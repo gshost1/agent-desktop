@@ -64,6 +64,14 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Fix.** Do not retry. Run `snapshot --app "App" --surface menu -i`. If the menu is there, use it. If not, run `list-surfaces --app "App"`. For a combo box or menu button, use `select @ref "Option"`.
 
+## Saved file has `:` in its name, in the wrong folder
+
+**Symptom.** A save reported success, but the file is missing from the folder you wanted. A file such as `:Users:me:Reports:q3.rtf` appears in the panel's default folder, often iCloud Drive or Documents.
+
+**Cause.** A full path went into the save panel's name field. The panel does not read it as a folder. It keeps its current folder and turns each `/` into `:` in the file name. `set-value` reported `delivered_verified` because the field held exactly that text.
+
+**Fix.** Put only the file name in the name field. Choose the folder with the panel, read the folder it shows (the `Where` pop-up or the path in the expanded panel), then click Save. Move the misnamed file yourself; agent-desktop does not undo a save.
+
 ## select does not find the menu
 
 **Symptom.** `select` fails to confirm the choice.

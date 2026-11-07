@@ -94,6 +94,7 @@ agent-desktop turns on web accessibility in a Chromium renderer when it needs it
     <tr><td><code>APP_UNRESPONSIVE</code> after <code>right-click</code> with <code>retry: unsafe</code></td><td><code>AXShowMenu</code> entered modal menu tracking after the menu opened</td><td>Do not retry. Run <code>snapshot --surface menu</code>; for a combo box or menu button, use <code>select</code></td></tr>
     <tr><td><code>select</code> cannot confirm the choice</td><td>It needs a closed-to-open menu change, and a menu was already open</td><td>Dismiss the open menu, then run <code>select</code> again</td></tr>
     <tr><td><code>WINDOW_NOT_FOUND</code></td><td>A window-owned surface has no open window</td><td><code>launch "App"</code> with <code>--activate</code>, then <code>list-windows --app "App"</code></td></tr>
+    <tr><td>A saved file is named like <code>:Users:me:q3.rtf</code> and sits in the panel's default folder</td><td>A path went into the save panel's name field; macOS keeps the current folder and turns each <code>/</code> into <code>:</code></td><td>Put only the file name in the name field and choose the folder with the panel before you click Save</td></tr>
     <tr><td>A shortcut does nothing</td><td><code>ctrl</code> used where macOS uses <code>cmd</code>, or the keys went to another app</td><td>Use <code>cmd+...</code>, or scope with <code>--app</code></td></tr>
   </tbody>
 </table>
