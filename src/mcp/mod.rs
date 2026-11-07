@@ -3,6 +3,10 @@
 mod call;
 mod calls;
 mod catalog;
+mod child_lease;
+mod inherited_lease;
+mod lease_inheritance;
+mod lease_slot;
 
 use clap::{ArgAction, ArgMatches, Command, CommandFactory, parser::ValueSource};
 use serde_json::{Map, Value, json};
@@ -40,11 +44,13 @@ pub(crate) fn command() -> Command {
 
 /// Serves MCP over stdin and stdout until stdin closes, then finishes the tool calls already running.
 /// At most `MAX_CONCURRENT_CALLS` calls run at once, and a message longer than `MAX_MESSAGE_BYTES` is refused unread.
+/// Under an interaction lease inherited from the parent, calls that may take the lease run one at a time.
 pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
     let server = Arc::new(Server {
         tools: catalog::tools(),
         globals: forwarded_globals(matches),
         calls: calls::Calls::default(),
+        lease: lease_inheritance::LeaseInheritance::from_env(),
     });
     let out = Arc::new(Mutex::new(std::io::stdout()));
     let mut input = std::io::stdin().lock();
@@ -122,6 +128,7 @@ struct Server {
     tools: Vec<catalog::Tool>,
     globals: Vec<String>,
     calls: calls::Calls,
+    lease: lease_inheritance::LeaseInheritance,
 }
 
 impl Server {
@@ -129,6 +136,7 @@ impl Server {
         if message["method"] == "notifications/cancelled" {
             if let Some(id) = message["params"].get("requestId") {
                 self.calls.cancel(id);
+                self.lease.cancel(id);
             }
             return;
         }
@@ -213,7 +221,7 @@ impl Server {
             Some(Value::Object(arguments)) => arguments.clone(),
             Some(_) => return Err(RpcError::new(-32602, "Tool arguments must be an object")),
         };
-        Ok(call::call(tool, &arguments, &self.globals, &self.calls, id))
+        Ok(call::call(self, tool, &arguments, id))
     }
 }
 
