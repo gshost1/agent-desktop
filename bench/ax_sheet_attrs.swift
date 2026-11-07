@@ -27,7 +27,7 @@ func walk(_ el: AXUIElement, _ depth: Int) {
     let role = str(el, "AXRole")
     if controls.contains(role) {
         var row: [String: String] = ["role": role, "name": str(el, "AXTitle"), "desc": str(el, "AXDescription")]
-        for a in ["AXWindow", "AXExpanded", "AXPosition", "AXSize", "AXHidden", "AXEnabled"] {
+        for a in ["AXWindow", "AXExpanded", "AXPosition", "AXSize", "AXHidden", "AXEnabled", "AXIdentifier", "AXSubrole", "AXPlaceholderValue", "AXValue"] {
             let (e, v) = read(el, a)
             row[a] = e == .success ? (a == "AXWindow" ? "ok" : String(describing: v!).prefix(40).description) : "err\(e.rawValue)"
         }

@@ -82,6 +82,13 @@ def main():
     a = ap.parse_args()
     rate = bpt()
     runs = [json.loads(l) for l in Path(a.results).read_text().splitlines() if l.strip()]
+    corrections_path = Path(a.results).with_name("corrections.jsonl")
+    corrections = {}
+    if corrections_path.exists():
+        corrections = {c["run_id"]: c for c in map(json.loads, corrections_path.read_text().splitlines()) if c}
+    for r in runs:
+        if r["run_id"] in corrections:
+            r["success"] = corrections[r["run_id"]]["success"]
     lines = [f"Calibrated JSON rate: {rate:.2f} bytes/token. Runs: {len(runs)}.", ""]
 
     groups = defaultdict(list)

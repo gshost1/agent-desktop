@@ -25,6 +25,13 @@ def quit_app(name):
     subprocess.run(["osascript", "-e", script], capture_output=True, timeout=20)
 
 
+def listing(directory):
+    try:
+        return [p.name for p in directory.iterdir()]
+    except OSError:
+        return []
+
+
 def close_bench_finder_windows():
     script = ('tell application "Finder" to close (every Finder window whose name starts with "t3-" '
               'or name starts with "bench-" or name is "agent-desktop-bench")')
@@ -151,6 +158,9 @@ class TextEditSave(Task):
         self.folder.mkdir(parents=True)
         self.stem = f"note-{self.run_id}"
         self.text = f"hello from run {self.run_id}"
+        self.default_dirs = [Path.home() / "Library/Mobile Documents/com~apple~TextEdit/Documents",
+                             Path.home() / "Documents", Path.home() / "Desktop"]
+        self.before = {d: set(listing(d)) for d in self.default_dirs}
 
     def prompt(self):
         return (f"Open TextEdit, create a new document containing exactly the text `{self.text}`, "
@@ -158,6 +168,10 @@ class TextEditSave(Task):
                 f"`{self.folder}`. Reply DONE when it is saved.")
 
     def verify(self, answer):
+        strays = [f"{d.name}/{n}" for d in self.default_dirs for n in set(listing(d)) - self.before[d]
+                  if self.run_id in n or self.stem in n]
+        if strays:
+            return False, f"stray files outside the target folder {strays}"
         entries = sorted(p.name for p in self.folder.iterdir() if p.name != ".DS_Store")
         if len(entries) != 1 or Path(entries[0]).stem != self.stem:
             return False, f"folder contents {entries}"
