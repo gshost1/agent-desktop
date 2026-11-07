@@ -162,6 +162,17 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 | `timed_out` | The wait budget expired without observing the expected state, including when transient read errors persisted through the last poll. `last_observation_error` may hold the last error. |
 | `identity_unavailable` | The ref has no usable process generation, so observation was skipped. |
 
+## Outline snapshots
+
+`snapshot --outline` (batch: `"outline": true`) replaces `data.tree` with `data.outline`, a string with one line per node and two spaces of indent per level. Every other snapshot field (`snapshot_id`, `ref_count`, `complete`, `truncated`, `nodes_observed`, `window`) is unchanged. A line is `role "name" [eN] = "value" desc="..." placeholder="..." hint="..." #native_id {states} (actions) @x,y WxH +N`, with absent parts left out:
+
+- `[eN]` is the ref's local part. Commands take it qualified with `data.snapshot_id`: `@<snapshot_id>:eN`.
+- Names and values are JSON string literals.
+- `(actions)` omits `Click` on a ref, `RightClick`, `ScrollTo` and `SetFocus`, which nearly every node advertises, and `Scroll` on a node whose ancestor already scrolls.
+- `@x,y WxH` appears only with `--include-bounds`, rounded to whole points.
+- `+N` is a skeleton container's `children_count`; `+…` marks `subtree_truncated`.
+- A ref-less, unnamed, stateless `group` with one child is skipped and its child printed at its level. No ref is dropped.
+
 ## Find result shape
 
 `find` match objects report the element's actual accessibility `name`. Elements

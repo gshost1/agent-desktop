@@ -34,13 +34,14 @@ Examples use a POSIX shell. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), b
 Use `find` when you know the role or exact name. Otherwise map the app first and drill into one region.
 
 ```
-agent-desktop snapshot --skeleton --app "Notes" -i --compact   # shallow map, children_count on cut branches
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # drill into one region
+agent-desktop snapshot --skeleton --app "Notes" -i --outline   # shallow map, +N on cut branches
+agent-desktop snapshot --root @s8f3k2p9:e3 -i --outline        # drill into one region
 agent-desktop click @s8f3k2p9:e12                              # act on a qualified ref
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read the same region
+agent-desktop snapshot --root @s8f3k2p9:e3 -i --outline        # verify: re-read the same region
 ```
 
-- A small app needs no skeleton. Take a full `snapshot -i`.
+- `--outline` prints the tree as indented text with local refs such as `[e12]`, at about a third of the tokens of the JSON tree. Pass a local ref as `@<snapshot_id>:e12`, using `data.snapshot_id`.
+- A small app needs no skeleton. Take a full `snapshot -i --outline`.
 - `-i` keeps interactive nodes only, so a row's static-text label is dropped. To tell which row a repeated button belongs to, drill that row's container with `--root` and leave out `-i`. On Windows and Linux that reads the row but does not make its button actionable: a button repeated in other rows is a twin in the window and its ref is refused (see Refs).
 - A `--root` drill adds its refs to the same snapshot id. Refs outside the drilled subtree, and the drilled root itself, stay valid; refs that were already inside it are replaced, so an old ref there returns `STALE_REF`.
 - Never skeleton a surface (`--surface menu`, `sheet`, `alert`). A surface is already focused.
@@ -49,7 +50,8 @@ agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read
 
 ## Refs
 
-- Output refs are qualified: `@<snapshot_id>:e<N>`, for example `@s8f3k2p9:e1`. Pass them to later commands as they are.
+- Output refs are qualified: `@<snapshot_id>:e<N>`, for example `@s8f3k2p9:e1`. Pass them to later commands as they are. An `--outline` snapshot prints the local part (`[e1]`); qualify it with the snapshot's `snapshot_id`.
+- Write refs out in full. In zsh, `S=@s8f3k2p9; agent-desktop click $S:e1` expands `:e` as a modifier and sends `click 1`; use `"${S}:e1"` if you must use a variable.
 - Refs are valid for one snapshot. After any UI change, re-drill the affected region or take a new snapshot.
 - Only addressable elements get refs. Static text and inert containers do not.
 - A command re-identifies the element before it acts. On macOS the ref carries the element's own address, so identical twins each keep their ref. On Windows and Linux a ref resolves only when it was the only element in the window its snapshot captured with its role, native id, name and description, counted even below a skeleton or depth cut, and exactly one live element still matches. Identical twins there have no ref path: only `--headed mouse-click --xy X,Y` can choose one, it takes the foreground, and a Linux Wayland session refuses it.

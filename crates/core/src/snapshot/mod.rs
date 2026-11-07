@@ -206,6 +206,7 @@ pub(crate) fn emit_snapshot_saved(
 }
 
 pub mod hints;
+pub mod outline;
 pub(crate) mod ref_owner_observation;
 pub(crate) mod snapshot_owner;
 pub(crate) mod snapshot_ref;
