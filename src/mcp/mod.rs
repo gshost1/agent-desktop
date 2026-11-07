@@ -7,6 +7,8 @@ mod child_lease;
 mod inherited_lease;
 mod lease_inheritance;
 mod lease_slot;
+mod slot_holder;
+mod slot_step;
 
 use clap::{ArgAction, ArgMatches, Command, CommandFactory, parser::ValueSource};
 use serde_json::{Map, Value, json};
@@ -44,7 +46,8 @@ pub(crate) fn command() -> Command {
 
 /// Serves MCP over stdin and stdout until stdin closes, then finishes the tool calls already running.
 /// At most `MAX_CONCURRENT_CALLS` calls run at once, and a message longer than `MAX_MESSAGE_BYTES` is refused unread.
-/// Under an interaction lease inherited from the parent, calls that may take the lease run one at a time.
+/// Under an interaction lease inherited from the parent, calls that may take the lease run one at a time,
+/// in arrival order.
 pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
     let server = Arc::new(Server {
         tools: catalog::tools(),
@@ -76,7 +79,7 @@ pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
         let server = Arc::clone(&server);
         let out = Arc::clone(&out);
         if message["method"] != "tools/call" {
-            server.respond(&out, &message);
+            server.respond(&out, &message, None);
             continue;
         }
         running.retain(|call: &std::thread::JoinHandle<()>| !call.is_finished());
@@ -92,7 +95,11 @@ pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
                 continue;
             }
         }
-        running.push(std::thread::spawn(move || server.respond(&out, &message)));
+        let ticket = message.get("id").and_then(|id| server.lease.register(id));
+        running.push(std::thread::spawn(move || {
+            server.respond(&out, &message, ticket);
+            server.lease.forget(ticket);
+        }));
     }
     for call in running {
         let _ = call.join();
@@ -132,11 +139,15 @@ struct Server {
 }
 
 impl Server {
-    fn respond(&self, out: &Mutex<std::io::Stdout>, message: &Value) {
+    fn respond(
+        &self,
+        out: &Mutex<std::io::Stdout>,
+        message: &Value,
+        ticket: Option<lease_slot::Ticket>,
+    ) {
         if message["method"] == "notifications/cancelled" {
             if let Some(id) = message["params"].get("requestId") {
-                self.calls.cancel(id);
-                self.lease.cancel(id);
+                self.lease.cancel(id, || self.calls.cancel(id));
             }
             return;
         }
@@ -145,7 +156,7 @@ impl Server {
         };
         let method = message["method"].as_str().unwrap_or_default();
         let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
-        let result = self.handle(&id, method, &params);
+        let result = self.handle(&id, method, &params, ticket);
         if method == "tools/call" && !self.calls.finish(&id) {
             return;
         }
@@ -174,7 +185,13 @@ impl Server {
         );
     }
 
-    fn handle(&self, id: &Value, method: &str, params: &Value) -> Result<Value, RpcError> {
+    fn handle(
+        &self,
+        id: &Value,
+        method: &str,
+        params: &Value,
+        ticket: Option<lease_slot::Ticket>,
+    ) -> Result<Value, RpcError> {
         if let Some(requested) = params["_meta"][PROTOCOL_VERSION_META].as_str() {
             if requested != MODERN_VERSION {
                 return Err(
@@ -199,7 +216,7 @@ impl Server {
                 "ttlMs": TOOLS_TTL_MS,
                 "cacheScope": "public",
             }),
-            "tools/call" => self.call(id, params)?,
+            "tools/call" => self.call(id, params, ticket)?,
             other => return Err(RpcError::new(-32601, format!("Method not found: {other}"))),
         };
         result["resultType"] = Value::from("complete");
@@ -207,7 +224,12 @@ impl Server {
         Ok(result)
     }
 
-    fn call(&self, id: &Value, params: &Value) -> Result<Value, RpcError> {
+    fn call(
+        &self,
+        id: &Value,
+        params: &Value,
+        ticket: Option<lease_slot::Ticket>,
+    ) -> Result<Value, RpcError> {
         let name = params["name"]
             .as_str()
             .ok_or_else(|| RpcError::new(-32602, "tools/call requires a tool name"))?;
@@ -221,7 +243,7 @@ impl Server {
             Some(Value::Object(arguments)) => arguments.clone(),
             Some(_) => return Err(RpcError::new(-32602, "Tool arguments must be an object")),
         };
-        Ok(call::call(self, tool, &arguments, id))
+        Ok(call::call(self, tool, &arguments, id, ticket))
     }
 }
 

@@ -17,6 +17,7 @@ fn legacy_initialize_echoes_a_supported_version_and_falls_back_to_the_newest() {
             &Value::Null,
             "initialize",
             &json!({ "protocolVersion": "2025-06-18" }),
+            None,
         )
         .unwrap_or_else(|_| panic!("initialize"));
     assert_eq!(echoed["protocolVersion"], "2025-06-18");
@@ -25,6 +26,7 @@ fn legacy_initialize_echoes_a_supported_version_and_falls_back_to_the_newest() {
             &Value::Null,
             "initialize",
             &json!({ "protocolVersion": "1999-01-01" }),
+            None,
         )
         .unwrap_or_else(|_| panic!("initialize"));
     assert_eq!(fallback["protocolVersion"], LEGACY_VERSIONS[0]);
@@ -34,7 +36,7 @@ fn legacy_initialize_echoes_a_supported_version_and_falls_back_to_the_newest() {
 #[test]
 fn modern_requests_with_an_unknown_version_get_the_supported_list() {
     let params = json!({ "_meta": { PROTOCOL_VERSION_META: "1999-01-01" } });
-    let Err(error) = server().handle(&Value::Null, "tools/list", &params) else {
+    let Err(error) = server().handle(&Value::Null, "tools/list", &params, None) else {
         panic!("an unknown modern version must be refused");
     };
     assert_eq!(error.code, -32022);
@@ -45,7 +47,7 @@ fn modern_requests_with_an_unknown_version_get_the_supported_list() {
 fn modern_tools_list_is_cacheable_and_complete() {
     let params = json!({ "_meta": { PROTOCOL_VERSION_META: MODERN_VERSION } });
     let result = server()
-        .handle(&Value::Null, "tools/list", &params)
+        .handle(&Value::Null, "tools/list", &params, None)
         .unwrap_or_else(|_| panic!("tools/list"));
     assert_eq!(result["resultType"], "complete");
     assert_eq!(result["cacheScope"], "public");
@@ -61,6 +63,7 @@ fn unknown_tools_are_protocol_errors() {
         &Value::Null,
         "tools/call",
         &json!({ "name": "desktop_nope" }),
+        None,
     ) else {
         panic!("unknown tool must be refused");
     };

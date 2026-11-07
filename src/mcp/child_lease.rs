@@ -1,32 +1,35 @@
-//! What one tool-call child receives of the interaction lease the server inherited.
+//! What one tool-call child receives of an interaction lease the server inherited.
 
 use std::process::Command;
 
 use super::inherited_lease::InheritedLease;
+use super::lease_slot::Ticket;
 
-/// `Unchanged` when nothing was inherited, so the child takes the lease itself. `Withheld` when the call
-/// does not need the lease: the child gets neither the descriptor nor the variable naming it. `Lent` while
-/// this child holds the server's one slot; dropping it frees the slot for the next call.
+/// `Unchanged` when nothing was inherited, so the child takes the lease itself. `Withheld` names the lease
+/// variable the child must not see: its call does not need the lease, or the inherited value is unusable.
+/// `Lent` while this call holds the server's one slot; dropping it ends the turn once the child is reaped.
 pub(crate) enum ChildLease<'a> {
     Unchanged,
-    Withheld(&'a InheritedLease),
-    Lent(&'a InheritedLease),
+    Withheld(&'static str),
+    Lent(&'a InheritedLease, Ticket),
 }
 
 impl ChildLease<'_> {
     pub(crate) fn apply(&self, command: &mut Command) {
         match self {
             Self::Unchanged => {}
-            Self::Withheld(lease) => lease.withhold(command),
-            Self::Lent(lease) => lease.lend(command),
+            Self::Withheld(variable) => {
+                command.env_remove(variable);
+            }
+            Self::Lent(lease, _) => lease.lend(command),
         }
     }
 }
 
 impl Drop for ChildLease<'_> {
     fn drop(&mut self) {
-        if let Self::Lent(lease) = self {
-            lease.release();
+        if let Self::Lent(lease, ticket) = self {
+            lease.release(*ticket);
         }
     }
 }

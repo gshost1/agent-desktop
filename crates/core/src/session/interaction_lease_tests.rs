@@ -340,3 +340,26 @@ fn runtime_directory_is_private_and_rejects_symlinks() {
     assert!(ensure_unix_runtime_directory(&runtime, uid).is_err());
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn only_an_open_descriptor_above_the_standard_streams_is_protected() {
+    use std::os::fd::AsRawFd;
+
+    for value in ["0", "1", "2", "-3", "notanumber", "99999"] {
+        assert_eq!(protect_inherited_lease_descriptor(value), None, "{value}");
+    }
+    let path = std::env::temp_dir().join(format!(
+        "agent-desktop-lease-fd-proof-{}",
+        std::process::id()
+    ));
+    let file = std::fs::File::create(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    let descriptor = file.as_raw_fd();
+    assert_eq!(unsafe { libc::fcntl(descriptor, libc::F_SETFD, 0) }, 0);
+    assert_eq!(
+        protect_inherited_lease_descriptor(&descriptor.to_string()),
+        Some(descriptor)
+    );
+    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFD) };
+    assert_ne!(flags & libc::FD_CLOEXEC, 0);
+}

@@ -19,6 +19,30 @@ pub struct InteractionLease {
 #[cfg(unix)]
 pub const INTERACTION_LEASE_FD_ENV: &str = "AGENT_DESKTOP_INTERACTION_LEASE_FD";
 
+/// Names the inherited interaction-lease handle on Windows, read by the Windows adapter to adopt it.
+#[cfg(windows)]
+pub const INTERACTION_LEASE_HANDLE_ENV: &str = "AGENT_DESKTOP_INTERACTION_LEASE_HANDLE";
+
+#[cfg(unix)]
+const LOWEST_INHERITED_LEASE_FD: std::os::fd::RawFd = 3;
+
+/// Marks the interaction-lease descriptor a parent passed down, named by `value`, close-on-exec and returns
+/// it, so a process that hands the lease on chooses which child inherits it. Nothing is touched, and `None`
+/// is returned, unless `value` names an open descriptor above the standard streams.
+#[cfg(unix)]
+pub fn protect_inherited_lease_descriptor(value: &str) -> Option<std::os::fd::RawFd> {
+    let descriptor = value
+        .parse::<std::os::fd::RawFd>()
+        .ok()
+        .filter(|descriptor| *descriptor >= LOWEST_INHERITED_LEASE_FD)?;
+    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFD) };
+    if flags < 0 {
+        return None;
+    }
+    let protected = unsafe { libc::fcntl(descriptor, libc::F_SETFD, flags | libc::FD_CLOEXEC) };
+    (protected == 0).then_some(descriptor)
+}
+
 impl InteractionLease {
     pub fn guarded(
         deadline: Deadline,

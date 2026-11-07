@@ -9,17 +9,19 @@ use super::Server;
 use super::catalog::Tool;
 use super::child_lease::ChildLease;
 use super::lease_inheritance::needs_lease;
+use super::lease_slot::Ticket;
 
 const CANCELLED: &str = "Cancelled";
 
 /// Runs `tool` with `arguments` for request `id`, prefixed by the server's own global flags, and returns a
 /// `CallToolResult`. A cancelled call returns early; the caller sends no response for it. A child lent the
-/// server's inherited lease keeps it until the child has exited or, once cancelled, closed its output.
+/// server's inherited lease keeps it until the child has been reaped, here or by the cancel's reaper.
 pub(super) fn call(
     server: &Server,
     tool: &Tool,
     arguments: &Map<String, Value>,
     id: &Value,
+    ticket: Option<Ticket>,
 ) -> Value {
     let argv = match tool.argv(arguments) {
         Ok(argv) => argv,
@@ -31,7 +33,7 @@ pub(super) fn call(
     };
     let Some(lease) = server
         .lease
-        .child_lease(id, || needs_lease(&server.globals, &argv))
+        .child_lease(ticket, || needs_lease(&server.globals, &argv))
     else {
         return error_result(CANCELLED);
     };

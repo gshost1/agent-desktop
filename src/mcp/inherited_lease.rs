@@ -2,14 +2,19 @@
 //!
 //! Every child that adopts the inherited descriptor shares one open file description, and taking a lock
 //! through a description that already holds it always succeeds, so the lock cannot tell siblings apart.
-//! The slot does: a child receives the descriptor and its variable only while it holds the slot.
+//! The slot does: a child receives the variable naming the lease only while its call holds the slot, and
+//! the slot passes on only after that child has been reaped. On Unix the descriptor itself is close-on-exec
+//! in this server and opened up only in the lent child. On Windows exclusivity rests on the variable alone:
+//! the inherited handle stays inheritable, so every child holds a copy it never adopts.
 
 use std::ffi::OsString;
 use std::process::Command;
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::thread::JoinHandle;
 
 use super::child_lease::ChildLease;
-use super::lease_slot::{LeaseSlot, Turn};
+use super::lease_slot::{LeaseSlot, Ticket};
+use super::slot_step::SlotStep;
 
 pub(crate) struct InheritedLease {
     variable: &'static str,
@@ -21,51 +26,76 @@ pub(crate) struct InheritedLease {
 }
 
 impl InheritedLease {
-    /// The lease named by `variable` with `value`. On Unix the descriptor it names is marked close-on-exec
-    /// here, so only a child the lease is lent to inherits it.
     pub(crate) fn new(variable: &'static str, value: OsString) -> Self {
         Self {
             variable,
-            #[cfg(unix)]
-            descriptor: keep_from_children(&value),
             value,
+            #[cfg(unix)]
+            descriptor: None,
             slot: Mutex::default(),
             changed: Condvar::new(),
         }
     }
 
-    /// Waits for the slot and lends the lease to call `id`; `None` when `id` was cancelled while it waited.
-    pub(crate) fn lend_to(&self, id: &str) -> Option<ChildLease<'_>> {
+    /// Lends `descriptor`, already close-on-exec in this server, to each child the lease is lent to.
+    #[cfg(unix)]
+    pub(crate) fn with_descriptor(mut self, descriptor: std::os::fd::RawFd) -> Self {
+        self.descriptor = Some(descriptor);
+        self
+    }
+
+    pub(crate) fn variable(&self) -> &'static str {
+        self.variable
+    }
+
+    pub(crate) fn register(&self, id: &str) -> Ticket {
+        self.lock().register(id)
+    }
+
+    /// Waits for the slot in arrival order and lends the lease to `ticket`; `None` when it was cancelled.
+    pub(crate) fn lend_to(&self, ticket: Ticket) -> Option<ChildLease<'_>> {
         let mut slot = self.lock();
-        slot.queue(id);
         loop {
-            match slot.advance(id) {
-                Turn::Take => return Some(ChildLease::Lent(self)),
-                Turn::Leave => return None,
-                Turn::Wait => {
-                    slot = self
-                        .changed
-                        .wait(slot)
-                        .unwrap_or_else(PoisonError::into_inner);
-                }
+            match slot.advance(ticket) {
+                SlotStep::Take => return Some(ChildLease::Lent(self, ticket)),
+                SlotStep::Wait => slot = self.wait(slot),
+                _ => return None,
             }
         }
     }
 
-    /// Stops call `id` from waiting for the slot; a call not waiting is left alone.
-    pub(crate) fn cancel(&self, id: &str) {
-        if self.lock().cancel(id) {
-            self.changed.notify_all();
-        }
-    }
-
-    pub(crate) fn release(&self) {
-        self.lock().release();
+    pub(crate) fn forget(&self, ticket: Ticket) {
+        self.lock().forget(ticket);
         self.changed.notify_all();
     }
 
-    pub(crate) fn withhold(&self, command: &mut Command) {
-        command.env_remove(self.variable);
+    /// Cancels request `id` through `cancel_call`, which returns the thread reaping its child. When `id`
+    /// holds the slot, the slot stays taken until that reaper has joined.
+    pub(crate) fn cancel(&self, id: &str, cancel_call: impl FnOnce() -> Option<JoinHandle<()>>) {
+        let holder = self.lock().cancel(id);
+        let reaper = cancel_call();
+        if let Some(ticket) = holder {
+            self.lock().hand_reaper(ticket, reaper);
+        }
+        self.changed.notify_all();
+    }
+
+    /// Ends `ticket`'s turn once its child is reaped, by its call thread or by the cancel's reaper.
+    pub(crate) fn release(&self, ticket: Ticket) {
+        let mut slot = self.lock();
+        loop {
+            match slot.end(ticket) {
+                SlotStep::Wait => slot = self.wait(slot),
+                SlotStep::Join(reaper) => {
+                    drop(slot);
+                    let _ = reaper.join();
+                    slot = self.lock();
+                }
+                _ => break,
+            }
+        }
+        drop(slot);
+        self.changed.notify_all();
     }
 
     pub(crate) fn lend(&self, command: &mut Command) {
@@ -77,16 +107,12 @@ impl InheritedLease {
     fn lock(&self) -> MutexGuard<'_, LeaseSlot> {
         self.slot.lock().unwrap_or_else(PoisonError::into_inner)
     }
-}
 
-#[cfg(unix)]
-fn keep_from_children(value: &OsString) -> Option<std::os::fd::RawFd> {
-    value
-        .to_str()?
-        .parse::<std::os::fd::RawFd>()
-        .ok()
-        .filter(|descriptor| *descriptor >= 0)
-        .filter(|descriptor| set_close_on_exec(*descriptor, true).is_ok())
+    fn wait<'a>(&self, slot: MutexGuard<'a, LeaseSlot>) -> MutexGuard<'a, LeaseSlot> {
+        self.changed
+            .wait(slot)
+            .unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
 #[cfg(unix)]
@@ -94,22 +120,16 @@ fn lend_descriptor(command: &mut Command, descriptor: Option<std::os::fd::RawFd>
     use std::os::unix::process::CommandExt;
 
     if let Some(descriptor) = descriptor {
-        unsafe { command.pre_exec(move || set_close_on_exec(descriptor, false)) };
+        unsafe { command.pre_exec(move || open_to_child(descriptor)) };
     }
 }
 
 #[cfg(unix)]
-fn set_close_on_exec(descriptor: std::os::fd::RawFd, close: bool) -> std::io::Result<()> {
+fn open_to_child(descriptor: std::os::fd::RawFd) -> std::io::Result<()> {
     let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFD) };
-    if flags < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    let flags = if close {
-        flags | libc::FD_CLOEXEC
-    } else {
-        flags & !libc::FD_CLOEXEC
-    };
-    if unsafe { libc::fcntl(descriptor, libc::F_SETFD, flags) } != 0 {
+    if flags < 0
+        || unsafe { libc::fcntl(descriptor, libc::F_SETFD, flags & !libc::FD_CLOEXEC) } != 0
+    {
         return Err(std::io::Error::last_os_error());
     }
     Ok(())
