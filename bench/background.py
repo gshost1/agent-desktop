@@ -5,9 +5,10 @@ A sentinel app (Dictionary) is frontmost with its search field focused. Three
 workers drive Calculator, TextEdit and Weather in parallel, each under its own
 --session and --agent-id, with headless commands only. A sampler records the
 frontmost app, the focused element of the frontmost app and the cursor position
-every 100 ms, independently of agent-desktop (JXA/AppKit). Effects are checked
+every 100 ms, independently of agent-desktop (bench/focus_probe.swift, AX and
+AppKit directly, no Automation permission). Effects are checked
 by independent reads: Calculator's display, the TextEdit file on disk after
-save is not used; the document text is read back through System Events.
+save is not used; the document text is read back from TextEdit by AppleScript.
 
 Phases: serial (one worker at a time) then parallel (all at once), so the
 latency cost of the shared interaction lease shows. Extra probes: `launch`
@@ -29,26 +30,20 @@ ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "out" / "background"
 BIN = str(ROOT.parent / "target" / "release" / "agent-desktop")
 SENTINEL = "Dictionary"
-PROBE = """
-ObjC.import("AppKit");
-var p = $.NSEvent.mouseLocation;
-var front = $.NSWorkspace.sharedWorkspace.frontmostApplication.localizedName.js;
-var se = Application("System Events");
-var focus = "";
-try {
-  var proc = se.processes.whose({frontmost: true})[0];
-  var el = proc.attributes.byName("AXFocusedUIElement").value();
-  focus = el.role() + ":" + (el.description() || "");
-} catch (e) { focus = "?"; }
-JSON.stringify({front: front, x: Math.round(p.x), y: Math.round(p.y), focus: focus});
-"""
+FOCUS_PROBE = str(ROOT / "out" / "focus_probe")
+
+
+def build_focus_probe():
+    src = ROOT / "focus_probe.swift"
+    if not Path(FOCUS_PROBE).exists() or Path(FOCUS_PROBE).stat().st_mtime < src.stat().st_mtime:
+        subprocess.run(["swiftc", "-O", str(src), "-o", FOCUS_PROBE], check=True)
 
 
 def probe():
-    out = subprocess.run(["osascript", "-l", "JavaScript", "-e", PROBE], capture_output=True, text=True, timeout=10).stdout
     try:
+        out = subprocess.run([FOCUS_PROBE, "--once"], capture_output=True, text=True, timeout=10).stdout
         return json.loads(out)
-    except ValueError:
+    except (ValueError, subprocess.TimeoutExpired):
         return {"front": "?", "x": None, "y": None, "focus": "?"}
 
 
@@ -58,11 +53,15 @@ class Sampler(threading.Thread):
         self.samples, self.stop = [], threading.Event()
 
     def run(self):
-        while not self.stop.is_set():
-            s = probe()
-            s["t"] = time.time()
-            self.samples.append(s)
-            time.sleep(0.1)
+        proc = subprocess.Popen([FOCUS_PROBE], stdout=subprocess.PIPE, text=True)
+        for line in proc.stdout:
+            if self.stop.is_set():
+                break
+            try:
+                self.samples.append(json.loads(line))
+            except ValueError:
+                pass
+        proc.terminate()
 
 
 def ad(args, env):
@@ -246,6 +245,7 @@ def main():
     ap.add_argument("--iterations", type=int, default=5)
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
+    build_focus_probe()
     home = ROOT / "out" / "home-background"
     home.mkdir(parents=True, exist_ok=True)
     os.chmod(home, 0o700)
