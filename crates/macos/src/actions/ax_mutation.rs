@@ -117,6 +117,21 @@ pub(crate) fn classify_perform(operation: &str, error: i32) -> Result<PerformSig
     signal_or_error(operation, PERFORM_API, error)
 }
 
+/// A target that stopped existing right after the action is evidence the
+/// action ran, but not of what it did, so delivery is reported unverified
+/// instead of uncertain.
+pub(crate) fn settle_uninformative_release(
+    operation: &str,
+    error: i32,
+    observed_effect: bool,
+    target_released: bool,
+) -> Result<crate::actions::chain::chain_delivery::DeliveryOutcome, AdapterError> {
+    if !observed_effect && target_released {
+        return Ok(crate::actions::chain::chain_delivery::DeliveryOutcome::DeliveredUnverified);
+    }
+    settle_uninformative_perform(operation, error, observed_effect)
+}
+
 pub(crate) fn settle_uninformative_perform(
     operation: &str,
     error: i32,
@@ -150,6 +165,42 @@ mod tests {
     fn success_is_delivered() {
         let result = classify("AXPress", "perform", kAXErrorSuccess);
         assert!(result.unwrap());
+    }
+
+    #[test]
+    fn an_uninformative_open_whose_target_is_gone_is_delivered_unverified() {
+        use crate::actions::chain::chain_delivery::DeliveryOutcome;
+        assert_eq!(
+            super::settle_uninformative_release(
+                "AXOpen",
+                kAXErrorAttributeUnsupported,
+                false,
+                true
+            )
+            .unwrap(),
+            DeliveryOutcome::DeliveredUnverified
+        );
+        assert_eq!(
+            super::settle_uninformative_release(
+                "AXOpen",
+                kAXErrorAttributeUnsupported,
+                true,
+                false
+            )
+            .unwrap(),
+            DeliveryOutcome::DeliveredVerified
+        );
+        let error = super::settle_uninformative_release(
+            "AXOpen",
+            kAXErrorAttributeUnsupported,
+            false,
+            false,
+        )
+        .expect_err("a target still present with no observed effect stays uncertain");
+        assert_eq!(
+            error.disposition.delivery(),
+            DeliveryDisposition::DeliveryUncertain
+        );
     }
 
     #[test]
