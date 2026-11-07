@@ -8,7 +8,7 @@ from pathlib import Path
 LOCK = Path.home() / ".agent-desktop" / "bench.lock"
 
 
-def take_lock(title, poll=60):
+def take_lock(title, poll=int(os.environ.get("BENCH_LOCK_POLL", "5"))):
     while True:
         if LOCK.exists():
             age = time.time() - LOCK.stat().st_mtime

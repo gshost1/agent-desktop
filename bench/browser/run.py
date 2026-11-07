@@ -113,6 +113,8 @@ def summarize_stream(lines):
             ev = json.loads(line)
         except Exception:
             continue
+        if not isinstance(ev, dict) or not isinstance(ev.get("message", {}), dict):
+            continue
         if ev.get("type") == "assistant":
             turns += 1
             for c in ev.get("message", {}).get("content", []):
@@ -151,6 +153,8 @@ def run_one(args, task, channel, run_idx, out):
     env = dict(os.environ)
     env["PATH"] = f"{args.bin_dir}:{env['PATH']}"
     env["AGENT_DESKTOP_HOME"] = str(work / "ad-home")
+    if args.ab_skills:
+        env["AGENT_BROWSER_SKILLS_DIR"] = args.ab_skills
     env["AGENT_BROWSER_SOCKET_DIR"] = tempfile.mkdtemp(prefix="abs.")
     cmd = ["claude", "-p", prompt, "--safe-mode", "--tools", "Bash", "--allowedTools", *allowed_tools(channel),
            "--append-system-prompt", channel_prompt(channel, cdp_port), "--model", args.model,
@@ -202,12 +206,18 @@ def main():
     ap.add_argument("--timeout", type=int, default=900)
     ap.add_argument("--chrome-arg", action="append", default=[])
     ap.add_argument("--lock-title", default="feat/unified-browser bench")
+    ap.add_argument("--ab-skills", default="", help="agent-browser skill-data dir from the matching npm package")
+    ap.add_argument("--keep-lock", action="store_true", help="leave the lock held for a follow-up step in the same slot")
+    ap.add_argument("--no-lock", action="store_true", help="only for headless Chrome runs that never touch the desktop")
     args = ap.parse_args()
     args.ad = f"{args.bin_dir}/agent-desktop"
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     tasks = [t for t in TASKS if args.tasks == "all" or t["id"] in args.tasks.split(",")]
-    take_lock(args.lock_title)
+    if args.no_lock and "--headless=new" not in args.chrome_arg:
+        sys.exit("--no-lock needs --chrome-arg=--headless=new")
+    if not args.no_lock:
+        take_lock(args.lock_title)
     try:
         for r in range(args.start_run, args.start_run + args.runs):
             for t in tasks:
@@ -216,7 +226,8 @@ def main():
                         continue
                     run_one(args, t, ch, r, out)
     finally:
-        release_lock(args.lock_title)
+        if not args.no_lock and not args.keep_lock:
+            release_lock(args.lock_title)
 
 
 if __name__ == "__main__":
