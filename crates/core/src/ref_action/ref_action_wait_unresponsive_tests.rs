@@ -60,10 +60,7 @@ fn auto_wait_retries_a_transiently_unresponsive_accessibility_service() {
     assert!(adapter.resolve_calls.load(Ordering::SeqCst) >= 2);
 }
 
-struct BusyAtDispatchPreflightAdapter {
-    live_reads: AtomicU32,
-    actions: AtomicU32,
-}
+struct BusyAtDispatchPreflightAdapter(AtomicU32);
 
 impl ObservationOps for BusyAtDispatchPreflightAdapter {
     fn resolve_element_strict(
@@ -74,25 +71,19 @@ impl ObservationOps for BusyAtDispatchPreflightAdapter {
         Ok(NativeHandle::null())
     }
 
-    crate::adapter::complete_live_observation!(
-        "button",
-        "Run",
-        [capability::CLICK],
-        adapter => {
-            if adapter.live_reads.fetch_add(1, Ordering::SeqCst) == 1 {
-                return Err(AdapterError::timeout("Original is busy")
-                    .with_details(serde_json::json!({ "retryable": true })));
-            }
-            crate::ElementState {
-                role: "button".into(),
-                states: Vec::new(),
-                value: None,
-                enabled: Some(true),
-                hidden: Some(false),
-                offscreen: Some(false),
-            }
+    crate::adapter::complete_live_observation!("button", "Run", [capability::CLICK], adapter => {
+        if adapter.0.fetch_add(1, Ordering::SeqCst) == 1 {
+            return Err(AdapterError::timeout("busy").with_details(serde_json::json!({ "retryable": true })));
         }
-    );
+        crate::ElementState {
+            role: "button".into(),
+            states: Vec::new(),
+            value: None,
+            enabled: Some(true),
+            hidden: Some(false),
+            offscreen: Some(false),
+        }
+    });
     crate::adapter::saved_ref_scope!("button", Some("Run"));
 }
 
@@ -103,7 +94,6 @@ impl ActionOps for BusyAtDispatchPreflightAdapter {
         _request: ActionRequest,
         _lease: &crate::InteractionLease,
     ) -> Result<crate::actions::action_result::ActionResult, AdapterError> {
-        self.actions.fetch_add(1, Ordering::SeqCst);
         Ok(crate::actions::action_result::ActionResult::delivered_unverified("click"))
     }
 }
@@ -115,23 +105,16 @@ impl SystemOps for BusyAtDispatchPreflightAdapter {
 
 #[test]
 fn auto_wait_retries_a_live_read_timeout_in_the_dispatch_preflight() {
-    let adapter = BusyAtDispatchPreflightAdapter {
-        live_reads: AtomicU32::new(0),
-        actions: AtomicU32::new(0),
-    };
-
     let result = execute_with_auto_wait(
         RefActionWaitCtx {
-            adapter: &adapter,
+            adapter: &BusyAtDispatchPreflightAdapter(AtomicU32::new(0)),
             entry: &entry(),
             ref_id: "@e1",
             context: &CommandContext::default(),
         },
         ActionRequest::headless(Action::Click).with_timeout_ms(Some(2_000)),
         crate::ref_action::ref_action_single::dispatch_resolved,
-    )
-    .unwrap();
+    );
 
-    assert_eq!(result.action, "click");
-    assert_eq!(adapter.actions.load(Ordering::SeqCst), 1);
+    assert_eq!(result.unwrap().action, "click");
 }

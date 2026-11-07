@@ -173,8 +173,6 @@ fn a_cursor_overlay_write_racing_session_end_cannot_reopen_the_session() {
     assert!(
         read_manifest(&manifest.id)
             .unwrap()
-            .unwrap()
-            .ended_at
-            .is_some()
+            .is_some_and(|m| m.ended_at.is_some())
     );
 }

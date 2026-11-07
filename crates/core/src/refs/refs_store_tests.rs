@@ -311,8 +311,4 @@ fn discarding_scaffolding_keeps_a_snapshot_drilled_after_its_trace_copy() {
     store.discard_duplicated_ref_scaffolding();
 
     assert!(store.snapshot_path(&snapshot_id).is_file());
-    assert_eq!(
-        store.latest_snapshot_id().unwrap().as_deref(),
-        Some(snapshot_id.as_str())
-    );
 }

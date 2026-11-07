@@ -101,14 +101,8 @@ fn close_to_tray_is_suppressed_but_a_genuine_exit_still_fires() {
 #[test]
 fn an_unscoped_wait_reports_an_exit_behind_an_app_that_closed_to_tray() {
     let seed = baseline_with_apps(vec![
-        AppInfo {
-            name: "Alpha".into(),
-            ..terminating_app(41, "alpha-tray")
-        },
-        AppInfo {
-            name: "Beta".into(),
-            ..terminating_app(42, "beta-exited")
-        },
+        terminating_app(41, "tray"),
+        terminating_app(42, "exited"),
     ]);
     let mut adapter = LivenessAdapter::new(
         vec![empty_baseline()],
@@ -116,7 +110,7 @@ fn an_unscoped_wait_reports_an_exit_behind_an_app_that_closed_to_tray() {
     );
     adapter.running.push(crate::ProcessId::new(41));
     let mut request = input("app-terminated", None);
-    request.timeout_ms = 500;
+    request.timeout_ms = 300;
 
     let result = wait_for_event(request, &adapter, Some(Ok(seed))).unwrap();
 
