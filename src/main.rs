@@ -266,8 +266,14 @@ fn execute_with_adapter(
         match deadline
             .map_or_else(agent_desktop_core::Deadline::standard, Ok)
             .map_err(AppError::from)
-            .and_then(|deadline| adapter.permission_report(deadline).map_err(AppError::from))
-        {
+            .and_then(|deadline| {
+                if command_policy::requires_full_permission_report(&cmd) {
+                    adapter.permission_report(deadline)
+                } else {
+                    adapter.preflight_permission_report(deadline)
+                }
+                .map_err(AppError::from)
+            }) {
             Ok(report) => report,
             Err(err) => return Err(pre_dispatch_error(err)),
         }

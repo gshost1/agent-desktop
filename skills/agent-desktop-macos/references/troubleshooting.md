@@ -12,7 +12,7 @@ Each entry is a symptom, its cause, and the fix. Read `error.code`, `error.sugge
 
 The guide offers the app bundle of the nearest process above agent-desktop. Under a tmux server or an SSH session, no such app exists, so the guide offers the `agent-desktop` binary. In that case, add the terminal app that started tmux by hand. macOS 27 and later name the Accessibility list Device Control and Data Access.
 
-For Automation, open Privacy & Security > Automation and allow the launching app to control System Events. While a consent prompt for the launching app waits on screen, macOS holds the Automation check: `automation` reads `unknown` after 1.5 s, and a command that needs it returns `APP_UNRESPONSIVE` with `details.answered: false`. Answer the prompt, then retry.
+For Automation, open Privacy & Security > Automation and allow the launching app to control System Events. While a consent prompt for the launching app waits on screen, macOS holds the Automation check. Only `status`, `permissions`, `batch` and the Notification Center commands make it: `automation` reads `unknown` after 3 s, a command that needs it returns `APP_UNRESPONSIVE` with `details.answered: false`, and a command deadline shorter than that returns `TIMEOUT`. Answer the prompt, then retry.
 
 ## Empty or sparse tree
 

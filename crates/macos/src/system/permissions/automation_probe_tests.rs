@@ -1,44 +1,66 @@
 use super::*;
-use std::time::Instant;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+static STARTED: AtomicU32 = AtomicU32::new(0);
 
 fn granted() -> i32 {
     0
 }
 
 fn stuck_behind_a_prompt() -> i32 {
-    std::thread::sleep(Duration::from_secs(5));
+    STARTED.fetch_add(1, Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(600));
     0
+}
+
+fn slot() -> Mutex<Option<Receiver<i32>>> {
+    Mutex::new(None)
 }
 
 #[test]
 fn an_answering_probe_returns_its_status() {
-    assert_eq!(probe_within(Deadline::after(1_000).unwrap(), granted), 0);
+    let status = probe_with(&slot(), Duration::from_secs(5), granted).unwrap();
+
+    assert_eq!(status, 0);
 }
 
 #[test]
-fn a_probe_blocked_behind_a_prompt_gives_up_at_the_deadline() {
-    let started = Instant::now();
+fn a_probe_blocked_behind_a_prompt_gives_up_and_the_next_call_reuses_it() {
+    let slot = slot();
+    let before = STARTED.load(Ordering::SeqCst);
 
-    let status = probe_within(Deadline::after(100).unwrap(), stuck_behind_a_prompt);
+    let first = probe_with(&slot, Duration::from_millis(50), stuck_behind_a_prompt).unwrap();
+    let second = probe_with(&slot, Duration::from_millis(50), stuck_behind_a_prompt).unwrap();
+    let answered = probe_with(&slot, Duration::from_secs(5), stuck_behind_a_prompt).unwrap();
 
-    assert_eq!(status, PROBE_UNANSWERED);
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(first, PROBE_UNANSWERED);
+    assert_eq!(second, PROBE_UNANSWERED);
+    assert_eq!(answered, 0);
+    assert_eq!(STARTED.load(Ordering::SeqCst) - before, 1);
 }
 
 #[test]
-fn a_long_command_deadline_still_bounds_the_probe() {
-    let started = Instant::now();
+fn a_spent_deadline_is_a_timeout_not_an_unanswered_probe() {
+    let error = probe_within(Deadline::after(0).unwrap(), granted).unwrap_err();
 
-    let status = probe_within(Deadline::after(60_000).unwrap(), stuck_behind_a_prompt);
-
-    assert_eq!(status, PROBE_UNANSWERED);
-    assert!(started.elapsed() < AUTOMATION_PROBE_BUDGET + Duration::from_millis(500));
+    assert_eq!(error.code, agent_desktop_core::ErrorCode::Timeout);
 }
 
 #[test]
-fn an_unanswered_probe_is_an_unknown_permission() {
+fn an_unanswered_probe_is_an_unknown_permission_and_names_the_prompt() {
     assert_eq!(
         super::super::map_automation_probe(PROBE_UNANSWERED),
         agent_desktop_core::PermissionState::Unknown
+    );
+    let error = super::super::automation_requirement(PROBE_UNANSWERED).unwrap_err();
+    assert_eq!(error.code, agent_desktop_core::ErrorCode::AppUnresponsive);
+    let details = error.details.as_ref().expect("details");
+    assert_eq!(details["answered"], false);
+    assert_eq!(details["retryable"], false);
+    assert!(
+        error
+            .suggestion
+            .as_deref()
+            .is_some_and(|text| text.contains("prompt"))
     );
 }
