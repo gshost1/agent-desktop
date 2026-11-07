@@ -14,13 +14,16 @@ mod imp {
     /// selection rather than the focus. Selection is therefore read as well,
     /// on every element, because an attribute an element does not publish reads
     /// as absent and the rule simply never fires for it. The focused editor's
-    /// value is read because a press can replace what that editor shows.
+    /// value is read because a press can replace what that editor shows. The
+    /// target's window title is read because opening an item in place
+    /// retitles the window and releases the target.
     #[derive(Default)]
     pub(crate) struct FocusState {
         focused_element: Option<AXElement>,
         focused_value: Option<String>,
         selected: Option<bool>,
         menu_open: Option<bool>,
+        window_title: Option<crate::actions::window_title::WindowTitle>,
     }
 
     /// Accessibility hands back a fresh reference for the same element on every
@@ -44,6 +47,12 @@ mod imp {
     }
 
     pub(crate) fn focus_state(element: &AXElement, deadline: Deadline) -> Option<FocusState> {
+        let mut state = observe_focus(element, deadline)?;
+        state.window_title = crate::actions::window_title::WindowTitle::read(element, deadline);
+        Some(state)
+    }
+
+    fn observe_focus(element: &AXElement, deadline: Deadline) -> Option<FocusState> {
         let app = crate::system::app::app_ops::pid_from_element(element, deadline)
             .map(crate::tree::element_for_pid)?;
         let focused_element = crate::tree::properties::attributes::copy_element_attr_result(
@@ -64,51 +73,9 @@ mod imp {
             )
             .ok()
             .flatten(),
-            menu_open: owned_menu_open(element, deadline),
+            menu_open: crate::actions::owned_menu::owned_menu_open(element, deadline),
+            window_title: None,
         })
-    }
-
-    fn owned_menu_open(element: &AXElement, deadline: Deadline) -> Option<bool> {
-        use crate::tree::surface_read;
-        let end = crate::tree::locator_deadline::from_operation(deadline).ok()?;
-        let role = surface_read::string(element, "AXRole", end).ok()??;
-        if !matches!(
-            role.as_str(),
-            "AXMenuButton" | "AXPopUpButton" | "AXMenuBarItem" | "AXMenuItem"
-        ) {
-            return None;
-        }
-        let mut complete = true;
-        for child in surface_read::elements(element, "AXChildren", end).ok()? {
-            if surface_read::string(&child, "AXRole", end).ok()?? != "AXMenu" {
-                continue;
-            }
-            let visible = surface_read::boolean(&child, "AXVisible", end).ok()?;
-            let hidden = surface_read::boolean(&child, "AXHidden", end).ok()?;
-            let bounds =
-                crate::tree::element_bounds::read_bounds_with_deadline(&child, end).ok()?;
-            match menu_visibility(visible, hidden, bounds) {
-                Some(true) => return Some(true),
-                Some(false) => {}
-                None => complete = false,
-            }
-        }
-        complete.then_some(false)
-    }
-
-    fn menu_visibility(
-        visible: Option<bool>,
-        hidden: Option<bool>,
-        bounds: Option<agent_desktop_core::Rect>,
-    ) -> Option<bool> {
-        if visible == Some(false) || hidden == Some(true) {
-            return Some(false);
-        }
-        let bounds = bounds?;
-        if bounds.width <= 0.0 || bounds.height <= 0.0 {
-            return Some(false);
-        }
-        (visible == Some(true) || hidden == Some(false)).then_some(true)
     }
 
     pub(crate) fn changed_now(
@@ -116,7 +83,14 @@ mod imp {
         element: &AXElement,
         deadline: Deadline,
     ) -> bool {
-        let after = focus_state(element, deadline);
+        let retitled = before
+            .as_ref()
+            .and_then(|state| state.window_title.as_ref())
+            .is_some_and(|title| title.changed(deadline));
+        if retitled {
+            return true;
+        }
+        let after = observe_focus(element, deadline);
         let focused = after
             .as_ref()
             .and_then(|state| state.focused_element.as_ref());
@@ -328,39 +302,6 @@ mod imp {
                     );
                 }
             }
-        }
-
-        #[test]
-        fn menu_verification_requires_visible_nonempty_geometry() {
-            let bounds = agent_desktop_core::Rect {
-                x: 0.0,
-                y: 0.0,
-                width: 100.0,
-                height: 100.0,
-            };
-            assert_eq!(menu_visibility(None, Some(false), Some(bounds)), Some(true));
-            assert_eq!(menu_visibility(Some(true), None, Some(bounds)), Some(true));
-            assert_eq!(menu_visibility(None, None, Some(bounds)), None);
-            assert_eq!(menu_visibility(Some(true), None, None), None);
-            assert_eq!(
-                menu_visibility(Some(false), Some(false), Some(bounds)),
-                Some(false)
-            );
-            assert_eq!(
-                menu_visibility(Some(true), Some(true), Some(bounds)),
-                Some(false)
-            );
-            assert_eq!(
-                menu_visibility(
-                    Some(true),
-                    Some(false),
-                    Some(agent_desktop_core::Rect {
-                        width: 0.0,
-                        ..bounds
-                    })
-                ),
-                Some(false)
-            );
         }
     }
 }

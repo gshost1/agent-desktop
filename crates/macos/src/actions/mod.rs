@@ -9,6 +9,8 @@ pub(crate) mod delivery_tracker;
 pub(crate) mod dispatch;
 pub(crate) mod extras;
 mod native_menu;
+#[cfg(target_os = "macos")]
+mod owned_menu;
 mod physical_click;
 mod physical_keyboard;
 mod physical_target;
@@ -19,6 +21,8 @@ mod scroll_read;
 pub(crate) mod select;
 pub(crate) mod toggle_state;
 pub(crate) mod type_text;
+#[cfg(target_os = "macos")]
+mod window_title;
 
 pub(crate) use delivery_tracker::DeliveryTracker;
 pub(crate) use dispatch::perform_action;

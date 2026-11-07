@@ -52,24 +52,12 @@ mod imp {
                 true,
                 activation_effect::changed_now(&before, el, deadline),
             )),
-            PerformSignal::Uninformative => {
-                let observed = activation_effect::settled_change(&before, el, deadline);
-                ax_mutation::settle_uninformative_release(
-                    name,
-                    error,
-                    observed,
-                    !observed && target_released(el, deadline),
-                )
-            }
+            PerformSignal::Uninformative => ax_mutation::settle_uninformative_perform(
+                name,
+                error,
+                activation_effect::settled_change(&before, el, deadline),
+            ),
         }
-    }
-
-    /// An action that navigates away replaces the view the target lived in,
-    /// so the target itself stops existing: Finder answers `AXOpen` on a file
-    /// item with an uninformative code and has already opened it.
-    fn target_released(el: &AXElement, deadline: agent_desktop_core::Deadline) -> bool {
-        crate::tree::properties::attributes::copy_string_attr_result(el, "AXRole", deadline)
-            == Err(accessibility_sys::kAXErrorInvalidUIElement)
     }
 
     pub(crate) fn advertises_action(
