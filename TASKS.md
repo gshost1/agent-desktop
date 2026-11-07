@@ -110,13 +110,13 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 ## PRs (fork only)
 
-| # | Branch | Finding | PR | Status |
-|---|---|---|---|---|
-| 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | **merged** 2026-11-07 as `c4d39615`; CI 13/13 green on head, gates green (4402), reviews done |
-| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | open; gates green (4397), 2 tests invert-verified, code review applied |
-| 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | – | written (w3), gates green (4406); review round 1 being applied |
-| 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | written (w4), gates green (4402); code + security review round 1 being applied |
-| 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | – | written (w5), gates green (4403); envelope bump 2.6 -> 2.7 in progress; will be draft (mac test literals) |
+| # | Branch | Finding | PR | Status | Upstream |
+|---|---|---|---|---|---|
+| 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | **merged** 2026-11-07 as `c4d39615`; CI 13/13 green on head, gates green (4402), reviews done | overlaps `#602` (goes back as a note to its author, not as our PR) |
+| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | open; gates green (4397), 2 tests invert-verified, code review applied | ready (when merged; no dependency on fork-only work) |
+| 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | – | written (w3), gates green (4406); review round 1 being applied | ready (when merged; rebased on the `#602` carry, so upstream needs `#602` first or a rebase) |
+| 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | written (w4), gates green (4402); code + security review round 1 being applied | ready (when merged; touches `src/mcp/calls.rs`, which `#602` also changes) |
+| 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | – | written (w5), gates green (4403); envelope bump 2.6 -> 2.7 in progress; will be draft (mac test literals) | needs-issue-first (changes the JSON contract: envelope 2.6 -> 2.7, AMBIGUOUS_TARGET -> STALE_REF) |
 
 ## Needs Mac verification
 
@@ -129,6 +129,13 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
   gnome-terminal python3-pyqt6`, or allow it for the session.
 - Fork CI: `pull_request` runs do not start on fork PRs; CI is dispatched with `workflow_dispatch` on the head SHA
   (counts for merging per George). CodeQL and Supply Chain are `disabled_fork`.
+
+## Upstream policy (George, 2026-11-07)
+
+Nothing goes to vercel-labs yet: no PRs, issues, comments, or links that create timeline events. Every fix stays
+upstream-ready: one finding per branch cut from `main`, no dependency on fork-only work (browser crate, perf
+branches), upstream references as inline code, PR prose via the technical-writer skill. The Upstream column is
+`ready`, `needs-issue-first` (JSON contract change or large refactor), `overlaps #N`, or `fork-only`.
 
 ## Merge rule (George, 2026-11-07)
 
