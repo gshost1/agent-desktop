@@ -24,24 +24,30 @@ import json,sys
 for m in json.load(sys.stdin).get('data',{}).get('matches',[]):
     if (m.get('value') or '').startswith('untitled folder'): print(m['ref_id']); break"
 }
-for variant in set-value type type-headed set-value-headed-return; do
+mkdir -p bench/out/probe_rename
+for variant in set-value set-value-headed-return type-interval-headed press-keys; do
     name="renamed-$variant"
     osascript -e 'tell application "Finder" to activate' -e 'tell application "Finder" to set index of (first Finder window whose name is "probe-rename") to 1' >/dev/null 2>&1
     sleep 0.5
     $B press cmd+shift+n --app Finder >/dev/null
     sleep 1.5
     ref=$(field)
+    [ -n "$ref" ] || { sleep 2; ref=$(field); }
     [ -n "$ref" ] || { echo "$variant: no rename field"; continue; }
     case "$variant" in
         set-value) out=$($B set-value "$ref" "$name") ;;
         type) out=$($B type "$ref" "$name") ;;
         type-headed) out=$($B --headed type "$ref" "$name") ;;
+        type-interval-headed) out=$($B --headed type "$ref" "$name" --interval-ms 20) ;;
+        press-keys) out=""; for ch in $(echo "$name" | grep -o .); do k=$ch; [ "$ch" = "-" ] && k=minus; out="$out$($B press "$k" --app Finder)"; done ;;
         set-value-headed-return) out=$($B set-value "$ref" "$name") ;;
     esac
     case "$variant" in
         *headed*) $B --headed press return --app Finder >/dev/null ;;
         *) $B press return --app Finder >/dev/null ;;
     esac
+    echo "$out" > "bench/out/probe_rename/$variant.json"
+    $B get "$ref" --property value > "bench/out/probe_rename/$variant.readback.json" 2>&1
     sleep 1.5
     on_disk=$(ls "$D" | tr '\n' ',')
     printf "%-24s ok=%s delivery=%s on_disk=[%s]\n" "$variant" \

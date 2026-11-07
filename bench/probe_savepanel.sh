@@ -13,7 +13,7 @@ H="${2:-bench/out/wt-popup/target/release/agent-desktop}"
 sleep 1
 "$B" press cmd+n --app TextEdit >/dev/null; sleep 1
 "$B" press cmd+s --app TextEdit >/dev/null; sleep 2
-pid=$("$B" list-apps | python3 -c 'import json,sys; print(next(a["pid"] for a in json.load(sys.stdin)["data"] if a["name"]=="TextEdit"))')
+pid=$("$B" list-apps | python3 -c 'import json,sys; print(next(a["pid"] for a in json.load(sys.stdin)["data"]["apps"] if a["name"]=="TextEdit"))')
 bench/out/ax_sheet_attrs "$pid" > "$out/ax_attrs.jsonl" 2>&1
 pick_ref() {
 python3 - "$1" <<'PY'
