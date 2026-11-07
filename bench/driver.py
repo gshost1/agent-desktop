@@ -195,7 +195,7 @@ def summarize(events, rdir, wall):
     cli = []
     log = rdir / "ad.log"
     if log.exists():
-        for line in log.read_text().splitlines():
+        for line in log.read_text(errors="replace").splitlines():
             parts = line.split("\t")
             if len(parts) >= 5:
                 cli.append({"s": float(parts[1]) - float(parts[0]), "rc": int(parts[2]), "bytes": int(parts[3]), "args": parts[4][:200]})
