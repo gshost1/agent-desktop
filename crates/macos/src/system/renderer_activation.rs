@@ -27,7 +27,8 @@ pub(crate) fn activate(process: ProcessIdentity, deadline: Deadline) -> Result<(
     if current == Some(true) {
         return Ok(());
     }
-    let chromium = crate::system::renderer_kind::detect_chromium(identity.pid()).is_some();
+    let chromium = attribute == renderer_probe::ENHANCED
+        && crate::system::renderer_kind::detect_chromium(identity.pid()).is_some();
     enable_attribute(
         &application,
         attribute,
@@ -37,11 +38,11 @@ pub(crate) fn activate(process: ProcessIdentity, deadline: Deadline) -> Result<(
 }
 
 /// How long to wait after switching accessibility on before the first read.
-/// A Chromium renderer builds its tree asynchronously after
-/// `AXEnhancedUserInterface` and can answer early with a partial tree, so it
-/// gets a fixed settle delay. Every Cocoa app exposes that attribute too; a
-/// native app answers with an empty tree until it is ready, and the caller
-/// polls it with backoff, so it does not pay the fixed delay.
+/// A Chromium renderer reads `AXEnhancedUserInterface` back as on at once but
+/// switches to its complete mode only after a debounce; until then its tree
+/// reads with inactive actions, so it gets a fixed settle delay. Every Cocoa
+/// app exposes that attribute too, but a native app's tree does not depend on
+/// it, so a native app does not pay the delay.
 fn settle_delay(attribute: &str, chromium: bool) -> Duration {
     if attribute == renderer_probe::ENHANCED && chromium {
         ENHANCED_ACTIVATION_DELAY
@@ -53,12 +54,12 @@ fn settle_delay(attribute: &str, chromium: bool) -> Duration {
 fn enable_attribute(
     application: &crate::tree::AXElement,
     attribute_name: &str,
-    settle_delay: Duration,
+    delay: Duration,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
     use core_foundation::{base::TCFType, boolean::CFBoolean, string::CFString};
 
-    if deadline.remaining() <= settle_delay {
+    if deadline.remaining() <= delay {
         return Err(not_delivered(deadline.timeout_error()));
     }
     let attribute = CFString::new(attribute_name);
@@ -82,7 +83,7 @@ fn enable_attribute(
         )
         .with_disposition(DeliverySemantics::not_delivered()));
     }
-    std::thread::sleep(deadline.remaining().min(settle_delay));
+    std::thread::sleep(deadline.remaining().min(delay));
     if deadline.is_expired() {
         return Err(deadline
             .timeout_error()
