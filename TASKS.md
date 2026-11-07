@@ -35,8 +35,8 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 | Rank | ID | Machine | Main files | Illegal transition reachable today | Hidden cost | Imp | St | Prior art | PR |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | ACTION-2 | `type --interval-ms` burst: Landing → Burst → Typed | core `commands/type_text_interval.rs:93` | After every keystroke lands, `--wait-for` reloads the refmap; a pruned or drilled snapshot returns SNAPSHOT_NOT_FOUND/STALE_REF stamped `not_delivered` + `refresh_snapshot_then_retry_original`, so a caller types the text twice | 3 loads of one entry per command | A | C | none (#348 introduced, #362 closed) | in progress |
-| 2 | STATE-9 | Interaction lease adoption: Free / Held(OFD) | core `storage/file_lock.rs:54-89`, `src/mcp/call.rs:29-35` | `mcp` started by a lease-holding harness passes the lease fd+env to up to 8 concurrent children; each "adopts" the same open file description, so mutations interleave | – | A | C mech, S reach | #160 (closed, different), PR #590 (open, lock dir only) | planned |
+| 1 | ACTION-2 | `type --interval-ms` burst: Landing → Burst → Typed | core `commands/type_text_interval.rs:93` | After every keystroke lands, `--wait-for` reloads the refmap; a pruned or drilled snapshot returns SNAPSHOT_NOT_FOUND/STALE_REF stamped `not_delivered` + `refresh_snapshot_then_retry_original`, so a caller types the text twice | 3 loads of one entry per command | A | C | none (#348 introduced, #362 closed) | [#2](https://github.com/gshost1/agent-desktop/pull/2) |
+| 2 | STATE-9 | Interaction lease adoption: Free / Held(OFD) | core `storage/file_lock.rs:54-89`, `src/mcp/call.rs:29-35` | `mcp` started by a lease-holding harness passes the lease fd+env to up to 8 concurrent children; each "adopts" the same open file description, so mutations interleave | – | A | C mech, S reach | #160 (closed, different), PR #590 (open, lock dir only) | in progress (w4) |
 | 3 | SURFACE-3 | Notification identity across CLI calls | core `notifications/`, all 3 adapters | dismiss/act address a list index; the list shifts between calls and the wrong same-app notification is dismissed or acted on | – | A | C | none | planned (M, JSON contract) |
 | 4 | SURFACE-4 | Windows dismiss verification | windows `notifications/` | with an identical twin present, a real dismissal reports ACTION_FAILED + retry, and the retry removes the twin | – | A | C | none | planned (win draft) |
 | 5 | SURFACE-10 | macOS `--surface focused` ref re-rooting | macos `tree/` surface roots | focused/menu refs re-root at whatever window or menu is current, ignoring `source_window_id` | – | A | C path, S identity catch | PR #258 fixed sheet/popover/alert only | planned (mac draft) |
@@ -44,8 +44,8 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 7 | ADAPTERS-2 | macOS click chain `DeliveredWithoutEffect` | macos `actions/` chain | a row that selects after the 300 ms check is treated as "press did nothing"; the chain then runs AXOpen or child presses (click + open) | – | A | S | #206 introduced; #455 (open) menu items only | probe on Mac first |
 | 8 | ADAPTERS-3 | Linux `write_ignored` | linux `actions/write/text_write.rs:78-90` | "not delivered" judged from one immediate read; a bridge that applies writes late lets a retried `type` insert twice | – | A | S | none | probe (Java ATK) first |
 | 9 | BINARY-12 | MCP cancel during held input | `src/mcp/calls.rs`, mac/win release guards | SIGTERM/TerminateProcess skips Drag/KeyReleaseGuard drops on mac/win; a button or key can stay down | – | A | S | #599, PR #602, #525 (cancel only) | probe on Mac first |
-| 10 | ACTION-1 | Pre-dispatch phase of a ref action | core `ref_action/ref_action_wait.rs:97-106`, `ref_action_single.rs:29-52`, `actions/headed_focus.rs:14` | lease timeout, post-lease deadline, headed focus failure and strict-trace failure before dispatch report `delivery: unknown`, `retry: unknown`, no recovery, and auto-wait stops early | – | B | C | #598 / PR #602 (preflight only) | planned |
-| 11 | REFS-2 | Capture verdict (`unique_at_capture: bool`) | core `refs/`, `tree/` capture proof | a capture that ran out of time or left a field unread fails later as AMBIGUOUS_TARGET `identity_not_unique`, retryable false; right advice is "retake" | – | B | C | none (#442 introduced) | planned |
+| 10 | ACTION-1 | Pre-dispatch phase of a ref action | core `ref_action/ref_action_wait.rs:97-106`, `ref_action_single.rs:29-52`, `actions/headed_focus.rs:14` | lease timeout, post-lease deadline, headed focus failure and strict-trace failure before dispatch report `delivery: unknown`, `retry: unknown`, no recovery, and auto-wait stops early | – | B | C | #598 / PR #602 (preflight only) | in progress (w3) |
+| 11 | REFS-2 | Capture verdict (`unique_at_capture: bool`) | core `refs/`, `tree/` capture proof | a capture that ran out of time or left a field unread fails later as AMBIGUOUS_TARGET `identity_not_unique`, retryable false; right advice is "retake" | – | B | C | none (#442 introduced) | in progress (w5) |
 | 12 | SURFACE-1 | Closed-menu wait phase | core `commands/wait*`, linux surface wait, mac/win menu wait | mac/win accept the first "closed" read, so `wait --menu-closed` right after the opener returns before the menu appears; Linux guard (bool + 2 s file stamp) misses raw `mouse-click`/`drag` and holds 2 s after an item click | up to 2 s per wait on Linux | B | C code, S mac/win timing | PR #291 (Linux-only fix) | planned (M) |
 | 13 | REFS-4 | Resolve error triple (code, complete, retryable) | core `ref_action/ref_action_poll.rs`, `refs/` | pre-lease poll stops on STALE_REF complete=true and ignores retryable=true; a reordering list yields final `saved_ref_absent` for a live element | – | B | C path, S rate | none | planned |
 | 14 | REFS-5 / ACTION-8 | Persist policy under an inherited deadline (#10) | core `snapshot/mod.rs` save, `commands/wait_selector.rs:301` | in batch, a complete snapshot/find/drill or a satisfied `--wait-for` fails TIMEOUT before the lock while a partial one is saved | – | B | C | register #10; #154, PRs #164, #372 related | planned |
@@ -112,13 +112,40 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 | # | Branch | Finding | PR | Status |
 |---|---|---|---|---|
-| 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | – | gates green, 3 tests invert-verified; opens after this checkpoint |
-| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | – | test fails on main, passes with fix, invert-verified; gates running |
+| 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | open; gates green (4402), 3 tests invert-verified, code + security review done |
+| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | open; gates green (4397), 2 tests invert-verified, code review applied |
+| 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | – | written (w3), gates green (4406); review round 1 being applied |
+| 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | written (w4), gates green (4402); code + security review round 1 being applied |
+| 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | – | written (w5), gates green (4403); envelope bump 2.6 -> 2.7 in progress; will be draft (mac test literals) |
 
 ## Needs Mac verification
 
 ## Needs Windows verification
 
+## Blocked on George
+
+- Linux E2E prerequisites: `sudo -n apt-get install ...` was denied by this session's Claude Code permission layer
+  before sudo ran. Run on the laptop: `sudo apt-get install -y x11-apps xdotool wmctrl xclip openbox wl-clipboard
+  gnome-terminal python3-pyqt6`, or allow it for the session.
+- Fork Actions: enabled, but no checks run on fork PRs. GitHub needs the one-time "enable workflows" click on the
+  fork's Actions tab.
+
+## Incidents
+
+- PR #1's first body (2026-11-07) mentioned the upstream author with a bare @-handle and linked upstream PR 602 by
+  URL. Fixed within a minute, but GitHub already notified the author and recorded a cross-reference on upstream
+  #602's timeline; that event cannot be removed from the fork. All later PR bodies reference upstream items in
+  inline code only (no autolink, no backlink).
+
 ## Found (outside scope)
+
+- `crates/linux/src/system/overlay/cursor_overlay_tests.rs:31-34` binds a Unix socket under the crate directory;
+  from a checkout path longer than ~80 characters it exceeds the 108-byte socket path limit and fails. Worktrees
+  here use short names (`w1`...) to avoid it.
+- `agent-desktop-linux adapter::tests::the_lifecycle_overrides_are_wired_to_the_adapter` needs a display; the
+  pre-commit hook fails without one. Commits here run the hook under a throwaway Xvfb.
+- `snapshot/mod.rs:202` sets `data.identity_unproven` to a reason string; docs and skills say `true` (from REFS-2).
+- The Linux clipboard owner and overlay renderers can inherit the lease fd from a child that never adopts it, so
+  the lock can outlive the parent (from STATE-9); belongs in core startup.
 
 - Upstream has many open PRs in areas this audit touches; rows above say "build on #N" where one covers a finding.
