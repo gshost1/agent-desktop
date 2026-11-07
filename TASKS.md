@@ -112,7 +112,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 | # | Branch | Finding | PR | Status |
 |---|---|---|---|---|
-| 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | open; gates green (4402), 3 tests invert-verified, code + security review done |
+| 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | **merged** 2026-11-07 as `c4d39615`; CI 13/13 green on head, gates green (4402), reviews done |
 | 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | open; gates green (4397), 2 tests invert-verified, code review applied |
 | 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | – | written (w3), gates green (4406); review round 1 being applied |
 | 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | written (w4), gates green (4402); code + security review round 1 being applied |
@@ -127,8 +127,13 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 - Linux E2E prerequisites: `sudo -n apt-get install ...` was denied by this session's Claude Code permission layer
   before sudo ran. Run on the laptop: `sudo apt-get install -y x11-apps xdotool wmctrl xclip openbox wl-clipboard
   gnome-terminal python3-pyqt6`, or allow it for the session.
-- Fork Actions: enabled, but no checks run on fork PRs. GitHub needs the one-time "enable workflows" click on the
-  fork's Actions tab.
+- Fork CI: `pull_request` runs do not start on fork PRs; CI is dispatched with `workflow_dispatch` on the head SHA
+  (counts for merging per George). CodeQL and Supply Chain are `disabled_fork`.
+
+## Merge rule (George, 2026-11-07)
+
+Merge own fork PRs when: every CI check on the head SHA is green (dispatch runs count), local gates and reviews are
+done, not a draft, rebased on current `origin/main` and re-tested. `gh pr merge <n> --squash --delete-branch`.
 
 ## Incidents
 
@@ -138,6 +143,10 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
   inline code only (no autolink, no backlink).
 
 ## Found (outside scope)
+
+- `commands::wait_selector::tests::retry_tests::gone_wait_requires_window_absence_after_accessibility_disappears`
+  (250 ms budget) failed once on the macOS CI runner for PR #2 with an unrelated diff; re-run requested. Likely a
+  slow-runner timing flake.
 
 - `crates/linux/src/system/overlay/cursor_overlay_tests.rs:31-34` binds a Unix socket under the crate directory;
   from a checkout path longer than ~80 characters it exceeds the 108-byte socket path limit and fails. Worktrees
