@@ -105,6 +105,7 @@ const ADAPTER_PASSTHROUGH_COMMANDS: &[&str] = &[
     "move-window",
     "notification-action",
     "open-system-surface",
+    "open-url",
     "press",
     "resize-window",
     "restore",
@@ -158,7 +159,7 @@ fn macos_capability_count_includes_restored_notifications() {
     let commands = cli_command_names();
     assert_eq!(
         commands.len(),
-        60,
+        61,
         "the published CLI command count changed; update capability documentation"
     );
 }

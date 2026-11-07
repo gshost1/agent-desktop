@@ -140,7 +140,7 @@ pub fn run_from_ref_with_context(
         snapshot_id: Some(active_snapshot_id),
         complete: true,
         nodes_observed,
-        identity_unproven: None,
+        notes: crate::SnapshotNotes::default(),
     })
 }
 

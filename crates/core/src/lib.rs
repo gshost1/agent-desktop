@@ -112,12 +112,15 @@ pub use session::interaction_lease::{
 };
 pub use session::process_lease_guard::ProcessLeaseGuard;
 pub use session::session_affinity::SessionAffinity;
+pub use snapshot::snapshot_channel::SnapshotChannel;
+pub use snapshot::snapshot_notes::SnapshotNotes;
 pub use snapshot::snapshot_owner::SnapshotOwner;
 pub use snapshot::snapshot_surface::SnapshotSurface;
 pub use storage::file_lock::FileLock;
 pub use storage::private_file_ops::{
     PrivateFileOps, bounded_read, install_private_file_ops, temporary_file_name,
 };
+pub use storage::state_file::StateFile;
 pub use storage::state_root::validate_state_root_env;
 pub use system::app_info::{AppInfo, AppPresentation, app_name_matches};
 pub use system::app_inventory::AppInventory;
@@ -129,6 +132,8 @@ pub use system::devtools_websocket_url::DevtoolsWebSocketUrl;
 pub use system::display_info::DisplayInfo;
 pub use system::image_buffer::{ImageBuffer, MAX_PNG_INPUT_BYTES, parse_png_dimensions};
 pub use system::image_format::ImageFormat;
+pub use system::open_url_request::OpenUrlRequest;
+pub use system::opened_page::OpenedPage;
 pub use system::operation_report::OperationReport;
 pub use system::operation_target::OperationTarget;
 pub use system::permission_report::PermissionReport;

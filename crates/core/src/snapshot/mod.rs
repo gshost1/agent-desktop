@@ -19,9 +19,7 @@ pub struct SnapshotResult {
     pub snapshot_id: Option<String>,
     pub complete: bool,
     pub nodes_observed: usize,
-    /// Set when the whole-window read that proves tokenless refs failed or was
-    /// cut short; it says why, and those refs are refused when used.
-    pub identity_unproven: Option<String>,
+    pub notes: crate::SnapshotNotes,
 }
 
 impl SnapshotResult {
@@ -67,6 +65,10 @@ pub(crate) fn build_for_owners(
     })?;
     let identity_unproven = capture.identity_unproven.clone();
     let (raw_tree, complete, nodes_observed, observed) = capture.into_parts()?;
+    let notes = crate::SnapshotNotes {
+        identity_unproven,
+        channel: observed.channel().cloned(),
+    };
     let capture_proof = crate::refs::ref_capture_proof::CaptureProof::new(&observed);
 
     let mut refmap = RefMap::new();
@@ -95,7 +97,7 @@ pub(crate) fn build_for_owners(
         snapshot_id: None,
         complete,
         nodes_observed,
-        identity_unproven,
+        notes,
     })
 }
 
@@ -198,7 +200,7 @@ pub(crate) fn emit_snapshot_saved(
         if !result.owner.app_name().is_empty() {
             fields["app"] = json!(result.owner.app_name());
         }
-        if let Some(reason) = &result.identity_unproven {
+        if let Some(reason) = &result.notes.identity_unproven {
             fields["identity_unproven"] = json!(reason);
         }
         fields
@@ -207,6 +209,8 @@ pub(crate) fn emit_snapshot_saved(
 
 pub mod hints;
 pub(crate) mod ref_owner_observation;
+pub mod snapshot_channel;
+pub mod snapshot_notes;
 pub(crate) mod snapshot_owner;
 pub(crate) mod snapshot_ref;
 pub mod snapshot_surface;

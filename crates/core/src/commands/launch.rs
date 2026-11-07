@@ -45,14 +45,31 @@ pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value,
     let mut launched = adapter.launch_app(&app, &options, &lease)?;
     if let Some(port) = options.cdp_port {
         let granted = deadline.remaining();
-        launched.cdp = Some(verify_cdp_endpoint(
-            port, deadline, granted, &launched, adapter,
-        )?);
+        let endpoint = verify_cdp_endpoint(port, deadline, granted, &launched, adapter)?;
+        remember_endpoint(adapter, &launched, &endpoint);
+        launched.cdp = Some(endpoint);
     }
     if launched.suggestion.is_none() {
         launched.suggestion = launch_suggestion(requested_cdp_port.is_some(), &launched);
     }
     Ok(serde_json::to_value(launched)?)
+}
+
+/// A verified endpoint is offered to the adapter so a later invocation can
+/// reach the same browser. The launch already succeeded, so a failure to
+/// record it is logged and the result stands.
+fn remember_endpoint(
+    adapter: &dyn PlatformAdapter,
+    launched: &LaunchResult,
+    endpoint: &cdp_endpoint::CdpEndpoint,
+) {
+    let Some(instance) = launched.process_instance.as_deref() else {
+        return;
+    };
+    let process = crate::ProcessIdentity::new(launched.pid, instance);
+    if let Err(error) = adapter.remember_cdp_endpoint(process, endpoint) {
+        tracing::warn!(error = %error, "launch: DevTools endpoint was not recorded");
+    }
 }
 
 /// The probe needs some of the overall deadline reserved for itself, or a
