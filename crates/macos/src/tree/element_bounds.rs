@@ -101,13 +101,21 @@ pub(crate) fn ancestor_viewport(
     deadline: Deadline,
 ) -> Result<Option<Rect>, AdapterError> {
     let instant = super::locator_deadline::from_operation(deadline)?;
-    let mut viewport = match owning_window_bounds(element, deadline)? {
-        Some(bounds) => Some(bounds),
-        None => window_ancestor_bounds(element, instant)?,
-    };
-    if viewport.is_none() {
-        return Ok(None);
+    if let Some(window) = owning_window_bounds(element, deadline)? {
+        return clip_by_ancestors(element, window, instant);
     }
+    let Ok(Some(window)) = window_ancestor_bounds(element, instant) else {
+        return Ok(None);
+    };
+    Ok(clip_by_ancestors(element, window, instant).ok().flatten())
+}
+
+fn clip_by_ancestors(
+    element: &AXElement,
+    window: Rect,
+    instant: std::time::Instant,
+) -> Result<Option<Rect>, AdapterError> {
+    let mut viewport = Some(window);
     let mut current = super::surface_read::element(element, "AXParent", instant)?;
     for _ in 0..super::properties::element::ABSOLUTE_MAX_DEPTH {
         let Some(parent) = current else {
@@ -142,7 +150,7 @@ fn window_ancestor_bounds(
     instant: std::time::Instant,
 ) -> Result<Option<Rect>, AdapterError> {
     let window = first_window_ancestor(
-        element.clone(),
+        element,
         |current| super::surface_read::element(current, "AXParent", instant),
         |current| super::surface_read::string(current, "AXRole", instant),
     )?;
@@ -152,26 +160,37 @@ fn window_ancestor_bounds(
     }
 }
 
+/// Roles that draw on their own surface, outside the window their parent chain
+/// passes through. Content at or below one of them has no window viewport,
+/// because an open menu or popover would otherwise be judged offscreen.
+const OWN_SURFACE_ROLES: [&str; 5] = [
+    "AXMenu",
+    "AXMenuItem",
+    "AXMenuBarItem",
+    "AXMenuBar",
+    "AXPopover",
+];
+
 /// Some controls, such as System Settings popup buttons, answer
 /// `kAXErrorNoValue` for `AXWindow` although an `AXWindow` encloses them. The
-/// parent chain still reaches that window. Menu content has no window even
-/// when its chain passes through one, because an open menu draws outside the
-/// window and would be judged offscreen; the search stops at the first menu
-/// role, and a chain that ends at the application has no window either.
-fn first_window_ancestor<E>(
-    start: E,
+/// parent chain still reaches that window. The search starts at the element
+/// itself, stops without a window at the first own-surface role or at the
+/// application, and a chain that cannot be read leaves the viewport unknown,
+/// as it was before the fallback existed.
+fn first_window_ancestor<E: Clone>(
+    start: &E,
     mut parent: impl FnMut(&E) -> Result<Option<E>, AdapterError>,
     mut role: impl FnMut(&E) -> Result<Option<String>, AdapterError>,
 ) -> Result<Option<E>, AdapterError> {
-    let mut current = parent(&start)?;
+    let mut current = Some(start.clone());
     for _ in 0..super::properties::element::ABSOLUTE_MAX_DEPTH {
         let Some(ancestor) = current else {
             return Ok(None);
         };
         match role(&ancestor)?.as_deref() {
             Some("AXWindow") => return Ok(Some(ancestor)),
-            Some("AXApplication" | "AXMenu" | "AXMenuItem" | "AXMenuBarItem" | "AXMenuBar")
-            | None => return Ok(None),
+            Some(own) if OWN_SURFACE_ROLES.contains(&own) => return Ok(None),
+            Some("AXApplication") | None => return Ok(None),
             Some(_) => current = parent(&ancestor)?,
         }
     }
@@ -183,8 +202,9 @@ fn first_window_ancestor<E>(
 
 /// The viewport an element is clipped by. `AXTopLevelUIElement` is not a
 /// substitute: for menu content it resolves to the menu bar, a 29-point strip
-/// that reports every open menu item as offscreen. An element with no window is
-/// drawn on its own surface, so its clipping viewport is simply unknown.
+/// that reports every open menu item as offscreen. Only `AXWindow` is read
+/// here; an element that publishes none is handled by the parent-chain
+/// fallback in `ancestor_viewport`.
 fn first_owning_container(
     mut read: impl FnMut(&'static str) -> Result<Option<AXElement>, i32>,
 ) -> Result<Option<AXElement>, (&'static str, i32)> {

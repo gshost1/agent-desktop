@@ -73,10 +73,10 @@ fn missing_clipping_geometry_is_unknown_not_empty() {
     );
 }
 /// A menu item's `AXTopLevelUIElement` is the menu bar, whose 29-point height
-/// clips every open menu item. A window-less element therefore reports no
-/// clipping viewport rather than a wrong one.
+/// clips every open menu item, so the owning container is read from
+/// `AXWindow` alone and never from a weaker attribute.
 #[test]
-fn a_window_less_element_reports_no_clipping_viewport() {
+fn the_owning_container_is_read_from_the_window_attribute_alone() {
     let mut attributes = Vec::new();
     let container = first_owning_container(|attribute| {
         attributes.push(attribute);
@@ -125,7 +125,7 @@ fn a_window_ancestor_stands_in_for_a_missing_window_attribute() {
         "AXApplication",
     ];
 
-    let window = first_window_ancestor(0, ancestry(&roles), |index| {
+    let window = first_window_ancestor(&0, ancestry(&roles), |index| {
         Ok(Some(roles[*index].to_owned()))
     })
     .unwrap();
@@ -143,7 +143,7 @@ fn a_chain_that_reaches_the_application_has_no_window_ancestor() {
         "AXApplication",
     ];
 
-    let window = first_window_ancestor(0, ancestry(&roles), |index| {
+    let window = first_window_ancestor(&0, ancestry(&roles), |index| {
         Ok(Some(roles[*index].to_owned()))
     })
     .unwrap();
@@ -161,7 +161,7 @@ fn a_popup_menu_item_inside_a_window_has_no_window_ancestor() {
         "AXWindow",
     ];
 
-    let window = first_window_ancestor(0, ancestry(&roles), |index| {
+    let window = first_window_ancestor(&0, ancestry(&roles), |index| {
         Ok(Some(roles[*index].to_owned()))
     })
     .unwrap();
@@ -173,7 +173,7 @@ fn a_popup_menu_item_inside_a_window_has_no_window_ancestor() {
 fn an_ancestor_without_a_role_ends_the_search_unknown() {
     let roles = ["AXPopUpButton", "AXGroup", "AXWindow"];
 
-    let window = first_window_ancestor(0, ancestry(&roles), |index| {
+    let window = first_window_ancestor(&0, ancestry(&roles), |index| {
         Ok((*index != 1).then(|| roles[*index].to_owned()))
     })
     .unwrap();
@@ -184,11 +184,37 @@ fn an_ancestor_without_a_role_ends_the_search_unknown() {
 #[test]
 fn an_unbounded_ancestry_fails_instead_of_looping() {
     let error = first_window_ancestor(
-        0_usize,
+        &0_usize,
         |index| Ok(Some(index + 1)),
         |_| Ok(Some("AXGroup".to_owned())),
     )
     .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::AppUnresponsive);
+}
+
+#[test]
+fn an_own_surface_element_has_no_window_ancestor_even_as_the_start() {
+    for start in ["AXMenu", "AXPopover", "AXMenuItem"] {
+        let roles = [start, "AXPopUpButton", "AXGroup", "AXWindow"];
+
+        let window = first_window_ancestor(&0, ancestry(&roles), |index| {
+            Ok(Some(roles[*index].to_owned()))
+        })
+        .unwrap();
+
+        assert_eq!(window, None, "{start}");
+    }
+}
+
+#[test]
+fn a_control_inside_a_popover_has_no_window_ancestor() {
+    let roles = ["AXButton", "AXGroup", "AXPopover", "AXGroup", "AXWindow"];
+
+    let window = first_window_ancestor(&0, ancestry(&roles), |index| {
+        Ok(Some(roles[*index].to_owned()))
+    })
+    .unwrap();
+
+    assert_eq!(window, None);
 }
