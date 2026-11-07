@@ -113,10 +113,10 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | # | Branch | Finding | PR | Status | Upstream |
 |---|---|---|---|---|---|
 | 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | **merged** 2026-11-07 as `c4d39615`; CI 13/13 green on head, gates green (4402), reviews done | overlaps `#602` (goes back as a note to its author, not as our PR) |
-| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | open; gates green (4397), 2 tests invert-verified, code review applied | ready (when merged; no dependency on fork-only work) |
-| 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | – | written (w3), gates green (4406); review round 1 being applied | ready (when merged; rebased on the `#602` carry, so upstream needs `#602` first or a rebase) |
-| 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | written (w4), gates green (4402); code + security review round 1 being applied | ready (when merged; touches `src/mcp/calls.rs`, which `#602` also changes) |
-| 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | – | written (w5), gates green (4403); envelope bump 2.6 -> 2.7 in progress; will be draft (mac test literals) | needs-issue-first (changes the JSON contract: envelope 2.6 -> 2.7, AMBIGUOUS_TARGET -> STALE_REF) |
+| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | open, not merged: CI green on head after one macOS flake re-run; needs rebase on `c4d39615` + re-test; Linux E2E openbox red (see handoff) | ready (when merged; no dependency on fork-only work) |
+| 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | – | pushed `fc4c7c32`, rebased; review round 1 done; full gates not re-run after rebase | ready (when merged; rebased on the `#602` carry, so upstream needs `#602` first or a rebase) |
+| 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | pushed `2cac4100`, rebased; review round 1 done; gates green (4413) | ready (when merged; touches `src/mcp/calls.rs`, which `#602` also changes) |
+| 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | – | pushed `7736b3e6`, rebased; envelope 2.7 done; gates red on 4 lock-contention tests (re-run needed); draft when opened | needs-issue-first (changes the JSON contract: envelope 2.6 -> 2.7, AMBIGUOUS_TARGET -> STALE_REF) |
 
 ## Needs Mac verification
 
@@ -129,6 +129,87 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
   gnome-terminal python3-pyqt6`, or allow it for the session.
 - Fork CI: `pull_request` runs do not start on fork PRs; CI is dispatched with `workflow_dispatch` on the head SHA
   (counts for merging per George). CodeQL and Supply Chain are `disabled_fork`.
+
+## Handoff (laptop → VPS), 2026-11-07
+
+Work moves to the VPS (full-access T3 link). Nothing here is deleted; the laptop clone and worktrees stay.
+
+### Branch state
+
+| Branch | Head | Base | State | Next step |
+|---|---|---|---|---|
+| `docs/state-machine-ledger` | this commit | – | ledger, `audit/<AREA>.md` evidence, `audit/tools/` | keep updating; never a PR |
+| `fix/type-interval-post-delivery-state` (PR #2, ACTION-2) | `7e5b9e97` | `b43ac4f6` (old main) | fix + 2 invert-verified tests; code review applied; local gates green (4397); CI 13/13 green on head after re-running one macOS flake (`wait_selector` 250 ms test) | rebase on `origin/main` `c4d39615`, re-run gates, re-dispatch CI on the new head, compare E2E against a `main` baseline, then merge under the merge rule |
+| `fix/ref-action-pre-dispatch-phase` (ACTION-1) | `fc4c7c32` | `c4d39615` | `pre_dispatch::run` boundary: lease timeout, post-lease deadline, headed focus, pre-dispatch trace and the rest of `dispatch_resolved_landing` now `not_delivered`; `preparatory_focus` only after a real focus call; marking lives in `actions/headed_focus.rs` so `point_resolve` gets it too; `with_detail` goes through `with_details`; json-output.md paragraph narrowed to covered steps. All 5 review items done. Core lib tests 1701/0 after rebase | full gates on `fc4c7c32` (last pre-rebase run had one flake, `batch::execution::tests::inherited_batch_deadline_bounds_slow_non_action_command`, 25 ms budget, passed 5/5 alone); `/code-review` round 2; open PR. Open, not fixed: `load_ref_entry` strict-trace error in `commands/helpers.rs` still `unknown` |
+| `fix/mcp-inherited-lease-exclusive` (STATE-9) | `2cac4100` | `c4d39615` | `LeaseInheritance { Owned, Inherited, Unusable }`; mutating calls plus `status`/`permissions` take a FIFO ticketed slot; reads (snapshot, find, get, is, wait, screenshot, list-surfaces) run concurrently with no fd/env; cancel before queueing handled by ticket; slot passes on only after the terminate thread joins (`Calls::cancel` returns the `JoinHandle`); `protect_inherited_lease_descriptor` and `INTERACTION_LEASE_HANDLE_ENV` moved to core. All 7 review items done; gates green (4413); Windows clippy clean | `/code-review` + security review round 2 (touches fds/IPC); open PR. Accepted risks to state in the PR: on Windows only the env var enforces exclusivity (handle stays inheritable); waiters count against `MAX_CONCURRENT_CALLS`; a withheld read that needs renderer activation behaves as under contention |
+| `fix/capture-verdict-not-ambiguous` (REFS-2) | `7736b3e6` | `c4d39615` | `CaptureVerdict { Unique, Ambiguous, Incomplete, Unknown }` replaces `unique_at_capture`; Incomplete/Unknown refuse as STALE_REF `identity_unproven` (`capture_incomplete` / `capture_unknown`) with refresh recovery; legacy bool loads via serde alias; envelope 2.6 -> 2.7 with `BREAKING CHANGE:` footer and all listed surfaces; one-line literal edits in ffi/windows/macos/linux tests | re-run gates (4 Linux lease tests timed out only because the E2E held `/tmp/agent-desktop-1000/interaction.lock`); FFI header was hand-edited (no cbindgen here): run `scripts/update-ffi-header.sh` / cbindgen verify; `/code-review`; open as **draft**, list under Needs Mac verification (3 macOS test literals not compiled); Upstream `needs-issue-first`. Leave `data.identity_unproven` string-vs-`true` mismatch for its own fix |
+
+Overlap with the Mac speed session (`origin/perf/*`, checked at handoff): `perf/snapshot-outline` also touches
+`docs/json-output.md` (ACTION-1, REFS-2) and `skills/agent-desktop/SKILL.md`,
+`skills/agent-desktop/references/commands-observation.md` (REFS-2). Name these in the PR bodies; rebase whichever
+merges second. `perf/cold-settle` and `perf/speed-cost` touch none of these branches' files.
+
+### Next batch (core/Linux, testable on Linux)
+
+1. REFS-5 / ACTION-8: persist policy under an inherited deadline (upstream register #10). Once a result is built,
+   save with the detached lock; covers snapshot, find, drill and a satisfied `--wait-for`
+   (`commands/wait_selector.rs:301`). Detail in `audit/REFS.md` and `audit/ACTION.md`.
+2. ADAPTERS-5: Linux X11 release guard `armed` never clears when the last key is up; make it a typestate
+   (Idle / Armed{held} / Released) and build the error after the release round trip. `audit/ADAPTERS.md`.
+3. SURFACE-2 / ACTION-4: notification wait baseline (#19): counts must shrink when entries leave; one identity type;
+   batch seed for notification waits. `audit/SURFACE.md`, `audit/ACTION.md`.
+Then by rank: SURFACE-1 (menu wait phase, M, mac/win drafts), REFS-4, ACTION-3/STATE-8, BINARY-5, BINARY-1,
+LIFECYCLE-9, STATE-1, STATE-4 (#11), STATE-5 (#12).
+
+### Method that worked
+
+- One worktree per branch under `.agents/worktrees/<short name>` (keep names short, see socket note). Exclude with
+  `.git/info/exclude`. Writers get `audit/tools/writer-brief.md` plus the finding id; gates via
+  `audit/tools/gates.sh <worktree>` (fmt, clippy, source rules, architecture, Windows core check, cargo tree,
+  host-set tests under a throwaway Xvfb). At most 3 builders at once on an 8-core box (~9 GB target per worktree).
+- Every PR: test fails on the bug first, invert-verify, gates, `/code-review` (and a security review for
+  files/IPC/fds), technical-writer prose, upstream references in inline code only.
+- `/security-review` refuses to run when the session cwd is not a git repo; a `security-reviewer` agent on
+  `git diff origin/main...HEAD` in the worktree is the stand-in used here.
+- Fork CI: `pull_request` runs do not start on fork PRs; dispatch `CI` with `workflow_dispatch` on the branch and read
+  check runs on the head SHA (`gh api repos/gshost1/agent-desktop/commits/<sha>/check-runs`). CI includes macOS and
+  Windows jobs, so it compiles the mac/win literal edits even though this box cannot.
+- Run the Linux E2E only when no gate or hook run is active: the harness holds the machine-wide interaction lock
+  and the Linux lease tests time out against it (`interaction_process_lock_timeout`).
+
+### Linux E2E notes
+
+- Packages (installed by George on the laptop 2026-11-07): `x11-apps xdotool wmctrl xclip openbox wl-clipboard
+  gnome-terminal python3-pyqt6`, plus Xvfb, dbus, gdbus, busctl, gsettings, gnome-shell, PyGObject, GNOME
+  Calculator, Text Editor, Files, Settings already present. The VPS needs the same set (`tests/e2e-linux/runner/gate.py`
+  is authoritative).
+- Run: `bash tests/e2e-linux/run.sh --tier x11-openbox` (133 legs, ~15 min wall on the laptop incl. release build).
+- PR #2 head `7e5b9e97` on the laptop: 93 pass, 55 fail, 1 error (`audit/E2E-pr2-openbox-failures.txt`). The failures
+  are in leg setup across Text Editor (no textfield ref), Calculator (`menubutton/Main Menu` missing), Settings rows,
+  Terminal (`gnome-terminal-server` absent / APP_NOT_FOUND) and openbox size hints (`readback_mismatch` on
+  resize). None exercises `type --interval-ms`. **No `main` baseline was run**, so "pre-existing" is unproven:
+  run the same tier on `main` first and diff the failure lists before using E2E as a merge signal.
+- Socket path limit: `crates/linux/src/system/overlay/cursor_overlay_tests.rs:31-34` binds a Unix socket under the
+  crate dir; a checkout path over ~80 chars exceeds the 108-byte limit and the test fails. Use short worktree paths.
+- `agent-desktop-linux adapter::tests::the_lifecycle_overrides_are_wired_to_the_adapter` needs a display; run tests
+  and the pre-commit hook under a throwaway Xvfb (`Xvfb :9N -screen 0 1280x800x24 &` then `DISPLAY=:9N`, kill after).
+- The pre-commit hook skips itself when `cargo` is not on `PATH`; export `~/.cargo/bin` first.
+
+### Control thread and permissions
+
+- From the laptop, `t3_thread_send` to the Mac control thread failed every time with `capability_denied` ("started
+  from T3 Code · MacBook Air (36) through a linked environment, so it cannot use this environment's links"). The VPS
+  link is full-access, which should not have this limit.
+- On the laptop, the Claude Code permission layer denied `sudo -n apt-get ...` and an `rm -rf` of a build dir.
+- T3 `t3_project_create` was denied (needs a full-access thread), so writers ran as native Agent subagents in
+  shell-created worktrees instead of `delegate_task` worktrees.
+
+### Accidental upstream ping
+
+PR #1's first body (2026-11-07) mentioned the upstream author with a bare @-handle and linked upstream PR 602 by URL.
+Both were removed within a minute, but GitHub had already notified the author and recorded a cross-reference on
+upstream `#602`'s timeline; that event cannot be removed from the fork side. Upstream policy now: nothing goes to
+vercel-labs, references as inline code only.
 
 ## Upstream policy (George, 2026-11-07)
 
