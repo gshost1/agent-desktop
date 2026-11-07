@@ -5,11 +5,19 @@ use agent_desktop_core::{
 
 use super::browser_link::BrowserLink;
 use super::link_access::LinkAccess;
-use super::page_choice::choose_page;
+use super::page_choice::{NO_PAGE_TARGET, choose_page};
 use super::web_channel_adapter::WebChannelAdapter;
 use crate::{create_background_tab, list_page_targets, navigate};
 
 const BLANK_PAGE: &str = "about:blank";
+const CURRENT_TAB: &str = "current_tab";
+const NEW_TAB: &str = "new_tab";
+
+/// Where `open-url` put the page: its target and how it got there.
+struct Placement {
+    target_id: String,
+    opened: &'static str,
+}
 
 impl<P: PlatformAdapter> WebChannelAdapter<P> {
     /// Loads a URL over CDP: in the tab the request's window shows, or in a
@@ -20,14 +28,20 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
     ) -> Result<Option<OpenedPage>, AdapterError> {
         let deadline = request.deadline;
         self.with_link(&request.process, LinkAccess::prompting(deadline), |link| {
-            let target_id = if request.new_tab {
-                create_background_tab(&mut link.connection, BLANK_PAGE, deadline)?
+            let (target_id, opened) = if request.new_tab {
+                (background_tab(link, deadline)?, NEW_TAB)
             } else {
-                choose_page(link, request.window, deadline)?.target_id
+                match choose_page(link, request.window, deadline) {
+                    Ok(page) => (page.target_id, CURRENT_TAB),
+                    Err(error) if is_no_page_target(&error) => {
+                        (background_tab(link, deadline)?, NEW_TAB)
+                    }
+                    Err(error) => return Err(error),
+                }
             };
             let session = link.session(&target_id, deadline)?;
             navigate(&mut link.connection, &session, request.url, deadline)?;
-            opened_page(link, target_id, request.url, deadline)
+            opened_page(link, Placement { target_id, opened }, request.url, deadline)
         })
     }
 
@@ -62,12 +76,29 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
     }
 }
 
+/// A new background tab. A browser with no page at all, such as a fresh
+/// profile showing only its first-run dialog, gets one this way too, so
+/// `open-url` never needs a page to exist first.
+fn background_tab(link: &mut BrowserLink, deadline: Deadline) -> Result<String, AdapterError> {
+    create_background_tab(&mut link.connection, BLANK_PAGE, deadline)
+}
+
+fn is_no_page_target(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        == Some(NO_PAGE_TARGET)
+}
+
 fn opened_page(
     link: &mut BrowserLink,
-    target_id: String,
+    placement: Placement,
     requested_url: &str,
     deadline: Deadline,
 ) -> Result<OpenedPage, AdapterError> {
+    let Placement { target_id, opened } = placement;
     let listed = list_page_targets(&mut link.connection, deadline)?
         .into_iter()
         .find(|target| target.target_id == target_id);
@@ -80,6 +111,7 @@ fn opened_page(
         title,
         channel: "cdp".into(),
         target_id,
+        opened: opened.into(),
     })
 }
 

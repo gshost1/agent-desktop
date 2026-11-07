@@ -105,3 +105,14 @@ fn two_visible_tabs_without_a_window_to_tell_them_apart_are_ambiguous() {
     let error = choose_page(&mut link, None, deadline()).unwrap_err();
     assert_eq!(error.code, ErrorCode::AmbiguousTarget);
 }
+
+#[test]
+fn a_browser_with_no_page_target_names_open_url() {
+    let mut link = link(targets(ScriptedTransport::new(), &[]));
+    let error = choose_page(&mut link, Some(&window_at(0.0)), deadline()).unwrap_err();
+    assert_eq!(error.code, ErrorCode::WindowNotFound);
+    assert_eq!(error.details.unwrap()["kind"], super::NO_PAGE_TARGET);
+    let suggestion = error.suggestion.unwrap();
+    assert!(suggestion.contains("open-url <url> --app <browser>"));
+    assert!(!suggestion.contains("--new-tab"));
+}

@@ -16,8 +16,12 @@ pub fn choose_page(
     window: Option<&WindowInfo>,
     deadline: Deadline,
 ) -> Result<PageTarget, AdapterError> {
+    let targets = list_page_targets(&mut link.connection, deadline)?;
+    if targets.is_empty() {
+        return Err(no_page_target());
+    }
     let mut placed = Vec::new();
-    for target in list_page_targets(&mut link.connection, deadline)? {
+    for target in targets {
         if let Ok(browser_window) =
             BrowserWindow::of_target(&mut link.connection, &target.target_id, deadline)
         {
@@ -25,9 +29,7 @@ pub fn choose_page(
         }
     }
     if placed.is_empty() {
-        return Err(no_page("The browser has no open page").with_suggestion(
-            "Open one in the background with `open-url <url> --app <browser> --new-tab`, then snapshot again",
-        ));
+        return Err(no_page("No page of the browser reports its window"));
     }
     let candidates = in_window(placed, window)?;
     if candidates.len() == 1 {
@@ -49,7 +51,7 @@ pub fn choose_page(
             .next()
             .ok_or_else(|| no_page("No visible tab")),
         0 => Err(no_page("No tab in the browser window is visible")
-            .with_suggestion("Restore the window if it is minimized, or open the page with `open-url --new-tab` and read it by its target")),
+            .with_suggestion("Restore the window if it is minimized, then snapshot again")),
         _ => Err(AdapterError::new(
             ErrorCode::AmbiguousTarget,
             "More than one browser window shows a visible tab",
@@ -91,6 +93,18 @@ fn in_window(
     }
     Ok(matching)
 }
+
+/// The error for a browser with no page target at all, such as a fresh
+/// profile that shows only its first-run dialog.
+pub fn no_page_target() -> AdapterError {
+    AdapterError::new(ErrorCode::WindowNotFound, "The browser has no open page")
+        .with_suggestion("Load one with `open-url <url> --app <browser>`, then snapshot again")
+        .with_details(json!({ "kind": NO_PAGE_TARGET }))
+        .with_disposition(DeliverySemantics::not_delivered())
+}
+
+/// The `details.kind` of [`no_page_target`].
+pub const NO_PAGE_TARGET: &str = "cdp_browser_has_no_page";
 
 fn no_page(message: &str) -> AdapterError {
     AdapterError::new(ErrorCode::WindowNotFound, message)

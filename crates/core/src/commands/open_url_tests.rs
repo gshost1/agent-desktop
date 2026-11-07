@@ -73,6 +73,7 @@ impl crate::SystemOps for BrowserStub {
             title: "Example".into(),
             channel: "cdp".into(),
             target_id: "T1".into(),
+            opened: "current_tab".into(),
         })
     }
 }

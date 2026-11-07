@@ -52,7 +52,26 @@ fn the_url_loads_in_the_tab_the_window_shows() {
     assert_eq!(page.target_id, "A");
     assert_eq!(page.title, "Example");
     assert_eq!(page.channel, "cdp");
+    assert_eq!(page.opened, "current_tab");
     assert!(web.inner().recorded().is_empty());
+}
+
+#[test]
+fn a_browser_with_no_page_gets_a_background_tab_instead_of_an_error() {
+    let mut transport = targets(ScriptedTransport::new(), &[]);
+    transport = transport.expect("Target.createTarget", json!({ "targetId": "N" }));
+    transport = navigated(attach(transport, "N"));
+    transport = targets(transport, &[("N", "https://example.test/", "Example")]);
+    let sent = transport.sent_log();
+    let web = adapter(
+        StubPlatform::owning(PORT),
+        ScriptedConnector::with(transport),
+    );
+    let window = window();
+    let page = web.open_url(&request(Some(&window), false)).unwrap();
+    assert_eq!(page.target_id, "N");
+    assert_eq!(page.opened, "new_tab");
+    assert_eq!(sent.lock().unwrap()[1]["params"]["background"], true);
 }
 
 #[test]
@@ -68,6 +87,7 @@ fn a_new_tab_opens_in_the_background() {
     );
     let page = web.open_url(&request(None, true)).unwrap();
     assert_eq!(page.target_id, "N");
+    assert_eq!(page.opened, "new_tab");
     let sent = sent.lock().unwrap();
     assert_eq!(sent[0]["params"]["background"], true);
     assert_eq!(sent[0]["params"]["url"], "about:blank");

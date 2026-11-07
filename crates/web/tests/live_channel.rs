@@ -49,9 +49,9 @@ impl Drop for HeadlessChrome {
     }
 }
 
-fn launch() -> HeadlessChrome {
+fn launch(label: &str) -> HeadlessChrome {
     let profile = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("web-live-channel-{}", std::process::id()));
+        .join(format!("web-live-channel-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&profile);
     std::fs::create_dir_all(&profile).unwrap();
     let child = Command::new(CHROME)
@@ -211,7 +211,7 @@ fn act(
 #[test]
 #[ignore = "launches headless Chrome"]
 fn the_unified_loop_drives_a_page_through_core() {
-    let chrome = launch();
+    let chrome = launch("loop");
     let pid = chrome.child.id();
     let connector = SystemConnector::with_sources(None, vec![chrome.profile.clone()]);
     let adapter = WebChannelAdapter::with_connector(HeadlessPlatform, Box::new(connector));
@@ -228,6 +228,7 @@ fn the_unified_loop_drives_a_page_through_core() {
         .unwrap();
     assert_eq!(opened.channel, "cdp");
     assert_eq!(opened.title, "Channel form");
+    assert_eq!(opened.opened, "current_tab");
 
     let tree = snapshot(&adapter, &window);
     let typed = act(
@@ -270,4 +271,45 @@ fn the_unified_loop_drives_a_page_through_core() {
         seen.clear();
         texts(&snapshot(&adapter, &window), &mut seen);
     }
+}
+
+#[test]
+#[ignore = "launches headless Chrome"]
+fn open_url_gives_a_browser_with_no_page_a_background_tab() {
+    let chrome = launch("empty");
+    let pid = chrome.child.id();
+    let endpoint = agent_desktop_web::endpoint_from_user_data_dir(&chrome.profile).unwrap();
+    let mut connection = agent_desktop_web::connect(&endpoint, deadline()).unwrap();
+    for page in agent_desktop_web::list_page_targets(&mut connection, deadline()).unwrap() {
+        agent_desktop_web::close_target(&mut connection, &page.target_id, deadline()).unwrap();
+    }
+    let started = Instant::now();
+    while !agent_desktop_web::list_page_targets(&mut connection, deadline())
+        .unwrap()
+        .is_empty()
+    {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "pages did not close"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let connector = SystemConnector::with_sources(None, vec![chrome.profile.clone()]);
+    let adapter = WebChannelAdapter::with_connector(HeadlessPlatform, Box::new(connector));
+    let window = window(pid);
+    let url = data_url(FORM);
+    let opened = adapter
+        .open_url(&OpenUrlRequest {
+            process: ProcessIdentity::new(pid, INSTANCE),
+            window: Some(&window),
+            url: &url,
+            new_tab: false,
+            deadline: deadline(),
+        })
+        .unwrap();
+    assert_eq!(opened.opened, "new_tab");
+    assert_eq!(opened.title, "Channel form");
+    let pages = agent_desktop_web::list_page_targets(&mut connection, deadline()).unwrap();
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].target_id, opened.target_id);
 }
