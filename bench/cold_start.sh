@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Cold-start profile: time launch and the first snapshot of a freshly started
 # app, with and without a settle pause, and log whether renderer activation ran.
-# Usage: bash bench/cold_start.sh [app ...]
+# Usage: [AD_BIN=path] bash bench/cold_start.sh [app ...]
 set -u
 cd "$(dirname "$0")/.."
-B=target/release/agent-desktop
+B="${AD_BIN:-target/release/agent-desktop}"
 export AGENT_DESKTOP_HOME="$PWD/bench/out/home-cold"; mkdir -p "$AGENT_DESKTOP_HOME"; chmod 700 "$AGENT_DESKTOP_HOME"
 now() { python3 -c 'import time;print(time.time())'; }
-for app in "${@:-Weather Calculator TextEdit}"; do
+apps=("$@"); [ ${#apps[@]} -gt 0 ] || apps=(Weather Calculator TextEdit)
+for app in "${apps[@]}"; do
   for pause in 0 5; do
     for i in 1 2 3; do
       osascript -e "if application \"$app\" is running then tell application \"$app\" to quit saving no" >/dev/null 2>&1 || osascript -e "if application \"$app\" is running then tell application \"$app\" to quit" >/dev/null 2>&1

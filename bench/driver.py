@@ -28,6 +28,18 @@ from tasks import TASKS, audit_command, reset_desktop  # noqa: E402
 
 REAL_BIN = REPO / "target" / "release" / "agent-desktop"
 SKILL = REPO / "skills" / "agent-desktop" / "SKILL.md"
+TREE = "bench"
+
+
+def use_tree(tree):
+    """Point the run at another checkout's release binary and shipped skill."""
+    global REAL_BIN, SKILL, TREE
+    root = Path(tree).resolve()
+    REAL_BIN = root / "target" / "release" / "agent-desktop"
+    SKILL = root / "skills" / "agent-desktop" / "SKILL.md"
+    TREE = root.name
+    if not REAL_BIN.exists():
+        sys.exit(f"no release binary in {root}")
 CONFIGS = {"a": None, "b": "b-lean.md", "c": "c-batch.md", "d": "d-no-resnapshot.md", "e": "e-combined.md",
            "m": None, "mx": None, "x": None}
 MCP_CONFIGS = {"m", "mx"}
@@ -136,7 +148,7 @@ def run_once(task_key, config, model, effort):
     if timed_out:
         ok, why = False, f"timed out; {why}"
     task.cleanup()
-    summary.update({"run_id": run_id, "task": task_key, "config": config, "model": model,
+    summary.update({"run_id": run_id, "task": task_key, "config": config, "model": model, "tree": TREE,
                     "effort": effort or "default", "success": ok, "verify": why})
     del summary["commands"]
     (rdir / "summary.json").write_text(json.dumps(summary, indent=1))
@@ -235,7 +247,10 @@ def main():
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--effort", default=None)
     ap.add_argument("--runs", type=int, default=1)
+    ap.add_argument("--tree", default=None, help="checkout whose release binary and skill to use")
     a = ap.parse_args()
+    if a.tree:
+        use_tree(a.tree)
     if not holds_lock():
         sys.exit(f"take the bench lock first: {LOCK}")
     (ROOT / "runs").mkdir(exist_ok=True)
