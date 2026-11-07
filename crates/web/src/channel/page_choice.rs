@@ -25,7 +25,9 @@ pub fn choose_page(
         }
     }
     if placed.is_empty() {
-        return Err(no_page("The browser has no open page"));
+        return Err(no_page("The browser has no open page").with_suggestion(
+            "Open one in the background with `open-url <url> --app <browser> --new-tab`, then snapshot again",
+        ));
     }
     let candidates = in_window(placed, window)?;
     if candidates.len() == 1 {
