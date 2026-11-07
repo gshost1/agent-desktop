@@ -4,7 +4,9 @@ use crate::{AdapterError, AppError, ErrorCode, PlatformAdapter, ProcessIdentity,
 
 /// Focuses the window a ref came from and returns whether it did. A ref
 /// captured through a process owner has no window to raise, so it returns
-/// `false`; any other ref without a window id is refused.
+/// `false`; any other ref without a window id is refused. Every refusal is
+/// `not_delivered`, because focus always comes before the input it serves,
+/// and one raised after the focus call also carries `preparatory_focus`.
 pub(crate) fn focus_entry_window(
     entry: &crate::RefEntry,
     adapter: &dyn PlatformAdapter,
@@ -18,8 +20,26 @@ pub(crate) fn focus_entry_window(
     if entry.source.is_process_owned() {
         return Ok(false);
     }
-    let expected = adapter.resolve_ref_focus_window(entry, lease.deadline())?;
+    let expected = adapter
+        .resolve_ref_focus_window(entry, lease.deadline())
+        .map_err(AdapterError::unsent)?;
     focus_exact_window(&expected, adapter, context, lease).map(|_| true)
+}
+
+/// Raises the application a ref came from, for input that needs the
+/// application rather than one of its windows focused.
+pub(crate) fn focus_entry_app(
+    entry: &crate::RefEntry,
+    adapter: &dyn PlatformAdapter,
+    lease: &crate::InteractionLease,
+) -> Result<(), AdapterError> {
+    let process = entry
+        .process
+        .identity()
+        .ok_or_else(|| AdapterError::stale_ref_because("Target process identity is unavailable"))?;
+    adapter
+        .focus_app(process, lease)
+        .map_err(crate::ref_action::pre_dispatch::after_focus)
 }
 
 pub fn saved_ref_focus_window(entry: &crate::RefEntry) -> Result<WindowInfo, AdapterError> {
@@ -59,7 +79,9 @@ pub(crate) fn focus_exact_window(
     context: &crate::CommandContext,
     lease: &crate::InteractionLease,
 ) -> Result<WindowInfo, AppError> {
-    let live = adapter.resolve_window_strict(expected, lease.deadline())?;
+    let live = adapter
+        .resolve_window_strict(expected, lease.deadline())
+        .map_err(AdapterError::unsent)?;
     if live.id != expected.id
         || live.pid != expected.pid
         || live.process_instance != expected.process_instance
@@ -69,11 +91,19 @@ pub(crate) fn focus_exact_window(
         )
         .into());
     }
-    adapter.focus_window(&live, lease)?;
-    context.trace_lazy(
-        "input.focus_window",
-        || json!({ "pid": live.pid, "window_id": live.id, "ok": true }),
-    )?;
+    adapter
+        .focus_window(&live, lease)
+        .map_err(crate::ref_action::pre_dispatch::after_focus)?;
+    context
+        .trace_lazy(
+            "input.focus_window",
+            || json!({ "pid": live.pid, "window_id": live.id, "ok": true }),
+        )
+        .map_err(|error| {
+            crate::ref_action::pre_dispatch::after_focus(crate::ref_action::into_adapter_error(
+                error,
+            ))
+        })?;
     Ok(live)
 }
 

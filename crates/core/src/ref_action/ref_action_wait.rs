@@ -1,6 +1,6 @@
 use crate::{
-    ActionRequest, ActionResult, AdapterError, AppError, Deadline,
-    ref_action::pre_dispatch::PreDispatch, ref_action::ref_action_context::RefActionContext,
+    ActionRequest, ActionResult, AdapterError, AppError, Deadline, ref_action::pre_dispatch,
+    ref_action::ref_action_context::RefActionContext,
     ref_action::ref_action_poll::execute_poll_loop,
     ref_action::ref_action_poll_state::RefActionPollState,
     ref_action::ref_action_single::execute_single_shot,
@@ -96,8 +96,7 @@ fn execute_with_deadline(
         );
         let cursor = crate::cursor_overlay::hold_cursor(context.context, deadline);
         crate::ref_action::presentation::before_lease(context, &request, deadline, cursor.is_ok());
-        let lease = PreDispatch::Lease
-            .run(|| acquire_lease(context.adapter, deadline))
+        let lease = pre_dispatch::run(|| acquire_lease(context.adapter, deadline))
             .map_err(|error| with_refusal(state.attach_error_metrics(error), refusal.as_ref()))?;
         if polls {
             request.timeout_ms = Some(deadline.remaining_ms());
@@ -157,7 +156,7 @@ fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
 /// Carries the dispatch-time refusal that sent the action back to the wait as
 /// `details.refusal`, so a budget that runs out there still reports why the
 /// ref was not acted on.
-fn with_refusal(mut error: AdapterError, refusal: Option<&AdapterError>) -> AdapterError {
+fn with_refusal(error: AdapterError, refusal: Option<&AdapterError>) -> AdapterError {
     let Some(refusal) = refusal else {
         return error;
     };
@@ -168,17 +167,7 @@ fn with_refusal(mut error: AdapterError, refusal: Option<&AdapterError>) -> Adap
     if let (Some(object), Some(details)) = (recorded.as_object_mut(), &refusal.details) {
         object.insert("details".into(), details.clone());
     }
-    let mut details = error
-        .details
-        .take()
-        .unwrap_or_else(|| serde_json::json!({}));
-    match details.as_object_mut() {
-        Some(object) => {
-            object.insert("refusal".into(), recorded);
-        }
-        None => details = serde_json::json!({ "error_details": details, "refusal": recorded }),
-    }
-    error.with_details(details)
+    pre_dispatch::with_detail(error, "refusal", recorded)
 }
 
 pub(crate) fn operation_deadline(request: &ActionRequest) -> Result<Deadline, AdapterError> {

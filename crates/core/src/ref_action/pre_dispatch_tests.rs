@@ -13,9 +13,18 @@ enum Lease {
     SpendsTheBudget,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Raises,
+    WindowLookupFails,
+    RaiseFails,
+}
+
 struct PreDispatchAdapter {
     lease: Lease,
-    focus_fails: bool,
+    focus: Focus,
+    preflight_fails: bool,
+    focus_calls: AtomicU32,
     stale_once_under_lease: AtomicBool,
     lease_calls: AtomicU32,
     dispatches: AtomicU32,
@@ -25,7 +34,9 @@ impl PreDispatchAdapter {
     fn new(lease: Lease) -> Self {
         Self {
             lease,
-            focus_fails: false,
+            focus: Focus::Raises,
+            preflight_fails: false,
+            focus_calls: AtomicU32::new(0),
             stale_once_under_lease: AtomicBool::new(false),
             lease_calls: AtomicU32::new(0),
             dispatches: AtomicU32::new(0),
@@ -52,7 +63,19 @@ impl ObservationOps for PreDispatchAdapter {
         Ok(NativeHandle::null())
     }
 
-    crate::adapter::complete_live_observation!("button", "Run", [capability::CLICK]);
+    crate::adapter::complete_live_observation!("button", "Run", [capability::CLICK], adapter => {
+        if adapter.preflight_fails && adapter.lease_calls.load(Ordering::SeqCst) > 0 {
+            return Err(AdapterError::timeout("busy under the lease"));
+        }
+        crate::ElementState {
+            role: "button".into(),
+            states: Vec::new(),
+            value: None,
+            enabled: Some(true),
+            hidden: Some(false),
+            offscreen: Some(false),
+        }
+    });
     crate::adapter::saved_ref_scope!("button", Some("Run"));
 }
 
@@ -97,11 +120,15 @@ impl SystemOps for PreDispatchAdapter {
         window: &WindowInfo,
         _: Deadline,
     ) -> Result<WindowInfo, AdapterError> {
+        if self.focus == Focus::WindowLookupFails {
+            return Err(AdapterError::timeout("window lookup"));
+        }
         Ok(window.clone())
     }
 
     fn focus_window(&self, _: &WindowInfo, _: &InteractionLease) -> Result<(), AdapterError> {
-        if self.focus_fails {
+        self.focus_calls.fetch_add(1, Ordering::SeqCst);
+        if self.focus == Focus::RaiseFails {
             return Err(AdapterError::timeout("x"));
         }
         Ok(())
@@ -173,7 +200,7 @@ fn a_budget_spent_while_taking_the_lease_is_not_delivered() {
 #[test]
 fn a_headed_focus_failure_is_not_delivered_and_records_the_focus() {
     let mut adapter = PreDispatchAdapter::new(Lease::Granted);
-    adapter.focus_fails = true;
+    adapter.focus = Focus::RaiseFails;
 
     let error = click(&adapter, ActionRequest::headed(Action::Click));
 
@@ -202,35 +229,61 @@ fn a_headed_click_with_a_granted_lease_and_focus_is_dispatched_once() {
 }
 
 #[test]
+fn a_focus_refusal_before_any_focus_call_records_no_focus() {
+    let mut adapter = PreDispatchAdapter::new(Lease::Granted);
+    adapter.focus = Focus::WindowLookupFails;
+
+    let error = click(&adapter, ActionRequest::headed(Action::Click));
+
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert!(
+        error
+            .details
+            .is_none_or(|details| details.get("preparatory_focus").is_none())
+    );
+    assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(adapter.dispatches.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_preflight_read_failure_under_the_lease_is_not_delivered() {
+    let mut adapter = PreDispatchAdapter::new(Lease::Granted);
+    adapter.preflight_fails = true;
+
+    let error = click(&adapter, ActionRequest::headless(Action::Click));
+
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(adapter.dispatches.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn a_pre_dispatch_refusal_without_evidence_becomes_not_delivered() {
-    for step in [
-        super::PreDispatch::Lease,
-        super::PreDispatch::Focus,
-        super::PreDispatch::Trace,
-    ] {
-        let error = step.refused(AdapterError::timeout("x"));
-        assert_eq!(error.disposition, DeliverySemantics::not_delivered());
-    }
+    let error = super::run(|| Err::<(), _>(AdapterError::timeout("x"))).unwrap_err();
+
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert!(error.details.is_none());
 }
 
 #[test]
 fn a_pre_dispatch_refusal_keeps_stronger_evidence() {
-    let error = super::PreDispatch::Focus
-        .refused(AdapterError::timeout("x").with_disposition(DeliverySemantics::uncertain()));
+    let error = super::run(|| {
+        Err::<(), _>(AdapterError::timeout("x").with_disposition(DeliverySemantics::uncertain()))
+    })
+    .unwrap_err();
 
     assert_eq!(error.disposition, DeliverySemantics::uncertain());
 }
 
 #[test]
-fn a_focus_refusal_records_the_focus_beside_earlier_details() {
-    let scrolled = super::PreDispatch::Focus.refused(AdapterError::timeout("x").with_details(
-        serde_json::json!({
-            "preparatory_scroll": "may_have_changed_view"
-        }),
+fn a_refusal_after_a_focus_call_records_the_focus_beside_earlier_details() {
+    let scrolled = super::after_focus(AdapterError::timeout("x").with_details(
+        serde_json::json!({ "preparatory_scroll": "may_have_changed_view", "retryable": true }),
     ));
-    let bare = super::PreDispatch::Focus
-        .refused(AdapterError::timeout("x").with_details(serde_json::json!("cause")));
+    let bare =
+        super::after_focus(AdapterError::timeout("x").with_details(serde_json::json!("cause")));
 
+    assert_eq!(scrolled.disposition, DeliverySemantics::not_delivered());
+    assert!(scrolled.is_explicitly_retryable());
     let scrolled = scrolled.details.unwrap();
     assert_eq!(scrolled["preparatory_scroll"], "may_have_changed_view");
     assert_eq!(scrolled["preparatory_focus"], "may_have_moved_focus");
@@ -240,14 +293,14 @@ fn a_focus_refusal_records_the_focus_beside_earlier_details() {
 }
 
 #[test]
-fn a_lease_or_trace_refusal_records_no_side_effect() {
-    let lease = super::PreDispatch::Lease.refused(AdapterError::timeout("x"));
-    let trace = super::PreDispatch::Trace.refused(crate::ref_action::into_adapter_error(
-        crate::AppError::Internal("trace write failed".into()),
-    ));
+fn a_trace_write_failure_before_dispatch_is_not_delivered() {
+    let error = super::run(|| {
+        Err::<(), _>(crate::ref_action::into_adapter_error(
+            crate::AppError::Internal("trace write failed".into()),
+        ))
+    })
+    .unwrap_err();
 
-    assert!(lease.details.is_none());
-    assert_eq!(trace.code, ErrorCode::Internal);
-    assert_eq!(trace.disposition, DeliverySemantics::not_delivered());
-    assert!(trace.details.is_none());
+    assert_eq!(error.code, ErrorCode::Internal);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
 }
