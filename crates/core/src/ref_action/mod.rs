@@ -8,6 +8,7 @@ use crate::refs::{RefEntry, resolve_saved_ref::resolve_saved_ref};
 use crate::{AdapterError, AppError, actionability};
 use serde_json::json;
 
+pub(crate) mod pre_dispatch;
 pub(crate) mod presentation;
 pub(crate) mod ref_action_actionability;
 pub(crate) mod ref_action_context;
@@ -135,10 +136,7 @@ pub(crate) fn dispatch_resolved_landing(
         .with_verified_point(preflight.verified_point.clone())
         .with_expected_process(expected_process.clone());
     let final_target = ResolvedRefAction::new(target, &handle);
-    final_target.context.trace_lazy(
-        "action.dispatch.start",
-        || json!({ "ref": final_target.ref_id, "action": request.action.name() }),
-    )?;
+    pre_dispatch::trace_dispatch_start(&final_target, &request)?;
     let action_name = request.action.name();
     let raises_surface = request.action.may_raise_surface();
     let presentation_action = request.action.clone();

@@ -1,6 +1,6 @@
 use crate::{
     ActionRequest, ActionResult, AdapterError, AppError, Deadline,
-    ref_action::ref_action_context::RefActionContext,
+    ref_action::pre_dispatch::PreDispatch, ref_action::ref_action_context::RefActionContext,
     ref_action::ref_action_poll::execute_poll_loop,
     ref_action::ref_action_poll_state::RefActionPollState,
     ref_action::ref_action_single::execute_single_shot,
@@ -96,14 +96,9 @@ fn execute_with_deadline(
         );
         let cursor = crate::cursor_overlay::hold_cursor(context.context, deadline);
         crate::ref_action::presentation::before_lease(context, &request, deadline, cursor.is_ok());
-        let lease = context
-            .adapter
-            .acquire_interaction_lease(deadline)
-            .map_err(|error| state.attach_error_metrics(error))?;
-        if deadline.is_expired() {
-            let error = state.attach_error_metrics(deadline.timeout_error());
-            return Err(with_refusal(error, refusal.as_ref()));
-        }
+        let lease = PreDispatch::Lease
+            .run(|| acquire_lease(context.adapter, deadline))
+            .map_err(|error| with_refusal(state.attach_error_metrics(error), refusal.as_ref()))?;
         if polls {
             request.timeout_ms = Some(deadline.remaining_ms());
         }
@@ -132,6 +127,22 @@ fn execute_with_deadline(
             }
         }
     }
+}
+
+/// Takes the interaction lease for one dispatch attempt. A failure here does
+/// not go back to the wait: the lease already waits out the whole budget, so a
+/// lease timeout, or a budget spent while it was taken, leaves none to wait
+/// with, and the other lease failures (an unsupported lease, a broken lock
+/// file) do not clear by waiting.
+fn acquire_lease(
+    adapter: &dyn crate::PlatformAdapter,
+    deadline: Deadline,
+) -> Result<crate::InteractionLease, AdapterError> {
+    let lease = adapter.acquire_interaction_lease(deadline)?;
+    if deadline.is_expired() {
+        return Err(deadline.timeout_error());
+    }
+    Ok(lease)
 }
 
 /// Whether a dispatch-time refusal goes back to the wait: the full resolution

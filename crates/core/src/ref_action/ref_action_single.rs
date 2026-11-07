@@ -1,6 +1,6 @@
 use crate::{
     ActionRequest, ActionResult, AdapterError, ref_action::into_adapter_error,
-    ref_action::ref_action_context::RefActionContext,
+    ref_action::pre_dispatch::PreDispatch, ref_action::ref_action_context::RefActionContext,
     ref_action::ref_action_wait_context::RefActionWaitContext,
 };
 
@@ -24,31 +24,48 @@ pub(crate) fn execute_single_shot(
         &crate::InteractionLease,
     ) -> Result<ActionResult, crate::AppError>,
 ) -> Result<ActionResult, AdapterError> {
+    focus_for_headed_input(context, &request, deadline, lease)?;
+    dispatch(RefActionContext::new(context, deadline), request, lease).map_err(into_adapter_error)
+}
+
+/// Raises the target application or window when headed input needs it. The
+/// raise is a pre-dispatch step: a refusal from it sent nothing of the action.
+fn focus_for_headed_input(
+    context: RefActionWaitContext<'_>,
+    request: &ActionRequest,
+    deadline: crate::Deadline,
+    lease: &crate::InteractionLease,
+) -> Result<(), AdapterError> {
     let keyboard_is_aimed_at_the_element = request.action.delivered_by_keyboard()
         && !context.adapter.keyboard_needs_window_activation();
-    if request.headed_requirement().requires_focus() && !keyboard_is_aimed_at_the_element {
-        let requirement = context
-            .adapter
-            .headed_requirement_for_ref(context.entry, &request, deadline)
-            .map_err(crate::ref_action::mark_pre_dispatch_resolution_failure)?;
-        if matches!(
-            requirement,
-            crate::HeadedRequirement::FocusedApplication
-                | crate::HeadedRequirement::FocusedApplicationAndCursor
-        ) {
-            let process = context.entry.process.identity().ok_or_else(|| {
-                AdapterError::stale_ref_because("Target process identity is unavailable")
-            })?;
-            context.adapter.focus_app(process, lease)?;
-        } else if requirement.requires_focus() {
-            crate::actions::headed_focus::focus_entry_window(
-                context.entry,
-                context.adapter,
-                context.context,
-                lease,
-            )
-            .map_err(crate::ref_action::into_adapter_error)?;
-        }
+    if !request.headed_requirement().requires_focus() || keyboard_is_aimed_at_the_element {
+        return Ok(());
     }
-    dispatch(RefActionContext::new(context, deadline), request, lease).map_err(into_adapter_error)
+    let requirement = context
+        .adapter
+        .headed_requirement_for_ref(context.entry, request, deadline)
+        .map_err(crate::ref_action::mark_pre_dispatch_resolution_failure)?;
+    if matches!(
+        requirement,
+        crate::HeadedRequirement::FocusedApplication
+            | crate::HeadedRequirement::FocusedApplicationAndCursor
+    ) {
+        let process = context.entry.process.identity().ok_or_else(|| {
+            AdapterError::stale_ref_because("Target process identity is unavailable")
+        })?;
+        return PreDispatch::Focus.run(|| context.adapter.focus_app(process, lease));
+    }
+    if !requirement.requires_focus() {
+        return Ok(());
+    }
+    PreDispatch::Focus.run(|| {
+        crate::actions::headed_focus::focus_entry_window(
+            context.entry,
+            context.adapter,
+            context.context,
+            lease,
+        )
+        .map(|_| ())
+        .map_err(into_adapter_error)
+    })
 }

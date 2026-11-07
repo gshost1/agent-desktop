@@ -11,13 +11,10 @@ pub(crate) fn focus_entry_window(
     context: &crate::CommandContext,
     lease: &crate::InteractionLease,
 ) -> Result<bool, AppError> {
-    entry.process.identity().ok_or_else(|| {
-        AdapterError::new(
-            ErrorCode::ActionNotSupported,
-            "Headed input requires target process-instance identity",
-        )
-        .with_details(json!({ "physical_delivery_started": false }))
-    })?;
+    entry
+        .process
+        .identity()
+        .ok_or_else(|| headed_refusal(MISSING_PROCESS_IDENTITY))?;
     if entry.source.is_process_owned() {
         return Ok(false);
     }
@@ -26,13 +23,10 @@ pub(crate) fn focus_entry_window(
 }
 
 pub fn saved_ref_focus_window(entry: &crate::RefEntry) -> Result<WindowInfo, AdapterError> {
-    let process = entry.process.identity().ok_or_else(|| {
-        AdapterError::new(
-            ErrorCode::ActionNotSupported,
-            "Headed input requires target process-instance identity",
-        )
-        .with_details(json!({ "physical_delivery_started": false }))
-    })?;
+    let process = entry
+        .process
+        .identity()
+        .ok_or_else(|| headed_refusal(MISSING_PROCESS_IDENTITY))?;
     let window_id = required_text(
         entry.source.source_window_id.as_deref(),
         "Headed input requires an exact source window id",
@@ -84,10 +78,20 @@ pub(crate) fn focus_exact_window(
 }
 
 fn required_text<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str, AdapterError> {
-    value.filter(|value| !value.is_empty()).ok_or_else(|| {
-        AdapterError::new(ErrorCode::ActionNotSupported, message)
-            .with_details(json!({ "physical_delivery_started": false }))
-    })
+    value
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| headed_refusal(message))
+}
+
+const MISSING_PROCESS_IDENTITY: &str = "Headed input requires target process-instance identity";
+
+/// A headed target that cannot be identified is refused before any input
+/// starts, so the refusal says `not_delivered` as well as
+/// `physical_delivery_started: false`.
+fn headed_refusal(message: &str) -> AdapterError {
+    AdapterError::new(ErrorCode::ActionNotSupported, message)
+        .with_details(json!({ "physical_delivery_started": false }))
+        .with_disposition(crate::DeliverySemantics::not_delivered())
 }
 
 #[cfg(test)]
