@@ -7,10 +7,10 @@ Commands that read UI state and never change it. Run `agent-desktop <command> --
 Captures the accessibility tree as JSON. Interactive elements get qualified refs (`@s8f3k2p9:e1`) that embed the snapshot id. A bare `@eN` fails with `INVALID_ARGS`.
 
 ```bash
-agent-desktop snapshot --app "System Settings" -i --compact
-agent-desktop snapshot --app "App" --skeleton -i --compact
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact
-agent-desktop snapshot --app "App" --surface menu -i
+agent-desktop snapshot --app "System Settings" -i --outline
+agent-desktop snapshot --app "App" --skeleton -i --outline
+agent-desktop snapshot --root @s8f3k2p9:e3 -i --outline
+agent-desktop snapshot --app "App" --surface menu -i --outline
 agent-desktop snapshot --app "App" --window-id w-1234 -i
 ```
 
@@ -24,13 +24,24 @@ Output shape:
       { "ref_id": "@s8f3k2p9:e1", "role": "button", "name": "About", "states": ["focused"] } ] } } }
 ```
 
+With `--outline`, `data.outline` replaces `data.tree`: one line per node, two spaces of indent per level, and the snapshot's other fields unchanged.
+
+```json
+{ "ok": true, "command": "snapshot",
+  "data": { "app": "System Settings", "window": { "id": "w-4521", "title": "General" },
+    "ref_count": 14, "snapshot_id": "s8f3k2p9", "complete": true,
+    "outline": "window \"General\"\n  button \"About\" [e1] {focused}\n  checkbox \"Wi-Fi\" [e2] = \"1\"\n" } }
+```
+
+A line reads `role "name" [eN] = "value" desc="..." #native_id {states} (actions) +children_count`, and leaves out what a node lacks. `[e1]` is the local ref: pass it as `@s8f3k2p9:e1`, joined with `data.snapshot_id`, written out in full rather than through a shell variable (zsh reads `$S:e1` as a modifier). `+12` marks a cut container with 12 children to drill with `--root`, and `+…` a subtree the observation budget cut. Actions that every node carries (`Click` on a ref, `RightClick`, `ScrollTo`, `SetFocus`) are omitted, and unnamed single-child wrapper groups are skipped. The outline costs about a third of the tokens of `data.tree`; use `--outline` unless you parse the tree with a program.
+
 On macOS, `menu` and `menubar` snapshots are application-owned. They need no document window, include `data.app`, and omit `data.window`. A process-owned snapshot of a background app with no window also omits `data.window`. If you pass `--window-id` for an application-owned menu, it selects the app that owns the surface.
 
 Each ref names the snapshot that owns it, so a ref keeps resolving against its own snapshot when you interleave several apps or windows.
 
 Choose the scope:
 
-- `-i --compact` keeps interactive elements only and drops empty wrappers. Use both by default.
+- `-i --outline` keeps interactive elements only and prints them as text. Use both by default. `--compact` collapses single-child wrappers in `data.tree` for programs that read the JSON.
 - `-i` keeps interactive nodes and cut containers, so a row's static-text label is dropped. To tie a repeated button to its row, drill that row's container with `--root` and leave out `-i`. On Windows and Linux this identifies the row but a button repeated across rows stays a twin, so its ref is refused.
 - `--skeleton` clamps depth to 3 and adds `children_count` to cut containers. Each cut branch exposes its deepest safely resolvable drill target, or its nearest resolvable ancestor when the boundary has no stable identity.
 - `--root <REF>` starts from a ref found earlier. Re-drilling a root replaces the refs from that root's previous drill, and those of any drill made under it. Refs outside the drilled subtree keep working, skeleton refs inside it are replaced, and the new refs join the same snapshot id. A drill inherits the whole-window identity count of its snapshot, so its refs resolve like the skeleton's. `--root` cannot combine with `--surface` or `--wait-for`.

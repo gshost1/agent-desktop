@@ -81,6 +81,32 @@ A node always carries `role` and, when they exist, `ref_id`, `name`, `value`, `d
 - `--compact` collapses a single-child wrapper that has no name, value, description, id, state, or action.
 - `--max-depth` limits depth. The default is 10 and the maximum is 50.
 
+## Outline output
+
+`--outline` returns the same tree as indented text in `data.outline` instead of JSON in `data.tree`, at about a third of the model tokens. Use it when an agent reads the snapshot; keep the JSON tree when a program parses it.
+
+```bash
+agent-desktop snapshot --app Calculator -i --outline
+```
+
+```json
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "snapshot",
+  "data": {
+    "app": "Calculator",
+    "complete": true,
+    "ref_count": 26,
+    "snapshot_id": "s2ri13mopm473h",
+    "window": { "id": "w-35042", "title": "Calculator" },
+    "outline": "window \"Calculator\"\n  scrollarea \"Edit field\" [e1] #StandardInputView (Scroll)\n  button \"All Clear\" [e3] #AllClear\n  button \"7\" [e6] #Seven\n"
+  }
+}
+```
+
+Each line is `role "name" [eN]` followed by the value, description, native id, states, the actions that matter, and `+N` on a cut container. `[e6]` is a local ref: pass it as `@s2ri13mopm473h:e6`. The [JSON output contract](https://github.com/vercel-labs/agent-desktop/blob/main/docs/json-output.md#outline-snapshots) lists every part of a line.
+
 ## Choose the window
 
 For window-owned surfaces, `snapshot` and `find` read one window. Without `--app` they use the focused window, and `WINDOW_NOT_FOUND` means there is none. With `--app` and no `--window-id`, agent-desktop narrows the app's windows in this order and stops at the first step that leaves exactly one:

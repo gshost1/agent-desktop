@@ -34,4 +34,10 @@ pub(crate) struct SnapshotArgs {
     )]
     #[serde(default)]
     pub force_electron_a11y: bool,
+    #[arg(
+        long,
+        help = "Return the tree as data.outline, one indented text line per node with local [eN] refs, instead of the JSON data.tree"
+    )]
+    #[serde(default)]
+    pub outline: bool,
 }

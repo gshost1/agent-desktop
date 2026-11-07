@@ -207,3 +207,14 @@ fn snapshot_args_batch_json_defaults_timeout_and_force_electron_a11y_when_absent
     assert_eq!(args.timeout_ms, None);
     assert!(!args.force_electron_a11y);
 }
+
+#[test]
+fn snapshot_outline_is_opt_in_on_the_cli_and_in_batch_json() {
+    let default = SnapshotArgs::try_parse_from(["snapshot", "-i"]).unwrap();
+    assert!(!default.outline);
+    let cli = SnapshotArgs::try_parse_from(["snapshot", "-i", "--outline"]).unwrap();
+    assert!(cli.outline);
+    let batch: SnapshotArgs =
+        serde_json::from_value(serde_json::json!({"app": "Finder", "outline": true})).unwrap();
+    assert!(batch.outline);
+}

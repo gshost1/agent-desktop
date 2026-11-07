@@ -16,7 +16,8 @@ pub(super) fn snapshot(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    snapshot_command::execute(
+    let outline = args.outline;
+    let mut body = snapshot_command::execute(
         snapshot_command::SnapshotArgs {
             app: args.scope.app,
             window_id: args.scope.window_id,
@@ -32,7 +33,11 @@ pub(super) fn snapshot(
         },
         adapter,
         context,
-    )
+    )?;
+    if outline {
+        agent_desktop_core::snapshot::outline::replace_tree_with_outline(&mut body);
+    }
+    Ok(body)
 }
 
 pub(super) fn find(

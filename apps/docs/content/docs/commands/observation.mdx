@@ -13,7 +13,7 @@ Concepts behind the flags are explained in [Skeleton and drill-down](/desktop/sk
 Captures an application's accessibility tree as JSON. Window-owned surfaces are read from a window; on macOS, `menu` and `menubar` are application-owned and need no document window. Interactive elements get qualified refs that later commands accept.
 
 ```bash
-agent-desktop snapshot [--app NAME] [--window-id ID] [-i] [--compact] [--skeleton] \
+agent-desktop snapshot [--app NAME] [--window-id ID] [-i] [--compact] [--outline] [--skeleton] \
                        [--root REF] [--surface KIND] [--max-depth N] [--include-bounds] \
                        [--timeout-ms MS] [--force-electron-a11y]
 ```
@@ -27,6 +27,7 @@ agent-desktop snapshot [--app NAME] [--window-id ID] [-i] [--compact] [--skeleto
     <tr><td><code>--window-id ID</code></td><td>none</td><td>Read one window by id from <code>list-windows</code>. For macOS <code>menu</code> and <code>menubar</code>, it selects the owning app.</td></tr>
     <tr><td><code>-i</code>, <code>--interactive-only</code></td><td>off</td><td>Drop leaves without a ref. See <a href="/desktop/snapshots-and-refs#what-a-snapshot-contains">What a snapshot contains</a>.</td></tr>
     <tr><td><code>--compact</code></td><td>off</td><td>Collapse single-child unnamed wrappers.</td></tr>
+    <tr><td><code>--outline</code></td><td>off</td><td>Return the tree as indented text in <code>data.outline</code>, with local <code>[eN]</code> refs, instead of JSON in <code>data.tree</code>. See <a href="/desktop/snapshots-and-refs#outline-output">Outline output</a>.</td></tr>
     <tr><td><code>--include-bounds</code></td><td>off</td><td>Add <code>bounds</code> to each node.</td></tr>
     <tr><td><code>--skeleton</code></td><td>off</td><td>Clamp depth to 3 and mark cut containers with <code>children_count</code>. See <a href="/desktop/skeleton-and-drill-down#take-a-skeleton">Take a skeleton</a>.</td></tr>
     <tr><td><code>--root REF</code></td><td>none</td><td>Drill into one ref's subtree and replace that region's refs. Cannot combine with <code>--surface</code> or <code>--wait-for</code>. See <a href="/desktop/skeleton-and-drill-down#drill-into-a-region">Drill into a region</a>.</td></tr>
