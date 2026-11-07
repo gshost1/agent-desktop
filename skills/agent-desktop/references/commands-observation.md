@@ -43,7 +43,7 @@ Choose the scope:
 
 `data.complete` is on every snapshot. When the observation budget runs out, the command still succeeds with `"complete": false`, `"truncated": true`, `"nodes_observed"`, and the tree it saw. Each node with cut descendants carries `"subtree_truncated": true`. Read `complete`; do not wait for a `TIMEOUT`. Raise `--timeout-ms` (default 3000) or drill with `--root` to finish the tree. A `--root` drill is all or nothing: an incomplete read returns `TIMEOUT`.
 
-`"identity_unproven": true` means the snapshot could not read the whole window in time to prove its refs. On Windows and Linux, and on macOS for an element with no address, those refs fail with `identity_not_unique`, so retake the snapshot with a larger `--timeout-ms` before acting.
+`"identity_unproven": true` means the snapshot could not read the whole window in time to prove its refs. On Windows and Linux, and on macOS for an element with no address, those refs fail `STALE_REF` with `details.kind: identity_unproven`, so retake the snapshot with a larger `--timeout-ms` before acting.
 
 A cold Chromium or Electron app can take 10 to 25 seconds to expose its web tree. If a fresh snapshot comes back thin, raise `--timeout-ms` and snapshot again.
 
@@ -56,7 +56,8 @@ An element gets a ref when its role is interactive or it advertises a primary ac
 A command re-identifies the element from the ref before it acts. On macOS, a ref carries the element's native address when available, so identical twins each keep their ref. On Windows and Linux, and on macOS when an element has no address, a ref resolves only when a complete read proved it was the only element in the window with its role, native id, name and description, and exactly one live element still matches. A skeleton, depth-limited or drilled capture counts against the whole window, so a shallow tree proves the same thing a full one does. Values and bounds never count as identity.
 
 - `STALE_REF`, `details.kind: saved_ref_absent`: no live element matches the stored identity. Take a fresh snapshot. On macOS `retained_object_stale` means the recorded address is dead or no longer matches.
-- `AMBIGUOUS_TARGET`, `details.kind: saved_ref_ambiguous`: an identical element appeared, so two live elements match. `identity_not_unique`: the ref was not proven unique at capture, so nothing was searched. That is an identical twin, which every snapshot refuses again, or a window the snapshot could not read whole in time, which a new snapshot with a larger `--timeout-ms` fixes.
+- `STALE_REF`, `details.kind: identity_unproven`: the capture could not count the ref, so nothing was searched. `details.reason` is `capture_incomplete` when the snapshot could not read the whole window in time, and `capture_unknown` when an element in it left a field the ref records unread. Retake the snapshot, with a larger `--timeout-ms` for a large window.
+- `AMBIGUOUS_TARGET`, `details.kind: saved_ref_ambiguous`: an identical element appeared, so two live elements match. `identity_not_unique`: the capture found an identical twin, so nothing was searched, and every snapshot refuses it again.
 - `TIMEOUT`, `details.kind: resolution_identity_unknown`: a live read did not answer, so identity is unproven. Nothing was sent; retry.
 
 Off macOS, identical twins have no ref path: only `--headed mouse-click --xy X,Y` can choose one. It takes the foreground, and a Linux Wayland session refuses it.

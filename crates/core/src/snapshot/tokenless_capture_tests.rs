@@ -105,7 +105,7 @@ fn the_whole_window_read_carries_the_forced_renderer_hint() {
     assert!(captured.identity_unproven.is_none());
     let (anchor_ref, anchor) = named(&captured.refmap, "Sidebar");
     assert!(
-        anchor.identity.unique_at_capture,
+        anchor.identity.capture.is_unique(),
         "the forced read is adopted and proves the anchor"
     );
     assert!(anchor.source.renderer_accessibility_forced);
@@ -197,4 +197,39 @@ fn a_deep_capture_cut_short_is_flagged_as_unproven() {
         captured.identity_unproven.as_deref(),
         Some("the window read was cut short")
     );
+}
+
+/// A snapshot whose whole-window read was cut short still hands out refs for
+/// the shallow tree it presents. Those refs are stale until a snapshot that
+/// reads the whole window proves them, not twins, so acting on one asks for
+/// that snapshot instead of reporting an ambiguity no snapshot would repeat.
+#[test]
+fn a_ref_from_a_whole_window_read_cut_short_asks_for_a_new_snapshot() {
+    let _guard = HomeGuard::new();
+    let deep = group(vec![group(vec![group(vec![node("button", "Deep")])])]);
+    let adapter = CaptureAdapter::new(window(vec![node("button", "Save"), deep]));
+    adapter.fault_whole_read(cut_short);
+    let shallow = crate::adapter::TreeOptions {
+        max_depth: 2,
+        ..Default::default()
+    };
+
+    let captured = crate::snapshot::build(
+        &adapter,
+        &shallow,
+        Some("Fixture"),
+        None,
+        Deadline::standard().expect("a standard deadline"),
+    )
+    .expect("the window snapshots");
+    assert!(captured.identity_unproven.is_some());
+    let (_, button) = named(&captured.refmap, "Save");
+
+    let Err(error) = resolve(&adapter, button) else {
+        panic!("an unproven ref is refused");
+    };
+    assert_eq!(error.code, ErrorCode::StaleRef, "{error:?}");
+    let details = error.details.expect("the refusal names its kind");
+    assert_eq!(details["kind"], "identity_unproven");
+    assert_eq!(details["reason"], "capture_incomplete");
 }

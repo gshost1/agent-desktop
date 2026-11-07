@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::{AdapterError, ErrorCode, RefEntry};
+use crate::{AdapterError, CaptureVerdict, ErrorCode, RefEntry};
 
 /// The incomplete-and-retryable answer shared by both resolvers: a candidate
 /// that could not be read is not a non-match. `RefEntry` evidence is
@@ -23,17 +23,29 @@ pub fn identity_unknown_error(entry: &RefEntry) -> AdapterError {
     }))
 }
 
-/// A tokenless ref that was not proven unique when it was captured.
-pub(crate) fn identity_not_unique(entry: &RefEntry) -> AdapterError {
+/// The refusal a tokenless ref gets from its capture verdict before anything
+/// is read from the application, or `None` when the capture proved it unique.
+pub(crate) fn capture_refusal(entry: &RefEntry) -> Option<AdapterError> {
+    match entry.identity.capture {
+        CaptureVerdict::Unique => None,
+        CaptureVerdict::Ambiguous => Some(identity_not_unique(entry)),
+        CaptureVerdict::Incomplete => Some(identity_unproven(entry, "capture_incomplete")),
+        CaptureVerdict::Unknown => Some(identity_unproven(entry, "capture_unknown")),
+    }
+}
+
+/// A tokenless ref whose capture found another element matching it, or whose
+/// refmap predates the verdict and recorded only that it was not unique.
+fn identity_not_unique(entry: &RefEntry) -> AdapterError {
     AdapterError::new(
         ErrorCode::AmbiguousTarget,
         "Saved ref was not proven unique when it was captured, so it cannot be re-identified safely",
     )
     .with_suggestion(
-        "Either another element in the window matched it, or the window could not be read \
-         whole within the snapshot timeout. For a large window, retake the snapshot with a \
-         larger --timeout-ms. Identical twins are refused again by every snapshot; where \
-         headed pointer input is available, an explicit --headed coordinate click can pick one.",
+        "Another element in the window matched it when it was captured; a refmap from an \
+         earlier version does not record why, so take a new snapshot for one. Identical twins \
+         are refused again by every snapshot; where headed pointer input is available, an \
+         explicit --headed coordinate click can pick one.",
     )
     .with_details(json!({
         "kind": "identity_not_unique",
@@ -41,6 +53,28 @@ pub(crate) fn identity_not_unique(entry: &RefEntry) -> AdapterError {
         "role": entry.identity.role,
     }))
     .with_disposition(crate::DeliverySemantics::not_delivered())
+}
+
+/// A tokenless ref whose capture could not count it: the read was not a
+/// complete read of the whole window, or an element in it left a field the ref
+/// records unread. No twin was seen, and a snapshot that reads the whole window
+/// can prove it, so this is a stale ref with the fresh-snapshot recovery rather
+/// than a twin. It carries no `retryable` stamp, because repeating the same ref
+/// returns the same refusal while a new snapshot can succeed.
+fn identity_unproven(entry: &RefEntry, reason: &str) -> AdapterError {
+    AdapterError::stale_ref_because(
+        "Saved ref was not proven unique when it was captured, because the capture could not \
+         read the whole window's evidence for it",
+    )
+    .with_suggestion(
+        "Retake the snapshot, with a larger --timeout-ms for a large window, then retry with \
+         the new ref.",
+    )
+    .with_details(json!({
+        "kind": "identity_unproven",
+        "reason": reason,
+        "role": entry.identity.role,
+    }))
 }
 
 /// Stamps the final incomplete diagnosis with `deadline_elapsed` so the

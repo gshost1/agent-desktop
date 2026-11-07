@@ -8,9 +8,7 @@ use crate::{
     refs::ref_full_predicate::FullPredicate,
     refs::ref_identity::element_token,
     refs::ref_live_predicate::LivePredicate,
-    refs::resolve_errors::{
-        absent, ambiguous_live_match, identity_not_unique, identity_unknown_error,
-    },
+    refs::resolve_errors::{absent, ambiguous_live_match, capture_refusal, identity_unknown_error},
 };
 
 /// The depth a whole-window observation reaches: the limit a snapshot walk
@@ -61,7 +59,7 @@ pub(crate) fn land_saved_ref(
     deadline: Deadline,
 ) -> Result<NativeHandle, AdapterError> {
     if element_token(entry).is_none()
-        && entry.identity.unique_at_capture
+        && entry.identity.capture.is_unique()
         && let Ok(handle) = adapter.resolve_locator_anchor(entry, deadline)
     {
         let root = ObservationRoot::Element {
@@ -94,8 +92,10 @@ pub(crate) fn observe_saved_ref(
     identity_only: bool,
 ) -> Result<SavedRefMatch, AdapterError> {
     let token = element_token(entry);
-    if token.is_none() && !entry.identity.unique_at_capture {
-        return Err(identity_not_unique(entry));
+    if token.is_none()
+        && let Some(refusal) = capture_refusal(entry)
+    {
+        return Err(refusal);
     }
     let window = recorded_window(adapter, entry, deadline)?;
     let base = TreeOptions {
@@ -355,7 +355,7 @@ fn positional_anchor(
     );
     anchor.identity = crate::RefEntryIdentity {
         retained_object: entry.identity.retained_object.clone(),
-        unique_at_capture: false,
+        capture: crate::CaptureVerdict::Ambiguous,
         ..entry.identity.clone()
     };
     Ok(anchor)

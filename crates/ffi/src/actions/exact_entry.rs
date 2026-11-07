@@ -223,7 +223,7 @@ unsafe fn decode_core_ref_entry(
             value,
             description,
             native_id,
-            unique_at_capture: false,
+            capture: agent_desktop_core::CaptureVerdict::Ambiguous,
         },
         geometry: RefGeometry {
             bounds_space,

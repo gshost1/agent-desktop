@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::{
-    ElementIdentifier, IdentityMatch, RefEntry,
+    CaptureVerdict, ElementIdentifier, IdentityMatch, RefEntry,
     locator::live_locator::{LocatorEvidence, LocatorField, ObservationSource, ObservedTree},
     refs::ref_full_predicate::{DESCRIPTION, FullPredicate, NAME, NATIVE_ID},
     refs::ref_identity::stable_name,
@@ -14,8 +14,8 @@ const ROLE: u8 = DESCRIPTION << 1;
 const MASKS: usize = (NATIVE_ID | NAME | DESCRIPTION) as usize + 1;
 
 /// One whole-window observation, counted once into the field subsets its
-/// entries record, so every tokenless entry published from it is proven by the
-/// rule `proves_node` applies rather than by a fresh scan per entry.
+/// entries record, so every tokenless entry published from it is judged by the
+/// rule `verdict` applies rather than by a fresh scan per entry.
 ///
 /// The count is the comparison resolution runs: `FullPredicate::of_entry` of the
 /// entry being published, measured against the evidence every node reported, so
@@ -24,7 +24,7 @@ const MASKS: usize = (NATIVE_ID | NAME | DESCRIPTION) as usize + 1;
 pub(crate) struct CaptureProof<'a> {
     observed: &'a ObservedTree,
     start: Option<usize>,
-    buckets: [OnceLock<HashMap<LiveKey<'a>, usize>>; MASKS],
+    buckets: [OnceLock<HashMap<LiveKey<'a>, Option<usize>>>; MASKS],
     unread: Vec<(u8, LivePredicate<'a>)>,
     whole_window: bool,
 }
@@ -63,13 +63,17 @@ impl<'a> CaptureProof<'a> {
         self
     }
 
-    /// Whether `entry`, allocated at `path`, is proven. The path is read the way
+    /// The verdict on `entry`, allocated at `path`. The path is read the way
     /// allocation wrote it: the start node's own path, then child positions in
     /// the projection, which skips no child the observation kept even when the
-    /// native indices have gaps.
-    pub(crate) fn proves(&self, entry: &RefEntry, path: &[usize]) -> bool {
+    /// native indices have gaps. A path the observation does not hold cannot tie
+    /// the entry to a node, so its verdict is `Unknown`.
+    pub(crate) fn verdict_at(&self, entry: &RefEntry, path: &[usize]) -> CaptureVerdict {
+        if !self.whole_window {
+            return CaptureVerdict::Incomplete;
+        }
         let Some(mut index) = self.start else {
-            return false;
+            return CaptureVerdict::Unknown;
         };
         let Some(prefix) = self
             .observed
@@ -77,10 +81,10 @@ impl<'a> CaptureProof<'a> {
             .get(index)
             .map(|node| node.path.as_slice())
         else {
-            return false;
+            return CaptureVerdict::Unknown;
         };
         let Some(steps) = path.strip_prefix(prefix) else {
-            return false;
+            return CaptureVerdict::Unknown;
         };
         for step in steps {
             match self
@@ -90,39 +94,46 @@ impl<'a> CaptureProof<'a> {
                 .and_then(|node| node.children.get(*step))
             {
                 Some(child) => index = *child as usize,
-                None => return false,
+                None => return CaptureVerdict::Unknown,
             }
         }
-        self.proves_node(entry, index)
+        self.verdict(entry, index)
     }
 
-    /// Whether `entry` was proven unique at the node it was built from: the
-    /// observation must be a complete whole-window read, exactly one of its nodes
-    /// must match the entry's full predicate, no node may leave a recorded field
-    /// unread, and that one node must be this one.
-    pub(crate) fn proves_node(&self, entry: &RefEntry, index: usize) -> bool {
+    /// The verdict on `entry` at the node it was built from. It is `Unique`
+    /// only when the observation is a complete whole-window read, exactly one
+    /// of its nodes matches the entry's full predicate, that node is this one,
+    /// and no node leaves a recorded field unread. Two or more matches are
+    /// `Ambiguous` whatever else went unread, because that twin is certain.
+    pub(crate) fn verdict(&self, entry: &RefEntry, index: usize) -> CaptureVerdict {
         if !self.whole_window {
-            return false;
+            return CaptureVerdict::Incomplete;
         }
         let predicate = FullPredicate::of_entry(entry);
         let fields = predicate.mask();
-        if self.buckets[fields as usize]
+        match self.buckets[fields as usize]
             .get_or_init(|| count_nodes(self.observed, fields))
             .get(&key_of(&predicate))
-            != Some(&index)
         {
-            return false;
+            Some(None) => CaptureVerdict::Ambiguous,
+            Some(Some(found)) if *found == index => {
+                let unread = self.unread.iter().any(|(bits, live)| {
+                    bits & (fields | ROLE) != 0 && predicate.compare(live) == IdentityMatch::Unknown
+                });
+                if unread {
+                    CaptureVerdict::Unknown
+                } else {
+                    CaptureVerdict::Unique
+                }
+            }
+            _ => CaptureVerdict::Unknown,
         }
-        !self.unread.iter().any(|(bits, live)| {
-            bits & (fields | ROLE) != 0 && predicate.compare(live) == IdentityMatch::Unknown
-        })
     }
 }
 
-/// The node indices each full predicate of this field subset matched, as a
-/// single index per predicate. A predicate two nodes match is stored with the
-/// last of them, so it never equals the node an entry was built from.
-fn count_nodes(observed: &ObservedTree, fields: u8) -> HashMap<LiveKey<'_>, usize> {
+/// The node each full predicate of this field subset matched: its index when
+/// exactly one node matched, `None` when two or more did.
+fn count_nodes(observed: &ObservedTree, fields: u8) -> HashMap<LiveKey<'_>, Option<usize>> {
     let mut counted: HashMap<LiveKey<'_>, (usize, usize)> = HashMap::new();
     for (index, node) in observed.nodes.iter().enumerate() {
         for key in keys_of(&node.evidence, fields) {
@@ -133,8 +144,7 @@ fn count_nodes(observed: &ObservedTree, fields: u8) -> HashMap<LiveKey<'_>, usiz
     }
     counted
         .into_iter()
-        .filter(|(_, (count, _))| *count == 1)
-        .map(|(key, (_, index))| (key, index))
+        .map(|(key, (count, index))| (key, (count == 1).then_some(index)))
         .collect()
 }
 

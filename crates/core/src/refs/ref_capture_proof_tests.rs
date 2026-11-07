@@ -8,7 +8,9 @@ use crate::refs::ref_alloc_options::RefAllocOptions;
 use crate::refs::ref_alloc_scope::RefAllocScope;
 use crate::refs::ref_alloc_source::RefAllocSource;
 use crate::refs::ref_capture_proof::CaptureProof;
-use crate::{AccessibilityNode, ElementIdentifier, IdentifierKind, RefMap, WindowInfo};
+use crate::{
+    AccessibilityNode, CaptureVerdict, ElementIdentifier, IdentifierKind, RefMap, WindowInfo,
+};
 
 fn named(role: &str, name: &str) -> AccessibilityNode {
     crate::adapter::minimal_accessibility_node(role, name)
@@ -57,13 +59,20 @@ fn config<'a>(capture: &'a CaptureProof<'a>) -> RefAllocConfig<'a> {
     }
 }
 
-fn flags(root: AccessibilityNode, observed: &ObservedTree) -> Vec<bool> {
+fn verdicts(root: AccessibilityNode, observed: &ObservedTree) -> Vec<CaptureVerdict> {
     let proof = CaptureProof::new(observed);
     let mut refmap = RefMap::new();
     allocate_refs(root, &mut refmap, &config(&proof)).unwrap();
     (1..=refmap.len())
         .filter_map(|index| refmap.get(&format!("@e{index}")))
-        .map(|entry| entry.identity.unique_at_capture)
+        .map(|entry| entry.identity.capture)
+        .collect()
+}
+
+fn flags(root: AccessibilityNode, observed: &ObservedTree) -> Vec<bool> {
+    verdicts(root, observed)
+        .into_iter()
+        .map(CaptureVerdict::is_unique)
         .collect()
 }
 
@@ -166,6 +175,37 @@ fn a_complete_observation_marks_the_entry_it_found_once() {
     assert_eq!(flags(root, &observed), [false, false, true]);
 }
 
+/// Each way a capture fails to prove a ref is recorded as itself: a twin it
+/// counted, a read that did not cover the whole window, and a field another
+/// element left unread, so resolution can refuse each with its own recovery.
+#[test]
+fn a_capture_records_why_it_could_not_prove_a_ref() {
+    use CaptureVerdict::{Ambiguous, Incomplete, Unique, Unknown};
+    let twinned = window(vec![
+        named("button", "Send"),
+        named("button", "Send"),
+        named("button", "Cancel"),
+    ]);
+    assert_eq!(
+        verdicts(twinned.clone(), &observed_from(twinned)),
+        [Ambiguous, Ambiguous, Unique]
+    );
+
+    let mut hidden = named("scrollarea", "Feed");
+    hidden.children_count = Some(2);
+    let cut = window(vec![named("button", "Cancel"), hidden]);
+    assert_eq!(verdicts(cut.clone(), &observed_from(cut)), [Incomplete]);
+
+    let unread = window(vec![
+        named("button", "Cancel"),
+        named("button", "Other"),
+        named("link", "Help"),
+    ]);
+    let mut observed = observed_from(unread.clone());
+    observed.nodes[2].evidence.name = LocatorField::Unknown;
+    assert_eq!(verdicts(unread, &observed), [Unknown, Unknown, Unique]);
+}
+
 #[test]
 fn an_identifier_a_twin_carries_secondhand_is_not_unique() {
     let (root, observed) = twin_carrying_the_identifier_secondhand();
@@ -192,7 +232,7 @@ fn find_marks_only_a_whole_window_match_found_once() {
                 &observed.source,
                 &crate::locator::LocatorQuery::default(),
             );
-            proof.proves_node(&entry, *index)
+            proof.verdict(&entry, *index).is_unique()
         })
         .filter_map(|(_, node)| node.evidence.name.meaningful_string())
         .collect();
@@ -288,7 +328,7 @@ fn a_published_entry_is_proven_by_its_own_predicate_not_the_preferred_identifier
             Some("shared")
         );
         assert!(
-            !matched.entry.identity.unique_at_capture,
+            !matched.entry.identity.capture.is_unique(),
             "a predicate both twins carry was not found once"
         );
     }
@@ -300,7 +340,7 @@ fn a_published_entry_is_proven_by_its_own_predicate_not_the_preferred_identifier
     )
     .expect("the observation evaluates");
     assert_eq!(named.matches.len(), 1);
-    assert!(named.matches[0].entry.identity.unique_at_capture);
+    assert!(named.matches[0].entry.identity.capture.is_unique());
 }
 
 #[test]

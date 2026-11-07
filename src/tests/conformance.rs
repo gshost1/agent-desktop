@@ -175,7 +175,7 @@ fn entry(bounds: Rect) -> RefEntry {
             value: None,
             description: None,
             native_id: None,
-            unique_at_capture: false,
+            capture: agent_desktop_core::CaptureVerdict::Ambiguous,
         },
         geometry: RefGeometry {
             bounds_space: None,

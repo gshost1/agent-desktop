@@ -123,7 +123,7 @@ Version 2.6 changes which refs resolve on Windows and Linux, and on macOS for an
 - On macOS, `open-system-surface --surface dock` and `--surface menu-bar-extras` now succeed headless. Their `data` has no `window`; check for the field before reading it. Windows and Linux still return `window` and need `--headed`.
 - On macOS, a snapshot of a background app that lists no window (a menu-bar app, the Dock, Control Center), and `--surface dock` or `--surface menu-bar-extras`, now succeed and read the app through its process. Earlier they failed `WINDOW_NOT_FOUND`. `data.window` is omitted from such a snapshot and `data.app` names the process; check for the field before reading `data.window.id`.
 
-A snapshot that needed one complete read of its window to prove its refs, and could not get it, says so with `"identity_unproven": true` in `data`. `complete` still describes the presented tree. On Windows and Linux, and on macOS for an element with no address, every ref of that snapshot fails `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"`; retake the snapshot with a larger `--timeout-ms`. The field is omitted otherwise.
+A snapshot that needed one complete read of its window to prove its refs, and could not get it, says so with `"identity_unproven": true` in `data`. `complete` still describes the presented tree. On Windows and Linux, and on macOS for an element with no address, every ref of that snapshot fails `STALE_REF` with `details.kind: "identity_unproven"` and `details.reason: "capture_incomplete"`; retake the snapshot with a larger `--timeout-ms`. The field is omitted otherwise.
 
 On macOS, application-owned `menu` and `menubar` snapshots omit `data.window`. `data.app` identifies the owner, including for a `--root` drill into a ref from one of these surfaces. Window-owned snapshots retain `data.window`. When `--window-id` is supplied for an application-owned surface, it selects the owning app while the observed surface remains application-owned.
 
@@ -173,18 +173,19 @@ to `role` or `value`.
 
 ## Ref re-identification details
 
-Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these four kinds:
+Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these five kinds:
 
 | `details.kind` | Code | Meaning |
 |------|------|---------|
 | `retained_object_stale` | `STALE_REF` | macOS: the element's recorded address is dead, or its process, role or recorded identifier no longer matches. `details.reason` is `dead`, `pid`, `role` or `native_identifier`. No search runs, so the ref cannot land on a look-alike. Take a fresh snapshot. |
 | `saved_ref_absent` | `STALE_REF` | No live element matches the stored role and stable fields over complete evidence, so the element is gone. Take a fresh snapshot. |
 | `saved_ref_ambiguous` | `AMBIGUOUS_TARGET` | An element identical to the captured one appeared, so two or more live elements match the stored role and stable fields. A fresh snapshot refuses both as twins; act on a control that is unique in the window. |
-| `identity_not_unique` | `AMBIGUOUS_TARGET` | The ref was not proven the only element matching its role and stable fields when it was captured, so nothing is searched. Either an identical twin existed, or the window could not be read whole within the snapshot timeout (retake the snapshot with a larger `--timeout-ms`). It is reached on Windows, on Linux, and on macOS when the element yields no address. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
+| `identity_not_unique` | `AMBIGUOUS_TARGET` | The capture counted two or more elements matching the ref's role and stable fields, so nothing is searched. It is reached on Windows, on Linux, and on macOS when the element yields no address, and for every unproven ref of a refmap written before the capture verdict existed. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
+| `identity_unproven` | `STALE_REF` | The capture could not count the ref, so nothing is searched and no twin was seen. `details.reason` is `capture_incomplete` when the capture was not a complete read of the whole window (the snapshot reports `data.identity_unproven`), or `capture_unknown` when an element in the window left a field the ref records unread. Retake the snapshot, with a larger `--timeout-ms` for a large window. It carries the `refresh_snapshot_then_retry_original` recovery with `requires_fresh_snapshot: true` and no `details.retryable`, because repeating the same ref returns the same refusal while a new snapshot can prove it. |
 
-The fifth outcome is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
+The sixth outcome is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
 
-After the core resolver chooses the element, the platform adapter lands it, and a landing failure keeps the adapter's own `details.kind` (for example `resolve_no_candidate` on Linux and Windows, or `resolution_complete_absence` on macOS). The platform skills list those kinds. `saved_ref_absent`, `saved_ref_ambiguous` and `identity_not_unique` carry `details.retryable: false`, because waiting cannot change the answer. Every one of these is `not_delivered`.
+After the core resolver chooses the element, the platform adapter lands it, and a landing failure keeps the adapter's own `details.kind` (for example `resolve_no_candidate` on Linux and Windows, or `resolution_complete_absence` on macOS). The platform skills list those kinds. `saved_ref_absent`, `saved_ref_ambiguous` and `identity_not_unique` carry `details.retryable: false`, because waiting cannot change the answer. Every one of these is `not_delivered`, `identity_unproven` included.
 
 ## Error codes
 

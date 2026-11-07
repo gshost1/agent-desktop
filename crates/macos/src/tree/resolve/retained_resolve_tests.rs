@@ -14,7 +14,7 @@ fn entry(role: &str) -> RefEntry {
             process_instance: Some("test-instance".into()),
         },
         identity: RefEntryIdentity {
-            unique_at_capture: false,
+            capture: agent_desktop_core::CaptureVerdict::Ambiguous,
             retained_object: None,
             role: role.into(),
             name: Some("Investors".into()),

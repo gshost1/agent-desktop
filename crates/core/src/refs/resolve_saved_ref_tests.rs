@@ -1,7 +1,11 @@
 use std::sync::atomic::Ordering;
 
-use super::test_support::{RuleAdapter, capture, entry, node, resolve, tree_with, window};
-use crate::{ErrorCode, refs::refs_test_support::HomeGuard};
+use super::test_support::{
+    RuleAdapter, capture, capture_observed, entry, node, resolve, tree_with, window,
+};
+use crate::locator::live_locator::LocatorField;
+use crate::response::output::ErrorPayload;
+use crate::{AdapterError, AppError, ErrorCode, refs::refs_test_support::HomeGuard};
 
 #[test]
 fn a_unique_live_match_resolves_through_a_positional_anchor() {
@@ -121,7 +125,7 @@ fn an_entry_not_unique_at_capture_is_refused_before_any_live_search() {
     let _guard = HomeGuard::new();
     let adapter = RuleAdapter::new(tree_with(vec![node("button", "Run")]));
     let mut entry = entry();
-    entry.identity.unique_at_capture = false;
+    entry.identity.capture = crate::CaptureVerdict::Ambiguous;
 
     let Err(error) = resolve(&adapter, &entry) else {
         panic!("an unproven ref must be refused");
@@ -137,7 +141,7 @@ fn an_element_token_goes_straight_to_the_adapter() {
     let _guard = HomeGuard::new();
     let adapter = RuleAdapter::new(tree_with(vec![]));
     let mut entry = entry();
-    entry.identity.unique_at_capture = false;
+    entry.identity.capture = crate::CaptureVerdict::Ambiguous;
     entry.identity.retained_object = Some("axtok1:page-7:node-3".into());
 
     let Ok(handle) = resolve(&adapter, &entry) else {
@@ -172,12 +176,12 @@ fn capture_and_resolution_agree_on_the_same_element() {
     let _guard = HomeGuard::new();
     let alone = tree_with(vec![node("button", "Run"), node("button", "Cancel")]);
     let captured = capture(alone.clone(), "Run");
-    assert!(captured.identity.unique_at_capture);
+    assert!(captured.identity.capture.is_unique());
     assert!(resolve(&RuleAdapter::new(alone), &captured).is_ok());
 
     let twinned = tree_with(vec![node("button", "Run"), node("button", "Run")]);
     let twin_captured = capture(twinned.clone(), "Run");
-    assert!(!twin_captured.identity.unique_at_capture);
+    assert!(!twin_captured.identity.capture.is_unique());
     let refused = resolve(&RuleAdapter::new(twinned), &twin_captured);
     assert_eq!(
         refused.err().map(|error| error.code),
@@ -245,12 +249,69 @@ fn an_unproven_entry_is_never_landed_provisionally() {
     let _guard = HomeGuard::new();
     let adapter = RuleAdapter::new(tree_with(vec![node("button", "Run")]));
     let mut entry = entry();
-    entry.identity.unique_at_capture = false;
+    entry.identity.capture = crate::CaptureVerdict::Ambiguous;
 
     let Err(error) = land(&adapter, &entry) else {
         panic!("an unproven ref is refused");
     };
 
     assert_eq!(error.details.unwrap()["kind"], "identity_not_unique");
+    assert_eq!(adapter.counts(), (0, 0, 0, 0));
+}
+
+/// A capture that could not prove a ref is a stale ref a fresh snapshot can
+/// replace, not a twin: it names its reason, sends nothing, and its recovery
+/// asks for that fresh snapshot.
+fn assert_unproven(error: &AdapterError, reason: &str) {
+    assert_eq!(error.code, ErrorCode::StaleRef, "{error:?}");
+    let details = error.details.as_ref().expect("the refusal names its kind");
+    assert_eq!(details["kind"], "identity_unproven");
+    assert_eq!(details["reason"], reason);
+    assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
+    let payload = ErrorPayload::from_app_error(&AppError::Adapter(error.clone()));
+    let recovery = payload
+        .recovery
+        .expect("retaking the snapshot is the recovery");
+    assert_eq!(recovery.strategy, "refresh_snapshot_then_retry_original");
+    assert!(recovery.requires_fresh_snapshot);
+}
+
+#[test]
+fn a_ref_captured_from_an_incomplete_read_is_stale_not_a_twin() {
+    let _guard = HomeGuard::new();
+    let mut truncated = node("scrollarea", "Feed");
+    truncated.children_count = Some(2);
+    let captured = capture(tree_with(vec![node("button", "Run"), truncated]), "Run");
+    let adapter = RuleAdapter::new(tree_with(vec![node("button", "Run")]));
+
+    let Err(error) = resolve(&adapter, &captured) else {
+        panic!("a ref an incomplete read could not prove is refused");
+    };
+
+    assert_unproven(&error, "capture_incomplete");
+    assert_eq!(adapter.counts(), (0, 0, 0, 0));
+}
+
+#[test]
+fn a_ref_whose_capture_left_a_recorded_field_unread_is_stale_not_a_twin() {
+    let _guard = HomeGuard::new();
+    let captured = capture_observed(
+        tree_with(vec![node("button", "Run"), node("button", "Other")]),
+        |observed| {
+            for observed_node in &mut observed.nodes {
+                if observed_node.evidence.name.known().map(String::as_str) == Some("Other") {
+                    observed_node.evidence.name = LocatorField::Unknown;
+                }
+            }
+        },
+        "Run",
+    );
+    let adapter = RuleAdapter::new(tree_with(vec![node("button", "Run")]));
+
+    let Err(error) = resolve(&adapter, &captured) else {
+        panic!("a ref a sibling's unread name could twin is refused");
+    };
+
+    assert_unproven(&error, "capture_unknown");
     assert_eq!(adapter.counts(), (0, 0, 0, 0));
 }

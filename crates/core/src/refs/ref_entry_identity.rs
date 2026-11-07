@@ -12,8 +12,13 @@ pub struct RefEntryIdentity {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_id: Option<crate::ElementIdentifier>,
-    /// Set when the capture read complete evidence and exactly one observed
-    /// element matched this entry's full identity predicate.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub unique_at_capture: bool,
+    /// What the capture this entry was published from proved about its
+    /// identity. Read from the legacy `unique_at_capture` flag in a refmap
+    /// written before the verdict existed.
+    #[serde(
+        default,
+        alias = "unique_at_capture",
+        skip_serializing_if = "crate::CaptureVerdict::is_ambiguous"
+    )]
+    pub capture: crate::CaptureVerdict,
 }

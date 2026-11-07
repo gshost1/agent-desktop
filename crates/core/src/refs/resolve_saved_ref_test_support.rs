@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
-use crate::locator::live_locator::ObservationRoot;
+use crate::locator::live_locator::{ObservationRoot, ObservedTree};
 use crate::refs::ref_alloc::allocate_refs;
 use crate::refs::ref_alloc_config::RefAllocConfig;
 use crate::refs::ref_alloc_options::RefAllocOptions;
@@ -182,9 +182,21 @@ pub(super) fn resolve(
 }
 
 pub(super) fn capture(root: AccessibilityNode, name: &str) -> RefEntry {
+    capture_observed(root, |_| {}, name)
+}
+
+/// Captures `root` the way a snapshot does, after `edit` changes what the
+/// observation behind the capture proof read.
+pub(super) fn capture_observed(
+    root: AccessibilityNode,
+    edit: impl FnOnce(&mut ObservedTree),
+    name: &str,
+) -> RefEntry {
     let mut refmap = RefMap::new();
-    let observed = crate::adapter::observed_tree(&ObservationRoot::Window(&window()), root.clone())
-        .expect("the fixture observes");
+    let mut observed =
+        crate::adapter::observed_tree(&ObservationRoot::Window(&window()), root.clone())
+            .expect("the fixture observes");
+    edit(&mut observed);
     let proof = crate::refs::ref_capture_proof::CaptureProof::new(&observed);
     let config = RefAllocConfig {
         capture: Some(&proof),
