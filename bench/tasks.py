@@ -197,6 +197,12 @@ class TextEditSave(Task):
     def cleanup(self):
         quit_app("TextEdit")
         shutil.rmtree(self.folder, ignore_errors=True)
+        quarantine = Path(__file__).resolve().parent / "out" / "icloud-strays"
+        for d in self.default_dirs:
+            for n in set(listing(d)) - self.before[d]:
+                if self.stem in n:
+                    quarantine.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(d / n), str(quarantine / n))
 
 
 class CalculatorMultiply(Task):
