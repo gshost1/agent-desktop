@@ -1,0 +1,10 @@
+#!/bin/zsh
+zmodload zsh/datetime
+t0=$EPOCHREALTIME
+out=$("$AD_REAL" "$@")
+rc=$?
+t1=$EPOCHREALTIME
+print -r -- "$out"
+LC_ALL=C n=${#out}
+[[ -n "$AD_LOG" ]] && print -r -- "$t0	$t1	$rc	$n	${(q)@}" >> "$AD_LOG"
+exit $rc
