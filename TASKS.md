@@ -134,6 +134,9 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 Merge own fork PRs when: every CI check on the head SHA is green (dispatch runs count), local gates and reviews are
 done, not a draft, rebased on current `origin/main` and re-tested. `gh pr merge <n> --squash --delete-branch`.
+A PR that touches root `Cargo.toml`: first confirm `gh workflow list --repo gshost1/agent-desktop --all` shows
+Release `disabled_manually` (a push to `main` touching it would cut a fork release); otherwise hold and tell the
+control thread.
 
 ## Incidents
 
