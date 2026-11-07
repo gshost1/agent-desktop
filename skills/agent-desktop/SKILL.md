@@ -44,7 +44,7 @@ agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read
 - `-i` keeps interactive nodes only, so a row's static-text label is dropped. To tell which row a repeated button belongs to, drill that row's container with `--root` and leave out `-i`. On Windows and Linux that reads the row but does not make its button actionable: a button repeated in other rows is a twin in the window and its ref is refused (see Refs).
 - A `--root` drill adds its refs to the same snapshot id. Refs outside the drilled subtree, and the drilled root itself, stay valid; refs that were already inside it are replaced, so an old ref there returns `STALE_REF`.
 - Never skeleton a surface (`--surface menu`, `sheet`, `alert`). A surface is already focused.
-- An action that opens a menu, sheet or alert lists it in `data.surfaces`. Target that overlay next. The report gets at most one second, so in an app with a large tree it can be missing; when you expect a dialog, snapshot `--surface sheet` or `--surface alert`.
+- An action that opens a menu, sheet or alert lists it in `data.surfaces`. Target that overlay next. The report gets at most one second, so in an app with a large tree it can be missing or carry `unclassified`; when you expect a dialog, snapshot `--surface sheet` or `--surface alert`.
 - After an async step, use `wait` (see `commands-system.md`). A fixed sleep is a race.
 
 ## Refs

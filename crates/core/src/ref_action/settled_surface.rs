@@ -22,7 +22,13 @@ pub(crate) fn read(
 ) -> Vec<SurfaceInfo> {
     adapter
         .list_surfaces(process, deadline.capped(SETTLED_SURFACE_BUDGET))
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            tracing::debug!(
+                code = error.code.as_str(),
+                "surface report after the action was dropped"
+            );
+            Vec::new()
+        })
 }
 
 #[cfg(test)]
