@@ -27,21 +27,37 @@ pub(crate) fn activate(process: ProcessIdentity, deadline: Deadline) -> Result<(
     if current == Some(true) {
         return Ok(());
     }
-    enable_attribute(&application, attribute, deadline)
+    let chromium = crate::system::renderer_kind::detect_chromium(identity.pid()).is_some();
+    enable_attribute(
+        &application,
+        attribute,
+        settle_delay(attribute, chromium),
+        deadline,
+    )
+}
+
+/// How long to wait after switching accessibility on before the first read.
+/// A Chromium renderer builds its tree asynchronously after
+/// `AXEnhancedUserInterface` and can answer early with a partial tree, so it
+/// gets a fixed settle delay. Every Cocoa app exposes that attribute too; a
+/// native app answers with an empty tree until it is ready, and the caller
+/// polls it with backoff, so it does not pay the fixed delay.
+fn settle_delay(attribute: &str, chromium: bool) -> Duration {
+    if attribute == renderer_probe::ENHANCED && chromium {
+        ENHANCED_ACTIVATION_DELAY
+    } else {
+        Duration::ZERO
+    }
 }
 
 fn enable_attribute(
     application: &crate::tree::AXElement,
     attribute_name: &str,
+    settle_delay: Duration,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
     use core_foundation::{base::TCFType, boolean::CFBoolean, string::CFString};
 
-    let settle_delay = if attribute_name == renderer_probe::ENHANCED {
-        ENHANCED_ACTIVATION_DELAY
-    } else {
-        Duration::ZERO
-    };
     if deadline.remaining() <= settle_delay {
         return Err(not_delivered(deadline.timeout_error()));
     }
@@ -119,6 +135,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_a_chromium_renderer_pays_the_enhanced_settle_delay() {
+        assert_eq!(
+            settle_delay(renderer_probe::ENHANCED, true),
+            ENHANCED_ACTIVATION_DELAY
+        );
+        assert_eq!(
+            settle_delay(renderer_probe::ENHANCED, false),
+            Duration::ZERO
+        );
+        assert_eq!(settle_delay(renderer_probe::MANUAL, true), Duration::ZERO);
+        assert_eq!(settle_delay(renderer_probe::MANUAL, false), Duration::ZERO);
+    }
+
+    #[test]
     fn observed_activation_overrides_a_setters_not_implemented_response() {
         let application = crate::tree::AXElement(std::ptr::null_mut());
         assert!(
@@ -145,7 +175,13 @@ mod tests {
     fn enhanced_activation_with_insufficient_budget_never_touches_native_handle() {
         let application = crate::tree::AXElement(std::ptr::null_mut());
         let deadline = Deadline::after(1_000).unwrap();
-        let error = enable_attribute(&application, renderer_probe::ENHANCED, deadline).unwrap_err();
+        let error = enable_attribute(
+            &application,
+            renderer_probe::ENHANCED,
+            ENHANCED_ACTIVATION_DELAY,
+            deadline,
+        )
+        .unwrap_err();
         assert_eq!(error.code, ErrorCode::Timeout);
         assert_eq!(error.disposition, DeliverySemantics::not_delivered());
     }
