@@ -28,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from tasks import TASKS, verify  # noqa: E402
 from lock import release_lock, take_lock  # noqa: E402
+from strays import collect_strays  # noqa: E402
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
@@ -161,6 +162,7 @@ def run_one(args, task, channel, run_idx, out):
            "--output-format", "stream-json", "--verbose", "--no-session-persistence"]
     front_before = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True).stdout.strip()
     t0 = time.time()
+    since = t0 - 1
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout, cwd=str(work), env=env)
         stdout, timed_out = p.stdout, False
@@ -175,6 +177,9 @@ def run_one(args, task, channel, run_idx, out):
     answer = final.get("result", "") or ""
     state = http_json(f"{args.base}/__state")
     ok, why = verify(task, ctx, answer, state)
+    strays = collect_strays(since, work, out / "strays" / run_id)
+    if strays:
+        ok, why = False, f"stray saves moved: {strays}; " + why
     stop_chrome(chrome)
     kill_apps(task.get("kill", []))
     if channel in ("cdp", "hybrid"):
@@ -185,7 +190,7 @@ def run_one(args, task, channel, run_idx, out):
            "input_tokens": u.get("input_tokens"), "output_tokens": u.get("output_tokens"),
            "cache_read": u.get("cache_read_input_tokens"), "cache_creation": u.get("cache_creation_input_tokens"),
            "total_input": sum(u.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")),
-           "cost_usd_list": final.get("total_cost_usd"), "front_before": front_before, **s}
+           "cost_usd_list": final.get("total_cost_usd"), "front_before": front_before, "strays": strays, **s}
     with open(out / "runs.jsonl", "a") as f:
         f.write(json.dumps(row) + "\n")
     print(json.dumps({k: row[k] for k in ("task", "channel", "run", "ok", "why", "wall_s", "num_turns", "total_input", "output_tokens", "snapshot_tokens_est")}), flush=True)
