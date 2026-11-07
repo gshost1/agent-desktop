@@ -20,6 +20,7 @@ pub(crate) struct DebugCapture {
     before: Option<Value>,
     window: Option<WindowInfo>,
     strip_bounds: bool,
+    outline: bool,
     mode: &'static str,
 }
 
@@ -34,6 +35,7 @@ impl DebugCapture {
         let Some(path) = options.screenshot.as_ref() else {
             return Ok(None);
         };
+        let mut outline = false;
         let (before, window, strip_bounds, mode) = match command {
             Commands::Click(args) => {
                 let (window, before) = capture::click_before(args, adapter, context)?;
@@ -42,6 +44,7 @@ impl DebugCapture {
             Commands::Snapshot(args) => {
                 let strip = !args.tree.include_bounds;
                 args.tree.include_bounds = true;
+                outline = std::mem::take(&mut args.outline);
                 let mode = if args.root.is_some() {
                     "drill-down"
                 } else if args.tree.skeleton {
@@ -69,6 +72,7 @@ impl DebugCapture {
             before,
             window,
             strip_bounds,
+            outline,
             mode,
         }))
     }
@@ -144,6 +148,9 @@ impl DebugCapture {
                 && let Some(tree) = data.get_mut("tree")
             {
                 strip_bounds(tree);
+            }
+            if self.outline {
+                agent_desktop_core::snapshot::outline::replace_tree_with_outline(data);
             }
             data["debug"] = metadata;
         } else {

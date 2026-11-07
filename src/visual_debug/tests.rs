@@ -180,3 +180,34 @@ fn visual_debug_command_failure_preserves_error_disposition() {
     assert_eq!(result.unwrap_err().code(), "ACTION_FAILED");
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn visual_debug_reads_the_tree_and_then_returns_an_outline_without_forced_bounds() {
+    let path = output_path();
+    let options = DebugOptions {
+        verbose: false,
+        debug: true,
+        screenshot: Some(path.clone()),
+    };
+    let mut cmd = command(&["snapshot", "-i", "--outline"]);
+    let adapter = crate::test_noop_ops::NoopAdapter;
+    let capture = DebugCapture::prepare(&mut cmd, &options, &adapter, &CommandContext::default())
+        .unwrap()
+        .unwrap();
+    let Commands::Snapshot(args) = &cmd else {
+        panic!("snapshot command");
+    };
+    assert!(
+        !args.outline,
+        "the snapshot must keep its tree for the capture"
+    );
+    let mut result = Ok(
+        json!({"snapshot_id": "s1", "tree": {"role": "window", "bounds": {"x": 1},
+        "children": [{"role": "button", "name": "OK", "ref_id": "@s1:e1", "bounds": {"x": 2}}]}}),
+    );
+    capture.finish(&mut result, &adapter, &CommandContext::default());
+    let data = result.unwrap();
+    assert!(data.get("tree").is_none());
+    assert_eq!(data["outline"], "window\n  button \"OK\" [e1]\n");
+    std::fs::remove_file(path).unwrap();
+}

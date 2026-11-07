@@ -164,14 +164,15 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 
 ## Outline snapshots
 
-`snapshot --outline` (batch: `"outline": true`) replaces `data.tree` with `data.outline`, a string with one line per node and two spaces of indent per level. Every other snapshot field (`snapshot_id`, `ref_count`, `complete`, `truncated`, `nodes_observed`, `window`) is unchanged. A line is `role "name" [eN] = "value" desc="..." placeholder="..." hint="..." #native_id {states} (actions) @x,y WxH +N`, with absent parts left out:
+`snapshot --outline` (batch: `"outline": true`) replaces `data.tree` with `data.outline`, a string with one line per node and two spaces of indent per level. Every other field the snapshot returns, such as `snapshot_id`, `ref_count`, `complete`, `truncated`, `nodes_observed`, `window`, `identity_unproven`, `elapsed_ms` and `matched_selector`, is unchanged. A line is `role/subrole "name" [eN] = "value" desc="..." placeholder="..." hint="..." roledesc="..." #native_id .class.class {states} (actions) @x,y WxH +N`, with absent parts left out:
 
 - `[eN]` is the ref's local part. Commands take it qualified with `data.snapshot_id`: `@<snapshot_id>:eN`.
-- Names and values are JSON string literals.
-- `(actions)` omits `Click` on a ref, `RightClick`, `ScrollTo` and `SetFocus`, which nearly every node advertises, and `Scroll` on a node whose ancestor already scrolls.
+- Names, values and the quoted attributes are JSON string literals. A native id made only of letters, digits, `_`, `.`, `:` and `-` prints bare; any other id is a JSON string literal.
+- `(actions)` omits `RightClick`, `ScrollTo` and `SetFocus`, which nearly every node advertises, and `Click` on a node with a ref. `Scroll` is omitted on a childless node inside a scrolling ancestor, where macOS repeats it; a container that scrolls on its own keeps it.
 - `@x,y WxH` appears only with `--include-bounds`, rounded to whole points.
 - `+N` is a skeleton container's `children_count`; `+…` marks `subtree_truncated`.
-- A ref-less, unnamed, stateless `group` with one child is skipped and its child printed at its level. No ref is dropped.
+- A `group` with no ref, a blank name, value and description, no states and only the omitted actions, and exactly one child, is skipped and its child printed at its level. No ref is dropped.
+- With `--debug --screenshot`, the capture reads the JSON tree and the outline replaces it afterwards.
 
 ## Find result shape
 
