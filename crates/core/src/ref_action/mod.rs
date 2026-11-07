@@ -171,18 +171,18 @@ pub(crate) fn dispatch_resolved_landing(
     Ok((result, handle))
 }
 
-/// An action that opens a sheet, menu, or alert leaves the caller staring at a
-/// success envelope with no hint that the application is now waiting on a
-/// dialog. Reporting the overlays saves a round of window archaeology. Purely
-/// informational, so a failed read never disturbs delivered work.
+/// The sheets, menus and alerts an action left open; a failed read never
+/// disturbs delivered work, and a listed web page is content, not an overlay.
 fn settled_surfaces(
     target: &ResolvedRefAction<'_>,
     process: crate::ProcessIdentity,
 ) -> Vec<crate::SurfaceInfo> {
-    target
+    let mut surfaces = target
         .adapter
         .list_surfaces(process, target.deadline)
-        .unwrap_or_default()
+        .unwrap_or_default();
+    surfaces.retain(|surface| surface.kind != crate::SnapshotSurface::Web.as_str());
+    surfaces
 }
 
 pub(crate) fn mark_pre_dispatch_resolution_failure(error: AdapterError) -> AdapterError {
