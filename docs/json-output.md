@@ -4,7 +4,7 @@ Every command returns structured JSON:
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "click",
   "data": {
@@ -18,7 +18,7 @@ Errors include machine-readable codes and recovery hints:
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": false,
   "command": "click",
   "error": {
@@ -114,7 +114,7 @@ Each of these commands now returns the adapter's own report inside `data`:
 
 Version 2.6 changes which refs resolve on Windows and Linux, and on macOS for an element that yields no address. Such a ref resolves only when one complete read of its window proved it unique when it was captured and exactly one live element matches its role and stable fields now. The only new payload fields are `data.identity_unproven` and, on a ref action whose budget ran out after a refusal, `error.details.refusal`.
 
-- A ref to one of two identical controls, which earlier resolved by position or geometry, now fails `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"` before anything is read. So does a ref captured from a window that could not be read whole within the snapshot timeout.
+- A ref to one of two identical controls, which earlier resolved by position or geometry, now fails `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"` before anything is read. So does a ref captured from a window that could not be read whole within the snapshot timeout. Version 2.7 moves that second case to `STALE_REF`; see the version 2.7 migration.
 - A refmap written before 2.6 records no capture proof, so all of its refs on these platforms fail the same way. Take a new snapshot.
 - An identical twin that appears after capture fails `AMBIGUOUS_TARGET` with `details.kind: "saved_ref_ambiguous"`.
 - All of these carry `details.retryable: false` and a `not_delivered` disposition. `disposition.retry` stays `safe` because nothing was sent, but repeating the same ref returns the same refusal.
@@ -161,6 +161,16 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 | `observation_failed` | A terminal read error stopped observation; inspect `last_observation_error`. |
 | `timed_out` | The wait budget expired without observing the expected state, including when transient read errors persisted through the last poll. `last_observation_error` may hold the last error. |
 | `identity_unavailable` | The ref has no usable process generation, so observation was skipped. |
+
+## Version 2.7 migration
+
+Version 2.7 changes the error code of one ref refusal on Windows and Linux, and on macOS for an element that yields no address. A refmap now records why its capture could not prove a ref, so a ref the capture could not count no longer reads as an identical twin.
+
+- A ref from a snapshot that could not read its window whole (the snapshot reported `data.identity_unproven`) failed `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"` in 2.6. It now fails `STALE_REF` with `details.kind: "identity_unproven"` and `details.reason: "capture_incomplete"`. The 2.6 bullet that put this case under `identity_not_unique` is superseded.
+- A ref whose capture read the whole window, but where an element left a field the ref records unread (so the count could not exclude a twin), also failed `identity_not_unique`. It now fails `STALE_REF` with `details.kind: "identity_unproven"` and `details.reason: "capture_unknown"`.
+- `identity_unproven` carries no `details.retryable`, so the error carries `recovery` with `strategy: "refresh_snapshot_then_retry_original"` and `requires_fresh_snapshot: true`. Repeating the same ref returns the same refusal; retake the snapshot, with a larger `--timeout-ms` for a large window. The disposition stays `not_delivered` with `retry: "safe"`, because nothing is sent.
+- `AMBIGUOUS_TARGET` with `identity_not_unique` now means the capture counted two or more matching elements. A refmap written before 2.7 cannot tell its unproven refs apart, so they keep failing `identity_not_unique`; take a new snapshot.
+- Refmaps written before 2.7 still load. The refmap entry field `unique_at_capture` is replaced by `capture` (`"unique"`, `"incomplete"` or `"unknown"`, omitted for ambiguous); a 2.6 binary reading a 2.7 refmap ignores `capture` and refuses every tokenless ref from it, so take a new snapshot with the binary you act with.
 
 ## Find result shape
 
