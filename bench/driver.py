@@ -28,10 +28,18 @@ from tasks import TASKS, audit_command, reset_desktop  # noqa: E402
 
 REAL_BIN = REPO / "target" / "release" / "agent-desktop"
 SKILL = REPO / "skills" / "agent-desktop" / "SKILL.md"
-CONFIGS = {"a": None, "b": "b-lean.md", "c": "c-batch.md", "d": "d-no-resnapshot.md", "e": "e-combined.md"}
+CONFIGS = {"a": None, "b": "b-lean.md", "c": "c-batch.md", "d": "d-no-resnapshot.md", "e": "e-combined.md",
+           "m": None, "mx": None, "x": None}
+MCP_CONFIGS = {"m", "mx"}
+NO_SKILL = {"mx", "x"}
 LOCK = Path.home() / ".agent-desktop" / "bench.lock"
 RUN_TIMEOUT_S = 900
 
+MCP_RULES = (
+    "You operate this Mac's GUI through the agent-desktop MCP tools, with accessibility granted. "
+    "Screen Recording is off, so screenshots fail. When the task is complete, reply with the final "
+    "answer only.\n\nTask: "
+)
 RULES = (
     "You operate this Mac's GUI through the `agent-desktop` CLI, which is on PATH with accessibility "
     "granted. Use Bash only to run agent-desktop; piping its output through jq, grep or head is fine. "
@@ -42,6 +50,8 @@ RULES = (
 
 
 def system_prompt(config):
+    if config in NO_SKILL:
+        return "The agent-desktop CLI is installed. Run `agent-desktop --help` to learn it."
     text = SKILL.read_text()
     if CONFIGS[config]:
         text += "\n" + (ROOT / "configs" / CONFIGS[config]).read_text()
@@ -77,10 +87,20 @@ def run_once(task_key, config, model, effort):
         "AGENT_DESKTOP_HOME": str(home),
     })
     env.pop("AGENT_DESKTOP_SESSION", None)
-    cmd = ["claude", "-p", RULES + task.prompt(), "--output-format", "stream-json", "--verbose",
-           "--setting-sources", "project", "--strict-mcp-config", "--tools", "Bash",
-           "--permission-mode", "bypassPermissions", "--model", model, "--no-session-persistence",
-           "--append-system-prompt", system_prompt(config)]
+    if config in MCP_CONFIGS:
+        mcp = rdir / "mcp.json"
+        mcp.write_text(json.dumps({"mcpServers": {"agent-desktop": {"command": str(REAL_BIN), "args": ["mcp"],
+                                                                    "env": {"AGENT_DESKTOP_HOME": str(home)}}}}))
+        cmd = ["claude", "-p", MCP_RULES + task.prompt(), "--output-format", "stream-json", "--verbose",
+               "--setting-sources", "project", "--strict-mcp-config", "--mcp-config", str(mcp), "--tools", "",
+               "--permission-mode", "bypassPermissions", "--model", model, "--no-session-persistence"]
+        if config == "m":
+            cmd += ["--append-system-prompt", SKILL.read_text()]
+    else:
+        cmd = ["claude", "-p", RULES + task.prompt(), "--output-format", "stream-json", "--verbose",
+               "--setting-sources", "project", "--strict-mcp-config", "--tools", "Bash",
+               "--permission-mode", "bypassPermissions", "--model", model, "--no-session-persistence",
+               "--append-system-prompt", system_prompt(config)]
     if effort:
         cmd += ["--effort", effort]
     t0 = time.time()
@@ -143,7 +163,10 @@ def summarize(events, rdir, wall):
             last_call_t[mid] = ev["_t"]
             for block in msg.get("content", []):
                 if block.get("type") == "tool_use":
-                    tool_uses[block["id"]] = {"call": mid, "cmd": block["input"].get("command", ""), "t": ev["_t"]}
+                    name = block.get("name", "")
+                    cmd = block["input"].get("command", "") if name == "Bash" else \
+                        "agent-desktop " + name.split("__")[-1] + " " + json.dumps(block["input"])
+                    tool_uses[block["id"]] = {"call": mid, "cmd": cmd, "t": ev["_t"]}
         elif ev.get("type") == "user":
             for block in ev.get("message", {}).get("content", []) or []:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
@@ -177,6 +200,7 @@ def summarize(events, rdir, wall):
             if len(parts) >= 5:
                 cli.append({"s": float(parts[1]) - float(parts[0]), "rc": int(parts[2]), "bytes": int(parts[3]), "args": parts[4][:200]})
     u = result.get("usage", {})
+    tool_s = round(sum(t["tool_s"] for s in steps for t in s["tools"]), 3)
     return {
         "answer": result.get("result", ""),
         "wall_s": round(wall, 2),
@@ -190,9 +214,9 @@ def summarize(events, rdir, wall):
         "result_usage": u,
         "cost_usd_list": result.get("total_cost_usd"),
         "cli_calls": len(cli),
-        "cli_s": round(sum(c["s"] for c in cli), 3),
+        "cli_s": round(sum(c["s"] for c in cli), 3) if cli else tool_s,
         "cli_bytes": sum(c["bytes"] for c in cli),
-        "tool_s": round(sum(t["tool_s"] for s in steps for t in s["tools"]), 3),
+        "tool_s": tool_s,
         "bash_calls": sum(len(s["tools"]) for s in steps),
         "steps": steps,
         "cli": cli,

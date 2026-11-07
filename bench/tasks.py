@@ -190,7 +190,57 @@ class CalculatorMultiply(Task):
         return ok, f"display {display!r}"
 
 
-TASKS = {t.key: t for t in [WeatherCard, SettingsAbout, FinderFolder, TextEditSave, CalculatorMultiply]}
+CHROME_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Invoice {inv}</title></head>
+<body><header><nav><a href="#">Home</a> <a href="#">Orders</a> <a href="#">Support</a></nav></header>
+<main><h1>Invoice {inv}</h1><table><thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead><tbody>
+{rows}</tbody></table><p>Shipping: $7.50</p><p><strong>Order total:</strong> <span id="total">${total}</span></p>
+<button>Pay now</button> <button>Download PDF</button></main></body></html>"""
+
+
+class ChromeRead(Task):
+    """Read a value from a page already open in a real Chrome (throwaway profile)."""
+    key = "chrome"
+    app = "Google Chrome"
+
+    def setup(self):
+        import random
+        if subprocess.run(["pgrep", "-x", "Google Chrome"], capture_output=True).returncode == 0:
+            raise RuntimeError("Google Chrome is already running; refusing to touch a user browser")
+        rnd = random.Random(self.run_id)
+        self.total = f"{rnd.randint(100, 9999)}.{rnd.randint(10, 99)}"
+        rows = "".join(f"<tr><td>Item {i}</td><td>{rnd.randint(1, 5)}</td><td>${rnd.randint(5, 300)}.00</td></tr>\n"
+                       for i in range(12))
+        self.dir = BENCH_DIR / f"chrome-{self.run_id}"
+        self.dir.mkdir(parents=True, exist_ok=True)
+        page = self.dir / "invoice.html"
+        page.write_text(CHROME_PAGE.format(inv=self.run_id[-6:], rows=rows, total=self.total))
+        self.profile = self.dir / "profile"
+        subprocess.run(["open", "-na", "Google Chrome", "--args", f"--user-data-dir={self.profile}",
+                        "--no-first-run", "--no-default-browser-check", page.as_uri()])
+        import time
+        for _ in range(40):
+            out = sh(self.real_bin, "list-windows", "--app", "Google Chrome")
+            if "Invoice" in out:
+                break
+            time.sleep(0.5)
+        time.sleep(1)
+
+    def prompt(self):
+        return ("Google Chrome has a page open that shows an invoice. Read the order total from that page. "
+                "Reply with the amount only.")
+
+    def verify(self, answer):
+        ok = self.total in answer.replace(",", "")
+        return ok, f"expected {self.total}"
+
+    def cleanup(self):
+        subprocess.run(["pkill", "-f", f"user-data-dir={self.profile}"], capture_output=True)
+        import time
+        time.sleep(2)
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+
+TASKS = {t.key: t for t in [WeatherCard, SettingsAbout, FinderFolder, TextEditSave, CalculatorMultiply, ChromeRead]}
 
 FORBIDDEN = {"open", "osascript", "mkdir", "touch", "cp", "mv", "defaults", "sw_vers", "sysctl",
              "system_profiler", "textutil", "screencapture", "shortcuts", "bc", "python", "python3",
