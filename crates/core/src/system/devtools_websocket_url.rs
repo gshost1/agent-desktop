@@ -1,19 +1,19 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use agent_desktop_core::{AdapterError, ErrorCode};
+use crate::{AdapterError, DeliverySemantics, ErrorCode};
 
 /// A `ws://` URL whose host is a loopback address. Parsing refuses every
 /// other host, `wss://` (the transport carries no TLS), credentials in the
 /// authority, and a missing path, so a connection can only ever reach a
 /// DevTools server on this machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WebSocketUrl {
+pub struct DevtoolsWebSocketUrl {
     host: String,
     port: u16,
     path: String,
 }
 
-impl WebSocketUrl {
+impl DevtoolsWebSocketUrl {
     pub fn parse(value: &str) -> Result<Self, AdapterError> {
         let rest = value
             .strip_prefix("ws://")
@@ -80,9 +80,9 @@ fn refused(value: &str, reason: &str) -> AdapterError {
     )
     .with_suggestion("Connect only to a DevTools endpoint on 127.0.0.1, localhost or [::1]")
     .with_details(serde_json::json!({ "kind": "cdp_url_refused", "url": value }))
-    .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
+    .with_disposition(DeliverySemantics::not_delivered())
 }
 
 #[cfg(test)]
-#[path = "websocket_url_tests.rs"]
+#[path = "devtools_websocket_url_tests.rs"]
 mod tests;

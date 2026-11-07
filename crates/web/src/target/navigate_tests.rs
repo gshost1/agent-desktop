@@ -96,15 +96,80 @@ fn a_loaded_document_needs_no_wait() {
     wait_for_load(&mut connection, &session(), Deadline::after(500).unwrap()).unwrap();
 }
 
-#[test]
-fn a_loading_document_waits_for_its_load_event() {
-    let transport = enabled()
+fn lifecycle_load(loader_id: &str) -> serde_json::Value {
+    json!({ "method": "Page.lifecycleEvent", "sessionId": "S",
+        "params": { "name": "load", "frameId": "F", "loaderId": loader_id } })
+}
+
+fn stale_loads() -> Vec<serde_json::Value> {
+    vec![
+        json!({ "method": "Page.loadEventFired", "sessionId": "S", "params": {} }),
+        lifecycle_load("L1"),
+    ]
+}
+
+fn loading(
+    transport: ScriptedTransport,
+    frame_events: Vec<serde_json::Value>,
+) -> ScriptedTransport {
+    transport
         .expect(
             "Runtime.evaluate",
             json!({ "result": { "type": "string", "value": "loading" } }),
         )
-        .push_inbound(json!({ "method": "Page.loadEventFired", "sessionId": "S", "params": {} }));
+        .expect_with_events(
+            "Page.getFrameTree",
+            frame_events,
+            json!({ "result": { "frameTree": { "frame": { "id": "F", "loaderId": "L2" } } } }),
+        )
+}
+
+#[test]
+fn a_loading_document_waits_for_its_own_load_event() {
+    let mut events = stale_loads();
+    events.push(lifecycle_load("L2"));
+    let transport = loading(enabled(), events);
     let mut connection = CdpConnection::new(transport.boxed());
 
     wait_for_load(&mut connection, &session(), Deadline::after(500).unwrap()).unwrap();
+}
+
+#[test]
+fn buffered_loads_of_an_earlier_document_do_not_end_the_wait() {
+    let mut transport = ScriptedTransport::new();
+    for event in stale_loads() {
+        transport = transport.push_inbound(event);
+    }
+    let transport = loading(
+        transport
+            .expect("Page.enable", json!({}))
+            .expect("Page.setLifecycleEventsEnabled", json!({})),
+        Vec::new(),
+    );
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let error =
+        wait_for_load(&mut connection, &session(), Deadline::after(50).unwrap()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::Timeout);
+}
+
+#[test]
+fn a_late_load_of_the_previous_document_does_not_end_a_navigation() {
+    let transport = enabled().expect_with_events(
+        "Page.navigate",
+        stale_loads(),
+        json!({ "result": { "frameId": "F", "loaderId": "L2" } }),
+    );
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let error = navigate(
+        &mut connection,
+        &session(),
+        "https://a.test/",
+        Deadline::after(50).unwrap(),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::Timeout);
 }

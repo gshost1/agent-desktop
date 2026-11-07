@@ -16,6 +16,7 @@ fn build(raw: Value, dom_ids: &HashMap<i64, String>) -> Vec<WebNode> {
     let context = FrameContext {
         target_id: "T1",
         frame_id: "F1",
+        loader_id: "L1",
         dom_ids,
     };
     build_frame(nodes(raw), &context)
@@ -84,6 +85,8 @@ fn interactive_nodes_carry_their_element_token_and_origin() {
         ElementToken::parse(token).unwrap(),
         ElementToken {
             target_id: "T1".into(),
+            frame_id: "F1".into(),
+            loader_id: "L1".into(),
             backend_node_id: 4
         }
     );

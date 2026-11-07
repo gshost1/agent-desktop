@@ -10,7 +10,7 @@ use tungstenite::{Error as WsError, Message, WebSocket};
 
 use super::cdp_transport::CdpTransport;
 use super::transport_error::{transport_closed, transport_failed, transport_timeout};
-use super::websocket_url::WebSocketUrl;
+use crate::WebSocketUrl;
 use crate::discovery::connect_error::handshake_rejected;
 
 const MAX_MESSAGE_BYTES: usize = 256 * 1024 * 1024;

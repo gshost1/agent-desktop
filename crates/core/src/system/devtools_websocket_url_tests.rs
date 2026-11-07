@@ -1,5 +1,5 @@
-use super::WebSocketUrl;
-use agent_desktop_core::ErrorCode;
+use super::DevtoolsWebSocketUrl;
+use crate::ErrorCode;
 
 #[test]
 fn accepts_each_loopback_host() {
@@ -8,7 +8,7 @@ fn accepts_each_loopback_host() {
         "ws://localhost:9222/devtools/browser/abc",
         "ws://[::1]:9222/devtools/browser/abc",
     ] {
-        let parsed = WebSocketUrl::parse(url).unwrap();
+        let parsed = DevtoolsWebSocketUrl::parse(url).unwrap();
         assert_eq!(parsed.port(), 9222);
         assert_eq!(parsed.path(), "/devtools/browser/abc");
         assert_eq!(parsed.as_url(), url);
@@ -31,13 +31,13 @@ fn refuses_remote_hosts_tls_credentials_and_bad_ports() {
         "ws://127.0.0.1:9222",
         "ws://127.0.0.1:9222/",
     ] {
-        let error = WebSocketUrl::parse(url).unwrap_err();
+        let error = DevtoolsWebSocketUrl::parse(url).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidArgs, "{url}");
     }
 }
 
 #[test]
 fn loopback_builds_a_rooted_path() {
-    let url = WebSocketUrl::loopback(4100, "devtools/browser/x").unwrap();
+    let url = DevtoolsWebSocketUrl::loopback(4100, "devtools/browser/x").unwrap();
     assert_eq!(url.as_url(), "ws://127.0.0.1:4100/devtools/browser/x");
 }

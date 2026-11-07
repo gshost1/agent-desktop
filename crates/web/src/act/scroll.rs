@@ -1,26 +1,20 @@
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, Point};
 use serde_json::{Value, json};
 
-use super::remote_element::stale;
-use crate::cdp::protocol_error::is_protocol_error;
-use crate::{CdpConnection, PageSession};
+use super::element_errors::node_error;
+use super::remote_element::prove_document;
+use crate::cdp::protocol_error::{is_node_gone, is_protocol_error};
+use crate::{CdpConnection, ElementToken, PageSession};
 
 /// Scrolls the node into the viewport if it is not already visible.
 pub fn scroll_into_view(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    connection
-        .call(
-            "DOM.scrollIntoViewIfNeeded",
-            json!({ "backendNodeId": backend_node_id }),
-            Some(&session.session_id),
-            deadline,
-        )
-        .map(|_| ())
-        .map_err(|error| not_rendered(error, session, backend_node_id))
+    prove_document(connection, session, token, deadline)?;
+    scroll_node(connection, session, token, deadline)
 }
 
 /// The centre of the node's border box in CSS pixels of the main frame's
@@ -28,19 +22,46 @@ pub fn scroll_into_view(
 pub fn box_center(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
+    deadline: Deadline,
+) -> Result<Point, AdapterError> {
+    prove_document(connection, session, token, deadline)?;
+    node_center(connection, session, token, deadline)
+}
+
+pub(crate) fn scroll_node(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    token: &ElementToken,
+    deadline: Deadline,
+) -> Result<(), AdapterError> {
+    connection
+        .call(
+            "DOM.scrollIntoViewIfNeeded",
+            json!({ "backendNodeId": token.backend_node_id }),
+            Some(&session.session_id),
+            deadline,
+        )
+        .map(|_| ())
+        .map_err(|error| not_rendered(error, token))
+}
+
+pub(crate) fn node_center(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    token: &ElementToken,
     deadline: Deadline,
 ) -> Result<Point, AdapterError> {
     let reply = connection
         .call(
             "DOM.getBoxModel",
-            json!({ "backendNodeId": backend_node_id }),
+            json!({ "backendNodeId": token.backend_node_id }),
             Some(&session.session_id),
             deadline,
         )
-        .map_err(|error| not_rendered(error, session, backend_node_id))?;
+        .map_err(|error| not_rendered(error, token))?;
     quad_center(reply.pointer("/model/border"))
-        .ok_or_else(|| not_rendered_error(backend_node_id, "the node has an empty box"))
+        .ok_or_else(|| not_rendered_error(token.backend_node_id, "the node has an empty box"))
 }
 
 pub(crate) fn quad_center(quad: Option<&Value>) -> Option<Point> {
@@ -63,15 +84,12 @@ pub(crate) fn quad_center(quad: Option<&Value>) -> Option<Point> {
     })
 }
 
-fn not_rendered(error: AdapterError, session: &PageSession, backend: i64) -> AdapterError {
-    if !is_protocol_error(&error) {
-        return error;
+fn not_rendered(error: AdapterError, token: &ElementToken) -> AdapterError {
+    if is_node_gone(&error) || !is_protocol_error(&error) {
+        return node_error(error, token);
     }
     let detail = error.platform_detail.clone().unwrap_or_default();
-    if detail.contains("No node") || detail.contains("not found") {
-        return stale(session, backend, &detail);
-    }
-    not_rendered_error(backend, &detail)
+    not_rendered_error(token.backend_node_id, &detail)
 }
 
 fn not_rendered_error(backend: i64, detail: &str) -> AdapterError {

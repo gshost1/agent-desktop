@@ -1,68 +1,35 @@
-use std::collections::HashMap;
+use std::collections::VecDeque;
 
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
-use serde_json::{Value, json};
+use serde_json::json;
 
-use super::cdp_ax_node::CdpAxNode;
-use super::dom_ids::read_dom_ids;
+use super::child_target::ChildTarget;
+use super::child_targets::{attach_child_targets, stop_child_targets};
 use super::flatten::flatten;
-use super::frame_build::build_frame;
-use super::frame_context::FrameContext;
 use super::frame_graft::{FrameNodes, graft_frames};
-use super::frame_tree::list_frames;
-use crate::cdp::protocol_error::is_protocol_error;
-use crate::transport::transport_error::transport_failed;
+use super::target_read::{frame_owner, read_target};
+use crate::cdp::protocol_error::{is_protocol_error, is_target_gone};
 use crate::{CdpConnection, PageSession, WebSnapshot};
 
-/// Reads the full accessibility tree of every frame in the page, grafts
+/// Reads the full accessibility tree of every frame in the page, including
+/// out-of-process iframes, which are attached as their own targets, grafts
 /// each child frame beneath its owner element, and returns it in core form.
+/// Frames that cannot be read, and frames lost because an ancestor frame
+/// could not be read, are listed in `unreadable_frames`.
 pub fn snapshot_page(
     connection: &mut CdpConnection,
     session: &PageSession,
     deadline: Deadline,
 ) -> Result<WebSnapshot, AdapterError> {
-    let session_id = session.session_id.as_str();
-    let frames = list_frames(connection, session, deadline)?;
-    let dom_ids = match read_dom_ids(connection, session, deadline) {
-        Ok(ids) => ids,
-        Err(error) if is_protocol_error(&error) => HashMap::new(),
-        Err(error) => return Err(error),
-    };
-    let mut built = Vec::with_capacity(frames.len());
-    let mut unreadable_frames = Vec::new();
-    for (frame_id, parent_id) in frames {
-        let reply = connection.call(
-            "Accessibility.getFullAXTree",
-            json!({ "frameId": frame_id }),
-            Some(session_id),
-            deadline,
-        );
-        let nodes = match reply {
-            Ok(reply) => parse_nodes(reply)?,
-            Err(error) if parent_id.is_some() && is_protocol_error(&error) => {
-                unreadable_frames.push(frame_id);
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        let owner_backend_node_id = match parent_id {
-            Some(_) => frame_owner(connection, session_id, &frame_id, deadline)?,
-            None => None,
-        };
-        let context = FrameContext {
-            target_id: &session.target_id,
-            frame_id: &frame_id,
-            dom_ids: &dom_ids,
-        };
-        let nodes = build_frame(nodes, &context);
-        built.push(FrameNodes {
-            frame_id,
-            parent_id,
-            owner_backend_node_id,
-            nodes,
-        });
+    let mut auto_attached = Vec::new();
+    let read = read_page(connection, session, deadline, &mut auto_attached);
+    for parent in auto_attached.iter().rev() {
+        stop_child_targets(connection, parent, deadline);
     }
-    let mut roots = graft_frames(built).into_iter();
+    let (frames, mut unreadable_frames) = read?;
+    let (roots, dropped) = graft_frames(frames);
+    unreadable_frames.extend(dropped);
+    let mut roots = roots.into_iter();
     let (Some(root), None) = (roots.next(), roots.next()) else {
         return Err(no_tree(&session.target_id));
     };
@@ -75,28 +42,53 @@ pub fn snapshot_page(
     })
 }
 
-fn parse_nodes(mut reply: Value) -> Result<Vec<CdpAxNode>, AdapterError> {
-    let nodes = reply.get_mut("nodes").map_or(Value::Null, Value::take);
-    serde_json::from_value(nodes)
-        .map_err(|error| transport_failed("Accessibility.getFullAXTree", error.to_string()))
+fn read_page(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    deadline: Deadline,
+    auto_attached: &mut Vec<PageSession>,
+) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
+    let (mut frames, mut unreadable) = read_target(connection, session, deadline)?;
+    let mut parents = VecDeque::from([session.clone()]);
+    while let Some(parent) = parents.pop_front() {
+        let children = match attach_child_targets(connection, &parent, deadline) {
+            Ok(children) => children,
+            Err(error) if parent != *session && is_target_gone(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        auto_attached.push(parent.clone());
+        for child in children {
+            match read_child(connection, &parent, &child, deadline) {
+                Ok((child_frames, child_unreadable)) => {
+                    frames.extend(child_frames);
+                    unreadable.extend(child_unreadable);
+                }
+                Err(error) if is_protocol_error(&error) || is_target_gone(&error) => {
+                    unreadable.push(child.session.target_id.clone());
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+            parents.push_back(child.session);
+        }
+    }
+    Ok((frames, unreadable))
 }
 
-fn frame_owner(
+fn read_child(
     connection: &mut CdpConnection,
-    session_id: &str,
-    frame_id: &str,
+    parent: &PageSession,
+    child: &ChildTarget,
     deadline: Deadline,
-) -> Result<Option<i64>, AdapterError> {
-    match connection.call(
-        "DOM.getFrameOwner",
-        json!({ "frameId": frame_id }),
-        Some(session_id),
-        deadline,
-    ) {
-        Ok(reply) => Ok(reply.get("backendNodeId").and_then(Value::as_i64)),
-        Err(error) if is_protocol_error(&error) => Ok(None),
-        Err(error) => Err(error),
+) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
+    let (mut frames, unreadable) = read_target(connection, &child.session, deadline)?;
+    if let Some(root) = frames.first_mut() {
+        if root.parent_id.is_none() {
+            root.parent_id.clone_from(&child.parent_frame_id);
+        }
+        root.owner_backend_node_id = frame_owner(connection, parent, &root.frame_id, deadline)?;
     }
+    Ok((frames, unreadable))
 }
 
 fn no_tree(target_id: &str) -> AdapterError {
