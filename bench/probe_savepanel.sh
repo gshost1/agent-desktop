@@ -28,6 +28,12 @@ for n in walk(t):
 PY
 }
 : > "$out/click.txt"
+for i in 1 2 3; do
+    s=$(python3 -c 'import time; print(time.time())')
+    "$B" snapshot --app TextEdit --surface sheet -i --compact > "$out/sheet-time.json"
+    e=$(python3 -c 'import time; print(time.time())')
+    echo "sheet snapshot ms $(python3 -c "print(round(($e-$s)*1000))") $(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])).get("data",{}); print({k:d.get(k) for k in ("complete","truncated","nodes_observed","ref_count")})' "$out/sheet-time.json")" >> "$out/click.txt"
+done
 for label in base head; do
     bin=$B; [ $label = head ] && bin=$H
     "$bin" snapshot --app TextEdit --surface sheet -i --compact > "$out/sheet-$label.json"
