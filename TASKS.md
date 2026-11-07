@@ -44,6 +44,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 7 | ADAPTERS-2 | macOS click chain `DeliveredWithoutEffect` | macos `actions/` chain | a row that selects after the 300 ms check is treated as "press did nothing"; the chain then runs AXOpen or child presses (click + open) | – | A | S | #206 introduced; #455 (open) menu items only | probe on Mac first |
 | 8 | ADAPTERS-3 | Linux `write_ignored` | linux `actions/write/text_write.rs:78-90` | "not delivered" judged from one immediate read; a bridge that applies writes late lets a retried `type` insert twice | – | A | S | none | probe (Java ATK) first |
 | 9 | BINARY-12 | MCP cancel during held input | `src/mcp/calls.rs`, mac/win release guards | SIGTERM/TerminateProcess skips Drag/KeyReleaseGuard drops on mac/win; a button or key can stay down | – | A | S | #599, PR #602, #525 (cancel only) | probe on Mac first |
+| 9a | MAC-SAVE-1 | Save-panel name field: field value vs saved path | macos set-value chain; core `actions/post_action.rs:176-190`, `tree/value_matches.rs:9-34` | macOS `set-value` of a full path into a Save panel name field returns `ok` (field reads back exactly the requested string, so element-scope verification passes), but the panel later saves `:private:tmp:…:x1.txt` in the default folder because macOS turns `/` into `:`. Likely the misnamed extra file in Torben's benchmark. Linux/Windows sibling (code read, not probed): core comparison is exact modulo CR, so a stored value that differs fails ACTION_FAILED rather than `ok`; GTK/Qt and the Windows common item dialog treat an absolute path in the name field as a destination path, so the same input is expected to save where asked | – | A | C (mac, reported), S (linux/win) | reported by the control thread from the Mac speed session | **owned by the Mac speed session; not fixed here** |
 | 10 | ACTION-1 | Pre-dispatch phase of a ref action | core `ref_action/ref_action_wait.rs:97-106`, `ref_action_single.rs:29-52`, `actions/headed_focus.rs:14` | lease timeout, post-lease deadline, headed focus failure and strict-trace failure before dispatch report `delivery: unknown`, `retry: unknown`, no recovery, and auto-wait stops early | – | B | C | #598 / PR #602 (preflight only) | in progress (w3) |
 | 11 | REFS-2 | Capture verdict (`unique_at_capture: bool`) | core `refs/`, `tree/` capture proof | a capture that ran out of time or left a field unread fails later as AMBIGUOUS_TARGET `identity_not_unique`, retryable false; right advice is "retake" | – | B | C | none (#442 introduced) | in progress (w5) |
 | 12 | SURFACE-1 | Closed-menu wait phase | core `commands/wait*`, linux surface wait, mac/win menu wait | mac/win accept the first "closed" read, so `wait --menu-closed` right after the opener returns before the menu appears; Linux guard (bool + 2 s file stamp) misses raw `mouse-click`/`drag` and holds 2 s after an item click | up to 2 s per wait on Linux | B | C code, S mac/win timing | PR #291 (Linux-only fix) | planned (M) |
@@ -219,6 +220,13 @@ Nothing goes to vercel-labs yet: no PRs, issues, comments, or links that create 
 upstream-ready: one finding per branch cut from `main`, no dependency on fork-only work (browser crate, perf
 branches), upstream references as inline code, PR prose via the technical-writer skill. The Upstream column is
 `ready`, `needs-issue-first` (JSON contract change or large refactor), `overlaps #N`, or `fork-only`.
+
+## Posting rule (George, 2026-11-07, after a second accidental upstream ping)
+
+Before any `gh pr create`, `gh pr edit`, `gh pr comment` or `gh issue ...`: write the body to a file, run
+`grep -nE '@[A-Za-z0-9-]+|github\.com/vercel-labs|vercel-labs/agent-desktop#' body.md`, remove every hit except
+`@`-prefixed code inside backticks, then post with `--body-file`. Upstream authors in plain text, PR and issue numbers
+in inline code.
 
 ## Merge rule (George, 2026-11-07)
 
