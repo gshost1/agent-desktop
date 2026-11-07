@@ -18,11 +18,28 @@ def sh(*args, timeout=30):
     return subprocess.run(list(args), capture_output=True, text=True, timeout=timeout).stdout
 
 
+MACCTL = Path(__file__).resolve().parent / "out" / "macctl"
+BENCH_DOC_PREFIXES = ["Untitled", "note-", "sp-"]
+BENCH_FINDER_PREFIXES = ["t3-", "bench-", "agent-desktop-bench", "probe-", "savepath-"]
+
+
+def build_macctl():
+    source = MACCTL.parent.parent / "macctl.swift"
+    if not MACCTL.exists() or MACCTL.stat().st_mtime < source.stat().st_mtime:
+        MACCTL.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["swiftc", "-O", str(source), "-o", str(MACCTL)], check=True, capture_output=True)
+
+
+def macctl(*args, timeout=20):
+    """Bench control through AppKit and Accessibility only: no AppleScript, no Automation grant."""
+    build_macctl()
+    return subprocess.run([str(MACCTL), *args], capture_output=True, text=True, timeout=timeout).stdout
+
+
 def quit_app(name):
-    script = f'if application "{name}" is running then tell application "{name}" to quit saving no'
-    if name != "TextEdit":
-        script = f'if application "{name}" is running then tell application "{name}" to quit'
-    subprocess.run(["osascript", "-e", script], capture_output=True, timeout=20)
+    if name == "TextEdit":
+        macctl("close-discard", "TextEdit", *BENCH_DOC_PREFIXES)
+    macctl("quit", name)
 
 
 def listing(directory):
@@ -33,9 +50,7 @@ def listing(directory):
 
 
 def close_bench_finder_windows():
-    script = ('tell application "Finder" to close (every Finder window whose name starts with "t3-" '
-              'or name starts with "bench-" or name is "agent-desktop-bench")')
-    subprocess.run(["osascript", "-e", script], capture_output=True, timeout=20)
+    macctl("close-discard", "Finder", *BENCH_FINDER_PREFIXES)
 
 
 def reset_desktop():

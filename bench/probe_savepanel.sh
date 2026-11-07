@@ -50,5 +50,5 @@ for label in base head; do
     "$B" press escape --app TextEdit >/dev/null; sleep 1
 done
 "$B" press escape --app TextEdit >/dev/null; sleep 1
-osascript -e 'tell application "TextEdit" to close front document saving no' >/dev/null 2>&1
+bench/out/macctl close-front-discard TextEdit
 cat "$out/click.txt"; head -40 "$out/ax_attrs.jsonl"

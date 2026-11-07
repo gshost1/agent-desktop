@@ -13,8 +13,8 @@ python3 - "$base" "$head" "$out" "$D" <<'PY'
 import json, subprocess, sys, time
 base, head, out, D = sys.argv[1:5]
 
-def osa(script):
-    return subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=30).stdout.strip()
+def macctl(*args):
+    return subprocess.run(["bench/out/macctl", *args], capture_output=True, text=True, timeout=30).stdout.strip()
 
 def ad(binary, *args):
     t0 = time.perf_counter()
@@ -30,9 +30,9 @@ def walk(n):
         yield from walk(c)
 
 def reset_window():
-    osa('tell application "Finder" to close (every Finder window whose name is "probe-many" or name starts with "folder-")')
+    macctl("close-discard", "Finder", "probe-many", "folder-")
     subprocess.run(["open", D]); time.sleep(3)
-    osa('tell application "Finder" to set current view of (first Finder window whose name is "probe-many") to icon view')
+    macctl("raise", "Finder", "probe-many"); macctl("menu", "Finder", "View", "as Icons")
     time.sleep(1)
 
 def window_id(binary):
@@ -60,7 +60,7 @@ for label, binary, name in (("base", base, "folder-31"), ("head", head, "folder-
         results[label] = {"error": f"no icon-view item for {name}"}; continue
     ms, e = ad(binary, "click", target["ref_id"])
     time.sleep(1)
-    front = osa('tell application "Finder" to get name of front Finder window')
+    front = (json.loads(macctl("windows", "Finder") or "[]") or [""])[0]
     results[label] = {"role": target["role"], "ms": round(ms), "ok": e.get("ok"),
                       "error": (e.get("error") or {}).get("code"),
                       "disposition": (e.get("error") or {}).get("disposition") or (e.get("data") or {}).get("delivery"),

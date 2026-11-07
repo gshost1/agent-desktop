@@ -11,7 +11,7 @@ D="$HOME/agent-desktop-bench/probe-rename"
 mkdir -p "$D"
 for d in "$D"/*; do [ -d "$d" ] && rmdir "$d" 2>/dev/null; done
 open "$D"; sleep 3
-osascript -e 'tell application "Finder" to set current view of (first Finder window whose name is "probe-rename") to list view' >/dev/null 2>&1
+bench/out/macctl raise Finder probe-rename; bench/out/macctl menu Finder View "as List" 2>/dev/null
 W=$($B list-windows --app Finder | python3 -c "
 import json,subprocess,sys
 for w in json.load(sys.stdin)['data']:
@@ -27,7 +27,7 @@ for m in json.load(sys.stdin).get('data',{}).get('matches',[]):
 mkdir -p bench/out/probe_rename
 for variant in set-value set-value-headed-return type-interval-headed press-keys; do
     name="renamed-$variant"
-    osascript -e 'tell application "Finder" to activate' -e 'tell application "Finder" to set index of (first Finder window whose name is "probe-rename") to 1' >/dev/null 2>&1
+    bench/out/macctl raise Finder probe-rename
     sleep 0.5
     $B press cmd+shift+n --app Finder >/dev/null
     sleep 1.5

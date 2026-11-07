@@ -162,7 +162,7 @@ def main():
         measure("type (40 chars)", b, ["type", area, "the quick brown fox jumps over the lazy d"], env, n, results, "TextEdit")
         measure("set-value", b, ["set-value", area, "latency bench\n"], env, n, results, "TextEdit")
     measure("press left", b, ["press", "left"], env, n, results, "TextEdit")
-    subprocess.run(["osascript", "-e", 'tell application "TextEdit" to close every document saving no'], capture_output=True)
+    subprocess.run([str(ROOT / "out" / "macctl"), "close-discard", "TextEdit", ""], capture_output=True)
 
     (OUT / "summary.json").write_text(json.dumps(results, indent=1))
     print(f"\nwrote {OUT/'summary.json'}")

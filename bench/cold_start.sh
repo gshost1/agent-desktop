@@ -11,7 +11,7 @@ apps=("$@"); [ ${#apps[@]} -gt 0 ] || apps=(Weather Calculator TextEdit)
 for app in "${apps[@]}"; do
   for pause in 0 5; do
     for i in 1 2 3; do
-      osascript -e "if application \"$app\" is running then tell application \"$app\" to quit saving no" >/dev/null 2>&1 || osascript -e "if application \"$app\" is running then tell application \"$app\" to quit" >/dev/null 2>&1
+      bench/out/macctl close-discard "$app" ""; bench/out/macctl quit "$app"
       sleep 2
       t0=$(now); $B launch "$app" --activate >/dev/null; t1=$(now)
       sleep "$pause"

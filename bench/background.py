@@ -28,6 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "out" / "background"
+MACCTL = str(ROOT / "out" / "macctl")
 BIN = str(ROOT.parent / "target" / "release" / "agent-desktop")
 SENTINEL = "Dictionary"
 FOCUS_PROBE = str(ROOT / "out" / "focus_probe")
@@ -145,14 +146,13 @@ def calculator_display(env):
 
 
 def textedit_text():
-    script = 'tell application "TextEdit" to get text of document 1'
-    return subprocess.run(["osascript", "-e", script], capture_output=True, text=True).stdout.strip()
+    return subprocess.run([MACCTL, "text", "TextEdit"], capture_output=True, text=True).stdout.strip()
 
 
 def make_frontmost():
     subprocess.run(["open", "-a", SENTINEL])
     time.sleep(1.5)
-    subprocess.run(["osascript", "-e", f'tell application "{SENTINEL}" to activate'])
+    subprocess.run([MACCTL, "activate", SENTINEL])
     time.sleep(1.0)
 
 
@@ -213,7 +213,7 @@ def run_phase(name, parallel, iters, envs):
 
 
 def launch_probe(env):
-    subprocess.run(["osascript", "-e", 'if application "Calculator" is running then tell application "Calculator" to quit'])
+    subprocess.run([MACCTL, "quit", "Calculator"])
     time.sleep(1.5)
     make_frontmost()
     before = probe()
@@ -246,6 +246,8 @@ def main():
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     build_focus_probe()
+    from tasks import build_macctl
+    build_macctl()
     home = ROOT / "out" / "home-background"
     home.mkdir(parents=True, exist_ok=True)
     os.chmod(home, 0o700)
@@ -262,7 +264,7 @@ def main():
     results["serial"] = run_phase("serial", False, a.iterations, envs)
     results["parallel"] = run_phase("parallel", True, a.iterations, envs)
     results["press"] = press_probe(envs["calc"])
-    subprocess.run(["osascript", "-e", 'tell application "TextEdit" to close every document saving no'])
+    subprocess.run([MACCTL, "close-discard", "TextEdit", ""])
     (OUT / "summary.json").write_text(json.dumps(results, indent=1, default=str))
 
 

@@ -96,7 +96,7 @@ def run(method, stem, target):
     log.update({"target_contents": landed, "strays": strays,
                 "landed_in_target": any(Path(n).stem == stem for n in landed)})
     ad("press", "escape", "--app", "TextEdit"); time.sleep(0.5)
-    subprocess.run(["osascript", "-e", 'tell application "TextEdit" to close front document saving no'], capture_output=True, timeout=20)
+    subprocess.run(["bench/out/macctl", "close-front-discard", "TextEdit"], capture_output=True, timeout=20)
     return log
 
 results = []

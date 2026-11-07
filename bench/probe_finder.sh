@@ -9,7 +9,7 @@ B=target/release/agent-desktop
 export AGENT_DESKTOP_HOME="$PWD/bench/out/home-probe"; mkdir -p "$AGENT_DESKTOP_HOME"; chmod 700 "$AGENT_DESKTOP_HOME"
 D="$HOME/agent-desktop-bench/probe-many"
 mkdir -p "$D"; for i in $(seq 1 60); do mkdir -p "$D/folder-$i"; done
-osascript -e "tell application \"Finder\" to open POSIX file \"$D\"" >/dev/null
+open "$D"
 sleep 2
 win_named() { for w in $($B list-windows --app Finder | python3 -c "import json,sys; [print(w['id']) for w in json.load(sys.stdin)['data']]"); do n=$($B snapshot --window-id "$w" --max-depth 1 | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['tree'].get('name',''))" 2>/dev/null); [ "$n" = "$1" ] && { echo "$w"; return; }; done; }
 W=$(win_named probe-many)
@@ -24,9 +24,9 @@ for args in "snapshot -i --outline" "snapshot -i" "snapshot -i --timeout-ms 2000
 done
 
 echo "== click-on-row probe (ADAPTERS-2): does one headless click select only, or also open?"
-for view in "list view" "icon view"; do
-  osascript -e "tell application \"Finder\" to set target of (first Finder window whose name is \"probe-many\" or name is \"folder-7\") to POSIX file \"$D\"" >/dev/null 2>&1
-  osascript -e "tell application \"Finder\" to set current view of (first Finder window whose name is \"probe-many\") to $view" >/dev/null
+for menu_item in "as List" "as Icons"; do
+  bench/out/macctl close-discard Finder folder-7; open "$D"; sleep 1
+  bench/out/macctl raise Finder probe-many; bench/out/macctl menu Finder View "$menu_item"
   sleep 1.5
   W=$(win_named probe-many)
   snap=$($B snapshot --window-id "$W" -i --timeout-ms 20000)
@@ -40,14 +40,14 @@ for n in walk(d['data']['tree']):
     if n.get('ref_id') and 'folder-7' == (n.get('name') or n.get('value') or ''):
         print(n['ref_id'], n.get('role')); break
 ")
-  echo "[$view] target: $ref"
+  echo "[$menu_item] target: $ref"
   r=${ref%% *}
   [ -n "$r" ] || { echo "  no ref for folder-7"; continue; }
-  before=$(osascript -e 'tell application "Finder" to get name of every Finder window')
+  before=$(bench/out/macctl windows Finder)
   out=$($B -v click "$r" 2>bench/out/probe-click.err)
   sleep 1
-  after=$(osascript -e 'tell application "Finder" to get name of every Finder window')
-  sel=$(osascript -e "tell application \"Finder\" to get name of selection")
+  after=$(bench/out/macctl windows Finder)
+  sel=$(bench/out/macctl selection Finder)
   echo "  click: $(echo "$out" | head -c 400)"
   echo "  steps(debug): $(grep -oE "AXPress|AXOpen|DeliveredWithoutEffect|press_selection|selection|child press|AXConfirm" bench/out/probe-click.err | sort | uniq -c | tr '\n' ' ')"
   echo "  windows before: $before"
