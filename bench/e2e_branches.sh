@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Runs the macOS E2E harness in each PR worktree (each already contains fork main).
+# bench/guard blocks the harness's System Events window-resize call; Automation for
+# System Events is denied here, so that step fails on every branch alike.
 cd "$(dirname "$0")/.."
 root="$PWD"
+export PATH="$root/bench/guard:$PATH"
 git fetch -q origin
 for wt in wt-surface wt-cold wt-popup wt-aeprobe; do
     d="$root/bench/out/$wt"

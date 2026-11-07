@@ -1,0 +1,12 @@
+#!/bin/sh
+# Refuses any AppleScript that targets System Events, so nothing the bench runs
+# (model runs, the E2E harness) sends it an Apple Event. Automation for System
+# Events is denied on purpose on this Mac. Other scripts pass through.
+for arg in "$@"; do
+    case "$arg" in
+        *"System Events"*)
+            echo "bench guard: AppleScript to System Events is blocked" >&2
+            exit 1 ;;
+    esac
+done
+exec /usr/bin/osascript "$@"
