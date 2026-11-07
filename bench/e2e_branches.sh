@@ -3,7 +3,7 @@
 cd "$(dirname "$0")/.."
 root="$PWD"
 git fetch -q origin
-for wt in wt-surface wt-cold wt-popup; do
+for wt in wt-surface wt-cold wt-popup wt-aeprobe; do
     d="$root/bench/out/$wt"
     [ -d "$d" ] || continue
     (cd "$d" && AGENT_DESKTOP_E2E_EXCLUSIVE=1 bash tests/e2e/run.sh > "$root/bench/out/e2e-$wt.log" 2>&1)
