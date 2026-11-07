@@ -130,9 +130,11 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 - Fork CI: `pull_request` runs do not start on fork PRs; CI is dispatched with `workflow_dispatch` on the head SHA
   (counts for merging per George). CodeQL and Supply Chain are `disabled_fork`.
 
-## Handoff (laptop → VPS), 2026-11-07
+## Handoff (laptop → VPS), 2026-11-07: REVERSED, do not act on it
 
-Work moves to the VPS (full-access T3 link). Nothing here is deleted; the laptop clone and worktrees stay.
+Reversed the same day: the VPS session could not start (sandbox could not be disabled from inside, `gh` not logged
+in) and changed no code. The laptop session owns the work again; the branch states below are the resume point.
+Pushed branches catch up with `main` by merging `origin/main` in (no force-push); the squash merge keeps `main` linear.
 
 ### Branch state
 
