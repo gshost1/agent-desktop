@@ -2,12 +2,13 @@
 # Runs benchmark rounds one at a time and shares the desktop between rounds.
 #
 # Each line of the plan file is one round: a label, then space-separated
-# task:config:model[:tree] entries (or "extras" for bench/run_extras.sh, or
-# sh:<script> to run a script). A line "yield" only hands the lock over. Before a
-# round it takes ~/.agent-desktop/bench.lock (waiting while another session
-# holds a lock younger than 2 h). After a round it removes the lock, waits for
-# another session to take it and release it again (gives up after 60 min of
-# no take, or 2 h of a held lock), then continues.
+# task:config:model[:tree] entries ("extras" runs bench/run_extras.sh, sh:<script>
+# runs a script). A line "wait-browser" waits until feat/unified-browser bench
+# has taken and released the lock, or 60 min. The lock is held for one round and
+# released after it. A background observer records when any other session's
+# title was last in ~/.agent-desktop/bench.lock; the lock is not retaken while
+# another holder was seen in the last 10 minutes, so a session that polls
+# slowly still gets every other round.
 #
 # Usage: bash bench/orchestrate.sh bench/plan.txt
 set -u
@@ -27,29 +28,64 @@ lock_age_s() {
 
 write_lock() { printf '%s\n%s\n' "$owner" "$(date -u +%FT%TZ)" > "$lock"; }
 
-take_lock() {
-    while [ -f "$lock" ] && ! grep -q "perf/speed-cost" "$lock" && [ "$(lock_age_s)" -lt 7200 ]; do
-        sleep 20
+seen_dir=bench/out/lock-seen
+mkdir -p "$seen_dir"
+started_at=$(date +%s)
+
+observe_lock() {
+    while true; do
+        if [ -f "$lock" ] && ! grep -q "perf/speed-cost" "$lock" 2>/dev/null; then
+            date +%s > "$seen_dir/other"
+            head -1 "$lock" 2>/dev/null > "$seen_dir/other_title"
+            grep -q "feat/unified-browser" "$lock" 2>/dev/null && date +%s > "$seen_dir/browser"
+        fi
+        sleep 1
     done
+}
+
+other_seen_within() {
+    local last
+    last=$(cat "$seen_dir/other" 2>/dev/null || echo 0)
+    [ $(( $(date +%s) - last )) -lt "$1" ]
+}
+
+held_by_other() {
+    [ -f "$lock" ] && ! grep -q "perf/speed-cost" "$lock" && [ "$(lock_age_s)" -lt 7200 ]
+}
+
+take_lock() {
+    while held_by_other || other_seen_within "$yield_s"; do sleep 10; done
     write_lock
     log "lock taken"
 }
 
-release_and_yield() {
+release_lock() {
     if grep -q "perf/speed-cost" "$lock" 2>/dev/null; then rm -f "$lock"; fi
-    log "lock released; waiting up to 60 min for another session's round"
-    local waited=0
-    while [ ! -f "$lock" ] && [ "$waited" -lt 3600 ]; do sleep 15; waited=$((waited + 15)); done
-    if [ ! -f "$lock" ]; then log "nobody took the lock in 60 min"; return; fi
-    log "another session holds the lock: $(head -1 "$lock")"
-    while [ -f "$lock" ] && ! grep -q "perf/speed-cost" "$lock" && [ "$(lock_age_s)" -lt 7200 ]; do sleep 20; done
-    log "other session released the lock"
+    log "lock released; not retaking while another holder was seen in the last $((yield_s / 60)) min"
 }
+
+wait_for_browser_round() {
+    log "waiting for feat/unified-browser bench to take and release the lock (at most 60 min)"
+    while [ $(( $(date +%s) - started_at )) -lt 3600 ]; do
+        if [ -f "$seen_dir/browser" ] && ! grep -q "feat/unified-browser" "$lock" 2>/dev/null; then
+            log "browser round seen and released"
+            return
+        fi
+        sleep 10
+    done
+    log "60 min passed without a browser round"
+}
+
+yield_s=600
+rm -f "$seen_dir/other" "$seen_dir/browser"
+observe_lock &
+observer=$!
+trap 'kill $observer 2>/dev/null' EXIT
 
 while IFS= read -r line; do
     [ -n "$line" ] || continue
     case "$line" in \#*) continue ;; esac
-    if [ "$line" = "yield" ]; then release_and_yield; continue; fi
+    if [ "$line" = "wait-browser" ]; then wait_for_browser_round; continue; fi
     label="${line%% *}"
     entries="${line#* }"
     take_lock
@@ -66,6 +102,6 @@ while IFS= read -r line; do
         python3 bench/driver.py --task "$task" --config "$cfg" --model "$model" ${tree:+--tree "$tree"} || echo "driver failed"
     done
     log "round $label done"
-    release_and_yield
+    release_lock
 done < "$plan"
 log "plan complete"
