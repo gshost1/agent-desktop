@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::element_call::ElementCall;
 use super::remote_element::call_on_element;
-use crate::{CdpConnection, PageSession};
+use crate::{CdpConnection, ElementToken, PageSession};
 
 const SELECT_OPTION: &str = r"function(choice) {
   if (this.localName !== 'select') return { error: 'not_select' };
@@ -28,14 +28,14 @@ const SELECT_OPTION: &str = r"function(choice) {
 pub fn select_option(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     choice: &str,
     deadline: Deadline,
 ) -> Result<String, AdapterError> {
     let outcome = call_on_element(
         connection,
         session,
-        backend_node_id,
+        token,
         ElementCall {
             function: SELECT_OPTION,
             arguments: vec![json!(choice)],
@@ -50,7 +50,7 @@ pub fn select_option(
             .to_owned()),
         Some("not_select") => Err(AdapterError::new(
             ErrorCode::ActionNotSupported,
-            format!("DOM node {backend_node_id} is not a <select>"),
+            format!("DOM node {} is not a <select>", token.backend_node_id),
         )
         .with_disposition(DeliverySemantics::not_delivered())),
         Some(reason) => Err(AdapterError::new(

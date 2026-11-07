@@ -1,9 +1,9 @@
 use agent_desktop_core::{AdapterError, Deadline, Point};
 use serde_json::json;
 
-use super::remote_element::ensure_live;
-use super::scroll::{box_center, scroll_into_view};
-use crate::{CdpConnection, PageSession};
+use super::remote_element::prove_document;
+use super::scroll::{node_center, scroll_node};
+use crate::{CdpConnection, ElementToken, PageSession};
 
 /// Clicks the node's centre with synthesized page input. The events go to
 /// the renderer, so the OS cursor never moves and the tab is never raised.
@@ -14,12 +14,24 @@ use crate::{CdpConnection, PageSession};
 pub fn click(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     deadline: Deadline,
 ) -> Result<Point, AdapterError> {
-    ensure_live(connection, session, backend_node_id, deadline)?;
-    scroll_into_view(connection, session, backend_node_id, deadline)?;
-    let point = box_center(connection, session, backend_node_id, deadline)?;
+    prove_document(connection, session, token, deadline)?;
+    click_node(connection, session, token, deadline)
+}
+
+/// Clicks a node whose document the caller already proved. The scroll
+/// reports a node that is gone as `STALE_REF`, so no separate liveness
+/// check runs.
+pub(crate) fn click_node(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    token: &ElementToken,
+    deadline: Deadline,
+) -> Result<Point, AdapterError> {
+    scroll_node(connection, session, token, deadline)?;
+    let point = node_center(connection, session, token, deadline)?;
     for (kind, buttons) in [("mousePressed", 1), ("mouseReleased", 0)] {
         connection.call(
             "Input.dispatchMouseEvent",

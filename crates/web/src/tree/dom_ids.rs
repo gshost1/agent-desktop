@@ -5,57 +5,71 @@ use serde_json::{Value, json};
 
 use crate::{CdpConnection, PageSession};
 
-/// Reads the DOM `id` attribute of every element in the page, piercing
-/// same-process frames and shadow roots, keyed by backend node id. One
-/// `DOM.getDocument` call serves the whole snapshot.
+/// Reads the DOM `id` attribute of every element in the target's local
+/// frames and shadow trees, keyed by backend node id. One
+/// `DOMSnapshot.captureSnapshot` serves the whole target: its reply is flat
+/// arrays however deep the DOM nests, and unlike `DOM.getDocument` it does
+/// not switch on the DOM domain's mutation events.
 pub(crate) fn read_dom_ids(
     connection: &mut CdpConnection,
     session: &PageSession,
     deadline: Deadline,
 ) -> Result<HashMap<i64, String>, AdapterError> {
-    let document = connection.call(
-        "DOM.getDocument",
-        json!({ "depth": -1, "pierce": true }),
+    let capture = connection.call(
+        "DOMSnapshot.captureSnapshot",
+        json!({ "computedStyles": [] }),
         Some(&session.session_id),
         deadline,
     )?;
-    Ok(collect_dom_ids(
-        document.get("root").unwrap_or(&Value::Null),
-    ))
+    Ok(collect_dom_ids(&capture))
 }
 
-pub(crate) fn collect_dom_ids(root: &Value) -> HashMap<i64, String> {
+/// Pairs each node's `backendNodeId` with its `id` attribute. Attribute
+/// names and values are indexes into the capture's shared `strings` table.
+pub(crate) fn collect_dom_ids(capture: &Value) -> HashMap<i64, String> {
+    let empty = Vec::new();
+    let strings = capture
+        .get("strings")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
+    let string = |index: &Value| {
+        index
+            .as_u64()
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| strings.get(index))
+            .and_then(Value::as_str)
+    };
+    let documents = capture
+        .get("documents")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
     let mut ids = HashMap::new();
-    let mut pending = vec![root];
-    while let Some(node) = pending.pop() {
-        if let (Some(backend), Some(id)) = (
-            node.get("backendNodeId").and_then(Value::as_i64),
-            id_attribute(node),
-        ) {
-            ids.insert(backend, id);
-        }
-        for key in ["children", "shadowRoots", "pseudoElements"] {
-            if let Some(list) = node.get(key).and_then(Value::as_array) {
-                pending.extend(list);
-            }
-        }
-        for key in ["contentDocument", "templateContent"] {
-            if let Some(child) = node.get(key) {
-                pending.push(child);
+    for nodes in documents
+        .iter()
+        .filter_map(|document| document.get("nodes"))
+    {
+        let backends = nodes.get("backendNodeId").and_then(Value::as_array);
+        let attributes = nodes.get("attributes").and_then(Value::as_array);
+        let (Some(backends), Some(attributes)) = (backends, attributes) else {
+            continue;
+        };
+        for (backend, pairs) in backends.iter().zip(attributes) {
+            let id = pairs.as_array().and_then(|pairs| {
+                pairs
+                    .chunks(2)
+                    .find(|pair| pair.first().and_then(string) == Some("id"))
+                    .and_then(|pair| pair.get(1))
+                    .and_then(string)
+            });
+            let id = id.map(str::trim).filter(|id| !id.is_empty());
+            if let (Some(backend), Some(id)) = (backend.as_i64(), id) {
+                ids.insert(backend, id.to_owned());
             }
         }
     }
     ids
 }
 
-fn id_attribute(node: &Value) -> Option<String> {
-    let attributes = node.get("attributes")?.as_array()?;
-    attributes
-        .chunks(2)
-        .find(|pair| pair.first().and_then(Value::as_str) == Some("id"))
-        .and_then(|pair| pair.get(1))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(str::to_owned)
-}
+#[cfg(test)]
+#[path = "dom_ids_tests.rs"]
+mod tests;

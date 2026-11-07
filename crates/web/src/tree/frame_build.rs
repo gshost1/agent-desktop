@@ -91,6 +91,7 @@ fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'_>) -> WebN
     let origin = node.backend_dom_node_id.map(|backend_node_id| NodeOrigin {
         target_id: context.target_id.to_owned(),
         frame_id: context.frame_id.to_owned(),
+        loader_id: context.loader_id.to_owned(),
         backend_node_id,
     });
     let available_actions = actions_of(role, node);

@@ -141,3 +141,71 @@ fn a_silent_transport_surfaces_a_timeout() {
 
     assert_eq!(error.code, ErrorCode::Timeout);
 }
+
+fn nested(depth: usize) -> serde_json::Value {
+    let mut value = json!(1);
+    for _ in 0..depth {
+        value = json!([value]);
+    }
+    value
+}
+
+#[test]
+fn a_deeply_nested_event_is_skipped_without_failing_the_pending_call() {
+    let transport = ScriptedTransport::new().expect_with_events(
+        "Page.getFrameTree",
+        vec![json!({ "method": "Page.frameNavigated", "params": { "deep": nested(300) } })],
+        json!({ "result": { "frameTree": {} } }),
+    );
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let reply = connection
+        .call("Page.getFrameTree", json!({}), Some("S"), deadline())
+        .unwrap();
+
+    assert_eq!(reply, json!({ "frameTree": {} }));
+}
+
+#[test]
+fn a_reply_too_deep_to_parse_fails_only_its_own_call() {
+    let transport = ScriptedTransport::new()
+        .expect_with_events(
+            "Runtime.callFunctionOn",
+            Vec::new(),
+            json!({ "result": { "value": nested(300) } }),
+        )
+        .expect("Browser.getVersion", json!({ "product": "Chrome/144" }));
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let error = connection
+        .call("Runtime.callFunctionOn", json!({}), Some("S"), deadline())
+        .unwrap_err();
+    let version = connection
+        .call("Browser.getVersion", json!({}), None, deadline())
+        .unwrap();
+
+    assert_eq!(error.details.unwrap()["kind"], "cdp_reply_unreadable");
+    assert_eq!(version["product"], "Chrome/144");
+}
+
+#[test]
+fn a_session_detached_while_awaiting_a_reply_fails_as_target_gone_and_stays_gone() {
+    let transport = ScriptedTransport::new().expect_with_events(
+        "Page.getFrameTree",
+        vec![json!({ "method": "Target.detachedFromTarget",
+            "params": { "sessionId": "S", "targetId": "T" } })],
+        serde_json::Value::Null,
+    );
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let first = connection
+        .call("Page.getFrameTree", json!({}), Some("S"), deadline())
+        .unwrap_err();
+    let second = connection
+        .call("DOM.resolveNode", json!({}), Some("S"), deadline())
+        .unwrap_err();
+
+    assert_eq!(first.code, ErrorCode::WindowNotFound);
+    assert_eq!(first.details.unwrap()["kind"], "cdp_target_gone");
+    assert_eq!(second.code, ErrorCode::WindowNotFound);
+}

@@ -18,7 +18,7 @@ fn a_remote_or_mismatched_debugger_url_is_refused() {
     let remote = r#"{"webSocketDebuggerUrl":"ws://192.168.1.4:9222/devtools/browser/abc"}"#;
     assert_eq!(
         parse_version_body(9222, remote).unwrap_err().code,
-        ErrorCode::InvalidArgs
+        ErrorCode::ActionFailed
     );
     let other_port = r#"{"webSocketDebuggerUrl":"ws://127.0.0.1:9333/devtools/browser/abc"}"#;
     assert_eq!(

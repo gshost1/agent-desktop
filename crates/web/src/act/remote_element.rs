@@ -1,63 +1,85 @@
-use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
+use agent_desktop_core::{AdapterError, Deadline};
 use serde_json::{Value, json};
 
 use super::element_call::ElementCall;
-use crate::cdp::protocol_error::is_protocol_error;
-use crate::{CdpConnection, PageSession};
+use super::element_errors::{document_replaced, node_error, script_failed, stale, wrong_session};
+use crate::tree::frame_tree::current_loader;
+use crate::{CdpConnection, ElementToken, PageSession};
 
 const OBJECT_GROUP: &str = "agent-desktop";
 
-/// Resolves a backend node to a remote object id. A node the page no longer
-/// holds is `STALE_REF`. `DOM.resolveNode` needs no `Runtime.enable`, so the
-/// page never sees the runtime domain switched on.
-pub(crate) fn resolve_object(
+/// Proves the token still names a node of the document it was read from:
+/// the session must belong to the token's target, and the token's frame
+/// must still show the token's loader. A replaced document, or a frame that
+/// is gone, is `STALE_REF`; backend node ids restart when a navigation swaps
+/// the renderer, so without this proof an old ref could reach an unrelated
+/// node.
+pub(crate) fn prove_document(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     deadline: Deadline,
-) -> Result<String, AdapterError> {
+) -> Result<(), AdapterError> {
+    if session.target_id != token.target_id {
+        return Err(wrong_session(token, &session.target_id));
+    }
+    let current = current_loader(connection, session, &token.frame_id, deadline)?;
+    if current.as_deref() == Some(token.loader_id.as_str()) {
+        return Ok(());
+    }
+    Err(document_replaced(token, current.as_deref()))
+}
+
+/// Proves the token's document, resolves its node to a remote object once,
+/// runs `body` with the object id, and releases the object whatever `body`
+/// returns. `DOM.resolveNode` needs no `Runtime.enable`, so the page never
+/// sees the runtime domain switched on.
+pub(crate) fn with_element<T>(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    token: &ElementToken,
+    deadline: Deadline,
+    body: impl FnOnce(&mut CdpConnection, &str) -> Result<T, AdapterError>,
+) -> Result<T, AdapterError> {
+    prove_document(connection, session, token, deadline)?;
     let reply = connection
         .call(
             "DOM.resolveNode",
-            json!({ "backendNodeId": backend_node_id, "objectGroup": OBJECT_GROUP }),
+            json!({ "backendNodeId": token.backend_node_id, "objectGroup": OBJECT_GROUP }),
             Some(&session.session_id),
             deadline,
         )
-        .map_err(|error| stale_if_rejected(error, session, backend_node_id))?;
-    reply
+        .map_err(|error| node_error(error, token))?;
+    let object_id = reply
         .pointer("/object/objectId")
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| stale(session, backend_node_id, "the node resolved to no object"))
+        .ok_or_else(|| stale(token, "the node resolved to no object"))?;
+    let outcome = body(connection, &object_id);
+    let _ = connection.call(
+        "Runtime.releaseObject",
+        json!({ "objectId": object_id }),
+        Some(&session.session_id),
+        deadline,
+    );
+    outcome
 }
 
-/// Proves the node is still in the page, failing with `STALE_REF` if not.
-pub(crate) fn ensure_live(
+/// Runs `call` with the remote object bound as `this` and returns its JSON
+/// result.
+pub(crate) fn call_function(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
-    deadline: Deadline,
-) -> Result<(), AdapterError> {
-    let object_id = resolve_object(connection, session, backend_node_id, deadline)?;
-    release_object(connection, session, &object_id, deadline);
-    Ok(())
-}
-
-/// Runs `call` with the node bound as `this` and returns its JSON result.
-pub(crate) fn call_on_element(
-    connection: &mut CdpConnection,
-    session: &PageSession,
-    backend_node_id: i64,
+    object_id: &str,
     call: ElementCall,
     deadline: Deadline,
 ) -> Result<Value, AdapterError> {
-    let object_id = resolve_object(connection, session, backend_node_id, deadline)?;
     let arguments: Vec<Value> = call
         .arguments
         .into_iter()
         .map(|value| json!({ "value": value }))
         .collect();
-    let reply = connection.call(
+    let mut reply = connection.call(
         "Runtime.callFunctionOn",
         json!({
             "objectId": object_id,
@@ -68,9 +90,7 @@ pub(crate) fn call_on_element(
         }),
         Some(&session.session_id),
         deadline,
-    );
-    release_object(connection, session, &object_id, deadline);
-    let mut reply = reply?;
+    )?;
     if let Some(exception) = reply.get("exceptionDetails") {
         return Err(script_failed(exception));
     }
@@ -79,50 +99,21 @@ pub(crate) fn call_on_element(
         .map_or(Value::Null, Value::take))
 }
 
-fn release_object(
+/// Runs `call` on the token's node after proving its document.
+pub(crate) fn call_on_element(
     connection: &mut CdpConnection,
     session: &PageSession,
-    object_id: &str,
+    token: &ElementToken,
+    call: ElementCall,
     deadline: Deadline,
-) {
-    let _ = connection.call(
-        "Runtime.releaseObject",
-        json!({ "objectId": object_id }),
-        Some(&session.session_id),
+) -> Result<Value, AdapterError> {
+    with_element(
+        connection,
+        session,
+        token,
         deadline,
-    );
-}
-
-fn stale_if_rejected(error: AdapterError, session: &PageSession, backend: i64) -> AdapterError {
-    if !is_protocol_error(&error) {
-        return error;
-    }
-    let detail = error.platform_detail.clone().unwrap_or_default();
-    stale(session, backend, &detail)
-}
-
-pub(crate) fn stale(session: &PageSession, backend: i64, detail: &str) -> AdapterError {
-    AdapterError::stale_ref_because(format!(
-        "DOM node {backend} no longer exists in page target {}",
-        session.target_id
-    ))
-    .with_platform_detail(detail)
-    .with_details(json!({ "kind": "cdp_node_gone", "backend_node_id": backend }))
-}
-
-fn script_failed(exception: &Value) -> AdapterError {
-    let text = exception
-        .pointer("/exception/description")
-        .or_else(|| exception.get("text"))
-        .and_then(Value::as_str)
-        .unwrap_or("script exception");
-    AdapterError::new(
-        ErrorCode::ActionFailed,
-        "The element script threw an exception",
+        |connection, object| call_function(connection, session, object, call, deadline),
     )
-    .with_platform_detail(text)
-    .with_details(json!({ "kind": "cdp_script_exception" }))
-    .with_disposition(DeliverySemantics::delivered_unverified())
 }
 
 #[cfg(test)]

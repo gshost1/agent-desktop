@@ -1,9 +1,9 @@
 use agent_desktop_core::{AdapterError, Deadline};
 
 use super::element_call::ElementCall;
-use super::remote_element::call_on_element;
+use super::remote_element::{call_function, with_element};
 use crate::transport::transport_error::transport_failed;
-use crate::{CdpConnection, ElementReading, PageSession};
+use crate::{CdpConnection, ElementReading, ElementToken, PageSession};
 
 pub(crate) const READ_STATE: &str = r"function() {
   const checkable = this.localName === 'input' && (this.type === 'checkbox' || this.type === 'radio');
@@ -20,13 +20,29 @@ pub(crate) const READ_STATE: &str = r"function() {
 pub fn read_element(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     deadline: Deadline,
 ) -> Result<ElementReading, AdapterError> {
-    let value = call_on_element(
+    with_element(
         connection,
         session,
-        backend_node_id,
+        token,
+        deadline,
+        |connection, object| read_object(connection, session, object, deadline),
+    )
+}
+
+/// Reads an already resolved node's value, text and checked state.
+pub(crate) fn read_object(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    object_id: &str,
+    deadline: Deadline,
+) -> Result<ElementReading, AdapterError> {
+    let value = call_function(
+        connection,
+        session,
+        object_id,
         ElementCall {
             function: READ_STATE,
             arguments: Vec::new(),
