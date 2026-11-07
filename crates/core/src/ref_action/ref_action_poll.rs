@@ -43,12 +43,7 @@ pub(crate) fn execute_poll_loop(
         match land_within_deadline(context.adapter, context.entry, deadline) {
             ResolveAttemptOutcome::DeadlinePassed => return Err(timeout(&state, deadline)),
             ResolveAttemptOutcome::Failed(error) => {
-                handle_resolve_failure(
-                    context,
-                    &mut state,
-                    crate::ref_action::mark_pre_dispatch_resolution_failure(error),
-                    deadline,
-                )?;
+                handle_resolve_failure(context, &mut state, error.unsent(), deadline)?;
             }
             ResolveAttemptOutcome::Resolved(handle) => {
                 trace_resolve_ok(context.context, context.ref_id);

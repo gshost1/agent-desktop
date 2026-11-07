@@ -1,6 +1,6 @@
 use crate::{
     ActionRequest, ActionResult, AdapterError, ref_action::into_adapter_error,
-    ref_action::pre_dispatch, ref_action::ref_action_context::RefActionContext,
+    ref_action::ref_action_context::RefActionContext,
     ref_action::ref_action_wait_context::RefActionWaitContext,
 };
 
@@ -24,7 +24,7 @@ pub(crate) fn execute_single_shot(
         &crate::InteractionLease,
     ) -> Result<ActionResult, crate::AppError>,
 ) -> Result<ActionResult, AdapterError> {
-    pre_dispatch::run(|| focus_for_headed_input(context, &request, deadline, lease))?;
+    focus_for_headed_input(context, &request, deadline, lease).map_err(AdapterError::unsent)?;
     dispatch(RefActionContext::new(context, deadline), request, lease).map_err(into_adapter_error)
 }
 

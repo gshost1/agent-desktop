@@ -39,7 +39,7 @@ pub(crate) fn focus_entry_app(
         .ok_or_else(|| AdapterError::stale_ref_because("Target process identity is unavailable"))?;
     adapter
         .focus_app(process, lease)
-        .map_err(crate::ref_action::pre_dispatch::after_focus)
+        .map_err(AdapterError::after_focus)
 }
 
 pub fn saved_ref_focus_window(entry: &crate::RefEntry) -> Result<WindowInfo, AdapterError> {
@@ -69,7 +69,8 @@ pub(crate) fn focus_process_window(
     lease: &crate::InteractionLease,
 ) -> Result<WindowInfo, AppError> {
     let expected =
-        crate::system::window_lookup::find_window_for_process(process, adapter, lease.deadline())?;
+        crate::system::window_lookup::find_window_for_process(process, adapter, lease.deadline())
+            .map_err(|error| error.into_adapter_error().unsent())?;
     focus_exact_window(&expected, adapter, context, lease)
 }
 
@@ -93,17 +94,13 @@ pub(crate) fn focus_exact_window(
     }
     adapter
         .focus_window(&live, lease)
-        .map_err(crate::ref_action::pre_dispatch::after_focus)?;
+        .map_err(AdapterError::after_focus)?;
     context
         .trace_lazy(
             "input.focus_window",
             || json!({ "pid": live.pid, "window_id": live.id, "ok": true }),
         )
-        .map_err(|error| {
-            crate::ref_action::pre_dispatch::after_focus(crate::ref_action::into_adapter_error(
-                error,
-            ))
-        })?;
+        .map_err(|error| error.into_adapter_error().after_focus())?;
     Ok(live)
 }
 

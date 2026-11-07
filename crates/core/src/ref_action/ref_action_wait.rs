@@ -1,5 +1,5 @@
 use crate::{
-    ActionRequest, ActionResult, AdapterError, AppError, Deadline, ref_action::pre_dispatch,
+    ActionRequest, ActionResult, AdapterError, AppError, Deadline,
     ref_action::ref_action_context::RefActionContext,
     ref_action::ref_action_poll::execute_poll_loop,
     ref_action::ref_action_poll_state::RefActionPollState,
@@ -96,7 +96,8 @@ fn execute_with_deadline(
         );
         let cursor = crate::cursor_overlay::hold_cursor(context.context, deadline);
         crate::ref_action::presentation::before_lease(context, &request, deadline, cursor.is_ok());
-        let lease = pre_dispatch::run(|| acquire_lease(context.adapter, deadline))
+        let lease = acquire_lease(context.adapter, deadline)
+            .map_err(AdapterError::unsent)
             .map_err(|error| with_refusal(state.attach_error_metrics(error), refusal.as_ref()))?;
         if polls {
             request.timeout_ms = Some(deadline.remaining_ms());
@@ -145,11 +146,12 @@ fn acquire_lease(
 }
 
 /// Whether a dispatch-time refusal goes back to the wait: the full resolution
-/// under the lease failed in a way that may clear, nothing was sent, and the
-/// caller's budget is not spent.
+/// under the lease failed in a way that may clear, nothing was sent, no focus
+/// call ran (one raise per command), and the caller's budget is not spent.
 fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
     error.disposition == crate::DeliverySemantics::not_delivered()
         && error.is_retryable_resolution_failure()
+        && !error.moved_focus()
         && !deadline.is_expired()
 }
 
@@ -167,7 +169,7 @@ fn with_refusal(error: AdapterError, refusal: Option<&AdapterError>) -> AdapterE
     if let (Some(object), Some(details)) = (recorded.as_object_mut(), &refusal.details) {
         object.insert("details".into(), details.clone());
     }
-    pre_dispatch::with_detail(error, "refusal", recorded)
+    error.with_detail("refusal", recorded)
 }
 
 pub(crate) fn operation_deadline(request: &ActionRequest) -> Result<Deadline, AdapterError> {
@@ -200,3 +202,7 @@ mod exactly_once_tests;
 #[cfg(test)]
 #[path = "ref_action_focus_order_tests.rs"]
 mod focus_order_tests;
+
+#[cfg(test)]
+#[path = "ref_action_pre_dispatch_tests.rs"]
+mod pre_dispatch_tests;

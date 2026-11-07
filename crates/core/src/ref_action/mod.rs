@@ -8,7 +8,6 @@ use crate::refs::{RefEntry, resolve_saved_ref::resolve_saved_ref};
 use crate::{AdapterError, AppError, actionability};
 use serde_json::json;
 
-pub(crate) mod pre_dispatch;
 pub(crate) mod presentation;
 pub(crate) mod ref_action_actionability;
 pub(crate) mod ref_action_context;
@@ -79,7 +78,7 @@ pub(crate) fn dispatch_resolved_landing(
         .ok_or_else(|| AdapterError::stale_ref_because("target process instance is unavailable"))?;
     let expected_process = crate::ProcessIdentity::new(target.entry.process.pid, process_instance);
     let mut handle = resolve_saved_ref(target.adapter, target.entry, target.deadline, Some(lease))
-        .map_err(mark_pre_dispatch_resolution_failure)
+        .map_err(AdapterError::unsent)
         .inspect_err(|error| {
             crate::ref_action::ref_action_wait_support::trace_resolve_error(
                 target.context,
@@ -92,7 +91,7 @@ pub(crate) fn dispatch_resolved_landing(
     let preflight = match stable_preflight(&initial_target, &request) {
         Ok(preflight) => preflight,
         Err(error) => {
-            let error = mark_pre_dispatch_resolution_failure(into_adapter_error(error));
+            let error = into_adapter_error(error).unsent();
             if !crate::ref_action::ref_action_wait_evidence::should_scroll_after_preflight(
                 &request, &error,
             ) {
@@ -136,7 +135,13 @@ pub(crate) fn dispatch_resolved_landing(
         .with_verified_point(preflight.verified_point.clone())
         .with_expected_process(expected_process.clone());
     let final_target = ResolvedRefAction::new(target, &handle);
-    pre_dispatch::trace_dispatch_start(&final_target, &request)?;
+    final_target
+        .context
+        .trace_lazy(
+            "action.dispatch.start",
+            || json!({ "ref": final_target.ref_id, "action": request.action.name() }),
+        )
+        .map_err(|error| error.into_adapter_error().unsent())?;
     let action_name = request.action.name();
     let raises_surface = request.action.may_raise_surface();
     let presentation_action = request.action.clone();
@@ -181,17 +186,6 @@ fn settled_surfaces(
         .adapter
         .list_surfaces(process, target.deadline)
         .unwrap_or_default()
-}
-
-pub(crate) fn mark_pre_dispatch_resolution_failure(error: AdapterError) -> AdapterError {
-    match error.disposition {
-        crate::DeliverySemantics::Unknown | crate::DeliverySemantics::NotDelivered => {
-            error.with_disposition(crate::DeliverySemantics::not_delivered())
-        }
-        crate::DeliverySemantics::DeliveryUncertain
-        | crate::DeliverySemantics::DeliveredUnverified
-        | crate::DeliverySemantics::DeliveredVerified => error,
-    }
 }
 
 pub(crate) fn capture_pre_artifact(

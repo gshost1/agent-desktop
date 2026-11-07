@@ -78,11 +78,14 @@ A ref action that fails after it starts waiting on the interaction lease and
 before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
 waiting for the lease, a deadline spent while taking it, a failed headed focus
 step, a failed resolve or actionability check under the lease, and a failed
-trace write at dispatch start. A failure raised after the focus call itself,
-here or in the focus step of a headed pointer command, also carries
-`details.preparatory_focus: "may_have_moved_focus"`, because that call may have
-raised a window even though no input was sent. A failure before the focus call,
-such as a window that no longer matches the ref, carries no such detail.
+trace write at dispatch start. The focus step of a headed pointer command and
+of `press` is `not_delivered` the same way. A failure raised after the focus
+call itself also carries `details.preparatory_focus: "may_have_moved_focus"`,
+because that call may have raised a window even though no input was sent; a
+failure before it, such as a window that no longer matches, carries no such
+detail. A ref action makes one focus attempt: after a refusal that carries
+`preparatory_focus` it does not wait and try again, even when the error is
+retryable.
 
 ## Version 2.4 migration
 

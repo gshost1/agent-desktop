@@ -18,6 +18,7 @@ enum Focus {
     Raises,
     WindowLookupFails,
     RaiseFails,
+    AppBusy,
 }
 
 struct PreDispatchAdapter {
@@ -80,6 +81,18 @@ impl ObservationOps for PreDispatchAdapter {
 }
 
 impl ActionOps for PreDispatchAdapter {
+    fn headed_requirement_for_ref(
+        &self,
+        _: &RefEntry,
+        request: &ActionRequest,
+        _: Deadline,
+    ) -> Result<crate::HeadedRequirement, AdapterError> {
+        Ok(match self.focus {
+            Focus::AppBusy => crate::HeadedRequirement::FocusedApplication,
+            _ => request.headed_requirement(),
+        })
+    }
+
     fn execute_action(
         &self,
         _: &NativeHandle,
@@ -124,6 +137,15 @@ impl SystemOps for PreDispatchAdapter {
             return Err(AdapterError::timeout("window lookup"));
         }
         Ok(window.clone())
+    }
+
+    fn focus_app(
+        &self,
+        _: crate::ProcessIdentity,
+        _: &InteractionLease,
+    ) -> Result<(), AdapterError> {
+        self.focus_calls.fetch_add(1, Ordering::SeqCst);
+        Err(AdapterError::timeout("busy").with_details(serde_json::json!({ "retryable": true })))
     }
 
     fn focus_window(&self, _: &WindowInfo, _: &InteractionLease) -> Result<(), AdapterError> {
@@ -257,50 +279,31 @@ fn a_preflight_read_failure_under_the_lease_is_not_delivered() {
 }
 
 #[test]
-fn a_pre_dispatch_refusal_without_evidence_becomes_not_delivered() {
-    let error = super::run(|| Err::<(), _>(AdapterError::timeout("x"))).unwrap_err();
+fn a_refusal_after_a_scroll_records_it_even_beside_non_object_details() {
+    let error = crate::ref_action::ref_action_wait_support::after_scroll(
+        AdapterError::timeout("x").with_details(serde_json::json!("cause")),
+    );
 
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
-    assert!(error.details.is_none());
+    let details = error.details.unwrap();
+    assert_eq!(details["error_details"], "cause");
+    assert_eq!(details["preparatory_scroll"], "may_have_changed_view");
 }
 
 #[test]
-fn a_pre_dispatch_refusal_keeps_stronger_evidence() {
-    let error = super::run(|| {
-        Err::<(), _>(AdapterError::timeout("x").with_disposition(DeliverySemantics::uncertain()))
-    })
-    .unwrap_err();
+fn a_retryable_focus_refusal_is_not_retried_inside_the_wait() {
+    let mut adapter = PreDispatchAdapter::new(Lease::Granted);
+    adapter.focus = Focus::AppBusy;
 
-    assert_eq!(error.disposition, DeliverySemantics::uncertain());
-}
+    let error = click(&adapter, ActionRequest::headed(Action::Click));
 
-#[test]
-fn a_refusal_after_a_focus_call_records_the_focus_beside_earlier_details() {
-    let scrolled = super::after_focus(AdapterError::timeout("x").with_details(
-        serde_json::json!({ "preparatory_scroll": "may_have_changed_view", "retryable": true }),
-    ));
-    let bare =
-        super::after_focus(AdapterError::timeout("x").with_details(serde_json::json!("cause")));
-
-    assert_eq!(scrolled.disposition, DeliverySemantics::not_delivered());
-    assert!(scrolled.is_explicitly_retryable());
-    let scrolled = scrolled.details.unwrap();
-    assert_eq!(scrolled["preparatory_scroll"], "may_have_changed_view");
-    assert_eq!(scrolled["preparatory_focus"], "may_have_moved_focus");
-    let bare = bare.details.unwrap();
-    assert_eq!(bare["error_details"], "cause");
-    assert_eq!(bare["preparatory_focus"], "may_have_moved_focus");
-}
-
-#[test]
-fn a_trace_write_failure_before_dispatch_is_not_delivered() {
-    let error = super::run(|| {
-        Err::<(), _>(crate::ref_action::into_adapter_error(
-            crate::AppError::Internal("trace write failed".into()),
-        ))
-    })
-    .unwrap_err();
-
-    assert_eq!(error.code, ErrorCode::Internal);
+    assert_eq!(error.code, ErrorCode::Timeout);
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.details.unwrap()["preparatory_focus"],
+        "may_have_moved_focus"
+    );
+    assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.lease_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.dispatches.load(Ordering::SeqCst), 0);
 }
