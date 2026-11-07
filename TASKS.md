@@ -221,12 +221,14 @@ upstream-ready: one finding per branch cut from `main`, no dependency on fork-on
 branches), upstream references as inline code, PR prose via the technical-writer skill. The Upstream column is
 `ready`, `needs-issue-first` (JSON contract change or large refactor), `overlaps #N`, or `fork-only`.
 
-## Posting rule (George, 2026-11-07, after a second accidental upstream ping)
+## Posting rule (George, 2026-11-07, corrected)
 
-Before any `gh pr create`, `gh pr edit`, `gh pr comment` or `gh issue ...`: write the body to a file, run
-`grep -nE '@[A-Za-z0-9-]+|github\.com/vercel-labs|vercel-labs/agent-desktop#' body.md`, remove every hit except
-`@`-prefixed code inside backticks, then post with `--body-file`. Upstream authors in plain text, PR and issue numbers
-in inline code.
+Before any `gh pr create`, `gh pr edit`, `gh pr comment`, `gh issue ...` and before pushing any commit: write the body
+or message to a file and run `grep -nE '@[A-Za-z0-9-]+|vercel-labs' <file>`. Zero hits outside backticks, or do not
+post or push (a pushed commit that names an upstream issue adds a reference on its timeline). Post with
+`--body-file`. Upstream authors in plain text, PR and issue numbers in inline code.
+Checked 2026-11-07: no pushed commit message on any audit branch hits; `main` has only GitHub's automatic
+`Co-authored-by:` email trailer on the PR #1 squash commit; PR #1's only hit is inside backticks.
 
 ## Merge rule (George, 2026-11-07)
 
