@@ -135,9 +135,11 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | [#23](https://github.com/gshost1/agent-desktop/pull/23) | **merged** 2026-11-08 as `6ec6e174` (rules 1+2); CI 13/13 on head `44a4cc48`, gates green (4639), 2 review rounds | ready (upstream register items 17 and 18) |
 | 17 | `fix/session-start-atomic` | STATE-5 / BINARY-10 | [#35](https://github.com/gshost1/agent-desktop/pull/35) | **merged** 2026-11-08 as `17d95295` (rules 1+2); CI 13/13 on head `531de753`, gates green (4644), review applied | ready (upstream register item 12) |
 | 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | [#38](https://github.com/gshost1/agent-desktop/pull/38) (draft) | head `64b1c704`, tests 4645/0 (--no-fail-fast), review applied; draft: macOS edit | ready after Mac check |
-| 19 | `fix/ffi-last-error-code` | STATE-1 / STATE-2 / STATE-3 (docs) | [#37](https://github.com/gshost1/agent-desktop/pull/37) | open; head `fd2634e1`, hook green, gates re-run pending (two unrelated timing tests flaked); review applied | ready (upstream register items 9, 14, 20) |
+| 19 | `fix/ffi-last-error-code` | STATE-1 / STATE-2 / STATE-3 (docs) | [#37](https://github.com/gshost1/agent-desktop/pull/37) | open; head `469eeb0a` (main `17d95295` merged in), gates green (4647); CI running; review applied | ready (upstream register items 9, 14, 20) |
 | 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | **merged** 2026-11-08 as `a7d301d7` (rules 1+2); CI 13/13 on head `17f6ece2`, gates green (4630) | fork-only (test budgets) |
-| 22 | `test/load-sensitive-budgets` | CI flakes | – | writer started (w22): menu-disappearance 30 ms wait, failed-inventory poll, Windows context-scope lease test | fork-only (test determinism) |
+| 22 | `test/load-sensitive-budgets` | CI flakes | [#39](https://github.com/gshost1/agent-desktop/pull/39) | open; head `dded6329` (main `17d95295` merged in); three tests deterministic, 20/20 each under load, invert-verified | fork-only (test determinism) |
+| 23 | `fix/session-gc-liveness` | session GC flake | [#40](https://github.com/gshost1/agent-desktop/pull/40) | open; head `d70298d6`; root cause: a child forked by another thread holds the session lock until exec, so one GC pass keeps a just-ended session (60/300 with a spawner, 0/300 without); tests retry GC up to 5 s, old 4/20 fail, new 0/20 | fork-only (test determinism) |
+| 24 | `fix/batch-run-state` | BINARY-2 / BINARY-3 | – | writer started (w24) | ready (prior art: upstream `#182` merged, `#177` closed) |
 | 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | **merged** 2026-11-08 as `89a3723e` (rules 1+2); CI 13/13 on head `a690a037` | fork-only (test isolation) |
 
 ## Needs Mac verification
@@ -335,7 +337,7 @@ exists and also runs CI's core Win32-leakage check.
   `feat/press-menu-shortcut`); npm bundled fixture race (PR #31); Windows `context::scope_tests::a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease`
   failed once on `main` run 42450666424 (not yet fixed); `application_surface_tests::a_missing_document_window_does_not_satisfy_a_menu_disappearance_wait` (30 ms, under local load), `failed_inventory_poll_never_reports_app_termination` (under local load), `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` and `dispatch::session::tests::session_gc_ended_reclaims_an_ended_session_that_recorded_trace_events` (same time-dependent GC liveness rule, see below).
 
-- Flaky `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` (failed on Linux CI for PR #14's head
+- Root-caused in PR #40 (forked child holds the inherited lock until exec). Flaky `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` (failed on Linux CI for PR #14's head
   `075586f6` and once locally on plain `main`): `session/gc.rs:59-82` keeps an ended session that shows recent
   trace or snapshot activity, and a session started and ended within the same moment can count as recently active.
   A time-dependent liveness rule; belongs with STATE-6 (GC on manifest-less and stale state).
