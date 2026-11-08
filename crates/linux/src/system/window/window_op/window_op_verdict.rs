@@ -13,8 +13,9 @@ pub(in crate::system) const POSITION_TOLERANCE: i32 = 2;
 /// How often a read-back or a wait is repeated.
 pub(in crate::system) const POLL: Duration = Duration::from_millis(25);
 
-/// How long a window manager gets to apply a request before a read-back that
-/// does not match is final.
+/// How long read-backs poll for a first match of a request. A read that does
+/// not match at this budget gets one last look a poll later; a match seen at
+/// any read then waits out its confirmation inside the command deadline.
 pub(in crate::system) const SETTLE_BUDGET: Duration = Duration::from_millis(250);
 
 const MAX_DIMENSION: f64 = 1_000_000.0;

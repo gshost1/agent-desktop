@@ -14,12 +14,11 @@ use self::owner::{ensure_owned_after, ensure_owned_before};
 use self::refuse::{no_client, refused, unreadable, unsupported_session, write_failed};
 use self::remembered_place::RememberedPlace;
 use self::settle::settle;
+use self::settled::Settled;
 use self::window_place::PlaceStore;
 use super::window_client::{ClientWorld, client_of};
 use super::window_op::window_op_shadow::{Shadow, to_client, to_visible, visible_of};
-use super::window_op::window_op_verdict::{
-    POSITION_TOLERANCE, Verdict, observed_of, requested, unverified,
-};
+use super::window_op::window_op_verdict::{POSITION_TOLERANCE, observed_of, requested, unverified};
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::focus::focus_cause::Cause;
 use crate::system::focus::focus_window::FocusWorld;
@@ -175,19 +174,22 @@ fn apply(
         None
     };
     world.write(client, write).map_err(write_failed)?;
-    let (verdict, observed) = settle(world, client, write, deadline);
+    let settled = settle(world, client, write, deadline);
     ensure_owned_after(world, win, client)?;
-    if let (true, Verdict::Satisfied, Some(facts)) = (pending, verdict, observed) {
+    if let (true, Settled::Held(facts)) = (pending, settled) {
         confirm_maximized(world, win, client, facts, deadline);
     }
-    let outcome = match verdict {
-        Verdict::Satisfied => Ok(()),
-        Verdict::Pending | Verdict::Mismatch => {
+    let outcome = match settled {
+        Settled::Held(_) => Ok(()),
+        Settled::Unheld(observed) => {
             let displays = world.displays();
             Err(unverified(write, observed.as_ref(), &displays))
         }
+        Settled::Unconfirmed(_) => Err(deadline
+            .timeout_error()
+            .with_disposition(DeliverySemantics::delivered_unverified())),
     };
-    if let (Some(place), Some(facts)) = (before, observed)
+    if let (Some(place), Some(facts)) = (before, settled.observed())
         && holds_place(&place, &facts.client, &world.displays())
         && ((facts.client.x - place.x).abs() > POSITION_TOLERANCE
             || (facts.client.y - place.y).abs() > POSITION_TOLERANCE)
@@ -346,6 +348,8 @@ mod refuse;
 mod remembered_place;
 #[path = "window_op_settle.rs"]
 mod settle;
+#[path = "window_op_settled.rs"]
+mod settled;
 pub(in crate::system) mod window_op_shadow;
 pub(in crate::system) mod window_op_verdict;
 #[path = "window_place.rs"]
