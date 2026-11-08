@@ -21,9 +21,10 @@ import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-TASKS = ["weather", "settings", "finder", "textedit", "calculator"]
+TASKS = ["weather", "settings", "finder", "textedit", "textedit-seeded", "calculator"]
 TASK_NAMES = {"weather": "Weather", "settings": "System Settings", "finder": "Finder folder",
-              "textedit": "TextEdit Save", "calculator": "Calculator"}
+              "textedit": "TextEdit Save", "textedit-seeded": "TextEdit Save (seeded, not Aside-comparable)",
+              "calculator": "Calculator"}
 TOKEN_FIELDS = [("input", "input_tokens"), ("cache read", "cache_read_input_tokens"),
                 ("cache write", "cache_creation_input_tokens"), ("output", "output_tokens")]
 

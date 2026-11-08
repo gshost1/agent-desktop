@@ -20,7 +20,7 @@ def sh(*args, timeout=30):
 
 
 MACCTL = Path(__file__).resolve().parent / "out" / "macctl"
-BENCH_DOC_PREFIXES = ["Untitled", "note-", "sp-", str(BENCH_DIR)]
+BENCH_DOC_PREFIXES = ["Untitled", "note-", "sp-", "seed-", str(BENCH_DIR)]
 BENCH_FINDER_PREFIXES = ["t3-", "bench-", "agent-desktop-bench", "probe-", "savepath-"]
 
 
@@ -300,6 +300,71 @@ class TextEditSave(Task):
         return [d / n for d in self.default_dirs for n in names if (d / n).exists()]
 
 
+class TextEditSeeded(Task):
+    """TextEdit Save into a given folder, starting from a document the bench seeded
+    and opened inside the run's bench folder, so Save As starts there and the panel
+    never shows TextEdit's default folder. Not comparable with the Aside rows."""
+    key = "textedit-seeded"
+    app = "TextEdit"
+
+    def setup(self):
+        self.folder = BENCH_DIR / f"t5-{self.run_id}"
+        if self.folder.exists():
+            shutil.rmtree(self.folder)
+        self.src, self.dest = self.folder / "src", self.folder / "dest"
+        self.src.mkdir(parents=True)
+        self.dest.mkdir()
+        self.seed = f"seed-{self.run_id}"
+        self.stem = f"note-{self.run_id}"
+        self.text = f"hello from run {self.run_id}"
+        self.default_dirs = [Path.home() / "Library/Mobile Documents/com~apple~TextEdit/Documents",
+                             Path.home() / "Documents", Path.home() / "Desktop"]
+        blank = self.folder / "blank.txt"
+        blank.write_text("")
+        sh("textutil", "-convert", "rtf", str(blank), "-output", str(self.src / f"{self.seed}.rtf"))
+        blank.unlink()
+        quit_textedit_for_prefs()
+        subprocess.run(["open", "-a", "TextEdit", str(self.src / f"{self.seed}.rtf")], check=True, timeout=10)
+        for _ in range(50):
+            focused = json.loads(macctl("focused", "TextEdit") or "{}")
+            if str(focused.get("window", "")).startswith(self.seed):
+                break
+            time.sleep(0.2)
+        else:
+            raise RuntimeError("the seeded TextEdit document did not open")
+
+    def prompt(self):
+        return (f"TextEdit has the document `{self.seed}.rtf` open. Type exactly the text `{self.text}` into it, "
+                f"then save it with File > Save As… under the name `{self.stem}` in the folder `{self.dest}`. "
+                f"Reply DONE when it is saved.")
+
+    def verify(self, answer):
+        strays = [f"{p.parent.name}/{p.name}" for p in self.stray_paths()]
+        if strays:
+            return False, f"stray files outside the target folder {strays}"
+        entries = sorted(p.name for p in self.dest.iterdir() if p.name != ".DS_Store")
+        if len(entries) != 1 or Path(entries[0]).stem != self.stem:
+            return False, f"dest contents {entries}"
+        body = sh("textutil", "-convert", "txt", "-stdout", str(self.dest / entries[0]))
+        ok = body.strip() == self.text
+        return ok, f"file {entries[0]} body {body.strip()[:80]!r}"
+
+    def cleanup(self):
+        quit_app("TextEdit")
+        shutil.rmtree(self.folder, ignore_errors=True)
+        quarantine = Path(__file__).resolve().parent / "out" / "stray-saves"
+        for path in self.stray_paths():
+            quarantine.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(quarantine / path.name))
+
+    def stray_paths(self):
+        """This run's own file names in TextEdit's default folders and in src, checked
+        by exact path. The default folders are never listed: they hold George's files."""
+        names = [self.stem + ext for ext in ("", ".rtf", ".rtfd", ".txt", ".html", ".docx", ".odt")]
+        dirs = self.default_dirs + [self.src]
+        return [d / n for d in dirs for n in names if (d / n).exists()]
+
+
 class CalculatorMultiply(Task):
     key = "calculator"
     app = "Calculator"
@@ -320,7 +385,7 @@ class CalculatorMultiply(Task):
         return ok, f"display {display!r}"
 
 
-TASKS = {t.key: t for t in [WeatherCard, SettingsAbout, FinderFolder, TextEditSave, CalculatorMultiply]}
+TASKS = {t.key: t for t in [WeatherCard, SettingsAbout, FinderFolder, TextEditSave, TextEditSeeded, CalculatorMultiply]}
 
 FORBIDDEN = {"open", "osascript", "mkdir", "touch", "cp", "mv", "defaults", "sw_vers", "sysctl",
              "system_profiler", "textutil", "screencapture", "shortcuts", "bc", "python", "python3",

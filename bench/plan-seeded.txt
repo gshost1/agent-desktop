@@ -1,0 +1,4 @@
+# n=3 TextEdit-seeded (bench-opened seed doc, Save As into a sibling bench folder) for #26 and #27 (wt-sheet) against fork main ec3add89. Not comparable with Aside rows.
+ts1 textedit-seeded:a:claude-opus-5-5:bench/out/wt-main textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26 textedit-seeded:a:claude-opus-5-5:bench/out/wt-sheet
+ts2 textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26 textedit-seeded:a:claude-opus-5-5:bench/out/wt-sheet textedit-seeded:a:claude-opus-5-5:bench/out/wt-main
+ts3 textedit-seeded:a:claude-opus-5-5:bench/out/wt-sheet textedit-seeded:a:claude-opus-5-5:bench/out/wt-main textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26
