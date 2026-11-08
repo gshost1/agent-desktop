@@ -85,6 +85,7 @@ impl SystemOps for FailingInventoryAdapter {
         _deadline: crate::Deadline,
     ) -> Result<SignalBaseline, AdapterError> {
         *self.calls.lock().unwrap() += 1;
+        crate::wait::deadline::sleep(std::time::Duration::from_millis(5));
         Err(
             AdapterError::app_unresponsive("macOS inventory").with_details(json!({
                 "kind": "inventory_sources",
@@ -325,6 +326,7 @@ fn failed_inventory_poll_never_diffs_against_an_empty_baseline() {
 
 #[test]
 fn failed_inventory_poll_never_reports_app_termination() {
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let adapter = FailingInventoryAdapter {
         calls: std::sync::Mutex::new(0),
     };
