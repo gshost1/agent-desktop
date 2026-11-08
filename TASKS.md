@@ -27,7 +27,7 @@ Other open fork PRs not owned by this session: #59, #48, #41, #36, #30, #9, #7, 
 - Commits need `DISPLAY` pointed at a throwaway Xvfb (displays 150-199), because the hook runs `the_lifecycle_overrides_are_wired_to_the_adapter`. Run long commands under `setsid -w`.
 - `w15/target-win/` is an untracked Windows cross-build dir, not work in progress. Old `target` dirs total about 41 GB; delete only with George's yes.
 - The laptop `gh` token has no `workflow` scope, so pushes that touch `.github/workflows/` are rejected (see Blocked on George).
-- Run the posting-rule grep before every PR body, comment or commit push. Nothing ever goes to vercel-labs.
+- Run the posting-rule grep before every PR body, comment or commit push. Nothing ever goes to `vercel-labs`.
 - Merge rule (below): latest main merged in, CI green on that head, CLEAN, no overlap with always-overlap files. Watch main CI after each merge. Never merge while GitHub shows UNKNOWN (see Incidents).
 - The `INTERACTION_LEASE_FD_ENV` const is unix-only: cfg-gate any use, and cross-check with `cargo check --target x86_64-pc-windows-msvc`.
 - A timing flake gets a small test PR on the virtual clock (`VirtualClock::freeze()`), never a re-run.
