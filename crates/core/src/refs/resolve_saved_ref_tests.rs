@@ -44,8 +44,11 @@ fn a_live_twin_refuses_as_ambiguous() {
     assert_eq!(adapter.anchors.load(Ordering::SeqCst), 0);
 }
 
+/// The whole-window count just found the element once, so a different element
+/// at its path means the path moved under the descent (a list re-sorting), not
+/// that the element is gone: the refusal is retryable, never `saved_ref_absent`.
 #[test]
-fn a_landed_element_that_is_not_the_recorded_one_is_stale() {
+fn a_landed_element_that_is_not_the_counted_one_is_a_retryable_moved_landing() {
     let _guard = HomeGuard::new();
     let mut adapter = RuleAdapter::new(tree_with(vec![node("button", "Run")]));
     adapter.landed = Some(node("button", "Cancel"));
@@ -55,7 +58,11 @@ fn a_landed_element_that_is_not_the_recorded_one_is_stale() {
     };
 
     assert_eq!(error.code, ErrorCode::StaleRef);
-    assert_eq!(error.details.unwrap()["kind"], "saved_ref_absent");
+    assert!(error.is_explicitly_retryable());
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "saved_ref_landing_moved");
+    assert_eq!(details["complete"], true);
+    assert_eq!(details["retryable"], true);
     assert_eq!(adapter.anchors.load(Ordering::SeqCst), 1);
 }
 
@@ -220,7 +227,7 @@ fn a_landing_that_does_not_confirm_falls_back_to_the_full_resolution() {
     };
 
     assert_eq!(error.code, ErrorCode::StaleRef);
-    assert_eq!(error.details.unwrap()["kind"], "saved_ref_absent");
+    assert_eq!(error.details.unwrap()["kind"], "saved_ref_landing_moved");
     assert_eq!(adapter.observations.load(Ordering::SeqCst), 3);
     assert_eq!(adapter.anchors.load(Ordering::SeqCst), 2);
 }

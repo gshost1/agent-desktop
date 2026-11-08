@@ -173,7 +173,7 @@ fn stopped_after_focus(
 /// caller's budget is not spent.
 fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
     error.disposition == crate::DeliverySemantics::not_delivered()
-        && error.is_retryable_resolution_failure()
+        && crate::refs::resolve_verdict::ResolveVerdict::of_ref_action(error).retries()
         && !deadline.is_expired()
 }
 

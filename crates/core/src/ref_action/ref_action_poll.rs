@@ -12,6 +12,7 @@ use crate::{
     ref_action::{ResolvedRefAction, preflight_resolved},
     refs::ref_resolve_deadline::{POLL_INTERVAL, land_within_deadline},
     refs::resolve_attempt_outcome::ResolveAttemptOutcome,
+    refs::resolve_verdict::ResolveVerdict,
 };
 
 const STABILITY_POLL_INTERVAL: Duration = Duration::from_millis(16);
@@ -95,29 +96,22 @@ fn handle_actionability_failure(
     Ok(())
 }
 
+/// Ends the wait on a settled refusal and polls again on any other, under the
+/// one verdict every re-resolving caller shares, so a complete answer its
+/// producer stamped retryable is waited on here as it is under the lease.
 fn handle_resolve_failure(
     context: RefActionWaitContext<'_>,
     state: &mut RefActionPollState,
     error: AdapterError,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    if error.code == ErrorCode::StaleRef
-        && error
-            .details
-            .as_ref()
-            .and_then(|details| details.get("complete"))
-            .and_then(serde_json::Value::as_bool)
-            == Some(true)
-    {
-        trace_resolve_error(context.context, context.ref_id, &error);
-        return Err(error);
-    }
-    if !error.is_retryable_resolution_failure() {
+    let verdict = ResolveVerdict::of_ref_action(&error);
+    if !verdict.retries() {
         trace_resolve_error(context.context, context.ref_id, &error);
         return Err(error);
     }
     state.saw_ambiguity |= error.code == ErrorCode::AmbiguousTarget;
-    state.record_resolve_error(&error);
+    state.record_resolve_error(&error, verdict);
     sleep_until_next_poll(deadline, POLL_INTERVAL);
     Ok(())
 }
@@ -159,8 +153,8 @@ fn timeout(state: &RefActionPollState, deadline: Deadline) -> AdapterError {
     if state.only_live_read_incomplete() {
         return live_read_incomplete(state, deadline);
     }
-    if let Some(error) = state.settled_identity_error() {
-        return settled_identity(error, state, deadline);
+    if let Some(error) = state.unsettled_answer() {
+        return unsettled_answer(error, state, deadline);
     }
     let mut details = json!({
         "kind": "actionability_timeout",
@@ -182,7 +176,9 @@ fn timeout(state: &RefActionPollState, deadline: Deadline) -> AdapterError {
         .with_disposition(crate::DeliverySemantics::not_delivered())
 }
 
-fn settled_identity(
+/// The last complete answer the wait kept retrying, reported once the budget
+/// runs out, with the time it waited.
+fn unsettled_answer(
     error: &AdapterError,
     state: &RefActionPollState,
     deadline: Deadline,

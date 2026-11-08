@@ -136,6 +136,9 @@ pub fn confirm_landed_element(
 /// The anchor lands a stored path, which a different element can move into
 /// between the live count and the descent, so the handle is re-identified
 /// before it is handed back: only the recorded predicate proves the landing.
+/// The full resolution and the C find entry point land a path that a count or
+/// a find just matched, and the provisional landing discards this refusal, so
+/// a landed element that does not match is a moved path, not a gone element.
 fn confirm_landed(
     adapter: &dyn PlatformAdapter,
     entry: &RefEntry,
@@ -160,7 +163,7 @@ fn confirm_landed(
     match FullPredicate::of_entry(entry).compare(&LivePredicate::observed(&landed.evidence)) {
         IdentityMatch::Match => Ok(()),
         IdentityMatch::Unknown => Err(identity_unknown_error(entry)),
-        IdentityMatch::NoMatch => Err(absent(entry)),
+        IdentityMatch::NoMatch => Err(crate::refs::resolve_errors::landing_moved(entry)),
     }
 }
 

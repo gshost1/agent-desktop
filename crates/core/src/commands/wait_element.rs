@@ -107,6 +107,9 @@ fn is_retryable_observe_error(error: &crate::AdapterError) -> bool {
         )
 }
 
+/// Polls again on any refusal the shared verdict retries. A predicate wait
+/// exists to outlast a missing element, so unlike a ref action it does not
+/// narrow the codes it retries.
 fn is_retryable_wait_error(error: &crate::AdapterError) -> bool {
-    error.is_explicitly_retryable()
+    crate::refs::resolve_verdict::ResolveVerdict::of(error).retries()
 }
