@@ -1,8 +1,12 @@
+use super::resolve_errors::{
+    deterministic_limit_error, has_deterministic_limit, has_transient_incompleteness,
+    incomplete_evidence, transient_incomplete_timeout, unknown_incomplete_error,
+};
 use super::{
     LocatorResolution, LocatorResolveRequest, LocatorStats, ObservationRequest, ObservationRoot,
     ObservedObservation, RowReading, validate_query, validate_request,
 };
-use crate::{AdapterError, AppError, ErrorCode, adapter::PlatformAdapter, locator::LocatorQuery};
+use crate::{AppError, adapter::PlatformAdapter, locator::LocatorQuery};
 use serde_json::json;
 use std::time::{Duration, Instant};
 
@@ -60,6 +64,12 @@ struct Attempt<'a> {
 /// the read its root resolution took hands that same tree back here, so the refs
 /// it publishes are proven by one observation rather than by a second one.
 ///
+/// An incomplete attempt that names no cause, neither a deterministic limit
+/// nor a transient read failure, gets one more walk while its observation
+/// budget lasts: a cause the platform did not record is not evidence that the
+/// next walk cannot finish. When no walk completes, the first such attempt is
+/// what fails closed, so its evidence is never replaced by a timeout.
+///
 /// A transiently incomplete attempt is retried only while it ended inside its
 /// own observation budget. An attempt that spent that budget was cut by time,
 /// and every retry gets less of it, so the timeout is returned at once with the
@@ -114,12 +124,16 @@ fn resolve_attempts(
     let mut last_incomplete = None;
     let mut last_partial = None;
     let mut selection_retry_used = false;
+    let mut causeless = None;
     let mut rows = first_pass_rows(request);
     loop {
         let remaining = deadline.remaining();
         if remaining.is_zero() {
             if let Some(partial) = last_partial.take() {
                 return finish_partial(partial, aggregate, started);
+            }
+            if let Some(resolution) = causeless.take() {
+                return finish_causeless(attempt.allow_partial, resolution, aggregate, started);
             }
             return Err(transient_incomplete_timeout(
                 deadline,
@@ -176,11 +190,12 @@ fn resolve_attempts(
                     continue;
                 }
                 if !resolution.meta.selection_complete && requires_authoritative_result(request) {
-                    if attempt.allow_partial {
-                        aggregate.merge_attempt(&resolution.stats);
-                        return finish_partial(resolution, aggregate, started);
+                    aggregate.merge_attempt(&resolution.stats);
+                    if causeless.is_none() && !attempt_deadline.is_expired() {
+                        causeless = Some(resolution);
+                        continue;
                     }
-                    return Err(unknown_incomplete_error(&resolution).into());
+                    return finish_causeless(attempt.allow_partial, resolution, aggregate, started);
                 }
                 aggregate.merge_attempt(&resolution.stats);
                 aggregate.elapsed_us = elapsed_us_since(started);
@@ -228,6 +243,23 @@ fn finish_partial(
     Ok(resolution)
 }
 
+/// Ends a resolution whose walk stayed incomplete with no recorded cause: the
+/// observed matches when partial answers are allowed, `locator_incomplete`
+/// otherwise, both with the stats of every walk.
+fn finish_causeless(
+    allow_partial: bool,
+    mut resolution: LocatorResolution,
+    mut aggregate: LocatorStats,
+    started: Instant,
+) -> Result<LocatorResolution, AppError> {
+    if allow_partial {
+        return finish_partial(resolution, aggregate, started);
+    }
+    aggregate.elapsed_us = elapsed_us_since(started);
+    resolution.stats = aggregate;
+    Err(unknown_incomplete_error(&resolution).into())
+}
+
 fn requires_authoritative_result(request: &LocatorResolveRequest) -> bool {
     request.materialization == super::LocatorMaterialization::SelectedMatches
         || !matches!(
@@ -236,88 +268,9 @@ fn requires_authoritative_result(request: &LocatorResolveRequest) -> bool {
         )
 }
 
-fn unknown_incomplete_error(resolution: &LocatorResolution) -> AdapterError {
-    AdapterError::timeout("Locator traversal returned incomplete evidence")
-        .with_suggestion("Retry with a narrower locator or a larger observation budget")
-        .with_details(json!({
-            "kind": "locator_incomplete",
-            "retryable": false,
-            "observed_matches": resolution.meta.total_matches,
-            "query_stats": resolution.stats,
-        }))
-        .with_disposition(crate::DeliverySemantics::not_delivered())
-}
-
-pub(super) fn has_deterministic_limit(stats: &LocatorStats) -> bool {
-    let limits = &stats.traversal.limits;
-    limits.node_hits > 0
-        || limits.edge_hits > 0
-        || limits.child_hits > 0
-        || limits.text_hits > 0
-        || limits.depth_hits > 0
-}
-
-fn has_transient_incompleteness(stats: &LocatorStats) -> bool {
-    stats.traversal.limits.child_count_changes > 0
-        || stats.reads.health.cannot_complete > 0
-        || stats.reads.health.deadline_exhausted > 0
-}
-
-fn deterministic_limit_error(resolution: &LocatorResolution) -> AdapterError {
-    AdapterError::new(
-        ErrorCode::Timeout,
-        "Locator traversal reached a deterministic observation budget",
-    )
-    .with_suggestion(
-        "Use a narrower locator, a shallower scope, or increase the matching observation budget",
-    )
-    .with_details(json!({
-        "kind": "locator_budget_limit",
-        "retryable": false,
-        "observed_matches": resolution.meta.total_matches,
-        "limits": resolution.stats.traversal.limits,
-        "query_stats": resolution.stats,
-    }))
-    .with_disposition(crate::DeliverySemantics::not_delivered())
-}
-
-fn incomplete_evidence(resolution: &LocatorResolution) -> serde_json::Value {
-    json!({
-        "observed_matches": resolution.meta.total_matches,
-        "child_count_changes": resolution.stats.traversal.limits.child_count_changes,
-        "cannot_complete": resolution.stats.reads.health.cannot_complete,
-        "deadline_exhausted": resolution.stats.reads.health.deadline_exhausted,
-    })
-}
-
-fn elapsed_us_since(started: Instant) -> u64 {
+pub(super) fn elapsed_us_since(started: Instant) -> u64 {
     let elapsed = crate::wait::deadline::now().saturating_duration_since(started);
     u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX)
-}
-
-fn transient_incomplete_timeout(
-    deadline: crate::Deadline,
-    stats: &LocatorStats,
-    last_incomplete: Option<serde_json::Value>,
-    started: Instant,
-) -> AdapterError {
-    let stats = LocatorStats {
-        elapsed_us: elapsed_us_since(started),
-        ..stats.clone()
-    };
-    AdapterError::timeout("Locator observation did not stabilize before its deadline")
-        .with_suggestion(
-            "Retry with a larger timeout or narrow the locator to a more stable subtree",
-        )
-        .with_details(json!({
-            "kind": "locator_transient_incomplete",
-            "retryable": true,
-            "timeout_ms": deadline.timeout_ms(),
-            "observation_attempts": stats.reads.counts.observation_attempts,
-            "last_incomplete": last_incomplete,
-            "query_stats": stats,
-        }))
-        .with_disposition(crate::DeliverySemantics::not_delivered())
 }
 
 fn resolve_observed_attempt(

@@ -83,8 +83,7 @@ impl LocatorTraversal {
             self.arena.drop_handles(1);
             return Ok(None);
         };
-        let pointer = element.0 as usize;
-        if !self.arena.ancestors.insert(pointer) {
+        if !self.arena.enter(&element) {
             self.arena.stats.traversal.cycles_skipped += 1;
             self.arena.drop_handles(1);
             return Ok(None);
@@ -92,7 +91,7 @@ impl LocatorTraversal {
         if !self.usage.claim_node() {
             self.arena.stats.traversal.limits.node_hits += 1;
             self.arena.mark_incomplete();
-            self.arena.ancestors.remove(&pointer);
+            self.arena.leave(&element);
             self.arena.drop_handles(1);
             return Ok(None);
         }
@@ -125,7 +124,8 @@ impl LocatorTraversal {
             self.arena.stats.activation.ready = true;
         }
         if read.invalid_element {
-            self.arena.ancestors.remove(&pointer);
+            self.arena.leave(&element);
+            self.arena.stats.reads.health.invalidated_elements += 1;
             self.arena.drop_handles(1);
             if raw_depth == 0 {
                 return Err(AdapterError::new(
@@ -167,7 +167,7 @@ impl LocatorTraversal {
                     read.attrs.role.as_deref().unwrap_or(""),
                     read.attrs.bounds,
                 ),
-                ancestors: self.arena.ancestors.iter().copied().collect(),
+                ancestors: self.arena.ancestor_path(),
             });
             (Vec::new(), None, true)
         } else {
@@ -184,7 +184,7 @@ impl LocatorTraversal {
             let (children, complete) = result?;
             (children, None, complete)
         };
-        self.arena.ancestors.remove(&pointer);
+        self.arena.leave(&element);
         self.arena.drop_handles(1);
         if !subtree_complete {
             self.arena.mark_incomplete();
