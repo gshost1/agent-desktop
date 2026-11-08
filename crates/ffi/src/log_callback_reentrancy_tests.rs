@@ -116,3 +116,12 @@ fn a_log_callback_can_call_back_into_the_library() {
     assert_eq!(outer, AdResult::Ok);
     assert_eq!(CALLBACK_RUNS.get(), 1);
 }
+
+#[test]
+fn a_mutation_from_a_log_callback_inside_a_mutation_is_refused_at_once() {
+    let (outer, inner, elapsed, kind) = run_outer_call_reentered_by_callback(true);
+    assert_eq!(outer, AdResult::Ok);
+    assert_eq!(inner, AdResult::ErrPolicyDenied, "after {elapsed:?}");
+    assert_eq!(kind, "reentrant_interaction_lease");
+    assert!(elapsed < Duration::from_millis(100), "took {elapsed:?}");
+}

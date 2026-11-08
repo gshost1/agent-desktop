@@ -1757,7 +1757,9 @@ AdResult ad_mouse_wheel(const struct AdAdapter *adapter,
  * invoke it once.
  *
  * The callback may call other `ad_*` functions. Events those nested calls emit
- * are not delivered to it.
+ * are not delivered to it. A mutating call made from the callback while the
+ * call that logged holds the interaction lease fails at once with
+ * `AD_RESULT_ERR_POLICY_DENIED` and details kind `reentrant_interaction_lease`.
  *
  * The message pointer is valid only until the callback returns. The callback
  * must not unwind across this C ABI boundary; C++ exceptions and Rust panics

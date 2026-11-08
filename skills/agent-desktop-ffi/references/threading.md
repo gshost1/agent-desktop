@@ -20,6 +20,7 @@ finite deadline and do not take the interaction lease.
 | read + read | Both may run concurrently; neither waits for the interaction lease |
 | read + mutation | The read does not wait for the lease and may overlap the mutation; its result is a point-in-time observation, not a transaction |
 | mutation + mutation | One lease holder runs at a time for the same OS user; the waiter consumes its command deadline and returns a structured timeout if it cannot acquire the lease |
+| mutation inside a mutation on the same thread (from a log callback) | Refused at once with `AD_RESULT_ERR_POLICY_DENIED`, details kind `reentrant_interaction_lease` |
 | native-handle call on another thread | Rejected with `AD_RESULT_ERR_INVALID_ARGS`; use a qualified ref instead |
 
 Snapshots, finds, gets, display/window/app listings, screenshots, clipboard
@@ -81,7 +82,11 @@ to cross an async task or thread boundary.
 invoked from any thread that calls an `ad_*` function.
 
 The callback may itself call `ad_*` functions. Events those nested calls emit
-are not delivered to the callback.
+are not delivered to the callback. While the call that logged is a mutation, its
+thread holds the interaction lease, so a mutating call from the callback fails
+at once with `AD_RESULT_ERR_POLICY_DENIED`, details kind
+`reentrant_interaction_lease` and `retryable: false`, instead of waiting for a
+lease only its own thread can release. Observations from the callback still run.
 
 A callback unregistered via `NULL` may still receive an invocation already in
 flight on another thread. Keep the callback and captured state alive for the
