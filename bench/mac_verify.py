@@ -48,13 +48,20 @@ def bench_folder(kind, files):
 
 
 def bench_window(binary, folder):
-    body, _ = run(binary, "list-windows", "--app", "Finder")
-    data = body.get("data") or []
-    windows = data if isinstance(data, list) else data.get("windows", [])
-    wins = [w for w in windows if w.get("title") == folder.name]
-    if len(wins) != 1:
-        sys.exit(f"STOP: expected one Finder window titled {folder.name}, found {len(wins)}")
-    return wins[0]["id"]
+    """The agent-desktop id of the bench folder's Finder window. Window titles from
+    agent-desktop are the app name while Screen Recording is denied, so the window is
+    identified by its AX title (bench tool) as Finder's focused window first."""
+    macctl("raise", "Finder", folder.name)
+    macctl("activate", "Finder")
+    time.sleep(0.7)
+    focused = json.loads(macctl("focused", "Finder") or "{}")
+    if focused.get("window") != folder.name:
+        sys.exit(f"STOP: Finder's focused window is not {folder.name}")
+    body, _ = run(binary, "snapshot", "--app", "Finder", "--max-depth", "1", "--compact")
+    wid = ((body.get("data") or {}).get("window") or {}).get("id")
+    if not wid:
+        sys.exit("STOP: no window id for the focused bench window")
+    return wid
 
 
 def close_folder(folder):
@@ -80,7 +87,7 @@ def verify_pr18(binary):
         for attempt in (1, 2):
             snap, _ = run(binary, "snapshot", "--app", "Finder", "--window-id", wid)
             tree = (snap.get("data") or {}).get("tree") or {}
-            target = next((n for n in walk(tree) if n.get("name") == "a.txt" and n.get("ref_id")), None)
+            target = next((n for n in walk(tree) if "a.txt" in (n.get("name"), n.get("value")) and n.get("ref_id")), None)
             if not target:
                 sys.exit("STOP: no a.txt ref in the bench window snapshot")
             opened, _ = run(binary, "right-click", target["ref_id"])
@@ -115,7 +122,8 @@ def verify_pr14(binary, fixture):
         for budget in ("200", "100", "50", "20"):
             snap, took = run(binary, "snapshot", "--app", "Finder", "--window-id", wid, "--timeout-ms", budget)
             data = snap.get("data") or {}
-            refs = [n for n in walk(data.get("tree") or {}) if n.get("ref_id") and n.get("name", "").startswith("f")]
+            refs = [n for n in walk(data.get("tree") or {})
+                    if n.get("ref_id") and str(n.get("value") or n.get("name") or "").startswith("f0")]
             row = {"case": f"snapshot --timeout-ms {budget}", "s": took, "complete": data.get("complete"),
                    "truncated": data.get("truncated"), "nodes_observed": data.get("nodes_observed"),
                    "file_refs": len(refs)}

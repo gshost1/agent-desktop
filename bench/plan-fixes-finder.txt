@@ -1,0 +1,4 @@
+# n=3 Finder for #24 and #25, then n=3 TextEdit for #26 and #27 (wt-sheet), each against fork main ec3add89, order rotated per round.
+fx1 finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24 finder:a:claude-opus-5-5:bench/out/wt-pr25
+fx2 finder:a:claude-opus-5-5:bench/out/wt-pr24 finder:a:claude-opus-5-5:bench/out/wt-pr25 finder:a:claude-opus-5-5:bench/out/wt-main
+fx3 finder:a:claude-opus-5-5:bench/out/wt-pr25 finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24
