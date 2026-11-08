@@ -13,9 +13,9 @@ LEG = "observation.stale_ref_after_ui_change"
 NOT_DELIVERED = {"delivery": "not_delivered", "retry": "safe"}
 FAITHFUL = {
     "code": "STALE_REF",
-    "suggestion": "Run 'snapshot' to refresh, then retry with the updated ref.",
+    "suggestion": "Reopen the menu through its opener, take a fresh menu snapshot, and use the new ref.",
     "disposition": NOT_DELIVERED,
-    "recovery": {"strategy": observation.STALE_RECOVERY},
+    "details": {"kind": observation.STALE_KIND, "complete": True, "retryable": False},
 }
 
 
@@ -33,8 +33,10 @@ class StaleVerdictTests(unittest.TestCase):
             ("success", refusal(ok=True), "", "expected STALE_REF"),
             ("delivered", refusal({"disposition": {"delivery": "delivered"}}), "", "not_delivered"),
             ("no disposition", refusal({"disposition": None}), "", "not_delivered"),
-            ("no recovery", refusal({"recovery": None}), "", "recovery strategy"),
-            ("wrong recovery", refusal({"recovery": {"strategy": "other"}}), "", "recovery strategy"),
+            ("no kind", refusal({"details": None}), "", "kind is not"),
+            ("wrong kind", refusal({"details": {"kind": "saved_ref_absent", "retryable": False}}), "", "kind is not"),
+            ("retryable", refusal({"details": {"kind": "menu_closed", "retryable": True}}), "", "must not be retryable"),
+            ("refresh offered", refusal({"recovery": {"strategy": "refresh_snapshot_then_retry_original"}}), "", "no refresh recovery"),
             ("wrong exit", refusal(exit_code=2), "", "must exit 1"),
             ("display changed", refusal(), "7", "changed the display"),
         ):
@@ -86,9 +88,9 @@ class RestorationTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.run_leg(lambda argv: Envelope(True, {}, None, "{}", 0, argv, 0))
 
-    def test_a_refusal_without_recovery_fails_the_leg(self):
+    def test_a_refusal_that_offers_a_refresh_fails_the_leg(self):
         with self.assertRaises(AssertionError):
-            self.run_leg(lambda argv: refusal({"recovery": None}))
+            self.run_leg(lambda argv: refusal({"recovery": {"strategy": "refresh_snapshot_then_retry_original"}}))
 
     def test_a_fresh_snapshot_that_reuses_the_ref_fails_the_leg(self):
         with self.assertRaises(AssertionError):

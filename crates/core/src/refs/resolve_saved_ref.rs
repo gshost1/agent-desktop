@@ -107,7 +107,8 @@ pub(crate) fn observe_saved_ref(
     };
     let mut request = whole_window_request(&base, deadline)?;
     request.observation_mode.identity_only = identity_only;
-    let observed = observe_window(adapter, &request, &window, lease)?;
+    let observed = observe_window(adapter, &request, &window, lease)
+        .map_err(|error| error.for_saved_ref_surface(entry.source.source_surface))?;
     let index = saved_ref_node(entry, token, &observed)?;
     let node = observed
         .nodes

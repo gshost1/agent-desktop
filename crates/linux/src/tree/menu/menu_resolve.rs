@@ -33,15 +33,7 @@ fn unanswered() -> AdapterError {
 }
 
 pub(crate) fn menu_closed() -> AdapterError {
-    AdapterError::stale_ref_because("The menu the ref was taken in is no longer open")
-    .with_suggestion("Reopen the menu through its opener, take a fresh menu snapshot, and use the new ref. Refreshing a closed menu cannot restore this ref.")
-    .with_details(
-        json!({
-            "kind": "menu_closed",
-            "complete": true,
-            "retryable": false,
-        }),
-    )
+    AdapterError::menu_closed()
 }
 
 struct MenuSource<'a> {

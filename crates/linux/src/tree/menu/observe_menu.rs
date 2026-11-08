@@ -1,6 +1,6 @@
 use agent_desktop_core::{
-    AdapterError, Deadline, ErrorCode, ObservationRequest, ObservationRoot, ObservationSource,
-    ObservedTree, SnapshotSurface, WindowInfo,
+    AdapterError, Deadline, ObservationRequest, ObservationRoot, ObservationSource, ObservedTree,
+    SnapshotSurface, WindowInfo,
 };
 
 use super::menu_identity::MenuIdentity;
@@ -92,11 +92,10 @@ pub(crate) fn is_cut_short_beyond_pruning(node: &WalkedNode<ObservedRead>) -> bo
 }
 
 fn menu_absent() -> AdapterError {
-    AdapterError::new(
-        ErrorCode::ElementNotFound,
+    AdapterError::surface_absent(
+        SnapshotSurface::Menu,
         "The window does not present an open menu",
     )
-    .with_suggestion("Open the menu first, then snapshot the menu surface")
 }
 
 fn outermost(popups: Vec<MenuPopup>) -> Result<MenuPopup, AdapterError> {
