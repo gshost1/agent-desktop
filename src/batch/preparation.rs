@@ -15,6 +15,21 @@ pub(super) struct PreparedCommand {
     pub context: CommandContext,
 }
 
+impl PreparedCommand {
+    /// The session this entry would be refused for because it has ended,
+    /// unless the command runs in an ended session, as `session end` does.
+    pub(super) fn ended_session(&self) -> Option<String> {
+        if self.command.runs_in_an_ended_session() {
+            return None;
+        }
+        let session_id = self.context.session_id()?;
+        match agent_desktop_core::session::read_manifest(session_id) {
+            Ok(Some(manifest)) if manifest.ended_at.is_some() => Some(session_id.to_owned()),
+            _ => None,
+        }
+    }
+}
+
 pub(super) fn prepare(
     input: &str,
     permission_report: &PermissionReport,

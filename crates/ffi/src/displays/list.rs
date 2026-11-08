@@ -27,8 +27,7 @@ pub unsafe extern "C" fn ad_list_displays(
                     crate::resource::validate_list_len(displays.len(), "Display list")
                         .and_then(|_| displays.iter().try_for_each(validate_display_info))
                 {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 let items = displays
                     .iter()
@@ -38,10 +37,7 @@ pub unsafe extern "C" fn ad_list_displays(
                 *out = Box::into_raw(Box::new(AdDisplayList { items }));
                 AdResult::Ok
             }
-            Err(error) => {
-                set_last_error(&error);
-                crate::error::last_error_code()
-            }
+            Err(error) => set_last_error(&error),
         }
     })
 }

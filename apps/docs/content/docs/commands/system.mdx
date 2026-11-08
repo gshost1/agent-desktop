@@ -111,7 +111,7 @@ agent-desktop session gc [--older-than SECONDS] [--ended]
   </tbody>
 </table>
 
-`start` returns `session_id`, `name`, `trace`, `artifacts`, `created_at`, `next` (the shell line that exports the id), and `activation`; [Sessions](/desktop/sessions#start-list-end-and-clean-up) shows a full result. `end` returns `session_id` and `ended_at`, `list` returns `data.sessions`, and `gc` returns `data.removed`. `--screenshots` with `--no-trace` is `INVALID_ARGS`, and `--multi-agent` without `--cursor` is a parse error.
+`start` returns `session_id`, `name`, `trace`, `artifacts`, `created_at`, `next` (the shell line that exports the id), and `activation`; [Sessions](/desktop/sessions#start-list-end-and-clean-up) shows a full result. With `--cursor` it also returns `cursor_overlay` (the saved setting) and `rendered` (`true` once the renderer draws; always `false` with `--multi-agent`, whose cursors appear per agent). The session and its overlay setting are saved in one write, so an error from `start` means no session was created and nothing is left to end. A renderer that cannot draw does not fail the start: it still returns the session id with `rendered: false`, the session is active with the overlay enabled, and the next action that draws asks for the renderer again. `end` returns `session_id` and `ended_at`, `list` returns `data.sessions`, and `gc` returns `data.removed`. `--screenshots` with `--no-trace` is `INVALID_ARGS`, and `--multi-agent` without `--cursor` is a parse error.
 
 ## cursor-overlay
 

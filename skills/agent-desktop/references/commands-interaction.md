@@ -149,11 +149,13 @@ agent-desktop scroll-to @s8f3k2p9:e8
 agent-desktop press return
 agent-desktop press ctrl+shift+z
 agent-desktop press cmd+s --app "TextEdit" --wait-for "button:Save" --wait-timeout 5000
+agent-desktop press return --ref @s8f3k2p9:e3
 ```
 
 - Key names: `return`, `escape`, `tab`, `space`, `delete`, `up`, `down`, `left`, `right`, `f1` to `f12`. Modifiers: `cmd`/`meta`, `ctrl`, `alt`, `shift`, joined with `+`. Modifier names and blocked combos differ by OS. Read the platform skill.
 - A bare uppercase letter adds Shift: `press H` sends `shift+h`.
 - `--app` or `--window-id` targets one app. Use `--window-id` when several instances share a name and `--app` alone is `AMBIGUOUS_TARGET`. Unscoped `press` goes to the foreground app.
+- `--ref` sends the keys to one element: it is focused first, without moving the pointer, so the key reaches that field and not whatever had focus. A web ref takes the key through the page. `--ref` cannot combine with `--app` or `--window-id`.
 - `press` reports `delivered_unverified`, because delivery does not prove the shortcut did its job. Wait for the expected effect once with `--wait-for` or `--wait-for-gone`. A timeout keeps the delivered result and is unsafe to retry blindly.
 - To open a window with a shortcut, keep the press and the wait in one `batch`, so the baseline is taken before delivery: `press`, then `wait --event window-opened`. A failed wait does not make the press safe to repeat.
 - Dangerous shortcuts are refused with `POLICY_DENIED` by the adapter. `--force` sends one anyway. Adding a modifier to a blocked shortcut usually gives another blocked one.

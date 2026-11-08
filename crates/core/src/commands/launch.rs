@@ -45,14 +45,31 @@ pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value,
     let mut launched = adapter.launch_app(&app, &options, &lease)?;
     if let Some(port) = options.cdp_port {
         let granted = deadline.remaining();
-        launched.cdp = Some(verify_cdp_endpoint(
-            port, deadline, granted, &launched, adapter,
-        )?);
+        let endpoint = verify_cdp_endpoint(port, deadline, granted, &launched, adapter)?;
+        remember_endpoint(adapter, &launched, &endpoint);
+        launched.cdp = Some(endpoint);
     }
     if launched.suggestion.is_none() {
         launched.suggestion = launch_suggestion(requested_cdp_port.is_some(), &launched);
     }
     Ok(serde_json::to_value(launched)?)
+}
+
+/// A verified endpoint is offered to the adapter so a later invocation can
+/// reach the same browser. The launch already succeeded, so a failure to
+/// record it is logged and the result stands.
+fn remember_endpoint(
+    adapter: &dyn PlatformAdapter,
+    launched: &LaunchResult,
+    endpoint: &cdp_endpoint::CdpEndpoint,
+) {
+    let Some(instance) = launched.process_instance.as_deref() else {
+        return;
+    };
+    let process = crate::ProcessIdentity::new(launched.pid, instance);
+    if let Err(error) = adapter.remember_cdp_endpoint(process, endpoint) {
+        tracing::warn!(error = %error, "launch: DevTools endpoint was not recorded");
+    }
 }
 
 /// The probe needs some of the overall deadline reserved for itself, or a
@@ -66,25 +83,25 @@ fn probe_reserve(total: Duration) -> Duration {
 
 /// Guidance the calling agent reads at the moment of use, not prose it has
 /// to infer: a Chromium app launched without `--cdp` is nudged toward the
-/// flag that opens the web-content door, and a verified endpoint is handed
-/// off to a CDP client instead of left for the caller to rediscover.
+/// flag that opens the web-content door, and a verified endpoint points at
+/// the web surface that reads and drives the page through it.
 fn launch_suggestion(cdp_requested: bool, launched: &LaunchResult) -> Option<String> {
-    if let Some(cdp) = &launched.cdp {
+    if launched.cdp.is_some() {
         return Some(format!(
-            "Next: run `agent-browser connect {}` (preferred; `agent-browser skills get \
-             electron` has the guide) or connect any CDP client such as Playwright or \
-             Puppeteer. If neither is available, ask the user to install agent-browser or \
-             continue with accessibility commands. Do not hand-roll raw CDP or call \
-             app-internal APIs — that path is unverified and app-specific. Native menus, \
-             dialogs, windows, and screenshots stay with agent-desktop.",
-            cdp.port
+            "Next: read the web content with `snapshot --app \"{app}\" --surface web -i` and act \
+             on its refs with the usual commands; `data.channel` is `cdp` when it was read over \
+             this endpoint. In a web browser, `open-url <url> --app \"{app}\"` loads a page; an \
+             app that embeds web content for its own interface refuses it. Do not hand-roll raw \
+             CDP or call app-internal APIs. Native menus, dialogs, windows, and screenshots stay \
+             on the accessibility surfaces.",
+            app = launched.app
         ));
     }
     if !cdp_requested && launched.renderer == Some(RendererKind::Chromium) {
         return Some(
             "Chromium app: for web-content work, run close-app and then launch --cdp, then \
-             drive the web contents with agent-browser or any CDP client. Accessibility \
-             commands still cover everything, including native menus and dialogs."
+             read the page with snapshot --surface web. Accessibility commands still cover \
+             everything, including native menus and dialogs."
                 .to_owned(),
         );
     }

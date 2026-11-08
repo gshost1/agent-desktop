@@ -5,7 +5,11 @@ use crate::{
     tree::roles::is_mutable_value_role,
 };
 
-const ELEMENT_TOKEN_PREFIX: &str = "axtok1:";
+/// Retained-object prefixes that mark a genuine element token: the AX
+/// element token, and the DevTools DOM-node token (`cdp:<target>:<node>`) a
+/// web-channel adapter records. Both name one live element through the
+/// adapter that minted them.
+const ELEMENT_TOKEN_PREFIXES: &[&str] = &["axtok1:", "cdp:"];
 
 /// The retained object that is a genuine element token. A platform that keeps
 /// only a positional path or a runtime id retains a location, not a handle, so
@@ -21,7 +25,9 @@ pub fn element_token(entry: &RefEntry) -> Option<&str> {
 /// Whether a retained object value is a genuine element token rather than a
 /// retained location.
 pub fn is_element_token(token: &str) -> bool {
-    token.starts_with(ELEMENT_TOKEN_PREFIX)
+    ELEMENT_TOKEN_PREFIXES
+        .iter()
+        .any(|prefix| token.starts_with(prefix))
 }
 
 pub fn has_meaningful_identity(entry: &RefEntry) -> bool {

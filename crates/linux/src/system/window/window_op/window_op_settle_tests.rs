@@ -10,14 +10,14 @@ fn a_resize_with_continuous_rectangle_drift_is_not_verified() {
         state(x, 0, 520, 380)
     }
     let mut world = World::showing(state(0, 0, 400, 300));
-    world.reaction = Some(drifting);
-    let (verdict, _) = super::super::settle(
+    world.reaction = Some(|written: &[WindowWrite]| ControlRead::Ready(drifting(written)));
+    let settled = super::super::settle(
         &world,
         CLIENT,
         &requested(&resize(520.0, 380.0)).unwrap().unwrap(),
-        Deadline::after(500).unwrap(),
+        Deadline::after(2_000).unwrap(),
     );
-    assert_eq!(verdict, Verdict::Mismatch);
+    assert!(matches!(settled, Settled::Unconfirmed(_)), "{settled:?}");
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn a_move_seen_only_in_passing_is_not_the_held_result() {
         &world,
         &window(),
         &WindowOp::Move { x: 300.0, y: 200.0 },
-        budget(),
+        Deadline::after(2_000).expect("a deadline builds"),
     )
     .expect_err("the slide kept going past the asked place");
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
@@ -83,62 +83,25 @@ fn a_move_without_time_for_the_confirmation_pause_is_unverified() {
         Deadline::after(100).expect("a deadline builds"),
     )
     .expect_err("two immediate reads cannot prove the place held");
+    assert_eq!(error.code, ErrorCode::Timeout);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     assert_eq!(world.writes(), 1);
+    let details = error.details.expect("details");
+    assert_eq!(details["requested"]["x"], 300);
+    assert_eq!(details["observed"]["x"], 300);
+    assert_eq!(details["observed"]["y"], 200);
 }
 
-fn confirmation_returning_after_the_limit(
-    written: &[WindowWrite],
-    late: WindowFacts,
-) -> WindowFacts {
-    thread_local! {
-        static READS: Cell<u32> = const { Cell::new(0) };
-    }
-    if written.is_empty() {
-        return state(10, 10, 400, 300);
-    }
-    let first = READS.with(|reads| reads.replace(reads.get() + 1) == 0);
-    if first {
-        state(300, 200, 400, 300)
-    } else {
-        std::thread::sleep(SETTLE_BUDGET);
-        late
-    }
-}
-
-fn late_and_moved_again(written: &[WindowWrite]) -> WindowFacts {
-    confirmation_returning_after_the_limit(written, state(60, 90, 400, 300))
-}
-
-fn late_and_unchanged(written: &[WindowWrite]) -> WindowFacts {
-    confirmation_returning_after_the_limit(written, state(300, 200, 400, 300))
-}
-
-fn move_confirmed_late(reaction: fn(&[WindowWrite]) -> WindowFacts) -> AdapterError {
-    let mut world = World::showing(state(10, 10, 400, 300));
-    world.reaction = Some(reaction);
+#[test]
+fn a_short_command_whose_place_lands_at_once_is_confirmed() {
+    let world = World::showing(state(300, 200, 400, 300));
     run(
         &world,
         &window(),
         &WindowOp::Move { x: 300.0, y: 200.0 },
-        Deadline::after(2_000).expect("a deadline builds"),
+        Deadline::after(200).expect("a deadline builds"),
     )
-    .expect_err("a confirmation read past the limit cannot prove the place held")
-}
-
-#[test]
-fn a_confirmation_that_returns_after_the_limit_reports_its_latest_rectangle() {
-    let error = move_confirmed_late(late_and_moved_again);
-    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
-    let details = error.details.expect("details");
-    assert_eq!(details["observed"]["x"], 60);
-    assert_eq!(details["observed"]["y"], 90);
-}
-
-#[test]
-fn a_confirmation_that_agrees_but_returns_after_the_limit_is_not_a_held_place() {
-    let error = move_confirmed_late(late_and_unchanged);
-    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    .expect("the pause fits in the command, so the place is confirmed");
 }
 
 #[test]
@@ -161,4 +124,19 @@ fn a_replacement_client_cannot_confirm_the_original_windows_operation() {
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     let current = World::showing(maximized);
     run(&current, &window(), &WindowOp::Maximize, budget()).expect("the current owner confirms");
+}
+
+#[test]
+fn a_match_that_shifts_within_the_tolerance_is_confirmed_from_its_latest_read() {
+    let world = World::showing(state(301, 200, 400, 300))
+        .then_showing(state(300, 200, 400, 300))
+        .then_showing(state(300, 200, 400, 300))
+        .then_showing(state(60, 90, 400, 300));
+    run(
+        &world,
+        &window(),
+        &WindowOp::Move { x: 300.0, y: 200.0 },
+        Deadline::after(2_000).expect("a deadline builds"),
+    )
+    .expect("the shifted read matched and held through its own pause");
 }

@@ -105,7 +105,7 @@ SKIP_PRECOMMIT=1 git commit -m "..."
 
 [AGENTS.md](AGENTS.md) holds the engineering rules for people and coding agents. They cover Conventional Commits, the 400-line cap per Rust file, no inline comments, no delivery-plan references in shipped source, one domain type per file, error handling, core isolation and the steps for adding a command. The hook and CI enforce most of them.
 
-Skills stay in sync. A new command or a changed CLI flag must update the matching skill. Cross-platform behavior goes in `skills/agent-desktop/`. Platform behavior goes in `skills/agent-desktop-macos/`, `skills/agent-desktop-windows/` or `skills/agent-desktop-linux/`. C ABI changes go in `skills/agent-desktop-ffi/`. The binary embeds these skills and agents read them, so they must match the code.
+Skills stay in sync. A new command or a changed CLI flag must update the matching skill. Cross-platform behavior goes in `skills/agent-desktop/`. Platform behavior goes in `skills/agent-desktop-macos/`, `skills/agent-desktop-windows/` or `skills/agent-desktop-linux/`. Web surface behavior goes in `skills/agent-desktop-web/`. C ABI changes go in `skills/agent-desktop-ffi/`. The binary embeds these skills and agents read them, so they must match the code.
 
 ## Submitting a pull request
 

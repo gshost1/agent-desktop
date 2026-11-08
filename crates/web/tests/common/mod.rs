@@ -23,8 +23,27 @@ impl Drop for HeadlessChrome {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        let flag = format!("--user-data-dir={}", self.profile.display());
+        let started = Instant::now();
+        while helpers_running(&flag) {
+            if started.elapsed() > Duration::from_secs(10) {
+                return;
+            }
+            let _ = Command::new("pkill")
+                .args(["-KILL", "-f", "--", &flag])
+                .status();
+            std::thread::sleep(Duration::from_millis(100));
+        }
         let _ = std::fs::remove_dir_all(&self.profile);
     }
+}
+
+fn helpers_running(flag: &str) -> bool {
+    Command::new("pgrep")
+        .args(["-f", "--", flag])
+        .stdout(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 /// Starts headless Chrome with a throwaway profile under the target
@@ -33,7 +52,11 @@ impl Drop for HeadlessChrome {
 pub fn launch(name: &str) -> HeadlessChrome {
     let profile = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("web-live-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&profile);
+    assert!(
+        !profile.exists(),
+        "a live test profile folder is reused: {}",
+        profile.display()
+    );
     std::fs::create_dir_all(&profile).unwrap();
     let child = Command::new(CHROME)
         .arg("--headless=new")

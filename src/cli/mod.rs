@@ -25,8 +25,8 @@ use crate::cli_args::{
     skills::SkillsArgs,
     system::{
         AppRefArgs, ClipboardGetArgs, ClipboardSetArgs, CloseAppArgs, FocusWindowArgs, LaunchArgs,
-        ListAppsArgs, ListWindowsArgs, MoveWindowCliArgs, OpenSystemSurfaceArgs, PermissionsArgs,
-        ResizeWindowCliArgs, WaitArgs,
+        ListAppsArgs, ListWindowsArgs, MoveWindowCliArgs, OpenSystemSurfaceArgs, OpenUrlArgs,
+        PermissionsArgs, ResizeWindowCliArgs, WaitArgs,
     },
     trace::TraceArgs,
 };
@@ -133,6 +133,10 @@ pub(crate) enum Commands {
         about = "Open a shell surface (start-menu, taskbar, dock, menu-bar-extras ...) and return the window it presents, if any"
     )]
     OpenSystemSurface(OpenSystemSurfaceArgs),
+    #[command(
+        about = "Load a URL in a browser over its DevTools endpoint: the window's visible tab, or a new background tab"
+    )]
+    OpenUrl(OpenUrlArgs),
     #[command(about = "List notifications from Notification Center")]
     ListNotifications(ListNotificationsCliArgs),
     #[command(about = "Dismiss a notification by index")]
@@ -231,6 +235,7 @@ impl Commands {
             Self::Restore(_) => CommandMetadata::new("restore", false),
             Self::ListSurfaces(_) => CommandMetadata::new("list-surfaces", false),
             Self::OpenSystemSurface(_) => CommandMetadata::new("open-system-surface", false),
+            Self::OpenUrl(_) => CommandMetadata::new("open-url", false),
             Self::ListNotifications(_) => CommandMetadata::new("list-notifications", false),
             Self::DismissNotification(_) => CommandMetadata::new("dismiss-notification", false),
             Self::DismissAllNotifications(_) => {
@@ -258,6 +263,13 @@ impl Commands {
 
     pub(crate) fn supports_post_action_wait(&self) -> bool {
         self.metadata().post_action_wait
+    }
+
+    /// Whether the command still runs when its session has ended. Only
+    /// `session end` does: teardown is repeatable on an ended session.
+    pub(crate) fn runs_in_an_ended_session(&self) -> bool {
+        matches!(self, Self::Session(args)
+            if matches!(args.action, crate::cli_args::session::SessionAction::End(_)))
     }
 
     pub(crate) fn is_mutating(&self) -> bool {
@@ -301,6 +313,7 @@ impl Commands {
             | Self::CloseApp(_)
             | Self::FocusWindow(_)
             | Self::OpenSystemSurface(_)
+            | Self::OpenUrl(_)
             | Self::ResizeWindow(_)
             | Self::MoveWindow(_)
             | Self::Minimize(_)

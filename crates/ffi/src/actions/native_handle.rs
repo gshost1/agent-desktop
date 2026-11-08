@@ -49,8 +49,7 @@ pub unsafe extern "C" fn ad_free_handle(
         let adapter_id = match crate::adapter::adapter_id(adapter) {
             Ok(id) => id,
             Err(error) => {
-                set_last_error(&error);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&error);
             }
         };
         if handle.is_null() {
@@ -66,10 +65,7 @@ pub unsafe extern "C" fn ad_free_handle(
                 (*handle).ptr = std::ptr::null();
                 AdResult::Ok
             }
-            Err(error) => {
-                set_last_error(&error);
-                AdResult::ErrInvalidArgs
-            }
+            Err(error) => set_last_error(&error),
         }
     })
 }
