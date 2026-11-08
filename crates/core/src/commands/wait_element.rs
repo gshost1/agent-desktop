@@ -107,6 +107,9 @@ fn is_retryable_observe_error(error: &crate::AdapterError) -> bool {
         )
 }
 
+/// Polls again on any refusal stamped `retryable: true`, as `wait --wait-for`
+/// does. A predicate wait exists to outlast a missing element, so it keeps
+/// polling a retryable complete absence that a ref action treats as final.
 fn is_retryable_wait_error(error: &crate::AdapterError) -> bool {
     error.is_explicitly_retryable()
 }

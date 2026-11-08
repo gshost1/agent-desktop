@@ -1,7 +1,7 @@
 use crate::{
-    AdapterError, AppError, CursorOverlayConfig, SignalBaseline, actions::action::Action,
-    actions::action_request::ActionRequest, actions::interaction_policy::InteractionPolicy,
-    session, trace::TraceConfig,
+    AdapterError, AppError, CursorOverlayConfig, NotificationSeed, SignalBaseline,
+    actions::action::Action, actions::action_request::ActionRequest,
+    actions::interaction_policy::InteractionPolicy, session, trace::TraceConfig,
 };
 use serde_json::{Value, json};
 use std::cell::Cell;
@@ -167,6 +167,17 @@ impl CommandContext {
 
     pub fn event_baseline(&self) -> Option<&Result<SignalBaseline, AdapterError>> {
         self.options.event_baseline.as_ref()
+    }
+
+    /// Seeds a `wait --notification` with notifications listed before the
+    /// action that precedes it, instead of the wait's own first list.
+    pub fn with_notification_seed(mut self, seed: Option<NotificationSeed>) -> Self {
+        self.options.notification_seed = seed;
+        self
+    }
+
+    pub fn notification_seed(&self) -> Option<&NotificationSeed> {
+        self.options.notification_seed.as_ref()
     }
 
     pub fn command_scope(&self, command: &'static str) -> Result<CommandScope<'_>, AppError> {

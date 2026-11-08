@@ -306,3 +306,55 @@ fn an_unchanged_bounds_hash_after_scroll_stops_the_scroll_retries() {
 
 #[path = "pointer_action_focus_tests.rs"]
 mod focus_tests;
+
+struct GoneTargetAdapter {
+    resolve_calls: AtomicU32,
+}
+
+impl ObservationOps for GoneTargetAdapter {
+    fn resolve_element_strict(
+        &self,
+        _entry: &RefEntry,
+        _deadline: crate::Deadline,
+    ) -> Result<NativeHandle, AdapterError> {
+        self.resolve_calls.fetch_add(1, Ordering::SeqCst);
+        Err(
+            AdapterError::stale_ref_because("No candidate").with_details(json!({
+                "kind": "resolve_no_candidate",
+                "complete": true,
+                "retryable": true,
+            })),
+        )
+    }
+    crate::adapter::saved_ref_scope!("button", Some("Target"));
+}
+
+impl ActionOps for GoneTargetAdapter {}
+impl InputOps for GoneTargetAdapter {}
+impl SystemOps for GoneTargetAdapter {}
+
+/// A pointer action applies the ref-action verdict: a complete search with no
+/// candidate is final whatever its retryable stamp, so the action answers
+/// `STALE_REF` at once instead of polling to its deadline.
+#[test]
+fn a_pointer_action_on_a_gone_element_fails_fast_with_stale_ref() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = point_ref_snapshot();
+    let adapter = GoneTargetAdapter {
+        resolve_calls: AtomicU32::new(0),
+    };
+    let started = std::time::Instant::now();
+
+    let Err(err) = wait_for_point_with_deadline(
+        point_args(&snapshot_id),
+        crate::Deadline::after(5_000).unwrap(),
+        &adapter,
+        &crate::CommandContext::default(),
+    ) else {
+        panic!("a gone element must not resolve");
+    };
+
+    assert_eq!(err.code(), "STALE_REF");
+    assert_eq!(adapter.resolve_calls.load(Ordering::SeqCst), 1);
+    assert!(started.elapsed() < std::time::Duration::from_millis(500));
+}

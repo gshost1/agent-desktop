@@ -42,8 +42,10 @@ pub fn resolve_saved_ref(
         entry: &anchor,
         root_ref: None,
     };
-    confirm_landed(adapter, entry, root, deadline, lease)?;
-    Ok(handle)
+    match confirm_landed(adapter, entry, root, deadline, lease)? {
+        IdentityMatch::NoMatch => Err(crate::refs::resolve_errors::landed_elsewhere(entry, true)),
+        _ => Ok(handle),
+    }
 }
 
 /// Lands a tokenless saved ref at its recorded path and confirms the landed
@@ -69,7 +71,7 @@ pub(crate) fn land_saved_ref(
             entry,
             root_ref: None,
         };
-        if confirm_landed(adapter, entry, root, deadline, None).is_ok() {
+        if confirm_landed(adapter, entry, root, deadline, None).ok() == Some(IdentityMatch::Match) {
             return Ok(handle);
         }
     }
@@ -130,19 +132,24 @@ pub fn confirm_landed_element(
         entry,
         root_ref: None,
     };
-    confirm_landed(adapter, entry, root, deadline, None)
+    match confirm_landed(adapter, entry, root, deadline, None)? {
+        IdentityMatch::NoMatch => Err(crate::refs::resolve_errors::landed_elsewhere(entry, false)),
+        _ => Ok(()),
+    }
 }
 
 /// The anchor lands a stored path, which a different element can move into
 /// between the live count and the descent, so the handle is re-identified
 /// before it is handed back: only the recorded predicate proves the landing.
+/// It answers `Match` or `NoMatch`; what a `NoMatch` means depends on whether
+/// a whole-window count just found the ref, so each caller names that.
 fn confirm_landed(
     adapter: &dyn PlatformAdapter,
     entry: &RefEntry,
     root: ObservationRoot<'_>,
     deadline: Deadline,
     lease: Option<&crate::InteractionLease>,
-) -> Result<(), AdapterError> {
+) -> Result<IdentityMatch, AdapterError> {
     let options = TreeOptions {
         max_depth: 0,
         surface: entry.source.source_surface,
@@ -158,9 +165,8 @@ fn confirm_landed(
         .and_then(|index| observed.nodes.get(*index as usize))
         .ok_or_else(|| AdapterError::internal("the landed element was not observed"))?;
     match FullPredicate::of_entry(entry).compare(&LivePredicate::observed(&landed.evidence)) {
-        IdentityMatch::Match => Ok(()),
         IdentityMatch::Unknown => Err(identity_unknown_error(entry)),
-        IdentityMatch::NoMatch => Err(absent(entry)),
+        landed => Ok(landed),
     }
 }
 

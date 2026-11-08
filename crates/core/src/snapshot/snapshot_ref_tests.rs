@@ -19,7 +19,7 @@ fn node(role: &str) -> AccessibilityNode {
     }
 }
 
-fn named(role: &str, name: &str) -> AccessibilityNode {
+pub(super) fn named(role: &str, name: &str) -> AccessibilityNode {
     let mut n = node(role);
     n.identity.name = Some(name.into());
     n
@@ -43,7 +43,7 @@ fn source(app: &'static str) -> crate::refs::ref_alloc_source::RefAllocSource<'s
     }
 }
 
-struct StubAdapter {
+pub(super) struct StubAdapter {
     subtree: AccessibilityNode,
     subtree_error: Option<AdapterError>,
     token: String,
@@ -52,7 +52,7 @@ struct StubAdapter {
 }
 
 impl StubAdapter {
-    fn new(subtree: AccessibilityNode) -> Self {
+    pub(super) fn new(subtree: AccessibilityNode) -> Self {
         Self::with_windows(subtree, vec![window_info("w-42", true)])
     }
 
@@ -161,7 +161,7 @@ impl InputOps for StubAdapter {}
 
 impl SystemOps for StubAdapter {}
 
-fn save_latest(refmap: RefMap) -> String {
+pub(super) fn save_latest(refmap: RefMap) -> String {
     RefStore::new()
         .unwrap()
         .save_new_snapshot(&refmap)
@@ -175,7 +175,7 @@ fn save_session(session_id: &str, refmap: RefMap) -> String {
         .expect("session snapshot refmap should save")
 }
 
-fn load_latest() -> RefMap {
+pub(super) fn load_latest() -> RefMap {
     RefStore::new()
         .unwrap()
         .load_latest()
@@ -195,7 +195,7 @@ fn local_ref(ref_id: &str) -> String {
         .1
 }
 
-fn seed_skeleton_refmap() -> RefMap {
+pub(super) fn seed_skeleton_refmap() -> RefMap {
     let mut map = RefMap::new();
     let anchor = ref_entry_from_node(&drilled("group", "Sidebar"), &source("TestApp"), None, &[0]);
     let _ = map.allocate(anchor);
@@ -209,7 +209,7 @@ fn seed_skeleton_refmap() -> RefMap {
     map
 }
 
-fn drill_opts() -> TreeOptions {
+pub(super) fn drill_opts() -> TreeOptions {
     TreeOptions {
         interactive_only: false,
         ..Default::default()

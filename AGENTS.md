@@ -23,7 +23,7 @@ Each platform adapter compiles only on its own OS and the workspace names all th
 the same set `.githooks/pre-commit` uses:
 
 ```bash
-HOST_PKGS=(-p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi)
+HOST_PKGS=(-p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web)
 # Windows: replace agent-desktop-macos with agent-desktop-windows. Linux: with agent-desktop-linux.
 # An array expands to separate arguments in both bash and zsh; a plain string does not in zsh.
 
@@ -99,6 +99,7 @@ crates/macos/    agent-desktop-macos: AX API
 crates/windows/  agent-desktop-windows: UI Automation
 crates/linux/    agent-desktop-linux: AT-SPI
 crates/ffi/      agent-desktop-ffi: cdylib and the committed C header include/agent_desktop.h
+crates/web/      agent-desktop-web: fork-only CDP client for web pages
 src/             agent-desktop binary: cli/, cli_args/, dispatch/, batch/, command_policy/,
                  diagnostic/, visual_debug/, mcp/
 skills/          agent skills, compiled into the binary

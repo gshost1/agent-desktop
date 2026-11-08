@@ -3,8 +3,7 @@ use crate::{
     adapter::PlatformAdapter,
     commands::helpers::{load_ref_entry, resolve_handle_within_deadline},
     context::CommandContext,
-    refs::RefEntry,
-    refs::ref_resolve_deadline::POLL_INTERVAL,
+    refs::{RefEntry, ref_resolve_deadline::POLL_INTERVAL, resolve_verdict::ResolveVerdict},
 };
 use serde_json::{Value, json};
 
@@ -360,7 +359,7 @@ fn point_observed_bounds_hash(err: &AppError) -> Option<u64> {
 
 fn is_retryable_point_error(err: &AppError) -> bool {
     match err {
-        AppError::Adapter(error) if error.is_retryable_resolution_failure() => true,
+        AppError::Adapter(error) if ResolveVerdict::for_ref_action(error).retries() => true,
         AppError::Adapter(error) if error.code == crate::ErrorCode::ActionFailed => {
             ["visible", "stable", "receives_events"]
                 .into_iter()
