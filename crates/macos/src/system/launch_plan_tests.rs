@@ -1,10 +1,10 @@
 use super::*;
+use agent_desktop_core::system::launch_presentation::LaunchPresentation;
 
 fn options(attach: bool, activate: bool, reopen: bool) -> LaunchOptions {
     LaunchOptions {
         attach_if_running: attach,
-        activate,
-        reopen,
+        presentation: LaunchPresentation { activate, reopen },
         ..Default::default()
     }
 }

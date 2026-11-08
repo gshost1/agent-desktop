@@ -1,4 +1,5 @@
 use super::*;
+use agent_desktop_core::system::launch_presentation::LaunchPresentation;
 
 #[test]
 fn no_attach_requests_a_fresh_application_instance() {
@@ -112,7 +113,10 @@ fn launch_options_enforce_a_bounded_text_budget() {
 #[test]
 fn reopening_a_fresh_instance_is_refused() {
     let options = LaunchOptions {
-        reopen: true,
+        presentation: LaunchPresentation {
+            reopen: true,
+            ..Default::default()
+        },
         attach_if_running: false,
         ..Default::default()
     };

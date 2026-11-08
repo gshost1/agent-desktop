@@ -16,7 +16,7 @@ fn invalid(message: &str) -> AdapterError {
 }
 
 pub(super) fn validate(options: &LaunchOptions) -> Result<(), AdapterError> {
-    if options.reopen {
+    if options.presentation.reopen {
         return Err(before_spawn(
             AdapterError::new(
                 ErrorCode::ActionNotSupported,

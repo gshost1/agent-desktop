@@ -1,7 +1,7 @@
 use agent_desktop_core::{
     AppError, ClipboardFormat, Direction, Modifier, MouseButton,
     commands::{get, is_check},
-    system::launch_options::LaunchOptions,
+    system::{launch_options::LaunchOptions, launch_presentation::LaunchPresentation},
 };
 use std::collections::BTreeMap;
 
@@ -135,7 +135,7 @@ pub(crate) fn build_launch_options(
             "Invalid --arg entry #{index}: argument contains a NUL byte"
         )));
     }
-    if launch.reopen && launch.no_attach {
+    if launch.attach.reopen && launch.attach.no_attach {
         return Err(AppError::invalid_input(
             "--reopen applies to the running instance and cannot be combined with --no-attach",
         ));
@@ -154,10 +154,12 @@ pub(crate) fn build_launch_options(
         env: env_map,
         cwd: launch.cwd.clone(),
         timeout_ms: launch.timeout,
-        attach_if_running: !launch.no_attach,
-        activate: launch.activate,
-        reopen: launch.reopen,
-        cdp_port: launch.cdp,
+        attach_if_running: !launch.attach.no_attach,
+        presentation: LaunchPresentation {
+            activate: launch.attach.activate,
+            reopen: launch.attach.reopen,
+        },
+        cdp_port: launch.cdp.cdp,
     })
 }
 

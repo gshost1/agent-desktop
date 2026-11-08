@@ -36,33 +36,6 @@
     return JSON.stringify(value);
   }
 
-  function groupEvents(events) {
-    var groups = [];
-    var stack = [];
-    events.forEach(function (event, index) {
-      var name = event.event || "";
-      if (name === "command.start") {
-        var frame = { command: event.command || "command", start: event, children: [], end: null, open: true };
-        groups.push({ type: "group", group: frame });
-        stack.push(frame);
-        return;
-      }
-      if (name === "command.end") {
-        if (stack.length) {
-          var top = stack.pop();
-          top.end = event;
-          top.open = false;
-        } else {
-          groups.push({ type: "event", event: event, index: index });
-        }
-        return;
-      }
-      if (stack.length) stack[stack.length - 1].children.push({ event: event, index: index });
-      else groups.push({ type: "event", event: event, index: index });
-    });
-    return groups;
-  }
-
   function statusOf(group) {
     if (group.open || !group.end) return { cls: "open-incomplete", label: "incomplete", glyph: "○" };
     return group.end.ok
@@ -155,7 +128,7 @@
       container.appendChild(empty);
       return;
     }
-    groupEvents(filtered).forEach(function (item) {
+    TraceViewerGroup.groupEvents(filtered).forEach(function (item) {
       if (item.type === "event") {
         container.appendChild(makeRow(item.event, false, detailFor(item.event)));
         return;

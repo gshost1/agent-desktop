@@ -82,7 +82,7 @@ fn conclude(
             "A running instance was used, so the environment and working directory of this launch were not applied.".to_owned(),
         );
     }
-    if options.activate
+    if options.presentation.activate
         && let Some(target) = &window
     {
         match focus(target) {
@@ -237,7 +237,7 @@ impl Launch<'_> {
     }
 
     fn wait_limit(&self, known: &HashSet<String>) -> Deadline {
-        if self.options.activate {
+        if self.options.presentation.activate {
             return self.deadline;
         }
         let wait = if known.is_empty() {

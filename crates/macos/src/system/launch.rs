@@ -130,7 +130,7 @@ fn settled_window(
             Err(error) => return Err(error),
         }
         if options.timeout_ms == 0
-            || (!options.activate && grace_over(grace_ends_at, Instant::now()))
+            || (!options.presentation.activate && grace_over(grace_ends_at, Instant::now()))
         {
             return last_read_failure.map_or(Ok(None), Err);
         }
@@ -334,7 +334,7 @@ fn validate_launch_options(options: &LaunchOptions) -> Result<(), AdapterError> 
         )
         .with_suggestion("Remove --cwd, or start the app through a dedicated launcher script"));
     }
-    if options.reopen && !options.attach_if_running {
+    if options.presentation.reopen && !options.attach_if_running {
         return Err(AdapterError::new(
             ErrorCode::InvalidArgs,
             "A reopen applies to the running instance and cannot start a new instance",

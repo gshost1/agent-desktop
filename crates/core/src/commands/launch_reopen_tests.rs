@@ -3,6 +3,7 @@ use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
 use crate::system::launch_notes::LaunchNotes;
 use crate::system::launch_options::LaunchOptions;
 use crate::system::launch_path::LaunchPath;
+use crate::system::launch_presentation::LaunchPresentation;
 use crate::{AdapterError, InteractionLease, ProcessId};
 use std::sync::Mutex;
 
@@ -54,6 +55,7 @@ fn run(path: Option<LaunchPath>, options: LaunchOptions) -> (serde_json::Value, 
         LaunchArgs {
             app: "Fixture".into(),
             options,
+            download_dir: None,
         },
         &adapter,
     )
@@ -67,19 +69,22 @@ fn the_reopen_request_reaches_the_adapter_unchanged() {
     let (_, received) = run(
         None,
         LaunchOptions {
-            reopen: true,
+            presentation: LaunchPresentation {
+                reopen: true,
+                ..Default::default()
+            },
             ..Default::default()
         },
     );
 
-    assert!(received.reopen);
+    assert!(received.presentation.reopen);
 }
 
 #[test]
 fn a_launch_does_not_ask_for_a_reopen_by_default() {
     let (_, received) = run(None, LaunchOptions::default());
 
-    assert!(!received.reopen);
+    assert!(!received.presentation.reopen);
 }
 
 #[test]

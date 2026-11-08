@@ -12,6 +12,7 @@ pub(crate) mod cursor_overlay_style;
 pub(crate) mod drag;
 pub(crate) mod drag_target;
 pub(crate) mod interaction;
+pub(crate) mod launch_flags;
 pub(crate) mod mouse_wheel;
 pub(crate) mod notifications;
 pub(crate) mod session;

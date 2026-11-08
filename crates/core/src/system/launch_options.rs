@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use super::launch_presentation::LaunchPresentation;
+
 /// Options accepted by `launch_app`. `attach_if_running` defaults to `true`,
 /// which preserves the behavior of attaching to an already-running instance
 /// instead of failing. Set it to `false` to
@@ -13,16 +15,7 @@ pub struct LaunchOptions {
     pub cwd: Option<PathBuf>,
     pub timeout_ms: u64,
     pub attach_if_running: bool,
-    /// Brings the application forward so it presents a window. A document-based
-    /// application creates its first window in response to activation, so a
-    /// caller that needs a window has to ask for one; waiting without asking
-    /// waits for an event that never fires.
-    pub activate: bool,
-    /// Asks the platform to treat the launch as a reopen of an application that
-    /// is already running, so an application with no window opens its default
-    /// one. Without it a running application is only attached to or brought
-    /// forward, never reopened.
-    pub reopen: bool,
+    pub presentation: LaunchPresentation,
     /// The resolved, concrete DevTools protocol port. Core resolves a
     /// requested `0` to a real free port before the adapter ever sees it, so
     /// by the time `launch_app` runs, this is either absent or one exact port.
@@ -37,8 +30,7 @@ impl Default for LaunchOptions {
             cwd: None,
             timeout_ms: 5_000,
             attach_if_running: true,
-            activate: false,
-            reopen: false,
+            presentation: LaunchPresentation::default(),
             cdp_port: None,
         }
     }

@@ -14,9 +14,9 @@ pub(crate) fn plan_launch(options: &LaunchOptions, matching_running: usize) -> L
     if !options.attach_if_running || matching_running != 1 {
         return LaunchPlan::LaunchServices(LaunchPath::Launched);
     }
-    if options.reopen {
+    if options.presentation.reopen {
         LaunchPlan::LaunchServices(LaunchPath::Reopened)
-    } else if options.activate {
+    } else if options.presentation.activate {
         LaunchPlan::ActivateRunning
     } else {
         LaunchPlan::AttachRunning

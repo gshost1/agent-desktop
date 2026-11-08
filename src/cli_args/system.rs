@@ -1,6 +1,7 @@
 use clap::{Args, Parser};
 use serde::Deserialize;
 
+use super::launch_flags::{LaunchAttachArgs, LaunchCdpArgs};
 use super::{Surface, WindowScope};
 
 fn default_launch_timeout() -> u64 {
@@ -40,33 +41,12 @@ pub(crate) struct LaunchArgs {
     pub env: Vec<String>,
     #[arg(long, help = "Working directory for the launched process")]
     pub cwd: Option<std::path::PathBuf>,
-    #[arg(
-        long = "no-attach",
-        help = "Start a fresh instance instead of attaching to a running one (Windows fails if the app is already running)"
-    )]
-    #[serde(default)]
-    pub no_attach: bool,
-    #[arg(
-        long,
-        help = "Bring the app forward so it presents a window, and wait for one"
-    )]
-    #[serde(default)]
-    pub activate: bool,
-    #[arg(
-        long,
-        help = "Send a running app a reopen so one with no window opens its default window (macOS; fails on Windows and Linux)"
-    )]
-    #[serde(default)]
-    pub reopen: bool,
-    #[arg(
-        long,
-        value_name = "PORT",
-        num_args = 0..=1,
-        default_missing_value = "0",
-        help = "Expose the app's DevTools protocol endpoint on this port (0 or omitted picks a free port)"
-    )]
-    #[serde(default)]
-    pub cdp: Option<u16>,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub attach: LaunchAttachArgs,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub cdp: LaunchCdpArgs,
 }
 
 #[derive(Parser, Debug, Deserialize)]
@@ -251,6 +231,9 @@ pub(crate) struct WaitArgs {
     pub event: WaitEventArgs,
     #[command(flatten)]
     #[serde(flatten)]
+    pub surface: WaitSurfaceArgs,
+    #[command(flatten)]
+    #[serde(flatten)]
     pub predicate: WaitPredicateArgs,
     #[arg(
         long,
@@ -299,6 +282,13 @@ pub(crate) struct WaitModeArgs {
         help = "Block until text appears in the app's accessibility tree; with --notification, filter notification text"
     )]
     pub text: Option<String>,
+}
+
+/// The flag-selected wait modes: a menu opening or closing, a notification,
+/// or a browser download.
+#[derive(Args, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WaitSurfaceArgs {
     #[arg(long, help = "Block until a menu surface is open")]
     #[serde(default)]
     pub menu: bool,
@@ -308,6 +298,12 @@ pub(crate) struct WaitModeArgs {
     #[arg(long, help = "Block until a new notification arrives")]
     #[serde(default)]
     pub notification: bool,
+    #[arg(
+        long,
+        help = "Block until the browser named by --app saves a download, or return one that finished since the last download wait; reports the saved path"
+    )]
+    #[serde(default)]
+    pub download: bool,
 }
 
 #[derive(Args, Debug, Deserialize)]
