@@ -234,3 +234,18 @@ fn a_list_that_delegates_clicks_to_its_items_takes_no_click() {
 
     assert!(clickable_nodes(&build(raw, &[2])).is_empty());
 }
+
+#[test]
+fn a_settable_date_input_that_listens_for_clicks_keeps_only_its_set_value() {
+    let raw = json!([
+        { "nodeId": "1", "role": role("RootWebArea"), "childIds": ["2"], "backendDOMNodeId": 1 },
+        { "nodeId": "2", "role": role("date"), "name": text("Arrival"), "backendDOMNodeId": 2,
+          "properties": [{ "name": "settable", "value": { "type": "booleanOrUndefined", "value": true } }] },
+    ]);
+
+    let root = build(raw, &[2]);
+
+    let field = &root.children[0];
+    assert_eq!(field.node.role, "datefield");
+    assert_eq!(field.node.presentation.available_actions, ["SetValue"]);
+}
