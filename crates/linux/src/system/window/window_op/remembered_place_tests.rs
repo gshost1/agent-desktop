@@ -60,6 +60,29 @@ fn a_maximized_record_holds_while_the_window_stays_maximized_on_its_display() {
 }
 
 #[test]
+fn a_maximized_record_holds_when_the_display_list_is_reordered_or_grows() {
+    let settled = live(rectangle(0, 27, 1280, 773), true);
+    let mut reordered = two_displays();
+    reordered.reverse();
+    let mut grown = reordered.clone();
+    grown.insert(
+        0,
+        Rect {
+            x: -1920.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        },
+    );
+    for displays in [reordered, grown] {
+        assert_eq!(
+            maximized_on_first().place_for(&settled, &displays),
+            Some(BEFORE)
+        );
+    }
+}
+
+#[test]
 fn a_maximized_record_is_stale_once_the_window_is_unmaximized_or_maximized_elsewhere() {
     let unmaximized = live(rectangle(400, 300, 500, 380), false);
     let elsewhere = live(rectangle(1280, 21, 1920, 1059), true);
@@ -99,10 +122,35 @@ fn an_unmaximized_record_holds_only_where_the_agent_left_the_window() {
 }
 
 #[test]
-fn a_hidden_window_matches_no_record() {
+fn a_hidden_read_is_judged_by_its_state_flags_and_rectangle() {
     let mut hidden = live(rectangle(0, 21, 1280, 779), true);
     hidden.hidden = true;
-    assert_eq!(maximized_on_first().place_for(&hidden, &[]), None);
+    assert_eq!(maximized_on_first().place_for(&hidden, &[]), Some(BEFORE));
+}
+
+#[test]
+fn a_pending_record_holds_while_the_window_is_maximized_on_any_display() {
+    let pending = RememberedPlace::Pending { before: BEFORE };
+    let elsewhere = live(rectangle(1280, 21, 1920, 1059), true);
+    assert_eq!(pending.place_for(&elsewhere, &two_displays()), Some(BEFORE));
+    let unmaximized = live(rectangle(400, 300, 500, 380), false);
+    assert_eq!(pending.place_for(&unmaximized, &two_displays()), None);
+}
+
+#[test]
+fn a_new_maximize_carries_the_owed_place_only_from_where_the_agent_left_the_window() {
+    let left = rectangle(160, 90, 500, 380);
+    let owed = Some(RememberedPlace::Unmaximized {
+        before: BEFORE,
+        left,
+    });
+    assert_eq!(RememberedPlace::carried(owed, &left), BEFORE);
+    let moved = rectangle(400, 300, 500, 380);
+    assert_eq!(RememberedPlace::carried(owed, &moved), moved);
+    assert_eq!(
+        RememberedPlace::carried(Some(maximized_on_first()), &moved),
+        moved
+    );
 }
 
 #[test]
@@ -111,7 +159,11 @@ fn a_record_round_trips_and_an_unknown_or_older_shape_reads_as_nothing() {
         before: rectangle(-20, 90, 500, 380),
         left: rectangle(160, 90, 500, 380),
     };
-    for record in [maximized_on_first(), left] {
+    for record in [
+        maximized_on_first(),
+        left,
+        RememberedPlace::Pending { before: BEFORE },
+    ] {
         assert_eq!(RememberedPlace::from_json(&record.to_json()), Some(record));
     }
     let mut unknown = left.to_json();

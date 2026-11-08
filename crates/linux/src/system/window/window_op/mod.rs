@@ -7,8 +7,8 @@ use agent_desktop_core::{
 use serde_json::Value;
 
 use self::hold::{
-    confirm_rectangle, give_back_place, holds_place, is_resize, keep_for_retry, move_client,
-    place_before_maximize, recall_place, remember_maximized,
+    confirm_maximized, confirm_rectangle, give_back_place, holds_place, is_resize, keep_for_retry,
+    move_client, recall_place, record_before_maximize,
 };
 use self::owner::{ensure_owned_after, ensure_owned_before};
 use self::refuse::{no_client, refused, unreadable, unsupported_session, write_failed};
@@ -206,11 +206,8 @@ fn apply(
     write: &WindowWrite,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    let before_maximize = if *write == WindowWrite::SetMaximized(true) {
-        place_before_maximize(world, client)
-    } else {
-        None
-    };
+    let pending =
+        *write == WindowWrite::SetMaximized(true) && record_before_maximize(world, win, client);
     let before = if is_resize(write) {
         world.facts(client).ready().map(|facts| facts.client)
     } else {
@@ -219,8 +216,8 @@ fn apply(
     world.write(client, write).map_err(write_failed)?;
     let (verdict, observed) = settle(world, client, write, deadline);
     ensure_owned_after(world, win, client)?;
-    if verdict == Verdict::Satisfied {
-        remember_maximized(world, win, client, before_maximize, observed);
+    if let (true, Verdict::Satisfied, Some(facts)) = (pending, verdict, observed) {
+        confirm_maximized(world, win, client, facts, deadline);
     }
     let outcome = match verdict {
         Verdict::Satisfied => Ok(()),

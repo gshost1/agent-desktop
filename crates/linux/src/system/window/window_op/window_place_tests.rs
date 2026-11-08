@@ -88,6 +88,7 @@ fn an_entry_of_the_older_shape_without_a_phase_reads_as_nothing() {
     });
     std::fs::write(store.path(0x40_0003, INSTANCE), older.to_string()).expect("a write");
     assert_eq!(store.load(0x40_0003, INSTANCE), None);
+    assert!(!store.path(0x40_0003, INSTANCE).exists());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -145,9 +146,6 @@ fn a_corrupt_entry_loads_as_nothing_and_is_swept() {
     std::fs::create_dir_all(&dir).expect("a dir");
     std::fs::write(store.path(1, INSTANCE), b"not json").expect("a write");
     assert_eq!(store.load(1, INSTANCE), None);
-    store
-        .save(2, 99, INSTANCE, place(), &everyone_lives)
-        .expect("a save");
     assert!(!store.path(1, INSTANCE).exists());
     let _ = std::fs::remove_dir_all(dir);
 }

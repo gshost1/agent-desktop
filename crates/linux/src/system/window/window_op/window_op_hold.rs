@@ -46,8 +46,8 @@ pub(super) fn move_client(
 }
 
 /// The place to give back to a window whose live state is `live`. A record
-/// the live window no longer matches is stale, so it is dropped and nothing
-/// is given back.
+/// a shown window no longer matches is stale and is dropped; a hidden read
+/// may be a transition, so it keeps the record and gives nothing back.
 pub(super) fn recall_place(
     world: &impl OpWorld,
     win: &WindowInfo,
@@ -56,7 +56,7 @@ pub(super) fn recall_place(
 ) -> Option<Extents> {
     let record = world.remembered(win, client)?;
     let place = record.place_for(live, &world.displays());
-    if place.is_none() {
+    if place.is_none() && !live.hidden {
         world.remember(win, client, None);
     }
     place
@@ -135,29 +135,55 @@ pub(super) fn move_to(x: i32, y: i32) -> WindowWrite {
     }
 }
 
-/// The client rectangle to give back after a maximize, read before it: only
-/// a window that is shown and not maximized has one.
-pub(super) fn place_before_maximize(world: &impl OpWorld, client: u32) -> Option<Extents> {
+/// Records the place to give back before a maximize is written, replacing
+/// any record of an earlier cycle, and says whether a pending record now
+/// waits for confirmation. A window already maximized keeps a record of the
+/// current cycle, so a retried maximize does not lose the place; a hidden or
+/// unreadable window gets no record.
+pub(super) fn record_before_maximize(world: &impl OpWorld, win: &WindowInfo, client: u32) -> bool {
+    let record = world.remembered(win, client);
     match world.facts(client) {
-        ControlRead::Ready(facts)
-            if !facts.maximized_vertical && !facts.maximized_horizontal && !facts.hidden =>
-        {
-            Some(facts.client)
+        ControlRead::Ready(facts) if facts.maximized_vertical || facts.maximized_horizontal => {
+            match record {
+                Some(RememberedPlace::Pending { .. }) => true,
+                Some(RememberedPlace::Maximized { .. }) => false,
+                Some(RememberedPlace::Unmaximized { .. }) => {
+                    world.remember(win, client, None);
+                    false
+                }
+                None => false,
+            }
         }
-        _ => None,
+        ControlRead::Ready(facts) if !facts.hidden => {
+            let before = RememberedPlace::carried(record, &facts.client);
+            world.remember(win, client, Some(RememberedPlace::Pending { before }));
+            true
+        }
+        _ => {
+            if record.is_some() {
+                world.remember(win, client, None);
+            }
+            false
+        }
     }
 }
 
-/// Records `before` once the maximize was observed, tied to the maximized
-/// rectangle the window was seen at.
-pub(super) fn remember_maximized(
+/// Promotes a pending record once the maximized rectangle held through a
+/// full confirmation pause; a rectangle still moving leaves it pending.
+pub(super) fn confirm_maximized(
     world: &impl OpWorld,
     win: &WindowInfo,
     client: u32,
-    before: Option<Extents>,
-    observed: Option<WindowFacts>,
+    first: WindowFacts,
+    deadline: Deadline,
 ) {
-    if let (Some(before), Some(facts)) = (before, observed) {
+    let Some(RememberedPlace::Pending { before }) = world.remembered(win, client) else {
+        return;
+    };
+    if let (true, Some(facts)) = confirm_rectangle(world, client, first, deadline)
+        && facts.maximized_vertical
+        && facts.maximized_horizontal
+    {
         let maximized = facts.client;
         world.remember(
             win,

@@ -77,12 +77,23 @@ impl PlaceStore {
         )
     }
 
+    /// The record of the window, checked against the window id and process
+    /// instance inside the entry. An entry that cannot be read as a record of
+    /// this window can never be used, so it is deleted.
     pub(super) fn load(&self, window: u32, instance: &str) -> Option<RememberedPlace> {
-        let value: Value =
-            serde_json::from_slice(&std::fs::read(self.path(window, instance)).ok()?).ok()?;
-        (value["instance"].as_str() == Some(instance)
-            && value["window"].as_u64() == Some(u64::from(window)))
-        .then(|| RememberedPlace::from_json(&value))?
+        let path = self.path(window, instance);
+        let bytes = std::fs::read(&path).ok()?;
+        let record = serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .filter(|value| {
+                value["instance"].as_str() == Some(instance)
+                    && value["window"].as_u64() == Some(u64::from(window))
+            })
+            .and_then(|value| RememberedPlace::from_json(&value));
+        if record.is_none() {
+            let _ = std::fs::remove_file(path);
+        }
+        record
     }
 
     pub(super) fn forget(&self, window: u32, instance: &str) {

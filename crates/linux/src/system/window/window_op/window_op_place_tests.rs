@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "window_op_cycle_tests.rs"]
+mod cycle;
+
 fn maximized() -> WindowFacts {
     let mut facts = state(0, 21, 1280, 779);
     facts.maximized_vertical = true;
