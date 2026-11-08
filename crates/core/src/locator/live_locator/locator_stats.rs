@@ -45,6 +45,7 @@ impl LocatorStats {
         self.reads.health.cannot_complete += other.reads.health.cannot_complete;
         self.reads.health.native_read_failures += other.reads.health.native_read_failures;
         self.reads.health.deadline_exhausted += other.reads.health.deadline_exhausted;
+        self.reads.health.invalidated_elements += other.reads.health.invalidated_elements;
         self.identifiers.values_observed += other.identifiers.values_observed;
         self.identifiers.nodes_with_identifiers += other.identifiers.nodes_with_identifiers;
         self.identifiers.nodes_with_multiple_identifiers +=
