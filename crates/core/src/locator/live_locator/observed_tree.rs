@@ -290,6 +290,10 @@ impl ObservedTree {
             .cloned()
             .unwrap_or_else(|| "unknown".into());
         let child_indices = node.children.clone();
+        let derived_name = node.evidence.derived_name().map(str::to_owned);
+        let mut descriptors = node.evidence.ref_evidence.descriptors.clone();
+        descriptors.derived_name = None;
+        descriptors.name_source = descriptors.name_source.filter(|_| derived_name.is_some());
         let projected = AccessibilityNode {
             ref_id: node.ref_id.take(),
             role,
@@ -299,7 +303,7 @@ impl ObservedTree {
                     .identifiers
                     .retained_object()
                     .map(str::to_owned),
-                name: node.evidence.name.meaningful_string(),
+                name: node.evidence.name.meaningful_string().or(derived_name),
                 value: node.evidence.value.meaningful_string(),
                 description: node.evidence.description.meaningful_string(),
                 native_id: node.evidence.identifiers.preferred_identifier().cloned(),
@@ -315,7 +319,7 @@ impl ObservedTree {
                     .unwrap_or_default(),
                 bounds: node.evidence.ref_evidence.bounds.known().copied(),
                 ref_bounds: node.evidence.ref_evidence.window_bounds.known().copied(),
-                descriptors: node.evidence.ref_evidence.descriptors.clone(),
+                descriptors,
             },
             children_count: node.children_count,
             subtree_truncated: !node.completeness.subtree_complete,
