@@ -25,8 +25,12 @@ fn remember(list: &mut Vec<u8>, code: u8) {
     }
 }
 
-fn pointer_coordinate(value: i32) -> Result<i16, SinkError> {
-    i16::try_from(value).map_err(|_| SinkError::Request("pointer coordinate out of range".into()))
+fn pointer_point(x: i32, y: i32) -> Result<(i16, i16), SinkError> {
+    let coordinate = |value: i32| {
+        i16::try_from(value)
+            .map_err(|_| SinkError::Request("pointer coordinate out of range".into()))
+    };
+    Ok((coordinate(x)?, coordinate(y)?))
 }
 
 impl<'a> ReleaseGuard<'a> {
@@ -121,23 +125,27 @@ impl<'a> ReleaseGuard<'a> {
     }
 
     pub(crate) fn move_to(&mut self, x: i32, y: i32) -> Result<(), SinkError> {
-        let (x, y) = (pointer_coordinate(x)?, pointer_coordinate(y)?);
+        let point = pointer_point(x, y)?;
         self.state.mark_started();
-        self.sink.move_to(x, y)?;
+        self.send_move(point)?;
         self.state.mark_delivered();
         Ok(())
     }
 
+    fn send_move(&mut self, (x, y): (i16, i16)) -> Result<(), SinkError> {
+        self.sink.move_to(x, y)
+    }
+
     pub(crate) fn edit_keymap(&mut self, edit: &KeymapEdit) -> Result<(), SinkError> {
         let current = self.sink.keymap()?;
-        let original = current.keysyms_of(edit.keycode);
+        let original = current
+            .keysyms_of(edit.keycode)
+            .ok_or(SinkError::Unrestorable(edit.keycode))?;
         let restoring = self
             .remaps
             .iter()
             .position(|saved| saved.keycode == edit.keycode && saved.keysyms == edit.keysyms);
-        if let Some(original) = original {
-            self.track_remap(edit, original);
-        }
+        self.track_remap(edit, original);
         self.sync_journal()?;
         self.state.mark_started();
         self.sink.edit_keymap(edit)?;
@@ -165,16 +173,12 @@ impl<'a> ReleaseGuard<'a> {
         });
     }
 
-    pub(crate) fn finish(&mut self) -> Result<(), SinkError> {
-        self.release_everything()
-    }
-
     /// Ends the sequence after `error`: posts corrective input only for what is still held or
     /// remapped, then reports the error with the release's real outcome.
     pub(crate) fn abort(mut self, error: AdapterError, suggestion: &str) -> AdapterError {
         let release = if self.holding() {
             let acknowledged = self.release_everything().is_ok();
-            self.surrender();
+            self.forget();
             EmergencyRelease::Posted { acknowledged }
         } else {
             let _ = self.sync_journal();
@@ -187,18 +191,22 @@ impl<'a> ReleaseGuard<'a> {
         !self.held.keys.is_empty() || !self.held.buttons.is_empty() || !self.remaps.is_empty()
     }
 
-    /// Leaves whatever the emergency release could not clear to the held-input journal's stale
-    /// sweep, so dropping the guard does not post the same release a second time.
-    fn surrender(&mut self) {
+    /// Drops the in-memory record of held input and remaps without touching the journal. After a
+    /// failed emergency release, the journal's stale sweep owns what is left, so dropping the guard
+    /// does not post the same release a second time.
+    fn forget(&mut self) {
         self.held = HeldInput::default();
         self.remaps.clear();
     }
 
-    fn release_everything(&mut self) -> Result<(), SinkError> {
+    /// Releases every held button and key, restores every remap, and confirms with a round trip.
+    /// The guard keeps its record, and the journal, until the server acknowledges the release.
+    pub(crate) fn release_everything(&mut self) -> Result<(), SinkError> {
         let mut outcome = Ok(());
         if !self.held.buttons.is_empty() {
             if let Some((x, y)) = self.origin {
-                keep_first(&mut outcome, self.return_to(x, y));
+                let back = pointer_point(x, y).and_then(|point| self.send_move(point));
+                keep_first(&mut outcome, back);
             }
             for code in self.held.buttons.iter().rev() {
                 keep_first(&mut outcome, self.sink.button(*code, false));
@@ -212,16 +220,10 @@ impl<'a> ReleaseGuard<'a> {
         }
         keep_first(&mut outcome, self.sink.round_trip());
         if outcome.is_ok() {
-            self.held = HeldInput::default();
-            self.remaps.clear();
+            self.forget();
             let _ = self.sync_journal();
         }
         outcome
-    }
-
-    fn return_to(&mut self, x: i32, y: i32) -> Result<(), SinkError> {
-        let (x, y) = (pointer_coordinate(x)?, pointer_coordinate(y)?);
-        self.sink.move_to(x, y)
     }
 }
 

@@ -1,6 +1,6 @@
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Arc;
-use std::sync::mpsc::{RecvTimeoutError, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::thread;
 use std::time::Duration;
 
@@ -142,7 +142,8 @@ pub(crate) fn run_journaled<S: X11Sink + 'static>(
                 Err(error) => {
                     let _ = proceed_tx.send(false);
                     progress.cancel();
-                    return Err(interrupted(error, &progress, false));
+                    let release = refused_release(&inbox, deadline);
+                    return Err(interrupted(error, &progress, release));
                 }
             },
             Ok(Report::Done(outcome)) => return outcome,
@@ -156,7 +157,7 @@ pub(crate) fn run_journaled<S: X11Sink + 'static>(
                     ErrorCode::Internal,
                     "The input worker ended without an answer",
                 );
-                return Err(interrupted(lost, &progress, true));
+                return Err(interrupted(lost, &progress, pending_release(&progress)));
             }
         }
     }
@@ -174,21 +175,42 @@ fn retain_lease(lease: &InteractionLease) -> Result<OwnedFd, AdapterError> {
 }
 
 fn abandoned(deadline: Deadline, progress: &Progress) -> AdapterError {
-    interrupted(deadline.timeout_error(), progress, true)
+    interrupted(
+        deadline.timeout_error(),
+        progress,
+        pending_release(progress),
+    )
 }
 
-fn interrupted(error: AdapterError, progress: &Progress, releasing: bool) -> AdapterError {
-    let delivered = progress.delivered();
-    let started = progress.has_started();
-    let error = worker::mark_started(error, started);
-    let release = if releasing && started {
+/// The release a still-running worker may post: unknown to the caller, so reported unacknowledged.
+fn pending_release(progress: &Progress) -> EmergencyRelease {
+    if progress.has_started() {
         EmergencyRelease::Posted {
             acknowledged: false,
         }
     } else {
         EmergencyRelease::NotNeeded
-    };
-    ReleaseState::resumed(delivered).enrich_error(error, release, ABORT_SUGGESTION)
+    }
+}
+
+/// Waits for the worker a refused gate stopped and returns the release its abort posted.
+fn refused_release(inbox: &Receiver<Report>, deadline: Deadline) -> EmergencyRelease {
+    match inbox.recv_timeout(deadline.remaining() + RELEASE_ALLOWANCE) {
+        Ok(Report::Done(Err(error))) => EmergencyRelease::reported_by(&error),
+        Ok(Report::Done(Ok(_))) => EmergencyRelease::NotNeeded,
+        Ok(Report::Gate) | Err(_) => EmergencyRelease::Posted {
+            acknowledged: false,
+        },
+    }
+}
+
+fn interrupted(
+    error: AdapterError,
+    progress: &Progress,
+    release: EmergencyRelease,
+) -> AdapterError {
+    let error = worker::mark_started(error, progress.has_started());
+    ReleaseState::resumed(progress.delivered()).enrich_error(error, release, ABORT_SUGGESTION)
 }
 
 #[cfg(test)]

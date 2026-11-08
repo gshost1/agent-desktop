@@ -74,7 +74,7 @@ fn execute(
             return Err(guard.abort(error, ABORT_SUGGESTION));
         }
     }
-    if let Err(error) = guard.finish().map_err(SinkError::into_adapter) {
+    if let Err(error) = guard.release_everything().map_err(SinkError::into_adapter) {
         return Err(guard.abort(error, ABORT_SUGGESTION));
     }
     let touched = guard.touched().clone();

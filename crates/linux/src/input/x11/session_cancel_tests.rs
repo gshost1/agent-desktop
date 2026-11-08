@@ -91,3 +91,49 @@ fn a_deadline_between_characters_reports_delivered_text_without_an_emergency_rel
         [Recorded::Key(38, true), Recorded::Key(38, false)]
     );
 }
+
+#[test]
+fn a_gate_refusal_while_a_modifier_is_held_reports_the_workers_release() {
+    let fake = FakeSink::new();
+    let hold = Plan {
+        steps: vec![Step::Key {
+            code: 37,
+            down: true,
+        }],
+        release_origin: None,
+    };
+    let tap = Plan {
+        steps: vec![
+            Step::Key {
+                code: 38,
+                down: true,
+            },
+            Step::Key {
+                code: 38,
+                down: false,
+            },
+        ],
+        release_origin: None,
+    };
+    let mut gates = 0;
+    let mut gate = || {
+        gates += 1;
+        if gates == 1 {
+            Ok(())
+        } else {
+            Err(agent_desktop_core::AdapterError::internal("focus moved"))
+        }
+    };
+
+    let error = run(&fake, vec![hold, tap], &mut gate, deadline(5_000), None)
+        .expect_err("the gate refuses the second plan");
+
+    assert_eq!(
+        events(&fake),
+        [Recorded::Key(37, true), Recorded::Key(37, false)]
+    );
+    let details = error.details.expect("evidence");
+    assert_eq!(details["delivered_events"], 1);
+    assert_eq!(details["emergency_release_posted"], true);
+    assert_eq!(details["emergency_release_acknowledged"], true);
+}

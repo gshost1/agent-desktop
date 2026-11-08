@@ -50,10 +50,7 @@ impl ReleaseState {
         if let Some(map) = details.as_object_mut() {
             map.insert("physical_delivery_started".into(), started.into());
             map.insert("delivered_events".into(), self.delivered.into());
-            if let EmergencyRelease::Posted { acknowledged } = release {
-                map.insert("emergency_release_posted".into(), true.into());
-                map.insert("emergency_release_acknowledged".into(), acknowledged.into());
-            }
+            release.record_into(map);
         }
         error
             .with_disposition(if self.delivered == 0 {
