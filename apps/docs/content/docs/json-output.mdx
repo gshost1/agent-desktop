@@ -202,7 +202,7 @@ A failed `--wait-for` after a delivered operation keeps the operation's own deli
 }
 ```
 
-Each match carries `ref_id`, `role`, `name`, `value`, `states`, `interactive`, and `path` (trimmed above). A match that earns a ref has a qualified `ref_id`, and the response then includes the `snapshot_id` that holds it. A match with no ref is a context match: its `ref_id` is `null` and it carries `bounds` when the platform reports them, so you can see where it is. An element without an accessible name omits `name`, and its content stays in `value`. When a query with `--role` matches nothing, `roles_present` lists the roles the search did see. When a `--role menuitem` query was answered from the menu bar after the window search found nothing, the response carries `surface: "menubar"`.
+Each match carries `ref_id`, `role`, `name`, `value`, `states`, `interactive`, and `path` (trimmed above). A match that earns a ref has a qualified `ref_id`, and the response then includes the `snapshot_id` that holds it. A match with no ref is a context match: its `ref_id` is `null` and it carries `bounds` when the platform reports them, so you can see where it is. An element without an accessible name omits `name`, and its content stays in `value`. When a query with `--role` matches nothing, `roles_present` lists the roles the search did see. When a `--role menuitem` query was answered from an open menu or the menu bar after the window search matched nothing, the response carries `surface: "menu"` or `surface: "menubar"`.
 
 ## Exit codes
 

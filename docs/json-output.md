@@ -188,10 +188,11 @@ Earlier output synthesized a display name, falling back to `value` or
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
 
-A `--role menuitem` find with no `--surface` or `--root` that finds nothing in
-the window, or finds no window, searches the application's menu bar once. A
-response answered that way carries `"surface": "menubar"`; its refs belong to
-the menu bar surface.
+A `--role menuitem` find with no `--surface` or `--root` that matches nothing in
+the window, or finds no window, searches the open menu and then the menu bar
+(macOS only) within the same deadline. A response answered that way carries
+`"surface": "menu"` or `"surface": "menubar"`, and its refs belong to that
+surface. A menu search that runs out of budget returns `TIMEOUT`.
 
 ## Ref re-identification details
 

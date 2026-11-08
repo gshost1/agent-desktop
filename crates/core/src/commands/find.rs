@@ -54,8 +54,9 @@ pub fn execute(
     let query = locator_query_from_args(&args)?;
     query.validate_states().map_err(AppError::Adapter)?;
 
-    let window_result = live::execute(&args, &query, adapter, context);
-    menu_bar::retry_in_menu_bar(args, &query, window_result, adapter, context)
+    let deadline = live::traversal_deadline(&args).map_err(AppError::Adapter)?;
+    let window_result = live::execute(&args, &query, adapter, context, deadline);
+    menu_fallback::search_menus(args, &query, window_result, adapter, context, deadline)
         .map_err(name_the_traversal_remedy)
 }
 
@@ -193,8 +194,8 @@ fn collect_snapshot_matches(
 #[path = "find_live.rs"]
 mod live;
 
-#[path = "find_menu_bar.rs"]
-mod menu_bar;
+#[path = "find_menu_fallback.rs"]
+mod menu_fallback;
 
 #[cfg(test)]
 #[path = "find_tests.rs"]

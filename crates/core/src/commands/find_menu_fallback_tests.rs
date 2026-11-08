@@ -1,5 +1,6 @@
 use super::super::{FindArgs, FindFilterArgs, FindSelectionArgs, execute};
 use super::*;
+use crate::ErrorCode;
 use crate::{
     AdapterError, AppInfo, WindowInfo,
     adapter::{ActionOps, InputOps, NativeHandle, ObservationOps, SystemOps, WindowFilter},
@@ -15,9 +16,13 @@ const APP: &str = "FixtureApp";
 
 #[derive(Default)]
 struct MenuBarAdapter {
-    menu_item_in_window: bool,
+    menu_item_in_window: u32,
     empty_menu_bar: bool,
+    open_context_menu: bool,
+    menu_bar_times_out: bool,
+    no_window: bool,
     menu_bar_reads: AtomicUsize,
+    menu_reads: AtomicUsize,
 }
 
 fn evidence(role: &str, name: &str) -> LocatorEvidence {
@@ -58,20 +63,36 @@ impl ObservationOps for MenuBarAdapter {
         request: &ObservationRequest,
     ) -> Result<ObservedTree, AdapterError> {
         let tree = match &root {
+            ObservationRoot::Application { surface, .. } if *surface == SnapshotSurface::Menu => {
+                self.menu_reads.fetch_add(1, Ordering::SeqCst);
+                if !self.open_context_menu {
+                    return Err(AdapterError::new(
+                        ErrorCode::ElementNotFound,
+                        "no open menu",
+                    ));
+                }
+                node("menu", "", vec![node("menuitem", "Open", Vec::new())])
+            }
             ObservationRoot::Application { surface, .. }
                 if *surface == SnapshotSurface::Menubar =>
             {
                 self.menu_bar_reads.fetch_add(1, Ordering::SeqCst);
+                if self.menu_bar_times_out {
+                    return Err(AdapterError::timeout("menu bar read ran out of budget"));
+                }
                 let items = if self.empty_menu_bar {
                     Vec::new()
                 } else {
-                    vec![node("menuitem", "Go to Folder\u{2026}", Vec::new())]
+                    vec![
+                        node("menuitem", "Go to Folder\u{2026}", Vec::new()),
+                        node("menuitem", "Open", Vec::new()),
+                    ]
                 };
                 node("menubar", "", vec![node("menubaritem", "Go", items)])
             }
             ObservationRoot::Window(window) => {
                 let mut children = vec![node("button", "Open", Vec::new())];
-                if self.menu_item_in_window {
+                for _ in 0..self.menu_item_in_window {
                     children.push(node("menuitem", "Go to Folder\u{2026}", Vec::new()));
                 }
                 node("window", &window.title, children)
@@ -87,7 +108,7 @@ impl ObservationOps for MenuBarAdapter {
     }
 
     fn is_application_surface(&self, surface: SnapshotSurface) -> bool {
-        surface == SnapshotSurface::Menubar
+        matches!(surface, SnapshotSurface::Menu | SnapshotSurface::Menubar)
     }
 
     fn list_apps(&self, _deadline: crate::Deadline) -> Result<Vec<AppInfo>, AdapterError> {
@@ -99,6 +120,9 @@ impl ObservationOps for MenuBarAdapter {
         _filter: &WindowFilter,
         _deadline: crate::Deadline,
     ) -> Result<Vec<WindowInfo>, AdapterError> {
+        if self.no_window {
+            return Ok(Vec::new());
+        }
         Ok(vec![WindowInfo {
             id: "w-1".into(),
             title: "Documents".into(),
@@ -126,7 +150,11 @@ impl ActionOps for MenuBarAdapter {}
 impl InputOps for MenuBarAdapter {}
 impl SystemOps for MenuBarAdapter {
     fn supported_surfaces(&self) -> Vec<SnapshotSurface> {
-        vec![SnapshotSurface::Window, SnapshotSurface::Menubar]
+        vec![
+            SnapshotSurface::Window,
+            SnapshotSurface::Menu,
+            SnapshotSurface::Menubar,
+        ]
     }
 }
 
@@ -173,6 +201,7 @@ fn a_menu_item_missing_from_the_window_is_answered_from_the_menu_bar() {
     let snapshot_id = response["snapshot_id"].as_str().expect("snapshot id");
     let ref_id = matches[0]["ref_id"].as_str().expect("ref");
     assert!(ref_id.starts_with(&format!("@{snapshot_id}:")), "{ref_id}");
+    assert_eq!(adapter.menu_bar_reads.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -190,7 +219,7 @@ fn a_first_match_menu_item_query_is_answered_from_the_menu_bar() {
 fn a_menu_item_found_in_the_window_never_reads_the_menu_bar() {
     let _guard = HomeGuard::new();
     let adapter = MenuBarAdapter {
-        menu_item_in_window: true,
+        menu_item_in_window: 1,
         ..Default::default()
     };
     let response = run(&adapter, find("menuitem", "go to folder"));
@@ -224,6 +253,92 @@ fn an_empty_menu_bar_returns_the_window_answer() {
 }
 
 #[test]
+fn an_open_menu_answers_before_the_menu_bar() {
+    let _guard = HomeGuard::new();
+    let adapter = MenuBarAdapter {
+        open_context_menu: true,
+        ..Default::default()
+    };
+    let response = run(&adapter, find("menuitem", "open"));
+    assert_eq!(response["surface"], "menu", "{response}");
+    assert_eq!(adapter.menu_bar_reads.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn an_app_without_a_window_is_answered_from_the_menu_bar() {
+    let _guard = HomeGuard::new();
+    let adapter = MenuBarAdapter {
+        no_window: true,
+        ..Default::default()
+    };
+    let response = run(&adapter, find("menuitem", "go to folder"));
+    assert_eq!(response["surface"], "menubar", "{response}");
+    assert_eq!(response["total_matches"], 1);
+}
+
+#[test]
+fn a_menu_bar_search_that_runs_out_of_budget_reports_the_timeout() {
+    let _guard = HomeGuard::new();
+    let adapter = MenuBarAdapter {
+        menu_bar_times_out: true,
+        ..Default::default()
+    };
+    let error = execute(
+        find("menuitem", "go to folder"),
+        &adapter,
+        &CommandContext::default(),
+    )
+    .expect_err("an incomplete menu bar search is not an empty answer");
+    let AppError::Adapter(error) = error else {
+        panic!("adapter error expected");
+    };
+    assert_eq!(error.code, ErrorCode::Timeout);
+}
+
+#[test]
+fn a_window_that_matched_beyond_the_requested_index_is_not_retried() {
+    let _guard = HomeGuard::new();
+    let adapter = MenuBarAdapter {
+        menu_item_in_window: 2,
+        ..Default::default()
+    };
+    let mut args = find("menuitem", "go to folder");
+    args.selection.nth = Some(5);
+    let response = run(&adapter, args);
+    assert!(response["match"].is_null(), "{response}");
+    assert!(response.get("surface").is_none(), "{response}");
+    assert_eq!(adapter.menu_bar_reads.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn an_expired_deadline_skips_the_menu_searches() {
+    let _guard = HomeGuard::new();
+    let adapter = MenuBarAdapter::default();
+    let deadline = crate::Deadline::after(1).expect("deadline");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let query = LocatorQuery {
+        identity: crate::IdentityPredicate {
+            role: Some("menuitem".into()),
+            ..Default::default()
+        },
+        ..LocatorQuery::default()
+    };
+    let window_answer = Ok((json!({ "matches": [], "total_matches": 0 }), 0));
+    let response = search_menus(
+        find("menuitem", "go to folder"),
+        &query,
+        window_answer,
+        &adapter,
+        &CommandContext::default(),
+        deadline,
+    )
+    .expect("window answer");
+    assert!(response.get("surface").is_none(), "{response}");
+    assert_eq!(adapter.menu_bar_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(adapter.menu_reads.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn a_rooted_or_explicitly_surfaced_find_is_left_alone() {
     let query = LocatorQuery {
         identity: crate::IdentityPredicate {
@@ -245,19 +360,11 @@ fn a_rooted_or_explicitly_surfaced_find_is_left_alone() {
 }
 
 #[test]
-fn every_response_shape_reports_emptiness() {
-    assert!(is_empty(&json!({ "count": 0 })));
-    assert!(!is_empty(&json!({ "count": 2 })));
-    assert!(is_empty(&json!({ "match": null })));
-    assert!(!is_empty(&json!({ "match": { "role": "menuitem" } })));
-    assert!(is_empty(&json!({ "matches": [] })));
-    assert!(!is_empty(&json!({ "matches": [{}] })));
-}
-
-#[test]
 fn only_a_missing_window_counts_as_finding_nothing() {
     let missing = Err(AppError::Adapter(AdapterError::app_has_no_window(APP)));
     assert!(window_found_nothing(&missing));
     let timeout = Err(AppError::Adapter(AdapterError::timeout("slow")));
     assert!(!window_found_nothing(&timeout));
+    assert!(window_found_nothing(&Ok((json!({}), 0))));
+    assert!(!window_found_nothing(&Ok((json!({ "match": null }), 2))));
 }

@@ -23,20 +23,23 @@ const MAX_RAW_DEPTH: u8 = 50;
 /// The traversal budget: the caller's if they set one, the shipped default
 /// otherwise. Named rather than inlined so a test exercises the same
 /// selection a caller reaches, instead of restating the arms beside it.
-fn traversal_deadline(args: &FindArgs) -> Result<crate::Deadline, AdapterError> {
+pub(super) fn traversal_deadline(args: &FindArgs) -> Result<crate::Deadline, AdapterError> {
     match args.timeout_ms {
         Some(timeout_ms) => crate::Deadline::after(timeout_ms),
         None => crate::Deadline::from_duration(LOCATOR_TIMEOUT),
     }
 }
 
+/// Runs one live find within `deadline` and returns the response with the
+/// number of matching elements, which a shaped response (`--nth`, `--count`)
+/// does not always show.
 pub(super) fn execute(
     args: &FindArgs,
     query: &LocatorQuery,
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
-) -> Result<Value, AppError> {
-    let deadline = traversal_deadline(args)?;
+    deadline: crate::Deadline,
+) -> Result<(Value, u32), AppError> {
     let request = resolve_request(args, deadline);
     let mut resolution = match args.root.as_deref() {
         Some(root_ref) => rooted_resolution(adapter, query, root_ref, &request, context)?,
@@ -76,7 +79,9 @@ pub(super) fn execute(
         }
     }
     emit_resolution(context, &resolution, snapshot_id.as_deref(), ref_count)?;
+    let total_matches = resolution.meta.total_matches;
     format_response(args, query, resolution, snapshot_id.as_deref())
+        .map(|response| (response, total_matches))
 }
 
 /// A rooted find draws its matches from the root's own subtree. A root with an

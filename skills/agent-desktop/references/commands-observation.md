@@ -82,7 +82,7 @@ agent-desktop find --app "App" --role button --count
 - `--name` and `--text` match fuzzily. Add `--exact` for case-insensitive equality. Use `--limit 2` before a mutation when you need to know the match is unique.
 - `--text` also matches ancestors whose subtree text contains the text. Use `--name` to match the node itself.
 - `--role` is case-insensitive; `textarea`, `textbox` and `searchfield` fold to `textfield`. When a role filter matches nothing, `data.roles_present` lists the roles in the searched tree. Use it to tell a wrong role name from an empty screen.
-- Menu items live in the menu bar, not in a window. A `--role menuitem` find with no `--surface` or `--root` that finds nothing in the window searches the app's menu bar once, and then reports `data.surface: "menubar"`. So `find --app <App> --role menuitem --name "Go to Folder"` returns a clickable ref without a menu bar snapshot.
+- Menu items live in an open menu or the menu bar, not in a window. A `--role menuitem` find with no `--surface` or `--root` that matches nothing in the window, or finds no window, searches the open menu and then the menu bar (macOS only) within the same `--timeout-ms`, and reports the surface that answered in `data.surface`. So `find --app <App> --role menuitem --name "Go to Folder"` returns a clickable ref without a menu bar snapshot. A search that runs out of budget returns `TIMEOUT`, not an empty list.
 - Unnamed elements omit `name`. Their content is in `value`, so search it with `--value`.
 - A large tree, such as a file dialog, can pass the 5000 ms default `--timeout-ms`. Raise it or narrow the search. A timeout here does not mean the app hangs.
 
