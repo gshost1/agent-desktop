@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use agent_desktop_core::{
     ActionResult, AdapterError, DeliverySemantics, ErrorCode, InteractionLease, MouseButton,
-    NotificationActionRequest,
+    NotificationActionRequest, NotificationTarget,
 };
 use serde_json::json;
 
@@ -10,7 +10,7 @@ use super::extract::Entry;
 use super::list::read_listing;
 use super::session::{Session, require_headed};
 use super::signal::{BusSignals, SETTLE_BUDGET, SignalSource};
-use super::target::{Located, Wanted, locate, reconfirm, require};
+use super::target::{Located, locate, reconfirm, require};
 use super::verify::{REMOVAL_SETTLE, evidence, holds, pressed_without_effect, settle_read};
 use super::world::{LiveWorld, ShellWorld};
 use crate::system::SharedBus;
@@ -41,10 +41,7 @@ pub(crate) fn action_in(
     lease: &InteractionLease,
 ) -> Result<ActionResult, AdapterError> {
     require_headed(request.policy)?;
-    let wanted = Wanted {
-        target: request.target,
-        app_filter: None,
-    };
+    let wanted = request.target;
     let first = locate(world, wanted, lease.deadline())?;
     offered(first.entry(), request.action_name)?;
     let session = Session::open(world, request.policy, lease)?;
@@ -55,7 +52,7 @@ pub(crate) fn action_in(
 fn press(
     world: &dyn ShellWorld,
     signals: &dyn SignalSource,
-    (request, wanted): (&NotificationActionRequest<'_>, Wanted<'_>),
+    (request, wanted): (&NotificationActionRequest<'_>, &NotificationTarget),
     first: &Entry,
     lease: &InteractionLease,
 ) -> Result<ActionResult, AdapterError> {
@@ -91,7 +88,7 @@ fn press(
 
 fn expanded(
     world: &dyn ShellWorld,
-    wanted: Wanted<'_>,
+    wanted: &NotificationTarget,
     first: &Entry,
     name: &str,
     lease: &InteractionLease,

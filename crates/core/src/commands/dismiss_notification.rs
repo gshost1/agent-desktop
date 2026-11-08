@@ -21,13 +21,13 @@ pub fn execute(
         expected_app: args.expected_app,
         expected_title: args.expected_title,
     };
-    let target = NotificationTarget::new(args.index, args.key.as_deref(), identity)?;
+    let target =
+        NotificationTarget::new(args.index, args.key.as_deref(), identity)?.with_app(args.app);
     let policy = super::notification_policy::mutation_policy(context)?;
     let lease = crate::commands::helpers::acquire_interaction_lease(adapter)?;
     let dismissed = adapter.dismiss_notification(
         crate::DismissNotificationRequest {
             target: &target,
-            app_filter: args.app.as_deref(),
             policy,
         },
         &lease,

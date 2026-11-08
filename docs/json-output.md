@@ -211,16 +211,20 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 
 `list-notifications` gives every entry a `key` beside `index`, `app_name`,
 `title`, `body` and `actions`. The key is opaque: a digest of the app, title
-and body, then `-` and the entry's occurrence among identical entries counted
-from the top (for example `"370187c8c54966aa-1"`). Identical twins get `-1`,
-`-2`, and so on. Filters (`--app`, `--text`, `--limit`) do not change an
-entry's key.
+and body, then `-` and the entry's occurrence among identical entries (for
+example `"370187c8c54966aa-1"`). Lists are newest first and occurrences count
+from the bottom, so the oldest twin is `-1` and an identical newcomer at the
+top gets the next number without changing the keys already listed. Keys are
+assigned over the whole list before `--app`, `--text` and `--limit` apply, so
+no filter changes a key.
 
 `dismiss-notification` and `notification-action` take it as `--key`. Core
-re-reads the list under the mutation and acts only on the one entry that
-carries the key. With an INDEX the entry must also still sit at that index.
+re-reads the whole list under the mutation, picks the one entry that carries
+the key (with an INDEX, it must also still sit there), and only then checks
+`--app` and `--expected-app` / `--expected-title` against that entry.
 Otherwise the call returns `NOTIFICATION_NOT_FOUND` with `not_delivered` and
-presses nothing. `dismiss-notification --key` without INDEX acts on the keyed
+presses nothing. `notification-action` still requires INDEX, and the C ABI
+does not take a key yet. `dismiss-notification --key` without INDEX acts on the keyed
 entry wherever it now sits. An index with only `--expected-app` or
 `--expected-title` checks just those fields, so it cannot tell two entries
 with the same app and title apart. A bare index is `INVALID_ARGS`.

@@ -7,10 +7,11 @@ use super::notification_key::NotificationKey;
 
 /// The opaque `key` that `list-notifications` prints for each entry: the
 /// digest of the entry's app, title and body, and its occurrence among the
-/// entries with that digest, counted from the top of the list. The
-/// occurrence tells identical twins apart. List filters only drop whole
-/// groups of twins or cut the list from the bottom, so a filtered list and a
-/// full list assign every shown entry the same key.
+/// entries with that digest. Every adapter lists newest first, so the
+/// occurrence is counted from the bottom: the oldest twin is 1, and an
+/// identical newcomer arriving at the top takes the next number without
+/// renumbering the twins already listed. Keys are always assigned over the
+/// whole unfiltered list, before any filter or limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NotificationToken {
     digest: u64,
@@ -18,21 +19,28 @@ pub(crate) struct NotificationToken {
 }
 
 impl NotificationToken {
-    /// The key of every entry of `listed`, in list order.
+    /// The key of every entry of `listed`, a newest-first list, in list
+    /// order.
     pub(crate) fn assign<'a>(listed: impl IntoIterator<Item = &'a NotificationInfo>) -> Vec<Self> {
-        let mut seen: HashMap<u64, usize> = HashMap::new();
-        listed
+        let digests: Vec<u64> = listed
             .into_iter()
-            .map(|info| {
-                let digest = NotificationKey::from(info).digest();
-                let occurrence = seen.entry(digest).or_insert(0);
+            .map(|info| NotificationKey::from(info).digest())
+            .collect();
+        let mut seen: HashMap<u64, usize> = HashMap::new();
+        let mut keys: Vec<Self> = digests
+            .iter()
+            .rev()
+            .map(|digest| {
+                let occurrence = seen.entry(*digest).or_insert(0);
                 *occurrence += 1;
                 Self {
-                    digest,
+                    digest: *digest,
                     occurrence: *occurrence,
                 }
             })
-            .collect()
+            .collect();
+        keys.reverse();
+        keys
     }
 
     /// Reads a key printed by [`fmt::Display`]; anything else is `None`.
@@ -58,8 +66,8 @@ impl fmt::Display for NotificationToken {
     }
 }
 
-/// The `key` of every entry of `listed`, in list order, as
-/// `list-notifications` prints it.
+/// The `key` of every entry of `listed`, a whole newest-first list, in list
+/// order, as `list-notifications` prints it.
 pub fn notification_keys(listed: &[NotificationInfo]) -> Vec<String> {
     NotificationToken::assign(listed)
         .iter()

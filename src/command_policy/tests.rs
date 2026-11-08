@@ -187,6 +187,30 @@ fn dismiss_notification_identity_is_required_before_permission_preflight() {
 }
 
 #[test]
+fn a_malformed_notification_key_is_refused_before_permission_preflight() {
+    let report = PermissionReport {
+        accessibility: PermissionState::Denied {
+            suggestion: "grant accessibility".into(),
+        },
+        screen_recording: PermissionState::Granted,
+        automation: PermissionState::NotRequired,
+    };
+    let command =
+        Commands::DismissNotification(crate::cli_args::notifications::DismissNotificationCliArgs {
+            index: None,
+            key: Some("not-a-key".into()),
+            app: None,
+            expected_app: None,
+            expected_title: None,
+        });
+
+    let error = preflight(&command, &report).expect_err("malformed key fails first");
+
+    assert_eq!(error.code(), "INVALID_ARGS");
+    assert!(error.to_string().contains("not a notification key"));
+}
+
+#[test]
 fn trace_show_passes_preflight_with_permissions_denied() {
     let report = PermissionReport {
         accessibility: PermissionState::Denied {

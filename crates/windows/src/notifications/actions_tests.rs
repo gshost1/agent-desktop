@@ -146,7 +146,6 @@ fn the_dismiss_reaches_the_windows_override_not_the_trait_default() {
         &adapter,
         DismissNotificationRequest {
             target: &target,
-            app_filter: None,
             policy: InteractionPolicy::headless(),
         },
         &lease,

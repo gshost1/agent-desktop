@@ -95,7 +95,7 @@ fn identical_twins_are_addressed_separately_by_occurrence() {
     .expect("target");
     assert_eq!(first.pick(&twins).expect("first"), 0);
     assert_eq!(second.pick(&twins).expect("second"), 1);
-    let error = second.pick(&twins[..1]).expect_err("only one twin is left");
+    let error = first.pick(&twins[1..]).expect_err("the newer twin left");
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
 }
 
@@ -130,6 +130,95 @@ fn an_index_that_is_no_longer_listed_is_not_found() {
     let target = NotificationTarget::new(Some(9), None, app("Slack")).expect("target");
     let error = target.pick(&shifted()).expect_err("no ninth entry");
     assert_eq!(error.code, ErrorCode::NotificationNotFound);
+}
+
+#[test]
+fn an_identical_newcomer_at_the_top_leaves_the_listed_twin_addressed() {
+    let seen = vec![
+        info(1, "CI", "Build failed", "main"),
+        info(2, "Mail", "Invoice", "due"),
+    ];
+    let target = NotificationTarget::new(
+        None,
+        Some(&key_of(&seen, 0)),
+        NotificationIdentity::default(),
+    )
+    .expect("target");
+    let now = vec![
+        info(1, "CI", "Build failed", "main"),
+        info(2, "CI", "Build failed", "main"),
+        info(3, "Mail", "Invoice", "due"),
+    ];
+    assert_eq!(target.pick(&now).expect("the original"), 1);
+}
+
+#[test]
+fn the_app_scope_is_checked_after_the_pick_with_the_mismatch_refusal() {
+    let key = key_of(&seen(), 0);
+    let scoped = |app: &str| {
+        NotificationTarget::new(None, Some(&key), NotificationIdentity::default())
+            .expect("target")
+            .with_app(Some(app.into()))
+    };
+    assert_eq!(scoped("SLA").pick(&shifted()).expect("in scope"), 1);
+    let error = scoped("mail").pick(&shifted()).expect_err("out of scope");
+    assert_eq!(error.code, ErrorCode::NotificationNotFound);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.message,
+        "The notification at index 2 does not match the expected app or title"
+    );
+    let expected = NotificationTarget::new(None, Some(&key), app("Mail")).expect("target");
+    assert_eq!(
+        expected.pick(&shifted()).expect_err("fields").message,
+        error.message
+    );
+}
+
+#[test]
+fn an_index_with_one_empty_and_one_set_field_checks_only_the_set_one() {
+    let mixed = NotificationIdentity {
+        expected_app: Some(String::new()),
+        expected_title: Some("Invoice".into()),
+    };
+    let target = NotificationTarget::new(Some(3), None, mixed).expect("one field is set");
+    assert_eq!(target.pick(&shifted()).expect("title matches"), 2);
+    let wrong = NotificationIdentity {
+        expected_app: Some(String::new()),
+        expected_title: Some("Reminder".into()),
+    };
+    let target = NotificationTarget::new(Some(3), None, wrong).expect("target");
+    assert!(target.pick(&shifted()).is_err());
+}
+
+#[test]
+fn an_index_with_both_fields_needs_both_to_match() {
+    let both = NotificationIdentity {
+        expected_app: Some("Mail".into()),
+        expected_title: Some("Invoice".into()),
+    };
+    let target = NotificationTarget::new(Some(3), None, both).expect("target");
+    assert!(target.pick(&shifted()).is_ok());
+    let other = NotificationIdentity {
+        expected_app: Some("Slack".into()),
+        expected_title: Some("Invoice".into()),
+    };
+    let target = NotificationTarget::new(Some(3), None, other).expect("target");
+    assert!(target.pick(&shifted()).is_err());
+}
+
+#[test]
+fn check_applies_the_same_addressing_rule_as_new() {
+    assert!(NotificationTarget::check(true, None, &app("Slack")).is_ok());
+    assert!(NotificationTarget::check(false, Some(&key_of(&seen(), 0)), &app("")).is_ok());
+    for (has_index, key, identity) in [
+        (true, None, app("")),
+        (false, None, app("Slack")),
+        (false, Some("bad"), app("")),
+    ] {
+        let error = NotificationTarget::check(has_index, key, &identity).expect_err("refused");
+        assert_eq!(error.code, ErrorCode::InvalidArgs);
+    }
 }
 
 #[test]

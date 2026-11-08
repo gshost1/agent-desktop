@@ -53,7 +53,7 @@ agent-desktop list-notifications [--app NAME] [--text TEXT] [--limit N]
 }
 ```
 
-`index` is 1-based and counts the unfiltered list, so a filtered result can start above 1. `body` and `actions` are omitted when empty. `key` is opaque and always present: a digest of app, title and body, then `-` and the entry's count among identical entries from the top. Filters do not change it. Errors: `POLICY_DENIED` on macOS or Windows with the surface closed, and `PLATFORM_NOT_SUPPORTED` when there is no notification service (on Linux, an owner other than GNOME Shell).
+`index` is 1-based and counts the unfiltered list, so a filtered result can start above 1. `body` and `actions` are omitted when empty. `key` is opaque and always present: a digest of app, title and body, then `-` and the entry's count among identical entries, counted from the oldest, so a new identical notification does not change existing keys. Keys are assigned before filters apply, so no filter changes one. Errors: `POLICY_DENIED` on macOS or Windows with the surface closed, and `PLATFORM_NOT_SUPPORTED` when there is no notification service (on Linux, an owner other than GNOME Shell).
 
 ## dismiss-notification
 
@@ -73,7 +73,7 @@ agent-desktop --headed dismiss-notification 2 --expected-title "Standup in 10 mi
     <tr><td><code>INDEX</code></td><td>required without <code>--key</code></td><td>1-based index from <code>list-notifications</code>. With <code>--key</code>, the keyed entry must still be at <code>INDEX</code>.</td></tr>
     <tr><td><code>--key KEY</code></td><td>none</td><td>The entry's <code>key</code> from <code>list-notifications</code>. Without <code>INDEX</code>, dismisses that entry wherever it now sits.</td></tr>
     <tr><td><code>--expected-app APP</code>, <code>--expected-title TITLE</code></td><td>one, without <code>--key</code></td><td>The app or title the notification must have.</td></tr>
-    <tr><td><code>--app NAME</code></td><td>none</td><td>Require the notification to come from this app.</td></tr>
+    <tr><td><code>--app NAME</code></td><td>none</td><td>Require the targeted notification to come from an app whose name contains <code>NAME</code>, ignoring case. Checked after the entry is found by key or index.</td></tr>
   </tbody>
 </table>
 

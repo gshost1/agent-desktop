@@ -11,13 +11,12 @@ mod tests;
 
 pub fn dismiss_notification(
     target: &NotificationTarget,
-    app_filter: Option<&str>,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
     require_foreground_policy(policy)?;
     let session = NcSession::open(policy, deadline)?;
-    let result = dismiss_impl(target, app_filter, policy, session.pid(), deadline);
+    let result = dismiss_impl(target, policy, session.pid(), deadline);
     close_session(session, result)
 }
 
@@ -47,12 +46,11 @@ pub fn notification_action(
 #[cfg(target_os = "macos")]
 fn dismiss_impl(
     target: &NotificationTarget,
-    app_filter: Option<&str>,
     policy: InteractionPolicy,
     pid: i32,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
-    let filter = build_filter(app_filter);
+    let filter = NotificationFilter::default();
     let entries = super::list::list_entries(&filter, pid, deadline)?;
 
     let entry = &entries[target.pick(entries.iter().map(|e| &e.info))?];
@@ -339,7 +337,6 @@ fn all_dismiss_strategies_failed() -> AdapterError {
 #[cfg(not(target_os = "macos"))]
 fn dismiss_impl(
     _target: &NotificationTarget,
-    _app_filter: Option<&str>,
     _policy: InteractionPolicy,
     _pid: i32,
     _deadline: Deadline,

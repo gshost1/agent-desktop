@@ -195,27 +195,19 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
                 validate_ref_id(ref_id)?;
             }
         }
-        Commands::DismissNotification(args)
-            if unaddressed(
-                &args.key,
-                args.index,
+        Commands::DismissNotification(args) => {
+            notification_addressing(
+                args.index.is_some(),
+                args.key.as_deref(),
                 [&args.expected_app, &args.expected_title],
-            ) =>
-        {
-            return Err(AppError::invalid_input(
-                "dismiss-notification requires --key, or INDEX with --expected-app or --expected-title",
-            ));
+            )?;
         }
-        Commands::NotificationAction(args)
-            if unaddressed(
-                &args.key,
-                Some(args.index),
+        Commands::NotificationAction(args) => {
+            notification_addressing(
+                true,
+                args.key.as_deref(),
                 [&args.expected_app, &args.expected_title],
-            ) =>
-        {
-            return Err(AppError::invalid_input(
-                "notification-action requires --key, or INDEX with --expected-app or --expected-title",
-            ));
+            )?;
         }
         Commands::Find(_)
         | Commands::Screenshot(_)
@@ -241,9 +233,7 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
         | Commands::Restore(_)
         | Commands::ListSurfaces(_)
         | Commands::ListNotifications(_)
-        | Commands::DismissNotification(_)
         | Commands::DismissAllNotifications(_)
-        | Commands::NotificationAction(_)
         | Commands::ClipboardGet(_)
         | Commands::ClipboardSet(_)
         | Commands::ClipboardClear
@@ -259,15 +249,20 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
     Ok(())
 }
 
-/// A notification mutation names its target by key, or by an index with at
-/// least one non-empty expected field; anything else could act on a shifted
-/// list.
-fn unaddressed(key: &Option<String>, index: Option<u64>, expected: [&Option<String>; 2]) -> bool {
-    key.is_none()
-        && (index.is_none()
-            || expected
-                .iter()
-                .all(|field| field.as_deref().is_none_or(str::is_empty)))
+/// Core's notification addressing rule, checked before any permission
+/// preflight so a malformed request is refused without touching the desktop.
+fn notification_addressing(
+    has_index: bool,
+    key: Option<&str>,
+    [app, title]: [&Option<String>; 2],
+) -> Result<(), AppError> {
+    let identity = agent_desktop_core::NotificationIdentity {
+        expected_app: app.clone(),
+        expected_title: title.clone(),
+    };
+    Ok(agent_desktop_core::NotificationTarget::check(
+        has_index, key, &identity,
+    )?)
 }
 
 fn requires_accessibility(permission: PermissionNeed) -> bool {

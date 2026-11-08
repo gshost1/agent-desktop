@@ -4,7 +4,7 @@ use agent_desktop_core::{
 
 use super::close::close_entry;
 use super::session::{Session, require_headed};
-use super::target::{Wanted, locate, reconfirm};
+use super::target::{locate, reconfirm};
 use super::world::{LiveWorld, ShellWorld};
 use crate::system::SharedBus;
 
@@ -26,10 +26,7 @@ pub(crate) fn dismiss_in(
     lease: &InteractionLease,
 ) -> Result<NotificationInfo, AdapterError> {
     require_headed(request.policy)?;
-    let wanted = Wanted {
-        target: request.target,
-        app_filter: request.app_filter,
-    };
+    let wanted = request.target;
     let first = locate(world, wanted, lease.deadline())?;
     let session = Session::open(world, request.policy, lease)?;
     let result = reconfirm(world, wanted, first.entry(), lease.deadline()).and_then(|ready| {

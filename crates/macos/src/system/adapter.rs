@@ -279,7 +279,6 @@ impl SystemOps for MacOSAdapter {
     ) -> Result<NotificationInfo, AdapterError> {
         crate::notifications::actions::dismiss_notification(
             request.target,
-            request.app_filter,
             request.policy,
             _lease.deadline(),
         )

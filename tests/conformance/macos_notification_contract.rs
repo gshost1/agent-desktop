@@ -21,7 +21,6 @@ fn notification_mutations_fail_before_foreground_access_under_headless_policy() 
             &adapter,
             DismissNotificationRequest {
                 target: &target,
-                app_filter: None,
                 policy,
             },
             &lease,

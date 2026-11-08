@@ -19,16 +19,16 @@ fn keys(listed: &[NotificationInfo]) -> Vec<String> {
 }
 
 #[test]
-fn twins_get_increasing_occurrences_and_other_entries_start_at_one() {
+fn the_oldest_twin_is_one_and_other_entries_start_at_one() {
     let listed = [
         info("Mail", "x", None),
         info("Chat", "y", None),
         info("Mail", "x", None),
     ];
     let keys = keys(&listed);
-    assert!(keys[0].ends_with("-1"));
+    assert!(keys[0].ends_with("-2"));
     assert!(keys[1].ends_with("-1"));
-    assert!(keys[2].ends_with("-2"));
+    assert!(keys[2].ends_with("-1"));
     assert_eq!(
         keys[0].split_once('-').map(|p| p.0),
         keys[2].split_once('-').map(|p| p.0)
@@ -37,14 +37,14 @@ fn twins_get_increasing_occurrences_and_other_entries_start_at_one() {
 }
 
 #[test]
-fn a_filtered_list_assigns_the_same_keys_as_the_full_list() {
-    let full = [
-        info("Chat", "y", None),
-        info("Mail", "x", None),
+fn an_identical_newcomer_at_the_top_does_not_change_the_listed_keys() {
+    let before = [info("CI", "Build failed", None), info("Mail", "x", None)];
+    let after = [
+        info("CI", "Build failed", None),
+        info("CI", "Build failed", None),
         info("Mail", "x", None),
     ];
-    let mail_only = [full[1].clone(), full[2].clone()];
-    assert_eq!(keys(&full)[1..], keys(&mail_only)[..]);
+    assert_eq!(keys(&before)[..], keys(&after)[1..]);
 }
 
 #[test]

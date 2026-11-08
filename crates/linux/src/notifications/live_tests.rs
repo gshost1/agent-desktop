@@ -100,7 +100,6 @@ fn an_entry_that_has_gone_is_not_found() {
     oracle(&["close", &id.to_string()]);
     let request = DismissNotificationRequest {
         target: &target,
-        app_filter: None,
         policy: InteractionPolicy::headed(),
     };
     let error = super::dismiss(&bus, request, &lease()).expect_err("gone");
@@ -154,7 +153,6 @@ fn dismiss_removes_exactly_the_target_and_the_daemon_reports_reason_two() {
     let target = keyed(&bus, "dropped");
     let request = DismissNotificationRequest {
         target: &target,
-        app_filter: None,
         policy: InteractionPolicy::headed(),
     };
     let done = super::dismiss(&bus, request, &lease()).expect("dismissed");

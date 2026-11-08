@@ -27,13 +27,12 @@ mod tests;
 /// never success.
 pub fn dismiss_notification(
     target: &NotificationTarget,
-    app_filter: Option<&str>,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
     require_foreground_policy(policy)?;
     let session = ActionCenterSession::open(policy, deadline)?;
-    let result = dismiss_impl(target, app_filter, session.hwnd(), deadline);
+    let result = dismiss_impl(target, session.hwnd(), deadline);
     close_session(session, result)
 }
 
@@ -85,11 +84,10 @@ pub fn notification_action(
 /// stays an honest `ACTION_FAILED` there.
 fn dismiss_impl(
     target: &NotificationTarget,
-    app_filter: Option<&str>,
     hwnd: isize,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
-    let filter = build_filter(app_filter);
+    let filter = NotificationFilter::default();
     let entry = locate(target, &filter, hwnd, deadline)?;
     let info = entry.info.clone();
     let index = info.index;

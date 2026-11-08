@@ -88,7 +88,7 @@ pub use notifications::notification_filter::NotificationFilter;
 pub use notifications::notification_identity::NotificationIdentity;
 pub use notifications::notification_info::NotificationInfo;
 pub use notifications::notification_seed::NotificationSeed;
-pub use notifications::notification_target::NotificationTarget;
+pub use notifications::notification_target::{NotificationTarget, notification_moved};
 pub use notifications::notification_token::notification_keys;
 pub use refs::RefMap;
 pub use refs::ref_capabilities::RefCapabilities;

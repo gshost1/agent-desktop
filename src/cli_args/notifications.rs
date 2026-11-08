@@ -28,7 +28,7 @@ pub(crate) struct DismissNotificationCliArgs {
     pub key: Option<String>,
     #[arg(
         long,
-        help = "Require the notification at INDEX to be from this app; INDEX is its position in the unfiltered list"
+        help = "Require the targeted notification (by --key or INDEX) to come from an app whose name contains this, ignoring case; INDEX counts the unfiltered list"
     )]
     pub app: Option<String>,
     #[arg(

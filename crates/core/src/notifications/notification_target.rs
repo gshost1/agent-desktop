@@ -1,6 +1,7 @@
 use crate::{AdapterError, DeliverySemantics, ErrorCode, NotificationIdentity, NotificationInfo};
 
 use super::notification_address::NotificationAddress;
+use super::notification_filter::app_matches;
 use super::notification_token::NotificationToken;
 
 const RELIST: &str = "Run list-notifications again and retry with a freshly listed key";
@@ -9,18 +10,20 @@ const RELIST: &str = "Run list-notifications again and retry with a freshly list
 /// an earlier `list-notifications`. A key finds the entry wherever it now
 /// sits; an index is only a position, so it is accepted only beside a key or
 /// an expected app or title the entry there must still carry. Adapters
-/// re-read their list under the mutation and act on the entry [`Self::pick`]
-/// names; they never match notifications themselves.
+/// re-read the whole, unfiltered list under the mutation and act on the
+/// entry [`Self::pick`] names; they never match or filter notifications
+/// themselves.
 #[derive(Debug, Clone)]
 pub struct NotificationTarget {
     address: NotificationAddress,
     identity: NotificationIdentity,
+    app: Option<String>,
 }
 
 impl NotificationTarget {
     /// Validates the caller's addressing: a key, or an index with at least
-    /// one expected identity field. A bare index is refused because the list
-    /// can shift between the two calls.
+    /// one non-empty expected identity field. A bare index is refused
+    /// because the list can shift between the two calls.
     pub fn new(
         index: Option<usize>,
         key: Option<&str>,
@@ -34,13 +37,34 @@ impl NotificationTarget {
             (None, Some(index)) if !identity.is_empty() => NotificationAddress::Index(index),
             (None, _) => return Err(unaddressed()),
         };
-        Ok(Self { address, identity })
+        Ok(Self {
+            address,
+            identity,
+            app: None,
+        })
+    }
+
+    /// The addressing check of [`Self::new`] alone, for callers that refuse
+    /// a malformed request before they have an index to hand over.
+    pub fn check(
+        has_index: bool,
+        key: Option<&str>,
+        identity: &NotificationIdentity,
+    ) -> Result<(), AdapterError> {
+        Self::new(has_index.then_some(1), key, identity.clone()).map(|_| ())
+    }
+
+    /// Also requires the picked entry's app name to contain `app`, ignoring
+    /// case, as `--app` does everywhere.
+    pub fn with_app(mut self, app: Option<String>) -> Self {
+        self.app = app.filter(|app| !app.is_empty());
+        self
     }
 
     /// The position in `listed` of the one entry this target names. `listed`
-    /// is the adapter's fresh read, in list order, unfiltered or filtered by
-    /// app. A key that matches no entry, or an index whose entry no longer
-    /// carries the key or the expected fields, is refused `not_delivered`.
+    /// is the adapter's fresh, unfiltered read in list order. The entry is
+    /// found by key or index first, then checked against the app scope and
+    /// the expected fields. Every refusal is `not_delivered`.
     pub fn pick<'a>(
         &self,
         listed: impl IntoIterator<Item = &'a NotificationInfo>,
@@ -53,11 +77,25 @@ impl NotificationTarget {
                 .position(|info| info.index == index)
                 .ok_or_else(|| AdapterError::notification_not_found(index))?,
         };
-        if !self.identity.matches(listed[at]) {
-            return Err(moved(listed[at].index));
+        let info = listed[at];
+        let app_ok = self.app.as_deref().is_none_or(|app| app_matches(info, app));
+        if !app_ok || !self.identity.matches(info) {
+            return Err(mismatched(info.index));
         }
         Ok(at)
     }
+}
+
+/// The refusal for an entry that is no longer the one the caller listed: the
+/// key now names an entry at another index, or a re-read found another
+/// object where the first read found the target.
+pub fn notification_moved(index: usize) -> AdapterError {
+    AdapterError::new(
+        ErrorCode::NotificationNotFound,
+        format!("The notification listed at index {index} moved or changed since it was listed"),
+    )
+    .with_suggestion(RELIST)
+    .with_disposition(DeliverySemantics::not_delivered())
 }
 
 fn keyed(
@@ -70,7 +108,7 @@ fn keyed(
     match (found.as_slice(), index) {
         ([at], None) => Ok(*at),
         ([at], Some(index)) if listed[*at].index == index => Ok(*at),
-        ([_], Some(index)) => Err(moved(index)),
+        ([_], Some(index)) => Err(notification_moved(index)),
         ([], _) => Err(gone(key)),
         _ => Err(AdapterError::new(
             ErrorCode::NotificationNotFound,
@@ -92,10 +130,10 @@ fn unaddressed() -> AdapterError {
     .with_disposition(DeliverySemantics::not_delivered())
 }
 
-fn moved(index: usize) -> AdapterError {
+fn mismatched(index: usize) -> AdapterError {
     AdapterError::new(
         ErrorCode::NotificationNotFound,
-        format!("Notification at index {index} no longer matches its expected identity"),
+        format!("The notification at index {index} does not match the expected app or title"),
     )
     .with_suggestion(RELIST)
     .with_disposition(DeliverySemantics::not_delivered())

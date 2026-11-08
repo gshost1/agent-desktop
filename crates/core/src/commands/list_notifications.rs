@@ -20,23 +20,31 @@ pub fn execute(
         text: args.text,
         limit: args.limit,
     };
-    let notifications = super::notification_policy::list_with_foreground_lease(
-        &filter,
+    let everything = super::notification_policy::list_with_foreground_lease(
+        &NotificationFilter::default(),
         crate::Deadline::standard()?,
         adapter,
         context,
     )?;
+    let notifications = keyed(&everything, &filter)?;
     Ok(json!({
         "count": notifications.len(),
-        "notifications": keyed(&notifications)?,
+        "notifications": notifications,
     }))
 }
 
-/// Each entry with the `key` a mutation names it by.
-fn keyed(notifications: &[NotificationInfo]) -> Result<Vec<Value>, AppError> {
-    notifications
+/// The entries of the whole list that pass `filter`, each with the `key` a
+/// mutation names it by. Keys are assigned over the whole list first, so no
+/// filter or limit can change one.
+fn keyed(
+    everything: &[NotificationInfo],
+    filter: &NotificationFilter,
+) -> Result<Vec<Value>, AppError> {
+    everything
         .iter()
-        .zip(crate::notification_keys(notifications))
+        .zip(crate::notification_keys(everything))
+        .filter(|(info, _)| filter.admits(info))
+        .take(filter.limit.unwrap_or(usize::MAX))
         .map(|(info, key)| {
             let mut entry = serde_json::to_value(info)?;
             entry["key"] = json!(key);

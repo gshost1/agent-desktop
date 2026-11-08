@@ -23,11 +23,7 @@ fn request(
     target: &NotificationTarget,
     policy: InteractionPolicy,
 ) -> DismissNotificationRequest<'_> {
-    DismissNotificationRequest {
-        target,
-        app_filter: None,
-        policy,
-    }
+    DismissNotificationRequest { target, policy }
 }
 
 fn run(
@@ -322,4 +318,32 @@ fn the_second_of_two_identical_twins_is_closed_by_its_own_key() {
     )
     .expect("the second twin is closed");
     assert_eq!(world_clicks(&log), vec!["/second/close"]);
+}
+
+#[test]
+fn an_identical_newcomer_at_the_top_leaves_the_listed_twin_targeted() {
+    let log = log();
+    let seen = [NotificationInfo {
+        index: 1,
+        app_name: "CI".into(),
+        title: "Build failed".into(),
+        body: None,
+        actions: vec![],
+    }];
+    let key = notification_keys(&seen).remove(0);
+    let now = || {
+        vec![
+            spec("CI", "Build failed").object("newcomer"),
+            spec("CI", "Build failed").object("original"),
+        ]
+    };
+    let world = FakeWorld::new(&log, vec![reading(&now()), reading(&now()[..1])]);
+    let target = NotificationTarget::new(None, Some(&key), identity_app("")).expect("target");
+    dismiss_in(
+        &world,
+        request(&target, InteractionPolicy::headed()),
+        &lease(600),
+    )
+    .expect("the original is closed");
+    assert_eq!(world_clicks(&log), vec!["/original/close"]);
 }
