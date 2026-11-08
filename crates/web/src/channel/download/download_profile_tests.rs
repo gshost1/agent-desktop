@@ -122,3 +122,37 @@ fn a_section_of_the_wrong_type_is_replaced() {
     assert_eq!(document["download"]["default_directory"], "/tmp/d");
     assert_eq!(document["savefile"]["default_directory"], "/tmp/d");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_private_preferences_file_stays_private_and_a_staged_link_is_not_followed() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = TestDir::new();
+    let profile = root.path().join("chrome-profile");
+    let preferences = profile.join("Default").join("Preferences");
+    std::fs::create_dir_all(preferences.parent().unwrap()).unwrap();
+    std::fs::write(&preferences, b"{}").unwrap();
+    std::fs::set_permissions(&preferences, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let victim = root.path().join("victim.txt");
+    std::fs::write(&victim, b"untouched").unwrap();
+    std::os::unix::fs::symlink(&victim, preferences.with_extension("agent-desktop-staged"))
+        .unwrap();
+    let downloads = root.path().join("downloads");
+    let launch = args(&[&format!("--user-data-dir={}", profile.display())]);
+
+    assert_eq!(
+        save_in_profile(&launch, &downloads).unwrap(),
+        DownloadScope::Profile
+    );
+
+    let mode = std::fs::metadata(&preferences)
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+    assert_eq!(std::fs::read(&victim).unwrap(), b"untouched");
+    assert_eq!(
+        read(&preferences)["download"]["default_directory"],
+        json!(downloads)
+    );
+}

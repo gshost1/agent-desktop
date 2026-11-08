@@ -50,3 +50,20 @@ fn suggested_names_cannot_leave_the_folder_or_break_windows_paths() {
     assert_eq!(safe_file_name("trailing. "), "trailing");
     assert_eq!(safe_file_name("NUL.txt"), "_NUL.txt");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_link_planted_under_the_guid_name_is_never_reported_or_placed() {
+    let dir = TestDir::new();
+    let elsewhere = dir.path().join("elsewhere.txt");
+    std::fs::write(&elsewhere, b"not a download").unwrap();
+    let inner = dir.path().join("downloads");
+    std::fs::create_dir(&inner).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, inner.join(GUID)).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, inner.join(format!("{GUID}.crdownload"))).unwrap();
+
+    assert_eq!(disk_state(&inner, GUID), DiskState::Missing);
+    assert!(place(&inner, GUID, "report.csv").is_err());
+    assert!(!inner.join("report.csv").exists());
+    assert_eq!(std::fs::read(&elsewhere).unwrap(), b"not a download");
+}

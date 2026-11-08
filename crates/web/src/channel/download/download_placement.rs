@@ -19,15 +19,23 @@ pub(crate) fn disk_state(dir: &Path, guid: &str) -> DiskState {
     let Some(name) = plain_name(guid) else {
         return DiskState::Missing;
     };
-    if let Ok(metadata) = std::fs::metadata(dir.join(&name))
-        && metadata.is_file()
-    {
-        return DiskState::Finished(metadata.len());
+    if let Some(len) = regular_file_len(&dir.join(&name)) {
+        return DiskState::Finished(len);
     }
-    if dir.join(format!("{name}{PARTIAL_SUFFIX}")).is_file() {
+    if regular_file_len(&dir.join(format!("{name}{PARTIAL_SUFFIX}"))).is_some() {
         return DiskState::Partial;
     }
     DiskState::Missing
+}
+
+/// The size of the file at `path` when it is a regular file itself. A
+/// symbolic link is never followed, so a link planted in the download folder
+/// is never reported as a download.
+fn regular_file_len(path: &Path) -> Option<u64> {
+    std::fs::symlink_metadata(path)
+        .ok()
+        .filter(|metadata| metadata.file_type().is_file())
+        .map(|metadata| metadata.len())
 }
 
 /// The guid-named file in `dir`, when `guid` is a plain file name.
@@ -40,14 +48,18 @@ pub(crate) fn guid_path(dir: &Path, guid: &str) -> Option<PathBuf> {
 /// An existing file is never replaced: each candidate is claimed with a hard
 /// link, which fails when the name exists, and the guid name is removed only
 /// after the link succeeds. A folder without hard links falls back to a
-/// rename once the name is seen to be free.
+/// rename once the name is seen to be free. A guid name that is not a
+/// regular file, such as a symbolic link, is refused, because linking it
+/// could name another file.
 pub(crate) fn place(dir: &Path, guid: &str, suggested: &str) -> std::io::Result<PathBuf> {
-    let source = guid_path(dir, guid).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "the guid is not a file name",
-        )
-    })?;
+    let source = guid_path(dir, guid)
+        .filter(|path| regular_file_len(path).is_some())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "the guid does not name a regular file in the download folder",
+            )
+        })?;
     let name = safe_file_name(suggested);
     for copy in 0..MAX_COPIES {
         let target = dir.join(numbered(&name, copy));

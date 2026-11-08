@@ -97,8 +97,30 @@ fn write_preferences(path: &Path, document: &Value) -> Result<(), AdapterError> 
         std::fs::create_dir_all(parent).map_err(|error| io_failure(parent, &error))?;
     }
     let staged = path.with_extension("agent-desktop-staged");
-    std::fs::write(&staged, bytes).map_err(|error| io_failure(&staged, &error))?;
+    write_staged(&staged, path, &bytes).map_err(|error| io_failure(&staged, &error))?;
     std::fs::rename(&staged, path).map_err(|error| io_failure(path, &error))
+}
+
+/// Writes the replacement next to `path` with the permissions `path` has,
+/// so a profile file the browser keeps private stays private. A stale
+/// staged file is removed first and the new one is created exclusively, so
+/// a symbolic link left at the staged name is never written through. The
+/// bytes reach the disk before the caller renames the file into place.
+fn write_staged(staged: &Path, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    match std::fs::remove_file(staged) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
+        _ => {}
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(staged)?;
+    if let Ok(existing) = std::fs::metadata(path) {
+        file.set_permissions(existing.permissions())?;
+    }
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 fn io_failure(path: &Path, error: &std::io::Error) -> AdapterError {
