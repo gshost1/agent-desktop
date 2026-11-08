@@ -72,12 +72,16 @@ fn attempt<S: Source>(
 /// accepted when its role is the stored one. There is no search: a path that
 /// leads nowhere, a different role or a destroyed object is settled at once,
 /// so the caller observes afresh instead of waiting. Identity is checked by
-/// the caller's own observation of the returned element.
+/// the caller's own observation of the returned element. A stopped process
+/// is `APP_UNRESPONSIVE` before anything is read, as in a strict resolution.
 pub(crate) fn resolve_anchor<S: Source>(
     source: &mut S,
     entry: &RefEntry,
     deadline: Deadline,
 ) -> Result<AtspiElement, AdapterError> {
+    if let Some(name) = source.stopped_app(entry.process.pid.get()) {
+        return Err(AdapterError::app_unresponsive(&name));
+    }
     let outcome = attempt(source, entry, deadline);
     settle_outcome(source, entry, outcome)
 }

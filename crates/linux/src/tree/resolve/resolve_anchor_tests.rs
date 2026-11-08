@@ -180,3 +180,15 @@ fn an_expired_deadline_is_a_timeout_and_a_stopped_process_makes_it_unresponsive(
     let error = resolve_anchor(&mut fake, &entry, spent).expect_err("spent");
     assert_eq!(error.code, ErrorCode::AppUnresponsive);
 }
+
+#[test]
+fn a_stopped_process_is_unresponsive_before_the_window_or_path_is_read() {
+    let mut fake = files();
+    let entry = fake.entry_of("/opts2", true);
+    fake.stopped = Some("files".into());
+
+    let error = refused(&mut fake, &entry);
+
+    assert_eq!(error.code, ErrorCode::AppUnresponsive);
+    assert_eq!(fake.reads.gate + fake.reads.levels + fake.reads.evidence, 0);
+}
