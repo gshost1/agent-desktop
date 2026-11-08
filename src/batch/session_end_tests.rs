@@ -67,7 +67,7 @@ fn an_early_read_failure_for_a_wait_in_an_ended_session_reports_nothing_but_the_
         BatchArgs {
             commands_json: json!([
                 {"command": "session", "session": session_id, "args": {"action": "end"}},
-                {"command": "clipboard-clear", "args": {}},
+                {"command": "press", "args": {"combo": "a"}},
                 {"command": "version", "args": {}},
                 {
                     "command": "wait",
@@ -111,7 +111,7 @@ fn an_action_skipped_for_its_ended_session_takes_no_read_for_the_live_wait() {
         BatchArgs {
             commands_json: json!([
                 {"command": "session", "session": session_id, "args": {"action": "end"}},
-                {"command": "clipboard-clear", "session": session_id, "args": {}},
+                {"command": "press", "session": session_id, "args": {"combo": "a"}},
                 {"command": "wait", "args": {"event": "window-opened", "timeout": 100}}
             ])
             .to_string(),

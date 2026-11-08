@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use super::SeedPlan;
 use crate::batch::preparation::prepare;
 
-const ACTION: &str = r#"{"command": "clipboard-clear", "args": {}}"#;
+const ACTION: &str = r#"{"command": "press", "args": {"combo": "a"}}"#;
 const EVENT_WAIT: &str = r#"{"command": "wait", "args": {"event": "window-opened"}}"#;
 const NOTIFICATION_WAIT: &str = r#"{"command": "wait", "args": {"notification": true}}"#;
 
@@ -69,6 +69,28 @@ fn a_wait_with_no_earlier_action_and_unseeded_waits_are_never_read_for() {
         entry(EVENT_WAIT),
         entry(ACTION),
         {"command": "wait", "args": {"ms": 10}}
+    ]));
+
+    assert!(plan.iter().all(Vec::is_empty), "{plan:?}");
+}
+
+#[test]
+fn clipboard_writes_between_the_action_and_the_wait_do_not_move_the_read() {
+    let plan = reads(json!([
+        {"command": "press", "args": {"combo": "cmd+n"}},
+        {"command": "clipboard-set", "args": {"text": "x"}},
+        {"command": "clipboard-clear", "args": {}},
+        entry(EVENT_WAIT)
+    ]));
+
+    assert_eq!(plan, vec![vec![3], vec![], vec![], vec![]]);
+}
+
+#[test]
+fn a_clipboard_write_alone_is_not_an_action_a_wait_observes() {
+    let plan = reads(json!([
+        {"command": "clipboard-set", "args": {"text": "x"}},
+        entry(EVENT_WAIT)
     ]));
 
     assert!(plan.iter().all(Vec::is_empty), "{plan:?}");

@@ -6,8 +6,6 @@ use agent_desktop_core::{
     commands::wait_notification as notification_wait, context::CommandContext,
 };
 
-use crate::cli::Commands;
-
 use super::{preparation::PreparedCommand, seed_kind::SeedKind};
 
 /// What a batch read hands its wait: an event baseline or a notification
@@ -55,7 +53,7 @@ pub(super) fn read_seed(
     adapter: &dyn PlatformAdapter,
     deadline: Deadline,
 ) -> Result<Option<SeedValues>, AdapterError> {
-    let (Commands::Wait(args), Some(kind)) = (&wait.command, SeedKind::of(&wait.command)) else {
+    let Some((kind, args)) = SeedKind::of(&wait.command) else {
         return Ok(None);
     };
     match kind {

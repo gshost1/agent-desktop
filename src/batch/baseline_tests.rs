@@ -26,20 +26,22 @@ impl agent_desktop_core::ObservationOps for AtomicEventAdapter {
     }
 }
 
-impl agent_desktop_core::ActionOps for AtomicEventAdapter {}
-
-impl agent_desktop_core::InputOps for AtomicEventAdapter {
-    fn clear_clipboard(
+impl agent_desktop_core::ActionOps for AtomicEventAdapter {
+    fn execute_action(
         &self,
+        _handle: &agent_desktop_core::NativeHandle,
+        request: agent_desktop_core::ActionRequest,
         _lease: &agent_desktop_core::InteractionLease,
-    ) -> Result<agent_desktop_core::OperationReport, agent_desktop_core::AdapterError> {
+    ) -> Result<agent_desktop_core::ActionResult, agent_desktop_core::AdapterError> {
         self.opened.store(true, Ordering::SeqCst);
-        Ok(agent_desktop_core::OperationReport::delivered_unverified(
-            "test",
-            agent_desktop_core::OperationTarget::Clipboard,
+        Ok(agent_desktop_core::ActionResult::from_execution(
+            &request.action,
+            Vec::new(),
         ))
     }
 }
+
+impl agent_desktop_core::InputOps for AtomicEventAdapter {}
 
 impl agent_desktop_core::SystemOps for AtomicEventAdapter {
     fn acquire_interaction_lease(
@@ -84,7 +86,7 @@ impl agent_desktop_core::SystemOps for AtomicEventAdapter {
 fn action_then_event_wait_uses_a_pre_action_baseline() {
     let args = BatchArgs {
         commands_json: serde_json::json!([
-            {"command": "clipboard-clear", "args": {}},
+            {"command": "press", "args": {"combo": "a"}},
             {
                 "command": "wait",
                 "args": {"event": "window-opened", "app": "Fixture", "timeout": 100}
@@ -115,7 +117,7 @@ fn action_then_event_wait_uses_a_pre_action_baseline() {
 fn an_event_wait_behind_a_read_only_entry_uses_a_baseline_from_before_the_action() {
     let args = BatchArgs {
         commands_json: serde_json::json!([
-            {"command": "clipboard-clear", "args": {}},
+            {"command": "press", "args": {"combo": "a"}},
             {"command": "version", "args": {}},
             {
                 "command": "wait",
@@ -191,20 +193,22 @@ fn notify_on_clear() -> NotifyOnClearAdapter {
 
 impl agent_desktop_core::ObservationOps for NotifyOnClearAdapter {}
 
-impl agent_desktop_core::ActionOps for NotifyOnClearAdapter {}
-
-impl agent_desktop_core::InputOps for NotifyOnClearAdapter {
-    fn clear_clipboard(
+impl agent_desktop_core::ActionOps for NotifyOnClearAdapter {
+    fn execute_action(
         &self,
+        _handle: &agent_desktop_core::NativeHandle,
+        request: agent_desktop_core::ActionRequest,
         _lease: &agent_desktop_core::InteractionLease,
-    ) -> Result<agent_desktop_core::OperationReport, agent_desktop_core::AdapterError> {
+    ) -> Result<agent_desktop_core::ActionResult, agent_desktop_core::AdapterError> {
         self.sent.store(true, Ordering::SeqCst);
-        Ok(agent_desktop_core::OperationReport::delivered_unverified(
-            "test",
-            agent_desktop_core::OperationTarget::Clipboard,
+        Ok(agent_desktop_core::ActionResult::from_execution(
+            &request.action,
+            Vec::new(),
         ))
     }
 }
+
+impl agent_desktop_core::InputOps for NotifyOnClearAdapter {}
 
 impl agent_desktop_core::SystemOps for NotifyOnClearAdapter {
     fn acquire_interaction_lease(
@@ -243,7 +247,7 @@ impl agent_desktop_core::SystemOps for NotifyOnClearAdapter {
 fn action_then_notification_wait_uses_a_pre_action_baseline() {
     let args = BatchArgs {
         commands_json: serde_json::json!([
-            {"command": "clipboard-clear", "args": {}},
+            {"command": "press", "args": {"combo": "a"}},
             {
                 "command": "wait",
                 "args": {"notification": true, "app": "Fixture", "timeout": 300}
@@ -274,20 +278,22 @@ struct UnreadableNotificationsAdapter {
 
 impl agent_desktop_core::ObservationOps for UnreadableNotificationsAdapter {}
 
-impl agent_desktop_core::ActionOps for UnreadableNotificationsAdapter {}
-
-impl agent_desktop_core::InputOps for UnreadableNotificationsAdapter {
-    fn clear_clipboard(
+impl agent_desktop_core::ActionOps for UnreadableNotificationsAdapter {
+    fn execute_action(
         &self,
+        _handle: &agent_desktop_core::NativeHandle,
+        request: agent_desktop_core::ActionRequest,
         _lease: &agent_desktop_core::InteractionLease,
-    ) -> Result<agent_desktop_core::OperationReport, agent_desktop_core::AdapterError> {
+    ) -> Result<agent_desktop_core::ActionResult, agent_desktop_core::AdapterError> {
         self.cleared.store(true, Ordering::SeqCst);
-        Ok(agent_desktop_core::OperationReport::delivered_unverified(
-            "test",
-            agent_desktop_core::OperationTarget::Clipboard,
+        Ok(agent_desktop_core::ActionResult::from_execution(
+            &request.action,
+            Vec::new(),
         ))
     }
 }
+
+impl agent_desktop_core::InputOps for UnreadableNotificationsAdapter {}
 
 impl agent_desktop_core::SystemOps for UnreadableNotificationsAdapter {
     fn acquire_interaction_lease(
@@ -302,7 +308,7 @@ impl agent_desktop_core::SystemOps for UnreadableNotificationsAdapter {
 fn an_unreadable_notification_seed_does_not_block_the_action() {
     let args = BatchArgs {
         commands_json: serde_json::json!([
-            {"command": "clipboard-clear", "args": {}},
+            {"command": "press", "args": {"combo": "a"}},
             {"command": "wait", "args": {"notification": true, "timeout": 100}}
         ])
         .to_string(),
@@ -330,13 +336,13 @@ fn an_unreadable_notification_seed_does_not_block_the_action() {
     );
 }
 
-fn clear_then_wait(
+fn press_then_wait(
     wait_args: serde_json::Value,
     context: agent_desktop_core::CommandContext,
 ) -> (serde_json::Value, usize) {
     let args = BatchArgs {
         commands_json: serde_json::json!([
-            {"command": "clipboard-clear", "args": {}},
+            {"command": "press", "args": {"combo": "a"}},
             {"command": "wait", "args": wait_args}
         ])
         .to_string(),
@@ -350,7 +356,7 @@ fn clear_then_wait(
 
 #[test]
 fn a_headed_notification_wait_is_not_seeded_before_the_action() {
-    let (value, early_lists) = clear_then_wait(
+    let (value, early_lists) = press_then_wait(
         serde_json::json!({"notification": true, "app": "Fixture", "timeout": 200}),
         agent_desktop_core::CommandContext::default().with_headed(true),
     );
@@ -365,7 +371,7 @@ fn a_headed_notification_wait_is_not_seeded_before_the_action() {
 
 #[test]
 fn a_wait_that_does_not_validate_as_a_notification_wait_is_not_seeded() {
-    let (value, early_lists) = clear_then_wait(
+    let (value, early_lists) = press_then_wait(
         serde_json::json!({"notification": true, "ms": 5, "timeout": 200}),
         agent_desktop_core::CommandContext::default(),
     );

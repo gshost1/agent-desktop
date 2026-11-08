@@ -58,7 +58,21 @@ impl agent_desktop_core::ObservationOps for ReadAdapter {
     }
 }
 
-impl agent_desktop_core::ActionOps for ReadAdapter {}
+impl agent_desktop_core::ActionOps for ReadAdapter {
+    fn execute_action(
+        &self,
+        _handle: &agent_desktop_core::NativeHandle,
+        request: agent_desktop_core::ActionRequest,
+        _lease: &agent_desktop_core::InteractionLease,
+    ) -> Result<agent_desktop_core::ActionResult, agent_desktop_core::AdapterError> {
+        self.cleared.store(true, Ordering::SeqCst);
+        self.clears.fetch_add(1, Ordering::SeqCst);
+        Ok(agent_desktop_core::ActionResult::from_execution(
+            &request.action,
+            Vec::new(),
+        ))
+    }
+}
 
 impl agent_desktop_core::InputOps for ReadAdapter {
     fn clear_clipboard(&self, _lease: &InteractionLease) -> Result<OperationReport, AdapterError> {
@@ -139,7 +153,7 @@ fn a_baseline_read_that_runs_out_the_batch_deadline_stops_as_deadline() {
 
     let value = run(
         &adapter,
-        json!([{"command": "clipboard-clear", "args": {}}, opened_wait(100)]),
+        json!([{"command": "press", "args": {"combo": "a"}}, opened_wait(100)]),
         false,
         200,
     );
@@ -160,7 +174,7 @@ fn an_early_read_failure_lets_the_action_run_and_the_wait_reports_it() {
         let value = run(
             &adapter,
             json!([
-                {"command": "clipboard-clear", "args": {}},
+                {"command": "press", "args": {"combo": "a"}},
                 {"command": "version", "args": {}},
                 opened_wait(100),
                 {"command": "version", "args": {}}
@@ -200,7 +214,7 @@ fn a_read_that_uses_up_the_batch_deadline_does_not_start_the_entry() {
 
     let value = run(
         &adapter,
-        json!([{"command": "clipboard-clear", "args": {}}, opened_wait(100)]),
+        json!([{"command": "press", "args": {"combo": "a"}}, opened_wait(100)]),
         false,
         200,
     );
@@ -220,7 +234,7 @@ fn an_event_wait_behind_a_notification_wait_sees_the_window_the_action_opened() 
     let value = run(
         &adapter,
         json!([
-            {"command": "clipboard-clear", "args": {}},
+            {"command": "press", "args": {"combo": "a"}},
             {"command": "wait", "args": {"notification": true, "timeout": 100}},
             opened_wait(300)
         ]),
@@ -242,7 +256,7 @@ fn two_waits_after_one_action_both_measure_from_before_the_action() {
     let value = run(
         &adapter,
         json!([
-            {"command": "clipboard-clear", "args": {}},
+            {"command": "press", "args": {"combo": "a"}},
             opened_wait(300),
             opened_wait(300)
         ]),

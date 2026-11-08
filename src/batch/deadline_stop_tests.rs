@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use agent_desktop_core::{AdapterError, CommandContext, Deadline, PermissionReport};
 use serde_json::{Value, json};
 
@@ -71,9 +69,7 @@ impl agent_desktop_core::SystemOps for StalledStepAdapter {
         _deadline: Deadline,
     ) -> Result<Vec<agent_desktop_core::DisplayInfo>, AdapterError> {
         let step = Deadline::after(5_000)?;
-        while !step.is_expired() {
-            std::thread::sleep(Duration::from_millis(2));
-        }
+        std::thread::sleep(step.remaining());
         Err(AdapterError::timeout("display enumeration stalled")
             .with_details(json!({ "timeout_ms": 50 })))
     }
@@ -98,4 +94,39 @@ fn a_sub_step_timeout_capped_by_the_batch_deadline_stops_as_deadline() {
             "{output}"
         );
     }
+}
+
+struct SlowSuccessAdapter;
+
+impl agent_desktop_core::ObservationOps for SlowSuccessAdapter {}
+impl agent_desktop_core::ActionOps for SlowSuccessAdapter {}
+impl agent_desktop_core::InputOps for SlowSuccessAdapter {}
+
+impl agent_desktop_core::SystemOps for SlowSuccessAdapter {
+    fn list_displays(
+        &self,
+        deadline: Deadline,
+    ) -> Result<Vec<agent_desktop_core::DisplayInfo>, AdapterError> {
+        std::thread::sleep(deadline.remaining());
+        Ok(Vec::new())
+    }
+}
+
+#[test]
+fn an_entry_that_succeeds_as_the_deadline_runs_out_stops_the_rest_as_deadline() {
+    let output = run(
+        &SlowSuccessAdapter,
+        json!([
+            {"command": "list-displays", "args": {}},
+            {"command": "version", "args": {}}
+        ]),
+        false,
+    );
+
+    assert_eq!(output["results"][0]["ok"], true, "{output}");
+    assert_eq!(
+        output["stopped"],
+        json!({"reason": "deadline", "after_index": 0}),
+        "{output}"
+    );
 }

@@ -37,10 +37,6 @@ pub(super) fn execute(
     let seed_plan = SeedPlan::new(&commands);
     let mut results = BatchResults::with_capacity(total);
     let mut seeds: Vec<Option<PendingSeed>> = (0..total).map(|_| None).collect();
-    let mut first_entry_seed = Some((
-        context.event_baseline().cloned(),
-        context.notification_seed().cloned(),
-    ));
     let mut stopped: Option<BatchStop> = None;
 
     'entries: for index in 0..total {
@@ -49,7 +45,12 @@ pub(super) fn execute(
             break;
         }
 
-        let inherited_seed = first_entry_seed.take();
+        let inherited_seed = (index == 0).then(|| {
+            (
+                context.event_baseline().cloned(),
+                context.notification_seed().cloned(),
+            )
+        });
         let held = seeds[index].take().map(PendingSeed::into_read);
 
         if let Some(ended_session) = commands[index].ended_session() {
@@ -121,7 +122,8 @@ pub(super) fn execute(
             &commands[index].name,
             crate::dispatch::dispatch(command, adapter, permission_report, &item_context),
         );
-        let outcome = EntryOutcome::of(index, &entry, deadline.is_expired());
+        let batch_expired = deadline.is_expired();
+        let outcome = EntryOutcome::of(index, &entry, batch_expired);
         let (entry, oversized) = super::result_entry::bounded_completed_entry(
             index,
             &commands[index].name,
@@ -133,7 +135,7 @@ pub(super) fn execute(
 
         stopped = BatchStop::after_entry(
             &outcome.with_oversized(oversized),
-            deadline.is_expired() && index + 1 < total,
+            batch_expired && index + 1 < total,
             args.stop_on_error,
         );
         if stopped.is_some() {
