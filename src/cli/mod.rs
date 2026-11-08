@@ -1,3 +1,4 @@
+use crate::command_policy::CommandEffect;
 use clap::Subcommand;
 
 mod identity;
@@ -260,6 +261,15 @@ impl Commands {
     }
 
     pub(crate) fn is_mutating(&self) -> bool {
+        self.effect() != CommandEffect::ReadOnly
+    }
+
+    /// The widest effect this command can have outside the process. The match
+    /// is exhaustive down to subcommands, so a new command cannot build
+    /// without deciding it.
+    pub(crate) fn effect(&self) -> CommandEffect {
+        use crate::cli_args::{session::SessionAction, trace::TraceAction};
+        use CommandEffect::{AppInput, LocalWrite, ReadOnly};
         match self {
             Self::Click(_)
             | Self::DoubleClick(_)
@@ -301,18 +311,24 @@ impl Commands {
             | Self::NotificationAction(_)
             | Self::ClipboardSet(_)
             | Self::ClipboardClear
-            | Self::Batch(_) => true,
-            Self::Screenshot(args) => args.output_path.is_some(),
-            Self::ClipboardGet(args) => args.out.is_some(),
-            Self::Permissions(args) => args.request,
-            Self::Session(args) => {
-                !matches!(&args.action, crate::cli_args::session::SessionAction::List)
-            }
-            Self::CursorOverlay(_) => true,
-            Self::Trace(args) => {
-                matches!(&args.action, crate::cli_args::trace::TraceAction::Export(_))
-            }
-            Self::Snapshot(_)
+            | Self::CursorOverlay(_)
+            | Self::Batch(_) => AppInput,
+            Self::Permissions(args) if args.request => AppInput,
+            Self::Screenshot(args) if args.output_path.is_some() => LocalWrite,
+            Self::ClipboardGet(args) if args.out.is_some() => LocalWrite,
+            Self::Session(args) => match &args.action {
+                SessionAction::Start(_) | SessionAction::End(_) => AppInput,
+                SessionAction::Gc(_) => LocalWrite,
+                SessionAction::List => ReadOnly,
+            },
+            Self::Trace(args) => match &args.action {
+                TraceAction::Export(_) => LocalWrite,
+                TraceAction::Show(_) => ReadOnly,
+            },
+            Self::Screenshot(_)
+            | Self::ClipboardGet(_)
+            | Self::Permissions(_)
+            | Self::Snapshot(_)
             | Self::Find(_)
             | Self::Get(_)
             | Self::Is(_)
@@ -324,7 +340,7 @@ impl Commands {
             | Self::Wait(_)
             | Self::Status
             | Self::Version
-            | Self::Skills(_) => false,
+            | Self::Skills(_) => ReadOnly,
         }
     }
 }
