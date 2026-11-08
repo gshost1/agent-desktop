@@ -8,12 +8,13 @@ use super::{
     result_entry::not_started_entry,
 };
 
-/// The results in entry order, with the bytes they take in the response and
-/// how many entries completed.
+/// The results in entry order, with the bytes they take in the response, how
+/// many entries completed and how many of those failed.
 pub(super) struct BatchResults {
     entries: Vec<Value>,
     bytes: usize,
     completed: usize,
+    failed: usize,
 }
 
 impl BatchResults {
@@ -22,6 +23,7 @@ impl BatchResults {
             entries: Vec::with_capacity(capacity),
             bytes: 0,
             completed: 0,
+            failed: 0,
         }
     }
 
@@ -33,12 +35,19 @@ impl BatchResults {
         self.completed
     }
 
+    /// Completed entries whose command returned an error.
+    pub(super) fn failed(&self) -> usize {
+        self.failed
+    }
+
     pub(super) fn into_entries(self) -> Vec<Value> {
         self.entries
     }
 
     pub(super) fn push(&mut self, entry: Value) {
-        self.completed += usize::from(entry["execution"] == "completed");
+        let completed = entry["execution"] == "completed";
+        self.completed += usize::from(completed);
+        self.failed += usize::from(completed && entry["ok"] == false);
         self.bytes = self
             .bytes
             .saturating_add(serialized_size(&entry).saturating_add(1));
@@ -67,3 +76,7 @@ impl BatchResults {
         BatchStop::DeadlineBeforeEntry { index }
     }
 }
+
+#[cfg(test)]
+#[path = "batch_results_tests.rs"]
+mod tests;
