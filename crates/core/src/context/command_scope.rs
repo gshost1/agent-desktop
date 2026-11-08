@@ -32,12 +32,7 @@ impl<'a> CommandScope<'a> {
         deadline_scope: DeadlineScope,
     ) -> Result<Self, AppError> {
         let start_seq = context
-            .trace
-            .emit_recorded(
-                "command.start",
-                context.session_id(),
-                || json!({ "command": command }),
-            )
+            .trace_recorded("command.start", json!({ "command": command }))
             .map_err(|error| {
                 trace_error_with_disposition(error, DeliverySemantics::not_delivered())
             })?;

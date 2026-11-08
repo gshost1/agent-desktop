@@ -1,4 +1,5 @@
 use super::command_pairing::CommandPairing;
+use super::count_bucket::CountBucket;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -9,15 +10,18 @@ type CountKey<'a> = (&'a str, u64, &'a str);
 /// indexes into the merged event list.
 ///
 /// A start that some end names by `command_seq` waits in `by_seq` and closes
-/// only through that end. Every other start waits in `by_count` under its
-/// segment, writer pid and command, where a legacy end closes one of them.
-/// Holding both apart keeps a legacy end from closing a start that a
-/// sequenced end will claim later.
+/// only through that end. Every other start waits in a `CountBucket` under
+/// its segment, writer pid and command, where a legacy end closes one.
+///
+/// The claimed set is read in a pass of its own before any pairing. A
+/// legacy end can come before the sequenced end that claims a start of the
+/// same command (start A, start B, legacy end of B, end of A by seq), so a
+/// single pass could not tell, at the legacy end, which starts to leave alone.
 #[derive(Debug)]
 pub(crate) struct OpenCommands<'a> {
     claimed: HashSet<SeqKey<'a>>,
     by_seq: HashMap<SeqKey<'a>, usize>,
-    by_count: HashMap<CountKey<'a>, Vec<usize>>,
+    by_count: HashMap<CountKey<'a>, CountBucket>,
 }
 
 impl<'a> OpenCommands<'a> {
@@ -38,12 +42,16 @@ impl<'a> OpenCommands<'a> {
     }
 
     pub(crate) fn start(&mut self, index: usize, event: &'a Value) {
-        match self.pairing_of_start(event) {
-            CommandPairing::BySeq(seq) => {
-                self.by_seq
-                    .insert((segment(event), writer_pid(event), seq), index);
+        let seq_key = event
+            .get("seq")
+            .and_then(Value::as_u64)
+            .map(|seq| (segment(event), writer_pid(event), seq))
+            .filter(|key| self.claimed.contains(key));
+        match seq_key {
+            Some(key) => {
+                self.by_seq.insert(key, index);
             }
-            CommandPairing::LegacyCount => self
+            None => self
                 .by_count
                 .entry((segment(event), writer_pid(event), command(event)))
                 .or_default()
@@ -60,35 +68,26 @@ impl<'a> OpenCommands<'a> {
             CommandPairing::LegacyCount => self
                 .by_count
                 .get_mut(&(segment(event), writer_pid(event), command(event)))
-                .and_then(Vec::pop)
-                .is_some(),
+                .is_some_and(CountBucket::close),
         }
     }
 
-    pub(crate) fn into_unpaired(self) -> Vec<usize> {
-        let mut unpaired: Vec<usize> = self
+    /// The starts left open, in event order, each with whether its identity
+    /// is known. It is unknown only for starts left in a bucket whose legacy
+    /// ends had to guess.
+    pub(crate) fn into_unpaired(self) -> Vec<(usize, bool)> {
+        let mut unpaired: Vec<(usize, bool)> = self
             .by_seq
             .into_values()
-            .chain(self.by_count.into_values().flatten())
+            .map(|index| (index, true))
+            .chain(
+                self.by_count
+                    .into_values()
+                    .flat_map(CountBucket::into_unpaired),
+            )
             .collect();
         unpaired.sort_unstable();
         unpaired
-    }
-
-    fn pairing_of_start(&self, event: &'a Value) -> CommandPairing {
-        match event.get("seq").and_then(Value::as_u64) {
-            Some(seq)
-                if !self
-                    .by_seq
-                    .contains_key(&(segment(event), writer_pid(event), seq))
-                    && self
-                        .claimed
-                        .contains(&(segment(event), writer_pid(event), seq)) =>
-            {
-                CommandPairing::BySeq(seq)
-            }
-            _ => CommandPairing::LegacyCount,
-        }
     }
 }
 

@@ -36,42 +36,6 @@
     return JSON.stringify(value);
   }
 
-  function closesFrame(frame, end) {
-    var start = frame.start;
-    if ((start.segment || "") !== (end.segment || "") || start.writer_pid !== end.writer_pid) return false;
-    if (typeof end.command_seq === "number") return start.seq === end.command_seq;
-    return frame.command === (end.command || "command");
-  }
-
-  function groupEvents(events) {
-    var groups = [];
-    var stack = [];
-    events.forEach(function (event, index) {
-      var name = event.event || "";
-      if (name === "command.start") {
-        var frame = { command: event.command || "command", start: event, children: [], end: null, open: true };
-        groups.push({ type: "group", group: frame });
-        stack.push(frame);
-        return;
-      }
-      if (name === "command.end") {
-        var at = stack.length - 1;
-        while (at >= 0 && !closesFrame(stack[at], event)) at -= 1;
-        if (at >= 0) {
-          var closed = stack.splice(at, 1)[0];
-          closed.end = event;
-          closed.open = false;
-        } else {
-          groups.push({ type: "event", event: event, index: index });
-        }
-        return;
-      }
-      if (stack.length) stack[stack.length - 1].children.push({ event: event, index: index });
-      else groups.push({ type: "event", event: event, index: index });
-    });
-    return groups;
-  }
-
   function statusOf(group) {
     if (group.open || !group.end) return { cls: "open-incomplete", label: "incomplete", glyph: "○" };
     return group.end.ok
@@ -164,7 +128,7 @@
       container.appendChild(empty);
       return;
     }
-    groupEvents(filtered).forEach(function (item) {
+    TraceViewerGroup.groupEvents(filtered).forEach(function (item) {
       if (item.type === "event") {
         container.appendChild(makeRow(item.event, false, detailFor(item.event)));
         return;

@@ -41,6 +41,7 @@ pub use adapter::live_identity::LiveIdentity;
 pub use adapter::native_handle::NativeHandle;
 pub use adapter::observation::ObservationOps;
 pub use adapter::system::SystemOps;
+pub use context::command_scope::CommandScope;
 pub use context::{CommandContext, WaitSelector};
 pub use cursor_overlay::{
     CURSOR_ARRIVAL_TIMEOUT_MS, CURSOR_HIGHLIGHT_HOLD_MS, CURSOR_IDLE_REST_MS,

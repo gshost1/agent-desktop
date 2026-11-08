@@ -188,21 +188,50 @@ fn lost_end_of_an_overlapped_scope_is_reported_against_its_start() {
 }
 
 #[test]
-fn legacy_ends_pair_by_count_per_command() {
-    let events = vec![
+fn legacy_ends_pair_by_count_and_name_a_start_only_when_forced() {
+    let guessed = vec![
         command_event("command.start", 1, None),
         command_event("command.start", 2, None),
         command_event("command.end", 3, None),
     ];
-    let warnings = detect_unpaired_commands(&events, None);
+    let warnings = detect_unpaired_commands(&guessed, None);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].starts_with("Unpaired command.start"));
+    assert!(warnings[0].contains("paired by count"), "{warnings:?}");
+    assert!(!warnings[0].contains("seq 1") && !warnings[0].contains("seq 2"));
+    let forced = vec![
+        command_event("command.start", 1, None),
+        command_event("command.end", 2, None),
+        command_event("command.start", 3, None),
+    ];
+    let warnings = detect_unpaired_commands(&forced, None);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("(seq 3)"), "{warnings:?}");
     let extra_end = vec![
         command_event("command.start", 1, None),
         command_event("command.end", 2, None),
         command_event("command.end", 3, None),
     ];
     let warnings = detect_unpaired_commands(&extra_end, None);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].starts_with("Unpaired command.end"));
+}
+
+#[test]
+fn a_legacy_end_leaves_alone_a_start_that_a_later_end_claims_by_seq() {
+    let mixed = vec![
+        command_event("command.start", 1, None),
+        command_event("command.start", 2, None),
+        command_event("command.end", 3, None),
+        command_event("command.end", 4, Some(1)),
+    ];
+    assert!(detect_unpaired_commands(&mixed, None).is_empty());
+    let unwritten_start = vec![
+        command_event("command.start", 1, None),
+        command_event("command.end", 2, None),
+        command_event("command.end", 3, Some(1)),
+    ];
+    let warnings = detect_unpaired_commands(&unwritten_start, None);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].starts_with("Unpaired command.end"));
 }

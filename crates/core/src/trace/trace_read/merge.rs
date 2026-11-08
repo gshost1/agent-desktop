@@ -112,21 +112,21 @@ pub(crate) fn detect_unpaired_commands(
         }
     }
 
-    for event in open
+    for (event, known) in open
         .into_unpaired()
         .into_iter()
-        .filter_map(|index| events.get(index))
+        .filter_map(|(index, known)| events.get(index).map(|event| (event, known)))
     {
         if is_current_command(event, current_command) {
             continue;
         }
-        let seq = event
-            .get("seq")
-            .and_then(Value::as_u64)
-            .map(|seq| format!(" (seq {seq})"))
-            .unwrap_or_default();
+        let identity = match event.get("seq").and_then(Value::as_u64) {
+            _ if !known => " (its ends carry no command_seq; paired by count)".to_string(),
+            Some(seq) => format!(" (seq {seq})"),
+            None => String::new(),
+        };
         warnings.push(format!(
-            "Unpaired command.start for '{}' in segment {}{seq}",
+            "Unpaired command.start for '{}' in segment {}{identity}",
             command(event),
             segment(event)
         ));

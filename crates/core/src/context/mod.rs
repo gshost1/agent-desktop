@@ -6,13 +6,13 @@ use crate::{
 use serde_json::Value;
 use std::path::PathBuf;
 
-mod command_scope;
+pub(crate) mod command_scope;
 mod cursor;
 mod options;
 mod session_scope;
 mod wait_selector;
 
-pub use command_scope::CommandScope;
+use command_scope::CommandScope;
 use options::CommandOptions;
 use session_scope::SessionScope;
 pub use wait_selector::WaitSelector;
@@ -222,6 +222,11 @@ impl CommandContext {
 
     pub fn trace(&self, event: &str, fields: Value) -> Result<(), AppError> {
         self.trace.emit(event, self.session_id(), fields)
+    }
+
+    fn trace_recorded(&self, event: &str, fields: Value) -> Result<Option<u64>, AppError> {
+        self.trace
+            .emit_recorded(event, self.session_id(), || fields)
     }
 
     pub fn trace_lazy(&self, event: &str, fields: impl FnOnce() -> Value) -> Result<(), AppError> {
