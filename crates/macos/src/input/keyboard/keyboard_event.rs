@@ -1,6 +1,6 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
-use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
-use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGKeyCode};
+use foreign_types::ForeignType;
 use std::time::Duration;
 
 const KEY_SETTLE: Duration = Duration::from_millis(4);
@@ -17,11 +17,8 @@ pub(crate) fn post_key(
 ) -> Result<(), AdapterError> {
     let mut delivery = crate::actions::DeliveryTracker::from_delivered_units(progress.0);
     ensure_budget(deadline, progress.1, delivery)?;
-    let source = event_source().map_err(|error| delivery.annotate(error))?;
-    let down = create_key_event(&source, key_code, true, flags)
-        .map_err(|error| delivery.annotate(error))?;
-    let up = create_key_event(&source, key_code, false, flags)
-        .map_err(|error| delivery.annotate(error))?;
+    let down = create_key_event(key_code, true, flags).map_err(|error| delivery.annotate(error))?;
+    let up = create_key_event(key_code, false, flags).map_err(|error| delivery.annotate(error))?;
     post_pair((down, up), target_pid, deadline, &mut delivery, progress.1)
 }
 
@@ -43,11 +40,10 @@ pub(crate) fn post_text(
                 "total_chunks": total,
             })))
         })?;
-        let source = event_source().map_err(|error| delivery.annotate(error))?;
-        let down = create_key_event(&source, 0, true, CGEventFlags::empty())
+        let down = create_key_event(0, true, CGEventFlags::empty())
             .map_err(|error| delivery.annotate(error))?;
         down.set_string_from_utf16_unchecked(&chunk);
-        let up = create_key_event(&source, 0, false, CGEventFlags::empty())
+        let up = create_key_event(0, false, CGEventFlags::empty())
             .map_err(|error| delivery.annotate(error))?;
         post_pair((down, up), Some(target_pid), deadline, &mut delivery, total)?;
     }
@@ -115,20 +111,35 @@ impl Drop for KeyReleaseGuard {
 }
 
 fn create_key_event(
-    source: &CGEventSource,
-    key_code: u16,
+    key_code: CGKeyCode,
     down: bool,
     flags: CGEventFlags,
 ) -> Result<CGEvent, AdapterError> {
-    let event = CGEvent::new_keyboard_event(source.clone(), key_code, down)
-        .map_err(|()| AdapterError::internal("CGEvent::new_keyboard_event failed"))?;
+    let event = unattributed_key_event(key_code, down)?;
     event.set_flags(flags);
     Ok(event)
 }
 
-fn event_source() -> Result<CGEventSource, AdapterError> {
-    CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|()| AdapterError::internal("Failed to create keyboard CGEventSource"))
+/// Key events carry no event source, as a key event an application builds
+/// for itself does. An event built from the HID system state source differs
+/// from it only in being stamped as hardware input (source state 1), and a
+/// Return built without a source is the one observed to commit an in-place
+/// edit whose text came from an accessibility write.
+fn unattributed_key_event(key_code: CGKeyCode, down: bool) -> Result<CGEvent, AdapterError> {
+    let raw = unsafe { CGEventCreateKeyboardEvent(std::ptr::null(), key_code, down) };
+    if raw.is_null() {
+        return Err(AdapterError::internal("CGEventCreateKeyboardEvent failed"));
+    }
+    Ok(unsafe { CGEvent::from_ptr(raw) })
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGEventCreateKeyboardEvent(
+        source: *const std::ffi::c_void,
+        virtual_key: CGKeyCode,
+        key_down: bool,
+    ) -> *mut <CGEvent as ForeignType>::CType;
 }
 
 fn post(event: &CGEvent, target_pid: Option<i32>) {
@@ -236,6 +247,28 @@ mod tests {
         let error = text_chunks(&text).expect_err("oversized text must fail before CGEvent");
 
         assert_eq!(error.code, ErrorCode::InvalidArgs);
+    }
+
+    #[test]
+    fn key_and_text_events_are_not_stamped_as_hardware_input() {
+        use core_graphics::event::EventField;
+
+        for event in [
+            create_key_event(36, true, CGEventFlags::empty()).unwrap(),
+            create_key_event(36, false, CGEventFlags::CGEventFlagCommand).unwrap(),
+            create_key_event(0, true, CGEventFlags::empty()).unwrap(),
+        ] {
+            assert_eq!(
+                event.get_integer_value_field(EventField::EVENT_SOURCE_STATE_ID),
+                0
+            );
+        }
+        let command = create_key_event(36, true, CGEventFlags::CGEventFlagCommand).unwrap();
+        assert_eq!(command.get_flags(), CGEventFlags::CGEventFlagCommand);
+        assert_eq!(
+            command.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE),
+            36
+        );
     }
 
     #[test]

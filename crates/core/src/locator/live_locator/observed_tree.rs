@@ -12,7 +12,7 @@ pub struct ObservedTree {
     pub(crate) stats: LocatorStats,
     pub(crate) structurally_complete: bool,
     pub(crate) logical_depths: Vec<u8>,
-    pub(crate) rows_unread: bool,
+    pub(crate) channel: Option<crate::SnapshotChannel>,
 }
 
 impl ObservedTree {
@@ -32,7 +32,7 @@ impl ObservedTree {
             stats,
             structurally_complete,
             logical_depths: Vec::new(),
-            rows_unread: false,
+            channel: None,
         };
         for root in roots {
             let index = tree.append(root, RefPath::new(), 0)?;
@@ -49,16 +49,36 @@ impl ObservedTree {
         self.structurally_complete
     }
 
+    /// Records which channel read this observation, for a snapshot to report.
+    pub fn with_channel(mut self, channel: crate::SnapshotChannel) -> Self {
+        self.channel = Some(channel);
+        self
+    }
+
+    pub fn channel(&self) -> Option<&crate::SnapshotChannel> {
+        self.channel.as_ref()
+    }
+
     /// Records that this observation read every node except the rows of list
     /// and table containers, which it left unread on request. The tree stays
     /// incomplete and never exhaustive; only a `--first` selection may answer
-    /// from it, with the first match outside those rows.
+    /// from it, with the first match outside those rows. The mark lives on the
+    /// roots, which an observation reaches only once its walk is over.
     pub fn mark_rows_unread(&mut self) {
-        self.rows_unread = true;
+        for root in &self.roots {
+            if let Some(node) = self.nodes.get_mut(*root as usize) {
+                node.completeness.rows_unread = true;
+            }
+        }
     }
 
     pub(crate) fn rows_unread(&self) -> bool {
-        self.rows_unread
+        !self.roots.is_empty()
+            && self.roots.iter().all(|root| {
+                self.nodes
+                    .get(*root as usize)
+                    .is_some_and(|node| node.completeness.rows_unread)
+            })
     }
 
     /// Whether this observation read the whole window: complete, and with no

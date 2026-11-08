@@ -69,6 +69,7 @@ pub(crate) enum Surface {
     #[value(alias = "action_center")]
     #[serde(alias = "action_center")]
     ActionCenter,
+    Web,
 }
 
 impl Surface {
@@ -94,6 +95,7 @@ impl Surface {
             Self::SystemTrayOverflow => SnapshotSurface::SystemTrayOverflow,
             Self::StartMenu => SnapshotSurface::StartMenu,
             Self::ActionCenter => SnapshotSurface::ActionCenter,
+            Self::Web => SnapshotSurface::Web,
         }
     }
 }

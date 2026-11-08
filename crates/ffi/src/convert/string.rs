@@ -145,11 +145,10 @@ macro_rules! decode_optional_filter {
         match $crate::convert::string::try_c_to_string($ptr) {
             Ok(value) => value,
             Err(err) => {
-                $crate::error::set_last_error(&agent_desktop_core::AdapterError::new(
+                return $crate::error::set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     err.describe($label),
                 ));
-                return $crate::error::AdResult::ErrInvalidArgs;
             }
         }
     }};

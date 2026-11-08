@@ -41,11 +41,11 @@ pub fn execute(args: FocusWindowArgs, adapter: &dyn PlatformAdapter) -> Result<V
         "More than one window matches the focus target",
     )?;
 
-    let window_id = window.id.clone();
     let lease = adapter.acquire_interaction_lease(deadline)?;
-    let focused = crate::system::window_focus::focus_and_confirm(adapter, &window, &lease)?;
-    debug_assert_eq!(focused.id, window_id);
-    Ok(json!({ "focused": focused }))
+    let observed = crate::system::window_focus::focus_and_observe(adapter, &window, &lease)?;
+    let focus_observed = observed.is_some();
+    let focused = observed.unwrap_or_else(|| crate::system::window_focus::confirmed_target(window));
+    Ok(json!({ "focused": focused, "focus_observed": focus_observed }))
 }
 
 #[cfg(test)]

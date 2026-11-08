@@ -63,7 +63,7 @@ Off macOS, identical twins have no ref path: only `--headed mouse-click --xy X,Y
 
 ### Surfaces
 
-Surfaces include `menu`, `menubar`, `sheet`, `popover`, `alert`, `focused`, and OS shell kinds supported on each platform. On macOS, `menu` and `menubar` are application-owned. A kind this OS does not have returns `INVALID_ARGS` with the supported list in `details`; an adapter with no supported surfaces returns `PLATFORM_NOT_SUPPORTED`. A shell surface needs no `--app`, except that macOS `menu-bar-extras` with `--app` reads that app's own status item. A closed shell surface returns `WINDOW_NOT_FOUND`; a complete lookup of an absent macOS menu returns `ELEMENT_NOT_FOUND` with `details.kind: "surface_absent"`. Raise a shell surface with `open-system-surface`.
+Surfaces include `menu`, `menubar`, `sheet`, `popover`, `alert`, `focused`, `web`, and OS shell kinds supported on each platform. On macOS, `menu` and `menubar` are application-owned. A kind this OS does not have returns `INVALID_ARGS` with the supported list in `details`; an adapter with no supported surfaces returns `PLATFORM_NOT_SUPPORTED`. A shell surface needs no `--app`, except that macOS `menu-bar-extras` with `--app` reads that app's own status item. A closed shell surface returns `WINDOW_NOT_FOUND`; a complete lookup of an absent macOS menu returns `ELEMENT_NOT_FOUND` with `details.kind: "surface_absent"`. Raise a shell surface with `open-system-surface`.
 
 Use a surface snapshot for dialogs and menus, not a window snapshot. To reach one item inside an overlay, use `find --surface` instead of a full dump.
 

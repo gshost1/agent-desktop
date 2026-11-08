@@ -315,7 +315,8 @@ fn cdp_success_gets_the_handoff_suggestion() {
         .get("suggestion")
         .and_then(Value::as_str)
         .expect("suggestion present once the endpoint is verified");
-    assert!(suggestion.contains("agent-browser connect"));
+    assert!(suggestion.contains("--surface web"));
+    assert!(!suggestion.contains("agent-browser"));
     assert!(suggestion.contains("Do not hand-roll raw CDP"));
 }
 
