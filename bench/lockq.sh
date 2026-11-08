@@ -26,6 +26,7 @@ lock="$dir/bench.lock"
 queue="$dir/bench.queue"
 mutex="$dir/bench.queue.mutex"
 beats="$dir/bench.queue.beats"
+pause="$dir/bench.pause"
 mkdir -p "$dir" "$beats"
 touch "$queue"
 
@@ -82,9 +83,14 @@ prune_unlocked() {
     done < "$queue"
 }
 
+paused() {
+    [ -f "$pause" ] && [ $(( $(now) - $(stat -f %m "$pause") )) -lt 1800 ]
+}
+
 try_take_unlocked() {
     prune_unlocked
     lock_free || return 1
+    paused && return 1
     [ "$(grep -v '^$' "$queue" | head -1)" = "$1" ] || return 1
     printf '%s\n%s\n' "$1" "$(date -u +%FT%TZ)" > "$lock"
     leave_unlocked "$1"
