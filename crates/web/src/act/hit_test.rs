@@ -2,10 +2,12 @@ use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, P
 use serde_json::{Value, json};
 
 use super::element_errors::{node_error, script_failed};
+use super::hit_point::HitPoint;
 use crate::cdp::protocol_error::is_protocol_error;
 use crate::{CdpConnection, ElementToken, PageSession};
 
 const OBJECT_GROUP: &str = "agent-desktop-hit";
+const INTERCEPTED: &str = "cdp_click_intercepted";
 
 const CONTAINS_HIT: &str = r"function(hit) {
   for (let node = hit; node; node = node.parentNode || node.host) {
@@ -15,7 +17,8 @@ const CONTAINS_HIT: &str = r"function(hit) {
 }";
 
 /// Proves the page would deliver a press at `point` to the token's node:
-/// the node `DOM.getNodeForLocation` reports there must be the node itself
+/// the node `DOM.getNodeForLocation` reports at the point's document
+/// position, the space it hit-tests in, must be the node itself
 /// or one of its descendants, across shadow roots. A point an overlay, a
 /// banner or another element covers is `ACTION_FAILED` and nothing is sent.
 /// A hit the page cannot relate to the node, such as one in another frame's
@@ -24,14 +27,14 @@ pub(crate) fn confirm_hit(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,
-    point: &Point,
+    point: &HitPoint,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
     let located = connection.call(
         "DOM.getNodeForLocation",
         json!({
-            "x": point.x.round() as i64,
-            "y": point.y.round() as i64,
+            "x": point.document.x.round() as i64,
+            "y": point.document.y.round() as i64,
             "includeUserAgentShadowDOM": true,
             "ignorePointerEventsNone": false,
         }),
@@ -44,12 +47,12 @@ pub(crate) fn confirm_hit(
         Err(error) => return Err(error),
     };
     let Some(hit) = hit else {
-        return Err(intercepted(token, point, None));
+        return Err(intercepted(token, &point.viewport, None));
     };
     if hit == token.backend_node_id || hit_is_inside(connection, session, token, hit, deadline)? {
         return Ok(());
     }
-    Err(intercepted(token, point, Some(hit)))
+    Err(intercepted(token, &point.viewport, Some(hit)))
 }
 
 fn hit_is_inside(
@@ -121,6 +124,16 @@ fn release(
     );
 }
 
+/// Whether `error` is the refusal [`confirm_hit`] gives a covered point.
+pub(crate) fn is_intercepted(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details.get("kind"))
+        .and_then(Value::as_str)
+        == Some(INTERCEPTED)
+}
+
 fn intercepted(token: &ElementToken, point: &Point, hit: Option<i64>) -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionFailed,
@@ -133,7 +146,7 @@ fn intercepted(token: &ElementToken, point: &Point, hit: Option<i64>) -> Adapter
         "Close the overlay or dialog that covers the element, or scroll it clear, then snapshot again",
     )
     .with_details(json!({
-        "kind": "cdp_click_intercepted",
+        "kind": INTERCEPTED,
         "backend_node_id": token.backend_node_id,
         "hit_backend_node_id": hit,
         "point": { "x": point.x, "y": point.y },

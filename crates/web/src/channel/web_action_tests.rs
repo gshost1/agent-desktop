@@ -79,8 +79,12 @@ fn click_dispatches_page_input_and_stays_unverified() {
     let transport = proven(attach(ScriptedTransport::new(), "T"))
         .expect("DOM.scrollIntoViewIfNeeded", json!({}))
         .expect(
-            "DOM.getBoxModel",
-            json!({ "model": { "border": [0, 0, 10, 0, 10, 10, 0, 10] } }),
+            "Page.getLayoutMetrics",
+            crate::act::act_fixture::metrics(0.0),
+        )
+        .expect(
+            "DOM.getContentQuads",
+            json!({ "quads": [[0, 0, 10, 0, 10, 10, 0, 10]] }),
         )
         .expect("DOM.getNodeForLocation", json!({ "backendNodeId": 7 }))
         .expect("Input.dispatchMouseEvent", json!({}))
@@ -97,8 +101,9 @@ fn click_dispatches_page_input_and_stays_unverified() {
         "Runtime.runIfWaitingForDebugger",
         "Page.getFrameTree",
         "DOM.scrollIntoViewIfNeeded",
+        "Page.getLayoutMetrics",
+        "DOM.getContentQuads",
         "DOM.getNodeForLocation",
-        "DOM.getBoxModel",
         "Input.dispatchMouseEvent",
     ];
     assert!(

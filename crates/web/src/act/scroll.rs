@@ -46,7 +46,7 @@ pub(crate) fn scroll_node(
         .map_err(|error| not_rendered(error, token))
 }
 
-pub(crate) fn node_center(
+fn node_center(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,
@@ -84,7 +84,7 @@ pub(crate) fn quad_center(quad: Option<&Value>) -> Option<Point> {
     })
 }
 
-fn not_rendered(error: AdapterError, token: &ElementToken) -> AdapterError {
+pub(crate) fn not_rendered(error: AdapterError, token: &ElementToken) -> AdapterError {
     if is_node_gone(&error) || !is_protocol_error(&error) {
         return node_error(error, token);
     }
@@ -92,7 +92,7 @@ fn not_rendered(error: AdapterError, token: &ElementToken) -> AdapterError {
     not_rendered_error(token.backend_node_id, &detail)
 }
 
-fn not_rendered_error(backend: i64, detail: &str) -> AdapterError {
+pub(crate) fn not_rendered_error(backend: i64, detail: &str) -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionFailed,
         format!("DOM node {backend} has no rendered box to act on"),

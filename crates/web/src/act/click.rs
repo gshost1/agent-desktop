@@ -1,9 +1,9 @@
 use agent_desktop_core::{AdapterError, Deadline, Point};
 use serde_json::json;
 
-use super::hit_test::confirm_hit;
+use super::press_point::press_point;
 use super::remote_element::prove_document;
-use super::scroll::{node_center, scroll_node};
+use super::scroll::scroll_node;
 use crate::{CdpConnection, ElementToken, PageSession};
 
 /// Clicks the node's centre with synthesized page input. The events go to
@@ -46,9 +46,10 @@ pub(crate) fn click_node(
     press_node(connection, session, token, 1, deadline)
 }
 
-/// Scrolls the node into view, proves the point at its centre hits the node
-/// or one of its descendants, then sends `count` press and release pairs
-/// there. A point another element covers is refused before any input.
+/// Scrolls the node into view, finds a visible point of it that hit-tests
+/// to the node or one of its descendants, then sends `count` press and
+/// release pairs there. A node another element covers everywhere it was
+/// tried is refused before any input.
 fn press_node(
     connection: &mut CdpConnection,
     session: &PageSession,
@@ -57,8 +58,7 @@ fn press_node(
     deadline: Deadline,
 ) -> Result<Point, AdapterError> {
     scroll_node(connection, session, token, deadline)?;
-    let point = node_center(connection, session, token, deadline)?;
-    confirm_hit(connection, session, token, &point, deadline)?;
+    let point = press_point(connection, session, token, deadline)?;
     for click_count in 1..=count.max(1) {
         press_once(connection, session, &point, click_count, deadline)?;
     }

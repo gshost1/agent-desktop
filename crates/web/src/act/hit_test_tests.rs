@@ -4,10 +4,17 @@ use serde_json::json;
 use super::confirm_hit;
 use crate::CdpConnection;
 use crate::act::act_fixture::{deadline, session, token};
+use crate::act::hit_point::HitPoint;
 use crate::transport::scripted_transport::ScriptedTransport;
 
-fn point() -> Point {
-    Point { x: 40.4, y: 19.6 }
+fn point() -> HitPoint {
+    HitPoint {
+        viewport: Point { x: 40.4, y: 19.6 },
+        document: Point {
+            x: 40.4,
+            y: 1_219.6,
+        },
+    }
 }
 
 fn located(hit: serde_json::Value) -> ScriptedTransport {
@@ -43,7 +50,7 @@ fn a_hit_on_the_node_itself_passes_in_one_round_trip() {
     let sent = sent.lock().unwrap();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0]["params"]["x"], 40);
-    assert_eq!(sent[0]["params"]["y"], 20);
+    assert_eq!(sent[0]["params"]["y"], 1_220);
     assert_eq!(sent[0]["sessionId"], "S");
 }
 
@@ -75,6 +82,7 @@ fn a_covering_element_is_refused_as_not_delivered() {
     assert_eq!(details["kind"], "cdp_click_intercepted");
     assert_eq!(details["backend_node_id"], 7);
     assert_eq!(details["hit_backend_node_id"], 9);
+    assert_eq!(details["point"], json!({ "x": 40.4, "y": 19.6 }));
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
 }
 
