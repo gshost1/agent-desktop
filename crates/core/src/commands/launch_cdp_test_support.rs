@@ -58,6 +58,7 @@ impl SystemOps for CdpAdapter {
             cdp: None,
             renderer: self.renderer,
             suggestion: None,
+            launch_path: None,
         })
     }
 

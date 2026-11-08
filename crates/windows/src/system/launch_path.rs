@@ -23,6 +23,13 @@ pub(super) fn launch_identifier(id: &str) -> Result<String, AdapterError> {
 }
 
 pub(super) fn validate_launch_options(options: &LaunchOptions) -> Result<(), AdapterError> {
+    if options.reopen {
+        return Err(AdapterError::new(
+            ErrorCode::ActionNotSupported,
+            "Windows has no reopen event, so --reopen cannot be honored",
+        )
+        .with_suggestion("Remove --reopen."));
+    }
     if options.args.len() > MAX_ARGUMENT_COUNT || options.env.len() > MAX_ENVIRONMENT_COUNT {
         return Err(AdapterError::new(
             ErrorCode::InvalidArgs,

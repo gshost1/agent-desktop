@@ -157,6 +157,7 @@ mod tests {
                 cdp: None,
                 renderer: None,
                 suggestion: None,
+                launch_path: None,
             })
         }
     }

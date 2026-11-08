@@ -101,6 +101,7 @@ fn conclude(
         cdp: None,
         renderer: None,
         suggestion: (!notes.is_empty()).then(|| notes.join(" ")),
+        launch_path: None,
     }
 }
 
@@ -294,6 +295,7 @@ impl Launch<'_> {
             suggestion: Some(
                 "The process started but is not on the accessibility bus yet. Its pid is the spawned process's and may be a wrapper of the application. Run 'list-apps' to see whether it appears.".to_owned(),
             ),
+            launch_path: None,
         }
     }
 

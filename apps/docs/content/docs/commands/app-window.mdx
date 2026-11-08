@@ -20,7 +20,7 @@ Starts an app, or attaches to a running instance, and returns once its process i
 
 ```bash
 agent-desktop launch <APP> [--timeout MS] [--arg VALUE]... [--env KEY=VALUE]... [--cwd PATH] \
-                           [--no-attach] [--activate] [--cdp [PORT]]
+                           [--no-attach] [--activate] [--reopen] [--cdp [PORT]]
 ```
 
 <table>
@@ -35,9 +35,12 @@ agent-desktop launch <APP> [--timeout MS] [--arg VALUE]... [--env KEY=VALUE]... 
     <tr><td><code>--cwd PATH</code></td><td>none</td><td>Working directory for the launched process.</td></tr>
     <tr><td><code>--no-attach</code></td><td>off</td><td>Start a fresh instance instead of attaching to a running one.</td></tr>
     <tr><td><code>--activate</code></td><td>off</td><td>Bring the app forward so it presents a window, and wait for one up to <code>--timeout</code>. This takes the foreground.</td></tr>
+    <tr><td><code>--reopen</code></td><td>off</td><td>macOS: send a running app a reopen, so an app with no window opens its default window. Without it a running app is never reopened. Cannot be combined with <code>--no-attach</code>. Windows and Linux have no reopen event and return <code>ACTION_NOT_SUPPORTED</code>.</td></tr>
     <tr><td><code>--cdp [PORT]</code></td><td>off</td><td>Launch with a loopback-only Chrome DevTools Protocol endpoint and verify that it answers. Omit <code>PORT</code>, or pass <code>0</code>, to pick a free port.</td></tr>
   </tbody>
 </table>
+
+On macOS, `data.launch_path` says which route ran: `attached_running` (running app, no `--activate`), `activated_running` (running app brought forward without Launch Services), `launched` (a new process through Launch Services), or `reopened` (`--reopen`). Only the last two can make an app open a window you did not ask for, because Launch Services sends a running app a reopen event and an app with no window answers by opening its default one. `--activate` on a running app therefore returns the windows it already has and creates none. `--arg` and `--env` reach only a new process: on a running app they are not delivered, and `data.suggestion` says so. Windows and Linux omit `launch_path`.
 
 ```bash
 agent-desktop launch gtk3-demo

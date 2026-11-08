@@ -8,6 +8,7 @@ pub mod display_info;
 pub(crate) mod image_buffer;
 pub(crate) mod image_format;
 pub mod launch_options;
+pub mod launch_path;
 pub mod launch_result;
 pub(crate) mod open_url_request;
 pub(crate) mod opened_page;

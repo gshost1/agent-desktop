@@ -54,6 +54,12 @@ pub(crate) struct LaunchArgs {
     pub activate: bool,
     #[arg(
         long,
+        help = "Send a running app a reopen so one with no window opens its default window (macOS; fails on Windows and Linux)"
+    )]
+    #[serde(default)]
+    pub reopen: bool,
+    #[arg(
+        long,
         value_name = "PORT",
         num_args = 0..=1,
         default_missing_value = "0",

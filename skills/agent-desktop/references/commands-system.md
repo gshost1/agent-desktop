@@ -7,11 +7,14 @@ App lifecycle, windows, notifications, clipboard, wait, batch, sessions, health.
 ```bash
 agent-desktop launch "System Settings"       # macOS display name
 agent-desktop launch "TextEdit" --activate
+agent-desktop launch "TextEdit" --reopen
 agent-desktop launch "MyTool" --arg /tmp/notes.txt --env KEY=VALUE --no-attach
 agent-desktop launch "Obsidian" --cdp
 ```
 
 `launch` returns once the process runs. The identifier differs by OS: the examples use macOS display names, and the platform skill names the form for its OS. By default it attaches to a running instance. `--no-attach` starts a fresh instance instead of attaching: on Windows it returns `ACTION_FAILED` if a matching app is already running; on macOS it launches a second instance alongside the running one. For an `--arg` value that starts with `-`, use `--arg=<value>`.
+
+On macOS a running app is never reopened unless you ask. `launch --activate` on a running app brings it forward and returns the windows it already has; it opens none, so an app with no window stays without one. `--reopen` is the explicit request for the app's default window (a running app with none opens one, such as a new untitled document or a Finder window on its default folder); it cannot be combined with `--no-attach`. `data.launch_path` is `attached_running`, `activated_running`, `launched` or `reopened`. `--arg` and `--env` apply only to a new process, so on a running app they are not delivered and `data.suggestion` says so; add `--no-attach` to start a new instance with them. Windows and Linux have no reopen event: `--reopen` returns `ACTION_NOT_SUPPORTED` and `launch_path` is absent.
 
 The process running and the app showing a window are separate facts:
 
@@ -20,7 +23,7 @@ The process running and the app showing a window are separate facts:
 ```
 
 - `window` is present when the app already has one, and omitted when it has none. Its absence is not a failure. `launch` still returns `ok: true`.
-- A document-based app may open its first window only when brought forward. Use `--activate`: it asks the app to present a window and waits for it up to `--timeout` (default 30000). This brings the app forward, so it is not headless. Or trigger the window yourself and use `wait --event window-opened`.
+- A document-based app may open its first window only when brought forward. Use `--activate` on an app that is starting up: it asks the app to present a window and waits for it up to `--timeout` (default 30000). On a macOS app that is already running with no window, `--activate` does not create one; use `--reopen` or open one yourself. This brings the app forward, so it is not headless. Or trigger the window yourself and use `wait --event window-opened`.
 - A process that exits before it shows a window returns `APP_UNRESPONSIVE`.
 - Windowless and menu-bar-only apps report no `window`. Use `list-apps` and read `presentation`.
 - An app built on Chromium may return `renderer: "chromium"` and a `suggestion`. These are hints. The accessibility path still works. A missing `renderer` never proves the app is native.

@@ -266,6 +266,10 @@ fn augment_probe_error(
 }
 
 #[cfg(test)]
+#[path = "launch_reopen_tests.rs"]
+mod reopen_tests;
+
+#[cfg(test)]
 #[path = "launch_tests.rs"]
 mod tests;
 

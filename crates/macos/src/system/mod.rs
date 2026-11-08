@@ -11,6 +11,8 @@ pub(crate) mod key_dispatch;
 pub(crate) mod launch;
 pub(crate) mod launch_callback_result;
 pub(crate) mod launch_completion;
+pub(crate) mod launch_plan;
+pub(crate) mod launch_target;
 pub(crate) mod launch_workspace;
 pub(crate) mod permissions;
 pub(crate) mod process;

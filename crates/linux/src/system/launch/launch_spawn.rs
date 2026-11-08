@@ -16,6 +16,15 @@ fn invalid(message: &str) -> AdapterError {
 }
 
 pub(super) fn validate(options: &LaunchOptions) -> Result<(), AdapterError> {
+    if options.reopen {
+        return Err(before_spawn(
+            AdapterError::new(
+                ErrorCode::ActionNotSupported,
+                "Linux has no reopen event, so --reopen cannot be honored",
+            )
+            .with_suggestion("Remove --reopen."),
+        ));
+    }
     if options.args.iter().any(|arg| arg.contains('\0')) {
         return Err(invalid("A launch argument holds a NUL"));
     }

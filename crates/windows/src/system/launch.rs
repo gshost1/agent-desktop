@@ -85,6 +85,7 @@ fn launch_result(
         cdp: None,
         renderer,
         suggestion: None,
+        launch_path: None,
     }
 }
 
@@ -366,6 +367,10 @@ fn after_launch(error: AdapterError) -> AdapterError {
 fn should_poll_after_first_observation(timeout_ms: u64) -> bool {
     timeout_ms > 0
 }
+
+#[cfg(test)]
+#[path = "launch_reopen_tests.rs"]
+mod reopen_tests;
 
 #[cfg(test)]
 #[path = "launch_tests.rs"]

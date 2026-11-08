@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ProcessId, WindowInfo, system::cdp_endpoint::CdpEndpoint, tree::renderer_kind::RendererKind,
+    ProcessId, WindowInfo, system::cdp_endpoint::CdpEndpoint, system::launch_path::LaunchPath,
+    tree::renderer_kind::RendererKind,
 };
 
 /// What a launch can honestly report. The process starting and the application
@@ -32,4 +33,7 @@ pub struct LaunchResult {
     /// when there is nothing more useful to say than the fields already do.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggestion: Option<String>,
+    /// The route the launch took, absent on a platform that has one route.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_path: Option<LaunchPath>,
 }

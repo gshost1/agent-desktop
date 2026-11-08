@@ -135,6 +135,11 @@ pub(crate) fn build_launch_options(
             "Invalid --arg entry #{index}: argument contains a NUL byte"
         )));
     }
+    if launch.reopen && launch.no_attach {
+        return Err(AppError::invalid_input(
+            "--reopen applies to the running instance and cannot be combined with --no-attach",
+        ));
+    }
     let mut env_map = BTreeMap::new();
     for (idx, pair) in env.iter().enumerate() {
         let (key, value) = parse_env_pair(pair, idx)?;
@@ -151,6 +156,7 @@ pub(crate) fn build_launch_options(
         timeout_ms: launch.timeout,
         attach_if_running: !launch.no_attach,
         activate: launch.activate,
+        reopen: launch.reopen,
         cdp_port: launch.cdp,
     })
 }

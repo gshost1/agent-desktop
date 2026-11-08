@@ -365,6 +365,7 @@ impl crate::adapter::SystemOps for SuggestingAdapter {
             cdp: None,
             renderer: Some(RendererKind::Chromium),
             suggestion: Some("adapter guidance".into()),
+            launch_path: None,
         })
     }
 }

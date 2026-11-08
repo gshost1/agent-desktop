@@ -108,3 +108,32 @@ fn launch_options_enforce_a_bounded_text_budget() {
 
     assert_eq!(error.code, ErrorCode::InvalidArgs);
 }
+
+#[test]
+fn reopening_a_fresh_instance_is_refused() {
+    let options = LaunchOptions {
+        reopen: true,
+        attach_if_running: false,
+        ..Default::default()
+    };
+
+    let error = validate_launch_options(&options).expect_err("reopen needs the running instance");
+
+    assert_eq!(error.code, ErrorCode::InvalidArgs);
+}
+
+#[test]
+fn arguments_a_running_app_cannot_receive_are_called_out() {
+    let with_args = LaunchOptions {
+        args: vec!["x".into()],
+        ..Default::default()
+    };
+    let with_env = LaunchOptions {
+        env: [("K".to_owned(), "V".to_owned())].into(),
+        ..Default::default()
+    };
+
+    assert!(ignored_inputs_hint(&with_args).is_some());
+    assert!(ignored_inputs_hint(&with_env).is_some());
+    assert!(ignored_inputs_hint(&LaunchOptions::default()).is_none());
+}

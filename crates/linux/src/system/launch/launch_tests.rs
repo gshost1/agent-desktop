@@ -353,3 +353,14 @@ fn successful_focus_keeps_its_window_without_a_failure_note_when_refresh_is_unav
         assert!(result.suggestion.is_none());
     }
 }
+
+#[test]
+fn reopen_is_refused_before_anything_is_spawned() {
+    let reopen = LaunchOptions {
+        reopen: true,
+        ..options()
+    };
+    let error = validate(&reopen).expect_err("linux has no reopen event");
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+}

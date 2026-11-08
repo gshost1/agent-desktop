@@ -50,6 +50,7 @@ impl SystemOps for LaunchAdapter {
             cdp: None,
             renderer: None,
             suggestion: None,
+            launch_path: None,
         })
     }
 }
