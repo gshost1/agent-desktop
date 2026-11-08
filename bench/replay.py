@@ -30,20 +30,38 @@ from tasks import TASKS, reset_desktop  # noqa: E402
 
 LOCK = Path.home() / ".agent-desktop" / "bench.lock"
 SNAPSHOT_REF = re.compile(r"@(s[0-9a-z]+):")
+SNAPSHOT_ID = re.compile(r"\b(s(?=[a-z]*[0-9])[0-9a-z]{9,16})\b")
+WINDOW_ID = re.compile(r"\b(w-\d+)\b")
 COMMAND_TIMEOUT_S = 90
 
 
 def recorded_commands(run_dir):
-    commands = []
+    """The run's Bash commands in order, each with the output the agent saw."""
+    commands, outputs = [], {}
     for line in (run_dir / "stream.jsonl").read_text().splitlines():
         ev = json.loads(line)
         content = (ev.get("message") or {}).get("content")
-        if ev.get("type") != "assistant" or not isinstance(content, list):
+        if not isinstance(content, list):
             continue
         for block in content:
             if block.get("type") == "tool_use" and block.get("name") == "Bash":
-                commands.append(block["input"].get("command", ""))
-    return commands
+                commands.append((block["id"], block["input"].get("command", "")))
+            elif block.get("type") == "tool_result":
+                body = block.get("content")
+                outputs[block["tool_use_id"]] = body if isinstance(body, str) else json.dumps(body)
+    return [(command, outputs.get(tid, "")) for tid, command in commands]
+
+
+class IdOrder:
+    """Ids of one kind in order of first appearance."""
+
+    def __init__(self, pattern):
+        self.pattern, self.seen = pattern, []
+
+    def add(self, text):
+        for found in self.pattern.findall(text):
+            if found not in self.seen:
+                self.seen.append(found)
 
 
 def snapshots_in_order(home):
@@ -53,8 +71,9 @@ def snapshots_in_order(home):
     return [p.name for p in sorted(store.iterdir(), key=lambda p: p.stat().st_mtime)]
 
 
-def remap(command, mapping):
-    return SNAPSHOT_REF.sub(lambda m: "@" + mapping.get(m.group(1), m.group(1)) + ":", command)
+def remap(command, snapshots, windows):
+    command = SNAPSHOT_REF.sub(lambda m: "@" + snapshots.get(m.group(1), m.group(1)) + ":", command)
+    return WINDOW_ID.sub(lambda m: windows.get(m.group(1), m.group(1)), command)
 
 
 def read_calls(log):
@@ -93,16 +112,23 @@ def replay(run_id, tree, top):
     env.pop("AGENT_DESKTOP_SESSION", None)
     recorded = snapshots_in_order(source / "ad-home")
     commands = recorded_commands(source)
+    orig_snaps, live_snaps = IdOrder(SNAPSHOT_ID), IdOrder(SNAPSHOT_ID)
+    orig_wins, live_wins = IdOrder(WINDOW_ID), IdOrder(WINDOW_ID)
     t0 = time.time()
-    for command in commands:
-        live = snapshots_in_order(home)
-        mapping = dict(zip(recorded, live))
-        text = remap(command.replace(old_token, new_token), mapping)
+    for command, recorded_output in commands:
+        snapshots = dict(zip(recorded, snapshots_in_order(home)))
+        snapshots.update(zip(orig_snaps.seen, live_snaps.seen))
+        windows = dict(zip(orig_wins.seen, live_wins.seen))
+        text = remap(command.replace(old_token, new_token), snapshots, windows)
         try:
-            subprocess.run(["bash", "-c", text], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                           capture_output=True, timeout=COMMAND_TIMEOUT_S)
+            done = subprocess.run(["bash", "-c", text], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                  capture_output=True, text=True, timeout=COMMAND_TIMEOUT_S)
+            live_output = done.stdout + done.stderr
         except subprocess.TimeoutExpired:
-            pass
+            live_output = ""
+        for order, text_seen in ((orig_snaps, recorded_output), (orig_wins, recorded_output),
+                                 (live_snaps, live_output), (live_wins, live_output)):
+            order.add(text_seen)
     wall = time.time() - t0
     try:
         ok, why = task.verify("DONE")
@@ -134,6 +160,9 @@ def main():
     ap.add_argument("--tree", default=None, help="checkout whose release binary to use")
     ap.add_argument("--top", type=int, default=10)
     a = ap.parse_args()
+    sys.exit("replay is disabled: it re-used recorded element numbers on a changed UI and clicked an "
+             "unrelated Finder menu item (2026-11-07). It must check each action's target role and name "
+             "against the recorded run and stay inside bench folders before it runs again.")
     if not (LOCK.exists() and LOCK.read_text().startswith("perf/speed-cost")):
         sys.exit(f"take the bench lock first: {LOCK}")
     replay(a.run, a.tree, a.top)

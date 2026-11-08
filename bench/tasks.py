@@ -8,6 +8,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 BENCH_DIR = Path.home() / "agent-desktop-bench"
@@ -47,6 +48,16 @@ def listing(directory):
         return [p.name for p in directory.iterdir()]
     except OSError:
         return []
+
+
+def open_bench_finder_window(folder):
+    """Open the task's own bench folder in a front Finder window, so the run never
+    starts on Finder's default window (Recents, Home or a personal folder)."""
+    if BENCH_DIR not in Path(folder).resolve().parents:
+        raise ValueError(f"refusing to open a Finder window outside {BENCH_DIR}: {folder}")
+    subprocess.run(["open", str(folder)], check=True, timeout=10)
+    time.sleep(1.5)
+    macctl("raise", "Finder", Path(folder).name)
 
 
 def close_bench_finder_windows():
@@ -147,6 +158,7 @@ class FinderFolder(Task):
             shutil.rmtree(self.parent)
         self.parent.mkdir(parents=True)
         self.name = f"bench-{self.run_id}"
+        open_bench_finder_window(self.parent)
 
     def prompt(self):
         return (f"Using Finder, create a new folder named `{self.name}` inside the folder "
