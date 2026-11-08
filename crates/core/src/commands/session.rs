@@ -1,8 +1,8 @@
-use crate::AppError;
 use crate::session::{
     ArtifactsMode, GcOptions, SessionTraceMode, StartSessionOptions, end_session, gc,
-    list_sessions, start_session,
+    list_sessions, start_session_with_cursor_overlay,
 };
+use crate::{AppError, CursorOverlayConfig};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -29,30 +29,7 @@ pub fn execute(action: SessionAction) -> Result<Value, AppError> {
             name,
             no_trace,
             screenshots,
-        } => {
-            let manifest = start_session(StartSessionOptions {
-                name,
-                trace: if no_trace {
-                    SessionTraceMode::Off
-                } else {
-                    SessionTraceMode::On
-                },
-                artifacts: if screenshots {
-                    ArtifactsMode::Full
-                } else {
-                    ArtifactsMode::Events
-                },
-            })?;
-            Ok(json!({
-                "session_id": manifest.id,
-                "name": manifest.name,
-                "trace": manifest.trace,
-                "artifacts": manifest.artifacts,
-                "created_at": manifest.created_at,
-                "next": activation_export(&manifest.id),
-                "activation": activation(&manifest.id),
-            }))
-        }
+        } => start(name, no_trace, screenshots, CursorOverlayConfig::default()),
         SessionAction::End { id } => {
             let manifest = end_session(&id)?;
             Ok(json!({
@@ -89,6 +66,44 @@ pub fn execute(action: SessionAction) -> Result<Value, AppError> {
     }
 }
 
+/// Starts a session whose manifest carries `cursor_overlay`.
+pub fn start(
+    name: Option<String>,
+    no_trace: bool,
+    screenshots: bool,
+    cursor_overlay: CursorOverlayConfig,
+) -> Result<Value, AppError> {
+    let manifest = start_session_with_cursor_overlay(
+        StartSessionOptions {
+            name,
+            trace: if no_trace {
+                SessionTraceMode::Off
+            } else {
+                SessionTraceMode::On
+            },
+            artifacts: if screenshots {
+                ArtifactsMode::Full
+            } else {
+                ArtifactsMode::Events
+            },
+        },
+        cursor_overlay,
+    )?;
+    let mut response = json!({
+        "session_id": manifest.id,
+        "name": manifest.name,
+        "trace": manifest.trace,
+        "artifacts": manifest.artifacts,
+        "created_at": manifest.created_at,
+        "next": activation_export(&manifest.id),
+        "activation": activation(&manifest.id),
+    });
+    if !manifest.cursor_overlay.is_disabled() {
+        response["cursor_overlay"] = serde_json::to_value(&manifest.cursor_overlay)?;
+    }
+    Ok(response)
+}
+
 /// The line a caller pastes into their own shell, so the shell that matters
 /// is the one running the command rather than the one this was built for.
 /// Written as a runtime branch, not a compile-time one: core is built and
@@ -108,3 +123,7 @@ pub(super) fn activation(session_id: &str) -> Value {
         "value": session_id,
     })
 }
+
+#[cfg(test)]
+#[path = "session_tests.rs"]
+mod tests;

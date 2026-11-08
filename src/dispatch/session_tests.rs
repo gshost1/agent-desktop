@@ -92,6 +92,52 @@ fn session_start_reports_the_adapter_overlay_result() {
 }
 
 #[test]
+fn renderer_failure_leaves_a_listed_active_session_that_ends_by_id() {
+    let _home = HomeGuard::new();
+    let failing = OverlayAdapter {
+        fail: true,
+        ..Default::default()
+    };
+    let started = super::dispatch(
+        SessionArgs {
+            action: SessionAction::Start(crate::cli_args::session::SessionStartArgs {
+                name: None,
+                no_trace: true,
+                screenshots: false,
+                cursor: true,
+                multi_agent: false,
+            }),
+        },
+        &failing,
+        &CommandContext::default(),
+    )
+    .expect("a renderer failure does not fail the start");
+    let run = |action| {
+        super::dispatch(
+            SessionArgs { action },
+            &NoopAdapter,
+            &CommandContext::default(),
+        )
+    };
+    let id = started["session_id"].as_str().unwrap().to_owned();
+    assert_eq!(started["rendered"], false);
+    assert_eq!(started["cursor_overlay"]["enabled"], true);
+    let listed = run(SessionAction::List).unwrap();
+    assert_eq!(listed["sessions"][0]["session_id"], id.as_str());
+    assert!(listed["sessions"][0]["ended_at"].is_null());
+
+    let ended = run(SessionAction::End(SessionEndArgs {
+        id: Some(id.clone()),
+    }))
+    .expect("the returned id ends the session");
+
+    assert!(ended["ended_at"].is_number());
+    let listed = run(SessionAction::List).unwrap();
+    assert_eq!(listed["sessions"].as_array().unwrap().len(), 1);
+    assert!(listed["sessions"][0]["ended_at"].is_number());
+}
+
+#[test]
 fn explicit_session_end_id_precedes_active_scope() {
     assert_eq!(
         resolve_end_session_id(Some("explicit".into()), Some("active")).unwrap(),

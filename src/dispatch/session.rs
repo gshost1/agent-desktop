@@ -1,6 +1,5 @@
 use agent_desktop_core::{
-    AppError, CursorOverlayConfig, CursorOverlayControl, PlatformAdapter,
-    commands::{cursor_overlay, session},
+    AppError, CursorOverlayConfig, CursorOverlayControl, PlatformAdapter, commands::session,
     context::CommandContext,
 };
 use serde_json::Value;
@@ -14,14 +13,15 @@ pub(crate) fn dispatch(
 ) -> Result<Value, AppError> {
     match args.action {
         SessionAction::Start(s) => {
-            let show_cursor = s.cursor;
-            let mut value = session::execute(session::SessionAction::Start {
-                name: s.name,
-                no_trace: s.no_trace,
-                screenshots: s.screenshots,
-            })?;
-            if show_cursor {
-                show_default_cursor(adapter, &mut value, s.multi_agent)?;
+            let cursor_overlay = if s.cursor {
+                CursorOverlayConfig::enabled(None, 6)?.with_multi_agent(s.multi_agent)
+            } else {
+                CursorOverlayConfig::default()
+            };
+            let mut value =
+                session::start(s.name, s.no_trace, s.screenshots, cursor_overlay.clone())?;
+            if s.cursor {
+                value["rendered"] = Value::Bool(render_cursor(adapter, &value, &cursor_overlay));
             }
             Ok(value)
         }
@@ -39,42 +39,30 @@ pub(crate) fn dispatch(
     }
 }
 
-fn show_default_cursor(
+/// Draws the cursor of a session whose manifest already enables it. The
+/// overlay is presentation only, so a renderer that cannot draw leaves the
+/// session started and reports `rendered: false`; the next action that needs
+/// the cursor asks for the renderer again.
+fn render_cursor(
     adapter: &dyn PlatformAdapter,
-    value: &mut Value,
-    multi_agent: bool,
-) -> Result<(), AppError> {
-    let Some(id) = value
-        .get("session_id")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-    else {
-        return Ok(());
+    value: &Value,
+    config: &CursorOverlayConfig,
+) -> bool {
+    let Some(id) = value.get("session_id").and_then(Value::as_str) else {
+        return false;
     };
-    let config = CursorOverlayConfig::enabled(None, 6)?.with_multi_agent(multi_agent);
-    let control = CursorOverlayControl::enable(id.clone(), config.style().clone())
+    if config.is_multi_agent() {
+        return false;
+    }
+    let control = CursorOverlayControl::enable(id.to_owned(), config.style().clone())
         .with_motion(config.motion().clone());
-    let enabled = cursor_overlay::execute(
-        &id,
-        cursor_overlay::CursorOverlayAction::Enable(Box::new(config)),
-    )?;
-    if let Some(overlay) = enabled.get("cursor_overlay").cloned()
-        && let Some(map) = value.as_object_mut()
-    {
-        map.insert("cursor_overlay".into(), overlay);
-    }
-    if multi_agent {
-        value["rendered"] = Value::Bool(false);
-        return Ok(());
-    }
-    value["rendered"] = Value::Bool(match adapter.update_cursor_overlay(&control) {
+    match adapter.update_cursor_overlay(&control) {
         Ok(()) => true,
         Err(error) => {
             super::overlay_skipped::log(&error);
             false
         }
-    });
-    Ok(())
+    }
 }
 
 fn resolve_end_session_id(

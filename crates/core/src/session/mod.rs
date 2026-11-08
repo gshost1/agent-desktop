@@ -299,6 +299,16 @@ pub fn list_sessions() -> Result<Vec<SessionManifest>, AppError> {
 }
 
 pub fn start_session(options: StartSessionOptions) -> Result<SessionManifest, AppError> {
+    start_session_with_cursor_overlay(options, CursorOverlayConfig::default())
+}
+
+/// Starts a session whose single manifest write already carries
+/// `cursor_overlay`, so no error can follow a session that became active.
+pub fn start_session_with_cursor_overlay(
+    options: StartSessionOptions,
+    cursor_overlay: CursorOverlayConfig,
+) -> Result<SessionManifest, AppError> {
+    let cursor_overlay = cursor_overlay.validated()?;
     if matches!(options.trace, SessionTraceMode::Off)
         && matches!(options.artifacts, ArtifactsMode::Full)
     {
@@ -321,7 +331,7 @@ pub fn start_session(options: StartSessionOptions) -> Result<SessionManifest, Ap
         ended_at: None,
         trace: options.trace,
         artifacts: options.artifacts,
-        cursor_overlay: CursorOverlayConfig::default(),
+        cursor_overlay,
     };
     write_manifest(&manifest)?;
     Ok(manifest)
