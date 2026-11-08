@@ -192,16 +192,63 @@ fn websocket_url_must_use_the_exact_loopback_port_and_websocket_scheme() {
         "ws://127.0.0.1:9222/devtools/browser/id",
         9222
     ));
+    for loopback in [
+        "ws://localhost:9222/devtools/browser/id",
+        "ws://[::1]:9222/devtools/browser/id",
+    ] {
+        assert!(valid_websocket_url(loopback, 9222), "refused {loopback}");
+    }
     for invalid in [
+        "wss://127.0.0.1:9222/devtools/browser/id",
         "http://127.0.0.1:9222/devtools/browser/id",
         "ws://192.0.2.1:9222/devtools/browser/id",
         "ws://127.0.0.1:9223/devtools/browser/id",
-        "ws://localhost:9222/devtools/browser/id",
         "ws://[::2]:9222/devtools/browser/id",
-        "ws://[::1]:9222/devtools/browser/id",
         "ws://127.0.0.1/devtools/browser/id",
         "ws://user@127.0.0.1:9222/devtools/browser/id",
     ] {
         assert!(!valid_websocket_url(invalid, 9222), "accepted {invalid}");
+    }
+}
+
+#[test]
+fn a_response_is_complete_once_content_length_bytes_arrive() {
+    let partial = b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n{\"a\":";
+    let full = b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n{\"a\":\"bc\"}";
+    assert!(!response_complete(partial));
+    assert!(response_complete(full));
+    assert!(!response_complete(b"HTTP/1.1 200 OK\r\nContent-Le"));
+}
+
+#[test]
+fn only_a_200_response_yields_a_body() {
+    assert_eq!(
+        devtools_http_ok_body(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}").as_deref(),
+        Some("{}")
+    );
+    assert!(devtools_http_ok_body(b"HTTP/1.1 404 Not Found\r\n\r\nnope").is_none());
+    assert!(devtools_http_ok_body(b"garbage").is_none());
+}
+
+#[test]
+fn a_version_body_names_its_loopback_debugger_url_and_product() {
+    let body = r#"{"Browser":"Chrome/144.0.0.0","webSocketDebuggerUrl":"ws://localhost:9222/devtools/browser/abc"}"#;
+    let endpoint = parse_devtools_version_body(9222, body).unwrap();
+    assert_eq!(endpoint.product.as_deref(), Some("Chrome/144.0.0.0"));
+    assert_eq!(
+        endpoint.websocket_url,
+        "ws://localhost:9222/devtools/browser/abc"
+    );
+    for refused in [
+        r#"{"webSocketDebuggerUrl":"ws://192.168.1.4:9222/devtools/browser/abc"}"#,
+        r#"{"webSocketDebuggerUrl":"ws://127.0.0.1:9333/devtools/browser/abc"}"#,
+        r#"{"webSocketDebuggerUrl":"wss://127.0.0.1:9222/devtools/browser/abc"}"#,
+        "{}",
+        "<html>",
+    ] {
+        assert!(
+            parse_devtools_version_body(9222, refused).is_none(),
+            "{refused}"
+        );
     }
 }
