@@ -35,7 +35,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 | Rank | ID | Machine | Main files | Illegal transition reachable today | Hidden cost | Imp | St | Prior art | PR |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | ACTION-2 | `type --interval-ms` burst: Landing → Burst → Typed | core `commands/type_text_interval.rs:93` | After every keystroke lands, `--wait-for` reloads the refmap; a pruned or drilled snapshot returns SNAPSHOT_NOT_FOUND/STALE_REF stamped `not_delivered` + `refresh_snapshot_then_retry_original`, so a caller types the text twice | 3 loads of one entry per command | A | C | none (#348 introduced, #362 closed) | [#2](https://github.com/gshost1/agent-desktop/pull/2) |
+| 1 | ACTION-2 | `type --interval-ms` burst: Landing → Burst → Typed | core `commands/type_text_interval.rs:93` | After every keystroke lands, `--wait-for` reloads the refmap; a pruned or drilled snapshot returns SNAPSHOT_NOT_FOUND/STALE_REF stamped `not_delivered` + `refresh_snapshot_then_retry_original`, so a caller types the text twice | 3 loads of one entry per command | A | C | none (#348 introduced, #362 closed) | [#2](https://github.com/gshost1/agent-desktop/pull/2) merged |
 | 2 | STATE-9 | Interaction lease adoption: Free / Held(OFD) | core `storage/file_lock.rs:54-89`, `src/mcp/call.rs:29-35` | `mcp` started by a lease-holding harness passes the lease fd+env to up to 8 concurrent children; each "adopts" the same open file description, so mutations interleave | – | A | C mech, S reach | #160 (closed, different), PR #590 (open, lock dir only) | in progress (w4) |
 | 3 | SURFACE-3 | Notification identity across CLI calls | core `notifications/`, all 3 adapters | dismiss/act address a list index; the list shifts between calls and the wrong same-app notification is dismissed or acted on | – | A | C | none | planned (M, JSON contract) |
 | 4 | SURFACE-4 | Windows dismiss verification | windows `notifications/` | with an identical twin present, a real dismissal reports ACTION_FAILED + retry, and the retry removes the twin | – | A | C | none | planned (win draft) |
@@ -114,7 +114,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | # | Branch | Finding | PR | Status | Upstream |
 |---|---|---|---|---|---|
 | 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | **merged** 2026-11-07 as `c4d39615`; CI 13/13 green on head, gates green (4402), reviews done | overlaps `#602` (goes back as a note to its author, not as our PR) |
-| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | open, not merged: CI green on head after one macOS flake re-run; needs rebase on `c4d39615` + re-test; Linux E2E openbox red (see handoff) | ready (when merged; no dependency on fork-only work) |
+| 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | **merged** 2026-11-07 as `f6a426db`; CI 13/13 green on head `de04c3a9`, gates green (4404), E2E no regression vs `main` | ready (no dependency on fork-only work) |
 | 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | – | pushed `fc4c7c32`, rebased; review round 1 done; full gates not re-run after rebase | ready (when merged; rebased on the `#602` carry, so upstream needs `#602` first or a rebase) |
 | 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | pushed `2cac4100`, rebased; review round 1 done; gates green (4413) | ready (when merged; touches `src/mcp/calls.rs`, which `#602` also changes) |
 | 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | – | pushed `7736b3e6`, rebased; envelope 2.7 done; gates red on 4 lock-contention tests (re-run needed); draft when opened | needs-issue-first (changes the JSON contract: envelope 2.6 -> 2.7, AMBIGUOUS_TARGET -> STALE_REF) |
@@ -246,6 +246,10 @@ control thread.
   inline code only (no autolink, no backlink).
 
 ## Found (outside scope)
+
+- Linux E2E baseline on this laptop (`main` `ec632e97`, x11-openbox): 93 pass, 55 fail, 1 error, all in leg setup
+  (list in `audit/E2E-main-ec632e97-openbox-failures.txt`). Compare branches against it, not against zero.
+  `ref_actions.double_click` flipped between runs (flaky).
 
 - `commands::wait_selector::tests::retry_tests::gone_wait_requires_window_absence_after_accessibility_disappears`
   (250 ms budget) failed once on the macOS CI runner for PR #2 with an unrelated diff; re-run requested. Likely a
