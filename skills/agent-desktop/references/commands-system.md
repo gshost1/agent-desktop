@@ -43,6 +43,8 @@ The port exists only for a fresh process. `launch` never quits a running app for
 | `cdp_switch_conflict` (`INVALID_ARGS`) | `--arg` carried a `--remote-debugging-*` or `--remote-allow-origins` switch | Drop that `--arg` |
 | `cdp_endpoint_unavailable` | No endpoint answered before the deadline | The app stays running. Use the accessibility path |
 
+`--download-dir <dir>` (with `--cdp`) names the folder the browser saves downloads to; `wait --download` returns each file saved there. Run `agent-desktop skills get web` for the download loop.
+
 Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
 Keep these on agent-desktop even with CDP connected: the native menu bar, file dialogs and sheets, window management, notifications, screenshots, and any app you did not launch. While the port is open, any local process of the same user can control the app's web contents. Request `--cdp` only for the step that needs it. `close-app` ends the exposure.
@@ -124,6 +126,7 @@ agent-desktop wait --element @s8f3k2p9:e5 --predicate value --value "Done"
 agent-desktop wait --window "Save As" --app "TextEdit"
 agent-desktop wait --text "Loading complete" --app "Safari"
 agent-desktop wait --menu --app "Finder"
+agent-desktop wait --download --app "Google Chrome" --timeout 60000
 agent-desktop wait --event window-opened --app "Finder"
 ```
 
@@ -134,6 +137,7 @@ Use `wait`, not a fixed sleep. `--timeout` defaults to 30000 ms. Modes:
 - **Window.** Waits for a window whose title contains the text. `--app` narrows. On timeout, `details.last_observed` lists the scoped window count and up to eight titles.
 - **Text.** Selects one app window, then waits for text in that tree. `--count N` waits until exactly N nodes match, and the result carries `count`. Several eligible windows, such as a document and its save dialog, return `AMBIGUOUS_TARGET` before any text check. `--window-id` does not narrow a text wait. To recover, find the target with `list-windows --app <app>` and inspect it with `snapshot --app <app> --window-id <id> -i`. For a dialog, use `wait --window <title> --app <app>`, then `snapshot --surface sheet` (see the dialog workflow). `--window` and `--text` are separate modes and cannot combine.
 - **Menu.** `--menu` waits for a menu surface to open. `--menu-closed` waits for it to close.
+- **Download.** `--download --app <browser>` returns the browser's oldest download that no earlier `wait --download` returned, including one that finished before the wait started, and otherwise waits for one to begin and finish: `{ "path", "suggested_filename", "url", "state": "completed", "bytes", "elapsed_ms" }`. `path` is the saved file under the name the server suggested, with ` (1)` added when that name is taken. A file the browser saved after the command that started it had exited carries no `url`, and its `suggested_filename` is the saved name. Files that were in the folder at launch are never returned. It needs a DevTools endpoint; launch the browser with `--cdp --download-dir <dir>` so a download started by an earlier command can be followed from the folder. A canceled download is `ACTION_FAILED` with `details.kind: "cdp_download_canceled"`, one whose partial file vanished is `cdp_download_interrupted`, and neither returns a path. A timeout carries `details.cause`: `cdp_download_not_started` or `cdp_download_in_progress`. Without `--download-dir`, a download that began in an earlier command cannot be followed (`cdp_download_untracked`); run the click and the wait in one `batch` instead.
 - **Event.** `--event` is one of `window-opened`, `window-closed`, `app-launched`, `app-terminated`, `focus-changed`, `surface-appeared`, `surface-dismissed`. It diffs a baseline taken at wait start against fresh reads, so you need no window id up front. `--window-id` and `--window` narrow it.
 
 For `wait --event` only, `--app` resolves once, at wait start, to one process instance. (`wait --window` filters by app name on every poll.) A later process of the same name is invisible to the wait. Two running instances return `AMBIGUOUS_TARGET`. When no app matches:

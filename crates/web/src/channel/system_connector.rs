@@ -2,10 +2,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use agent_desktop_core::system::cdp_endpoint::CdpEndpoint;
-use agent_desktop_core::{AdapterError, Deadline, ProcessIdentity, StateFile};
+use agent_desktop_core::{AdapterError, Deadline, DownloadScope, ProcessIdentity, StateFile};
 
 use super::candidate_origin::CandidateOrigin;
 use super::cdp_connector::CdpConnector;
+use super::download::download_behavior::enable_downloads;
+use super::download::download_folder::DownloadFolder;
 use super::endpoint_candidate::EndpointCandidate;
 use super::endpoint_mismatch::endpoint_mismatch;
 use super::endpoint_registry::{read_entries, record_entry, registry_file};
@@ -68,6 +70,10 @@ impl CdpConnector for SystemConnector {
                 port: entry.port,
                 origin: CandidateOrigin::Registry {
                     websocket_url: entry.websocket_url,
+                    download_folder: entry.download_dir.map(|dir| DownloadFolder {
+                        path: PathBuf::from(dir),
+                        scope: entry.download_scope.unwrap_or(DownloadScope::Connection),
+                    }),
                 },
             })
             .collect();
@@ -91,7 +97,7 @@ impl CdpConnector for SystemConnector {
         may_prompt: bool,
     ) -> Result<CdpConnection, AdapterError> {
         let endpoint = match &candidate.origin {
-            CandidateOrigin::Registry { websocket_url } => BrowserEndpoint {
+            CandidateOrigin::Registry { websocket_url, .. } => BrowserEndpoint {
                 websocket_url: WebSocketUrl::parse(websocket_url)?,
                 source: EndpointSource::JsonVersion,
                 product: None,
@@ -111,7 +117,18 @@ impl CdpConnector for SystemConnector {
         if endpoint.port() != candidate.port {
             return Err(endpoint_mismatch(candidate.port, endpoint.port()));
         }
-        connect(&endpoint, deadline)
+        let started = std::time::Instant::now();
+        let mut connection = connect(&endpoint, deadline)?;
+        tracing::debug!(
+            port = candidate.port,
+            elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+            "cdp connect"
+        );
+        let download_folder = candidate.download_folder();
+        if let Err(error) = enable_downloads(&mut connection, download_folder.as_ref(), deadline) {
+            tracing::warn!(error = %error, "web downloads: the browser refused download events");
+        }
+        Ok(connection)
     }
 
     fn remember(
@@ -130,6 +147,8 @@ impl CdpConnector for SystemConnector {
                 process_instance: process.instance.clone(),
                 port: endpoint.port,
                 websocket_url: endpoint.websocket_url.clone(),
+                download_dir: endpoint.download_dir.clone(),
+                download_scope: endpoint.download_scope,
             },
             deadline,
         )

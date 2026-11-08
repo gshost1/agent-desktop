@@ -48,6 +48,24 @@ impl CdpConnection {
         session_id: Option<&str>,
         deadline: Deadline,
     ) -> Result<Value, AdapterError> {
+        let started = std::time::Instant::now();
+        let reply = self.exchange(method, params, session_id, deadline);
+        tracing::debug!(
+            method,
+            elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+            ok = reply.is_ok(),
+            "cdp call"
+        );
+        reply
+    }
+
+    fn exchange(
+        &mut self,
+        method: &str,
+        params: Value,
+        session_id: Option<&str>,
+        deadline: Deadline,
+    ) -> Result<Value, AdapterError> {
         if session_id.is_some_and(|session| self.detached_sessions.contains(session)) {
             return Err(session_detached(method));
         }

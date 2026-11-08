@@ -28,6 +28,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "wait_element",
     "wait_latest_ref_cache",
     "wait_mode",
+    "wait_download",
     "wait_notification",
     "wait_predicate",
     "wait_scheduler",
