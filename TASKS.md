@@ -238,6 +238,8 @@ GitHub blocked Actions on the fork (`workflow_dispatch` returns HTTP 422 "Action
 repository"; pushes create no runs). Do not work around it. Until George says it lifted: no merges, no dispatches or
 re-runs; keep running local gates and pushing at checkpoints. PR #2 had merged just before (its dispatch run on head
 `de04c3a9` completed 13/13 green).
+**Lifted the same day:** Actions re-enabled with George's approval; normal merge rules apply. Dispatch CI only when a
+head is ready for review, not on every push.
 
 ## Merge rule (George, 2026-11-07)
 
