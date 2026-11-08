@@ -73,7 +73,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 35 | STATE-4 / BINARY-9 | `mcp --debug --screenshot`, `mcp --wait-for` (#11) | `src/mcp/`, `src/visual_debug/mod.rs:56-65` | per-command globals go to every tool call; non-snapshot tools fail from the first call, snapshot/click after the first | – | B | C | none | planned |
 | 36 | STATE-5 / BINARY-10 | `session start --cursor` two-step write (#12) | `src/dispatch/session.rs:159-221` | second write fails → error has no session id; session stays active | – | B | C | none | [#35](https://github.com/gshost1/agent-desktop/pull/35) merged |
 | 37 | STATE-6 | Manifest-less session dirs (#15) | core `session/gc.rs` | invisible to GC; one failed delete aborts the GC loop | disk | B | C | #601, PR #498 (open) | build on #498 |
-| 38 | STATE-7 | Trace reader command pairing (#16) | core `trace/trace_read/merge.rs:95-155` | concurrent same-named FFI commands overwrite each other's start; real lost end hidden | – | B | C | none | planned |
+| 38 | STATE-7 | Trace reader command pairing (#16) | core `trace/trace_read/merge.rs:95-155` | concurrent same-named FFI commands overwrite each other's start; real lost end hidden | – | B | C | none | **merged** [#51](https://github.com/gshost1/agent-desktop/pull/51) `3fce1ebb` |
 | 39 | STATE-12 / BINARY-11 | Overlay Hide/Show as a switch (#13) | `src/dispatch/mod.rs:52-68`, renderers | A's Show lands during B's headed action; mac Hide/Show take the start lock for up to 4 s | up to 4 s (mac) | B (visual) | C | #178, PR #183, PR #528 | planned (intent to confirm) |
 | 40 | STATE-13 | Overlay renderer per routing mode | core `cursor_overlay/`, renderers | switching single/multi-agent leaves the old renderer; next Show draws a ghost cursor | – | B (visual) | C | #175, PR #180 | planned |
 | 41 | STATE-14 | macOS overlay socket name | macos overlay `endpoint.rs:6-49` | legacy hash of `Xv2` equals current hash of `X`; `session end Xv2` errors | – | B | C | none | planned (mac draft) |
@@ -144,10 +144,10 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 25 | `fix/linux-window-settle-provisional` | LIFECYCLE-8 | [#43](https://github.com/gshost1/agent-desktop/pull/43) | **merged** 2026-11-08 as `8806c6c2` (rules 1+2); CI 13/13 on head `29fe91d4`, gates green (4659), 2 review rounds + `readback_unsettled` fix | ready (Linux only; adds error cause `readback_unsettled`) |
 | 26 | `test/inventory-poll-sibling-clock` | CI flake | [#45](https://github.com/gshost1/agent-desktop/pull/45) | **merged** 2026-11-08 as `24574e93` (rules 1+2); CI 13/13 on head `dcb62c28`, gates green (4647) | fork-only (test determinism) |
 | 27 | `fix/focus-window-confirmation` | LIFECYCLE-10 | [#46](https://github.com/gshost1/agent-desktop/pull/46) | **merged** 2026-11-08 as `42b97e61` (rules 1+2); CI 13/13 on head `c2ef737b`, gates green (4826); re-cycled twice after Mac-session merges (#28, #24) | needs-issue-first (adds `data.focus_observed`) |
-| 28 | `fix/trace-command-pairing` | STATE-7 | [#51](https://github.com/gshost1/agent-desktop/pull/51) | open; review applied at `e00bec80` (gates 4832); re-cycled onto `0a5ff966` (lib.rs overlap) as `19bc64c7`; gates + CI running. CI wiring for the viewer test blocked on `workflow` scope | ready (upstream `#602` item 16) |
-| 29 | `fix/mcp-forwarded-globals` | STATE-4 / BINARY-9 | [#52](https://github.com/gshost1/agent-desktop/pull/52) | open; review + security review applied at `bab3f4d5` (gates 4833); re-cycled onto `0a5ff966` as `583815d3`; gates + CI running | ready (upstream `#602` item 11; `#587` edits the same file) |
+| 28 | `fix/trace-command-pairing` | STATE-7 | [#51](https://github.com/gshost1/agent-desktop/pull/51) | **merged** 2026-11-08 as `3fce1ebb` (rule 3: `main` moved by #53, test files only); CI 13/13 on head `19bc64c7`, gates green (4892); viewer test not yet in CI (workflow scope) | ready (upstream `#602` item 16) |
+| 29 | `fix/mcp-forwarded-globals` | STATE-4 / BINARY-9 | [#52](https://github.com/gshost1/agent-desktop/pull/52) | open; review + security review applied (`bab3f4d5`, gates 4833); re-cycled onto `3fce1ebb` (#51 changed lib.rs) as `24c0ac10`; gates + CI running | ready (upstream `#602` item 11; `#587` edits the same file) |
 | 30 | `fix/process-lease-reentrancy` | STATE-17 / STATE-21 | – | writer (w30): STATE-17 is unreachable today because a nested call panics in tracing first (STATE-21); decision: fix both in one PR (guard owner + no nested tracing panic) | ready |
-| 31 | `test/batch-cli-envelope-on-failure` | batch CLI flake diagnostics | [#53](https://github.com/gshost1/agent-desktop/pull/53) | open; `run_batch` prints envelope, stderr and elapsed time when `data.results` is missing; head `72247de1`; gates + CI running | fork-only (test diagnostics) |
+| 31 | `test/batch-cli-envelope-on-failure` | batch CLI flake diagnostics | [#53](https://github.com/gshost1/agent-desktop/pull/53) | **merged** 2026-11-08 as `d921b52e` (rules 1+2); CI 13/13 on head `72247de1`, gates green (4886) | fork-only (test diagnostics) |
 | 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | **merged** 2026-11-08 as `89a3723e` (rules 1+2); CI 13/13 on head `a690a037` | fork-only (test isolation) |
 
 ## Needs Mac verification
@@ -327,6 +327,7 @@ exists and also runs CI's core Win32-leakage check.
 
 ## Incidents
 
+- 2026-11-08: merged PR #51 while GitHub still reported `UNKNOWN` (not yet recomputed after PR #53 merged seconds earlier), and without first waiting for `main` CI on `d921b52e`. Rule 3 held (no overlapping files). From now: re-read `mergeStateStatus` until `CLEAN` and wait for `main` CI between merges.
 - 2026-11-08: merged PR #39 right after PR #40 without first waiting for `main` CI on `a3183289` (rule: watch `main` CI after each merge). Both PRs are test-only; `main` CI on both commits checked afterwards.
 - 2026-11-07: the harness flagged the STATE-9 writer for a possible "security weakening" action. I stopped it and
   checked: nothing outside the worktree changed (`~/.claude/settings.json` untouched since Nov 3, `core.hooksPath`
