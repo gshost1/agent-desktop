@@ -61,12 +61,33 @@ def read_save_folder():
     return (True, done.stdout.strip()) if done.returncode == 0 else (False, None)
 
 
-def quit_textedit_for_prefs():
-    quit_app("TextEdit")
-    for _ in range(50):
+def textedit_gone(tries=50):
+    for _ in range(tries):
         if subprocess.run(["pgrep", "-x", "TextEdit"], capture_output=True).returncode != 0:
-            return
+            return True
         time.sleep(0.2)
+    return False
+
+
+def textedit_holds_only_bench_windows():
+    try:
+        titles = json.loads(macctl("windows", "TextEdit") or "[]")
+    except (json.JSONDecodeError, subprocess.TimeoutExpired):
+        return False
+    return all(any(t.startswith(p) for p in BENCH_DOC_PREFIXES) for t in titles)
+
+
+def quit_textedit_for_prefs():
+    """Quit TextEdit before its prefs are written. A TextEdit wedged on a bench
+    document (a stuck Save sheet blocks a normal quit) is force-killed, but only
+    when every window it has is a bench window; anything else is left alone."""
+    quit_app("TextEdit")
+    if textedit_gone():
+        return
+    if textedit_holds_only_bench_windows():
+        subprocess.run(["pkill", "-9", "-x", "TextEdit"], timeout=10)
+        if textedit_gone(25):
+            return
     raise RuntimeError("TextEdit is still running; its save-folder pref was not touched")
 
 

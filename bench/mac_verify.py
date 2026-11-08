@@ -49,7 +49,9 @@ def bench_folder(kind, files):
 
 def bench_window(binary, folder):
     body, _ = run(binary, "list-windows", "--app", "Finder")
-    wins = [w for w in (body.get("data") or {}).get("windows", []) if w.get("title") == folder.name]
+    data = body.get("data") or []
+    windows = data if isinstance(data, list) else data.get("windows", [])
+    wins = [w for w in windows if w.get("title") == folder.name]
     if len(wins) != 1:
         sys.exit(f"STOP: expected one Finder window titled {folder.name}, found {len(wins)}")
     return wins[0]["id"]
