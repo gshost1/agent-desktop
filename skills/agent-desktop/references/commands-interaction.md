@@ -27,13 +27,13 @@ A successful action reports what happened, not only that it ran.
 | `data.steps` | Each mechanism tried, in order: `label`, `outcome` (`attempted`, `skipped`, `succeeded`), `mechanism` (`semantic_api` or `physical_synthetic`), `verified` |
 | `data.disposition.delivery` | `delivered_verified` when the effect was observed, `delivered_unverified` when the app claimed success without an observable change |
 | `data.post_state` | The target's state after the action, when it has one |
-| `data.surfaces` | Overlays open once the action settled |
+| `data.surfaces` | Overlays open once the action settled, read in at most one second. An entry with `unclassified` names kinds that read could not finish |
 
 Stateful actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, `collapse`) re-read state after they run. A readable contradiction returns `ACTION_FAILED` with `details.kind: "post_action_verification"`. A failed read keeps its own error code, so even `STALE_REF` or `TIMEOUT` can follow delivery. An unreadable postcondition does not fail the action. Missing evidence alone returns success with `delivered_unverified`, `details.verification_scope: "unavailable"` and `verification_reason: "insufficient_evidence"`.
 
 - Secure text is redacted. A delivered write can return `delivered_unverified` with `verification_reason: "secure_field"`. This never turns a native delivery error into success.
 - `set-value` and `type` verify the element value only (`verification_scope: element_value`, `application_commit: not_verified`). Confirm document-level effects, such as a table that should have resized, with an independent read.
-- If `data.surfaces` lists a sheet, menu or alert, the app is waiting on it. Use `find --surface sheet` and answer it. A `delivered_unverified` result with an open surface usually means a confirmation is pending.
+- If `data.surfaces` lists a sheet, menu or alert, the app is waiting on it. Use `find --surface sheet` and answer it. A `delivered_unverified` result with an open surface usually means a confirmation is pending. A missing `data.surfaces`, or an entry whose `unclassified` names a kind, does not prove that kind is closed: snapshot that surface when you expect one.
 
 ## Errors
 
