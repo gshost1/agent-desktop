@@ -53,7 +53,7 @@ impl SystemOps for FailingRead {
     fn wait_for_menu(
         &self,
         _process: crate::ProcessIdentity,
-        _open: bool,
+        _wait: crate::MenuWait,
         _deadline: Deadline,
     ) -> Result<(), AdapterError> {
         self.fail()

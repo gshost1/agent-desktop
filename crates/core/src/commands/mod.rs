@@ -80,6 +80,7 @@ pub(crate) mod wait_element;
 pub(crate) mod wait_event;
 pub(crate) mod wait_event_filter;
 pub(crate) mod wait_event_input;
+pub mod wait_menu;
 pub(crate) mod wait_mode;
 pub mod wait_notification;
 pub(crate) mod wait_predicate;

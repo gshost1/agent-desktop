@@ -130,7 +130,7 @@ To drive the web contents with agent-browser instead, launch the app with `--cdp
     <tr><td><code>ACTION_FAILED</code>, cause <code>blocked_by_modal_dialog</code></td><td>A modal dialog or popover blocks the window</td><td>Read it with <code>snapshot --surface</code> and answer or dismiss it</td></tr>
     <tr><td><code>ACTION_FAILED</code>, cause <code>grab_focus_rejected</code>, on <code>focus</code></td><td>A GTK4 app rejects <code>Component.GrabFocus</code></td><td>Focus its window with <code>focus-window</code></td></tr>
     <tr><td>Two quick <code>click</code> calls on one GTK4 button act once</td><td>GTK4 reads clicks less than about 250 ms apart as one</td><td>Wait for the effect between clicks</td></tr>
-    <tr><td><code>--menu-closed</code> returns at once</td><td>The menu never opened</td><td>Wait for <code>--menu</code> first</td></tr>
+    <tr><td><code>--menu-closed</code> returns after about 1.5 s</td><td>No menu was seen open, so the wait held for the opener grace</td><td>Wait for <code>--menu</code> first, or run the action and <code>--menu-closed</code> in one <code>batch</code></td></tr>
     <tr><td><code>screenshot</code> returns <code>ACTION_FAILED</code> with <code>details.reason: "covered"</code></td><td>A non-compositing window manager cannot capture a covered window</td><td>Raise it with <code>focus-window</code>; on a non-compositing window manager, capture the display with <code>--screen 0</code></td></tr>
     <tr><td><code>INTERNAL</code>, "private file parent is accessible by group or other users"</td><td>The state root is not private</td><td><code>chmod 700</code> the state root</td></tr>
   </tbody>

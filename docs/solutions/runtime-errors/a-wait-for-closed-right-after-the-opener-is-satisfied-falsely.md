@@ -2,13 +2,13 @@
 title: A wait for "closed" right after the opener is satisfied falsely
 date: 2026-10-19
 category: runtime-errors
-module: crates/linux/src/system/interaction/action_clock.rs, crates/linux/src/system/interaction/action_clock_store.rs, crates/linux/src/system/menu/menu_wait.rs
+module: crates/core/src/wait/menu_wait_phase.rs, crates/core/src/wait/menu_wait.rs, crates/core/src/commands/wait_menu.rs, src/batch/execution.rs
 problem_type: runtime_error
-component: atspi-menu-wait
+component: menu-wait
 symptoms:
   - "wait --menu-closed returns at once after a click that opens a GTK4 popover, before the menu ever showed."
   - "The same sequence passes when click and wait run in one process and fails when they run as two CLI calls."
-tags: [linux, at-spi, gtk4, menu, wait, race, persisted-state]
+tags: [linux, macos, windows, at-spi, gtk4, menu, wait, race, state-machine]
 ---
 
 ## Problem
@@ -17,12 +17,17 @@ A GTK4 popover menu appears in the accessibility tree 157 to 331 ms after its op
 
 ## Solution
 
-A closed-direction wait holds until it has seen the menu open, or until 2 s pass since the last action, whichever comes first. `menu_wait.rs` asks `action_clock::recent_for(pid)`; the clock marks every action that started, that is, anything but one refused before it sent (`action_clock::mark_outcome`).
+Core owns the decision for every platform. `MenuWaitPhase` (`crates/core/src/wait/menu_wait_phase.rs`) is `AwaitingOpen { until, read_closed }`, `Open`, `Closing` or `Closed`, with one transition per whole read: an open read moves any phase to `Open`; a closed read moves `Open` to `Closing` and `Closing` to `Closed`, so a menu swapped for another across one poll is not a close; it moves `AwaitingOpen` to `Closed` only when the read began at or after `until`. A second transition runs at the deadline: `AwaitingOpen` with at least one completed closed read becomes `Closed`, because the menu stayed closed for the whole wait. A closed-direction wait is satisfied only in `Closed`. Each adapter's poll loop (Linux `menu_wait.rs`, macOS and Windows `system/wait.rs`) feeds its reads to the `MenuWait` core hands it and no longer compares a read with the wanted state itself.
 
-The memory has to outlive the process. An agent runs `click` and `wait` as two CLI calls, so an in-process `Instant` is empty in the second one. `action_clock_store.rs` writes a per-process record under `$XDG_RUNTIME_DIR/agent-desktop-actions`, stamped in milliseconds of boot time (suspend included) so two processes agree and a restart cannot make an old record look new, and keyed by a process-instance token so a reused pid does not inherit it. The first live legs used the in-process clock and passed 10 of 10 (L33-17); only the two-process case (L33-56) exercises the persisted store.
+The phase a closed wait starts in comes from evidence, not from which action ran:
+
+- `batch` reads the menu of the waited app before the action that precedes a `wait --menu-closed` (`menu_seed`, the way it seeds `wait --event` with a pre-action baseline). A menu open before the action starts the wait in `Open`, so after a menu-item click two closed reads end it with no hold. The reading is capped at 500 ms and, on Linux, sits between the poll loop's liveness checks, so a slow read or a reused pid leaves no seed.
+- Otherwise the wait starts in `AwaitingOpen` with a 1.5 s opener grace measured from the wait's start, whatever the timeout. The popover delays above (157 to 999 ms after the opener returns, L18-2, L33-11, L33-51) fall inside it, because the wait itself starts only after the opener returned.
+
+The earlier Linux-only guard held the wait until 2 s after the last action, read from a per-process file under `$XDG_RUNTIME_DIR/agent-desktop-actions`. It was removed: raw `mouse-click` and `drag` never wrote it, so a coordinate opener got no hold, and a menu-item click held the wait for up to 2 s even with the menu already gone. The phase makes no distinction between action kinds, and the batch reading makes the menu-item case immediate.
 
 ## Prevention
 
-- Test a wait that depends on a prior action in two processes, not one. A unit test with an in-process clock cannot fail for this reason.
+- Test a wait that depends on a prior action in two processes, not one, and in a batch. A unit test with an in-process clock cannot fail for this reason.
 - Do not size the hold from one toolkit. The popover delay is measured per toolkit (L18-2, L33-51).
-- Treat "not yet visible" and "closed" as different states; the wait must know which one it read.
+- Treat "not yet visible" and "closed" as different states; the wait must know which one it read. Keep that decision in core so no platform can answer it differently.

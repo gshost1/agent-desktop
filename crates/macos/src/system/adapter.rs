@@ -1,6 +1,6 @@
 use agent_desktop_core::{
     ActionResult, AdapterError, Deadline, DismissAllNotificationsRequest,
-    DismissNotificationRequest, ImageBuffer, InteractionLease, NotificationActionRequest,
+    DismissNotificationRequest, ImageBuffer, InteractionLease, MenuWait, NotificationActionRequest,
     NotificationFilter, NotificationInfo, OperationReport, PermissionReport, ProcessIdentity,
     ScreenshotTarget, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps, WindowInfo,
     WindowOp,
@@ -228,10 +228,18 @@ impl SystemOps for MacOSAdapter {
     fn wait_for_menu(
         &self,
         process: ProcessIdentity,
-        open: bool,
+        wait: MenuWait,
         deadline: Deadline,
     ) -> Result<(), AdapterError> {
-        crate::system::wait::wait_for_menu(process, open, deadline)
+        crate::system::wait::wait_for_menu(process, wait, deadline)
+    }
+
+    fn menu_open(
+        &self,
+        process: ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        crate::system::wait::menu_open(&process, deadline)
     }
 
     fn resolve_window_strict(

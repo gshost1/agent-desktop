@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 mod cursor;
+mod menu_seeding;
 mod options;
 mod session_scope;
 mod wait_selector;

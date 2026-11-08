@@ -1,10 +1,11 @@
 use agent_desktop_core::{
     ActionResult, AdapterError, AdapterSession, AppInfo, Deadline, DismissAllNotificationsRequest,
     DismissNotificationRequest, DisplayInfo, ImageBuffer, InteractionLease, InteractionPolicy,
-    KeyCombo, NotificationActionRequest, NotificationFilter, NotificationInfo, ObservationOps,
-    OperationReport, PermissionReport, ProcessIdentity, ScreenshotTarget, SessionAffinity,
-    SignalBaseline, SignalFilter, SnapshotSurface, SystemOps, WindowFilter, WindowInfo, WindowOp,
-    system::launch_options::LaunchOptions, system::process_state::ProcessState,
+    KeyCombo, MenuWait, NotificationActionRequest, NotificationFilter, NotificationInfo,
+    ObservationOps, OperationReport, PermissionReport, ProcessIdentity, ScreenshotTarget,
+    SessionAffinity, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps, WindowFilter,
+    WindowInfo, WindowOp, system::launch_options::LaunchOptions,
+    system::process_state::ProcessState,
 };
 
 use crate::adapter::WindowsAdapter;
@@ -288,10 +289,18 @@ impl SystemOps for WindowsAdapter {
     fn wait_for_menu(
         &self,
         process: ProcessIdentity,
-        open: bool,
+        wait: MenuWait,
         deadline: Deadline,
     ) -> Result<(), AdapterError> {
-        crate::system::wait::wait_for_menu(process, open, deadline)
+        crate::system::wait::wait_for_menu(process, wait, deadline)
+    }
+
+    fn menu_open(
+        &self,
+        process: ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        crate::system::wait::menu_open(&process, deadline)
     }
 
     /// The other half of `wait`'s baseline surface: the single-pass

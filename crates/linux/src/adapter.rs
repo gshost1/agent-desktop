@@ -267,10 +267,7 @@ impl LinuxAdapter {
         request: ActionRequest,
         lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
-        let target = crate::tree::atspi_element(handle)
-            .ok()
-            .map(|element| element.pid());
-        let result = match crate::system::tray::target_of(handle) {
+        match crate::system::tray::target_of(handle) {
             Some(target) => crate::system::tray::execute(target, request, lease),
             None => {
                 let outcome = crate::tree::atspi_element(handle)
@@ -284,9 +281,7 @@ impl LinuxAdapter {
                     None => crate::actions::execute_action(self.bus(), handle, request, lease),
                 }
             }
-        };
-        crate::system::interaction::action_clock::mark_outcome(target, &result);
-        result
+        }
     }
 }
 

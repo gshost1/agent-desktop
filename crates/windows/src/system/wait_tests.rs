@@ -57,6 +57,16 @@ fn deadline(timeout_ms: u64) -> Deadline {
     Deadline::after(timeout_ms).expect("bounded deadline")
 }
 
+fn opened() -> MenuWait {
+    MenuWait::opened()
+}
+
+/// A closed wait whose opener grace is over: a plain closed-state poll.
+fn closed() -> MenuWait {
+    let started = Instant::now().checked_sub(agent_desktop_core::MENU_OPENER_GRACE);
+    MenuWait::closed(started.expect("monotonic clock"))
+}
+
 fn identity_for(pid: ProcessId) -> ProcessIdentity {
     crate::system::fixture::live_identity::live_process_identity(pid)
 }
@@ -73,7 +83,7 @@ fn open_true_returns_ok_once_the_fixtures_menu_opens_shortly_after_the_wait_star
 
     let (sender, receiver) = channel();
     thread::spawn(move || {
-        let result = wait_for_menu(identity, true, deadline(TRANSITION_DEADLINE_MS));
+        let result = wait_for_menu(identity, opened(), deadline(TRANSITION_DEADLINE_MS));
         let _ = sender.send(result);
     });
 
@@ -112,7 +122,7 @@ fn open_false_waits_and_returns_ok_once_the_already_open_menu_is_dismissed() {
 
     let (sender, receiver) = channel();
     thread::spawn(move || {
-        let result = wait_for_menu(identity, false, deadline(TRANSITION_DEADLINE_MS));
+        let result = wait_for_menu(identity, closed(), deadline(TRANSITION_DEADLINE_MS));
         let _ = sender.send(result);
     });
 
@@ -130,33 +140,6 @@ fn open_false_waits_and_returns_ok_once_the_already_open_menu_is_dismissed() {
     assert!(fixture.wait_for_menu_state(false, STATE_TIMEOUT));
 }
 
-/// Uses a poll-count assertion rather than an elapsed-time one so the
-/// property holds regardless of host speed: the predicate is read exactly
-/// once when the requested state already holds, proving the deadline is
-/// consulted only after that first read rather than gating it.
-#[test]
-fn already_in_the_requested_state_returns_immediately_reading_the_predicate_once() {
-    bootstrap();
-    let _app_name_scope = FIXTURE_APP_NAME_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let fixture = MenuFixture::spawn().expect("the menu fixture starts");
-    let identity = identity_for(ProcessId::from(fixture.process_id()));
-    poll_calls::take();
-
-    let result = wait_for_menu(identity, false, deadline(5_000));
-
-    assert!(
-        result.is_ok(),
-        "the menu is already closed, so the wait must succeed without polling twice"
-    );
-    assert_eq!(
-        poll_calls::take(),
-        1,
-        "the predicate must be read exactly once when the state already matches"
-    );
-}
-
 #[test]
 fn a_menu_that_never_transitions_times_out_with_direction_specific_platform_detail() {
     bootstrap();
@@ -167,7 +150,7 @@ fn a_menu_that_never_transitions_times_out_with_direction_specific_platform_deta
     let never_opens = MenuFixture::spawn().expect("the menu fixture starts");
     let open_identity = identity_for(ProcessId::from(never_opens.process_id()));
 
-    let open_error = wait_for_menu(open_identity, true, deadline(400))
+    let open_error = wait_for_menu(open_identity, opened(), deadline(400))
         .expect_err("a menu that never opens must time out");
 
     let never_closes = MenuFixture::spawn().expect("the menu fixture starts");
@@ -176,7 +159,7 @@ fn a_menu_that_never_transitions_times_out_with_direction_specific_platform_deta
     thread::sleep(SETTLE);
     let close_identity = identity_for(ProcessId::from(never_closes.process_id()));
 
-    let close_error = wait_for_menu(close_identity, false, deadline(400))
+    let close_error = wait_for_menu(close_identity, closed(), deadline(400))
         .expect_err("a menu that never closes must time out");
     never_closes.dismiss_context_menu();
     assert!(never_closes.wait_for_menu_state(false, STATE_TIMEOUT));
@@ -220,7 +203,7 @@ fn a_target_that_exits_mid_wait_returns_stale_ref_not_a_satisfied_wait_or_a_time
 
     let (sender, receiver) = channel();
     thread::spawn(move || {
-        let result = wait_for_menu(identity, true, deadline(10_000));
+        let result = wait_for_menu(identity, opened(), deadline(10_000));
         let _ = sender.send(result);
     });
 
@@ -251,7 +234,7 @@ fn the_poll_loop_does_not_spin_over_a_fixed_timeout() {
     let identity = identity_for(ProcessId::from(fixture.process_id()));
     poll_calls::take();
 
-    let result = wait_for_menu(identity, true, deadline(500));
+    let result = wait_for_menu(identity, opened(), deadline(500));
 
     result.expect_err("a menu that never opens must time out rather than spin forever");
     let polls = poll_calls::take();
@@ -319,7 +302,7 @@ fn a_non_timeout_predicate_error_propagates_on_the_first_poll_without_spinning_t
     ));
 
     let started = Instant::now();
-    let result = wait_for_menu(identity, true, Deadline::after(10_000).expect("deadline"));
+    let result = wait_for_menu(identity, opened(), deadline(10_000));
 
     let error = result.expect_err("a non-Timeout predicate error must propagate, not be absorbed");
     assert_eq!(error.code, ErrorCode::AppUnresponsive);
@@ -358,12 +341,8 @@ fn an_evaluation_error_surfaces_as_stale_ref_when_the_target_is_gone_and_unchang
         ErrorCode::AppUnresponsive,
         "The target process could not be found",
     ));
-    let alive = wait_for_menu(
-        identity.clone(),
-        true,
-        Deadline::after(10_000).expect("deadline"),
-    )
-    .expect_err("a non-Timeout predicate error must propagate");
+    let alive = wait_for_menu(identity.clone(), opened(), deadline(10_000))
+        .expect_err("a non-Timeout predicate error must propagate");
     assert_eq!(
         alive.code,
         ErrorCode::AppUnresponsive,
@@ -379,7 +358,7 @@ fn an_evaluation_error_surfaces_as_stale_ref_when_the_target_is_gone_and_unchang
         ErrorCode::AppUnresponsive,
         "The target process could not be found",
     ));
-    let gone = wait_for_menu(identity, true, Deadline::after(10_000).expect("deadline"))
+    let gone = wait_for_menu(identity, opened(), deadline(10_000))
         .expect_err("a target that exited mid-read must not report a satisfied wait");
     assert_eq!(
         gone.code,
@@ -393,3 +372,6 @@ mod expiry_detail_tests;
 
 #[path = "wait_exit_confirmation_tests.rs"]
 mod exit_confirmation_tests;
+
+#[path = "wait_grace_tests.rs"]
+mod grace_tests;
