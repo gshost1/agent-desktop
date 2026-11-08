@@ -49,6 +49,7 @@ fn artifacts_full_captures_pre_and_post_pngs() {
 #[test]
 fn artifact_capture_budget_supports_deadline_bound_screenshot_backends() {
     let (_home, _lock) = setup_artifacts_test();
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let manifest = artifacts_session();
     let context = CommandContext::new(Some(manifest.id.clone()), None, false).unwrap();
     run_ref_action(&context, &deadline_png_adapter(250), 42).unwrap();
