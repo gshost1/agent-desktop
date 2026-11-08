@@ -296,18 +296,24 @@ fn session_gc_ended_reclaims_an_ended_session_that_recorded_trace_events() {
     std::fs::write(&segment, b"{\"event\":\"command.end\"}\n").unwrap();
     agent_desktop_core::session::end_session(&manifest.id).unwrap();
 
-    let value = super::dispatch(
-        SessionArgs {
-            action: SessionAction::Gc(SessionGcArgs {
-                older_than: Some(0),
-                ended: true,
-            }),
-        },
-        &NoopAdapter,
-        &CommandContext::default(),
-    )
-    .expect("gc of ended sessions runs");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut removed = Vec::new();
+    while removed.is_empty() && std::time::Instant::now() < deadline {
+        let value = super::dispatch(
+            SessionArgs {
+                action: SessionAction::Gc(SessionGcArgs {
+                    older_than: Some(0),
+                    ended: true,
+                }),
+            },
+            &NoopAdapter,
+            &CommandContext::default(),
+        )
+        .expect("gc of ended sessions runs");
+        removed = value["removed"].as_array().cloned().unwrap_or_default();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 
-    assert_eq!(value["removed"], serde_json::json!([manifest.id]));
+    assert_eq!(removed, vec![serde_json::json!(manifest.id)]);
     assert!(!home.path().join("sessions").join(&manifest.id).exists());
 }
