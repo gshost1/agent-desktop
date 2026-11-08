@@ -5,8 +5,10 @@ use agent_desktop_core::{
 use crate::cli::Commands;
 
 mod command_effect;
+mod preflight_budget;
 
 pub(crate) use command_effect::CommandEffect;
+pub(crate) use preflight_budget::preflight_deadline;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PermissionNeed {
