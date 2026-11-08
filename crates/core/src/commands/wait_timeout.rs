@@ -28,6 +28,24 @@ pub(crate) fn menu(mut error: AdapterError, timeout_ms: u64) -> AppError {
     AppError::Adapter(error)
 }
 
+/// A download wait that ran out of time keeps the adapter's details, moves
+/// its kind to `cause`, and carries the wait's timeout shape.
+pub(crate) fn download(mut error: AdapterError, timeout_ms: u64) -> AppError {
+    if error.code == ErrorCode::Timeout {
+        let details = error.details.get_or_insert_with(|| json!({}));
+        if !details.is_object() {
+            *details = json!({ "adapter_details": details.take() });
+        }
+        if let Some(cause) = details.get("kind").cloned() {
+            details["cause"] = cause;
+        }
+        details["kind"] = json!("wait_timeout");
+        details["predicate"] = json!("download");
+        details["timeout_ms"] = json!(timeout_ms);
+    }
+    AppError::Adapter(error)
+}
+
 /// Builds the wait-loop TIMEOUT error. Every payload carries
 /// `kind: "wait_timeout"` so agents can discriminate it from the chain
 /// deadline TIMEOUT schema (`kind: "chain_deadline"`) without sniffing
