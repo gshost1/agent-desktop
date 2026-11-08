@@ -13,6 +13,7 @@ use crate::input::clipboard::owner::owner_files;
 use crate::input::clipboard::owner::owner_record::start_ticks_of;
 use crate::input::clipboard::test_nonce::test_nonce;
 use crate::input::clipboard::x11_read::Fault;
+use crate::input::test_scratch::Scratch;
 
 const DISPLAY: &str = ":77";
 const WINDOW: u32 = 4242;
@@ -59,15 +60,16 @@ impl SelectionServer for FakeServer {
 }
 
 struct World {
-    root: PathBuf,
+    root: Scratch,
     records: PathBuf,
     nonce: String,
 }
 
 impl World {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("ad-setclear-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = Scratch::adopt(
+            std::env::temp_dir().join(format!("ad-setclear-{name}-{}", std::process::id())),
+        );
         let records = root.join("clipboard");
         fs::create_dir_all(&records).expect("a record directory");
         fs::set_permissions(&records, fs::Permissions::from_mode(0o700)).expect("private");

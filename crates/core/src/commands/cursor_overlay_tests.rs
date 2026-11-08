@@ -9,6 +9,7 @@ fn session_and_overlay_responses_show_portable_activation_guidance() {
         name: None,
         no_trace: false,
         screenshots: false,
+        cursor_overlay: None,
     })
     .expect("session start");
     let id = started["session_id"].as_str().expect("session id");
