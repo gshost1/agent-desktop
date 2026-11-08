@@ -11,7 +11,7 @@ const DRAIN_STEP: Duration = Duration::from_millis(10);
 struct FocusAdapter {
     windows: Vec<WindowInfo>,
     focused_windows: Vec<WindowInfo>,
-    focused_window_calls: Mutex<u32>,
+    read_budgets: Mutex<Vec<Duration>>,
     read_error: Option<ErrorCode>,
     focus_error: Option<AdapterError>,
     drains_lease: bool,
@@ -23,7 +23,7 @@ impl FocusAdapter {
         Self {
             windows: vec![target.clone()],
             focused_windows: focused,
-            focused_window_calls: Mutex::new(0),
+            read_budgets: Mutex::new(Vec::new()),
             read_error: None,
             focus_error: None,
             drains_lease: false,
@@ -31,8 +31,8 @@ impl FocusAdapter {
         }
     }
 
-    fn reads(&self) -> u32 {
-        *self.focused_window_calls.lock().unwrap()
+    fn reads(&self) -> usize {
+        self.read_budgets.lock().unwrap().len()
     }
 }
 
@@ -42,11 +42,15 @@ impl ObservationOps for FocusAdapter {
         filter: &WindowFilter,
         _deadline: crate::Deadline,
     ) -> Result<Vec<WindowInfo>, AdapterError> {
-        if filter.focused_only {
-            Ok(self.focused_windows.clone())
-        } else {
-            Ok(self.windows.clone())
+        if !filter.focused_only {
+            return Ok(self.windows.clone());
         }
+        Ok(self
+            .focused_windows
+            .iter()
+            .filter(|window| filter.app.as_ref().is_none_or(|app| &window.app == app))
+            .cloned()
+            .collect())
     }
 }
 
@@ -75,9 +79,9 @@ impl SystemOps for FocusAdapter {
         &self,
         deadline: crate::Deadline,
     ) -> Result<Option<WindowInfo>, AdapterError> {
+        self.read_budgets.lock().unwrap().push(deadline.remaining());
         crate::wait::deadline::sleep(self.read_cost);
         deadline.ensure_remaining()?;
-        *self.focused_window_calls.lock().unwrap() += 1;
         match &self.read_error {
             Some(ErrorCode::PlatformNotSupported) => {
                 Err(AdapterError::not_supported("focused_window"))
@@ -112,6 +116,21 @@ fn dialog() -> WindowInfo {
     dialog
 }
 
+fn foreign() -> WindowInfo {
+    let mut foreign = window("x1", true);
+    foreign.app = "Terminal".into();
+    foreign.pid = crate::ProcessId::new(7);
+    foreign.process_instance = Some("other-instance".into());
+    foreign
+}
+
+fn second_instance() -> WindowInfo {
+    let mut second = window("w9", true);
+    second.pid = crate::ProcessId::new(43);
+    second.process_instance = Some("second-instance".into());
+    second
+}
+
 fn by_id(id: &str) -> FocusWindowArgs {
     FocusWindowArgs {
         window_id: Some(id.into()),
@@ -129,6 +148,7 @@ fn reports_focused_window_after_os_confirms_focus() {
 
     assert_eq!(value["focused"]["id"], "w1");
     assert_eq!(value["focused"]["is_focused"], true);
+    assert_eq!(value["focus_observed"], true);
     assert_eq!(adapter.reads(), 1);
 }
 
@@ -144,6 +164,8 @@ fn a_late_adapter_confirmation_is_a_focused_window() {
 
     assert_eq!(value["focused"]["id"], "w1");
     assert_eq!(value["focused"]["is_focused"], true);
+    assert_eq!(value["focus_observed"], false);
+    assert_eq!(adapter.reads(), 1);
 }
 
 #[test]
@@ -155,6 +177,33 @@ fn a_modal_dialog_seen_by_the_follow_up_read_is_reported_as_focused() {
 
     assert_eq!(value["focused"]["id"], "d1");
     assert_eq!(value["focused"]["title"], "Save changes?");
+    assert_eq!(value["focus_observed"], true);
+}
+
+#[test]
+fn a_window_of_another_process_seen_by_the_follow_up_read_is_not_reported() {
+    let target = window("w1", false);
+    let adapter = FocusAdapter::new(&target, vec![foreign()]);
+
+    let value = execute(by_id(&target.id), &adapter).unwrap();
+
+    assert_eq!(value["focused"]["id"], "w1");
+    assert_eq!(value["focus_observed"], false);
+    assert_eq!(adapter.reads(), 1);
+}
+
+#[test]
+fn the_follow_up_read_is_bounded_after_a_confirmed_focus() {
+    let _clock = VirtualClock::freeze();
+    let target = window("w1", false);
+    let adapter = FocusAdapter::new(&target, vec![window("w1", true)]);
+
+    execute(by_id(&target.id), &adapter).unwrap();
+
+    assert_eq!(
+        *adapter.read_budgets.lock().unwrap(),
+        vec![Duration::from_millis(750)]
+    );
 }
 
 #[test]
@@ -167,6 +216,7 @@ fn a_failed_follow_up_read_reports_the_target_the_adapter_confirmed() {
 
     assert_eq!(value["focused"]["id"], "w1");
     assert_eq!(value["focused"]["is_focused"], true);
+    assert_eq!(value["focus_observed"], false);
     assert_eq!(adapter.reads(), 1);
 }
 
@@ -179,6 +229,7 @@ fn a_follow_up_read_that_sees_no_window_reports_the_confirmed_target() {
 
     assert_eq!(value["focused"]["id"], "w1");
     assert_eq!(value["focused"]["is_focused"], true);
+    assert_eq!(value["focus_observed"], false);
 }
 
 #[test]
@@ -204,12 +255,13 @@ fn an_adapter_focus_error_passes_through_unchanged() {
 #[test]
 fn falls_back_to_focused_window_list_when_direct_observation_is_unsupported() {
     let target = window("w1", false);
-    let mut adapter = FocusAdapter::new(&target, vec![window("w1", true)]);
+    let mut adapter = FocusAdapter::new(&target, vec![foreign(), second_instance(), dialog()]);
     adapter.read_error = Some(ErrorCode::PlatformNotSupported);
 
     let value = execute(by_id(&target.id), &adapter).unwrap();
 
-    assert_eq!(value["focused"]["id"], "w1");
+    assert_eq!(value["focused"]["id"], "d1");
+    assert_eq!(value["focus_observed"], true);
     assert_eq!(adapter.reads(), 1);
 }
 

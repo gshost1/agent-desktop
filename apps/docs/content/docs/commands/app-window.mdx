@@ -240,7 +240,12 @@ agent-desktop focus-window [--window-id ID] [--app NAME] [--title TEXT]
   </tbody>
 </table>
 
-Pass at least one flag; with none the command fails with `INVALID_ARGS`. `data.focused` is the window one follow-up read sees holding focus, with the same fields as a `list-windows` entry. When a modal dialog holds the focus, `focused` is the dialog, so read `focused.title` before you act. When that read fails, sees no focused window, or the deadline has run out, `focused` is the window you named, as the platform confirmed it.
+Pass at least one flag; with none the command fails with `INVALID_ARGS`. After the platform confirms the focus, one follow-up read, bounded at 750 ms, looks for the focused window. `data.focused` has the same fields as a `list-windows` entry:
+
+- When the read sees the window you named, or another window of the same process such as a dialog, `focused` is that window and `data.focus_observed` is `true`. Read `focused.title` before you act.
+- When the read fails, sees no focused window, sees a window of another process, or the deadline has run out, `focused` is the window you named with `is_focused: true`, as the platform confirmed it, and `focus_observed` is `false`. Its other fields come from the window list read before the focus.
+
+A modal dialog behaves differently per platform. On Linux, a window its application's modal dialog blocks fails with `ACTION_FAILED`, cause `blocked_by_modal_dialog`, and `details.dialog` names the dialog; focus the dialog instead. On other platforms the platform can confirm the window while its dialog holds the focus, and `focused` is then the dialog.
 
 ```json
 {
@@ -253,12 +258,13 @@ Pass at least one flag; with none the command fails with `INVALID_ARGS`. `data.f
       "id": "w-1.10-org-a11y-atspi-accessible-162",
       "is_focused": true,
       "title": "Untitled Document 1 - gedit"
-    }
+    },
+    "focus_observed": true
   }
 }
 ```
 
-The example above is trimmed to four fields. Errors: `WINDOW_NOT_FOUND` when nothing matches, `AMBIGUOUS_TARGET` when several windows still match, and `ACTION_FAILED` when the OS never reports the window focused. The command takes the foreground but does not need `--headed`.
+The example above is trimmed to four fields. Errors: `WINDOW_NOT_FOUND` when nothing matches, `AMBIGUOUS_TARGET` when several windows still match, and the platform's own error, usually `ACTION_FAILED` with a `details.cause`, when it cannot confirm the window focused. The command takes the foreground but does not need `--headed`.
 
 Platform limits: Linux needs X11. See [Linux](/desktop/platforms/linux) and [Windows](/desktop/platforms/windows).
 
