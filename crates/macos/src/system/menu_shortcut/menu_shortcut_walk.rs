@@ -22,6 +22,8 @@ struct Pending {
     element: AXElement,
     depth: u8,
     menu: Option<String>,
+    parent: Option<String>,
+    position: usize,
 }
 
 /// Walks the application's menu bar breadth-first, one batched read and one
@@ -47,6 +49,8 @@ pub(crate) fn scan_menu_bar(
         element: menu_bar,
         depth: 0,
         menu: None,
+        parent: None,
+        position: 1,
     }]);
     let mut walk = MenuWalk::default();
     while let Some(pending) = queue.pop_front() {
@@ -63,7 +67,7 @@ pub(crate) fn scan_menu_bar(
         }
         let started = Instant::now();
         let read = read_menu_node(&pending.element, &names, read_slice(lookup, pending.depth));
-        walk.note_read(started, || unread_label(pending.menu.as_deref(), None));
+        walk.note_read(started, || read_label(&pending, None));
         let node = match read {
             Ok(node) => node,
             Err(error) => {
@@ -92,9 +96,7 @@ pub(crate) fn scan_menu_bar(
         let here = Pending { menu, ..pending };
         let started = Instant::now();
         let read = children(&here.element, here.depth, read_slice(lookup, here.depth));
-        walk.note_read(started, || {
-            unread_label(here.menu.as_deref(), node.title.as_deref())
-        });
+        walk.note_read(started, || read_label(&here, node.title.as_deref()));
         let children = match read {
             Ok(children) => children,
             Err(error) => {
@@ -102,11 +104,19 @@ pub(crate) fn scan_menu_bar(
                 continue;
             }
         };
-        queue.extend(children.into_iter().map(|child| Pending {
-            element: child,
-            depth: here.depth.saturating_add(1),
-            menu: here.menu.clone(),
-        }));
+        let parent = node.title.filter(|title| !title.is_empty());
+        queue.extend(
+            children
+                .into_iter()
+                .enumerate()
+                .map(|(index, child)| Pending {
+                    element: child,
+                    depth: here.depth.saturating_add(1),
+                    menu: here.menu.clone(),
+                    parent: parent.clone(),
+                    position: index + 1,
+                }),
+        );
     }
     Ok(MenuScan::Complete(walk))
 }
@@ -141,13 +151,22 @@ fn step_over(
             .to_string();
         return Err(incomplete_menu_error(&kind, pending, walk));
     }
-    walk.unread_menus
-        .push(unread_label(pending.menu.as_deref(), title));
+    walk.unread_menus.push(read_label(pending, title));
     Ok(())
 }
 
-pub(crate) fn unread_label(menu: Option<&str>, item: Option<&str>) -> String {
-    format!("{} > {}", menu.unwrap_or("?"), item.unwrap_or("?"))
+/// Names a read by its top-level menu, the item that holds it when that is
+/// not the menu itself, and its own title, or its position among its siblings
+/// when the read that would return the title is the one that failed.
+fn read_label(pending: &Pending, title: Option<&str>) -> String {
+    let menu = pending.menu.as_deref().unwrap_or("menu bar");
+    let item = title
+        .filter(|title| !title.is_empty())
+        .map_or_else(|| format!("item {}", pending.position), str::to_string);
+    match pending.parent.as_deref() {
+        Some(parent) if parent != menu => format!("{menu} > {parent} > {item}"),
+        _ => format!("{menu} > {item}"),
+    }
 }
 
 fn menu_match(element: &AXElement, node: &MenuNode, menu: Option<String>) -> MenuMatch {

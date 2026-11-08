@@ -5,7 +5,46 @@ fn pending(depth: u8, menu: Option<&str>) -> Pending {
         element: crate::tree::element_for_pid(i32::MAX),
         depth,
         menu: menu.map(str::to_string),
+        parent: None,
+        position: 4,
     }
+}
+
+fn nested(menu: &str, parent: &str, position: usize) -> Pending {
+    Pending {
+        parent: Some(parent.into()),
+        position,
+        ..pending(5, Some(menu))
+    }
+}
+
+#[test]
+fn a_read_is_named_by_its_menu_its_holder_and_its_title_or_position() {
+    assert_eq!(read_label(&pending(3, Some("File")), None), "File > item 4");
+    assert_eq!(
+        read_label(&pending(3, Some("File")), Some("")),
+        "File > item 4"
+    );
+    assert_eq!(
+        read_label(&pending(3, Some("Edit")), Some("AutoFill")),
+        "Edit > AutoFill"
+    );
+    assert_eq!(
+        read_label(&nested("File", "Open Recent", 2), None),
+        "File > Open Recent > item 2"
+    );
+    assert_eq!(
+        read_label(&nested("Edit", "Edit", 6), Some("Speech")),
+        "Edit > Speech"
+    );
+    assert_eq!(read_label(&pending(1, None), None), "menu bar > item 4");
+}
+
+#[test]
+fn an_item_whose_own_read_failed_is_recorded_by_position() {
+    let mut walk = MenuWalk::default();
+    step_over(busy(), &nested("Format", "Font", 3), None, &mut walk).unwrap();
+    assert_eq!(walk.unread_menus, ["Format > Font > item 3"]);
 }
 
 fn busy() -> AdapterError {
