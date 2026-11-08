@@ -65,15 +65,17 @@ impl Calls {
         }
     }
 
-    /// Cancels `id`; an unknown id is ignored. A started child is stopped on its own thread by `terminate`.
-    pub(crate) fn cancel(&self, id: &Value) {
+    /// Cancels `id`; an unknown id is ignored. A started child is stopped on its own thread by `terminate`,
+    /// whose handle is returned so a caller can wait until that child has been reaped.
+    pub(crate) fn cancel(&self, id: &Value) -> Option<std::thread::JoinHandle<()>> {
         let slot = self
             .lock()
             .get_mut(&id.to_string())
             .map(|slot| std::mem::replace(slot, Slot::Cancelled));
         if let Some(Slot::Running(child)) = slot {
-            std::thread::spawn(move || terminate(child));
+            return Some(std::thread::spawn(move || terminate(child)));
         }
+        None
     }
 
     /// Releases `id` once its call has returned; false when it was cancelled, so no response is due.
