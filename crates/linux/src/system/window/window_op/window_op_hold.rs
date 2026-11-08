@@ -1,22 +1,31 @@
+use super::confirmation::Confirmation;
 use super::*;
 
+/// Reads the window again a full confirmation pause after `first` matched,
+/// inside the deadline. This is the one place the pause and its deadline rule
+/// live, for a move, a resize and a maximize alike.
 pub(super) fn confirm_rectangle(
     world: &impl OpWorld,
     client: u32,
     first: WindowFacts,
     deadline: Deadline,
-) -> (bool, Option<WindowFacts>) {
+) -> Confirmation {
     if deadline.remaining() < CONFIRM_PAUSE {
-        return (false, Some(first));
+        return Confirmation::OutOfTime(first);
     }
     std::thread::sleep(CONFIRM_PAUSE);
-    let next = world.facts(client).ready();
-    let stable = !deadline.is_expired() && next.is_some_and(|next| next.client == first.client);
-    (stable, next)
+    match world.facts(client).ready() {
+        None => Confirmation::Unreadable,
+        Some(next) if deadline.is_expired() => Confirmation::OutOfTime(next),
+        Some(next) if next.client == first.client => Confirmation::Stable(next),
+        Some(next) => Confirmation::Changed(next),
+    }
 }
 
 /// Puts the client at `place`, with a second try through a place 40 px away
 /// where the manager skips a move to the place it believes the window holds.
+/// A window that reached the place but could not be confirmed there is not
+/// nudged away from it.
 pub(super) fn move_client(
     world: &impl OpWorld,
     win: &WindowInfo,
@@ -30,19 +39,26 @@ pub(super) fn move_client(
         ControlRead::Ready(facts)
             if (facts.client.x - place.x).abs() <= POSITION_TOLERANCE
                 && (facts.client.y - place.y).abs() <= POSITION_TOLERANCE
-                && confirm_rectangle(world, client, facts, deadline).0
+                && matches!(confirm_rectangle(world, client, facts, deadline), Confirmation::Stable(_))
     );
-    if !there && apply(world, win, client, &back, deadline).is_err() {
-        let _ = apply(
-            world,
-            win,
-            client,
-            &move_to(place.x + NUDGE, place.y),
-            deadline,
-        );
-        apply(world, win, client, &back, deadline)?;
+    if there {
+        return Ok(());
     }
-    Ok(())
+    match attempt(world, win, client, &back, deadline) {
+        Ok(reached @ (Settled::Held(_) | Settled::Unconfirmed(_))) => {
+            outcome(world, client, &back, reached, deadline)
+        }
+        _ => {
+            let _ = apply(
+                world,
+                win,
+                client,
+                &move_to(place.x + NUDGE, place.y),
+                deadline,
+            );
+            apply(world, win, client, &back, deadline)
+        }
+    }
 }
 
 /// The place to give back to a window whose live state is `live`. A record
@@ -180,7 +196,7 @@ pub(super) fn confirm_maximized(
     let Some(RememberedPlace::Pending { before }) = world.remembered(win, client) else {
         return;
     };
-    if let (true, Some(facts)) = confirm_rectangle(world, client, first, deadline)
+    if let Confirmation::Stable(facts) = confirm_rectangle(world, client, first, deadline)
         && facts.maximized_vertical
         && facts.maximized_horizontal
     {

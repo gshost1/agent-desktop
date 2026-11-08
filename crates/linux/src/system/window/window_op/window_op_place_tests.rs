@@ -87,7 +87,9 @@ fn skips_a_move_to_the_place_it_believes_current(written: &[WindowWrite]) -> Win
 #[test]
 fn a_manager_that_skips_a_move_to_the_place_it_believes_is_current_is_nudged_away_and_back() {
     let mut world = World::showing(maximized()).keeping(maximized_record());
-    world.reaction = Some(skips_a_move_to_the_place_it_believes_current);
+    world.reaction = Some(|written: &[WindowWrite]| {
+        ControlRead::Ready(skips_a_move_to_the_place_it_believes_current(written))
+    });
     let deadline = Deadline::after(2_000).expect("a deadline builds");
     run(&world, &window(), &WindowOp::Restore, deadline).expect("a restore");
     let writes = world.writes.borrow();
