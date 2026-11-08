@@ -17,6 +17,7 @@ import contextlib
 import json
 import os
 import shutil
+import socket
 import signal
 import subprocess
 import sys
@@ -27,7 +28,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from tasks import TASKS, verify  # noqa: E402
+from tasks import TASKS, real_expectations, verify  # noqa: E402
 from lock import release_lock, take_lock  # noqa: E402
 from strays import collect_strays  # noqa: E402
 
@@ -37,6 +38,24 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 def http_json(url):
     with urllib.request.urlopen(url, timeout=5) as r:
         return json.loads(r.read())
+
+
+def free_port():
+    """A port nothing listens on now; each run gets its own so a Chrome still releasing the last one cannot answer for it."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def listener_pids(port):
+    out = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True).stdout
+    return {int(p) for p in out.split()}
+
+
+def endpoint_is_this_runs(port, profile):
+    """True when every process listening on `port` runs on `profile`."""
+    listening = listener_pids(port)
+    return bool(listening) and listening <= set(profile_processes(profile))
 
 
 def launch_chrome(profile, port, downloads, extra):
@@ -55,9 +74,13 @@ def launch_chrome(profile, port, downloads, extra):
             return proc
         try:
             http_json(f"http://127.0.0.1:{port}/json/version")
-            return proc
         except Exception:
             time.sleep(0.3)
+            continue
+        if proc.poll() is None and endpoint_is_this_runs(port, profile):
+            return proc
+        stop_chrome(proc, profile)
+        raise RuntimeError(f"port {port} is answered by a process that is not this run's Chrome")
     stop_chrome(proc, profile)
     raise RuntimeError("chrome devtools endpoint never came up (a startup dialog blocks it)")
 
@@ -112,7 +135,7 @@ def launch_chrome_ad(ad, home, profile, downloads, extra):
 
 
 def profile_processes(profile):
-    out = subprocess.run(["pgrep", "-f", f"--user-data-dir={profile}"], capture_output=True, text=True).stdout
+    out = subprocess.run(["pgrep", "-f", "--", f"--user-data-dir={profile}"], capture_output=True, text=True).stdout
     return [int(p) for p in out.split()]
 
 
@@ -242,16 +265,32 @@ def summarize_stream(lines):
             "snapshot_tokens_est": snap_chars // 4, "snapshot_calls": snap_calls, "final": final}
 
 
+def endpoint_port(home):
+    try:
+        return json.loads((home / "web" / "endpoints.json").read_text())["entries"][0]["port"]
+    except (OSError, ValueError, KeyError, IndexError):
+        return None
+
+
 def run_one(args, task, channel, run_idx, out):
     seed = 1000 * (run_idx + 1) + sum(map(ord, task["id"] + channel))
     exp = http_json(f"{args.base}/__reset?seed={seed}")
+    try:
+        exp.update(real_expectations(task["id"]))
+    except Exception as e:
+        row = {"task": task["id"], "channel": channel, "run": run_idx, "model": args.model, "ok": False,
+               "why": f"expected value unavailable: {e}"}
+        with open(out / "runs.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+        print(json.dumps(row), flush=True)
+        return row
     run_id = f"{task['id']}-{channel}-{run_idx}"
     work = out / "work" / run_id
     shutil.rmtree(work, ignore_errors=True)
     downloads = work / "downloads"
     downloads.mkdir(parents=True)
     kill_apps(task.get("kill", []))
-    cdp_port = args.cdp_port if channel in ("cdp", "hybrid") else None
+    cdp_port = free_port() if channel in ("cdp", "hybrid") else None
     stack = contextlib.ExitStack()
     try:
         launcher = None
@@ -267,7 +306,8 @@ def run_one(args, task, channel, run_idx, out):
         print(json.dumps(row), flush=True)
         return row
     with stack:
-        ctx = {"base": args.base, "work": str(work), "downloads": str(downloads), "exp": exp, "ad": args.ad}
+        ctx = {"base": args.base, "work": str(work), "downloads": str(downloads), "exp": exp, "ad": args.ad,
+               "cdp_port": cdp_port or endpoint_port(work / "ad-home")}
         prompt = task["prompt"].format(**ctx)
         env = dict(os.environ)
         env["PATH"] = f"{args.bin_dir}:{env['PATH']}"
@@ -327,13 +367,13 @@ def main():
     ap.add_argument("--start-run", type=int, default=0)
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--base", default="http://127.0.0.1:8791")
-    ap.add_argument("--cdp-port", type=int, default=9333)
     ap.add_argument("--bin-dir", required=True, help="folder holding agent-desktop and agent-browser")
     ap.add_argument("--out", default=str(HERE / "results"))
     ap.add_argument("--timeout", type=int, default=900)
     ap.add_argument("--chrome-arg", action="append", default=[])
     ap.add_argument("--lock-title", default="feat/unified-browser bench")
     ap.add_argument("--ab-skills", default="", help="agent-browser skill-data dir from the matching npm package")
+    ap.add_argument("--rotate", action="store_true", help="rotate the channel order by run index")
     ap.add_argument("--keep-lock", action="store_true", help="leave the lock held for a follow-up step in the same slot")
     ap.add_argument("--no-lock", action="store_true", help="only for headless Chrome runs that never touch the desktop")
     args = ap.parse_args()
@@ -354,7 +394,9 @@ def main():
     try:
         for r in range(args.start_run, args.start_run + args.runs):
             for t in tasks:
-                for ch in args.channels.split(","):
+                order = args.channels.split(",")
+                shift = r % len(order) if args.rotate else 0
+                for ch in order[shift:] + order[:shift]:
                     if ch not in t["channels"]:
                         continue
                     run_one(args, t, ch, r, out)

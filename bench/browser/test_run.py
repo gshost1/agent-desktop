@@ -177,3 +177,39 @@ class StopChromeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CdpPortTest(unittest.TestCase):
+    def test_every_run_gets_a_port_nothing_listens_on(self):
+        port = run.free_port()
+        self.assertEqual(run.listener_pids(port), set())
+
+    def test_an_endpoint_answered_by_another_process_is_not_this_runs(self):
+        with mock.patch.object(run, "listener_pids", return_value={11}), \
+                mock.patch.object(run, "profile_processes", return_value=[22, 23]):
+            self.assertFalse(run.endpoint_is_this_runs(9, Path("p")))
+
+    def test_an_endpoint_nobody_listens_on_is_not_this_runs(self):
+        with mock.patch.object(run, "listener_pids", return_value=set()), \
+                mock.patch.object(run, "profile_processes", return_value=[22]):
+            self.assertFalse(run.endpoint_is_this_runs(9, Path("p")))
+
+    def test_an_endpoint_listened_on_only_by_the_runs_processes_is_this_runs(self):
+        with mock.patch.object(run, "listener_pids", return_value={22}), \
+                mock.patch.object(run, "profile_processes", return_value=[22, 23]):
+            self.assertTrue(run.endpoint_is_this_runs(9, Path("p")))
+
+
+class ProfileProcessesTest(unittest.TestCase):
+    def test_the_pattern_is_passed_after_a_double_dash_because_it_starts_with_dashes(self):
+        with mock.patch.object(run.subprocess, "run", return_value=mock.Mock(stdout="")) as called:
+            run.profile_processes(Path("/p"))
+        self.assertEqual(called.call_args.args[0][:3], ["pgrep", "-f", "--"])
+
+    def test_a_running_process_on_the_profile_is_found(self):
+        profile = Path(tempfile.mkdtemp(prefix="pp-test."))
+        self.addCleanup(run.shutil.rmtree, profile, True)
+        child = run.subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", f"--user-data-dir={profile}"])
+        self.addCleanup(child.kill)
+        run.time.sleep(0.5)
+        self.assertIn(child.pid, run.profile_processes(profile))
