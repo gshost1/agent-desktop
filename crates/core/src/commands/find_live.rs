@@ -173,7 +173,7 @@ fn require_complete(resolution: &LocatorResolution) -> Result<(), AppError> {
 
 fn persist_refmap(context: &CommandContext, refmap: &RefMap) -> Result<String, AppError> {
     let store = RefStore::for_session(context.session_id())?;
-    let snapshot_id = store.persist_observed(refmap)?;
+    let snapshot_id = store.save_new_snapshot(refmap)?;
     trace_artifacts::copy_refmap_if_full(context, &store, &snapshot_id, refmap)?;
     Ok(snapshot_id)
 }

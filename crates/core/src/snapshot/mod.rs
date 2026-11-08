@@ -28,7 +28,7 @@ impl SnapshotResult {
     /// Saves the refmap of this already-built result. Whether the walk was
     /// complete does not change how the save is budgeted.
     pub(crate) fn save_refmap(&self, store: &RefStore) -> Result<String, AppError> {
-        store.persist_observed(&self.refmap)
+        store.save_new_snapshot(&self.refmap)
     }
 
     pub(crate) fn bind_snapshot_id(&mut self, snapshot_id: String) {

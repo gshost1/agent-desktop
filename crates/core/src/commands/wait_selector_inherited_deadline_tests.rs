@@ -7,7 +7,7 @@ use super::*;
 /// (`Deadline::after(LOCK_TIMEOUT_MS)`), whose budget collapsed to 0, so the
 /// uncontested lock returned `lock_timeout` and the `?` in `timeout_response`
 /// replaced the intended `wait_timeout` envelope. The fix routes the recovery
-/// write through [`RefStore::persist_observed`] (a detached lock
+/// write through [`RefStore::save_new_snapshot`] (a detached lock
 /// deadline) so the `wait_timeout` envelope — with its `snapshot_id` — is
 /// always built.
 #[test]

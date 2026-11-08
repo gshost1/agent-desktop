@@ -44,18 +44,23 @@ impl RefStore {
         })
     }
 
+    /// Saves an already-observed refmap as a new snapshot and points
+    /// `latest_snapshot_id` at it. This is the one save path for every built
+    /// result, complete or partial.
+    ///
+    /// The write lock is taken under
+    /// [`PersistBudget::DetachedAfterObservation`]: a result built inside its
+    /// command deadline is not thrown away because the deadline ran out before
+    /// the save. The cost is that a save can outlast the command deadline, and
+    /// can wait for a contended lock even when the command still has time left.
+    /// It waits at most `LOCK_TIMEOUT_MS` (2 s) for the lock, then holds it for
+    /// the write and the prune pass. Prune is untimed: it sweeps orphaned temp
+    /// files in the store root, `snapshots/` and the new snapshot's directory,
+    /// lists `snapshots/` once, and only when that holds more than 128 snapshots
+    /// also sweeps and stats every retained directory and removes the oldest
+    /// down to 96 (normally 129 -> 96, so 33 directories).
     pub fn save_new_snapshot(&self, refmap: &RefMap) -> Result<String, AppError> {
-        self.with_write_lock(|| self.save_new_snapshot_unlocked_with_id(refmap))
-    }
-
-    /// Saves an already-observed result as a new snapshot. The write lock is
-    /// taken under [`PersistBudget::DetachedAfterObservation`], so a result
-    /// built inside its command deadline, complete or partial, is not thrown
-    /// away because the deadline ran out before the save.
-    pub(crate) fn persist_observed(&self, refmap: &RefMap) -> Result<String, AppError> {
-        self.with_write_lock_for(PersistBudget::DetachedAfterObservation, || {
-            self.save_new_snapshot_unlocked_with_id(refmap)
-        })
+        self.with_observed_save_lock(|| self.save_new_snapshot_unlocked_with_id(refmap))
     }
 
     fn save_new_snapshot_unlocked_with_id(&self, refmap: &RefMap) -> Result<String, AppError> {
@@ -66,8 +71,10 @@ impl RefStore {
         Ok(snapshot_id)
     }
 
+    /// Saves an already-observed refmap under `snapshot_id`, with the lock
+    /// budget [`save_new_snapshot`](Self::save_new_snapshot) uses.
     pub fn save_snapshot(&self, snapshot_id: &str, refmap: &RefMap) -> Result<(), AppError> {
-        self.with_write_lock(|| self.save_snapshot_unlocked(snapshot_id, refmap))
+        self.with_observed_save_lock(|| self.save_snapshot_unlocked(snapshot_id, refmap))
     }
 
     /// Writes a drill-down's observed subtree back into `snapshot_id` if the
@@ -82,7 +89,7 @@ impl RefStore {
         update: impl FnOnce(&mut RefMap) -> Result<T, AppError>,
     ) -> Result<(T, RefMap), AppError> {
         validate_snapshot_id(snapshot_id)?;
-        self.with_write_lock_for(PersistBudget::DetachedAfterObservation, || {
+        self.with_observed_save_lock(|| {
             let mut current = self.load_snapshot_from_base(&self.base_dir, snapshot_id)?;
             if current.get(expected_ref_id) != Some(expected_entry) {
                 return Err(AppError::Adapter(AdapterError::stale_ref(expected_ref_id)));
@@ -252,15 +259,16 @@ impl RefStore {
     }
 
     fn with_write_lock<T>(&self, f: impl FnOnce() -> Result<T, AppError>) -> Result<T, AppError> {
-        self.with_write_lock_for(PersistBudget::Inherited, f)
+        let _lock = RefStoreLock::acquire(&self.lock_path())?;
+        f()
     }
 
-    fn with_write_lock_for<T>(
+    fn with_observed_save_lock<T>(
         &self,
-        budget: PersistBudget,
         f: impl FnOnce() -> Result<T, AppError>,
     ) -> Result<T, AppError> {
-        let _lock = RefStoreLock::acquire_for(&self.lock_path(), budget)?;
+        let lock_path = self.lock_path();
+        let _lock = RefStoreLock::acquire_for(&lock_path, PersistBudget::DetachedAfterObservation)?;
         f()
     }
 

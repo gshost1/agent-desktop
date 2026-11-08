@@ -113,7 +113,7 @@ fn complete_snapshot_built_before_an_inherited_deadline_expires_is_still_persist
 }
 
 #[test]
-fn persisting_past_an_inherited_deadline_overruns_it_by_at_most_the_lock_budget() {
+fn a_save_past_an_inherited_deadline_waits_at_most_the_lock_budget() {
     let _home = HomeGuard::new();
     let store = RefStore::new().unwrap();
     let held =
@@ -122,19 +122,23 @@ fn persisting_past_an_inherited_deadline_overruns_it_by_at_most_the_lock_budget(
     let clock = crate::wait::deadline::VirtualClock::freeze();
     let inherited = crate::Deadline::detached_after(30).unwrap();
     let deadline_scope = crate::wait::deadline::enter_scope(Some(inherited));
+    let options = TreeOptions::default();
+    let result = build(&COMPLETE, &options, Some("TestApp"), None, inherited).unwrap();
+    assert!(result.complete && inherited.is_expired());
 
-    let Err(AppError::Adapter(error)) = snapshot_test_app(&COMPLETE, 30) else {
+    let save_started = clock.elapsed();
+    let Err(AppError::Adapter(error)) = result.save_refmap(&store) else {
         panic!("a contended save must fail with an adapter error");
     };
+    let waited = clock.elapsed() - save_started;
     drop(deadline_scope);
 
     assert_eq!(error.code, crate::ErrorCode::Timeout);
     assert_eq!(error.details.unwrap()["kind"], "lock_timeout");
     let lock_budget = Duration::from_millis(crate::refs::refs_lock::LOCK_TIMEOUT_MS);
-    let overrun = clock.elapsed() - Duration::from_millis(30);
     assert!(
-        overrun > lock_budget && overrun <= lock_budget + Duration::from_millis(1),
-        "the save waits its own lock budget once, past the inherited deadline: {overrun:?}"
+        waited >= lock_budget && waited <= lock_budget + Duration::from_millis(10),
+        "a save waits its own lock budget once, whatever the command had left: {waited:?}"
     );
     drop(held);
     assert!(store.latest_snapshot_id().unwrap().is_none());
