@@ -7,17 +7,18 @@ use agent_desktop_core::{
 use serde_json::Value;
 
 use self::hold::{
-    confirm_maximized, confirm_rectangle, give_back_place, holds_place, is_resize, keep_for_retry,
-    move_client, recall_place, record_before_maximize,
+    confirm_maximized, give_back_place, holds_place, is_resize, keep_for_retry, move_client,
+    recall_place, record_before_maximize,
 };
 use self::owner::{ensure_owned_after, ensure_owned_before};
 use self::refuse::{no_client, refused, unreadable, unsupported_session, write_failed};
 use self::remembered_place::RememberedPlace;
+use self::settle::settle;
 use self::window_place::PlaceStore;
 use super::window_client::{ClientWorld, client_of};
 use super::window_op::window_op_shadow::{Shadow, to_client, to_visible, visible_of};
 use super::window_op::window_op_verdict::{
-    POLL, POSITION_TOLERANCE, SETTLE_BUDGET, Verdict, judge, observed_of, requested, unverified,
+    POSITION_TOLERANCE, Verdict, observed_of, requested, unverified,
 };
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::focus::focus_cause::Cause;
@@ -157,46 +158,6 @@ fn locate(world: &impl OpWorld, win: &WindowInfo) -> Result<(u32, Shadow), Adapt
         .find(|client| client.id == id)
         .map_or((0, 0, 0, 0), |client| client.shadow);
     Ok((id, shadow))
-}
-
-fn settle(
-    world: &impl OpWorld,
-    client: u32,
-    write: &WindowWrite,
-    deadline: Deadline,
-) -> (Verdict, Option<WindowFacts>) {
-    let limit = deadline.capped(SETTLE_BUDGET);
-    loop {
-        let mut observed = world.facts(client).ready();
-        let at_limit = limit.is_expired();
-        let verdict = match observed {
-            Some(facts) => judge(write, &facts, at_limit),
-            None if at_limit => Verdict::Mismatch,
-            None => Verdict::Pending,
-        };
-        match verdict {
-            Verdict::Satisfied if matches!(write, WindowWrite::MoveResize { .. }) => {
-                if limit.remaining() < CONFIRM_PAUSE {
-                    return (Verdict::Mismatch, observed);
-                }
-                let Some(first) = observed else {
-                    return (Verdict::Mismatch, None);
-                };
-                let (stable, latest) = confirm_rectangle(world, client, first, limit);
-                observed = latest;
-                match observed {
-                    Some(facts) if stable && judge(write, &facts, true) == Verdict::Satisfied => {
-                        return (Verdict::Satisfied, Some(facts));
-                    }
-                    _ if limit.is_expired() => return (Verdict::Mismatch, observed),
-                    _ => {}
-                }
-            }
-            Verdict::Pending => {}
-            _ => return (verdict, observed),
-        }
-        std::thread::sleep(POLL.min(limit.remaining()));
-    }
 }
 
 fn apply(
@@ -383,6 +344,8 @@ mod owner;
 mod refuse;
 #[path = "remembered_place.rs"]
 mod remembered_place;
+#[path = "window_op_settle.rs"]
+mod settle;
 pub(in crate::system) mod window_op_shadow;
 pub(in crate::system) mod window_op_verdict;
 #[path = "window_place.rs"]

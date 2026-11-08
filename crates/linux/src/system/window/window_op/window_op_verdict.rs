@@ -10,11 +10,11 @@ use crate::system::x11::control::window_facts::WindowFacts;
 /// and still count as the request satisfied.
 pub(in crate::system) const POSITION_TOLERANCE: i32 = 2;
 
-/// How long a window manager gets to apply a request before the read-back is
-/// final.
 /// How often a read-back or a wait is repeated.
 pub(in crate::system) const POLL: Duration = Duration::from_millis(25);
 
+/// How long a window manager gets to apply a request before a read-back that
+/// does not match is final.
 pub(in crate::system) const SETTLE_BUDGET: Duration = Duration::from_millis(250);
 
 const MAX_DIMENSION: f64 = 1_000_000.0;
