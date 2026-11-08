@@ -91,27 +91,33 @@ fn a_timed_out_surface_report_leaves_the_result_without_surfaces() {
     assert!(surfaces.is_empty());
 }
 
-fn sheet_and_web_page() -> Result<Vec<SurfaceInfo>, AdapterError> {
-    let mut surfaces = sheet()?;
-    surfaces.push(SurfaceInfo {
-        id: "web:page-1".into(),
-        kind: crate::SnapshotSurface::Web.as_str().into(),
-        title: Some("Example".into()),
-        item_count: None,
-        unclassified: Vec::new(),
-    });
-    Ok(surfaces)
+struct RaisedOnlyAdapter;
+
+impl ObservationOps for RaisedOnlyAdapter {
+    fn list_surfaces(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        panic!("the settled report must not list content surfaces")
+    }
+
+    fn list_raised_surfaces(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        sheet()
+    }
 }
+impl ActionOps for RaisedOnlyAdapter {}
+impl InputOps for RaisedOnlyAdapter {}
+impl SystemOps for RaisedOnlyAdapter {}
 
 #[test]
-fn an_open_web_page_is_not_reported_as_a_surface_the_action_raised() {
-    let adapter = RecordingAdapter {
-        granted: Mutex::new(None),
-        result: sheet_and_web_page,
-    };
-
+fn the_settled_report_reads_only_surfaces_an_action_can_raise() {
     let surfaces = read(
-        &adapter,
+        &RaisedOnlyAdapter,
         process(),
         Deadline::after(5_000).expect("deadline"),
     );

@@ -195,6 +195,17 @@ pub trait ObservationOps: Send + Sync {
         Err(AdapterError::not_supported("list_surfaces"))
     }
 
+    /// The surfaces an action can raise over an application: its sheets,
+    /// menus, popovers and alerts, without content pages an adapter also lists
+    /// as surfaces. An action reports these after it lands.
+    fn list_raised_surfaces(
+        &self,
+        process: crate::ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        self.list_surfaces(process, deadline)
+    }
+
     /// Reads an already-open OS-chrome surface - the Start menu, the taskbar,
     /// the notification area, the Action Center - into the window identity
     /// the observation stack consumes. It only reads what is already up and

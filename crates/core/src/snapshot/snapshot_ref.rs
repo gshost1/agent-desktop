@@ -81,6 +81,7 @@ pub fn run_from_ref_with_context(
         path_prefix,
         observed,
     } = capture;
+    let channel = observed.channel().cloned();
     let capture_proof =
         crate::refs::ref_capture_proof::CaptureProof::new(&observed).rooted_at(&path_prefix);
     let owner = resolve_result_owner(&entry, &window, adapter)?;
@@ -140,7 +141,10 @@ pub fn run_from_ref_with_context(
         snapshot_id: Some(active_snapshot_id),
         complete: true,
         nodes_observed,
-        notes: crate::SnapshotNotes::default(),
+        notes: crate::SnapshotNotes {
+            channel,
+            ..crate::SnapshotNotes::default()
+        },
     })
 }
 
@@ -258,3 +262,7 @@ mod alloc_tests;
 #[cfg(test)]
 #[path = "snapshot_ref_deadline_tests.rs"]
 mod deadline_tests;
+
+#[cfg(test)]
+#[path = "snapshot_ref_channel_tests.rs"]
+mod channel_tests;

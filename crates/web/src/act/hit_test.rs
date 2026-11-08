@@ -10,16 +10,21 @@ const OBJECT_GROUP: &str = "agent-desktop-hit";
 const INTERCEPTED: &str = "cdp_click_intercepted";
 
 const CONTAINS_HIT: &str = r"function(hit) {
-  for (let node = hit; node; node = node.parentNode || node.host) {
-    if (node === this) return true;
-  }
-  return false;
+  const within = (root) => {
+    for (let node = hit; node; node = node.parentNode || node.host) {
+      if (node === root) return true;
+    }
+    return false;
+  };
+  return within(this) || Array.from(this.labels || []).some(within);
 }";
 
 /// Proves the page would deliver a press at `point` to the token's node:
 /// the node `DOM.getNodeForLocation` reports at the point's document
-/// position, the space it hit-tests in, must be the node itself
-/// or one of its descendants, across shadow roots. A point an overlay, a
+/// position, the space it hit-tests in, must be the node itself, one of its
+/// descendants across shadow roots, or inside one of the control's own
+/// labels, which the page forwards a press to (a visually hidden input that
+/// a label draws). A point an overlay, a
 /// banner or another element covers is `ACTION_FAILED` and nothing is sent.
 /// A hit the page cannot relate to the node, such as one in another frame's
 /// script world, counts as covered.

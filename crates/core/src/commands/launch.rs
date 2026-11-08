@@ -121,11 +121,12 @@ fn probe_reserve(total: Duration) -> Duration {
 fn launch_suggestion(cdp_requested: bool, launched: &LaunchResult) -> Option<String> {
     if launched.cdp.is_some() {
         return Some(format!(
-            "Next: load a page with `open-url <url> --app \"{app}\"`, read it with \
-             `snapshot --app \"{app}\" --surface web -i`, and act on its refs with the usual \
-             commands; `data.channel` is `cdp` when the page was read over this endpoint. \
-             Do not hand-roll raw CDP or call app-internal APIs. Native menus, dialogs, \
-             windows, and screenshots stay on the accessibility surfaces.",
+            "Next: read the web content with `snapshot --app \"{app}\" --surface web -i` and act \
+             on its refs with the usual commands; `data.channel` is `cdp` when it was read over \
+             this endpoint. In a web browser, `open-url <url> --app \"{app}\"` loads a page; an \
+             app that embeds web content for its own interface refuses it. Do not hand-roll raw \
+             CDP or call app-internal APIs. Native menus, dialogs, windows, and screenshots stay \
+             on the accessibility surfaces.",
             app = launched.app
         ));
     }

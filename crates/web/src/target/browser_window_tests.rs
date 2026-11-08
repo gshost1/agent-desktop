@@ -1,4 +1,4 @@
-use agent_desktop_core::{Deadline, Rect};
+use agent_desktop_core::Deadline;
 use serde_json::json;
 
 use super::BrowserWindow;
@@ -15,15 +15,11 @@ fn the_window_of_a_target_carries_its_id_and_bounds() {
     let window =
         BrowserWindow::of_target(&mut connection, "T", Deadline::after(500).unwrap()).unwrap();
     assert_eq!(window.window_id, 3);
-    let ax = Rect {
-        x: 11.0,
-        y: 20.0,
-        width: 800.0,
-        height: 599.0,
-    };
-    assert!(window.matches_bounds(&ax, 2.0));
-    let elsewhere = Rect { x: 400.0, ..ax };
-    assert!(!window.matches_bounds(&elsewhere, 2.0));
+    let bounds = &window.bounds;
+    assert_eq!(
+        (bounds.x, bounds.y, bounds.width, bounds.height),
+        (10.0, 20.0, 800.0, 600.0)
+    );
 }
 
 #[test]
