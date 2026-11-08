@@ -120,6 +120,14 @@ such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
 
+On macOS, `press --app` that delivers a key event while the app's focus is in a
+view another process serves, such as a Save panel drawn in the app's sheet,
+carries `data.details.keyboard_target`: `pid` received the key, `host_pid` is
+the app, and `route` is `hosted_view`. When that ownership could not be proven,
+the key goes to the app as before and `keyboard_target` has `route: "host"`,
+`focus_owner_pid` and an `unproven` reason. The field is omitted when the app
+owns its focus.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.
