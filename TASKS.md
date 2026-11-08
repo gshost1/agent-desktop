@@ -125,7 +125,8 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 7 | `fix/x11-release-guard-armed-state` | ADAPTERS-5 | [#15](https://github.com/gshost1/agent-desktop/pull/15) | **merged** 2026-11-07 as `4acf87bc` (rules 1+2); CI 26/26 green on head `a52c0589`, gates green (4552), review applied | ready (Linux only, no fork-only dependency) |
 | 8 | `fix/notification-wait-baseline` | SURFACE-2 / ACTION-4 | [#16](https://github.com/gshost1/agent-desktop/pull/16) | **merged** 2026-11-07 as `a3a1aedd` (rule 3: `main` moved by non-overlapping Linux files); CI 26/26 green on head `85b9c7c2`, gates green (4564) | ready (upstream register item 19, no issue) |
 | 9 | `fix/menu-close-wait-phase` | SURFACE-1 | [#18](https://github.com/gshost1/agent-desktop/pull/18) (draft) | head `5b6d3a07` (main `a3a1aedd`), gates green (4591), review applied; CI dispatched; draft until the Mac check | ready after Mac check (supersedes upstream `#291`'s Linux-only guard) |
-| 10 | `fix/resolve-error-classification` | REFS-4 | [#17](https://github.com/gshost1/agent-desktop/pull/17) | open; head `ebe44ae0` (main `a3a1aedd`), gates green (4585), 3 review rounds; CI dispatched | ready (when merged; no fork-only dependency) |
+| 10 | `fix/resolve-error-classification` | REFS-4 | [#17](https://github.com/gshost1/agent-desktop/pull/17) | open; head `ebe44ae0`; CI red on two wall-clock tests on the macOS runner (unrelated, fixed by #19) and one rustup download failure; will merge `main` after #19 and re-run CI | ready (when merged; no fork-only dependency) |
+| 11 | `test/wait-timing-budgets` | CI flakes | [#19](https://github.com/gshost1/agent-desktop/pull/19) | open; head `686ad47b`, gates green (4570); CI dispatched | fork-only (test budgets) |
 
 ## Needs Mac verification
 
@@ -278,6 +279,13 @@ exists and also runs CI's core Win32-leakage check.
   inline code only (no autolink, no backlink).
 
 ## Found (outside scope)
+
+- Test hygiene: `crates/core/src/trace/trace_read/input_tests.rs:6` (`trace-input-*`) and the `agent-desktop-trace-mod-*`
+  tests create directories in the system temp dir and never remove them. One day of gate runs here left 792 + ~900
+  directories (about 4.6 GB) in `/tmp` and hit the per-user tmpfs quota (`Disk quota exceeded`, failing
+  `embed_budget_skips_later_screenshots`). Removed today's leftovers; the tests need a drop guard.
+- Two wall-clock wait tests are too tight for the macOS CI runner (`element_wait_explicit_session_snapshot_with_matching_session_context`
+  at 50 ms, `dismissed_then_identical_notification_is_matched` at 600 ms); fixed in PR #19.
 
 - Linux E2E baseline on this laptop (`main` `ec632e97`, x11-openbox): 93 pass, 55 fail, 1 error, all in leg setup
   (list in `audit/E2E-main-ec632e97-openbox-failures.txt`). Compare branches against it, not against zero.
