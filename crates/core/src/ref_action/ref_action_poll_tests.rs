@@ -1,5 +1,11 @@
 use super::*;
 
+/// Records a refusal under the verdict the poll derives for it, as
+/// `handle_resolve_failure` does before retrying.
+fn record(state: &mut RefActionPollState, error: &AdapterError) {
+    state.record_resolve_error(error, ResolveVerdict::for_ref_action(error));
+}
+
 #[test]
 fn preflight_preserves_explicit_non_retryable_failures() {
     for code in [
@@ -36,12 +42,13 @@ fn preflight_identity_failures_are_terminal() {
 }
 
 #[test]
-fn timeout_returns_a_settled_stale_ref_with_elapsed() {
+fn timeout_returns_an_unsettled_ambiguous_target() {
     let mut state = RefActionPollState::default();
-    state.record_resolve_error(
-        &AdapterError::stale_ref_because("Stored ref does not match any live element")
+    record(
+        &mut state,
+        &AdapterError::ambiguous_target("Multiple live elements match the stored identity")
             .with_details(json!({
-                "kind": "resolve_no_candidate",
+                "kind": "resolve_ambiguous",
                 "complete": true,
                 "retryable": true,
             })),
@@ -49,33 +56,17 @@ fn timeout_returns_a_settled_stale_ref_with_elapsed() {
 
     let error = timeout(&state, Deadline::after(1).expect("deadline"));
 
-    assert_eq!(error.code, ErrorCode::StaleRef);
-    let details = error.details.expect("settled details");
-    assert_eq!(details["kind"], "resolve_no_candidate");
-    assert!(details.get("elapsed_ms").is_some());
-}
-
-#[test]
-fn timeout_returns_a_settled_ambiguous_target() {
-    let mut state = RefActionPollState::default();
-    state.record_resolve_error(
-        &AdapterError::ambiguous_target("Multiple live elements match the stored identity")
-            .with_details(json!({
-                "kind": "resolve_ambiguous",
-                "complete": true,
-                "retryable": false,
-            })),
-    );
-
-    let error = timeout(&state, Deadline::after(1).expect("deadline"));
-
     assert_eq!(error.code, ErrorCode::AmbiguousTarget);
+    let details = error.details.expect("unsettled details");
+    assert_eq!(details["kind"], "resolve_ambiguous");
+    assert!(details.get("elapsed_ms").is_some());
 }
 
 #[test]
 fn timeout_keeps_timeout_when_the_resolve_search_was_incomplete() {
     let mut state = RefActionPollState::default();
-    state.record_resolve_error(
+    record(
+        &mut state,
         &AdapterError::stale_ref_because("Strict resolution slice expired").with_details(json!({
             "kind": "resolve_no_candidate",
             "complete": false,
@@ -92,34 +83,60 @@ fn timeout_keeps_timeout_when_the_resolve_search_was_incomplete() {
     );
 }
 
+/// Only identity refusals are kept as the answer a wait reports when it runs
+/// out: a retryable read that timed out keeps the actionability timeout even
+/// when its producer marked it complete.
 #[test]
-fn timeout_prefers_an_earlier_settled_stale_ref_over_a_later_cutoff() {
+fn timeout_keeps_timeout_for_a_complete_retryable_timeout_or_unresponsive_read() {
+    for code in [ErrorCode::Timeout, ErrorCode::AppUnresponsive] {
+        let mut state = RefActionPollState::default();
+        record(
+            &mut state,
+            &AdapterError::new(code, "slow read")
+                .with_details(json!({ "complete": true, "retryable": true })),
+        );
+
+        let error = timeout(&state, Deadline::after(1).expect("deadline"));
+
+        assert_eq!(error.code, ErrorCode::Timeout);
+        assert_eq!(
+            error.details.expect("timeout details")["kind"],
+            "actionability_timeout"
+        );
+    }
+}
+
+#[test]
+fn timeout_prefers_an_earlier_unsettled_answer_over_a_later_cutoff() {
     let mut state = RefActionPollState::default();
-    state.record_resolve_error(
-        &AdapterError::stale_ref_because("Stored ref does not match any live element")
+    record(
+        &mut state,
+        &AdapterError::ambiguous_target("Multiple live elements match the stored identity")
             .with_details(json!({
-                "kind": "resolve_no_candidate",
+                "kind": "resolve_ambiguous",
                 "complete": true,
                 "retryable": true,
             })),
     );
-    state.record_resolve_error(
+    record(
+        &mut state,
         &AdapterError::timeout("Operation exceeded its deadline")
             .with_details(json!({ "kind": "deadline" })),
     );
 
     let error = timeout(&state, Deadline::after(1).expect("deadline"));
 
-    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(error.code, ErrorCode::AmbiguousTarget);
 }
 
 #[test]
-fn timeout_forgets_the_settled_stale_ref_once_an_attempt_resolves() {
+fn timeout_forgets_the_unsettled_answer_once_an_attempt_resolves() {
     let mut state = RefActionPollState::default();
-    state.record_resolve_error(
-        &AdapterError::stale_ref_because("Stored ref does not match any live element")
+    record(
+        &mut state,
+        &AdapterError::ambiguous_target("Multiple live elements match the stored identity")
             .with_details(json!({
-                "kind": "resolve_no_candidate",
+                "kind": "resolve_ambiguous",
                 "complete": true,
                 "retryable": true,
             })),

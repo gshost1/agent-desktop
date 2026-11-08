@@ -80,9 +80,10 @@ fn execute_with_deadline(
     let polls = request.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let mut saw_ambiguity = false;
     let mut refusal: Option<AdapterError> = None;
+    let mut moved = crate::ref_action::ref_action_moved_landings::MovedLandings::default();
     loop {
         let mut state = if polls {
-            execute_poll_loop(context, &request, deadline)
+            execute_poll_loop(context, &request, deadline, &mut moved)
                 .map_err(|error| with_refusal(error, refusal.as_ref()))?
         } else {
             RefActionPollState::default()
@@ -122,6 +123,10 @@ fn execute_with_deadline(
                 }
                 if shot.focused {
                     return Err(stopped_after_focus(error, &state, refusal.as_ref()));
+                }
+                let verdict = crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(&error);
+                if let Some(absent) = moved.exhausted(verdict, context.entry) {
+                    return Err(with_refusal(absent, Some(&error)));
                 }
                 saw_ambiguity |= error.code == crate::ErrorCode::AmbiguousTarget;
                 refusal = Some(error);
@@ -173,7 +178,7 @@ fn stopped_after_focus(
 /// caller's budget is not spent.
 fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
     error.disposition == crate::DeliverySemantics::not_delivered()
-        && error.is_retryable_resolution_failure()
+        && crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(error).retries()
         && !deadline.is_expired()
 }
 
