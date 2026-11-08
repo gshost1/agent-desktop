@@ -5,13 +5,14 @@ use agent_desktop_core::system::process_state::ProcessState;
 use agent_desktop_core::{
     ActionResult, AdapterError, AdapterSession, AppInfo, CursorOverlayControl, Deadline,
     DismissAllNotificationsRequest, DismissNotificationRequest, DisplayInfo, DownloadInfo,
-    ImageBuffer, InteractionLease, InteractionPolicy, KeyCombo, NotificationActionRequest,
-    NotificationFilter, NotificationInfo, OpenUrlRequest, OpenedPage, OperationReport,
-    PermissionReport, PlatformAdapter, ProcessIdentity, RefEntry, ScreenshotTarget,
-    SessionAffinity, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps, WaitWakeup,
-    WindowInfo, WindowOp,
+    DownloadScope, ImageBuffer, InteractionLease, InteractionPolicy, KeyCombo,
+    NotificationActionRequest, NotificationFilter, NotificationInfo, OpenUrlRequest, OpenedPage,
+    OperationReport, PermissionReport, PlatformAdapter, ProcessIdentity, RefEntry,
+    ScreenshotTarget, SessionAffinity, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps,
+    WaitWakeup, WindowInfo, WindowOp,
 };
 
+use super::download::download_profile::save_in_profile;
 use super::ref_routing::platform_entry;
 use super::web_channel_adapter::WebChannelAdapter;
 
@@ -108,7 +109,23 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
         self.inner
             .remember_cdp_endpoint(process.clone(), endpoint)?;
         let deadline = Deadline::after(REMEMBER_TIMEOUT_MS)?;
-        self.connector.remember(&process, endpoint, deadline)
+        self.connector.remember(&process, endpoint, deadline)?;
+        if endpoint.download_scope == Some(DownloadScope::Profile)
+            && let Some(dir) = endpoint.download_dir.as_deref()
+        {
+            self.claim_existing_downloads(&process, std::path::Path::new(dir));
+        }
+        Ok(())
+    }
+
+    /// Writes the download folder into the browser profile the launch
+    /// arguments name, when it is one this may change.
+    fn prepare_cdp_downloads(
+        &self,
+        options: &LaunchOptions,
+        download_dir: &str,
+    ) -> Result<DownloadScope, AdapterError> {
+        save_in_profile(&options.args, std::path::Path::new(download_dir))
     }
 
     /// Loads the URL over CDP when an endpoint reaches the browser, and asks

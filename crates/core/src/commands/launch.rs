@@ -14,8 +14,9 @@ const MAX_PROBE_RESERVE: Duration = Duration::from_millis(5_000);
 pub struct LaunchArgs {
     pub app: String,
     pub options: LaunchOptions,
-    /// Where the launched browser saves downloads. Needs `--cdp`; every
-    /// later DevTools connection to this browser points downloads here.
+    /// Where the launched browser saves downloads. Needs `--cdp`. Launch
+    /// asks the adapter to write it into the browser profile; failing that,
+    /// every later DevTools connection points downloads here.
     pub download_dir: Option<std::path::PathBuf>,
 }
 
@@ -51,12 +52,16 @@ pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value,
     let launch_deadline = probe_budget.map_or(deadline, |reserve| {
         deadline.capped(deadline.remaining().saturating_sub(reserve))
     });
+    let download_scope = download_dir
+        .as_deref()
+        .map(|dir| prepare_downloads(adapter, &options, dir));
     let lease = adapter.acquire_interaction_lease(launch_deadline)?;
     let mut launched = adapter.launch_app(&app, &options, &lease)?;
     if let Some(port) = options.cdp_port {
         let granted = deadline.remaining();
         let mut endpoint = verify_cdp_endpoint(port, deadline, granted, &launched, adapter)?;
         endpoint.download_dir = download_dir;
+        endpoint.download_scope = download_scope;
         remember_endpoint(adapter, &launched, &endpoint);
         launched.cdp = Some(endpoint);
     }
@@ -64,6 +69,23 @@ pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value,
         launched.suggestion = launch_suggestion(requested_cdp_port.is_some(), &launched);
     }
     Ok(serde_json::to_value(launched)?)
+}
+
+/// Asks the adapter to write the download folder into the browser profile
+/// before launch. The launch can still point downloads there over each
+/// DevTools connection, so a refusal is logged and the connection scope
+/// stands.
+fn prepare_downloads(
+    adapter: &dyn PlatformAdapter,
+    options: &LaunchOptions,
+    download_dir: &str,
+) -> crate::DownloadScope {
+    adapter
+        .prepare_cdp_downloads(options, download_dir)
+        .unwrap_or_else(|error| {
+            tracing::warn!(error = %error, "launch: the profile download folder was not set");
+            crate::DownloadScope::Connection
+        })
 }
 
 /// A verified endpoint is offered to the adapter so a later invocation can
@@ -290,3 +312,7 @@ mod cdp_tests;
 #[cfg(test)]
 #[path = "launch_cdp_switch_tests.rs"]
 mod cdp_switch_tests;
+
+#[cfg(test)]
+#[path = "launch_download_tests.rs"]
+mod download_tests;

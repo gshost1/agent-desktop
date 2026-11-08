@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use super::download::download_folder::DownloadFolder;
+
 /// Where a DevTools endpoint candidate was found: the registry `launch --cdp`
 /// writes, with the WebSocket URL it verified and the download folder launch
 /// named, or a browser profile's `DevToolsActivePort` file.
@@ -7,7 +9,7 @@ use std::path::PathBuf;
 pub enum CandidateOrigin {
     Registry {
         websocket_url: String,
-        download_dir: Option<PathBuf>,
+        download_folder: Option<DownloadFolder>,
     },
     ActivePort {
         user_data_dir: PathBuf,

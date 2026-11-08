@@ -1,9 +1,8 @@
+use agent_desktop_core::{AdapterError, Deadline, DownloadScope, ProcessIdentity};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-
-use agent_desktop_core::{AdapterError, Deadline, ProcessIdentity};
 
 use super::download::download_event::{event_guid, is_download_start};
+use super::download::download_folder::DownloadFolder;
 use crate::cdp::protocol_error::{is_protocol_error, target_gone};
 use crate::{CdpConnection, CdpEvent, PageSession, attach_to_target};
 
@@ -15,7 +14,7 @@ use crate::{CdpConnection, CdpEvent, PageSession, attach_to_target};
 pub struct BrowserLink {
     pub process: ProcessIdentity,
     pub connection: CdpConnection,
-    pub download_dir: Option<PathBuf>,
+    pub download_folder: Option<DownloadFolder>,
     pub(crate) seen_downloads: HashSet<String>,
     sessions: HashMap<String, PageSession>,
 }
@@ -24,15 +23,31 @@ impl BrowserLink {
     pub fn new(
         process: ProcessIdentity,
         connection: CdpConnection,
-        download_dir: Option<PathBuf>,
+        download_folder: Option<DownloadFolder>,
     ) -> Self {
         Self {
             process,
             connection,
-            download_dir,
+            download_folder,
             seen_downloads: HashSet::new(),
             sessions: HashMap::new(),
         }
+    }
+
+    /// The folder downloads must be renamed in from their guid: set only
+    /// when DevTools connections alone point downloads at the folder.
+    pub(crate) fn guid_folder(&self) -> Option<&std::path::Path> {
+        self.download_folder
+            .as_ref()
+            .filter(|folder| folder.scope == DownloadScope::Connection)
+            .map(|folder| folder.path.as_path())
+    }
+
+    /// Whether an action that may start a download must wait for it to
+    /// begin before the connection closes: only when the folder lasts only as
+    /// long as the connection.
+    pub(crate) fn holds_downloads_open(&self) -> bool {
+        self.guid_folder().is_some()
     }
 
     /// Remembers the downloads whose start is among `events`: this
@@ -70,3 +85,7 @@ impl BrowserLink {
         Ok(session)
     }
 }
+
+#[cfg(test)]
+#[path = "browser_link_tests.rs"]
+mod tests;

@@ -42,7 +42,7 @@ fn saved() -> Result<DownloadInfo, AdapterError> {
     Ok(DownloadInfo {
         path: "/tmp/downloads/report.csv".into(),
         suggested_filename: "report.csv".into(),
-        url: "https://example.test/report.csv".into(),
+        url: Some("https://example.test/report.csv".into()),
         state: "completed".into(),
         bytes: 8,
     })

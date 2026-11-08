@@ -6,6 +6,7 @@ use super::process_downloads::ProcessDownloads;
 
 const MAX_PROCESSES: usize = 16;
 const MAX_RECORDS: usize = 32;
+const MAX_CLAIMED: usize = 512;
 const MAX_BYTES: u64 = 256 * 1024;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -23,14 +24,25 @@ pub(crate) fn ledger_file() -> Result<StateFile, AdapterError> {
 }
 
 /// Runs `edit` on the records of `process` under the ledger's lock and
-/// writes the ledger back when `edit` changed it. The newest 16 browser
-/// processes are kept, and for each its newest 32 downloads, dropping
-/// delivered ones first.
+/// writes the ledger back when `edit` changed it.
 pub(crate) fn update_records<T>(
     file: &StateFile,
     process: &ProcessIdentity,
     deadline: Deadline,
     edit: impl FnOnce(&mut Vec<DownloadRecord>) -> T,
+) -> Result<T, AdapterError> {
+    update_downloads(file, process, deadline, |entry| edit(&mut entry.records))
+}
+
+/// Runs `edit` on everything the ledger keeps for `process` under its lock
+/// and writes the ledger back when `edit` changed it. The newest 16 browser
+/// processes are kept, and for each its newest 32 downloads, dropping
+/// delivered ones first, and its newest 512 claimed file names.
+pub(crate) fn update_downloads<T>(
+    file: &StateFile,
+    process: &ProcessIdentity,
+    deadline: Deadline,
+    edit: impl FnOnce(&mut ProcessDownloads) -> T,
 ) -> Result<T, AdapterError> {
     let _lock = file.lock(deadline, "web download ledger")?;
     let mut document = read_document(file);
@@ -46,16 +58,20 @@ pub(crate) fn update_records<T>(
                 pid,
                 process_instance: process.instance.clone(),
                 records: Vec::new(),
+                claimed: Vec::new(),
             });
             document.processes.len() - 1
         }
     };
-    let before = document.processes[index].records.clone();
-    let outcome = edit(&mut document.processes[index].records);
-    if document.processes[index].records == before {
+    let before = document.processes[index].clone();
+    let outcome = edit(&mut document.processes[index]);
+    if document.processes[index] == before {
         return Ok(outcome);
     }
     prune(&mut document.processes[index].records);
+    let claimed = &mut document.processes[index].claimed;
+    let excess_names = claimed.len().saturating_sub(MAX_CLAIMED);
+    claimed.drain(..excess_names);
     let entry = document.processes.remove(index);
     document.processes.push(entry);
     let excess = document.processes.len().saturating_sub(MAX_PROCESSES);

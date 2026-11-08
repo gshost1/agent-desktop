@@ -128,6 +128,19 @@ pub trait SystemOps: Send + Sync {
         Err(AdapterError::not_supported("open_url"))
     }
 
+    /// Prepares a browser that is about to launch with `--cdp` to save its
+    /// downloads in `download_dir`, before it starts. An adapter that can
+    /// write the folder into the browser profile's own preference returns
+    /// `Profile`; the default leaves only the DevTools connection to point
+    /// downloads there.
+    fn prepare_cdp_downloads(
+        &self,
+        _options: &crate::system::launch_options::LaunchOptions,
+        _download_dir: &str,
+    ) -> Result<crate::DownloadScope, AdapterError> {
+        Ok(crate::DownloadScope::Connection)
+    }
+
     /// Waits for the browser process's next download that no earlier wait
     /// returned, including one that finished before the wait began, and
     /// returns the saved file. A canceled or interrupted download is an error.

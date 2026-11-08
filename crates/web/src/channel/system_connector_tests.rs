@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use agent_desktop_core::system::cdp_endpoint::CdpEndpoint;
-use agent_desktop_core::{Deadline, ProcessIdentity, StateFile};
+use agent_desktop_core::{Deadline, DownloadScope, ProcessIdentity, StateFile};
 
 use super::SystemConnector;
 use crate::channel::candidate_origin::CandidateOrigin;
@@ -15,6 +15,7 @@ fn endpoint(port: u16) -> CdpEndpoint {
         websocket_url: format!("ws://127.0.0.1:{port}/devtools/browser/abc"),
         product: None,
         download_dir: None,
+        download_scope: None,
     }
 }
 
@@ -42,9 +43,35 @@ fn registry_candidates_match_the_exact_process_instance_newest_first() {
         candidates[0].origin,
         CandidateOrigin::Registry {
             websocket_url: "ws://127.0.0.1:9222/devtools/browser/abc".into(),
-            download_dir: None,
+            download_folder: None,
         }
     );
+}
+
+#[test]
+fn a_remembered_download_folder_keeps_its_scope_and_an_unscoped_one_is_per_connection() {
+    let dir = TestDir::new();
+    let connector =
+        SystemConnector::with_sources(Some(StateFile::at(dir.path().join("e.json"))), Vec::new());
+    let deadline = Deadline::after(1_000).unwrap();
+    let scoped = ProcessIdentity::new(7u32, "scoped");
+    let unscoped = ProcessIdentity::new(8u32, "unscoped");
+    let mut profile = endpoint(9222);
+    profile.download_dir = Some("/tmp/downloads".into());
+    profile.download_scope = Some(DownloadScope::Profile);
+    let mut legacy = endpoint(9333);
+    legacy.download_dir = Some("/tmp/older".into());
+    connector.remember(&scoped, &profile, deadline).unwrap();
+    connector.remember(&unscoped, &legacy, deadline).unwrap();
+
+    let folder = |process| connector.candidates(process)[0].download_folder().unwrap();
+
+    assert_eq!(folder(&scoped).scope, DownloadScope::Profile);
+    assert_eq!(
+        folder(&scoped).path,
+        std::path::PathBuf::from("/tmp/downloads")
+    );
+    assert_eq!(folder(&unscoped).scope, DownloadScope::Connection);
 }
 
 #[test]

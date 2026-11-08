@@ -44,7 +44,8 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             };
             let session = link.session(&target_id, deadline)?;
             let navigated = navigate(&mut link.connection, &session, request.url, deadline);
-            let download_began = self.note_downloads(link, navigated.is_err(), deadline);
+            let linger = navigated.is_err() && link.download_folder.is_some();
+            let download_began = self.note_downloads(link, linger, deadline);
             match navigated {
                 Ok(()) => opened_page(link, Placement { target_id, opened }, request.url, deadline),
                 Err(_) if download_began => Ok(OpenedPage {

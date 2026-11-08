@@ -26,6 +26,9 @@ pub struct CdpEndpoint {
     /// downloads; absent when the browser keeps its own download folder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_dir: Option<String>,
+    /// How the browser keeps saving to `download_dir`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_scope: Option<crate::DownloadScope>,
 }
 
 /// Binds an ephemeral port to learn one the OS considers free, then releases
@@ -178,6 +181,7 @@ pub fn parse_devtools_version_body(port: u16, body: &str) -> Option<CdpEndpoint>
         websocket_url,
         product,
         download_dir: None,
+        download_scope: None,
     })
 }
 

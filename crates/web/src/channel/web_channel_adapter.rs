@@ -6,6 +6,7 @@ use agent_desktop_core::{
 
 use super::browser_link::BrowserLink;
 use super::cdp_connector::CdpConnector;
+use super::download::download_folder::DownloadFolder;
 use super::download::download_ledger::ledger_file;
 use super::link_access::LinkAccess;
 use super::system_connector::SystemConnector;
@@ -69,10 +70,14 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             *guard = None;
         }
         if guard.is_none() {
-            let Some((connection, download_dir)) = self.discover(process, access)? else {
+            let Some((connection, download_folder)) = self.discover(process, access)? else {
                 return Ok(None);
             };
-            *guard = Some(BrowserLink::new(process.clone(), connection, download_dir));
+            *guard = Some(BrowserLink::new(
+                process.clone(),
+                connection,
+                download_folder,
+            ));
         }
         let Some(link) = guard.as_mut() else {
             return Ok(None);
@@ -118,7 +123,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         &self,
         process: &ProcessIdentity,
         access: LinkAccess,
-    ) -> Result<Option<(CdpConnection, Option<std::path::PathBuf>)>, AdapterError> {
+    ) -> Result<Option<(CdpConnection, Option<DownloadFolder>)>, AdapterError> {
         let mut first_error = None;
         for candidate in self.connector.candidates(process) {
             let owned = self.inner.process_owns_tcp_listener(
@@ -133,7 +138,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
                 .connector
                 .open(&candidate, access.deadline, access.may_prompt)
             {
-                Ok(connection) => return Ok(Some((connection, candidate.download_dir()))),
+                Ok(connection) => return Ok(Some((connection, candidate.download_folder()))),
                 Err(error) if error.code == ErrorCode::PermDenied => return Err(error),
                 Err(error) => {
                     first_error.get_or_insert(error);

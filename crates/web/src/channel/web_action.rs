@@ -53,7 +53,8 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             };
             let result = run(&mut target, &request.action);
             if result.is_ok() {
-                let _ = self.note_downloads(link, may_start_download(&request.action), deadline);
+                let linger = may_start_download(&request.action) && link.holds_downloads_open();
+                let _ = self.note_downloads(link, linger, deadline);
             }
             result
         })?;

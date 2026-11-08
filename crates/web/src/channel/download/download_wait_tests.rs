@@ -7,6 +7,7 @@ use agent_desktop_core::{
 use serde_json::{Value, json};
 
 use crate::ElementToken;
+use crate::channel::download::download_folder::DownloadFolder;
 use crate::channel::download::download_ledger::update_records;
 use crate::channel::download::download_record::DownloadRecord;
 use crate::channel::download::download_state::DownloadState;
@@ -62,7 +63,8 @@ impl Fixture {
         timeout_ms: u64,
     ) -> Result<DownloadInfo, AdapterError> {
         let mut connector = ScriptedConnector::with(transport);
-        connector.download_dir = folder.then(|| self.downloads());
+        connector.download_folder =
+            folder.then(|| DownloadFolder::per_connection(self.downloads()));
         let web = adapter(StubPlatform::owning(PORT), connector)
             .with_download_ledger(Some(self.ledger()));
         web.wait_for_download(process(), deadline_ms(timeout_ms))
@@ -114,7 +116,7 @@ fn a_download_that_finished_in_an_earlier_command_is_returned_under_its_suggeste
     assert_eq!(info.state, "completed");
     assert_eq!(info.bytes, 8);
     assert_eq!(info.suggested_filename, "report.csv");
-    assert_eq!(info.url, "http://127.0.0.1/report.csv");
+    assert_eq!(info.url.as_deref(), Some("http://127.0.0.1/report.csv"));
     assert!(!fixture.downloads().join(GUID).exists());
 
     let again = fixture

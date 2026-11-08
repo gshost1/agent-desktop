@@ -105,5 +105,6 @@ fn test_endpoint() -> CdpEndpoint {
         websocket_url: format!("ws://127.0.0.1:{PORT}/devtools/browser/x"),
         product: None,
         download_dir: None,
+        download_scope: None,
     }
 }

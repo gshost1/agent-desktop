@@ -3,16 +3,19 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use agent_desktop_core::{
-    AdapterError, Deadline, DownloadInfo, PlatformAdapter, ProcessIdentity, StateFile,
+    AdapterError, Deadline, DownloadInfo, DownloadScope, PlatformAdapter, ProcessIdentity,
+    StateFile,
 };
 
 use super::download_event::{apply_event, is_download_event};
 use super::download_failure::{canceled, interrupted, no_endpoint, timed_out, untracked};
-use super::download_ledger::update_records;
+use super::download_ledger::update_downloads;
 use super::download_placement::{DiskState, disk_state, guid_path};
+use super::download_profile_step::next_profile_step;
 use super::download_record::DownloadRecord;
 use super::download_settle::{ledger_deadline, place_finished};
 use super::download_state::DownloadState;
+use super::download_step::DownloadStep as Step;
 use crate::channel::browser_link::BrowserLink;
 use crate::channel::link_access::LinkAccess;
 use crate::channel::web_channel_adapter::WebChannelAdapter;
@@ -20,14 +23,6 @@ use crate::transport::transport_error::is_timeout;
 
 const POLL: Duration = Duration::from_millis(250);
 const MISSING_GRACE: Duration = Duration::from_millis(1_500);
-
-enum Step {
-    Ready(DownloadInfo),
-    Failed(AdapterError),
-    Pending(DownloadRecord),
-    Missing,
-    Idle,
-}
 
 impl<P: PlatformAdapter> WebChannelAdapter<P> {
     /// Returns the browser's oldest download no earlier wait returned,
@@ -58,13 +53,23 @@ fn wait_on_link(
         arrived.extend(link.connection.drain_events(is_download_event));
         link.note_seen(&arrived);
         let events = std::mem::take(&mut arrived);
-        let dir = link.download_dir.clone();
+        let folder = link.download_folder.clone();
         let grace_over = missing_since.is_some_and(|since| since.elapsed() >= MISSING_GRACE);
-        let step = update_records(ledger, &link.process, ledger_deadline()?, |records| {
+        let step = update_downloads(ledger, &link.process, ledger_deadline()?, |entry| {
             for event in &events {
-                apply_event(records, event);
+                apply_event(&mut entry.records, event);
             }
-            next_step(records, dir.as_deref(), &link.seen_downloads, grace_over)
+            match folder {
+                Some(folder) if folder.scope == DownloadScope::Profile => {
+                    next_profile_step(entry, &folder.path, &link.seen_downloads, grace_over)
+                }
+                folder => next_step(
+                    &mut entry.records,
+                    folder.as_ref().map(|folder| folder.path.as_path()),
+                    &link.seen_downloads,
+                    grace_over,
+                ),
+            }
         })?;
         let pending = match step {
             Step::Ready(info) => return Ok(info),
@@ -96,8 +101,9 @@ fn wait_on_link(
     }
 }
 
-/// Settles the oldest download no wait returned yet. With a download folder
-/// an in-progress download is read from the folder, since its events may
+/// Settles the oldest download no wait returned yet for a browser whose
+/// downloads only DevTools connections point at `dir`, under guid names.
+/// With a folder an in-progress download is read from the folder, since its events may
 /// have gone to a connection that closed; a partial file that vanished
 /// without a finished one is interrupted once `grace_over`. Without a
 /// folder only this connection's events can finish it.
@@ -137,7 +143,7 @@ fn next_step(
                 Some(path) => Step::Ready(DownloadInfo {
                     path,
                     suggested_filename: record.suggested_filename.clone(),
-                    url: record.url.clone(),
+                    url: Some(record.url.clone()),
                     state: record.state.as_str().to_owned(),
                     bytes: record.bytes,
                 }),

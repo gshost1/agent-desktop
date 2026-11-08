@@ -1,14 +1,15 @@
 use std::path::Path;
 use std::time::Duration;
 
-use agent_desktop_core::{AdapterError, Deadline, PlatformAdapter};
+use agent_desktop_core::{AdapterError, Deadline, PlatformAdapter, ProcessIdentity};
 
 use super::download_event::{apply_event, is_download_event, is_download_start};
-use super::download_ledger::update_records;
+use super::download_ledger::{update_downloads, update_records};
 use super::download_placement::{guid_path, place};
 use super::download_record::DownloadRecord;
 use super::download_state::DownloadState;
 use super::download_wait::path_text;
+use super::folder_listing::FolderListing;
 use crate::channel::browser_link::BrowserLink;
 use crate::channel::web_channel_adapter::WebChannelAdapter;
 
@@ -46,28 +47,30 @@ pub(crate) fn place_finished(record: &mut DownloadRecord, dir: Option<&Path>) {
 
 impl<P: PlatformAdapter> WebChannelAdapter<P> {
     /// Records the download events this connection holds in the ledger, so
-    /// a later `wait --download` sees them. After an action that can start a
-    /// download on a browser with a download folder, it first waits up to
-    /// 200 ms for one to begin: the browser drops the download folder when
-    /// this connection closes, so a download it has not yet begun would land
-    /// in the browser's own folder. A failure here never fails the action.
-    /// Returns whether a download began.
+    /// a later `wait --download` sees them. With `linger` and no download
+    /// start buffered yet, it first waits up to 200 ms for one to begin. A
+    /// failure here never fails the action. Returns whether a download began.
     pub(crate) fn note_downloads(
         &self,
         link: &mut BrowserLink,
-        may_start: bool,
+        linger: bool,
         deadline: Deadline,
     ) -> bool {
         let mut events = Vec::new();
         let buffered_start = link.connection.drain_events(is_download_start);
-        let lingers = may_start && link.download_dir.is_some() && buffered_start.is_empty();
+        let lingers = linger && buffered_start.is_empty();
         events.extend(buffered_start);
-        if lingers
-            && let Ok(event) = link
+        if lingers {
+            let started = std::time::Instant::now();
+            let begun = link
                 .connection
-                .wait_for_event(is_download_start, deadline.capped(DOWNLOAD_NOTICE))
-        {
-            events.push(event);
+                .wait_for_event(is_download_start, deadline.capped(DOWNLOAD_NOTICE));
+            tracing::debug!(
+                elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                began = begun.is_ok(),
+                "web download linger"
+            );
+            events.extend(begun.ok());
         }
         events.extend(link.connection.drain_events(is_download_event));
         if events.is_empty() {
@@ -78,7 +81,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         let Ok(ledger) = self.download_ledger() else {
             return began;
         };
-        let dir = link.download_dir.clone();
+        let dir = link.guid_folder().map(Path::to_path_buf);
         let recorded = ledger_deadline().and_then(|lock_deadline| {
             update_records(ledger, &link.process, lock_deadline, |records| {
                 for event in &events {
@@ -93,5 +96,25 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             tracing::warn!(error = %error, "web downloads were not recorded");
         }
         began
+    }
+
+    /// Marks every file already in a profile download folder as not a
+    /// download, so `wait --download` returns only what the browser saves
+    /// after launch. A failure only risks returning an older file.
+    pub(crate) fn claim_existing_downloads(&self, process: &ProcessIdentity, dir: &Path) {
+        let Ok(ledger) = self.download_ledger() else {
+            return;
+        };
+        let listing = FolderListing::read(dir);
+        let claimed = ledger_deadline().and_then(|lock_deadline| {
+            update_downloads(ledger, process, lock_deadline, |entry| {
+                for file in &listing.finished {
+                    entry.claim(&file.name);
+                }
+            })
+        });
+        if let Err(error) = claimed {
+            tracing::warn!(error = %error, "web downloads: files already in the folder were not recorded");
+        }
     }
 }

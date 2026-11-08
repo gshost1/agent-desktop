@@ -56,12 +56,12 @@ pub(crate) fn no_endpoint() -> AdapterError {
 pub(crate) fn timed_out(pending: Option<&DownloadRecord>) -> AdapterError {
     let error = match pending {
         Some(record) => AdapterError::timeout("The download did not finish before the timeout")
-            .with_details(json!({
+            .with_details(known_url(json!({
                 "kind": "cdp_download_in_progress",
                 "url": record.url,
                 "suggested_filename": record.suggested_filename,
                 "bytes": record.bytes,
-            })),
+            }))),
         None => AdapterError::timeout("No download began before the timeout")
             .with_details(json!({ "kind": "cdp_download_not_started" })),
     };
@@ -70,11 +70,22 @@ pub(crate) fn timed_out(pending: Option<&DownloadRecord>) -> AdapterError {
 
 fn failed(record: &DownloadRecord, kind: &str, message: &str) -> AdapterError {
     AdapterError::new(ErrorCode::ActionFailed, message)
-        .with_details(json!({
+        .with_details(known_url(json!({
             "kind": kind,
             "url": record.url,
             "suggested_filename": record.suggested_filename,
             "bytes": record.bytes,
-        }))
+        })))
         .with_disposition(DeliverySemantics::not_delivered())
+}
+
+/// Drops `url` from error details when no connection saw where the download
+/// came from.
+fn known_url(mut details: serde_json::Value) -> serde_json::Value {
+    if details["url"].as_str().is_some_and(str::is_empty)
+        && let Some(object) = details.as_object_mut()
+    {
+        object.remove("url");
+    }
+    details
 }
