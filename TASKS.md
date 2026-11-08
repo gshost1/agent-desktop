@@ -137,8 +137,8 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | [#38](https://github.com/gshost1/agent-desktop/pull/38) (draft) | head `64b1c704`, tests 4645/0 (--no-fail-fast), review applied; draft: macOS edit | ready after Mac check |
 | 19 | `fix/ffi-last-error-code` | STATE-1 / STATE-2 / STATE-3 (docs) | [#37](https://github.com/gshost1/agent-desktop/pull/37) | **merged** 2026-11-08 as `5f85dcfa` (rules 1+2); CI 27/27 on head `469eeb0a`, gates green (4647), review applied | ready (upstream register items 9, 14, 20) |
 | 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | **merged** 2026-11-08 as `a7d301d7` (rules 1+2); CI 13/13 on head `17f6ece2`, gates green (4630) | fork-only (test budgets) |
-| 22 | `test/load-sensitive-budgets` | CI flakes | [#39](https://github.com/gshost1/agent-desktop/pull/39) | open; head `25df1b15` (main `5f85dcfa` merged in); three tests deterministic, 20/20 each under load, invert-verified | fork-only (test determinism) |
-| 23 | `fix/session-gc-liveness` | session GC flake | [#40](https://github.com/gshost1/agent-desktop/pull/40) | open; head `81dc4622` (main `5f85dcfa` merged in); first gate run red only on the batch CLI flake below; root cause: a child forked by another thread holds the session lock until exec, so one GC pass keeps a just-ended session (60/300 with a spawner, 0/300 without); tests retry GC up to 5 s, old 4/20 fail, new 0/20 | fork-only (test determinism) |
+| 22 | `test/load-sensitive-budgets` | CI flakes | [#39](https://github.com/gshost1/agent-desktop/pull/39) | **merged** 2026-11-08 as `921d6d22` (rule 3: `main` moved by PR #40, no overlapping files); CI 13/13 on head `25df1b15`, gates green (4647) | fork-only (test determinism) |
+| 23 | `fix/session-gc-liveness` | session GC flake | [#40](https://github.com/gshost1/agent-desktop/pull/40) | **merged** 2026-11-08 as `a3183289` (rules 1+2); CI 13/13 on head `81dc4622`, gates green (4647); root cause: a child forked by another thread holds the session lock until exec | fork-only (test determinism) |
 | 24 | `fix/batch-run-state` | BINARY-2 / BINARY-3 | – | writer started (w24) | ready (prior art: upstream `#182` merged, `#177` closed) |
 | 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | **merged** 2026-11-08 as `89a3723e` (rules 1+2); CI 13/13 on head `a690a037` | fork-only (test isolation) |
 
@@ -318,6 +318,7 @@ exists and also runs CI's core Win32-leakage check.
 
 ## Incidents
 
+- 2026-11-08: merged PR #39 right after PR #40 without first waiting for `main` CI on `a3183289` (rule: watch `main` CI after each merge). Both PRs are test-only; `main` CI on both commits checked afterwards.
 - 2026-11-07: the harness flagged the STATE-9 writer for a possible "security weakening" action. I stopped it and
   checked: nothing outside the worktree changed (`~/.claude/settings.json` untouched since Nov 3, `core.hooksPath`
   intact, lock dir still 0700), its last commit was not pushed, and its code matched the decided design. A
