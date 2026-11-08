@@ -143,23 +143,29 @@ fn actions_other_than_axopen_capture_no_sheet() {
 fn a_target_in_a_plain_window_stops_the_walk_at_that_window() {
     let row = crate::tree::element_for_pid(501);
     let window = crate::tree::element_for_pid(502);
+    let application = crate::tree::element_for_pid(503);
     let reads = std::cell::Cell::new(0);
-    let captured = OwnedSheet::capture_with(
-        &row,
-        |element| {
-            reads.set(reads.get() + 1);
-            Some(
-                if crate::tree::same_element(element, &window) {
-                    "AXWindow"
-                } else {
-                    "AXRow"
-                }
-                .to_string(),
-            )
-        },
-        |element| (!crate::tree::same_element(element, &window)).then(|| window.clone()),
-        |_| panic!("children are read only for a sheet"),
-    );
+    let role = |element: &AXElement| {
+        reads.set(reads.get() + 1);
+        let role = if crate::tree::same_element(element, &window) {
+            "AXWindow"
+        } else if crate::tree::same_element(element, &application) {
+            "AXApplication"
+        } else {
+            "AXRow"
+        };
+        Some(role.to_string())
+    };
+    let parent = |element: &AXElement| {
+        Some(if crate::tree::same_element(element, &row) {
+            window.clone()
+        } else {
+            application.clone()
+        })
+    };
+    let captured = OwnedSheet::capture_with(&row, role, parent, |_| {
+        panic!("children are read only for a sheet")
+    });
     assert!(captured.is_none());
     assert_eq!(reads.get(), 2);
 }
