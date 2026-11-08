@@ -33,6 +33,7 @@ Stateful actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `e
 
 - Secure text is redacted. A delivered write can return `delivered_unverified` with `verification_reason: "secure_field"`. This never turns a native delivery error into success.
 - `set-value` and `type` verify the element value only (`verification_scope: element_value`, `application_commit: not_verified`). Confirm document-level effects, such as a table that should have resized, with an independent read.
+- `application_commit: pending` with `verification_scope: inline_editor` means the text went into an editor floating over the field, such as a list row being renamed. Nothing is committed yet: press `details.commit_key` (`press return --app <App>`), then confirm with an independent read, such as the file name on disk.
 - If `data.surfaces` lists a sheet, menu or alert, the app is waiting on it. Use `find --surface sheet` and answer it. A `delivered_unverified` result with an open surface usually means a confirmation is pending. A missing `data.surfaces`, or an entry whose `unclassified` names a kind, does not prove that kind is closed: snapshot that surface when you expect one.
 
 ## Errors

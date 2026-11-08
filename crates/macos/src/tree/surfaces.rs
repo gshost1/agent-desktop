@@ -2,13 +2,28 @@ use super::{AXElement, properties::element::element_for_pid, surface_read};
 use agent_desktop_core::{AdapterError, SnapshotSurface};
 use std::time::Instant;
 
+/// The focused window, or while no window reports focus, the windowless
+/// editor that holds keyboard focus for an in-place edit.
 #[cfg(target_os = "macos")]
 pub(crate) fn focused_surface_for_pid(
     pid: i32,
     deadline: Instant,
 ) -> Result<Option<AXElement>, AdapterError> {
     let app = element_for_pid(pid);
-    surface_read::element(&app, "AXFocusedWindow", deadline)
+    first_focused_root(
+        || surface_read::element(&app, "AXFocusedWindow", deadline),
+        || super::inline_editor::focused_editor_for_pid(pid, deadline),
+    )
+}
+
+pub(crate) fn first_focused_root<T>(
+    focused_window: impl FnOnce() -> Result<Option<T>, AdapterError>,
+    focused_editor: impl FnOnce() -> Result<Option<T>, AdapterError>,
+) -> Result<Option<T>, AdapterError> {
+    match focused_window()? {
+        Some(window) => Ok(Some(window)),
+        None => focused_editor(),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -163,6 +178,10 @@ unsupported_surface!(sheet_for_pid);
 unsupported_surface!(popover_for_pid);
 #[cfg(not(target_os = "macos"))]
 unsupported_surface!(alert_for_pid);
+
+#[cfg(test)]
+#[path = "surfaces_tests.rs"]
+mod tests;
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn is_menu_open(_pid: i32, _deadline: Instant) -> Result<bool, AdapterError> {
