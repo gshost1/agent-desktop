@@ -89,7 +89,8 @@ def channel_prompt(channel, cdp_port):
           f"Chrome is already running with a DevTools endpoint on port {cdp_port}; pass `--cdp {cdp_port}` on every "
           "agent-browser command. Learn it with `agent-browser skills get core` before you start.")
     adweb = ("You operate this Mac and its web pages only through the `agent-desktop` CLI (on PATH). "
-             "Learn it with `agent-desktop skills get desktop` (and `agent-desktop skills get platform`) before you start.")
+             "For web pages, learn it with `agent-desktop skills get web` before you start; only if the task "
+             "also needs a native app, read `agent-desktop skills get desktop` too.")
     common = (" Google Chrome is already open. Do not use any other program (no curl, osascript, open, python). "
               "When finished, reply with one line: DONE <answer if the task asks for one>.")
     return {"ax": ad, "cdp": ab, "hybrid": ab + " For native macOS apps use the `agent-desktop` CLI (on PATH): " + ad,
