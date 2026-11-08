@@ -1,16 +1,22 @@
 use agent_desktop_core::{
-    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, NotificationSeed,
-    PermissionReport, PlatformAdapter, SignalBaseline, SignalFilter,
-    commands::wait_notification as notification_wait, context::CommandContext,
+    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, PermissionReport,
+    PlatformAdapter, context::CommandContext,
 };
 use serde_json::{Value, json};
 
-use crate::{cli::Commands, cli_args::batch::BatchArgs, command_policy::CommandEffect};
+use crate::{
+    cli::Commands,
+    cli_args::{batch::BatchArgs, session::SessionAction},
+    command_policy::CommandEffect,
+};
 
 use super::{
+    batch_stop::BatchStop,
     bounded_json::serialized_size,
+    pending_seed::PendingSeed,
     preparation::{MAX_BATCH_ENTRIES, MAX_BATCH_JSON_BYTES, PreparedCommand, prepare},
     result_entry::{MAX_BATCH_OUTPUT_BYTES, not_started_entry},
+    seed_plan::SeedPlan,
 };
 
 /// Runs the batch and records, in `entry_effects`, the effect of every
@@ -29,13 +35,12 @@ pub(super) fn execute(
     let mut commands = prepare(&args.commands_json, permission_report, &batch_context)?;
     let total = commands.len();
     entry_effects.extend(commands.iter().map(|prepared| prepared.command.effect()));
+    let seed_plan = SeedPlan::new(&commands);
     let mut results = Vec::with_capacity(total);
     let mut results_bytes = 0;
     let mut completed = 0;
-    let mut pending_baseline: Option<Result<SignalBaseline, AdapterError>> =
-        context.event_baseline().cloned();
-    let mut pending_notification = context.notification_seed().cloned();
-    let mut stopped = None;
+    let mut pending_seed: Option<PendingSeed> = None;
+    let mut stopped: Option<BatchStop> = None;
 
     for index in 0..total {
         if deadline.is_expired() {
@@ -45,12 +50,11 @@ pub(super) fn execute(
                 &mut results_bytes,
                 not_started_entry(index, &commands[index].name, "deadline", error),
             );
-            stopped = Some(json!({ "reason": "deadline", "index": index }));
+            stopped = Some(BatchStop::DeadlineBeforeEntry { index });
             break;
         }
 
-        let current_baseline = pending_baseline.take();
-        let current_notification = pending_notification.take();
+        let current_seed = PendingSeed::take_for(&mut pending_seed, index);
 
         if let Some(ended_session) = session_ended_for(&commands[index]) {
             let error = batch_session_ended(index, &commands[index].name, &ended_session);
@@ -60,54 +64,48 @@ pub(super) fn execute(
                 not_started_entry(index, &commands[index].name, "session_ended", error),
             );
             if args.stop_on_error {
-                stopped = Some(json!({ "reason": "stop_on_error", "index": index }));
+                stopped = Some(BatchStop::StopOnError { index });
                 break;
             }
             continue;
         }
 
-        match pre_action_seed(commands.get(index + 1), adapter, deadline) {
-            Ok((event, notification)) => {
-                pending_baseline = event.map(Ok);
-                pending_notification = notification;
-            }
-            Err(error) => {
-                let wait_index = index + 1;
-                let wait_command = &commands[wait_index].name;
-                let error = baseline_error(
-                    index,
-                    &commands[index].name,
-                    wait_index,
-                    wait_command,
-                    error,
-                );
-                push_small_entry(
-                    &mut results,
-                    &mut results_bytes,
-                    not_started_entry(
-                        index,
-                        &commands[index].name,
-                        "pre_action_baseline_failed",
-                        error,
-                    ),
-                );
-                stopped = Some(json!({
-                    "reason": "pre_action_baseline_failed",
-                    "blocked_index": index,
-                    "blocked_command": commands[index].name,
-                    "wait_index": wait_index,
-                    "wait_command": wait_command,
-                }));
-                break;
+        if let Some(wait_index) = seed_plan.wait_read_before(index) {
+            match PendingSeed::capture(wait_index, &commands[wait_index], adapter, deadline) {
+                Ok(seed) => pending_seed = seed,
+                Err(error) => {
+                    let blocked_command = commands[index].name.clone();
+                    let wait_command = commands[wait_index].name.clone();
+                    let error =
+                        baseline_error(index, &blocked_command, wait_index, &wait_command, error);
+                    push_small_entry(
+                        &mut results,
+                        &mut results_bytes,
+                        not_started_entry(
+                            index,
+                            &blocked_command,
+                            "pre_action_baseline_failed",
+                            error,
+                        ),
+                    );
+                    stopped = Some(BatchStop::BaselineFailed {
+                        blocked_index: index,
+                        blocked_command,
+                        wait_index,
+                        wait_command,
+                    });
+                    break;
+                }
             }
         }
 
-        let item_context = commands[index]
-            .context
-            .clone()
-            .with_inherited_deadline(deadline)
-            .with_event_baseline(current_baseline)
-            .with_notification_seed(current_notification);
+        let item_context = PendingSeed::seed_context(
+            current_seed,
+            commands[index]
+                .context
+                .clone()
+                .with_inherited_deadline(deadline),
+        );
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
         let effect = entry_effects[index];
         let entry = super::result_entry::completed_entry(
@@ -115,7 +113,12 @@ pub(super) fn execute(
             &commands[index].name,
             crate::dispatch::dispatch(command, adapter, permission_report, &item_context),
         );
-        let failed = entry["ok"] != true;
+        let failure = (entry["ok"] != true).then(|| {
+            entry["error"]["code"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        });
         let (entry, oversized) = super::result_entry::bounded_completed_entry(
             index,
             &commands[index].name,
@@ -126,16 +129,14 @@ pub(super) fn execute(
         completed += usize::from(entry["execution"] == "completed");
         push_small_entry(&mut results, &mut results_bytes, entry);
 
-        if oversized {
-            stopped = Some(json!({ "reason": "output_limit", "index": index }));
-            break;
-        }
-        if failed && args.stop_on_error {
-            stopped = Some(json!({ "reason": "stop_on_error", "index": index }));
-            break;
-        }
-        if deadline.is_expired() && index + 1 < total {
-            stopped = Some(json!({ "reason": "deadline", "after_index": index }));
+        stopped = BatchStop::after_entry(
+            index,
+            failure.as_deref(),
+            oversized,
+            deadline.is_expired() && index + 1 < total,
+            args.stop_on_error,
+        );
+        if stopped.is_some() {
             break;
         }
     }
@@ -162,7 +163,7 @@ pub(super) fn execute(
         }
     });
     if let Some(stopped) = stopped {
-        body["stopped"] = stopped;
+        body["stopped"] = stopped.to_value();
     }
     if serialized_size(&body) > MAX_BATCH_OUTPUT_BYTES {
         let disposition = if completed == 0 {
@@ -183,45 +184,6 @@ pub(super) fn execute(
         .into());
     }
     Ok(body)
-}
-
-type PreActionSeed = (Option<SignalBaseline>, Option<NotificationSeed>);
-
-/// Reads what the following wait entry diffs against before the current entry
-/// runs, so a window, surface or notification the current entry produces is
-/// reported as new instead of being absorbed into the wait's own first read.
-/// Only an event baseline failure is an error: a notification seed that cannot
-/// be read falls back to the wait's own first list and never blocks the entry.
-fn pre_action_seed(
-    next: Option<&PreparedCommand>,
-    adapter: &dyn PlatformAdapter,
-    deadline: Deadline,
-) -> Result<PreActionSeed, AdapterError> {
-    let Some(next) = next else {
-        return Ok((None, None));
-    };
-    let Commands::Wait(args) = &next.command else {
-        return Ok((None, None));
-    };
-    if args.mode.notification {
-        let Ok(core_args) = crate::dispatch::system::core_wait_args(args) else {
-            return Ok((None, None));
-        };
-        let context = next.context.clone().with_inherited_deadline(deadline);
-        let seed = notification_wait::pre_action_seed(&core_args, deadline, adapter, &context);
-        return Ok((None, seed));
-    }
-    if args.event.event.is_some() {
-        let filter = SignalFilter {
-            app: args.app.clone(),
-            process: None,
-        };
-        return Ok((
-            Some(adapter.capture_signal_baseline(&filter, deadline)?),
-            None,
-        ));
-    }
-    Ok((None, None))
 }
 
 fn baseline_error(
@@ -251,11 +213,24 @@ fn baseline_error(
     source.into()
 }
 
+/// The session an entry would be refused for because it has ended. A
+/// `session end` entry is never refused: teardown is repeatable on an ended
+/// session, as it is outside a batch.
 fn session_ended_for(command: &PreparedCommand) -> Option<String> {
+    if runs_in_an_ended_session(&command.command) {
+        return None;
+    }
     let session_id = command.context.session_id()?;
     match agent_desktop_core::session::read_manifest(session_id) {
         Ok(Some(manifest)) if manifest.ended_at.is_some() => Some(session_id.to_owned()),
         _ => None,
+    }
+}
+
+fn runs_in_an_ended_session(command: &Commands) -> bool {
+    match command {
+        Commands::Session(args) => matches!(args.action, SessionAction::End(_)),
+        _ => false,
     }
 }
 

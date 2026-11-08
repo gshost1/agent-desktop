@@ -112,6 +112,38 @@ fn action_then_event_wait_uses_a_pre_action_baseline() {
 }
 
 #[test]
+fn an_event_wait_behind_a_read_only_entry_uses_a_baseline_from_before_the_action() {
+    let args = BatchArgs {
+        commands_json: serde_json::json!([
+            {"command": "clipboard-clear", "args": {}},
+            {"command": "version", "args": {}},
+            {
+                "command": "wait",
+                "args": {"event": "window-opened", "app": "Fixture", "timeout": 100}
+            }
+        ])
+        .to_string(),
+        stop_on_error: true,
+        timeout_ms: 60_000,
+    };
+    let adapter = AtomicEventAdapter {
+        opened: AtomicBool::new(false),
+    };
+
+    let value = execute(
+        args,
+        &adapter,
+        &PermissionReport::default(),
+        &agent_desktop_core::CommandContext::default(),
+    )
+    .unwrap();
+
+    assert_eq!(value["results"][1]["ok"], true, "{value}");
+    assert_eq!(value["results"][2]["ok"], true, "{value}");
+    assert_eq!(value["results"][2]["data"]["event"]["window_id"], "w-sync");
+}
+
+#[test]
 fn wait_as_first_entry_runs_with_event_baseline_none() {
     let args = BatchArgs {
         commands_json: serde_json::json!([
