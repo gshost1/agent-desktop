@@ -3,54 +3,41 @@
 use agent_desktop_core::{AdapterError, AppError, DeliverySemantics, ErrorCode};
 use serde_json::json;
 
-pub(super) fn baseline_error(
-    blocked_index: usize,
-    blocked_command: &str,
-    wait_index: usize,
-    wait_command: &str,
-    mut source: AdapterError,
-) -> AppError {
-    let cause_details = source.details.take();
-    source.message = format!(
-        "Batch entry {blocked_index} ('{blocked_command}') was not started because the baseline for following wait entry {wait_index} ('{wait_command}') failed: {}",
-        source.message
-    );
-    let mut details = json!({
-        "kind": "pre_action_baseline_failed",
-        "blocked_index": blocked_index,
-        "blocked_command": blocked_command,
-        "wait_index": wait_index,
-        "wait_command": wait_command,
-    });
-    if let Some(cause_details) = cause_details {
-        details["cause_details"] = cause_details;
-    }
-    source.details = Some(details);
-    source.disposition = DeliverySemantics::not_delivered();
-    source.into()
-}
+use super::preparation::PreparedCommand;
 
-/// The error for a wait entry whose read, taken at an earlier entry so the
-/// entries between could run, failed.
-pub(super) fn wait_baseline_error(
-    wait_index: usize,
-    wait_command: &str,
+/// The error for an entry not started because the read for the wait at
+/// `wait_index`, taken at entry `read_at`, failed. The entry not started is
+/// either `read_at` itself, an action that must not run unobserved, or the
+/// wait, when the read was held for it.
+pub(super) fn baseline_error(
+    commands: &[PreparedCommand],
+    not_started: usize,
     read_at: usize,
-    read_command: &str,
+    wait_index: usize,
     mut source: AdapterError,
 ) -> AppError {
+    let read_command = commands[read_at].name.as_str();
+    let wait_command = commands[wait_index].name.as_str();
     let cause_details = source.details.take();
-    source.message = format!(
-        "Batch entry {wait_index} ('{wait_command}') was not started because its baseline, read at entry {read_at} ('{read_command}'), failed: {}",
-        source.message
-    );
-    let mut details = json!({
-        "kind": "pre_action_baseline_failed",
-        "wait_index": wait_index,
-        "wait_command": wait_command,
-        "read_at_index": read_at,
-        "read_at_command": read_command,
-    });
+    let (message, mut details) = if not_started == read_at {
+        (
+            format!(
+                "Batch entry {read_at} ('{read_command}') was not started because the baseline for following wait entry {wait_index} ('{wait_command}') failed"
+            ),
+            json!({ "blocked_index": read_at, "blocked_command": read_command }),
+        )
+    } else {
+        (
+            format!(
+                "Batch entry {wait_index} ('{wait_command}') was not started because its baseline, read at entry {read_at} ('{read_command}'), failed"
+            ),
+            json!({ "read_at_index": read_at, "read_at_command": read_command }),
+        )
+    };
+    source.message = format!("{message}: {}", source.message);
+    details["kind"] = json!("pre_action_baseline_failed");
+    details["wait_index"] = json!(wait_index);
+    details["wait_command"] = json!(wait_command);
     if let Some(cause_details) = cause_details {
         details["cause_details"] = cause_details;
     }

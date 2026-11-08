@@ -13,30 +13,19 @@ pub(super) struct EntryOutcome {
 }
 
 impl EntryOutcome {
-    /// Reads the outcome of the entry at `index`. The entry ran under the
-    /// earlier of its own deadline and the batch deadline, which had
-    /// `batch_remaining_ms` left when it was dispatched. Its `TIMEOUT` is the
-    /// batch deadline's when the batch deadline has expired and the entry's
-    /// own budget, when its error reports one, would have run past what the
-    /// batch had left.
-    pub(super) fn of(
-        index: usize,
-        entry: &Value,
-        batch_remaining_ms: u64,
-        batch_expired: bool,
-    ) -> Self {
+    /// Reads the outcome of the entry at `index`. `batch_deadline_expired` is
+    /// whether, while the entry ran, its code found a deadline expired that
+    /// the batch deadline had capped (`Deadline::take_inherited_expiry`). A
+    /// `TIMEOUT` with that record is the batch deadline's, whichever step of
+    /// the entry ran out.
+    pub(super) fn of(index: usize, entry: &Value, batch_deadline_expired: bool) -> Self {
         let failed = entry["ok"] != true;
-        let error = &entry["error"];
-        let own_budget_outlasts_batch = error["details"]["timeout_ms"]
-            .as_u64()
-            .is_none_or(|own_ms| own_ms >= batch_remaining_ms);
         Self {
             index,
             failed,
             deadline_timeout: failed
-                && batch_expired
-                && error["code"] == ErrorCode::Timeout.as_str()
-                && own_budget_outlasts_batch,
+                && batch_deadline_expired
+                && entry["error"]["code"] == ErrorCode::Timeout.as_str(),
             oversized: false,
         }
     }

@@ -7,13 +7,15 @@ use agent_desktop_core::{
 };
 use serde_json::{Value, json};
 
-use super::execute;
+use crate::batch::execute;
 use crate::cli_args::batch::BatchArgs;
 
 enum ReadMode {
     WindowOnSecondReadAfterClear,
+    SecondWindowOnThirdReadAfterClear,
     Fails,
     FailsAtDeadline,
+    SucceedsAtDeadline,
 }
 
 struct ReadAdapter {
@@ -33,9 +35,13 @@ fn adapter(mode: ReadMode) -> ReadAdapter {
 }
 
 fn late_window() -> WindowInfo {
+    window("w-late", "Late")
+}
+
+fn window(id: &str, title: &str) -> WindowInfo {
     WindowInfo {
-        id: "w-late".into(),
-        title: "Late".into(),
+        id: id.into(),
+        title: title.into(),
         app: "Fixture".into(),
         pid: ProcessId::new(42),
         process_instance: Some("fixture-42".into()),
@@ -93,8 +99,19 @@ impl agent_desktop_core::SystemOps for ReadAdapter {
                 std::thread::sleep(deadline.remaining());
                 return Err(deadline.timeout_error());
             }
+            ReadMode::SucceedsAtDeadline => {
+                std::thread::sleep(deadline.remaining());
+                Vec::new()
+            }
             ReadMode::WindowOnSecondReadAfterClear if reads >= 2 => vec![late_window()],
-            ReadMode::WindowOnSecondReadAfterClear => Vec::new(),
+            ReadMode::SecondWindowOnThirdReadAfterClear if reads >= 3 => {
+                vec![window("w-alpha", "Alpha"), window("w-beta", "Beta")]
+            }
+            ReadMode::SecondWindowOnThirdReadAfterClear if reads == 2 => {
+                vec![window("w-alpha", "Alpha")]
+            }
+            ReadMode::WindowOnSecondReadAfterClear
+            | ReadMode::SecondWindowOnThirdReadAfterClear => Vec::new(),
         };
         Ok(SignalBaseline {
             windows,
@@ -207,5 +224,109 @@ fn an_early_read_failure_lets_the_action_run_and_the_wait_reports_it() {
             assert_eq!(results[3]["ok"], true, "{value}");
             assert!(value.get("stopped").is_none(), "{value}");
         }
+    }
+}
+
+fn titled_wait(title: &str) -> Value {
+    json!({
+        "command": "wait",
+        "args": {"event": "window-opened", "app": "Fixture", "window": title, "timeout": 300}
+    })
+}
+
+#[test]
+fn a_following_wait_for_another_window_still_sees_a_window_opened_during_the_first_wait() {
+    let adapter = adapter(ReadMode::SecondWindowOnThirdReadAfterClear);
+
+    let value = run(
+        &adapter,
+        json!([
+            {"command": "clipboard-clear", "args": {}},
+            titled_wait("Alpha"),
+            titled_wait("Beta")
+        ]),
+        false,
+        60_000,
+    );
+
+    assert_eq!(
+        value["results"][1]["data"]["event"]["window_id"], "w-alpha",
+        "{value}"
+    );
+    assert_eq!(
+        value["results"][2]["data"]["event"]["window_id"], "w-beta",
+        "{value}"
+    );
+}
+
+#[test]
+fn an_adjacent_read_failure_before_a_read_only_entry_is_held_for_the_wait() {
+    let adapter = adapter(ReadMode::Fails);
+
+    let value = run(
+        &adapter,
+        json!([{"command": "version", "args": {}}, opened_wait(100)]),
+        false,
+        60_000,
+    );
+
+    assert_eq!(value["results"][0]["ok"], true, "{value}");
+    assert_eq!(
+        value["results"][1]["not_started_reason"], "pre_action_baseline_failed",
+        "{value}"
+    );
+    assert!(value.get("stopped").is_none(), "{value}");
+}
+
+#[test]
+fn a_read_that_uses_up_the_batch_deadline_does_not_start_the_entry() {
+    let adapter = adapter(ReadMode::SucceedsAtDeadline);
+
+    let value = run(
+        &adapter,
+        json!([{"command": "clipboard-clear", "args": {}}, opened_wait(100)]),
+        false,
+        200,
+    );
+
+    assert_eq!(adapter.clears.load(Ordering::SeqCst), 0, "{value}");
+    assert_eq!(
+        value["results"][0]["not_started_reason"], "deadline",
+        "{value}"
+    );
+    assert_eq!(value["stopped"], json!({"reason": "deadline", "index": 0}));
+}
+
+#[test]
+fn a_wait_not_started_for_its_failed_read_still_takes_the_read_it_owes_the_next_wait() {
+    let focus_wait = json!({"command": "wait", "args": {"event": "focus-changed", "timeout": 100}});
+    for next_wait in [opened_wait(100), focus_wait] {
+        let adapter = adapter(ReadMode::Fails);
+
+        let value = run(
+            &adapter,
+            json!([
+                {"command": "clipboard-clear", "args": {}},
+                {"command": "version", "args": {}},
+                opened_wait(100),
+                next_wait
+            ]),
+            false,
+            60_000,
+        );
+
+        let results = &value["results"];
+        assert_eq!(
+            results[2]["not_started_reason"], "pre_action_baseline_failed",
+            "{value}"
+        );
+        assert_eq!(
+            results[3]["not_started_reason"], "pre_action_baseline_failed",
+            "{value}"
+        );
+        assert_eq!(
+            results[3]["error"]["details"]["read_at_index"], 2,
+            "{value}"
+        );
     }
 }

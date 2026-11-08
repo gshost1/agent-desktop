@@ -7,13 +7,15 @@ use serde_json::{Value, json};
 use crate::{cli::Commands, cli_args::batch::BatchArgs, command_policy::CommandEffect};
 
 use super::{
+    batch_results::BatchResults,
     batch_stop::BatchStop,
     bounded_json::serialized_size,
-    entry_errors::{baseline_error, batch_session_ended, batch_timeout, wait_baseline_error},
+    entry_errors::{baseline_error, batch_session_ended},
     entry_outcome::EntryOutcome,
     pending_seed::{PendingSeed, read_seed, seed_context},
-    preparation::{MAX_BATCH_ENTRIES, MAX_BATCH_JSON_BYTES, PreparedCommand, prepare},
-    result_entry::{MAX_BATCH_OUTPUT_BYTES, not_started_entry},
+    preparation::{MAX_BATCH_ENTRIES, MAX_BATCH_JSON_BYTES, prepare},
+    read_point::ReadPoint,
+    result_entry::MAX_BATCH_OUTPUT_BYTES,
     seed_plan::SeedPlan,
 };
 
@@ -34,101 +36,70 @@ pub(super) fn execute(
     let total = commands.len();
     entry_effects.extend(commands.iter().map(|prepared| prepared.command.effect()));
     let seed_plan = SeedPlan::new(&commands);
-    let mut results = Vec::with_capacity(total);
-    let mut results_bytes = 0;
-    let mut completed = 0;
+    let mut results = BatchResults::with_capacity(total);
     let mut pending_seed: Option<PendingSeed> = None;
     let mut stopped: Option<BatchStop> = None;
 
     for index in 0..total {
         if deadline.is_expired() {
-            let error = batch_timeout(index, &commands[index].name, args.timeout_ms);
-            push_small_entry(
-                &mut results,
-                &mut results_bytes,
-                not_started_entry(index, &commands[index].name, "deadline", error),
-            );
-            stopped = Some(BatchStop::DeadlineBeforeEntry { index });
+            stopped = Some(results.deadline(index, &commands[index].name, args.timeout_ms));
             break;
         }
 
-        let current_seed = pending_seed.take_if(|seed| seed.is_for(index));
-
-        if let Some(ended_session) = session_ended_for(&commands[index]) {
-            let error = batch_session_ended(index, &commands[index].name, &ended_session);
-            push_small_entry(
-                &mut results,
-                &mut results_bytes,
-                not_started_entry(index, &commands[index].name, "session_ended", error),
-            );
+        let owed = seed_plan.read_at(index);
+        let held = pending_seed
+            .take_if(|seed| seed.is_for(index))
+            .map(PendingSeed::into_read);
+        let mut seed_values = None;
+        let refusal = match (commands[index].ended_session(), held) {
+            (Some(ended), _) => Some((
+                "session_ended",
+                batch_session_ended(index, &commands[index].name, &ended),
+            )),
+            (None, Some((read_at, Err(error)))) => Some((
+                "pre_action_baseline_failed",
+                baseline_error(&commands, index, read_at, index, error),
+            )),
+            (None, Some((_, Ok(values)))) => {
+                seed_values = Some(values);
+                None
+            }
+            (None, None) => None,
+        };
+        if let Some((reason, error)) = refusal {
+            results.not_started(index, &commands[index].name, reason, error);
             if args.stop_on_error {
                 stopped = Some(BatchStop::StopOnError { index });
                 break;
             }
+            if let Some(point) = owed {
+                let wait_index = point.wait_index();
+                let read = read_seed(&commands[wait_index], adapter, deadline);
+                pending_seed = PendingSeed::held(wait_index, index, read);
+            }
             continue;
         }
 
-        let current_seed = match current_seed.map(PendingSeed::into_read) {
-            Some((read_at, Err(error))) => {
-                let read_command = &commands[read_at].name;
-                let error =
-                    wait_baseline_error(index, &commands[index].name, read_at, read_command, error);
-                push_small_entry(
-                    &mut results,
-                    &mut results_bytes,
-                    not_started_entry(
+        if let Some(ReadPoint::Before { wait_index }) = owed {
+            let read = read_seed(&commands[wait_index], adapter, deadline);
+            if deadline.is_expired() {
+                stopped = Some(results.deadline(index, &commands[index].name, args.timeout_ms));
+                break;
+            }
+            match read {
+                Err(error) if wait_index == index + 1 && entry_effects[index].sends_input() => {
+                    let error = baseline_error(&commands, index, index, wait_index, error);
+                    results.not_started(
                         index,
                         &commands[index].name,
                         "pre_action_baseline_failed",
                         error,
-                    ),
-                );
-                if args.stop_on_error {
-                    stopped = Some(BatchStop::StopOnError { index });
-                    break;
-                }
-                continue;
-            }
-            Some((_, Ok(values))) => Some(values),
-            None => None,
-        };
-
-        if let Some(wait_index) = seed_plan.read_before(index) {
-            match read_seed(&commands[wait_index], adapter, deadline) {
-                Err(_) if deadline.is_expired() => {
-                    let error = batch_timeout(index, &commands[index].name, args.timeout_ms);
-                    push_small_entry(
-                        &mut results,
-                        &mut results_bytes,
-                        not_started_entry(index, &commands[index].name, "deadline", error),
-                    );
-                    stopped = Some(BatchStop::DeadlineBeforeEntry { index });
-                    break;
-                }
-                Err(error) if wait_index == index + 1 => {
-                    let wait_command = commands[wait_index].name.clone();
-                    let error = baseline_error(
-                        index,
-                        &commands[index].name,
-                        wait_index,
-                        &wait_command,
-                        error,
-                    );
-                    push_small_entry(
-                        &mut results,
-                        &mut results_bytes,
-                        not_started_entry(
-                            index,
-                            &commands[index].name,
-                            "pre_action_baseline_failed",
-                            error,
-                        ),
                     );
                     stopped = Some(BatchStop::BaselineFailed {
                         blocked_index: index,
                         blocked_command: commands[index].name.clone(),
                         wait_index,
-                        wait_command,
+                        wait_command: commands[wait_index].name.clone(),
                     });
                     break;
                 }
@@ -137,49 +108,46 @@ pub(super) fn execute(
         }
 
         let item_context = seed_context(
-            current_seed,
+            seed_values,
             commands[index]
                 .context
                 .clone()
                 .with_inherited_deadline(deadline),
         );
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
-        let batch_remaining_ms = deadline.remaining_ms();
+        Deadline::take_inherited_expiry();
         let entry = super::result_entry::completed_entry(
             index,
             &commands[index].name,
             crate::dispatch::dispatch(command, adapter, permission_report, &item_context),
         );
-        let outcome = EntryOutcome::of(index, &entry, batch_remaining_ms, deadline.is_expired());
+        let outcome = EntryOutcome::of(index, &entry, Deadline::take_inherited_expiry());
         let (entry, oversized) = super::result_entry::bounded_completed_entry(
             index,
             &commands[index].name,
             entry_effects[index],
             entry,
-            results_bytes,
+            results.bytes(),
         );
-        completed += usize::from(entry["execution"] == "completed");
-        push_small_entry(&mut results, &mut results_bytes, entry);
+        results.push(entry);
 
-        let outcome = outcome.with_oversized(oversized);
         stopped = BatchStop::after_entry(
-            &outcome,
+            &outcome.with_oversized(oversized),
             deadline.is_expired() && index + 1 < total,
             args.stop_on_error,
         );
         if stopped.is_some() {
             break;
         }
-        if !outcome.failed
-            && let Some(wait_index) = seed_plan.read_again_after(index)
-        {
+        if let Some(ReadPoint::After { wait_index }) = owed {
             let read = read_seed(&commands[wait_index], adapter, deadline);
             pending_seed = PendingSeed::held(wait_index, index, read);
         }
     }
 
+    let completed = results.completed();
     let mut body = json!({
-        "results": results,
+        "results": results.into_entries(),
         "semantics": {
             "atomic": false,
             "order": "sequential",
@@ -223,24 +191,18 @@ pub(super) fn execute(
     Ok(body)
 }
 
-/// The session an entry would be refused for because it has ended, unless
-/// the command runs in an ended session, as `session end` does.
-fn session_ended_for(command: &PreparedCommand) -> Option<String> {
-    if command.command.runs_in_an_ended_session() {
-        return None;
-    }
-    let session_id = command.context.session_id()?;
-    match agent_desktop_core::session::read_manifest(session_id) {
-        Ok(Some(manifest)) if manifest.ended_at.is_some() => Some(session_id.to_owned()),
-        _ => None,
-    }
-}
-
-fn push_small_entry(results: &mut Vec<Value>, used: &mut usize, entry: Value) {
-    *used = used.saturating_add(serialized_size(&entry).saturating_add(1));
-    results.push(entry);
-}
-
 #[cfg(test)]
 #[path = "execution_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "seed_read_tests.rs"]
+mod seed_read_tests;
+
+#[cfg(test)]
+#[path = "session_end_tests.rs"]
+mod session_end_tests;
+
+#[cfg(test)]
+#[path = "deadline_stop_tests.rs"]
+mod deadline_stop_tests;

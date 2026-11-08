@@ -9,6 +9,7 @@ pub const DEFAULT_OPERATION_TIMEOUT_MS: u64 = 5_000;
 
 thread_local! {
     static INHERITED_DEADLINE: Cell<Option<Deadline>> = const { Cell::new(None) };
+    static INHERITED_EXPIRY_OBSERVED: Cell<bool> = const { Cell::new(false) };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +18,7 @@ pub struct Deadline {
     expires_at: Instant,
     timeout_ms: u64,
     capped: bool,
+    inherited: bool,
 }
 
 impl Deadline {
@@ -50,6 +52,7 @@ impl Deadline {
             expires_at,
             timeout_ms,
             capped: false,
+            inherited: false,
         })
     }
 
@@ -83,6 +86,7 @@ impl Deadline {
             expires_at,
             timeout_ms,
             capped: false,
+            inherited: false,
         };
         Ok(INHERITED_DEADLINE.with(|inherited| {
             inherited
@@ -92,7 +96,19 @@ impl Deadline {
     }
 
     pub fn remaining(self) -> Duration {
-        self.expires_at.saturating_duration_since(now())
+        let remaining = self.expires_at.saturating_duration_since(now());
+        if remaining.is_zero() && self.inherited {
+            INHERITED_EXPIRY_OBSERVED.set(true);
+        }
+        remaining
+    }
+
+    /// Whether code on this thread found a deadline expired, or built its
+    /// timeout error, while its expiry was set by the enclosing command
+    /// scope's inherited deadline, such as a batch deadline, since the last
+    /// call. Clears the record.
+    pub fn take_inherited_expiry() -> bool {
+        INHERITED_EXPIRY_OBSERVED.replace(false)
     }
 
     pub fn remaining_slice(self, maximum: Duration) -> Result<Duration, AdapterError> {
@@ -169,6 +185,7 @@ impl Deadline {
     }
 
     pub fn timeout_error(self) -> AdapterError {
+        let _ = self.remaining();
         AdapterError::timeout("Operation exceeded its deadline").with_details(json!({
             "kind": "deadline",
             "timeout_ms": self.timeout_ms,
@@ -177,9 +194,22 @@ impl Deadline {
     }
 
     fn min_expiry(self, other: Self) -> Self {
+        let other_is_earlier = other.expires_at < self.expires_at;
         Self {
-            capped: self.capped || other.expires_at < self.expires_at,
+            capped: self.capped || other_is_earlier,
+            inherited: if other_is_earlier {
+                other.inherited
+            } else {
+                self.inherited
+            },
             expires_at: self.expires_at.min(other.expires_at),
+            ..self
+        }
+    }
+
+    fn as_inherited(self) -> Self {
+        Self {
+            inherited: true,
             ..self
         }
     }
@@ -202,7 +232,7 @@ pub(crate) fn enter_scope(deadline: Option<Deadline>) -> DeadlineScope {
         (Some(parent), Some(child)) => Some(child.min_expiry(parent)),
         (parent, child) => parent.or(child),
     };
-    INHERITED_DEADLINE.set(effective);
+    INHERITED_DEADLINE.set(effective.map(Deadline::as_inherited));
     DeadlineScope {
         previous,
         _not_send: std::marker::PhantomData,

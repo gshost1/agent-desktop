@@ -163,3 +163,57 @@ fn dropping_the_clock_restores_real_time() {
     assert!(resumed >= before);
     assert!(resumed.saturating_duration_since(before) < Duration::from_secs(1800));
 }
+
+#[test]
+fn a_local_deadline_capped_by_the_inherited_one_records_its_expiry() {
+    let clock = VirtualClock::freeze();
+    let _scope = super::enter_scope(Some(Deadline::after(30).unwrap()));
+    let local = Deadline::after(5_000).unwrap();
+    Deadline::take_inherited_expiry();
+
+    clock.advance(Duration::from_millis(29));
+    assert!(!local.is_expired());
+    assert!(!Deadline::take_inherited_expiry());
+    clock.advance(Duration::from_millis(1));
+    assert!(local.is_expired());
+    assert!(Deadline::take_inherited_expiry());
+    assert!(!Deadline::take_inherited_expiry());
+}
+
+#[test]
+fn a_shorter_local_deadline_expiring_is_not_the_inherited_one() {
+    let clock = VirtualClock::freeze();
+    let _scope = super::enter_scope(Some(Deadline::after(5_000).unwrap()));
+    let local = Deadline::after(30).unwrap();
+    Deadline::take_inherited_expiry();
+
+    clock.advance(Duration::from_millis(30));
+
+    assert!(local.is_expired());
+    assert!(!Deadline::take_inherited_expiry());
+}
+
+#[test]
+fn a_deadline_outside_any_scope_never_records_an_inherited_expiry() {
+    let clock = VirtualClock::freeze();
+    let deadline = Deadline::after(10).unwrap();
+    Deadline::take_inherited_expiry();
+
+    clock.advance(Duration::from_millis(10));
+
+    assert!(deadline.is_expired());
+    assert!(!Deadline::take_inherited_expiry());
+}
+
+#[test]
+fn a_timeout_error_from_an_expired_inherited_cap_records_the_expiry() {
+    let clock = VirtualClock::freeze();
+    let _scope = super::enter_scope(Some(Deadline::after(30).unwrap()));
+    let local = Deadline::after(5_000).unwrap();
+    Deadline::take_inherited_expiry();
+
+    clock.advance(Duration::from_millis(30));
+    let _error = local.timeout_error();
+
+    assert!(Deadline::take_inherited_expiry());
+}

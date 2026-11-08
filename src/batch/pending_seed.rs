@@ -48,7 +48,8 @@ impl PendingSeed {
 
 /// Reads what the wait entry `wait` diffs against, so a window, surface or
 /// notification the entries before it produce is reported as new instead of
-/// being absorbed into the wait's own first read. Only an event baseline
+/// being absorbed into the wait's own first read. A wait whose session has
+/// already ended is not read for: it will be skipped. Only an event baseline
 /// failure is an error: a notification seed that cannot be read falls back
 /// to the wait's own first list and never fails.
 pub(super) fn read_seed(
@@ -59,6 +60,9 @@ pub(super) fn read_seed(
     let (Commands::Wait(args), Some(kind)) = (&wait.command, SeedKind::of(&wait.command)) else {
         return Ok(None);
     };
+    if wait.ended_session().is_some() {
+        return Ok(None);
+    }
     match kind {
         SeedKind::Notification { .. } => {
             let Ok(core_args) = crate::dispatch::system::core_wait_args(args) else {

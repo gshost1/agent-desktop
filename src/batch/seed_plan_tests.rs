@@ -2,7 +2,7 @@ use agent_desktop_core::{CommandContext, PermissionReport};
 use serde_json::{Value, json};
 
 use super::SeedPlan;
-use crate::batch::preparation::prepare;
+use crate::batch::{preparation::prepare, read_point::ReadPoint};
 
 const ACTION: &str = r#"{"command": "clipboard-clear", "args": {}}"#;
 const EVENT_WAIT: &str = r#"{"command": "wait", "args": {"event": "window-opened"}}"#;
@@ -21,14 +21,16 @@ fn plan(commands: Value) -> (SeedPlan, usize) {
     (SeedPlan::new(&prepared), prepared.len())
 }
 
-fn reads(commands: Value) -> Vec<Option<usize>> {
+fn points(commands: Value) -> Vec<Option<ReadPoint>> {
     let (plan, len) = plan(commands);
-    (0..len).map(|index| plan.read_before(index)).collect()
+    (0..len).map(|index| plan.read_at(index)).collect()
 }
 
-fn reads_again(commands: Value) -> Vec<Option<usize>> {
-    let (plan, len) = plan(commands);
-    (0..len).map(|index| plan.read_again_after(index)).collect()
+fn reads(commands: Value) -> Vec<Option<usize>> {
+    points(commands)
+        .into_iter()
+        .map(|point| point.map(ReadPoint::wait_index))
+        .collect()
 }
 
 #[test]
@@ -45,10 +47,17 @@ fn an_event_wait_is_read_before_the_action_across_read_only_and_local_write_entr
 }
 
 #[test]
-fn a_wait_after_a_wait_is_read_before_the_earlier_wait() {
-    let plan = reads(json!([entry(ACTION), entry(EVENT_WAIT), entry(EVENT_WAIT)]));
+fn a_repeated_wait_is_read_once_after_the_earlier_wait_and_never_before_it() {
+    let plan = points(json!([entry(ACTION), entry(EVENT_WAIT), entry(EVENT_WAIT)]));
 
-    assert_eq!(plan, vec![Some(1), Some(2), None]);
+    assert_eq!(
+        plan,
+        vec![
+            Some(ReadPoint::Before { wait_index: 1 }),
+            Some(ReadPoint::After { wait_index: 2 }),
+            None
+        ]
+    );
 }
 
 #[test]
@@ -85,18 +94,29 @@ fn a_first_entry_wait_and_unseeded_waits_are_never_read_ahead() {
 }
 
 #[test]
-fn only_a_wait_of_the_same_kind_is_read_again_after_the_earlier_wait() {
-    let other_app = json!({"command": "wait", "args": {"event": "window-opened", "app": "Other"}});
+fn only_a_wait_with_the_same_whole_filter_is_read_after_the_earlier_wait() {
+    let other_window =
+        json!({"command": "wait", "args": {"event": "window-opened", "window": "B"}});
     let focus = json!({"command": "wait", "args": {"event": "focus-changed"}});
 
-    let again = reads_again(json!([
+    let points = points(json!([
         entry(ACTION),
         entry(EVENT_WAIT),
         {"command": "version", "args": {}},
         entry(EVENT_WAIT),
-        other_app,
+        other_window,
         focus
     ]));
 
-    assert_eq!(again, vec![None, Some(3), None, None, None, None]);
+    assert_eq!(
+        points,
+        vec![
+            Some(ReadPoint::Before { wait_index: 1 }),
+            Some(ReadPoint::After { wait_index: 3 }),
+            None,
+            Some(ReadPoint::Before { wait_index: 4 }),
+            Some(ReadPoint::Before { wait_index: 5 }),
+            None
+        ]
+    );
 }
