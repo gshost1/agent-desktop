@@ -180,6 +180,7 @@ fn wrong_or_rejected_values_fail_and_leave_the_input_alone() {
     page.set("timefield", "Delivery time", "10:00").unwrap();
     page.set("datefield", "Delivery day", "2026-11-08").unwrap();
     page.take_events();
+    page.eval("document.getElementById('customer').focus()");
 
     let other_form = page
         .set("timefield", "Delivery time", "7:30 PM")
@@ -202,6 +203,7 @@ fn wrong_or_rejected_values_fail_and_leave_the_input_alone() {
     assert_eq!(page.value("delivery"), "10:00");
     assert_eq!(page.value("day"), "2026-11-08");
     assert_eq!(page.take_events(), json!([]));
+    assert_eq!(page.eval("document.activeElement.id"), "customer");
 
     let before_min = page.set("datefield", "Delivery day", "2025-06-01").unwrap();
     assert_eq!(
@@ -245,4 +247,39 @@ fn a_range_input_reports_the_value_it_clamped_to() {
     assert_eq!(clamped.code, ErrorCode::ActionFailed);
     assert_eq!(clamped.details.unwrap()["observed"], "10");
     assert_eq!(page.value("spice"), "10");
+}
+
+#[test]
+#[ignore = "launches headless Chrome"]
+fn a_fraction_of_a_second_verifies_in_the_form_the_browser_writes_back() {
+    let (_chrome, mut page) = open();
+    let long = page
+        .set("datefield", "Pickup slot", "2026-11-08T19:30:05.500")
+        .unwrap_err();
+    assert_eq!(long.code, ErrorCode::InvalidArgs);
+    assert!(
+        long.suggestion
+            .unwrap()
+            .starts_with("Pass '2026-11-08T19:30:05.5'.")
+    );
+    for (role, name, id, value) in [
+        ("datefield", "Pickup slot", "slot", "2026-11-08T19:30:05.5"),
+        (
+            "datefield",
+            "Pickup slot",
+            "slot",
+            "2026-11-08T19:30:05.123",
+        ),
+        ("timefield", "Delivery time", "delivery", "19:30:05.500"),
+        ("timefield", "Delivery time", "delivery", "19:30:05.5"),
+        ("timefield", "Delivery time", "delivery", "19:30:00.000"),
+    ] {
+        let outcome = page.set(role, name, value).unwrap();
+        assert_eq!(
+            outcome.delivery(),
+            DeliverySemantics::delivered_verified(),
+            "{value}"
+        );
+        assert_eq!(page.value(id), value);
+    }
 }

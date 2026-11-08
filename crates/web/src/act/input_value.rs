@@ -13,7 +13,8 @@ use crate::{CdpConnection, PageSession};
 /// framework that tracks the value on the element itself still sees a
 /// change, then fires `input` and `change` as a user edit would and reads
 /// the value back. A value the input sanitizes to empty is put back and
-/// reported as rejected, with no event fired.
+/// reported as rejected before the input is focused, so a refusal fires no
+/// event and moves no focus.
 const ASSIGN_VALUE: &str = r"function(value) {
   const before = this.value;
   if (before === value) return { status: 'unchanged', observed: before };
@@ -21,12 +22,12 @@ const ASSIGN_VALUE: &str = r"function(value) {
   while (owner && !Object.getOwnPropertyDescriptor(owner, 'value')) owner = Object.getPrototypeOf(owner);
   const descriptor = owner ? Object.getOwnPropertyDescriptor(owner, 'value') : null;
   const assign = (next) => { if (descriptor && descriptor.set) descriptor.set.call(this, next); else this.value = next; };
-  this.focus();
   assign(value);
   if (value !== '' && this.value === '') {
     assign(before);
     return { status: 'rejected', observed: this.value };
   }
+  this.focus();
   this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   this.dispatchEvent(new Event('change', { bubbles: true }));
   return { status: 'assigned', observed: this.value };

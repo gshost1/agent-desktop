@@ -101,5 +101,6 @@ fn an_incrementor_refusing_a_value_points_at_the_field_that_contains_it() {
         let hint = error.suggestion.unwrap();
         assert!(hint.contains("field that contains it"), "{hint}");
         assert!(hint.contains("timefield"), "{hint}");
+        assert!(!hint.contains("ArrowUp"), "{hint}");
     }
 }

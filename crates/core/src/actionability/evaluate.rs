@@ -272,7 +272,7 @@ fn finish(
     } else if evidence.state.role == "cell" && editable_failed {
         "This cell is not directly editable. Activate it, take a fresh snapshot, and target the text editor if one appears."
     } else if evidence.state.role == "incrementor" && editable_failed {
-        "This incrementor has no value of its own to set: it is a stepper, or one part of a date or time field. Set the whole value with set-value on the field that contains it, the parent that advertises SetValue (on the web surface, a datefield or timefield), or step it with press ArrowUp or ArrowDown."
+        "This incrementor has no value of its own to set. When it is one part of a date or time field, set the whole value with set-value on the field that contains it, the parent that advertises SetValue (on the web surface, a datefield or timefield)."
     } else if not_supported && matches!(request.action, crate::Action::SetFocus) {
         "Choose an element advertising SetFocus in a fresh snapshot. To focus the owning window instead, use focus-window."
     } else if not_supported
