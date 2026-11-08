@@ -14,6 +14,7 @@ pub(crate) mod ref_action_context;
 pub(crate) mod ref_action_poll;
 pub(crate) mod ref_action_poll_state;
 pub(crate) mod ref_action_single;
+pub(crate) mod ref_action_single_shot;
 pub(crate) mod ref_action_wait;
 pub(crate) mod ref_action_wait_context;
 pub(crate) mod ref_action_wait_evidence;
@@ -79,7 +80,7 @@ pub(crate) fn dispatch_resolved_landing(
         .ok_or_else(|| AdapterError::stale_ref_because("target process instance is unavailable"))?;
     let expected_process = crate::ProcessIdentity::new(target.entry.process.pid, process_instance);
     let mut handle = resolve_saved_ref(target.adapter, target.entry, target.deadline, Some(lease))
-        .map_err(mark_pre_dispatch_resolution_failure)
+        .map_err(AdapterError::unsent)
         .inspect_err(|error| {
             crate::ref_action::ref_action_wait_support::trace_resolve_error(
                 target.context,
@@ -92,7 +93,7 @@ pub(crate) fn dispatch_resolved_landing(
     let preflight = match stable_preflight(&initial_target, &request) {
         Ok(preflight) => preflight,
         Err(error) => {
-            let error = mark_pre_dispatch_resolution_failure(into_adapter_error(error));
+            let error = error.into_adapter_error().unsent();
             if !crate::ref_action::ref_action_wait_evidence::should_scroll_after_preflight(
                 &request, &error,
             ) {
@@ -123,7 +124,7 @@ pub(crate) fn dispatch_resolved_landing(
             };
             let scrolled_target = ResolvedRefAction::new(target, &handle);
             stable_preflight(&scrolled_target, &request)
-                .map_err(|error| after_scroll(into_adapter_error(error)))?
+                .map_err(|error| after_scroll(error.into_adapter_error()))?
         }
     };
     if matches!(
@@ -136,10 +137,13 @@ pub(crate) fn dispatch_resolved_landing(
         .with_verified_point(preflight.verified_point.clone())
         .with_expected_process(expected_process.clone());
     let final_target = ResolvedRefAction::new(target, &handle);
-    final_target.context.trace_lazy(
-        "action.dispatch.start",
-        || json!({ "ref": final_target.ref_id, "action": request.action.name() }),
-    )?;
+    final_target
+        .context
+        .trace_lazy(
+            "action.dispatch.start",
+            || json!({ "ref": final_target.ref_id, "action": request.action.name() }),
+        )
+        .map_err(|error| error.into_adapter_error().unsent())?;
     let action_name = request.action.name();
     let raises_surface = request.action.may_raise_surface();
     let presentation_action = request.action.clone();
@@ -174,17 +178,6 @@ pub(crate) fn dispatch_resolved_landing(
         )
         .map_err(trace_error_after_delivery)?;
     Ok((result, handle))
-}
-
-pub(crate) fn mark_pre_dispatch_resolution_failure(error: AdapterError) -> AdapterError {
-    match error.disposition {
-        crate::DeliverySemantics::Unknown | crate::DeliverySemantics::NotDelivered => {
-            error.with_disposition(crate::DeliverySemantics::not_delivered())
-        }
-        crate::DeliverySemantics::DeliveryUncertain
-        | crate::DeliverySemantics::DeliveredUnverified
-        | crate::DeliverySemantics::DeliveredVerified => error,
-    }
 }
 
 pub(crate) fn capture_pre_artifact(
@@ -377,13 +370,6 @@ pub fn execute_entry(
     request: ActionRequest,
 ) -> Result<ActionResult, AdapterError> {
     execute_entry_with_context(adapter, entry, request, &CommandContext::default())
-}
-
-pub(crate) fn into_adapter_error(err: AppError) -> AdapterError {
-    match err {
-        AppError::Adapter(err) => err,
-        other => AdapterError::internal(other.to_string()),
-    }
 }
 
 #[cfg(test)]
