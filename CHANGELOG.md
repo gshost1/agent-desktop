@@ -34,6 +34,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 * In the C library, return each failing call's own result code, and let a log callback call back into the library. ([#37](https://github.com/gshost1/agent-desktop/pull/37)) ([#55](https://github.com/gshost1/agent-desktop/pull/55))
 * Tell agents to brace a snapshot-qualified ref built from a shell variable (`"${S}:e1"`). In zsh, an unbraced `$S:e1` drops the snapshot id and passes `1`. ([#63](https://github.com/gshost1/agent-desktop/pull/63))
 * On the web channel, give native date, time, datetime-local, month, week and color inputs one ref and set them whole with `set-value`, reported `delivered_verified` only when the read-back matches. A value in another format is refused with the exact value to pass, a part of the input is refused with the input it belongs to, and a batch now reports `failed_entries`. ([#66](https://github.com/gshost1/agent-desktop/pull/66))
+* Return a full snapshot whose refs would pass the 1 MB refmap cap, such as a long web page, as a truncated tree (`complete: false`, `refmap_capped: true`) instead of failing with `INTERNAL`. `wait --text` and `--wait-for` report `match_cut` when the match lies past the cut. A `--root` drill past the cap still fails with `INTERNAL`. ([#64](https://github.com/gshost1/agent-desktop/pull/64))
 * On Linux, confirm a window placement that the window manager applies late, report an X11 emergency release only when a key or button was held, and give back a pre-maximize place only while the window is as the agent left it. ([#43](https://github.com/gshost1/agent-desktop/pull/43)) ([#15](https://github.com/gshost1/agent-desktop/pull/15)) ([#22](https://github.com/gshost1/agent-desktop/pull/22))
 
 ### Performance
@@ -52,7 +53,6 @@ This fork release publishes GitHub release archives and checksums only. It does 
 ### Known issues
 
 * Once in 15 benchmark runs, a cold Chrome start was not exposed to the accessibility tree until `launch "Google Chrome" --activate`.
-* Snapshotting a very large web page can fail with `INTERNAL` "RefMap exceeds 1MB size".
 * Clickable rows that a web page exposes only as plain text get no ref.
 
 ## [1.2.0](https://github.com/vercel-labs/agent-desktop/compare/v1.1.0...v1.2.0) (2026-11-05)
