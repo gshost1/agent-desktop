@@ -55,9 +55,10 @@ calls that already acquired it finish safely, while calls that begin afterward
 return `AD_RESULT_ERR_INVALID_ARGS`. Concurrent destruction cannot free memory
 still referenced by an in-flight call.
 
-Destroying an adapter also revokes native handles created by that adapter on the
-calling thread. Other threads' handle registries reject subsequent use because
-the owner adapter token no longer exists.
+Destroying an adapter does not release native handles created by it. Using such
+a handle afterward fails because the owner adapter token no longer exists, but
+the handle stays allocated until `ad_free_handle` (with the same adapter pointer
+value) or the end of the thread that created it.
 
 ## Native-handle thread ownership
 

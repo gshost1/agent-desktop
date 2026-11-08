@@ -46,8 +46,7 @@ macro_rules! operation_deadline {
         match $crate::operation::deadline() {
             Ok(deadline) => deadline,
             Err(error) => {
-                $crate::error::set_last_error(&error);
-                return $crate::error::last_error_code();
+                return $crate::error::set_last_error(&error);
             }
         }
     }};
@@ -58,8 +57,7 @@ macro_rules! interaction_lease {
         match $crate::operation::lease($adapter) {
             Ok(lease) => lease,
             Err(error) => {
-                $crate::error::set_last_error(&error);
-                return $crate::error::last_error_code();
+                return $crate::error::set_last_error(&error);
             }
         }
     }};

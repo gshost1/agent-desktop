@@ -30,10 +30,13 @@ pub(crate) fn core_wait_args(args: &WaitArgs) -> Result<wait_command::WaitArgs, 
             element: args.mode.element.clone(),
             window: args.mode.window.clone(),
             text: args.mode.text.clone(),
-            surface: SurfaceWait::from_flags(
-                args.mode.menu,
-                args.mode.menu_closed,
-                args.mode.notification,
+            surface: SurfaceWait::with_download(
+                SurfaceWait::from_flags(
+                    args.surface.menu,
+                    args.surface.menu_closed,
+                    args.surface.notification,
+                )?,
+                args.surface.download,
             )?,
             event: args.event.event.clone(),
             window_id: args.event.window_id.clone(),

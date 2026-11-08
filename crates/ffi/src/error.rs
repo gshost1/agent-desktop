@@ -117,7 +117,8 @@ fn error_code_to_result(code: &ErrorCode) -> AdResult {
     }
 }
 
-pub(crate) fn set_last_error(err: &AdapterError) {
+#[must_use = "a failing call must return the code mapped from its error"]
+pub(crate) fn set_last_error(err: &AdapterError) -> AdResult {
     let code = error_code_to_result(&err.code);
     let message = match CString::new(err.message.as_str()) {
         Ok(cs) => MessageSource::Owned(cs),
@@ -141,6 +142,7 @@ pub(crate) fn set_last_error(err: &AdapterError) {
         details,
         disposition: err.disposition,
     });
+    code
 }
 
 #[cfg(test)]
@@ -173,7 +175,7 @@ pub(crate) fn set_last_error_static(code: AdResult, message: &'static CStr) {
     });
 }
 
-pub(crate) fn last_error_code() -> AdResult {
+fn last_error_code() -> AdResult {
     LAST_ERROR
         .try_with(|cell| {
             cell.try_borrow()

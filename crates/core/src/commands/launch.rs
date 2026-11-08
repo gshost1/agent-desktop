@@ -14,11 +14,22 @@ const MAX_PROBE_RESERVE: Duration = Duration::from_millis(5_000);
 pub struct LaunchArgs {
     pub app: String,
     pub options: LaunchOptions,
+    /// Where the launched browser saves downloads. Needs `--cdp`. Launch
+    /// asks the adapter to write it into the browser profile; failing that,
+    /// every later DevTools connection points downloads here.
+    pub download_dir: Option<std::path::PathBuf>,
 }
 
 pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value, AppError> {
-    let LaunchArgs { app, mut options } = args;
+    let LaunchArgs {
+        app,
+        mut options,
+        download_dir,
+    } = args;
     crate::wait_timeout_duration(options.timeout_ms)?;
+    let download_dir = download_dir
+        .map(|dir| crate::system::download_dir::prepare_download_dir(&dir, options.cdp_port))
+        .transpose()?;
     let deadline = if options.timeout_ms == 0 {
         crate::Deadline::standard()?
     } else {
@@ -41,18 +52,57 @@ pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value,
     let launch_deadline = probe_budget.map_or(deadline, |reserve| {
         deadline.capped(deadline.remaining().saturating_sub(reserve))
     });
+    let download_scope = download_dir
+        .as_deref()
+        .map(|dir| prepare_downloads(adapter, &options, dir));
     let lease = adapter.acquire_interaction_lease(launch_deadline)?;
     let mut launched = adapter.launch_app(&app, &options, &lease)?;
     if let Some(port) = options.cdp_port {
         let granted = deadline.remaining();
-        launched.cdp = Some(verify_cdp_endpoint(
-            port, deadline, granted, &launched, adapter,
-        )?);
+        let mut endpoint = verify_cdp_endpoint(port, deadline, granted, &launched, adapter)?;
+        endpoint.download_dir = download_dir;
+        endpoint.download_scope = download_scope;
+        remember_endpoint(adapter, &launched, &endpoint);
+        launched.cdp = Some(endpoint);
     }
     if launched.suggestion.is_none() {
         launched.suggestion = launch_suggestion(requested_cdp_port.is_some(), &launched);
     }
     Ok(serde_json::to_value(launched)?)
+}
+
+/// Asks the adapter to write the download folder into the browser profile
+/// before launch. The launch can still point downloads there over each
+/// DevTools connection, so a refusal is logged and the connection scope
+/// stands.
+fn prepare_downloads(
+    adapter: &dyn PlatformAdapter,
+    options: &LaunchOptions,
+    download_dir: &str,
+) -> crate::DownloadScope {
+    adapter
+        .prepare_cdp_downloads(options, download_dir)
+        .unwrap_or_else(|error| {
+            tracing::warn!(error = %error, "launch: the profile download folder was not set");
+            crate::DownloadScope::Connection
+        })
+}
+
+/// A verified endpoint is offered to the adapter so a later invocation can
+/// reach the same browser. The launch already succeeded, so a failure to
+/// record it is logged and the result stands.
+fn remember_endpoint(
+    adapter: &dyn PlatformAdapter,
+    launched: &LaunchResult,
+    endpoint: &cdp_endpoint::CdpEndpoint,
+) {
+    let Some(instance) = launched.process_instance.as_deref() else {
+        return;
+    };
+    let process = crate::ProcessIdentity::new(launched.pid, instance);
+    if let Err(error) = adapter.remember_cdp_endpoint(process, endpoint) {
+        tracing::warn!(error = %error, "launch: DevTools endpoint was not recorded");
+    }
 }
 
 /// The probe needs some of the overall deadline reserved for itself, or a
@@ -66,25 +116,25 @@ fn probe_reserve(total: Duration) -> Duration {
 
 /// Guidance the calling agent reads at the moment of use, not prose it has
 /// to infer: a Chromium app launched without `--cdp` is nudged toward the
-/// flag that opens the web-content door, and a verified endpoint is handed
-/// off to a CDP client instead of left for the caller to rediscover.
+/// flag that opens the web-content door, and a verified endpoint points at
+/// the web surface that reads and drives the page through it.
 fn launch_suggestion(cdp_requested: bool, launched: &LaunchResult) -> Option<String> {
-    if let Some(cdp) = &launched.cdp {
+    if launched.cdp.is_some() {
         return Some(format!(
-            "Next: run `agent-browser connect {}` (preferred; `agent-browser skills get \
-             electron` has the guide) or connect any CDP client such as Playwright or \
-             Puppeteer. If neither is available, ask the user to install agent-browser or \
-             continue with accessibility commands. Do not hand-roll raw CDP or call \
-             app-internal APIs — that path is unverified and app-specific. Native menus, \
-             dialogs, windows, and screenshots stay with agent-desktop.",
-            cdp.port
+            "Next: read the web content with `snapshot --app \"{app}\" --surface web -i` and act \
+             on its refs with the usual commands; `data.channel` is `cdp` when it was read over \
+             this endpoint. In a web browser, `open-url <url> --app \"{app}\"` loads a page; an \
+             app that embeds web content for its own interface refuses it. Do not hand-roll raw \
+             CDP or call app-internal APIs. Native menus, dialogs, windows, and screenshots stay \
+             on the accessibility surfaces.",
+            app = launched.app
         ));
     }
     if !cdp_requested && launched.renderer == Some(RendererKind::Chromium) {
         return Some(
             "Chromium app: for web-content work, run close-app and then launch --cdp, then \
-             drive the web contents with agent-browser or any CDP client. Accessibility \
-             commands still cover everything, including native menus and dialogs."
+             read the page with snapshot --surface web. Accessibility commands still cover \
+             everything, including native menus and dialogs."
                 .to_owned(),
         );
     }
@@ -263,3 +313,7 @@ mod cdp_tests;
 #[cfg(test)]
 #[path = "launch_cdp_switch_tests.rs"]
 mod cdp_switch_tests;
+
+#[cfg(test)]
+#[path = "launch_download_tests.rs"]
+mod download_tests;

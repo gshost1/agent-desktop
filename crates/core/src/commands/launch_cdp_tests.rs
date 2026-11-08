@@ -16,6 +16,7 @@ fn cdp_launch_rejects_a_conflicting_remote_debugging_switch() {
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },
@@ -59,6 +60,7 @@ fn cdp_launch_rejects_an_already_running_instance() {
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },
@@ -101,6 +103,7 @@ fn cdp_launch_rejects_a_running_instance_named_by_its_path() {
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "/opt/Obsidian/Obsidian.exe".into(),
                 options,
             },
@@ -143,6 +146,7 @@ fn cdp_launch_ignores_a_name_matching_helper_process_without_presentation() {
 
     let value = execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options,
         },
@@ -168,6 +172,7 @@ fn cdp_launch_appends_the_switch_and_resolves_the_port_before_verification_fails
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },
@@ -203,6 +208,7 @@ fn cdp_launch_returns_a_verified_endpoint_when_the_process_answers() {
 
     let value = execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options,
         },
@@ -240,6 +246,7 @@ fn cdp_launch_rejects_a_valid_devtools_response_from_an_unattributed_listener() 
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },
@@ -273,6 +280,7 @@ fn chromium_renderer_without_cdp_gets_the_relaunch_suggestion() {
 
     let value = execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options: LaunchOptions::default(),
         },
@@ -303,6 +311,7 @@ fn cdp_success_gets_the_handoff_suggestion() {
 
     let value = execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options,
         },
@@ -315,7 +324,8 @@ fn cdp_success_gets_the_handoff_suggestion() {
         .get("suggestion")
         .and_then(Value::as_str)
         .expect("suggestion present once the endpoint is verified");
-    assert!(suggestion.contains("agent-browser connect"));
+    assert!(suggestion.contains("--surface web"));
+    assert!(!suggestion.contains("agent-browser"));
     assert!(suggestion.contains("Do not hand-roll raw CDP"));
 }
 
@@ -325,6 +335,7 @@ fn non_chromium_plain_launch_has_neither_renderer_nor_suggestion() {
 
     let value = execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options: LaunchOptions::default(),
         },
@@ -372,6 +383,7 @@ impl crate::adapter::SystemOps for SuggestingAdapter {
 fn adapter_suggestion_survives_the_core_chromium_nudge() {
     let value = execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options: LaunchOptions::default(),
         },

@@ -85,7 +85,7 @@ fn build_node(
     vec![WebNode { children, ..built }]
 }
 
-fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'_>) -> WebNode {
+pub(crate) fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'_>) -> WebNode {
     let role = map_cdp_role(raw_role);
     let text = |value: &Option<AxValue>| value.as_ref().and_then(AxValue::as_text);
     let origin = node.backend_dom_node_id.map(|backend_node_id| NodeOrigin {
