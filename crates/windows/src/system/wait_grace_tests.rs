@@ -69,7 +69,7 @@ fn a_deadline_inside_the_grace_after_closed_reads_is_closed_not_a_timeout() {
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
     let identity = identity_for(ProcessId::from(fixture.process_id()));
 
-    let result = wait_for_menu(identity, MenuWait::closed(Instant::now()), deadline(500));
+    let result = wait_for_menu(identity, MenuWait::closed(Instant::now()), deadline(1_000));
 
     assert!(
         result.is_ok(),

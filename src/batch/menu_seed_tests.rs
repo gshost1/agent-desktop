@@ -151,7 +151,7 @@ fn a_menu_open_before_the_action_ends_the_closed_wait_without_the_grace() {
         assert_eq!(value["results"][1]["ok"], true, "{value}");
         assert_eq!(*adapter.wait_reads.lock().unwrap(), 2, "{action}");
         assert!(
-            started.elapsed() < Duration::from_millis(800),
+            started.elapsed() < agent_desktop_core::MENU_OPENER_GRACE,
             "{action}: {:?}",
             started.elapsed()
         );

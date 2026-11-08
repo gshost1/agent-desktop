@@ -10,7 +10,14 @@ pub(crate) fn wait_for_menu(
 
     loop {
         let identity = crate::system::process::process_identity::require_core(&process)?;
-        let instant = crate::tree::locator_deadline::from_operation(deadline)?;
+        let instant = match crate::tree::locator_deadline::from_operation(deadline) {
+            Ok(instant) => instant,
+            Err(_) if wait.satisfied_at_deadline() => {
+                crate::system::process::process_identity::require_core(&process)?;
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
         let read_started = Instant::now();
         if wait.observe(read_menu(identity.pid(), instant)?, read_started) {
             crate::system::process::process_identity::require_core(&process)?;

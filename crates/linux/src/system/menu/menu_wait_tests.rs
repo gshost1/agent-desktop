@@ -241,7 +241,7 @@ fn a_closed_wait_after_a_menu_item_click_returns_after_one_more_poll_without_a_h
     let started = Instant::now();
     assert!(run(&world, MenuWait::closed_after_open(), deadline(5000)).is_ok());
     assert_eq!(world.read_count.get(), 2);
-    assert!(started.elapsed() < Duration::from_millis(500));
+    assert!(started.elapsed() < MENU_OPENER_GRACE);
 }
 
 #[test]

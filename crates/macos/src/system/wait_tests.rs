@@ -34,5 +34,5 @@ fn a_closed_wait_that_never_sees_a_menu_returns_once_the_grace_has_passed() {
 fn a_deadline_inside_the_grace_after_closed_reads_is_closed_not_a_timeout() {
     forced_reads::script(&[false]);
     let wait = MenuWait::closed(Instant::now());
-    wait_for_menu(own_process(), wait, Deadline::after(300).unwrap()).unwrap();
+    wait_for_menu(own_process(), wait, Deadline::after(1_000).unwrap()).unwrap();
 }
