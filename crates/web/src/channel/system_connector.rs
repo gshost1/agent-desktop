@@ -9,12 +9,13 @@ use super::cdp_connector::CdpConnector;
 use super::download::download_behavior::enable_downloads;
 use super::download::download_folder::DownloadFolder;
 use super::endpoint_candidate::EndpointCandidate;
+use super::endpoint_mismatch::endpoint_mismatch;
 use super::endpoint_registry::{read_entries, record_entry, registry_file};
 use super::prompt_refusal::approval_needed;
 use super::registry_entry::RegistryEntry;
 use crate::{
     BrowserEndpoint, CdpConnection, EndpointSource, WebSocketUrl, connect, default_user_data_dirs,
-    endpoint_from_port, endpoint_from_user_data_dir, read_active_port,
+    endpoint_from_port, read_active_port,
 };
 
 const VERSION_PROBE: Duration = Duration::from_millis(1_000);
@@ -81,7 +82,7 @@ impl CdpConnector for SystemConnector {
                 candidates.push(EndpointCandidate {
                     port: active.port,
                     origin: CandidateOrigin::ActivePort {
-                        user_data_dir: dir.clone(),
+                        websocket_path: active.websocket_path,
                     },
                 });
             }
@@ -101,14 +102,21 @@ impl CdpConnector for SystemConnector {
                 source: EndpointSource::JsonVersion,
                 product: None,
             },
-            CandidateOrigin::ActivePort { user_data_dir } => {
+            CandidateOrigin::ActivePort { websocket_path } => {
                 match endpoint_from_port(candidate.port, deadline.capped(VERSION_PROBE)) {
                     Ok(endpoint) => endpoint,
-                    Err(_) if may_prompt => endpoint_from_user_data_dir(user_data_dir)?,
+                    Err(_) if may_prompt => BrowserEndpoint {
+                        websocket_url: WebSocketUrl::loopback(candidate.port, websocket_path)?,
+                        source: EndpointSource::DevToolsActivePort,
+                        product: None,
+                    },
                     Err(_) => return Err(approval_needed(candidate.port)),
                 }
             }
         };
+        if endpoint.port() != candidate.port {
+            return Err(endpoint_mismatch(candidate.port, endpoint.port()));
+        }
         let started = std::time::Instant::now();
         let mut connection = connect(&endpoint, deadline)?;
         tracing::debug!(

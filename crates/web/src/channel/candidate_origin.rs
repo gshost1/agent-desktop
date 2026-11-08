@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-
 use super::download::download_folder::DownloadFolder;
 
 /// Where a DevTools endpoint candidate was found: the registry `launch --cdp`
 /// writes, with the WebSocket URL it verified and the download folder launch
-/// named, or a browser profile's `DevToolsActivePort` file.
+/// named, or a browser profile's `DevToolsActivePort` file, with the WebSocket
+/// path read from it together with the port. The connection always goes to
+/// the candidate's own port, the one whose listener ownership was checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CandidateOrigin {
     Registry {
@@ -12,6 +12,6 @@ pub enum CandidateOrigin {
         download_folder: Option<DownloadFolder>,
     },
     ActivePort {
-        user_data_dir: PathBuf,
+        websocket_path: String,
     },
 }

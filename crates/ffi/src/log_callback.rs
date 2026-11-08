@@ -121,13 +121,18 @@ pub(crate) fn with_dispatch<R>(body: impl FnOnce() -> R) -> R {
     tracing::dispatcher::with_default(&dispatch, body)
 }
 
-/// Registers or clears the callback used for events emitted synchronously
-/// inside later `ad_*` calls on the same thread.
+/// Registers or clears the process-wide callback used for events emitted
+/// synchronously inside later `ad_*` calls on any thread. The callback runs on
+/// the thread that made the call.
 ///
-/// The callback may be invoked concurrently by different host threads. The
-/// message pointer is valid only until the callback returns. The callback must
-/// not unwind across this C ABI boundary; C++ exceptions and Rust panics must
-/// be caught inside the callback. Violating that contract may abort the host.
+/// The callback may be invoked concurrently by different host threads. After
+/// it is cleared, each call already in flight on another thread may still
+/// invoke it once.
+///
+/// The message pointer is valid only until the callback returns. The callback
+/// must not unwind across this C ABI boundary; C++ exceptions and Rust panics
+/// must be caught inside the callback. Violating that contract may abort the
+/// host.
 #[unsafe(no_mangle)]
 pub extern "C" fn ad_set_log_callback(
     callback: Option<unsafe extern "C" fn(level: i32, msg: *const c_char)>,

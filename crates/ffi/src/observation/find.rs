@@ -40,8 +40,7 @@ pub unsafe extern "C" fn ad_find_exact(
         let window = match crate::windows::ad_exact_window_to_core(&*win) {
             Ok(window) => window,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         find_in_window(adapter, &window, &*query, out_handle)
@@ -57,8 +56,7 @@ unsafe fn find_in_window(
     let (locator, request) = match unsafe { decode_query(query) } {
         Ok(decoded) => decoded,
         Err(error) => {
-            set_last_error(&error);
-            return AdResult::ErrInvalidArgs;
+            return set_last_error(&error);
         }
     };
     let adapter_id = adapter.addr();
@@ -71,21 +69,19 @@ unsafe fn find_in_window(
     ) {
         Ok(resolution) => resolution,
         Err(e) => {
-            set_last_error(&crate::commands::app_error_to_adapter(e));
-            return crate::error::last_error_code();
+            return set_last_error(&crate::commands::app_error_to_adapter(e));
         }
     };
     let selected = if request.selection == LocatorSelection::Strict {
         match agent_desktop_core::require_unique(resolution) {
             Ok(selected) => selected,
             Err(error) => {
-                set_last_error(&crate::commands::app_error_to_adapter(error));
-                return crate::error::last_error_code();
+                return set_last_error(&crate::commands::app_error_to_adapter(error));
             }
         }
     } else {
         if !resolution.meta.selection_complete {
-            set_last_error(
+            return set_last_error(
                 &AdapterError::timeout("Locator traversal could not prove the selected result")
                     .with_details(serde_json::json!({
                         "kind": "locator_incomplete",
@@ -93,24 +89,21 @@ unsafe fn find_in_window(
                         "query_stats": resolution.stats,
                     })),
             );
-            return AdResult::ErrTimeout;
         }
         let Some(selected) = resolution.matches.into_iter().next() else {
-            set_last_error(&AdapterError::new(
+            return set_last_error(&AdapterError::new(
                 ErrorCode::ElementNotFound,
                 "Locator query matched no elements",
             ));
-            return AdResult::ErrElementNotFound;
         };
         selected
     };
     let entry = selected.into_entry();
     let Some(process_instance) = entry.process.process_instance.clone() else {
-        set_last_error(&AdapterError::new(
+        return set_last_error(&AdapterError::new(
             ErrorCode::InvalidArgs,
             "resolved element has no process-generation identity",
         ));
-        return AdResult::ErrInvalidArgs;
     };
     let process = agent_desktop_core::ProcessIdentity::new(entry.process.pid, process_instance);
     match adapter
@@ -124,24 +117,17 @@ unsafe fn find_in_window(
                 &handle,
                 request.deadline,
             ) {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
             match crate::actions::native_handle::into_ffi_handle(adapter_id, handle, process) {
                 Ok(token) => {
                     unsafe { (*out_handle).ptr = token };
                     AdResult::Ok
                 }
-                Err(error) => {
-                    set_last_error(&error);
-                    crate::error::last_error_code()
-                }
+                Err(error) => set_last_error(&error),
             }
         }
-        Err(e) => {
-            set_last_error(&e);
-            crate::error::last_error_code()
-        }
+        Err(e) => set_last_error(&e),
     }
 }
 
