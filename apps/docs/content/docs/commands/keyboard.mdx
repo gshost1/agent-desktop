@@ -8,12 +8,13 @@ description: Reference for press, key-down, and key-up. press sends key combos; 
 
 ## press
 
-Sends a key combo to the focused window, or to one app.
+Sends a key combo to the focused window, to one app, or to one element.
 
 ```bash
-agent-desktop press COMBO [--app NAME] [--window-id ID] [--force]
+agent-desktop press COMBO [--app NAME] [--window-id ID] [--ref REF] [--force]
 agent-desktop press ctrl+shift+z
 agent-desktop press return --app gnome-calculator
+agent-desktop press return --ref @s8f3k2p9:e3
 ```
 
 <table>
@@ -24,6 +25,7 @@ agent-desktop press return --app gnome-calculator
     <tr><td><code>COMBO</code></td><td>required</td><td>Keys joined with <code>+</code>. The last part is the key; the parts before it are modifiers.</td></tr>
     <tr><td><code>--app NAME</code></td><td>focused window</td><td>Send the keys to this application. With <code>--headed</code>, its window is focused first. Several instances with the same name return <code>AMBIGUOUS_TARGET</code>.</td></tr>
     <tr><td><code>--window-id ID</code></td><td>none</td><td>Target the instance that owns this window.</td></tr>
+    <tr><td><code>--ref REF</code></td><td>none</td><td>Send the keys to this element. It is focused first, without moving the pointer. A web ref takes the key through the page, in the background. Cannot combine with <code>--app</code> or <code>--window-id</code>.</td></tr>
     <tr><td><code>--force</code></td><td>off</td><td>Send a combo the platform blocks as dangerous, such as a quit or lock shortcut.</td></tr>
   </tbody>
 </table>

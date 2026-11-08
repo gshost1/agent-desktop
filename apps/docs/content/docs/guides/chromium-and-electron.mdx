@@ -1,32 +1,33 @@
 ---
 title: Chromium and Electron apps
 navTitle: Chromium and Electron
-description: Drive the web contents of a Chromium or Electron app with agent-browser over a DevTools port that agent-desktop opens, and keep the native UI on agent-desktop.
+description: Read and drive a web page in Chrome over a DevTools port that agent-desktop opens, with the same snapshot and ref loop as a native app, and keep the native UI on the accessibility surfaces.
 ---
 
-agent-desktop reads every app through the OS accessibility tree, and that path works for Chromium and Electron apps too. Their web contents can be dense and slow to walk, though. For an app you can launch fresh, `launch --cdp` starts it with a loopback-only Chrome DevTools Protocol (CDP) port, and [agent-browser](https://agent-browser.dev) connects to that port to drive the web contents. agent-desktop never speaks CDP itself; it opens and verifies the port, and keeps the native UI.
+agent-desktop reads every app through the OS accessibility tree, and that path works for Chromium and Electron apps too. Their web contents can be dense and slow to walk, though. For a browser you can launch fresh, `launch --cdp` starts it with a loopback-only Chrome DevTools Protocol (CDP) port, and the `web` snapshot surface reads the page over that port. Refs from a web snapshot act through the page in the background: the window is not raised and the pointer does not move.
 
 <table>
   <thead>
     <tr><th>Part of the app</th><th>Drive it with</th></tr>
   </thead>
   <tbody>
-    <tr><td>Web contents: pages, panels, editors, forms inside the app</td><td>agent-browser, over the CDP port</td></tr>
-    <tr><td>Native menu bar, file dialogs and sheets, window management, notifications, screenshots</td><td>agent-desktop</td></tr>
-    <tr><td>An app that is already running, or one you did not launch</td><td>agent-desktop only. The port exists only on a process launched with it</td></tr>
+    <tr><td>The page: links, forms, buttons, text</td><td><code>snapshot --surface web</code> and the usual ref commands</td></tr>
+    <tr><td>Native menu bar, file dialogs and sheets, window management, notifications, screenshots</td><td>The accessibility surfaces</td></tr>
+    <tr><td>An app that is already running, or one you did not launch</td><td>The accessibility surfaces only. The port exists only on a process launched with it</td></tr>
   </tbody>
 </table>
 
-## 1. Launch the app with a DevTools port
+The examples on this page ran against Google Chrome on macOS. Agents read the same loop with `agent-desktop skills get web`.
+
+## 1. Launch the browser with a DevTools port
 
 ```bash
-agent-desktop launch chrome --cdp --env ACCESSIBILITY_ENABLED=1 \
-  --arg=--force-renderer-accessibility --arg=--user-data-dir=/tmp/chrome-profile
+agent-desktop launch "Google Chrome" --cdp --arg=--user-data-dir="$PWD/chrome-profile" --arg=--no-first-run --arg=--no-default-browser-check
 ```
 
-`--cdp` adds the remote-debugging switches, waits until the endpoint answers, and returns it in `data.cdp`. Omit the port, as here, to let the OS pick a free one, or pass one (`--cdp 9229`). The `--env` and `--force-renderer-accessibility` arguments are for Linux, where Chromium joins the accessibility bus only when asked, so that agent-desktop can still see the native UI; see [Linux](/desktop/platforms/linux#chromium-qt-and-electron). An Electron app needs no extra arguments.
+`--cdp` adds the remote-debugging switches, waits until the endpoint answers, checks that the launched process owns it, and returns it in `data.cdp`. Omit the port, as here, to let the OS pick a free one, or pass one (`--cdp 9229`). `--user-data-dir` keeps the session out of the user's profile, and the two `--no-*` switches skip the dialogs a fresh profile opens. On Linux, Chromium joins the accessibility bus only when asked, so add `--env ACCESSIBILITY_ENABLED=1 --arg=--force-renderer-accessibility` to keep the native UI visible; see [Linux](/desktop/platforms/linux#chromium-qt-and-electron).
 
-This is Google Chrome on Linux, with the suggestion and the window object trimmed:
+This is the result, with the window object trimmed:
 
 ```json
 {
@@ -34,56 +35,72 @@ This is Google Chrome on Linux, with the suggestion and the window object trimme
   "ok": true,
   "command": "launch",
   "data": {
-    "app": "chrome",
+    "app": "Google Chrome",
     "cdp": {
-      "http_endpoint": "http://127.0.0.1:44297",
-      "port": 44297,
-      "product": "Chrome/156.0.8078.79",
-      "websocket_url": "ws://127.0.0.1:44297/devtools/browser/4a28a252-c7ea-4288-9985-50e34fc49b8f"
+      "http_endpoint": "http://127.0.0.1:62332",
+      "port": 62332,
+      "product": "Chrome/156.0.8078.80",
+      "websocket_url": "ws://127.0.0.1:62332/devtools/browser/7bd6bb05-38fc-480f-9e04-a4acd8aa10f3"
     },
-    "pid": 11342,
-    "process_instance": "1e1c1e2e:168278",
-    "renderer": "chromium",
-    "suggestion": "Next: run `agent-browser connect 44297` (preferred; `agent-browser skills get electron` has the guide) or connect any CDP client such as Playwright or Puppeteer. ...",
-    "window": { "id": "w-1.10-org-a11y-atspi-accessible-1", "title": "Untitled - Google Chrome" }
+    "suggestion": "Next: read the web content with `snapshot --app \"Google Chrome\" --surface web -i` and act on its refs with the usual commands; `data.channel` is `cdp` when it was read over this endpoint. In a web browser, `open-url <url> --app \"Google Chrome\"` loads a page; an app that embeds web content for its own interface refuses it. Do not hand-roll raw CDP or call app-internal APIs. Native menus, dialogs, windows, and screenshots stay on the accessibility surfaces."
   }
 }
 ```
 
-Pass the app name that `list-apps` prints (`chrome`, `Slack`, `Obsidian`). agent-desktop refuses `--cdp` for an app that is already running, because a running process has no port and quitting it would lose the user's state. It finds the running app by that name, so a launcher alias such as `google-chrome` on Linux skips the check and the launch times out instead.
+agent-desktop refuses `--cdp` for an app that is already running, because a running process has no port and quitting it would lose the user's tabs. It finds the running app by the name you pass, so on Linux a launcher alias such as `google-chrome` skips the check and the launch times out instead.
 
-## 2. Connect agent-browser to the port
-
-```bash
-agent-browser connect 44297      # the port from data.cdp.port
-agent-browser snapshot -i
-# - heading "Settings" [level=1, ref=e1]
-# - textbox "Name" [ref=e3]
-# - button "Save" [ref=e2]
-agent-browser fill @e3 "Ada"
-agent-browser click @e2
-```
-
-From here the web contents follow agent-browser's own snapshot, ref, and act loop; see [agent-browser](https://agent-browser.dev) and `agent-browser skills get electron`. Playwright, Puppeteer, and other CDP clients can use `data.cdp.websocket_url` instead. Do not write raw CDP or call app-internal APIs.
-
-## 3. Keep the native UI on agent-desktop
-
-The window chrome, menus, and dialogs are not in the web contents, so they stay on agent-desktop, in the same run:
+## 2. Load and read the page
 
 ```bash
-agent-desktop find --app chrome --role button --name Reload --first
-agent-desktop find --app chrome --role textfield --first          # the address bar
+agent-desktop open-url "https://example.com/" --app "Google Chrome"
+agent-desktop snapshot --app "Google Chrome" --surface web -i
 ```
 
-Against the session above, the second `find` returned the address bar, `"name": "Address and search bar"`, with the page agent-browser had opened as its value. Use `snapshot --surface` for a native file dialog or sheet the web contents open; see [Surfaces](/desktop/surfaces).
+`open-url` returns after the page's load event, with `url`, `title`, `channel`, `target_id` and `opened` (`current_tab`, or `new_tab` with `--new-tab` or when the browser had no page). The snapshot reads the visible tab of the window you name and reports `data.channel`. `cdp` means the page was read over the port. `ax` means no endpoint reached the browser, so the window was read through the accessibility tree; `data.suggestion` names the `launch --cdp` command that enables the web channel.
 
-## 4. Close the app
+## 3. Act on the page
 
 ```bash
-agent-desktop close-app chrome
+agent-desktop click @s8f3k2p9:e1
+agent-desktop snapshot --app "Google Chrome" --surface web -i
 ```
 
-`close-app` ends the process and with it the port; the run above returned `delivered_verified` with `details.evidence: "process_instance_exited"`, and the endpoint stopped answering. While the port is open, any local process of the same user can control the app's web contents, so request `--cdp` only for the steps that need it.
+`click`, `double-click`, `set-value`, `type`, `clear`, `select`, `check`, `uncheck`, `toggle`, `focus`, `scroll` and `scroll-to` work on web refs. Other actions return `ACTION_NOT_SUPPORTED`, and `--headed` is refused. `click` returns once the click is delivered, not when the next page loads, so check `data.url` in the next snapshot. A ref from a page that has since navigated fails with `STALE_REF` and `details.kind: cdp_document_replaced`.
+
+A click on an element that something else covers is refused before it is sent:
+
+```json
+{
+  "version": "2.6",
+  "ok": false,
+  "command": "click",
+  "error": {
+    "code": "ACTION_FAILED",
+    "message": "Another element covers DOM node 32 at the point the click would land",
+    "suggestion": "Close the overlay or dialog that covers the element, or scroll it clear, then snapshot again",
+    "details": { "backend_node_id": 32, "hit_backend_node_id": 30, "kind": "cdp_click_intercepted", "point": { "x": 600.0, "y": 648.65625 } },
+    "disposition": { "delivery": "not_delivered", "retry": "safe" }
+  }
+}
+```
+
+## 4. Keep the native UI on the accessibility surfaces
+
+The window chrome, menus, and dialogs are not part of the page, so read them with a window or surface snapshot in the same run:
+
+```bash
+agent-desktop find --app "Google Chrome" --role textfield --first          # the address bar
+```
+
+Use `snapshot --surface` for a native file dialog or sheet the page opens; see [Surfaces](/desktop/surfaces).
+
+## 5. Close the browser
+
+```bash
+agent-desktop close-app "Google Chrome"
+```
+
+`close-app` ends the process and with it the port. While the port is open, any local process of the same user can control the browser's pages, so request `--cdp` only for the task that needs it.
 
 ## When `--cdp` fails
 
@@ -92,7 +109,7 @@ agent-desktop close-app chrome
     <tr><th>Error</th><th>Cause</th><th>What to do</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>ACTION_FAILED</code>, <code>details.kind: cdp_requires_fresh_launch</code></td><td>The app is already running. <code>details.pids</code> lists it, and nothing was launched (<code>not_delivered</code>).</td><td>Run <code>close-app</code>, confirm the exit, and launch again with <code>--cdp</code>, or drive the running app through accessibility.</td></tr>
+    <tr><td><code>ACTION_FAILED</code>, <code>details.kind: cdp_requires_fresh_launch</code></td><td>The app is already running. <code>details.pids</code> lists it, and nothing was launched (<code>not_delivered</code>).</td><td>Ask before you close it, because the user loses their tabs. Then run <code>close-app</code>, confirm the exit, and launch again with <code>--cdp</code>, or drive the running app through accessibility.</td></tr>
     <tr><td><code>ACTION_FAILED</code>, <code>details.kind: cdp_endpoint_unavailable</code></td><td>The app started, but no DevTools endpoint answered before the deadline. The app keeps running (<code>delivered_unverified</code>).</td><td>Use the accessibility path, or <code>close-app</code> and check the app name and arguments.</td></tr>
     <tr><td><code>INVALID_ARGS</code>, <code>details.kind: cdp_port_in_use</code></td><td>The port you named is bound.</td><td>Name another port, or omit it.</td></tr>
     <tr><td><code>INVALID_ARGS</code>, <code>details.kind: cdp_switch_conflict</code></td><td>An <code>--arg</code> sets <code>--remote-debugging-*</code> or <code>--remote-allow-origins</code>, which <code>--cdp</code> owns.</td><td>Drop that <code>--arg</code>.</td></tr>

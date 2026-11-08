@@ -17,10 +17,17 @@ use crate::{
     command_policy::CommandEffect,
 };
 
+mod batch_results;
+mod batch_stop;
 mod bounded_json;
+mod entry_errors;
+mod entry_outcome;
 mod execution;
+mod pending_seed;
 mod preparation;
 mod result_entry;
+mod seed_kind;
+mod seed_plan;
 
 #[cfg(test)]
 #[path = "baseline_tests.rs"]
@@ -100,6 +107,7 @@ pub(crate) fn parse_command(item: BatchCommand) -> Result<Commands, AppError> {
         "restore" => decode(command, item.args).map(Commands::Restore),
         "list-surfaces" => decode(command, item.args).map(Commands::ListSurfaces),
         "open-system-surface" => decode(command, item.args).map(Commands::OpenSystemSurface),
+        "open-url" => decode(command, item.args).map(Commands::OpenUrl),
         "list-notifications" => decode(command, item.args).map(Commands::ListNotifications),
         "dismiss-notification" => decode(command, item.args).map(Commands::DismissNotification),
         "dismiss-all-notifications" => {

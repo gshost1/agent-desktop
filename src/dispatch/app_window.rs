@@ -6,7 +6,8 @@ use agent_desktop_core::{
         list_surfaces as list_surfaces_command, list_windows as list_windows_command,
         maximize as maximize_command, minimize as minimize_command,
         move_window as move_window_command, open_system_surface as open_system_surface_command,
-        resize_window as resize_window_command, restore as restore_command,
+        open_url as open_url_command, resize_window as resize_window_command,
+        restore as restore_command,
     },
 };
 use serde_json::Value;
@@ -15,7 +16,7 @@ use crate::cli_args::{
     ListSurfacesArgs,
     system::{
         AppRefArgs, CloseAppArgs, FocusWindowArgs, LaunchArgs, ListAppsArgs, ListWindowsArgs,
-        MoveWindowCliArgs, OpenSystemSurfaceArgs, ResizeWindowCliArgs,
+        MoveWindowCliArgs, OpenSystemSurfaceArgs, OpenUrlArgs, ResizeWindowCliArgs,
     },
 };
 use crate::dispatch::parse::build_launch_options;
@@ -90,6 +91,22 @@ pub(super) fn open_system_surface(
         },
         adapter,
         context,
+    )
+}
+
+pub(super) fn open_url(
+    args: OpenUrlArgs,
+    adapter: &dyn PlatformAdapter,
+) -> Result<Value, AppError> {
+    open_url_command::execute(
+        open_url_command::OpenUrlArgs {
+            url: args.url,
+            app: args.app,
+            new_tab: args.new_tab,
+            window_id: args.window_id,
+            timeout_ms: args.timeout_ms,
+        },
+        adapter,
     )
 }
 
