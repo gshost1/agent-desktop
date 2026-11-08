@@ -68,6 +68,7 @@ pub(super) fn find(
                 last: args.selection.last,
                 nth: args.selection.nth,
                 limit: args.selection.limit,
+                allow_partial: args.selection.allow_partial,
             },
         },
         adapter,

@@ -40,9 +40,11 @@ mod observed_node;
 mod observed_observation;
 mod observed_subtree;
 mod observed_tree;
+mod partial;
 mod predicate;
 mod ref_evidence_requirements;
 mod resolve;
+mod row_reading;
 mod select;
 mod selection_completeness;
 mod validate;
@@ -85,7 +87,10 @@ pub use observed_subtree::ObservedSubtree;
 pub use observed_tree::ObservedTree;
 pub use ref_evidence_requirements::RefEvidenceRequirements;
 pub use resolve::resolve_query;
-pub(crate) use resolve::resolve_query_from;
+pub(crate) use resolve::{
+    resolve_query_allowing_partial, resolve_query_from, resolve_query_from_allowing_partial,
+};
+pub(crate) use row_reading::RowReading;
 pub use validate::{validate_query, validate_request};
 
 #[cfg(test)]
@@ -98,6 +103,10 @@ mod materialize_tests;
 mod observed_tree_tests;
 #[cfg(test)]
 mod ownership_tests;
+#[cfg(test)]
+mod resolve_first_tests;
+#[cfg(test)]
+mod resolve_partial_tests;
 #[cfg(test)]
 mod resolve_query_hydration_tests;
 #[cfg(test)]

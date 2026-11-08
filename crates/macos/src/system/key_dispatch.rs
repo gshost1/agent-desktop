@@ -4,10 +4,10 @@ use agent_desktop_core::{
 };
 use std::time::{Duration, Instant};
 
+use crate::system::menu_shortcut::{
+    MENU_SHORTCUT_STEP, menu_shortcut_outcome::MenuShortcutOutcome, press_menu_shortcut,
+};
 use crate::tree::AXElement;
-
-#[path = "key_dispatch_menu.rs"]
-mod menu;
 
 pub(crate) fn press_for_app_impl(
     process: ProcessIdentity,
@@ -29,23 +29,22 @@ fn press_for_app(
     let identity = crate::system::process::process_identity::require_core(&process)?;
     let pid = identity.pid();
     let app = crate::tree::element_for_pid(pid);
+    let hosted = crate::system::window::hosted_focus_read::resolve(&app, pid, deadline)?;
+    let host_owns_keys = !hosted.as_ref().is_some_and(|focus| focus.is_hosted_view());
 
-    if uses_menu_shortcut(combo, policy) {
-        match menu::try_menu_bar_shortcut(&app, combo, deadline) {
-            Ok(true) => {
-                return post_delivery_process_result(&process, semantic_step("AXPress menu item"));
-            }
-            Ok(false) => {}
-            Err(error) if menu::is_bounded_menu_incomplete(&error) => {
-                tracing::debug!("bounded menu lookup fell back to exact PID-targeted key delivery");
-            }
-            Err(error) => return Err(error),
-        }
+    let menu = if host_owns_keys && uses_menu_shortcut(combo, policy) {
+        press_menu_shortcut(&process, &app, combo, deadline)?
+    } else {
+        MenuShortcutOutcome::NotApplicable
+    };
+    if matches!(menu, MenuShortcutOutcome::Pressed(_)) {
+        return post_delivery_process_result(&process, menu_shortcut_report(&menu));
     }
-    if let Some(action) = simple_key_action(combo)
+    if host_owns_keys
+        && let Some(action) = simple_key_action(combo)
         && try_simple_key_action(&app, action, deadline)?
     {
-        return post_delivery_process_result(&process, semantic_step(action));
+        return post_delivery_process_result(&process, semantic_step(action).into());
     }
 
     crate::input::keyboard::keyboard_map::key_name_to_code(&combo.key)?;
@@ -56,13 +55,63 @@ fn press_for_app(
     crate::system::process::process_identity::require_core(&process)?;
     require_focused_element(&app, policy, deadline)?;
     crate::system::process::process_identity::require_core(&process)?;
-    crate::input::keyboard::synthesize_key(combo, Some(pid), deadline)?;
-    post_delivery_process_result(
-        &process,
+    let (delivery_pid, watch) = match &hosted {
+        Some(focus) => (
+            focus.delivery_pid(&app, deadline)?,
+            crate::system::window::hosted_focus_effect::watch(focus, &app, deadline)?,
+        ),
+        None => (pid, None),
+    };
+    crate::input::keyboard::synthesize_key(combo, Some(delivery_pid), deadline)?;
+    let mut report = menu_shortcut_report(&menu);
+    report.steps.push(
         ActionStep::succeeded("CGEventPostToPid")
             .with_mechanism(StepMechanism::PhysicalSynthetic)
             .with_verified(false),
-    )
+    );
+    let result = post_delivery_process_result(&process, report)?;
+    match &hosted {
+        Some(focus) => crate::system::window::hosted_focus_effect::finish_press(
+            focus, &app, watch, result, deadline,
+        ),
+        None => Ok(result),
+    }
+}
+
+/// What the press response says about the menu-bar lookup: the menu item it
+/// pressed, or why the chord went to the keyboard after the lookup applied.
+struct DeliveryReport {
+    steps: Vec<ActionStep>,
+    details: Option<serde_json::Value>,
+}
+
+impl From<ActionStep> for DeliveryReport {
+    fn from(step: ActionStep) -> Self {
+        Self {
+            steps: vec![step],
+            details: None,
+        }
+    }
+}
+
+fn menu_shortcut_report(outcome: &MenuShortcutOutcome) -> DeliveryReport {
+    let (step, details) = match outcome {
+        MenuShortcutOutcome::Pressed(details) => (semantic_step(MENU_SHORTCUT_STEP), details),
+        MenuShortcutOutcome::Skipped(details) => (
+            ActionStep::skipped(MENU_SHORTCUT_STEP).with_mechanism(StepMechanism::SemanticApi),
+            details,
+        ),
+        MenuShortcutOutcome::NotApplicable => {
+            return DeliveryReport {
+                steps: Vec::new(),
+                details: None,
+            };
+        }
+    };
+    DeliveryReport {
+        steps: vec![step],
+        details: Some(serde_json::json!({ "menu_shortcut": details })),
+    }
 }
 
 fn semantic_step(label: &'static str) -> ActionStep {
@@ -73,11 +122,15 @@ fn semantic_step(label: &'static str) -> ActionStep {
 
 fn post_delivery_process_result(
     process: &ProcessIdentity,
-    step: ActionStep,
+    report: DeliveryReport,
 ) -> Result<ActionResult, AdapterError> {
     crate::system::process::process_identity::require_core(process)
         .map_err(|error| error.with_disposition(DeliverySemantics::delivered_unverified()))?;
-    Ok(ActionResult::delivered_unverified("press_key").with_steps(vec![step]))
+    let result = ActionResult::delivered_unverified("press_key").with_steps(report.steps);
+    Ok(match report.details {
+        Some(details) => result.with_details(details),
+        None => result,
+    })
 }
 
 fn try_simple_key_action(
@@ -94,8 +147,14 @@ fn try_simple_key_action(
     crate::actions::ax_helpers::try_ax_action_or_err(&focused, action, deadline)
 }
 
-fn uses_menu_shortcut(combo: &KeyCombo, policy: InteractionPolicy) -> bool {
-    policy.allow_focus_steal && !combo.modifiers.is_empty()
+/// A command chord tries the menu bar under either policy. Headless, the
+/// keystroke lands only while the app is frontmost, which a background app is
+/// not; headed, core has already focused the window, and the menu item runs the
+/// same command the key equivalent would.
+fn uses_menu_shortcut(combo: &KeyCombo, _policy: InteractionPolicy) -> bool {
+    combo
+        .modifiers
+        .contains(&agent_desktop_core::Modifier::Meta)
 }
 
 fn simple_key_action(combo: &KeyCombo) -> Option<&'static str> {

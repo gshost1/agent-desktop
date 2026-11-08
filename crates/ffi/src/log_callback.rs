@@ -112,8 +112,12 @@ fn format_event(event: &Event<'_>) -> Option<CString> {
     CString::new(serde_json::to_string(&sanitized).ok()?).ok()
 }
 
+pub(crate) fn in_callback() -> bool {
+    IN_CALLBACK.get()
+}
+
 pub(crate) fn with_dispatch<R>(body: impl FnOnce() -> R) -> R {
-    if current_callback().is_none() {
+    if IN_CALLBACK.get() || current_callback().is_none() {
         return body();
     }
     let subscriber = tracing_subscriber::registry().with(CallbackLayer);
@@ -128,6 +132,24 @@ pub(crate) fn with_dispatch<R>(body: impl FnOnce() -> R) -> R {
 /// The callback may be invoked concurrently by different host threads. After
 /// it is cleared, each call already in flight on another thread may still
 /// invoke it once.
+///
+/// The callback may call other `ad_*` functions. Events those nested calls emit
+/// are not delivered to it. The calls that take the interaction lease through
+/// this library's FFI layer are `ad_mouse_event`, `ad_mouse_event_with_modifiers`,
+/// `ad_mouse_wheel`, `ad_drag`, `ad_set_clipboard`, `ad_clear_clipboard`,
+/// `ad_execute_action`, `ad_execute_action_with_policy`, `ad_execute_by_ref`,
+/// `ad_execute_by_ref_timeout`, `ad_launch_app_exact`, `ad_close_app`,
+/// `ad_focus_window_exact`, `ad_window_op_exact`, `ad_notification_action`,
+/// `ad_dismiss_notification` and `ad_dismiss_all_notifications`. One of these
+/// made from the callback while the call that logged is one of them and holds
+/// the lease fails at once with `AD_RESULT_ERR_POLICY_DENIED` and details kind
+/// `reentrant_interaction_lease`. For `ad_execute_by_ref*` and `ad_close_app`
+/// as the call that logged, the refusal applies for the whole call, including
+/// its work before the lease is taken. Any other nested call that needs the
+/// lease while the call that logged holds it, including an observation that
+/// takes the lease internally, waits for a release that happens only after the
+/// callback returns, so it can time out. Do not make such calls from the
+/// callback.
 ///
 /// The message pointer is valid only until the callback returns. The callback
 /// must not unwind across this C ABI boundary; C++ exceptions and Rust panics
@@ -152,6 +174,12 @@ mod tests {
     static MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
     static LOG_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    pub(super) fn log_test_serialization() -> std::sync::MutexGuard<'static, ()> {
+        LOG_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     unsafe extern "C" fn record(_level: i32, message: *const c_char) {
         let message = unsafe { CStr::from_ptr(message) }
             .to_string_lossy()
@@ -161,7 +189,7 @@ mod tests {
 
     #[test]
     fn scoped_dispatch_delivers_and_redacts() {
-        let _guard = LOG_TEST_LOCK.lock().unwrap();
+        let _guard = log_test_serialization();
         MESSAGES.lock().unwrap().clear();
         assert_eq!(ad_set_log_callback(Some(record)), AdResult::Ok);
         with_dispatch(|| {
@@ -183,7 +211,7 @@ mod tests {
 
     #[test]
     fn callback_does_not_capture_outside_scope() {
-        let _guard = LOG_TEST_LOCK.lock().unwrap();
+        let _guard = log_test_serialization();
         MESSAGES.lock().unwrap().clear();
         assert_eq!(ad_set_log_callback(Some(record)), AdResult::Ok);
         tracing::error!(operation = "outside");
@@ -191,3 +219,7 @@ mod tests {
         assert!(MESSAGES.lock().unwrap().is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "log_callback_reentrancy_tests.rs"]
+mod reentrancy_tests;

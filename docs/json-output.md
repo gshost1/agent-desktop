@@ -120,6 +120,32 @@ such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
 
+On macOS, `press --app` reports `data.details.keyboard_target` when the app's
+keyboard focus may belong to another process, such as a Save panel that a
+service draws in the app's sheet. `pid` received the key and `host_pid` is the
+app. With `route: "hosted_view"` the key went to the process that owns the
+focused control. With `route: "host"` the key went to the app as before, and
+`focus_owner_pid` and `unproven` say which process looked like the owner and
+why it was not proven: `focus_frame_unknown`, `focus_outside_host_windows`,
+`owner_has_no_window_server_presence`, `owner_focus_not_linked` or
+`owner_process_exited`. `candidates` lists the evidence for each process
+considered: `owns_host_focus` (the app's focused element names it),
+`focused_application` (it is the system's focused application),
+`responsible_to_host` (macOS attributes its work to the app), `owns_window`,
+and `focus_frame_matches` (its own focused element has the app's focus frame;
+`null` when not read). The field is omitted when no other process is tied to
+the app's focus.
+
+When the key went to a proven owner, or to the app while an unproven owner's
+focused element is the app's focused control, `press` reads the app's focused
+element and the windows of both processes before and after delivery, for up to
+750 ms. A change makes the result `delivered_verified` with
+`keyboard_target.effect: "observed"`. No change is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
+`details.keyboard_target.effect: "none_observed"`: the key may have been lost,
+or may have acted without a visible change, so read the panel and use its
+controls by ref instead of repeating the key.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.
@@ -274,6 +300,43 @@ Earlier output synthesized a display name, falling back to `value` or
 `description`, then a `(unnamed <role>)` placeholder, so consumers that treated
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
+
+### Which match `--first` returns
+
+`--first` returns the first match in traversal order, not in document order.
+Where the platform reads list and table rows last (macOS: outlines, tables,
+browsers and lists), a match outside those rows comes before any match inside
+them, and `find --first` answers it without reading the rows. Only when nothing
+outside the rows matches does it read them, and then it returns the first match
+inside them. Platforms that read the tree in document order return the first
+match in document order. A ref from such an answer re-identifies by element
+token. A platform without one keeps its usual rule: an element it cannot prove
+unique gets the `identity_not_unique` refusal when you act on it.
+
+### Partial results
+
+By default a `find` that cannot finish its walk within `--timeout-ms` returns
+`TIMEOUT`. With `--allow-partial` it returns the matches it observed instead.
+The data then carries `complete`:
+
+```json
+{ "data": { "complete": false, "truncated": true, "total_matches": 3,
+  "matches": [ { "role": "button", "name": "Cancel", "bounds": { } } ] } }
+```
+
+- `complete: true` means the answer is the same one the default contract gives.
+  Matches, refs and `total_matches` are unchanged.
+- `complete: false` comes with `truncated: true`. The matches are the ones seen
+  before the budget ran out, and `total_matches` (or `count` with `--count`) is a
+  lower bound. With `--first`, `--last` or `--nth`, `match` is the one picked
+  from the observed matches, which an unread part of the tree could change.
+- In an incomplete answer, a match carries `ref_id` only when the platform
+  re-identifies it by element token (macOS). find re-reads each such match by its
+  token, the same check a complete answer makes, to fill the fields the walk
+  skipped. A match it cannot re-read before the deadline, and every match without
+  a token, has no ref and carries `bounds` when the platform reports them.
+- Without the flag the data has no `complete` field, and an incomplete walk is
+  still `TIMEOUT`.
 
 ## Derived names
 
