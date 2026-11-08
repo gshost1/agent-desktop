@@ -109,6 +109,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 71 | ACTION-9 | Auto-wait loop and poll state | core `ref_action/ref_action_wait.rs`, `ref_action_poll_state.rs` | metrics count the last iteration only; each refusal raises or scrolls again | repeated focus/scroll | C/D | C | none | planned |
 | 71a | ACTION-12 | Pointer retry loop re-focus | core `commands/pointer_action.rs:~250` (`retry_leased_point_phase`, `focus_point_under_lease`, `scroll_point_target`) | headed `hover`/`drag` call `focus_entry_window` on every retry attempt, raising the window up to every 100 ms for the whole `--timeout`; ref actions now focus once per command (ACTION-1) | repeated focus round trips | B | C (review of ACTION-1) | none | planned |
 | 71b | ACTION-13 | `preparatory_focus` parity outside ref actions | core `commands/press.rs`, `commands/pointer_action.rs` | headed `press` and pointer commands that fail after a successful focus call do not carry `details.preparatory_focus`, unlike ref actions | – | B (low) | C (review of ACTION-1) | none | planned |
+| 71c | SURFACE-12 | macOS Notification Center empty read before windows populate | macos `notifications/` NcSession `list_entries` (`windows.is_empty()` early return) | opening Notification Center and reading before its AXWindows exist returns `Ok(vec![])`, a settled "no notifications" answer instead of a retryable read; a wait seed or record taken from it lets existing notifications look new | – | B | S (code review of SURFACE-2) | none | planned (mac draft) |
 | – | D rows | REFS-8, REFS-9, ACTION-11, BINARY-13, BINARY-14, LIFECYCLE-13/14/15, STATE-2, STATE-3, STATE-19, SURFACE-11, ADAPTERS-11..18 | see `audit/` | no reachable illegal transition found, or code clarity only | small | D | – | – | – |
 
 ## PRs (fork only)
@@ -122,6 +123,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | [#14](https://github.com/gshost1/agent-desktop/pull/14) (draft) | head `99f7bea6`, gates green (4437), 2 review rounds applied; CI dispatched (its macOS job compiles the mac literals); stays draft: contract change | needs-issue-first (changes the JSON contract: envelope 2.6 -> 2.7, AMBIGUOUS_TARGET -> STALE_REF) |
 | 6 | `fix/persist-policy-inherited-deadline` | REFS-5 / ACTION-8 | [#11](https://github.com/gshost1/agent-desktop/pull/11) | **merged** 2026-11-07 as `fe81b5c3`; CI 26/26 green on head `d2185abf`, gates green (4428), review applied | ready (upstream register item 10, no upstream issue) |
 | 7 | `fix/x11-release-guard-armed-state` | ADAPTERS-5 | [#15](https://github.com/gshost1/agent-desktop/pull/15) | open; head `6f31b4a8` (main `a1873d35` merged), gates green (4534), review applied; CI dispatched | ready (when merged; Linux only, no fork-only dependency) |
+| 8 | `fix/notification-wait-baseline` | SURFACE-2 / ACTION-4 | – | pushed `41f67867`, gates green (4539); review round 1 being applied (debounced departures, seed never blocks the action, headless-only seed) | – |
 
 ## Needs Mac verification
 
