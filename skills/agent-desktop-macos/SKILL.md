@@ -21,7 +21,7 @@ Read the core skill first (`agent-desktop skills get desktop`) for the observe, 
 
 - macOS 13 or later, Intel or Apple Silicon.
 - Accessibility permission for the app that launches agent-desktop (Terminal, iTerm2, Warp, VS Code, Codex). macOS 27 and later name this list Device Control and Data Access. If System Settings lists the `agent-desktop` binary separately, grant it too.
-- Screen Recording permission, only for `screenshot` and for `session start --screenshots` artifacts.
+- Screen Recording permission, only for `screenshot` and for `session start --screenshots` artifacts. Window titles do not need it: without it, `list-windows`, `snapshot` and `wait --window` read each title from the window's accessibility element. A title macOS cannot tie to exactly one window is reported as `""`, never as the app name.
 - Automation permission for System Events, only where a command reports it missing.
 
 ## First contact

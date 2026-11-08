@@ -78,7 +78,7 @@ agent-desktop move-window --app "TextEdit" --x 0 --y 0
 agent-desktop minimize --app "TextEdit"   # maximize, restore likewise
 ```
 
-- `list-windows` returns `{ id, title, app_name, pid, bounds, is_focused, accessible }`. Use a `w-<id>` with `--window-id` when an app has several windows.
+- `list-windows` returns `{ id, title, app_name, pid, bounds, is_focused, accessible }`. Use a `w-<id>` with `--window-id` when an app has several windows. An empty `title` means the platform reported no title for that window; target it by `--window-id`.
 - `accessible: false` means semantic commands cannot reach that window. Targeting it returns `ACTION_NOT_SUPPORTED` with `kind: "window_without_accessibility_element"`. It still accepts screenshots and coordinate input. Choose another window. Wait polling treats this error as transient. In particular, `--wait-for-gone` does not count it as absence; it keeps polling until the window disappears from the inventory or the wait times out.
 - `focus-window` needs at least one identifier. It confirms the OS reports that window as focused. Otherwise it returns `ACTION_FAILED`.
 - `restore` undoes a minimize and returns the window to its earlier placement. It does not promise to un-maximize.
