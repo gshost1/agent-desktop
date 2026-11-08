@@ -1,6 +1,8 @@
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 
 use super::select_search::SelectSearch;
+use crate::actions::chain::menu_observation::MenuObservation;
+use crate::actions::chain::menu_tracking;
 use crate::tree::AXElement;
 
 const MAX_SELECT_NODES: usize = 2_048;
@@ -21,7 +23,7 @@ pub(crate) fn select_from_menu(
         .with_suggestion("Dismiss the open menu and retry select."));
     }
     let exposes_value = crate::tree::copy_value_typed(element, deadline).is_some();
-    let delivered = open_menu(element, deadline)?;
+    let delivered = open_menu(element, pid, deadline)?;
     if !delivered {
         return Err(AdapterError::new(
             ErrorCode::ActionNotSupported,
@@ -98,13 +100,24 @@ pub(crate) fn select_collection_item(
     select_collection_candidate(&candidate, deadline)
 }
 
-fn open_menu(element: &AXElement, deadline: Deadline) -> Result<bool, AdapterError> {
-    prepare(element, deadline)?;
-    if crate::actions::ax_helpers::try_ax_action_or_err(element, "AXShowMenu", deadline)? {
-        return Ok(true);
+fn open_menu(element: &AXElement, pid: i32, deadline: Deadline) -> Result<bool, AdapterError> {
+    for action in ["AXShowMenu", "AXPress"] {
+        prepare(element, deadline)?;
+        match crate::actions::ax_helpers::try_ax_action_or_err(element, action, deadline) {
+            Ok(true) => return Ok(true),
+            Ok(false) => {}
+            Err(failure) if menu_tracking::is_tracking_timeout(&failure) => {
+                return menu_tracking::settle_tracking_timeout(
+                    failure,
+                    MenuObservation::Closed,
+                    menu_tracking::poll_menu(pid, deadline),
+                )
+                .map(|outcome| outcome.was_delivered());
+            }
+            Err(failure) => return Err(failure),
+        }
     }
-    prepare(element, deadline)?;
-    crate::actions::ax_helpers::try_ax_action_or_err(element, "AXPress", deadline)
+    Ok(false)
 }
 
 fn select_open_menu_item(

@@ -91,7 +91,7 @@ agent-desktop right-click @s8f3k2p9:e5
 - `click` is the primary activation. Headless uses the activation the element publishes. `--headed` clicks physically first where that is possible and reports `physical_synthetic` in `data.steps`. The app is observed to judge delivery, not the accessibility return code.
 - `double-click` and `triple-click` are physical gestures and fail closed headless. For raw coordinates use `--headed mouse-click --xy X,Y --count 2` (or `3`).
 - `right-click` opens the context menu. Then take `snapshot --surface menu`. Use `select` for combo boxes and menu buttons instead.
-- A right-click can return `APP_UNRESPONSIVE` with uncertain delivery after a modal menu opened. Look at the effect first. Do not retry.
+- A right-click can return `APP_UNRESPONSIVE` or `ACTION_FAILED` with uncertain delivery when the menu takes longer to appear than the adapter's check. Look at the effect first (`wait --menu`). Do not retry.
 
 ## Text input
 

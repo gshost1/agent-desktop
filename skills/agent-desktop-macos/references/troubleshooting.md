@@ -56,13 +56,13 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Fix.** Add the global `--headed` flag only if physical input is what you want. Example: `agent-desktop --headed mouse-click --xy 640,400 --button right`. Take coordinates from `get @ref --property bounds`.
 
-## APP_UNRESPONSIVE after right-click
+## APP_UNRESPONSIVE or ACTION_FAILED after right-click
 
-**Symptom.** `right-click` returns `APP_UNRESPONSIVE` with `delivery_uncertain` and `retry: unsafe`.
+**Symptom.** `right-click` returns `APP_UNRESPONSIVE`, or `ACTION_FAILED` with `details.menu_observed: false`, with `delivery_uncertain` and `retry: unsafe`.
 
-**Cause.** `AXShowMenu` can enter modal menu tracking and return `kAXErrorCannotComplete` after the menu opened.
+**Cause.** `AXShowMenu` does not return until the menu it opened stops tracking, so it times out with `kAXErrorCannotComplete`. agent-desktop then reads the app's menu surface for up to 600 ms and reports a menu it sees as success. These errors mean it saw none: `ACTION_FAILED` when the app answered the reads, `APP_UNRESPONSIVE` when it did not. The menu can still open after that window.
 
-**Fix.** Do not retry. Run `snapshot --app "App" --surface menu -i`. If the menu is there, use it. If not, run `list-surfaces --app "App"`. For a combo box or menu button, use `select @ref "Option"`.
+**Fix.** Do not retry. Run `wait --menu --app "App" --timeout 3000`, or `snapshot --app "App" --surface menu -i`. If the menu is there, use it. If not, run `list-surfaces --app "App"`. For a combo box or menu button, use `select @ref "Option"`.
 
 ## Saved file has `:` in its name, in the wrong folder
 

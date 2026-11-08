@@ -1,6 +1,8 @@
 use agent_desktop_core::{AdapterError, Deadline};
 
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
+use crate::actions::chain::menu_observation::MenuObservation;
+use crate::actions::chain::menu_tracking::{self, observe_menu};
 use crate::tree::AXElement;
 
 const MAX_MENU_SEARCH_NODES: usize = 2_048;
@@ -80,19 +82,16 @@ fn show_menu_on_element(
     let Some(pid) = crate::system::app::app_ops::pid_from_element(element, deadline) else {
         return Ok(DeliveryOutcome::NotDelivered);
     };
-    if menu_probe(pid, deadline) {
+    let baseline = observe_menu(pid, deadline);
+    if baseline == MenuObservation::Open {
         return Ok(DeliveryOutcome::NotDelivered);
     }
-    prepare(element, deadline)?;
-    let delivered =
-        crate::actions::ax_helpers::try_ax_action_or_err(element, "AXShowMenu", deadline)?;
-    if !delivered {
-        return Ok(DeliveryOutcome::NotDelivered);
-    }
-    Ok(DeliveryOutcome::from_delivery(
-        true,
-        wait_for_new_menu(pid, deadline)?,
-    ))
+    perform_menu_action(
+        element,
+        "AXShowMenu",
+        MenuTarget { pid, baseline },
+        deadline,
+    )
 }
 
 fn show_menu_or_press(
@@ -102,23 +101,55 @@ fn show_menu_or_press(
     let Some(pid) = crate::system::app::app_ops::pid_from_element(element, deadline) else {
         return Ok(DeliveryOutcome::NotDelivered);
     };
-    if menu_probe(pid, deadline) {
+    let baseline = observe_menu(pid, deadline);
+    if baseline == MenuObservation::Open {
         return Ok(DeliveryOutcome::NotDelivered);
     }
     for action in ["AXShowMenu", "AXPress"] {
-        prepare(element, deadline)?;
-        if crate::actions::ax_helpers::try_ax_action_or_err(element, action, deadline)? {
-            return Ok(DeliveryOutcome::from_delivery(
-                true,
-                wait_for_new_menu(pid, deadline)?,
-            ));
+        let outcome = perform_menu_action(element, action, MenuTarget { pid, baseline }, deadline)?;
+        if outcome.was_delivered() {
+            return Ok(outcome);
         }
     }
     Ok(DeliveryOutcome::NotDelivered)
 }
 
+#[derive(Clone, Copy)]
+struct MenuTarget {
+    pid: i32,
+    baseline: MenuObservation,
+}
+
+/// A menu-opening action can time out because the menu it opened is still
+/// tracking, so a `kAXErrorCannotComplete` is settled by reading the menu
+/// surface rather than reported as an unresponsive application.
+fn perform_menu_action(
+    element: &AXElement,
+    action: &str,
+    target: MenuTarget,
+    deadline: Deadline,
+) -> Result<DeliveryOutcome, AdapterError> {
+    prepare(element, deadline)?;
+    match crate::actions::ax_helpers::try_ax_action_or_err(element, action, deadline) {
+        Ok(false) => Ok(DeliveryOutcome::NotDelivered),
+        Ok(true) => Ok(DeliveryOutcome::from_delivery(
+            true,
+            wait_for_new_menu(target.pid, deadline)?,
+        )),
+        Err(failure) if menu_tracking::is_tracking_timeout(&failure) => {
+            menu_tracking::settle_tracking_timeout(
+                failure,
+                target.baseline,
+                menu_tracking::poll_menu(target.pid, deadline),
+            )
+        }
+        Err(failure) => Err(failure),
+    }
+}
+
 fn wait_for_new_menu(pid: i32, deadline: Deadline) -> Result<bool, AdapterError> {
-    let local_end = std::time::Instant::now() + std::time::Duration::from_millis(600);
+    let local_end =
+        std::time::Instant::now() + std::time::Duration::from_millis(menu_tracking::MENU_SETTLE_MS);
     loop {
         if menu_probe(pid, deadline) {
             return Ok(true);
@@ -135,9 +166,7 @@ fn wait_for_new_menu(pid: i32, deadline: Deadline) -> Result<bool, AdapterError>
 /// probe is the expected shape of "a menu is up" rather than an application
 /// fault. Verification must never turn a delivered action into an error.
 fn menu_probe(pid: i32, deadline: Deadline) -> bool {
-    instant(deadline)
-        .and_then(|instant| crate::tree::surfaces::is_menu_open(pid, instant))
-        .unwrap_or(false)
+    observe_menu(pid, deadline) == MenuObservation::Open
 }
 
 fn select_containing_item(element: &AXElement, deadline: Deadline) -> Result<bool, AdapterError> {
