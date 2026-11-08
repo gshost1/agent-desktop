@@ -8,8 +8,13 @@ use std::process::{Command, Stdio};
 use super::Server;
 use super::catalog::Tool;
 use super::child_lease::ChildLease;
-use super::lease_inheritance::needs_lease;
+use super::lease_refusal::LeaseRefusal;
+use super::lease_role::LeaseRole;
 use super::lease_slot::Ticket;
+use agent_desktop_core::{
+    AppError,
+    response::output::{ErrorPayload, Response},
+};
 
 const CANCELLED: &str = "Cancelled";
 
@@ -31,11 +36,11 @@ pub(super) fn call(
         Ok(exe) => exe,
         Err(error) => return error_result(&format!("Cannot locate agent-desktop: {error}")),
     };
-    let Some(lease) = server
-        .lease
-        .child_lease(ticket, || needs_lease(&server.globals, &argv))
-    else {
-        return error_result(CANCELLED);
+    let role = || LeaseRole::of_call(&server.globals, &argv);
+    let lease = match server.lease.child_lease(ticket, role) {
+        Ok(lease) => lease,
+        Err(LeaseRefusal::Cancelled) => return error_result(CANCELLED),
+        Err(LeaseRefusal::Unusable(error)) => return refused(tool, &error),
     };
     let mut command = child_command(&exe, &server.globals, &argv, &lease);
     let (stdout, stderr) = match server.calls.start(id, &mut command) {
@@ -79,6 +84,12 @@ pub(crate) fn child_command(
         .stderr(Stdio::piped());
     lease.apply(&mut command);
     command
+}
+
+fn refused(tool: &Tool, error: &AppError) -> Value {
+    let command = tool.path.first().map_or("", String::as_str);
+    serde_json::to_value(Response::err(command, ErrorPayload::from_app_error(error)))
+        .map_or_else(|_| error_result(&error.to_string()), envelope_result)
 }
 
 fn read_all(pipe: Option<impl Read>) -> Vec<u8> {

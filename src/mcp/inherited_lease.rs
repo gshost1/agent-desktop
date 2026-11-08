@@ -2,10 +2,12 @@
 //!
 //! Every child that adopts the inherited descriptor shares one open file description, and taking a lock
 //! through a description that already holds it always succeeds, so the lock cannot tell siblings apart.
-//! The slot does: a child receives the variable naming the lease only while its call holds the slot, and
-//! the slot passes on only after that child has been reaped. On Unix the descriptor itself is close-on-exec
-//! in this server and opened up only in the lent child. On Windows exclusivity rests on the variable alone:
-//! the inherited handle stays inheritable, so every child holds a copy it never adopts.
+//! The slot does: a call that can inject input or steal focus receives the variable naming the lease only
+//! while it holds the slot, and the slot passes on only after its child has been reaped. Reads that inject
+//! no input share the lease beside the holder, and commands that never take it get nothing. On Unix the
+//! descriptor itself is close-on-exec in this server and opened up only in a child the lease is lent to.
+//! On Windows exclusivity rests on the variable alone: the inherited handle stays inheritable, so every
+//! child holds a copy it never adopts.
 
 use std::ffi::OsString;
 use std::process::Command;
@@ -48,7 +50,7 @@ impl InheritedLease {
         self.variable
     }
 
-    pub(crate) fn register(&self, id: &str) -> Ticket {
+    pub(crate) fn register(&self, id: Option<&str>) -> Ticket {
         self.lock().register(id)
     }
 

@@ -1,13 +1,14 @@
 //! Whether this server runs under an interaction lease its parent holds, resolved once when it starts.
 
-use clap::Parser;
+use agent_desktop_core::{AdapterError, AppError, DeliverySemantics, ErrorCode};
 use serde_json::Value;
 use std::thread::JoinHandle;
 
 use super::child_lease::ChildLease;
 use super::inherited_lease::InheritedLease;
+use super::lease_refusal::LeaseRefusal;
+use super::lease_role::LeaseRole;
 use super::lease_slot::Ticket;
-use crate::cli::{Cli, Commands};
 
 #[cfg(unix)]
 const LEASE_VARIABLE: Option<&str> = Some(agent_desktop_core::INTERACTION_LEASE_FD_ENV);
@@ -17,13 +18,17 @@ const LEASE_VARIABLE: Option<&str> = Some(agent_desktop_core::INTERACTION_LEASE_
 const LEASE_VARIABLE: Option<&str> = None;
 
 /// `Owned` when no lease was inherited: every child takes the lease itself, as a CLI run does. `Inherited`
-/// when the parent handed its lease to this server: children act under it one at a time. `Unusable` when
-/// the variable is set but names no open descriptor above the standard streams (on Windows, no integer
-/// handle): no child sees it, so each takes the real lock itself, which stays exclusive whoever holds it.
+/// when the parent handed its lease to this server: children act under it by their `LeaseRole`. `Unusable`
+/// when the variable is set but names no open descriptor above the standard streams (on Windows, no integer
+/// handle): the parent presumably holds the real lock, so a call that needs the lease is refused at once
+/// rather than left to wait out its deadline, and the rest run without the variable.
 pub(crate) enum LeaseInheritance {
     Owned,
     Inherited(Box<InheritedLease>),
-    Unusable(&'static str),
+    Unusable {
+        variable: &'static str,
+        value: String,
+    },
 }
 
 impl LeaseInheritance {
@@ -47,39 +52,50 @@ impl LeaseInheritance {
             .map(|_| InheritedLease::new(variable, value.clone()));
         match inherited {
             Some(lease) => Self::Inherited(Box::new(lease)),
-            None => {
-                eprintln!(
-                    "agent-desktop mcp: ignoring {variable}, which names no usable inherited lease; tool calls take the lease themselves"
-                );
-                Self::Unusable(variable)
-            }
+            None => Self::Unusable {
+                variable,
+                value: value.to_string_lossy().into_owned(),
+            },
         }
     }
 
-    /// Puts admitted request `id` in line for the lease; `None` unless a lease was inherited.
-    pub(crate) fn register(&self, id: &Value) -> Option<Ticket> {
+    /// Puts an admitted call, with or without a request `id`, in line; `None` unless a lease was inherited.
+    pub(crate) fn register(&self, id: Option<&Value>) -> Option<Ticket> {
         match self {
-            Self::Inherited(lease) => Some(lease.register(&id.to_string())),
-            Self::Owned | Self::Unusable(_) => None,
+            Self::Inherited(lease) => Some(lease.register(id.map(Value::to_string).as_deref())),
+            Self::Owned | Self::Unusable { .. } => None,
         }
     }
 
-    /// What the child of the call holding `ticket` receives. Under an inherited lease, a call for which
-    /// `needs_lease` is true waits for the slot; `None` when it was cancelled first, so it must not spawn.
+    /// What the child of the call holding `ticket` receives, by the call's `role`. An exclusive call waits
+    /// for its turn; it is refused when cancelled first, and every call that needs the lease is refused when
+    /// the inherited value is unusable.
     pub(crate) fn child_lease(
         &self,
         ticket: Option<Ticket>,
-        needs_lease: impl FnOnce() -> bool,
-    ) -> Option<ChildLease<'_>> {
-        match (self, ticket) {
-            (Self::Owned, _) => Some(ChildLease::Unchanged),
-            (Self::Unusable(variable), _) => Some(ChildLease::Withheld(variable)),
-            (Self::Inherited(lease), Some(ticket)) if needs_lease() => lease.lend_to(ticket),
-            (Self::Inherited(lease), ticket) => {
-                if let Some(ticket) = ticket {
-                    lease.forget(ticket);
-                }
-                Some(ChildLease::Withheld(lease.variable()))
+        role: impl FnOnce() -> LeaseRole,
+    ) -> Result<ChildLease<'_>, LeaseRefusal> {
+        let lease = match self {
+            Self::Owned => return Ok(ChildLease::Unchanged),
+            Self::Unusable { variable, value } => {
+                return match role() {
+                    LeaseRole::Unused => Ok(ChildLease::Withheld(variable)),
+                    _ => Err(LeaseRefusal::Unusable(unusable(variable, value))),
+                };
+            }
+            Self::Inherited(lease) => lease,
+        };
+        match (role(), ticket) {
+            (LeaseRole::Exclusive, Some(ticket)) => {
+                lease.lend_to(ticket).ok_or(LeaseRefusal::Cancelled)
+            }
+            (LeaseRole::Exclusive, None) => Err(LeaseRefusal::Cancelled),
+            (role, ticket) => {
+                self.forget(ticket);
+                Ok(match role {
+                    LeaseRole::Unused => ChildLease::Withheld(lease.variable()),
+                    _ => ChildLease::Shared(lease),
+                })
             }
         }
     }
@@ -94,30 +110,25 @@ impl LeaseInheritance {
     pub(crate) fn cancel(&self, id: &Value, cancel_call: impl FnOnce() -> Option<JoinHandle<()>>) {
         match self {
             Self::Inherited(lease) => lease.cancel(&id.to_string(), cancel_call),
-            Self::Owned | Self::Unusable(_) => {
+            Self::Owned | Self::Unusable { .. } => {
                 let _ = cancel_call();
             }
         }
     }
 }
 
-/// True for a command that changes something, or that reads the permission report (`status`,
-/// `permissions`), which can release stuck keys under the lease. Read-only commands, accessibility reads
-/// included, run beside the holder without the lease, so a `wait` never blocks the action it waits for.
-/// Anything that does not parse counts as needing the lease.
-pub(crate) fn needs_lease(globals: &[String], argv: &[String]) -> bool {
-    let words = std::iter::once("agent-desktop")
-        .chain(globals.iter().map(String::as_str))
-        .chain(argv.iter().map(String::as_str));
-    match Cli::try_parse_from(words) {
-        Ok(Cli {
-            command: Some(command),
-            ..
-        }) => {
-            command.is_mutating() || matches!(command, Commands::Status | Commands::Permissions(_))
-        }
-        _ => true,
-    }
+fn unusable(variable: &str, value: &str) -> AppError {
+    AdapterError::new(
+        ErrorCode::PolicyDenied,
+        format!(
+            "{variable}={value} names no inherited interaction lease this server can lend, and its parent may hold the lock"
+        ),
+    )
+    .with_suggestion(format!(
+        "Start agent-desktop mcp with {variable} set to an open descriptor of the interaction lock above 2, or without it"
+    ))
+    .with_disposition(DeliverySemantics::not_delivered())
+    .into()
 }
 
 #[cfg(test)]

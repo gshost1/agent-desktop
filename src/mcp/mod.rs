@@ -6,7 +6,10 @@ mod catalog;
 mod child_lease;
 mod inherited_lease;
 mod lease_inheritance;
+mod lease_refusal;
+mod lease_role;
 mod lease_slot;
+mod queued_ticket;
 mod slot_holder;
 mod slot_step;
 
@@ -95,10 +98,10 @@ pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
                 continue;
             }
         }
-        let ticket = message.get("id").and_then(|id| server.lease.register(id));
+        let ticket = server.lease.register(message.get("id"));
         running.push(std::thread::spawn(move || {
-            server.respond(&out, &message, ticket);
-            server.lease.forget(ticket);
+            let place = queued_ticket::QueuedTicket::new(&server.lease, ticket);
+            server.respond(&out, &message, place.ticket());
         }));
     }
     for call in running {

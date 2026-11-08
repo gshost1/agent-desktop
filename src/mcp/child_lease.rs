@@ -6,11 +6,12 @@ use super::inherited_lease::InheritedLease;
 use super::lease_slot::Ticket;
 
 /// `Unchanged` when nothing was inherited, so the child takes the lease itself. `Withheld` names the lease
-/// variable the child must not see: its call does not need the lease, or the inherited value is unusable.
-/// `Lent` while this call holds the server's one slot; dropping it ends the turn once the child is reaped.
+/// variable the child must not see. `Shared` lends the lease to a read beside the holder. `Lent` while this
+/// call holds the server's one exclusive slot; dropping it ends the turn once the child is reaped.
 pub(crate) enum ChildLease<'a> {
     Unchanged,
     Withheld(&'static str),
+    Shared(&'a InheritedLease),
     Lent(&'a InheritedLease, Ticket),
 }
 
@@ -21,7 +22,7 @@ impl ChildLease<'_> {
             Self::Withheld(variable) => {
                 command.env_remove(variable);
             }
-            Self::Lent(lease, _) => lease.lend(command),
+            Self::Shared(lease) | Self::Lent(lease, _) => lease.lend(command),
         }
     }
 }

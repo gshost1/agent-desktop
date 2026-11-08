@@ -1,5 +1,7 @@
 use super::*;
 use crate::mcp::call::child_command;
+use crate::mcp::queued_ticket::QueuedTicket;
+use agent_desktop_core::{AppError, ErrorCode};
 use serde_json::json;
 use std::ffi::OsStr;
 use std::path::Path;
@@ -30,8 +32,11 @@ fn lease_variable(lease: &ChildLease<'_>) -> Option<Option<String>> {
 }
 
 fn lent(lease: &LeaseInheritance, id: u64) -> ChildLease<'_> {
-    let ticket = lease.register(&json!(id));
-    lease.child_lease(ticket, || true).expect("lent")
+    let ticket = lease.register(Some(&json!(id)));
+    lease
+        .child_lease(ticket, || LeaseRole::Exclusive)
+        .ok()
+        .expect("lent")
 }
 
 #[test]
@@ -39,11 +44,14 @@ fn concurrent_calls_under_an_inherited_lease_take_turns_and_a_waiting_child_neve
     let lease = &inherited();
     let first = lent(lease, 1);
     assert_eq!(lease_variable(&first), Some(Some("test-lease".to_owned())));
-    let second = lease.register(&json!(2));
+    let second = lease.register(Some(&json!(2)));
     std::thread::scope(|scope| {
         let (sent, received) = mpsc::channel();
         scope.spawn(move || {
-            let second = lease.child_lease(second, || true).expect("second call");
+            let second = lease
+                .child_lease(second, || LeaseRole::Exclusive)
+                .ok()
+                .expect("second call");
             let _ = sent.send(lease_variable(&second));
         });
         assert!(
@@ -64,14 +72,17 @@ fn concurrent_calls_under_an_inherited_lease_take_turns_and_a_waiting_child_neve
 fn waiting_calls_take_the_lease_in_arrival_order() {
     let lease = &inherited();
     let first = lent(lease, 1);
-    let second = lease.register(&json!(2));
-    let third = lease.register(&json!(3));
+    let second = lease.register(Some(&json!(2)));
+    let third = lease.register(Some(&json!(3)));
     let (sent, received) = mpsc::channel();
     std::thread::scope(|scope| {
         for (ticket, id) in [(third, 3), (second, 2)] {
             let sent = sent.clone();
             scope.spawn(move || {
-                let turn = lease.child_lease(ticket, || true).expect("turn");
+                let turn = lease
+                    .child_lease(ticket, || LeaseRole::Exclusive)
+                    .ok()
+                    .expect("turn");
                 let _ = sent.send(id);
                 std::thread::sleep(Duration::from_millis(20));
                 drop(turn);
@@ -87,12 +98,16 @@ fn waiting_calls_take_the_lease_in_arrival_order() {
 fn a_call_cancelled_before_it_queues_leaves_at_once_and_its_id_can_be_reused() {
     let lease = &inherited();
     let held = lent(lease, 1);
-    let cancelled = lease.register(&json!(2));
+    let cancelled = lease.register(Some(&json!(2)));
     lease.cancel(&json!(2), || None);
     let left = std::thread::scope(|scope| {
         let (sent, received) = mpsc::channel();
         scope.spawn(move || {
-            let _ = sent.send(lease.child_lease(cancelled, || true).is_none());
+            let _ = sent.send(
+                lease
+                    .child_lease(cancelled, || LeaseRole::Exclusive)
+                    .is_err(),
+            );
         });
         let left = received.recv_timeout(WAITING);
         drop(held);
@@ -103,10 +118,10 @@ fn a_call_cancelled_before_it_queues_leaves_at_once_and_its_id_can_be_reused() {
         Ok(true),
         "a call cancelled before it queued must leave without waiting"
     );
-    let reused = lease.register(&json!(2));
+    let reused = lease.register(Some(&json!(2)));
     assert!(matches!(
-        lease.child_lease(reused, || true),
-        Some(ChildLease::Lent(..))
+        lease.child_lease(reused, || LeaseRole::Exclusive),
+        Ok(ChildLease::Lent(..))
     ));
 }
 
@@ -114,9 +129,9 @@ fn a_call_cancelled_before_it_queues_leaves_at_once_and_its_id_can_be_reused() {
 fn a_call_cancelled_while_waiting_never_gets_the_lease_and_leaves_the_slot_free() {
     let lease = inherited();
     let held = lent(&lease, 1);
-    let waiting = lease.register(&json!(2));
+    let waiting = lease.register(Some(&json!(2)));
     std::thread::scope(|scope| {
-        let waiter = scope.spawn(|| lease.child_lease(waiting, || true).is_none());
+        let waiter = scope.spawn(|| lease.child_lease(waiting, || LeaseRole::Exclusive).is_err());
         std::thread::sleep(Duration::from_millis(50));
         lease.cancel(&json!(2), || None);
         assert!(
@@ -136,7 +151,7 @@ fn a_cancelled_holder_passes_the_lease_on_only_after_its_child_is_reaped() {
         let _ = reaper_done.recv_timeout(SETTLED);
     });
     let holder = lent(lease, 1);
-    let next = lease.register(&json!(2));
+    let next = lease.register(Some(&json!(2)));
     std::thread::scope(|scope| {
         let (taken, turn) = mpsc::channel();
         let (output_closed, call_ends) = mpsc::channel::<()>();
@@ -145,7 +160,10 @@ fn a_cancelled_holder_passes_the_lease_on_only_after_its_child_is_reaped() {
             drop(holder);
         });
         scope.spawn(move || {
-            let next = lease.child_lease(next, || true).expect("next call");
+            let next = lease
+                .child_lease(next, || LeaseRole::Exclusive)
+                .ok()
+                .expect("next call");
             let _ = taken.send(());
             drop(next);
         });
@@ -164,50 +182,115 @@ fn a_cancelled_holder_passes_the_lease_on_only_after_its_child_is_reaped() {
 }
 
 #[test]
-fn a_call_that_never_takes_the_lease_runs_at_once_without_it() {
+fn a_shared_read_gets_the_lease_beside_the_holder_and_an_unused_command_gets_nothing() {
     let lease = inherited();
     let held = lent(&lease, 1);
-    let ticket = lease.register(&json!(2));
-    let read_only = lease.child_lease(ticket, || false).expect("read-only call");
-    assert_eq!(lease_variable(&read_only), Some(None));
-    drop(read_only);
+    let ticket = lease.register(Some(&json!(2)));
+    let read = lease
+        .child_lease(ticket, || LeaseRole::Shared)
+        .ok()
+        .expect("shared read");
+    assert_eq!(lease_variable(&read), Some(Some("test-lease".to_owned())));
+    let ticket = lease.register(Some(&json!(3)));
+    let unused = lease
+        .child_lease(ticket, || LeaseRole::Unused)
+        .ok()
+        .expect("unused");
+    assert_eq!(lease_variable(&unused), Some(None));
     drop(held);
+    assert!(matches!(lent(&lease, 4), ChildLease::Lent(..)));
 }
 
 #[test]
-fn an_unusable_inherited_value_is_withheld_from_every_child() {
-    let lease = LeaseInheritance::Unusable(TEST_VARIABLE);
-    let first = lease.child_lease(None, || true).expect("call");
-    let second = lease.child_lease(None, || true).expect("call");
-    assert_eq!(lease_variable(&first), Some(None));
-    assert_eq!(lease_variable(&second), Some(None));
+fn a_call_without_an_id_still_waits_its_turn() {
+    let lease = &inherited();
+    let first = lent(lease, 1);
+    let anonymous = lease.register(None);
+    std::thread::scope(|scope| {
+        let (sent, received) = mpsc::channel();
+        scope.spawn(move || {
+            let turn = lease.child_lease(anonymous, || LeaseRole::Exclusive);
+            let _ = sent.send(matches!(turn, Ok(ChildLease::Lent(..))));
+        });
+        assert!(received.recv_timeout(WAITING).is_err());
+        drop(first);
+        assert_eq!(received.recv_timeout(SETTLED), Ok(true));
+    });
+}
+
+#[test]
+fn a_call_thread_that_unwinds_before_its_turn_gives_up_its_place() {
+    let lease = &inherited();
+    let held = lent(lease, 1);
+    let doomed = lease.register(Some(&json!(2)));
+    let next = lease.register(Some(&json!(3)));
+    let unwound = std::thread::scope(|scope| {
+        scope
+            .spawn(move || {
+                let _place = QueuedTicket::new(lease, doomed);
+                panic!("call thread unwinds before its turn");
+            })
+            .join()
+    });
+    assert!(unwound.is_err());
+    drop(held);
+    let turn = std::thread::scope(|scope| {
+        let (sent, received) = mpsc::channel();
+        scope.spawn(move || {
+            let turn = lease.child_lease(next, || LeaseRole::Exclusive);
+            let _ = sent.send(matches!(turn, Ok(ChildLease::Lent(..))));
+        });
+        let turn = received.recv_timeout(WAITING);
+        lease.forget(doomed);
+        turn
+    });
+    assert_eq!(
+        turn,
+        Ok(true),
+        "the call behind an unwound one must not wait forever"
+    );
+}
+
+#[test]
+fn an_unusable_inherited_value_refuses_lease_calls_at_once_and_withholds_it_from_the_rest() {
+    let lease = LeaseInheritance::Unusable {
+        variable: TEST_VARIABLE,
+        value: "2".to_owned(),
+    };
+    for role in [LeaseRole::Exclusive, LeaseRole::Shared] {
+        let Err(LeaseRefusal::Unusable(error)) = lease.child_lease(None, || role) else {
+            panic!("{role:?} must be refused");
+        };
+        let AppError::Adapter(error) = error else {
+            panic!("an adapter error");
+        };
+        assert_eq!(error.code, ErrorCode::PolicyDenied);
+        assert!(error.message.contains("AGENT_DESKTOP_MCP_LEASE_TEST=2"));
+    }
+    let unused = lease
+        .child_lease(None, || LeaseRole::Unused)
+        .ok()
+        .expect("unused");
+    assert_eq!(lease_variable(&unused), Some(None));
 }
 
 #[test]
 fn without_an_inherited_lease_children_are_left_to_take_it_themselves() {
     let owned = LeaseInheritance::Owned;
-    assert_eq!(owned.register(&json!(1)), None);
-    let first = owned.child_lease(None, || true).expect("owned call");
-    let second = owned.child_lease(None, || true).expect("owned call");
-    assert_eq!(lease_variable(&first), None);
-    assert_eq!(lease_variable(&second), None);
+    assert_eq!(owned.register(Some(&json!(1))), None);
+    for role in [
+        LeaseRole::Exclusive,
+        LeaseRole::Exclusive,
+        LeaseRole::Shared,
+    ] {
+        let child = owned.child_lease(None, || role).ok().expect("owned call");
+        assert_eq!(lease_variable(&child), None);
+    }
 }
 
 #[test]
-fn only_changes_and_permission_reports_wait_for_the_lease() {
-    for argv in [
-        &["list-apps"][..],
-        &["version"],
-        &["skills", "list"],
-        &["clipboard-get"],
-        &["snapshot"],
-        &["find", "--role=button"],
-        &["wait", "--text=Done"],
-        &["screenshot"],
-        &["list-surfaces"],
-    ] {
-        assert!(!needs_lease(&[], &words(argv)), "{argv:?}");
-    }
+fn input_and_focus_are_exclusive_reads_are_shared_and_lease_free_commands_get_nothing() {
+    let role = |globals: &[&str], argv: &[&str]| LeaseRole::of_call(&words(globals), &words(argv));
     for argv in [
         &["status"][..],
         &["permissions"],
@@ -216,13 +299,36 @@ fn only_changes_and_permission_reports_wait_for_the_lease() {
         &["clipboard-get", "--out=/tmp/x"],
         &["no-such-command"],
     ] {
-        assert!(needs_lease(&[], &words(argv)), "{argv:?}");
+        assert_eq!(role(&[], argv), LeaseRole::Exclusive, "{argv:?}");
+    }
+    for argv in [&["list-notifications"][..], &["wait", "--notification"]] {
+        assert_eq!(role(&["--headed"], argv), LeaseRole::Exclusive, "{argv:?}");
+        assert_eq!(role(&[], argv), LeaseRole::Shared, "{argv:?}");
+    }
+    for argv in [
+        &["snapshot"][..],
+        &["find", "--role=button"],
+        &["wait", "--text=Done"],
+        &["screenshot"],
+        &["list-surfaces"],
+    ] {
+        assert_eq!(role(&["--headed"], argv), LeaseRole::Shared, "{argv:?}");
+    }
+    for argv in [
+        &["list-apps"][..],
+        &["list-windows"],
+        &["list-displays"],
+        &["version"],
+        &["skills", "list"],
+        &["clipboard-get"],
+    ] {
+        assert_eq!(role(&[], argv), LeaseRole::Unused, "{argv:?}");
     }
 }
 
 #[cfg(unix)]
 #[test]
-fn only_the_child_lent_the_lease_inherits_its_descriptor() {
+fn only_a_child_the_lease_is_lent_to_inherits_its_descriptor() {
     use std::os::fd::AsRawFd;
 
     let path = std::env::temp_dir().join(format!(
@@ -244,13 +350,20 @@ fn only_the_child_lent_the_lease_inherits_its_descriptor() {
         let mut command = child_command(Path::new("sh"), &[], &words(&["-c", &script]), lease);
         command.output().expect("sh runs").status.success()
     };
+    let holds = "[ -e /dev/fd/FD ] && [ \"$AGENT_DESKTOP_MCP_LEASE_TEST\" = FD ]";
     let lent_child = lent(&lease, 1);
-    assert!(probe(
-        &lent_child,
-        "[ -e /dev/fd/FD ] && [ \"$AGENT_DESKTOP_MCP_LEASE_TEST\" = FD ]"
-    ));
-    let ticket = lease.register(&json!(2));
-    let withheld = lease.child_lease(ticket, || false).expect("withheld");
+    assert!(probe(&lent_child, holds));
+    let ticket = lease.register(Some(&json!(2)));
+    let shared = lease
+        .child_lease(ticket, || LeaseRole::Shared)
+        .ok()
+        .expect("shared");
+    assert!(probe(&shared, holds));
+    let ticket = lease.register(Some(&json!(3)));
+    let withheld = lease
+        .child_lease(ticket, || LeaseRole::Unused)
+        .ok()
+        .expect("withheld");
     assert!(probe(
         &withheld,
         "[ ! -e /dev/fd/FD ] && [ -z \"${AGENT_DESKTOP_MCP_LEASE_TEST+x}\" ]"

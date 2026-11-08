@@ -21,11 +21,14 @@ pub(crate) struct LeaseSlot {
 }
 
 impl LeaseSlot {
-    /// Puts request `id` in line when it is admitted, before its call thread starts.
-    pub(crate) fn register(&mut self, id: &str) -> Ticket {
+    /// Puts an admitted call in line before its call thread starts; a request `id`, when it has one, lets a
+    /// cancel find it.
+    pub(crate) fn register(&mut self, id: Option<&str>) -> Ticket {
         self.issued += 1;
         self.line.push_back(self.issued);
-        self.tickets.insert(id.to_owned(), self.issued);
+        if let Some(id) = id {
+            self.tickets.insert(id.to_owned(), self.issued);
+        }
         self.issued
     }
 
