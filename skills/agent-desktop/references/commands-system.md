@@ -43,7 +43,7 @@ The port exists only for a fresh process. `launch` never quits a running app for
 | `cdp_switch_conflict` (`INVALID_ARGS`) | `--arg` carried a `--remote-debugging-*` or `--remote-allow-origins` switch | Drop that `--arg` |
 | `cdp_endpoint_unavailable` | No endpoint answered before the deadline | The app stays running. Use the accessibility path |
 
-Handoff: agent-desktop never talks to the port itself. Check `command -v agent-browser`. If it exists, run `agent-browser connect <port>` and use its snapshot, click and type workflow (`agent-browser skills get electron` has the guide). Playwright, Puppeteer and other CDP clients also work. Do not write raw CDP by hand or call app-internal APIs. If no client exists, ask the user to run `npm install -g agent-browser`, or stay on the accessibility path.
+Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
 Keep these on agent-desktop even with CDP connected: the native menu bar, file dialogs and sheets, window management, notifications, screenshots, and any app you did not launch. While the port is open, any local process of the same user can control the app's web contents. Request `--cdp` only for the step that needs it. `close-app` ends the exposure.
 

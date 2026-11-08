@@ -107,6 +107,7 @@ pub(crate) fn parse_command(item: BatchCommand) -> Result<Commands, AppError> {
         "restore" => decode(command, item.args).map(Commands::Restore),
         "list-surfaces" => decode(command, item.args).map(Commands::ListSurfaces),
         "open-system-surface" => decode(command, item.args).map(Commands::OpenSystemSurface),
+        "open-url" => decode(command, item.args).map(Commands::OpenUrl),
         "list-notifications" => decode(command, item.args).map(Commands::ListNotifications),
         "dismiss-notification" => decode(command, item.args).map(Commands::DismissNotification),
         "dismiss-all-notifications" => {

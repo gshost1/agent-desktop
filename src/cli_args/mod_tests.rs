@@ -22,6 +22,7 @@ const EXPECTED_CORE_SURFACES: &[SnapshotSurface] = &[
     SnapshotSurface::SystemTrayOverflow,
     SnapshotSurface::StartMenu,
     SnapshotSurface::ActionCenter,
+    SnapshotSurface::Web,
 ];
 
 #[test]

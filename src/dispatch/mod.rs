@@ -120,6 +120,7 @@ fn dispatch_command(
         Commands::OpenSystemSurface(args) => {
             app_window::open_system_surface(args, adapter, context)
         }
+        Commands::OpenUrl(args) => app_window::open_url(args, adapter),
         Commands::ListNotifications(args) => notifications::list(args, adapter, context),
         Commands::DismissNotification(args) => notifications::dismiss(args, adapter, context),
         Commands::DismissAllNotifications(args) => {

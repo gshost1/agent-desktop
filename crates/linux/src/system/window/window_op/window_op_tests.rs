@@ -22,6 +22,9 @@ mod hold;
 #[path = "window_op_settle_tests.rs"]
 mod settle;
 
+#[path = "window_op_settle_late_tests.rs"]
+mod settle_late;
+
 #[path = "window_op_wayland_tests.rs"]
 mod wayland;
 
@@ -33,6 +36,8 @@ mod shadow;
 
 pub(super) const CLIENT: u32 = 0x0040_0003;
 pub(super) const INSTANCE: &str = "abcd1234:99";
+
+pub(super) type Reaction = fn(&[WindowWrite]) -> ControlRead<WindowFacts>;
 
 pub(super) struct World {
     pub(super) clients: RefCell<VecDeque<ControlRead<Vec<X11Client>>>>,
@@ -46,7 +51,7 @@ pub(super) struct World {
     pub(super) overview_reads: Cell<u32>,
     pub(super) wayland: bool,
     pub(super) stopped: bool,
-    pub(super) reaction: Option<fn(&[WindowWrite]) -> WindowFacts>,
+    pub(super) reaction: Option<Reaction>,
     pub(super) remembered: RefCell<Option<(String, RememberedPlace)>>,
     pub(super) remember_calls: RefCell<Vec<Option<RememberedPlace>>>,
     pub(super) twins: Option<Twins>,
@@ -168,14 +173,15 @@ impl OpWorld for World {
     }
 
     fn facts(&self, _client: u32) -> ControlRead<WindowFacts> {
-        if let Some(reaction) = self.reaction {
-            let written: Vec<WindowWrite> = self
-                .writes
+        let written = || -> Vec<WindowWrite> {
+            self.writes
                 .borrow()
                 .iter()
                 .map(|(_, write)| write.clone())
-                .collect();
-            return ControlRead::Ready(reaction(&written));
+                .collect()
+        };
+        if let Some(reaction) = self.reaction {
+            return reaction(&written());
         }
         next(&self.facts)
     }
@@ -236,7 +242,7 @@ pub(super) fn window() -> WindowInfo {
 }
 
 pub(super) fn budget() -> Deadline {
-    Deadline::after(250).expect("a deadline builds")
+    Deadline::after(2_000).expect("a deadline builds")
 }
 
 pub(super) fn resize(width: f64, height: f64) -> WindowOp {
