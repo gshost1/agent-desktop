@@ -43,7 +43,7 @@ fn app_unresponsive_requires_explicit_retry_evidence() {
     assert!(!is_retryable_point_error(&err));
 }
 
-fn point_ref_snapshot() -> String {
+pub(super) fn point_ref_snapshot() -> String {
     let store = RefStore::new().unwrap();
     let mut refmap = RefMap::new();
     refmap.allocate(RefEntry {
@@ -306,9 +306,6 @@ fn an_unchanged_bounds_hash_after_scroll_stops_the_scroll_retries() {
 
 #[path = "pointer_action_focus_tests.rs"]
 mod focus_tests;
-
-#[path = "pointer_action_focus_phase_tests.rs"]
-mod focus_phase_tests;
 
 struct GoneTargetAdapter {
     resolve_calls: AtomicU32,

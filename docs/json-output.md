@@ -119,6 +119,12 @@ carries no such detail, and neither does a failure in a step after the action,
 such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
+A headed `hover` or `drag` focuses on each attempt under that attempt's lease
+and reads the front window just before. An attempt whose focus brought the
+target in front of another window (or of none) and still fails ends the
+command with its own error, which carries `details.preparatory_focus`; when
+the target was already in front or the front window cannot be read, a
+retryable failure goes back to waiting.
 
 On macOS, `press --app` reports `data.details.keyboard_target` when the app's
 keyboard focus may belong to another process, such as a Save panel that a

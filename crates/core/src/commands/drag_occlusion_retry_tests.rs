@@ -110,19 +110,20 @@ impl SystemOps for TransientOcclusionAdapter {
 }
 
 #[test]
-fn drag_ends_with_a_post_focus_occlusion_instead_of_raising_again() {
+fn drag_retries_transient_post_focus_occlusion_without_holding_lease() {
     let _guard = HomeGuard::new();
     let snapshot_id = cross_app_snapshot();
     let adapter = TransientOcclusionAdapter::new();
     let mut args = cross_app_args(snapshot_id);
     args.timeout_ms = Some(5_000);
 
-    let error = execute(args, &adapter, &CommandContext::default().with_headed(true)).unwrap_err();
+    let value = execute(args, &adapter, &CommandContext::default().with_headed(true)).unwrap();
 
-    assert_eq!(error.code(), "ACTION_FAILED");
-    assert_eq!(adapter.lease_acquisitions.load(Ordering::SeqCst), 1);
+    assert_eq!(value["disposition"]["delivery"], "delivered_unverified");
+    assert!(value.get("dragged").is_none());
+    assert_eq!(adapter.lease_acquisitions.load(Ordering::SeqCst), 2);
     assert!(!adapter.lease_held.load(Ordering::SeqCst));
-    assert!(adapter.captured.lock().unwrap().is_none());
+    assert!(adapter.captured.lock().unwrap().is_some());
 }
 
 #[test]

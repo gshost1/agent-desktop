@@ -151,7 +151,7 @@ fn hover_on_occluded_ref_fails_preflight_before_dispatch() {
 }
 
 #[test]
-fn headed_hover_ends_with_a_post_focus_occlusion_instead_of_raising_again() {
+fn headed_hover_retries_transient_post_focus_occlusion_without_holding_lease() {
     let _guard = HomeGuard::new();
     let snapshot_id = ref_snapshot(42);
     let adapter = OccludedTargetAdapter {
@@ -164,15 +164,19 @@ fn headed_hover_ends_with_a_post_focus_occlusion_instead_of_raising_again() {
     let mut args = ref_args(snapshot_id);
     args.timeout_ms = Some(5_000);
 
-    let error = execute(args, &adapter, &CommandContext::default().with_headed(true)).unwrap_err();
+    let value = execute(args, &adapter, &CommandContext::default().with_headed(true)).unwrap();
 
-    assert_eq!(error.code(), "ACTION_FAILED");
-    assert!(adapter.moved_to.lock().unwrap().is_none());
+    assert_eq!(value["disposition"]["delivery"], "delivered_unverified");
+    assert!(value.get("hovered").is_none());
+    assert_eq!(
+        adapter.hit_tests.load(std::sync::atomic::Ordering::SeqCst),
+        3
+    );
     assert_eq!(
         adapter
             .lease_acquisitions
             .load(std::sync::atomic::Ordering::SeqCst),
-        1
+        2
     );
     assert!(!adapter.lease_held.load(std::sync::atomic::Ordering::SeqCst));
 }
