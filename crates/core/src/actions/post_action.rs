@@ -48,7 +48,10 @@ pub fn execute_verified_action(
         });
     if execution
         .as_ref()
-        .is_err_and(|error| error.disposition == DeliverySemantics::not_delivered())
+        .is_ok_and(ActionResult::awaits_application_commit)
+        || execution
+            .as_ref()
+            .is_err_and(|error| error.disposition == DeliverySemantics::not_delivered())
     {
         return execution;
     }
@@ -268,3 +271,7 @@ mod tests;
 #[cfg(test)]
 #[path = "post_action_toggle_tests.rs"]
 mod toggle_tests;
+
+#[cfg(test)]
+#[path = "post_action_commit_tests.rs"]
+mod commit_tests;

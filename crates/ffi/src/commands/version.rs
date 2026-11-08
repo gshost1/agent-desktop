@@ -25,8 +25,7 @@ pub unsafe extern "C" fn ad_version(out: *mut *mut c_char) -> AdResult {
             Ok(ctx) => ctx,
             Err(app_err) => {
                 let ae = app_error_to_adapter(app_err);
-                set_last_error(&ae);
-                return crate::error::last_error_code();
+                return set_last_error(&ae);
             }
         };
         let scope = crate::commands::command_scope!(context, "version");

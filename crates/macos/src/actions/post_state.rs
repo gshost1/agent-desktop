@@ -29,7 +29,12 @@ pub(crate) fn read_live_element(
         description: read.evidence.description,
         identifiers: read.evidence.identifiers,
     };
-    let available_actions = known_actions(read.evidence.ref_evidence.available_actions)?;
+    let available_actions = crate::actions::inline_editor_target::with_editor_capabilities(
+        element,
+        &role,
+        known_actions(read.evidence.ref_evidence.available_actions)?,
+        deadline,
+    )?;
     let attrs = read.attrs;
     let bounds = attrs.bounds;
     let expanded_observed = crate::tree::state_reader::expanded_from_attrs(&attrs).is_some();

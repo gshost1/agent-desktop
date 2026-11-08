@@ -154,8 +154,12 @@ fn build_report_with_requirement(
         request
     };
     let requirements = ActionabilityRequirements::for_action(&request.action);
-    let pointer_delivery =
-        requirements.pointer_delivery(&request.action, &evidence.available_actions, request.policy);
+    let protocol = super::protocol_delivery::applies(evidence, request, hit_test);
+    let pointer_delivery = if protocol {
+        super::PointerDelivery::Semantic
+    } else {
+        requirements.pointer_delivery(&request.action, &evidence.available_actions, request.policy)
+    };
     let mut checks = Vec::new();
     let mut verified_point = None;
     let presentation_point = evidence.bounds.and_then(center_point);
@@ -166,7 +170,7 @@ fn build_report_with_requirement(
     );
     if requirements.visible {
         let requires_geometry =
-            requirements.requires_geometry(request, &evidence.available_actions);
+            !protocol && requirements.requires_geometry(request, &evidence.available_actions);
         let visibility = gates::visibility(evidence, requires_geometry, without_pointer);
         if requires_geometry
             && evidence.bounds.is_none()
@@ -194,7 +198,11 @@ fn build_report_with_requirement(
     if requirements.editable {
         checks.push(gates::editable(evidence, &request.action));
     }
-    checks.push(gates::action_supported(evidence, request));
+    checks.push(if protocol {
+        super::check_result::pass("supported_action")
+    } else {
+        gates::action_supported(evidence, request)
+    });
     checks.push(gates::policy(request));
     if checks
         .iter()
