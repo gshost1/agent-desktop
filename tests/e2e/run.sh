@@ -120,7 +120,9 @@ w = min(int(b["width"]) - 40, 1900)
 h = min(int(b["height"]) - 34, 1080)
 print(int(b["x"]) + 20, int(b["y"]) + 28, w, h)
 ')"
-if [ -n "$frame" ]; then
+if private_skip_enabled; then
+    private_skip "fixture window normalization (osascript System Events)"
+elif [ -n "$frame" ]; then
     read -r fx fy fw fh <<EOF_FRAME
 $frame
 EOF_FRAME
