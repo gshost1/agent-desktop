@@ -14,6 +14,7 @@ pub(crate) mod launch_completion;
 pub(crate) mod launch_plan;
 pub(crate) mod launch_target;
 pub(crate) mod launch_workspace;
+pub(crate) mod menu_shortcut;
 pub(crate) mod permissions;
 pub(crate) mod process;
 pub(crate) mod ref_focus_window;

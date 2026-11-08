@@ -56,3 +56,29 @@ fn pre_dispatch_failures_are_always_safe_to_retry() {
         );
     }
 }
+
+#[test]
+fn a_top_level_batch_preflight_gets_the_batch_budget_capped_not_five_seconds() {
+    let deadline_of = |args: &[&str]| {
+        let cli = crate::Cli::try_parse_from(args).expect("parses");
+        crate::preflight_deadline(&cli.command.expect("a command"), None)
+            .expect("a deadline builds")
+            .remaining()
+    };
+    let batch = deadline_of(&["agent-desktop", "batch", "[]", "--timeout-ms", "60000"]);
+    assert!(batch > std::time::Duration::from_secs(10), "{batch:?}");
+    assert!(
+        batch <= std::time::Duration::from_millis(15_000),
+        "{batch:?}"
+    );
+    let short = deadline_of(&["agent-desktop", "batch", "[]", "--timeout-ms", "2000"]);
+    assert!(
+        short <= std::time::Duration::from_millis(2_000),
+        "{short:?}"
+    );
+    let status = deadline_of(&["agent-desktop", "status"]);
+    assert!(
+        status <= std::time::Duration::from_millis(5_000),
+        "{status:?}"
+    );
+}

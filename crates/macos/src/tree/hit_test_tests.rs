@@ -99,3 +99,12 @@ fn ancestor_walk_retains_handles_and_detects_the_same_element() {
     assert!(!remember_ancestor(&mut visited, &equivalent));
     assert_eq!(visited.len(), 1);
 }
+
+#[test]
+fn a_sheet_or_popover_frame_is_the_last_clip_before_its_parent_window() {
+    use crate::tree::element_bounds::draws_own_surface;
+    assert!(draws_own_surface("AXSheet"));
+    assert!(draws_own_surface("AXPopover"));
+    assert!(!draws_own_surface("AXWindow"));
+    assert!(!draws_own_surface("AXScrollArea"));
+}

@@ -120,6 +120,32 @@ such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
 
+On macOS, `press --app` reports `data.details.keyboard_target` when the app's
+keyboard focus may belong to another process, such as a Save panel that a
+service draws in the app's sheet. `pid` received the key and `host_pid` is the
+app. With `route: "hosted_view"` the key went to the process that owns the
+focused control. With `route: "host"` the key went to the app as before, and
+`focus_owner_pid` and `unproven` say which process looked like the owner and
+why it was not proven: `focus_frame_unknown`, `focus_outside_host_windows`,
+`owner_has_no_window_server_presence`, `owner_focus_not_linked` or
+`owner_process_exited`. `candidates` lists the evidence for each process
+considered: `owns_host_focus` (the app's focused element names it),
+`focused_application` (it is the system's focused application),
+`responsible_to_host` (macOS attributes its work to the app), `owns_window`,
+and `focus_frame_matches` (its own focused element has the app's focus frame;
+`null` when not read). The field is omitted when no other process is tied to
+the app's focus.
+
+When the key went to a proven owner, or to the app while an unproven owner's
+focused element is the app's focused control, `press` reads the app's focused
+element and the windows of both processes before and after delivery, for up to
+750 ms. A change makes the result `delivered_verified` with
+`keyboard_target.effect: "observed"`. No change is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
+`details.keyboard_target.effect: "none_observed"`: the key may have been lost,
+or may have acted without a visible change, so read the panel and use its
+controls by ref instead of repeating the key.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.

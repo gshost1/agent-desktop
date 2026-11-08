@@ -57,7 +57,7 @@ agent-desktop snapshot --app "TextEdit" --surface sheet -i
 
 - `find --surface menubar` returns one ref instead of the whole menu bar.
 - To walk a menu by hand: click the menu bar item, `wait --menu`, `snapshot --surface menu -i`, click the item, `wait --menu-closed`.
-- A headless `press` never runs a menu item. Find the item and `click` it instead.
+- On macOS, when you know the item's shortcut, `press cmd+shift+n --app Finder --headed` runs it without the menu walk. Headless works too for commands the app keeps enabled in the background; a window command such as New Folder is disabled there, and `press` fails with `ACTION_FAILED` and `menu_item_disabled_in_background` instead of pretending. Check that `data.steps` holds `AXPress menu shortcut`. Any other step means keys were sent instead, which a background app may never receive; then find the item and `click` it.
 
 ## Dialogs, sheets and alerts
 
