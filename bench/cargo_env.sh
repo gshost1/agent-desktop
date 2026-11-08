@@ -3,6 +3,7 @@
 # 2026-11-07). Each tree still gets its own release binary, copied to
 # <tree>/target/release/agent-desktop, where driver.py and the probes look.
 export CARGO_TARGET_DIR="${BENCH_CARGO_TARGET_DIR:-$HOME/.agent-desktop-bench-target}"
+BENCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_TARGET_CAP_KB=$((8 * 1024 * 1024))
 
 bench_trim_target() {
@@ -16,7 +17,7 @@ bench_trim_target() {
 
 bench_build() {
     local dir="$1"
-    (cd "$dir" && nice -n 10 cargo build --release -q -p agent-desktop) || return 1
+    (cd "$dir" && bash "$BENCH_ROOT/serial_cargo.sh" cargo build --release -q -p agent-desktop) || return 1
     mkdir -p "$dir/target/release"
     cp "$CARGO_TARGET_DIR/release/agent-desktop" "$dir/target/release/agent-desktop"
     bench_trim_target

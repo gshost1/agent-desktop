@@ -4,5 +4,3 @@ hab3 weather:a:claude-opus-5-5:bench/out/wt-upstream weather:a:claude-opus-5-5:b
 gates sh:bench/gate_queue.sh
 hab4 textedit:a:claude-opus-5-5:bench/out/wt-upstream textedit:a:claude-opus-5-5:bench/out/wt-fork textedit:a:claude-opus-5-5:bench/out/wt-upstream calculator:a:claude-opus-5-5:bench/out/wt-fork calculator:a:claude-opus-5-5:bench/out/wt-upstream
 fv1 finder:a:claude-opus-5-5:bench/out/wt-fork textedit:a:claude-opus-5-5:bench/out/wt-fork
-fv2 finder:a:claude-opus-5-5:bench/out/wt-fork textedit:a:claude-opus-5-5:bench/out/wt-fork
-fv3 finder:a:claude-opus-5-5:bench/out/wt-fork textedit:a:claude-opus-5-5:bench/out/wt-fork
