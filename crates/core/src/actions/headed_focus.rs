@@ -13,17 +13,39 @@ pub(crate) fn focus_entry_window(
     context: &crate::CommandContext,
     lease: &crate::InteractionLease,
 ) -> Result<bool, AdapterError> {
+    let Some(expected) = entry_focus_window(entry, adapter, lease)? else {
+        return Ok(false);
+    };
+    focus_exact_window(&expected, adapter, context, lease).map(|_| true)
+}
+
+/// The window a headed focus of this ref raises, resolved the way
+/// [`focus_entry_window`] resolves it, or `None` for a ref captured through a
+/// process owner, which has no window to raise.
+pub(crate) fn entry_focus_window(
+    entry: &crate::RefEntry,
+    adapter: &dyn PlatformAdapter,
+    lease: &crate::InteractionLease,
+) -> Result<Option<WindowInfo>, AdapterError> {
     entry
         .process
         .identity()
         .ok_or_else(|| headed_refusal(MISSING_PROCESS_IDENTITY))?;
     if entry.source.is_process_owned() {
-        return Ok(false);
+        return Ok(None);
     }
-    let expected = adapter
+    adapter
         .resolve_ref_focus_window(entry, lease.deadline())
-        .map_err(AdapterError::unsent)?;
-    focus_exact_window(&expected, adapter, context, lease).map(|_| true)
+        .map(Some)
+        .map_err(AdapterError::unsent)
+}
+
+/// Whether two reads name the same window of the same process instance, the
+/// identity a headed focus requires of the window it raises.
+pub(crate) fn same_window(seen: &WindowInfo, expected: &WindowInfo) -> bool {
+    seen.id == expected.id
+        && seen.pid == expected.pid
+        && seen.process_instance == expected.process_instance
 }
 
 /// Raises the application a ref came from, for input that needs the
@@ -85,10 +107,7 @@ pub(crate) fn focus_exact_window(
     let live = adapter
         .resolve_window_strict(expected, lease.deadline())
         .map_err(AdapterError::unsent)?;
-    if live.id != expected.id
-        || live.pid != expected.pid
-        || live.process_instance != expected.process_instance
-    {
+    if !same_window(&live, expected) {
         return Err(AdapterError::stale_ref_because(
             "Headed target window belongs to a different process instance",
         ));

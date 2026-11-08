@@ -189,7 +189,7 @@ fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
 /// Carries the dispatch-time refusal that sent the action back to the wait as
 /// `details.refusal`, so a budget that runs out there still reports why the
 /// ref was not acted on.
-fn with_refusal(error: AdapterError, refusal: Option<&AdapterError>) -> AdapterError {
+pub(crate) fn with_refusal(error: AdapterError, refusal: Option<&AdapterError>) -> AdapterError {
     let Some(refusal) = refusal else {
         return error;
     };

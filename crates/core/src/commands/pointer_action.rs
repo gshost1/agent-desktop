@@ -242,6 +242,7 @@ fn focus_point_under_lease(
     lease: &crate::InteractionLease,
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
+    before_focus: &mut dyn FnMut(&crate::WindowInfo),
 ) -> Result<bool, AppError> {
     if !args.headed_requirement.requires_focus() {
         return Ok(false);
@@ -250,7 +251,13 @@ fn focus_point_under_lease(
         return Ok(false);
     };
     let entry = load_ref_entry(ref_id, context)?;
-    crate::commands::point_resolve::focus_for_physical_input(Some(&entry), adapter, context, lease)
+    crate::commands::point_resolve::focus_for_physical_input(
+        Some(&entry),
+        adapter,
+        context,
+        lease,
+        before_focus,
+    )
 }
 
 pub(crate) fn resolve_point_under_lease<'a>(
@@ -294,7 +301,7 @@ fn scroll_point_target(
     context: &CommandContext,
 ) -> Result<(), AppError> {
     let lease = adapter.acquire_interaction_lease(deadline)?;
-    focus_point_under_lease(args, &lease, adapter, context)?;
+    focus_point_under_lease(args, &lease, adapter, context, &mut |_| ())?;
     let handle = resolve_handle_within_deadline(adapter, entry, deadline, Some(&lease))?;
     adapter.scroll_into_view(&handle, &lease)?;
     Ok(())

@@ -323,6 +323,16 @@ fn focus_test_lease() -> crate::InteractionLease {
     crate::InteractionLease::guarded(crate::Deadline::standard().unwrap(), ()).unwrap()
 }
 
+fn focus_headed(adapter: &FocusFailureAdapter) -> Result<bool, AppError> {
+    focus_for_physical_input(
+        Some(&focus_ref_entry()),
+        adapter,
+        &CommandContext::default().with_headed(true),
+        &focus_test_lease(),
+        &mut |_| (),
+    )
+}
+
 #[test]
 fn transient_window_resolution_failure_blocks_headed_input() {
     let adapter = FocusFailureAdapter {
@@ -330,13 +340,7 @@ fn transient_window_resolution_failure_blocks_headed_input() {
         ..Default::default()
     };
 
-    let error = focus_for_physical_input(
-        Some(&focus_ref_entry()),
-        &adapter,
-        &CommandContext::default().with_headed(true),
-        &focus_test_lease(),
-    )
-    .unwrap_err();
+    let error = focus_headed(&adapter).unwrap_err();
 
     assert_eq!(error.code(), "APP_UNRESPONSIVE");
     assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 0);
@@ -350,10 +354,10 @@ fn windowless_ref_skips_focus_only_when_process_owned() {
     let mut entry = focus_ref_entry();
     entry.source.source_window_id = None;
     entry.source.source_window_title = Some(String::new());
-    let skipped = focus_for_physical_input(Some(&entry), &adapter, &context, &lease);
+    let skipped = focus_for_physical_input(Some(&entry), &adapter, &context, &lease, &mut |_| ());
     assert_eq!(skipped.ok(), Some(false));
     entry.source.source_window_title = Some("Fixture".into());
-    let refused = focus_for_physical_input(Some(&entry), &adapter, &context, &lease);
+    let refused = focus_for_physical_input(Some(&entry), &adapter, &context, &lease, &mut |_| ());
     assert_eq!(refused.unwrap_err().code(), "ACTION_NOT_SUPPORTED");
     assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 0);
 }
@@ -368,13 +372,7 @@ fn transient_focus_failure_blocks_headed_input() {
         ..Default::default()
     };
 
-    let error = focus_for_physical_input(
-        Some(&focus_ref_entry()),
-        &adapter,
-        &CommandContext::default().with_headed(true),
-        &focus_test_lease(),
-    )
-    .unwrap_err();
+    let error = focus_headed(&adapter).unwrap_err();
 
     assert_eq!(error.code(), "ACTION_FAILED");
     assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 1);
@@ -387,13 +385,7 @@ fn permission_failure_during_focus_is_preserved() {
         ..Default::default()
     };
 
-    let err = focus_for_physical_input(
-        Some(&focus_ref_entry()),
-        &adapter,
-        &CommandContext::default().with_headed(true),
-        &focus_test_lease(),
-    )
-    .unwrap_err();
+    let err = focus_headed(&adapter).unwrap_err();
 
     assert_eq!(err.code(), "PERM_DENIED");
 }

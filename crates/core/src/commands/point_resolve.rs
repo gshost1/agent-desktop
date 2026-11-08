@@ -80,19 +80,28 @@ pub(crate) fn resolve_point_from_ref_or_xy_with_context(
     Err(AppError::invalid_input(args.missing_input_message))
 }
 
+/// Focuses the window a ref came from when physical input may steal focus,
+/// and returns whether a focus call ran. `before_focus` sees the exact window
+/// the focus call is about to raise, after every refusal that comes first.
 pub(crate) fn focus_for_physical_input(
     entry: Option<&crate::RefEntry>,
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
     lease: &crate::InteractionLease,
+    before_focus: &mut dyn FnMut(&crate::WindowInfo),
 ) -> Result<bool, AppError> {
+    use crate::actions::headed_focus::{entry_focus_window, focus_exact_window};
+
     let Some(entry) = entry else { return Ok(false) };
     if !context.physical_input_policy().allow_focus_steal {
         return Ok(false);
     }
-    Ok(crate::actions::headed_focus::focus_entry_window(
-        entry, adapter, context, lease,
-    )?)
+    let Some(expected) = entry_focus_window(entry, adapter, lease)? else {
+        return Ok(false);
+    };
+    before_focus(&expected);
+    focus_exact_window(&expected, adapter, context, lease)?;
+    Ok(true)
 }
 
 #[cfg(test)]
