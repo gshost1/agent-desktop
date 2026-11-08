@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -51,6 +52,7 @@ MCP_CONFIGS = {"m", "mx"}
 NO_SKILL = {"mx", "x"}
 LOCK = Path.home() / ".agent-desktop" / "bench.lock"
 RUN_TIMEOUT_S = 900
+TASK_CAP_S = {"finder": 150, "textedit": 150}
 DATA_VOLUME = "/System/Volumes/Data"
 MIN_VALID_FREE_GB = 2
 ENOSPC_MARKERS = ("No space left on device", "ENOSPC")
@@ -175,7 +177,16 @@ def run_measured(run_id, task_key, config, model, effort):
     events = []
     proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             stdin=subprocess.DEVNULL, text=True)
-    timed_out = False
+    cap_s = TASK_CAP_S.get(task_key, RUN_TIMEOUT_S)
+    capped = threading.Event()
+
+    def stop_at_cap():
+        capped.set()
+        proc.kill()
+
+    watchdog = threading.Timer(cap_s, stop_at_cap)
+    watchdog.daemon = True
+    watchdog.start()
     with open(rdir / "stream.jsonl", "w") as fh:
         for line in proc.stdout:
             t = time.time() - t0
@@ -186,11 +197,12 @@ def run_measured(run_id, task_key, config, model, effort):
             ev["_t"] = round(t, 3)
             events.append(ev)
             fh.write(json.dumps(ev) + "\n")
-            if t > RUN_TIMEOUT_S:
-                proc.kill()
-                timed_out = True
+            if t > cap_s:
+                stop_at_cap()
                 break
     proc.wait()
+    watchdog.cancel()
+    timed_out = capped.is_set()
     wall = time.time() - t0
     stderr = proc.stderr.read()
     summary = summarize(events, rdir, wall)
@@ -203,9 +215,10 @@ def run_measured(run_id, task_key, config, model, effort):
     if forbidden:
         ok, why = False, f"forbidden command {forbidden[0]}; {why}"
     if timed_out:
-        ok, why = False, f"timed out; {why}"
+        ok, why = False, f"timed out at the {cap_s} s cap; {why}"
     summary.update({"run_id": run_id, "task": task_key, "config": config, "model": model, "tree": TREE,
-                    "effort": effort or "default", "success": ok, "verify": why})
+                    "effort": effort or "default", "success": ok, "verify": why,
+                    "cap_s": cap_s, "timed_out": timed_out})
     summary.update(validity(stderr, rdir))
     del summary["commands"]
     (rdir / "summary.json").write_text(json.dumps(summary, indent=1))
@@ -220,6 +233,12 @@ def run_measured(run_id, task_key, config, model, effort):
     except Exception as exc:
         print(f"{run_id} cleanup failed after the row was written: {exc}", flush=True)
     return summary
+
+
+def usage_so_far(calls):
+    """Token totals from the per-call usage, for a run stopped before its result event."""
+    keys = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens")
+    return {k: sum(u.get(k, 0) for u in calls.values()) for k in keys} if calls else {}
 
 
 def summarize(events, rdir, wall):
@@ -273,7 +292,7 @@ def summarize(events, rdir, wall):
             parts = line.split("\t")
             if len(parts) >= 5:
                 cli.append({"s": float(parts[1]) - float(parts[0]), "rc": int(parts[2]), "bytes": int(parts[3]), "args": parts[4][:200]})
-    u = result.get("usage", {})
+    u = result.get("usage") or usage_so_far(calls)
     tool_s = round(sum(t["tool_s"] for s in steps for t in s["tools"]), 3)
     return {
         "answer": result.get("result", ""),
