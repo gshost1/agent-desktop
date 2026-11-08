@@ -165,13 +165,12 @@ fn global_capture_probes_owners_once_after_the_owner_snapshots_agree() {
 }
 
 #[test]
-fn owner_churn_retries_without_probing_and_wins_over_stale_ax_failure() {
+fn post_ax_snapshot_is_captured_and_churn_wins_over_stale_ax_failure() {
     let snapshots = std::cell::RefCell::new(std::collections::VecDeque::from([
         owners(&[(10, 100.0)], Some(10)),
         owners(&[(10, 106.0)], Some(10)),
     ]));
     let snapshot_count = std::cell::Cell::new(0);
-    let probes = std::cell::Cell::new(0);
 
     let error = capture_global_with(
         false,
@@ -181,14 +180,38 @@ fn owner_churn_retries_without_probing_and_wins_over_stale_ax_failure() {
         },
         |_| Ok(vec![record(10, 1, "Front")]),
         |_| Err(AdapterError::permission_denied()),
-        |_, _| {
-            probes.set(probes.get() + 1);
-            FxHashMap::default()
-        },
+        |_, _| FxHashMap::default(),
     )
     .unwrap_err();
 
     assert_eq!(snapshot_count.get(), 2);
-    assert_eq!(probes.get(), 0);
     assert_eq!(error.details.unwrap()["phase"], "appkit_snapshot_changed");
+}
+
+#[test]
+fn owner_churn_is_retried_without_probing_owners() {
+    let snapshots = std::cell::RefCell::new(std::collections::VecDeque::from([
+        owners(&[(10, 100.0)], Some(10)),
+        owners(&[(10, 106.0)], Some(10)),
+        owners(&[(10, 100.0)], Some(10)),
+        owners(&[(10, 100.0)], Some(10)),
+    ]));
+    let probes = std::cell::Cell::new(0);
+
+    let windows = stabilize_global_with(Instant::now() + UNCONSUMED_BUDGET, || {
+        capture_global_with(
+            false,
+            || Ok(snapshots.borrow_mut().pop_front().unwrap()),
+            |_| Ok(vec![record(10, 1, "Front")]),
+            |_| Ok(ax_state(Some((None, Some(1))))),
+            |_, _| {
+                probes.set(probes.get() + 1);
+                FxHashMap::default()
+            },
+        )
+    })
+    .unwrap();
+
+    assert_eq!(windows.len(), 1);
+    assert_eq!(probes.get(), 1);
 }
