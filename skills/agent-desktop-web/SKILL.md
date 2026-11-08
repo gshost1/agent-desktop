@@ -33,7 +33,7 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 ```
 
 - `open-url` returns after the page's load event, with `url`, `title` and `opened` (`current_tab` or `new_tab`). `--new-tab` opens a background tab.
-- Navigate with `open-url`, not the address bar. A URL set into the address bar followed by `press return` does not navigate: the key goes to the page's focused element.
+- Navigate with `open-url`. It does not raise the browser and returns after the load event.
 - Read `data.channel` in the snapshot. `cdp` means refs act through the page, in the background: the window is not raised and the pointer does not move. `ax` means no endpoint reached the browser; it still works, and `data.suggestion` names the `launch --cdp` command.
 - `-i` keeps interactive nodes only. Leave it out to read page text such as totals, codes or table cells. On a long page, pipe the JSON through `jq` or `grep` instead of reading all of it.
 - `click` returns once the click is delivered. It does not wait for the next page, so a snapshot taken at once can still show the old one. After a link or a submit, check `data.url` in the new snapshot, and snapshot again while it still shows the old page. A ref from the old page then fails with `STALE_REF`.
@@ -48,8 +48,9 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 | Choose an option in a select, by label or value | `select @ref "Norway"` |
 | Tick or untick a checkbox | `check @ref`, `uncheck @ref` |
 | Choose a radio button | `check @ref` |
+| Press Enter or another key in a field | `press return --ref @ref` |
 
-`type`, `clear`, `toggle`, `focus`, `scroll`, `scroll-to` and `double-click` also work on web refs. Other actions return `ACTION_NOT_SUPPORTED`, and `--headed` is refused. `press` is not a web action: it sends an OS key event to the browser process, not a key event through the page, so submit a form with its button.
+`type`, `clear`, `toggle`, `focus`, `scroll`, `scroll-to` and `double-click` also work on web refs. Other actions return `ACTION_NOT_SUPPORTED`, and `--headed` is refused. To press a key in a page field, name the field: `press return --ref @ref` sends the key through the page, in the background. Web refs take single keys; a combo with a modifier returns `ACTION_NOT_SUPPORTED`. `press` without `--ref` is an OS key event that goes wherever the browser's keyboard focus is, often the address bar, so it can miss the field that `focus` chose.
 
 Several steps on one page cost one turn as a `batch`:
 
@@ -71,6 +72,7 @@ agent-desktop batch '[
 | `ACTION_FAILED`, `cdp_node_not_rendered` | The element has no box on screen (hidden, collapsed) | Open the section that holds it, snapshot again |
 | `WINDOW_NOT_FOUND`, `cdp_target_gone` | The tab closed | `list-surfaces --app "Google Chrome"` or `open-url` |
 | `WINDOW_NOT_FOUND`, `cdp_browser_has_no_page` or `cdp_page_not_found` | No page to read (a fresh profile, a minimized window) | `open-url`, or restore the window |
+| `ACTION_NOT_SUPPORTED`, `cdp_not_a_browser` | `open-url` on an app that embeds web content for its own interface (an Electron app) | Read and act with `snapshot --surface web`; open URLs in a web browser |
 | `PERM_DENIED`, `cdp_approval_required` | Chrome asked its user to allow the connection | Ask the user; do not retry in a loop |
 
 Retry an action only when `error.disposition.retry` is `safe`. Otherwise read the page again and decide from what it shows.

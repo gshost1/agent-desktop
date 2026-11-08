@@ -27,6 +27,7 @@ pub(super) fn press(
             combo: args.combo,
             app: args.app,
             window_id: args.window_id,
+            ref_id: args.ref_id,
             force: args.force,
         },
         adapter,
