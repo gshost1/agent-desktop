@@ -68,9 +68,7 @@ fn recovered_ref_window_is_strictly_verified_before_focus_without_rewriting_sour
             focus_entry_window(&entry, &adapter, &crate::CommandContext::default(), &lease);
         assert_eq!(entry, original);
         if mismatch {
-            let crate::AppError::Adapter(error) = result.unwrap_err() else {
-                panic!("expected an adapter error");
-            };
+            let error = result.unwrap_err();
             assert_eq!(error.code, ErrorCode::StaleRef);
             assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
             assert!(
@@ -106,9 +104,6 @@ fn a_headed_target_without_identity_is_refused_as_not_delivered() {
     windowless.source.source_window_id = None;
     let no_window = crate::saved_ref_focus_window(&windowless).unwrap_err();
 
-    let crate::AppError::Adapter(focus) = focus else {
-        panic!("expected an adapter error");
-    };
     for error in [focus, saved, no_window] {
         assert_eq!(error.code, ErrorCode::ActionNotSupported);
         assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
@@ -129,13 +124,25 @@ fn a_failed_focus_call_is_not_delivered_and_records_the_focus() {
 
     let result = focus_entry_window(&entry, &adapter, &crate::CommandContext::default(), &lease);
 
-    let crate::AppError::Adapter(error) = result.unwrap_err() else {
-        panic!("expected an adapter error");
-    };
+    let error = result.unwrap_err();
     assert_eq!(error.code, ErrorCode::Timeout);
     assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
     assert_eq!(
         error.details.unwrap()["preparatory_focus"],
         "may_have_moved_focus"
     );
+}
+
+#[test]
+fn an_application_target_without_identity_is_refused_like_a_window_target() {
+    let mut entry = crate::adapter::minimal_ref_entry("menuitem", None);
+    entry.process.process_instance = None;
+    let lease = crate::InteractionLease::guarded(crate::Deadline::standard().unwrap(), ()).unwrap();
+
+    let error = focus_entry_app(&entry, &crate::adapter::NoopAdapter, &lease).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(error.message, MISSING_PROCESS_IDENTITY);
+    assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
+    assert!(!error.moved_focus());
 }

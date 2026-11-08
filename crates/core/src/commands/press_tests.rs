@@ -305,3 +305,35 @@ fn press_waits_in_requested_app_without_repeating_delivery() {
         );
     }
 }
+
+struct BusyLeaseAdapter;
+
+impl ObservationOps for BusyLeaseAdapter {}
+impl ActionOps for BusyLeaseAdapter {}
+impl InputOps for BusyLeaseAdapter {}
+impl SystemOps for BusyLeaseAdapter {
+    fn acquire_interaction_lease(
+        &self,
+        deadline: crate::Deadline,
+    ) -> Result<crate::InteractionLease, AdapterError> {
+        Err(deadline
+            .timeout_error()
+            .with_details(serde_json::json!({ "kind": "interaction_process_lock_timeout" })))
+    }
+}
+
+#[test]
+fn a_lease_timeout_before_the_key_is_sent_is_not_delivered() {
+    let error = execute(
+        args("a", false),
+        &BusyLeaseAdapter,
+        &CommandContext::default(),
+    )
+    .unwrap_err();
+
+    let crate::AppError::Adapter(error) = error else {
+        panic!("expected an adapter error");
+    };
+    assert_eq!(error.code, crate::ErrorCode::Timeout);
+    assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
+}

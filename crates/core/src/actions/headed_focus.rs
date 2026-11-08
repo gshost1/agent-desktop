@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::{AdapterError, AppError, ErrorCode, PlatformAdapter, ProcessIdentity, WindowInfo};
+use crate::{AdapterError, ErrorCode, PlatformAdapter, ProcessIdentity, WindowInfo};
 
 /// Focuses the window a ref came from and returns whether it did. A ref
 /// captured through a process owner has no window to raise, so it returns
@@ -12,7 +12,7 @@ pub(crate) fn focus_entry_window(
     adapter: &dyn PlatformAdapter,
     context: &crate::CommandContext,
     lease: &crate::InteractionLease,
-) -> Result<bool, AppError> {
+) -> Result<bool, AdapterError> {
     entry
         .process
         .identity()
@@ -27,19 +27,21 @@ pub(crate) fn focus_entry_window(
 }
 
 /// Raises the application a ref came from, for input that needs the
-/// application rather than one of its windows focused.
+/// application rather than one of its windows focused, and returns whether it
+/// did, with the same refusals as [`focus_entry_window`].
 pub(crate) fn focus_entry_app(
     entry: &crate::RefEntry,
     adapter: &dyn PlatformAdapter,
     lease: &crate::InteractionLease,
-) -> Result<(), AdapterError> {
+) -> Result<bool, AdapterError> {
     let process = entry
         .process
         .identity()
-        .ok_or_else(|| AdapterError::stale_ref_because("Target process identity is unavailable"))?;
+        .ok_or_else(|| headed_refusal(MISSING_PROCESS_IDENTITY))?;
     adapter
         .focus_app(process, lease)
-        .map_err(AdapterError::after_focus)
+        .map_err(AdapterError::after_focus)?;
+    Ok(true)
 }
 
 pub fn saved_ref_focus_window(entry: &crate::RefEntry) -> Result<WindowInfo, AdapterError> {
@@ -67,7 +69,7 @@ pub(crate) fn focus_process_window(
     adapter: &dyn PlatformAdapter,
     context: &crate::CommandContext,
     lease: &crate::InteractionLease,
-) -> Result<WindowInfo, AppError> {
+) -> Result<WindowInfo, AdapterError> {
     let expected =
         crate::system::window_lookup::find_window_for_process(process, adapter, lease.deadline())
             .map_err(|error| error.into_adapter_error().unsent())?;
@@ -79,7 +81,7 @@ pub(crate) fn focus_exact_window(
     adapter: &dyn PlatformAdapter,
     context: &crate::CommandContext,
     lease: &crate::InteractionLease,
-) -> Result<WindowInfo, AppError> {
+) -> Result<WindowInfo, AdapterError> {
     let live = adapter
         .resolve_window_strict(expected, lease.deadline())
         .map_err(AdapterError::unsent)?;
@@ -89,8 +91,7 @@ pub(crate) fn focus_exact_window(
     {
         return Err(AdapterError::stale_ref_because(
             "Headed target window belongs to a different process instance",
-        )
-        .into());
+        ));
     }
     adapter
         .focus_window(&live, lease)

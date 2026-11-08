@@ -22,17 +22,22 @@ impl AdapterError {
         self.with_details(details)
     }
 
-    /// A refusal raised once a focus call ran: nothing of the action was
-    /// sent, but the call may have raised a window, so `preparatory_focus`
-    /// records it the way `preparatory_scroll` records a scroll recovery.
+    /// A refusal raised by a focus call or right after it, before the
+    /// action: nothing of the action was sent, and [`Self::after_focus_ran`]
+    /// records the call.
     pub(crate) fn after_focus(self) -> Self {
-        self.unsent()
-            .with_detail("preparatory_focus", json!("may_have_moved_focus"))
+        self.unsent().after_focus_ran()
     }
 
-    /// Whether a focus call ran before this refusal. A wait does not go back
-    /// for another attempt after one, so a command raises a window at most
-    /// once.
+    /// Records that a focus call ran before this error, which may have raised
+    /// a window, the way `preparatory_scroll` records a scroll recovery. The
+    /// disposition is left as it is, because the error may come from after
+    /// the action was sent.
+    pub(crate) fn after_focus_ran(self) -> Self {
+        self.with_detail("preparatory_focus", json!("may_have_moved_focus"))
+    }
+
+    /// Whether this error records a focus call that ran before it.
     pub(crate) fn moved_focus(&self) -> bool {
         self.details
             .as_ref()

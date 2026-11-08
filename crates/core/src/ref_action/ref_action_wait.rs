@@ -80,6 +80,7 @@ fn execute_with_deadline(
     let polls = request.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let mut saw_ambiguity = false;
     let mut refusal: Option<AdapterError> = None;
+    let mut focused = false;
     loop {
         let mut state = if polls {
             execute_poll_loop(context, &request, deadline)
@@ -103,7 +104,9 @@ fn execute_with_deadline(
             request.timeout_ms = Some(deadline.remaining_ms());
         }
         let lease_started = std::time::Instant::now();
-        match execute_single_shot(context, request.clone(), deadline, &lease, &dispatch) {
+        let shot = execute_single_shot(context, request.clone(), deadline, &lease, &dispatch);
+        focused |= shot.focused;
+        match shot.result {
             Ok(mut result) => {
                 state.attach_transient_ambiguity(&mut result);
                 state.attach_wait_metrics(
@@ -116,7 +119,7 @@ fn execute_with_deadline(
             Err(error) => {
                 drop(lease);
                 crate::ref_action::finish_artifacts(RefActionContext::new(context, deadline), &pre);
-                if !(polls && resolves_again(&error, deadline)) {
+                if !(polls && !focused && resolves_again(&error, deadline)) {
                     return Err(error);
                 }
                 saw_ambiguity |= error.code == crate::ErrorCode::AmbiguousTarget;
@@ -146,12 +149,12 @@ fn acquire_lease(
 }
 
 /// Whether a dispatch-time refusal goes back to the wait: the full resolution
-/// under the lease failed in a way that may clear, nothing was sent, no focus
-/// call ran (one raise per command), and the caller's budget is not spent.
+/// under the lease failed in a way that may clear, nothing was sent, and the
+/// caller's budget is not spent. The loop also stops once a focus call has run
+/// for the command, so a command raises a window at most once.
 fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
     error.disposition == crate::DeliverySemantics::not_delivered()
         && error.is_retryable_resolution_failure()
-        && !error.moved_focus()
         && !deadline.is_expired()
 }
 

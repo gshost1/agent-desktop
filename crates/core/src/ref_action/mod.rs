@@ -14,6 +14,7 @@ pub(crate) mod ref_action_context;
 pub(crate) mod ref_action_poll;
 pub(crate) mod ref_action_poll_state;
 pub(crate) mod ref_action_single;
+pub(crate) mod ref_action_single_shot;
 pub(crate) mod ref_action_wait;
 pub(crate) mod ref_action_wait_context;
 pub(crate) mod ref_action_wait_evidence;
@@ -91,7 +92,7 @@ pub(crate) fn dispatch_resolved_landing(
     let preflight = match stable_preflight(&initial_target, &request) {
         Ok(preflight) => preflight,
         Err(error) => {
-            let error = into_adapter_error(error).unsent();
+            let error = error.into_adapter_error().unsent();
             if !crate::ref_action::ref_action_wait_evidence::should_scroll_after_preflight(
                 &request, &error,
             ) {
@@ -122,7 +123,7 @@ pub(crate) fn dispatch_resolved_landing(
             };
             let scrolled_target = ResolvedRefAction::new(target, &handle);
             stable_preflight(&scrolled_target, &request)
-                .map_err(|error| after_scroll(into_adapter_error(error)))?
+                .map_err(|error| after_scroll(error.into_adapter_error()))?
         }
     };
     if matches!(
@@ -378,13 +379,6 @@ pub fn execute_entry(
     request: ActionRequest,
 ) -> Result<ActionResult, AdapterError> {
     execute_entry_with_context(adapter, entry, request, &CommandContext::default())
-}
-
-pub(crate) fn into_adapter_error(err: AppError) -> AdapterError {
-    match err {
-        AppError::Adapter(err) => err,
-        other => AdapterError::internal(other.to_string()),
-    }
 }
 
 #[cfg(test)]

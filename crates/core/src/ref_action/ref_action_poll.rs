@@ -9,7 +9,7 @@ use crate::{
     ref_action::ref_action_wait_context::RefActionWaitContext,
     ref_action::ref_action_wait_evidence::{failed_check, should_scroll_after_preflight},
     ref_action::ref_action_wait_support::{trace_resolve_error, trace_resolve_ok},
-    ref_action::{ResolvedRefAction, into_adapter_error, preflight_resolved},
+    ref_action::{ResolvedRefAction, preflight_resolved},
     refs::ref_resolve_deadline::{POLL_INTERVAL, land_within_deadline},
     refs::resolve_attempt_outcome::ResolveAttemptOutcome,
 };
@@ -53,7 +53,7 @@ pub(crate) fn execute_poll_loop(
                     ResolvedRefAction::new(RefActionContext::new(context, deadline), &handle);
                 state.preflight_attempts = state.preflight_attempts.saturating_add(1);
                 if let Err(error) = preflight_resolved(&target, request, state.stability()) {
-                    let error = into_adapter_error(error);
+                    let error = error.into_adapter_error();
                     let focus_pending = request.headed_requirement().requires_focus()
                         && failed_check(&error, "receives_events");
                     let scroll_can_help = should_scroll_after_preflight(request, &error)

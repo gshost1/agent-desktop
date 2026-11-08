@@ -21,10 +21,17 @@ enum Focus {
     AppBusy,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnderLease {
+    Fine,
+    PreflightFails,
+    ResolvesStale,
+}
+
 struct PreDispatchAdapter {
     lease: Lease,
     focus: Focus,
-    preflight_fails: bool,
+    under_lease: UnderLease,
     focus_calls: AtomicU32,
     stale_once_under_lease: AtomicBool,
     lease_calls: AtomicU32,
@@ -36,7 +43,7 @@ impl PreDispatchAdapter {
         Self {
             lease,
             focus: Focus::Raises,
-            preflight_fails: false,
+            under_lease: UnderLease::Fine,
             focus_calls: AtomicU32::new(0),
             stale_once_under_lease: AtomicBool::new(false),
             lease_calls: AtomicU32::new(0),
@@ -51,6 +58,14 @@ impl ObservationOps for PreDispatchAdapter {
         _: &RefEntry,
         _: Deadline,
     ) -> Result<NativeHandle, AdapterError> {
+        if self.under_lease == UnderLease::ResolvesStale
+            && self.lease_calls.load(Ordering::SeqCst) > 0
+        {
+            return Err(
+                AdapterError::new(ErrorCode::StaleRef, "moved under the lease")
+                    .with_details(serde_json::json!({ "retryable": true })),
+            );
+        }
         let leased = self.lease_calls.load(Ordering::SeqCst) == 1;
         if self.lease == Lease::TimesOutOnRetry
             && leased
@@ -65,7 +80,9 @@ impl ObservationOps for PreDispatchAdapter {
     }
 
     crate::adapter::complete_live_observation!("button", "Run", [capability::CLICK], adapter => {
-        if adapter.preflight_fails && adapter.lease_calls.load(Ordering::SeqCst) > 0 {
+        if adapter.under_lease == UnderLease::PreflightFails
+            && adapter.lease_calls.load(Ordering::SeqCst) > 0
+        {
             return Err(AdapterError::timeout("busy under the lease"));
         }
         crate::ElementState {
@@ -270,7 +287,7 @@ fn a_focus_refusal_before_any_focus_call_records_no_focus() {
 #[test]
 fn a_preflight_read_failure_under_the_lease_is_not_delivered() {
     let mut adapter = PreDispatchAdapter::new(Lease::Granted);
-    adapter.preflight_fails = true;
+    adapter.under_lease = UnderLease::PreflightFails;
 
     let error = click(&adapter, ActionRequest::headless(Action::Click));
 
@@ -298,6 +315,24 @@ fn a_retryable_focus_refusal_is_not_retried_inside_the_wait() {
     let error = click(&adapter, ActionRequest::headed(Action::Click));
 
     assert_eq!(error.code, ErrorCode::Timeout);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.details.unwrap()["preparatory_focus"],
+        "may_have_moved_focus"
+    );
+    assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.lease_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.dispatches.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_refusal_after_a_successful_focus_is_not_retried_and_records_the_focus() {
+    let mut adapter = PreDispatchAdapter::new(Lease::Granted);
+    adapter.under_lease = UnderLease::ResolvesStale;
+
+    let error = click(&adapter, ActionRequest::headed(Action::Click));
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
     assert_eq!(
         error.details.unwrap()["preparatory_focus"],
