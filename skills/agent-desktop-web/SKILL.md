@@ -33,6 +33,7 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 ```
 
 - `open-url` returns after the page's load event, with `url`, `title` and `opened` (`current_tab` or `new_tab`). `--new-tab` opens a background tab.
+- Navigate with `open-url`, not the address bar. A URL set into the address bar followed by `press return` does not navigate: the key goes to the page's focused element.
 - Read `data.channel` in the snapshot. `cdp` means refs act through the page, in the background: the window is not raised and the pointer does not move. `ax` means no endpoint reached the browser; it still works, and `data.suggestion` names the `launch --cdp` command.
 - `-i` keeps interactive nodes only. Leave it out to read page text such as totals, codes or table cells. On a long page, pipe the JSON through `jq` or `grep` instead of reading all of it.
 - `click` returns once the click is delivered. It does not wait for the next page, so a snapshot taken at once can still show the old one. After a link or a submit, check `data.url` in the new snapshot, and snapshot again while it still shows the old page. A ref from the old page then fails with `STALE_REF`.
