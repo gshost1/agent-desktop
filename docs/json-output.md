@@ -120,6 +120,32 @@ such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
 
+On macOS, `press --app` reports `data.details.keyboard_target` when the app's
+keyboard focus may belong to another process, such as a Save panel that a
+service draws in the app's sheet. `pid` received the key and `host_pid` is the
+app. With `route: "hosted_view"` the key went to the process that owns the
+focused control. With `route: "host"` the key went to the app as before, and
+`focus_owner_pid` and `unproven` say which process looked like the owner and
+why it was not proven: `focus_frame_unknown`, `focus_outside_host_windows`,
+`owner_has_no_window_server_presence`, `owner_focus_not_linked` or
+`owner_process_exited`. `candidates` lists the evidence for each process
+considered: `owns_host_focus` (the app's focused element names it),
+`focused_application` (it is the system's focused application),
+`responsible_to_host` (macOS attributes its work to the app), `owns_window`,
+and `focus_frame_matches` (its own focused element has the app's focus frame;
+`null` when not read). The field is omitted when no other process is tied to
+the app's focus.
+
+When the key went to a proven owner, or to the app while an unproven owner's
+focused element is the app's focused control, `press` reads the app's focused
+element and the windows of both processes before and after delivery, for up to
+750 ms. A change makes the result `delivered_verified` with
+`keyboard_target.effect: "observed"`. No change is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
+`details.keyboard_target.effect: "none_observed"`: the key may have been lost,
+or may have acted without a visible change, so read the panel and use its
+controls by ref instead of repeating the key.
+
 On macOS, `press --app` and `press --window-id` with `return`, `enter` or
 `escape` and no modifiers check the effect when the focused window is a sheet
 or dialog, or carries a sheet. A real key goes first, before any semantic
@@ -143,6 +169,17 @@ tried) and `default_button` (for Return) or `cancel_button` (for Escape), which
 says whether the surface names such a button. Read the surface again and use
 its controls by ref instead of repeating the key. Presses with modifiers, other
 keys, and presses with no sheet or dialog in the focused window are unchanged.
+
+The two reports meet only through `keyboard_target`. While a proven hosted
+view owns the keys (`route: "hosted_view"`), the sheet and dialog check does not
+run: the key goes to the hosted view's process, no `AXConfirm` or `AXCancel` is
+tried, and the hosted focus effect alone verifies it, so the result carries
+`keyboard_target` and no `modal_key`. Otherwise the app owns its keys, and on a
+sheet or dialog the real key goes to the app and `modal_key` alone verifies the
+press; `keyboard_target` is added beside it, without `effect`, when an unproven
+owner was reported. A late report never replaces an earlier one:
+`keyboard_target`, `modal_key` and `menu_shortcut` sit side by side in
+`details`.
 
 ## Version 2.4 migration
 

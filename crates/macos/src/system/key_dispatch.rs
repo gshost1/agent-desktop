@@ -4,16 +4,22 @@ use agent_desktop_core::{
 };
 use std::time::{Duration, Instant};
 
+use crate::system::menu_shortcut::{
+    MENU_SHORTCUT_STEP, menu_shortcut_outcome::MenuShortcutOutcome, press_menu_shortcut,
+};
+use crate::system::window::hosted_focus_effect::EffectWatch;
 use crate::tree::AXElement;
-
-#[path = "key_dispatch_menu.rs"]
-mod menu;
 
 #[path = "key_dispatch_modal.rs"]
 mod modal;
 
 #[path = "key_dispatch_modal_route.rs"]
 mod modal_route;
+
+#[path = "key_dispatch_target.rs"]
+mod target;
+
+use target::{KeyTarget, host_key_action};
 
 pub(crate) fn press_for_app_impl(
     process: ProcessIdentity,
@@ -35,55 +41,111 @@ fn press_for_app(
     let identity = crate::system::process::process_identity::require_core(&process)?;
     let pid = identity.pid();
     let app = crate::tree::element_for_pid(pid);
+    let hosted = crate::system::window::hosted_focus_read::resolve(&app, pid, deadline)?;
+    let target = KeyTarget {
+        process: &process,
+        app: &app,
+        hosted: hosted.as_ref(),
+    };
+    let host_owns_keys = target.host_owns_keys();
 
-    if uses_menu_shortcut(combo, policy) {
-        match menu::try_menu_bar_shortcut(&app, combo, deadline) {
-            Ok(true) => {
-                return post_delivery_process_result(&process, semantic_step("AXPress menu item"));
-            }
-            Ok(false) => {}
-            Err(error) if menu::is_bounded_menu_incomplete(&error) => {
-                tracing::debug!("bounded menu lookup fell back to exact PID-targeted key delivery");
-            }
-            Err(error) => return Err(error),
-        }
+    let menu = if host_owns_keys && uses_menu_shortcut(combo, policy) {
+        press_menu_shortcut(&process, &app, combo, deadline)?
+    } else {
+        MenuShortcutOutcome::NotApplicable
+    };
+    if matches!(menu, MenuShortcutOutcome::Pressed(_)) {
+        return post_delivery_process_result(&process, menu_shortcut_report(&menu));
     }
-    if let Some(action) = simple_key_action(combo) {
+    if let Some(action) = host_key_action(host_owns_keys, combo) {
         if let Some(modal) = modal::ModalWatch::capture(&app, action, deadline)? {
-            return modal_route::press_on_modal(&process, &app, (combo, policy), &modal, deadline);
+            return modal_route::press_on_modal(&target, (combo, policy), &modal, deadline)
+                .map(|result| target.report(result))
+                .map_err(|error| target.annotate(error));
         }
         if try_simple_key_action(&app, action, deadline)? {
-            return post_delivery_process_result(&process, semantic_step(action));
+            return post_delivery_process_result(&process, semantic_step(action).into());
         }
     }
-    let step = send_physical_key(&process, &app, combo, policy, deadline)?;
-    post_delivery_process_result(&process, step)
+    let (step, watch) = send_physical_key(&target, (combo, policy), deadline, true)?;
+    let mut report = menu_shortcut_report(&menu);
+    report.steps.push(step);
+    let result = post_delivery_process_result(&process, report)?;
+    match &hosted {
+        Some(focus) => crate::system::window::hosted_focus_effect::finish_press(
+            focus, &app, watch, result, deadline,
+        ),
+        None => Ok(result),
+    }
 }
 
+/// Sends the real key to the pid the target picks. `watch_effect` reads the
+/// hosted focus state first, for the route that verifies by its change.
 fn send_physical_key(
-    process: &ProcessIdentity,
-    app: &AXElement,
-    combo: &KeyCombo,
-    policy: InteractionPolicy,
+    target: &KeyTarget<'_>,
+    (combo, policy): (&KeyCombo, InteractionPolicy),
     deadline: Deadline,
-) -> Result<ActionStep, AdapterError> {
-    let pid = app_pid(process)?;
+    watch_effect: bool,
+) -> Result<(ActionStep, Option<EffectWatch>), AdapterError> {
+    use crate::system::process::process_identity::require_core;
+
+    let pid = require_core(target.process)?.pid();
     crate::input::keyboard::keyboard_map::key_name_to_code(&combo.key)?;
     if policy.allow_focus_steal {
-        crate::system::process::process_identity::require_core(process)?;
+        require_core(target.process)?;
         crate::system::focus::verify_app_focused(pid, deadline)?;
     }
-    crate::system::process::process_identity::require_core(process)?;
-    require_focused_element(app, policy, deadline)?;
-    crate::system::process::process_identity::require_core(process)?;
-    crate::input::keyboard::synthesize_key(combo, Some(pid), deadline)?;
-    Ok(ActionStep::succeeded("CGEventPostToPid")
+    require_core(target.process)?;
+    require_focused_element(target.app, policy, deadline)?;
+    require_core(target.process)?;
+    let delivery_pid = target.delivery_pid(deadline)?;
+    let watch = match target.hosted {
+        Some(focus) if watch_effect => {
+            crate::system::window::hosted_focus_effect::watch(focus, target.app, deadline)?
+        }
+        _ => None,
+    };
+    crate::input::keyboard::synthesize_key(combo, Some(delivery_pid), deadline)?;
+    let step = ActionStep::succeeded("CGEventPostToPid")
         .with_mechanism(StepMechanism::PhysicalSynthetic)
-        .with_verified(false))
+        .with_verified(false);
+    Ok((step, watch))
 }
 
-fn app_pid(process: &ProcessIdentity) -> Result<i32, AdapterError> {
-    Ok(crate::system::process::process_identity::require_core(process)?.pid())
+/// What the press response says about the menu-bar lookup: the menu item it
+/// pressed, or why the chord went to the keyboard after the lookup applied.
+struct DeliveryReport {
+    steps: Vec<ActionStep>,
+    details: Option<serde_json::Value>,
+}
+
+impl From<ActionStep> for DeliveryReport {
+    fn from(step: ActionStep) -> Self {
+        Self {
+            steps: vec![step],
+            details: None,
+        }
+    }
+}
+
+fn menu_shortcut_report(outcome: &MenuShortcutOutcome) -> DeliveryReport {
+    let (step, details) = match outcome {
+        MenuShortcutOutcome::Pressed(details) => (semantic_step(MENU_SHORTCUT_STEP), details),
+        MenuShortcutOutcome::Skipped(details) => (
+            ActionStep::skipped(MENU_SHORTCUT_STEP).with_mechanism(StepMechanism::SemanticApi),
+            details,
+        ),
+        MenuShortcutOutcome::NotApplicable => {
+            return DeliveryReport {
+                steps: Vec::new(),
+                details: None,
+            };
+        }
+    };
+    DeliveryReport {
+        steps: vec![step],
+        details: Some(serde_json::json!({ "menu_shortcut": details })),
+    }
 }
 
 fn semantic_step(label: &'static str) -> ActionStep {
@@ -94,11 +156,15 @@ fn semantic_step(label: &'static str) -> ActionStep {
 
 fn post_delivery_process_result(
     process: &ProcessIdentity,
-    step: ActionStep,
+    report: DeliveryReport,
 ) -> Result<ActionResult, AdapterError> {
     crate::system::process::process_identity::require_core(process)
         .map_err(|error| error.with_disposition(DeliverySemantics::delivered_unverified()))?;
-    Ok(ActionResult::delivered_unverified("press_key").with_steps(vec![step]))
+    let result = ActionResult::delivered_unverified("press_key").with_steps(report.steps);
+    Ok(match report.details {
+        Some(details) => result.with_details(details),
+        None => result,
+    })
 }
 
 fn try_simple_key_action(
@@ -115,8 +181,14 @@ fn try_simple_key_action(
     crate::actions::ax_helpers::try_ax_action_or_err(&focused, action, deadline)
 }
 
-fn uses_menu_shortcut(combo: &KeyCombo, policy: InteractionPolicy) -> bool {
-    policy.allow_focus_steal && !combo.modifiers.is_empty()
+/// A command chord tries the menu bar under either policy. Headless, the
+/// keystroke lands only while the app is frontmost, which a background app is
+/// not; headed, core has already focused the window, and the menu item runs the
+/// same command the key equivalent would.
+fn uses_menu_shortcut(combo: &KeyCombo, _policy: InteractionPolicy) -> bool {
+    combo
+        .modifiers
+        .contains(&agent_desktop_core::Modifier::Meta)
 }
 
 fn simple_key_action(combo: &KeyCombo) -> Option<&'static str> {

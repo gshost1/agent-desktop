@@ -9,11 +9,11 @@
 
 use agent_desktop_core::{
     ActionResult, ActionStep, AdapterError, Deadline, DeliverySemantics, InteractionPolicy,
-    KeyCombo, ProcessIdentity,
+    KeyCombo,
 };
 
 use super::modal::{FocusedValue, ModalWatch};
-use crate::tree::AXElement;
+use super::target::KeyTarget;
 
 pub(super) trait ModalRoutes {
     fn physical(&mut self) -> Result<ActionStep, AdapterError>;
@@ -78,16 +78,17 @@ fn sent_nothing(error: &AdapterError) -> bool {
     )
 }
 
+/// The real key goes to the pid `target` picks, the same pid a press off a
+/// sheet would reach.
 pub(super) fn press_on_modal(
-    process: &ProcessIdentity,
-    app: &AXElement,
+    target: &KeyTarget<'_>,
     key: (&KeyCombo, InteractionPolicy),
     modal: &ModalWatch,
     deadline: Deadline,
 ) -> Result<ActionResult, AdapterError> {
+    let process = target.process;
     let mut routes = LiveModalRoutes {
-        process,
-        app,
+        target,
         key,
         modal,
         edited: None,
@@ -115,8 +116,7 @@ fn after_delivery(error: AdapterError) -> AdapterError {
 }
 
 struct LiveModalRoutes<'a> {
-    process: &'a ProcessIdentity,
-    app: &'a AXElement,
+    target: &'a KeyTarget<'a>,
     key: (&'a KeyCombo, InteractionPolicy),
     modal: &'a ModalWatch,
     edited: Option<FocusedValue>,
@@ -125,16 +125,15 @@ struct LiveModalRoutes<'a> {
 
 impl ModalRoutes for LiveModalRoutes<'_> {
     fn physical(&mut self) -> Result<ActionStep, AdapterError> {
-        self.edited = FocusedValue::read(self.app, self.deadline);
-        let (combo, policy) = self.key;
-        super::send_physical_key(self.process, self.app, combo, policy, self.deadline)
+        self.edited = FocusedValue::read(self.target.app, self.deadline);
+        super::send_physical_key(self.target, self.key, self.deadline, false).map(|(step, _)| step)
     }
 
     fn semantic(&mut self) -> Result<Option<ActionStep>, AdapterError> {
         let action = self.modal.action();
         self.edited = None;
         Ok(
-            super::try_simple_key_action(self.app, action, self.deadline)?
+            super::try_simple_key_action(self.target.app, action, self.deadline)?
                 .then(|| super::semantic_step(action)),
         )
     }

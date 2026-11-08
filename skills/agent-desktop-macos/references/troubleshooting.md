@@ -70,7 +70,24 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Cause.** A full path went into the save panel's name field. The panel does not read it as a folder. It keeps its current folder and turns each `/` into `:` in the file name. `set-value` reported `delivered_verified` because the field held exactly that text.
 
-**Fix.** Put only the file name in the name field. Choose the folder with the panel, read the folder it shows (the `Where` pop-up or the path in the expanded panel), then click Save. Move the misnamed file yourself; agent-desktop does not undo a save.
+**Fix.** Put only the file name in the name field and choose the folder with Go to Folder, as in [Save into a given folder](#save-into-a-given-folder). Move the misnamed file yourself; agent-desktop does not undo a save.
+
+## Save into a given folder
+
+An Open or Save panel can be served by a separate process and drawn inside the app's sheet. `press --app` sends its keys to the process that owns the focused panel control, so the panel's own shortcuts work. Go to the folder first, then set the name and save:
+
+```bash
+agent-desktop press cmd+s --app "TextEdit"                                    # open the Save sheet
+agent-desktop press cmd+shift+g --app "TextEdit"                              # Go to Folder
+agent-desktop find --app "TextEdit" --surface sheet --role textfield --state focused --first
+agent-desktop set-value @s1:e1 "~/Reports"                                     # the folder
+agent-desktop press return --app "TextEdit"                                   # go there
+agent-desktop find --app "TextEdit" --surface sheet --role textfield --name "Save As:" --first
+agent-desktop set-value @s2:e1 "q3-report"                                     # file name only, no slashes
+agent-desktop press return --app "TextEdit"                                   # Save
+```
+
+Replace `@s1:e1` and `@s2:e1` with the `ref_id` each `find` returns. While a panel control has focus, `press` reports `data.details.keyboard_target` with `"route": "hosted_view"` and the pid that received the keys. `"route": "host"` with an `unproven` reason means agent-desktop could not prove which process owns the panel's focus and sent the keys to the app, where the panel does not see them. A key that changed nothing in the panel fails with `ACTION_FAILED` and `"effect": "none_observed"`; do not repeat it. In both cases use the panel's controls by ref instead: `select @where "<folder>"` on the `Where:` pop-up (role `combobox`) for a folder it lists, `click` on a folder row in the file list to open it, `set-value` on the name field, then `click` on the `Save` button. Check the result yourself: the sheet is gone from `list-surfaces --app "TextEdit"` and the file is in the folder.
 
 ## Rename reports success but the old name stays
 

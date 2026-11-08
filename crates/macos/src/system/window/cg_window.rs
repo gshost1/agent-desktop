@@ -16,20 +16,18 @@ pub(crate) struct WindowRecord {
 }
 
 impl WindowRecord {
-    pub(crate) fn display_title(&self) -> &str {
-        self.title.as_deref().unwrap_or(&self.app_name)
-    }
-
+    /// A record whose title is still unknown becomes an empty title, the
+    /// cross-platform form of an unknown title. The owner's name is never a
+    /// window title.
     pub(crate) fn into_window_info(
         self,
         is_focused: bool,
         minimized: Option<bool>,
         accessible: bool,
     ) -> Result<WindowInfo, AdapterError> {
-        let title = self.title.unwrap_or_else(|| self.app_name.clone());
         Ok(WindowInfo {
             id: format!("w-{}", self.window_number),
-            title,
+            title: self.title.unwrap_or_default(),
             app: self.app_name,
             pid: crate::system::process::process_identity::from_pid_t(self.pid)?,
             process_instance: self.process_instance,
@@ -321,7 +319,7 @@ fn required_string_field(dict: &WindowDictionary, key: &str) -> Result<String, A
     string_field(dict, key).ok_or_else(|| missing_field_error(key))
 }
 
-fn int_field(dict: &WindowDictionary, key: &str) -> Option<i64> {
+pub(in crate::system) fn int_field(dict: &WindowDictionary, key: &str) -> Option<i64> {
     use crate::tree::properties::cf_type::borrowed_cf_number;
     use core_foundation::base::TCFType;
 

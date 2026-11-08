@@ -59,11 +59,15 @@ fn capture_global_once(
         },
         |pid| crate::system::window::window_ax_state::read_frontmost_until(pid, deadline),
     )?;
-    crate::system::window::window_ax_state::label_accessibility(&mut windows, |pid| {
+    crate::system::window::window_ax_state::label_accessibility(&mut windows, |pid, wanted| {
         let probe_deadline = Instant::now()
             .checked_add(std::time::Duration::from_millis(50))
             .map_or(deadline, |probe| probe.min(deadline));
-        crate::system::window::window_ax_state::accessible_window_ids_until(pid, probe_deadline)
+        crate::system::window::window_ax_state::accessible_window_titles_until(
+            pid,
+            wanted,
+            probe_deadline,
+        )
     });
     Ok(windows)
 }
@@ -304,7 +308,9 @@ fn matching_focus_windows(
     let title_matches = records
         .iter()
         .filter(|record| {
-            record.pid == frontmost_pid && focused_title.as_deref() == Some(record.display_title())
+            record.pid == frontmost_pid
+                && focused_title.is_some()
+                && focused_title.as_deref() == record.title.as_deref()
         })
         .map(|record| (record.pid, record.window_number))
         .collect::<Vec<_>>();
