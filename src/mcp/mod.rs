@@ -4,6 +4,8 @@ mod call;
 mod calls;
 mod catalog;
 mod child_lease;
+mod global_scope;
+mod globals;
 mod inherited_lease;
 mod lease_inheritance;
 mod lease_refusal;
@@ -13,13 +15,11 @@ mod queued_ticket;
 mod slot_holder;
 mod slot_step;
 
-use clap::{ArgAction, ArgMatches, Command, CommandFactory, parser::ValueSource};
+use clap::{ArgMatches, Command};
 use serde_json::{Map, Value, json};
 use std::io::{BufRead, Write};
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
-
-use crate::cli::Cli;
 
 const MODERN_VERSION: &str = "2026-07-28";
 const LEGACY_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -35,15 +35,15 @@ false with error; a call rejected before the command runs returns plain text. Re
 desktop_skills_get with name \"desktop\" first for the observe-act loop, and with name \
 \"platform\" for what differs on this OS. The skills use CLI syntax: `agent-desktop snapshot \
 --app Finder` is desktop_snapshot with {\"app\": \"Finder\"}, and the input schema replaces \
---help. Global flags (--session, --agent-id, --headed, --wait-for, --trace) are fixed \
-by how this server was started and cannot be passed per call. Refs such as @s8f3k2p9:e1 come from \
+--help. Global flags (--session, --agent-id, --headed, --trace) are fixed by how this \
+server was started and cannot be passed per call. Refs such as @s8f3k2p9:e1 come from \
 desktop_snapshot and go stale when the UI changes: on STALE_REF or AMBIGUOUS_TARGET, snapshot \
 again. Repeat an action only when its disposition.retry is \"safe\".";
 
 /// The `mcp` subcommand; it lives outside `Commands` because it serves commands rather than being one.
 pub(crate) fn command() -> Command {
     Command::new("mcp").about(
-        "Serve every command as an MCP tool over stdio; global flags given here apply to every call",
+        "Serve every command as an MCP tool over stdio; server-wide global flags given here apply to every call",
     )
 }
 
@@ -51,10 +51,15 @@ pub(crate) fn command() -> Command {
 /// At most `MAX_CONCURRENT_CALLS` calls run at once, and a message longer than `MAX_MESSAGE_BYTES` is refused unread.
 /// Under an interaction lease inherited from the parent, calls that can inject input or steal focus run one
 /// at a time, in arrival order, each waiting for its turn at most `inherited_lease::QUEUE_WAIT_BOUND`.
+/// Global flags that apply to a single command, such as `--debug` or `--wait-for`, refuse to start it.
 pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
+    let globals = match globals::forwarded_globals(matches) {
+        Ok(globals) => globals,
+        Err(error) => return globals::refuse_start(&error),
+    };
     let server = Arc::new(Server {
         tools: catalog::tools(),
-        globals: forwarded_globals(matches),
+        globals,
         calls: calls::Calls::default(),
         lease: Arc::new(lease_inheritance::LeaseInheritance::from_env()),
     });
@@ -294,24 +299,6 @@ fn supported_versions() -> Vec<&'static str> {
 
 fn server_info() -> Value {
     json!({ "name": "agent-desktop", "version": env!("CARGO_PKG_VERSION") })
-}
-
-fn forwarded_globals(matches: &ArgMatches) -> Vec<String> {
-    let root = Cli::command();
-    let mut globals = Vec::new();
-    for arg in root.get_arguments().filter(|arg| arg.is_global_set()) {
-        let id = arg.get_id().as_str();
-        let Some(long) = arg.get_long() else { continue };
-        if matches.value_source(id) != Some(ValueSource::CommandLine) {
-            continue;
-        }
-        if matches!(arg.get_action(), ArgAction::SetTrue) {
-            globals.push(format!("--{long}"));
-        } else if let Some(values) = matches.get_raw(id) {
-            globals.extend(values.map(|value| format!("--{long}={}", value.to_string_lossy())));
-        }
-    }
-    globals
 }
 
 fn write_line(out: &Mutex<std::io::Stdout>, message: &Value) {

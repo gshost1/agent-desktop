@@ -131,7 +131,8 @@ JSON entries into the same `Commands` enum, runs the same `CommandPolicy` prefli
 each leaf command is one tool, its schema comes from the command's clap arguments and help, and a call rebuilds the
 argv and runs this binary as a child process. A command added to or removed from `Commands` appears in or disappears
 from the MCP tool list with no MCP change. `mcp` itself is attached to the root command in `main.rs`, outside
-`Commands`, so it is never a tool, a batch entry or a counted command.
+`Commands`, so it is never a tool, a batch entry or a counted command. A new global flag needs a scope in
+`src/mcp/global_scope.rs`: server-wide flags are forwarded to every call, per-command flags make `mcp` refuse to start.
 
 **Adding a command.**
 1. Create `crates/core/src/commands/<name>.rs` with an `execute()` function, its tests in `<name>_tests.rs`, and

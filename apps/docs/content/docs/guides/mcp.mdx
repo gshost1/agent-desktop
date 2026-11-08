@@ -37,15 +37,17 @@ The tool list is read from the CLI's own command definitions, so it always match
 
 ## Apply global flags once
 
-Global flags given to `mcp` apply to every call:
+Server-wide global flags given to `mcp` apply to every call: `--session`, `--agent-id`, `--headed`, `--trace`, `--trace-strict` and `--verbose`.
 
 ```bash
 agent-desktop mcp --session s1 --headed
 ```
 
+Flags that describe a single command, `--debug`, `--screenshot`, `--wait-for`, `--wait-for-gone` and `--wait-timeout`, cannot apply to every call. `mcp` refuses them: it prints an `INVALID_ARGS` envelope, exits with code `1` and serves nothing. Run visual debug from the CLI, and call `desktop_wait` to wait for an element.
+
 `AGENT_DESKTOP_SESSION`, `AGENT_DESKTOP_AGENT_ID` and `AGENT_DESKTOP_HOME` in the server's environment apply the same way.
 
-A tool cannot pass a global flag. Commands that need a session, such as `trace` and `cursor-overlay`, work only when the server has one, headed-only commands need `mcp --headed`, and `--wait-for` is not available per call.
+A tool cannot pass a global flag. Commands that need a session, such as `trace` and `cursor-overlay`, work only when the server has one, and headed-only commands need `mcp --headed`.
 
 ## Read results
 

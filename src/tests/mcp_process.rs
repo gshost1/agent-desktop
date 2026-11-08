@@ -76,14 +76,48 @@ fn mcp_tool_calls_run_the_cli_command_and_return_its_envelope() {
 fn mcp_server_global_flags_reach_every_call() {
     let responses = serve(
         &[call(1, "desktop_session_list", json!({}))],
-        &["--debug", "--screenshot", "x.html"],
+        &["--agent-id", "not a valid id"],
     );
     let result = &responses[0]["result"];
     assert_eq!(result["isError"], true, "{result}");
     assert_eq!(
         result["structuredContent"]["error"]["message"],
-        "--debug supports snapshot and click only"
+        "Agent id must be 1-64 chars using letters, numbers, '-' or '_'"
     );
+}
+
+#[test]
+fn mcp_refuses_per_command_global_flags_before_serving() {
+    let dir = std::env::temp_dir().join(format!("agent-desktop-mcp-refuse-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let html = dir.join("debug.html");
+    let html_arg = html.to_str().expect("utf-8 path");
+    for args in [
+        &["--debug", "--screenshot", html_arg][..],
+        &["--wait-for", "button:OK"],
+        &["--wait-timeout", "5"],
+    ] {
+        let output = binary()
+            .arg("mcp")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .expect("binary runs");
+        assert_eq!(output.status.code(), Some(1), "{args:?}");
+        let envelope: Value = serde_json::from_slice(&output.stdout).expect("one JSON envelope");
+        assert_eq!(envelope["ok"], false, "{envelope}");
+        assert_eq!(envelope["command"], "mcp", "{envelope}");
+        assert_eq!(envelope["error"]["code"], "INVALID_ARGS", "{envelope}");
+        assert!(envelope["error"]["suggestion"].is_string(), "{envelope}");
+        assert!(
+            envelope["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(args[0])),
+            "{envelope}"
+        );
+    }
+    assert!(!html.exists());
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
