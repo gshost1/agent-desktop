@@ -3,14 +3,18 @@ const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { cpSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, writeFileSync, chmodSync, statSync, renameSync, symlinkSync } = require('node:fs');
 const { tmpdir } = require('node:os');
-const { join, resolve } = require('node:path');
+const { join, resolve, sep } = require('node:path');
 const { test } = require('node:test');
 const { PLATFORMS, helperNames, tarballName } = require('../../npm/lib/platform');
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'agent-desktop-bundled-'));
   const source = resolve(__dirname, '../..');
-  cpSync(join(source, 'npm'), join(root, 'npm'), { recursive: true });
+  const transientBin = join(source, 'npm', 'bin');
+  cpSync(join(source, 'npm'), join(root, 'npm'), {
+    recursive: true,
+    filter: (path) => !path.startsWith(transientBin + sep) || path === join(transientBin, 'agent-desktop'),
+  });
   mkdirSync(join(root, 'scripts'));
   cpSync(join(source, 'scripts/prepare-npm-binaries.js'), join(root, 'scripts/prepare-npm-binaries.js'));
   const archives = join(root, 'archives');
