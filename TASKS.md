@@ -230,6 +230,13 @@ post or push (a pushed commit that names an upstream issue adds a reference on i
 Checked 2026-11-07: no pushed commit message on any audit branch hits; `main` has only GitHub's automatic
 `Co-authored-by:` email trailer on the PR #1 squash commit; PR #1's only hit is inside backticks.
 
+## CI block (2026-11-07, from the control thread)
+
+GitHub blocked Actions on the fork (`workflow_dispatch` returns HTTP 422 "Actions has been disabled for this
+repository"; pushes create no runs). Do not work around it. Until George says it lifted: no merges, no dispatches or
+re-runs; keep running local gates and pushing at checkpoints. PR #2 had merged just before (its dispatch run on head
+`de04c3a9` completed 13/13 green).
+
 ## Merge rule (George, 2026-11-07)
 
 Merge own fork PRs when: every CI check on the head SHA is green (dispatch runs count), local gates and reviews are
