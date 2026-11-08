@@ -8,19 +8,25 @@ agent-desktop ships guides written for AI agents: the observe, act, and verify l
 
 ## Bootstrap an agent
 
-Run these three commands before the first action:
+Load the desktop quickstart before the first action. It holds the common commands and the rules most tasks need:
 
 ```bash
-agent-desktop status                  # platform, permissions, supported surfaces
 agent-desktop skills get desktop      # quickstart: common commands, the loop, refs, retry rules
+```
+
+Load the platform skill when the agent hits `PERM_DENIED`, an empty tree or another OS-specific error, and before OS-specific work such as granting permissions or reading shell surfaces. `status` is not a required first step; run it when the agent needs the platform, the permission report or `supported_surfaces`.
+
+```bash
 agent-desktop skills get platform     # what differs on the OS the binary runs on
+agent-desktop status                  # platform, permissions, supported surfaces
 ```
 
 To make this automatic, put the bootstrap in your agent's instructions file (`AGENTS.md` or equivalent):
 
 ```markdown
 Use `agent-desktop` to see and operate desktop apps. Before the first use, run
-`agent-desktop skills get desktop` and `agent-desktop skills get platform`, and follow them.
+`agent-desktop skills get desktop` and follow it. Run `agent-desktop skills get platform`
+on a permission or OS-specific error, or before OS-specific work.
 ```
 
 ## The skills command

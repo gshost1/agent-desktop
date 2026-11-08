@@ -26,7 +26,6 @@ agent-desktop select @s8f3k2p9:e7 "Large"
 agent-desktop type @s8f3k2p9:e2 " more"
 agent-desktop press cmd+s --app Notes  # ctrl+s off macOS
 agent-desktop click @s8f3k2p9:e5 --wait-for "button:Replace"  # act, then wait for role:text
-agent-desktop wait --element @s8f3k2p9:e9
 agent-desktop wait --window "Save" --app Notes
 agent-desktop wait --text "Saved" --app Notes
 agent-desktop wait --menu --app Notes
@@ -39,26 +38,26 @@ agent-desktop list-windows --app Notes
 
 1. Locate with `find` when you know the role or name, else `snapshot -i --compact`.
 2. Act on a ref from that output.
-3. Read the result. A menu, sheet or alert it opened is in `data.surfaces`: snapshot that surface next.
+3. A menu, sheet or alert the action opened is in `data.surfaces`: snapshot that surface next.
 4. Wait with `wait` or `--wait-for`, never a fixed sleep.
 
-Chain known steps in one Bash call or one `batch`. Don't re-snapshot to confirm an `ok: true` action; check `data.surfaces`.
+Chain known steps in one Bash call or one `batch`. `delivered_verified` landed; don't re-read it. `delivered_unverified` can be `ok: true` with no effect: check that control with `get`, `is`, `find` or `--root`, not a full snapshot.
 
 ## Refs, retry, headless
 
-Refs are qualified (`@s8f3k2p9:e1`); pass them as printed. A ref is valid until the UI changes. `STALE_REF` means snapshot again.
+Pass refs as printed. In PowerShell, quote every ref (`'@s1:e2'`). A ref is valid until the UI changes; on `STALE_REF`, snapshot again. A `--root` drill replaces the refs inside its subtree. Never `--skeleton` a surface.
 
-Retry only when `disposition.retry` is `safe`. Otherwise the action may have landed: read the live state first.
+Retry only when `disposition.retry` is `safe`. Otherwise it may have landed: read the live state first.
 
-Ref actions are headless: no focus, cursor or clipboard. Add the global `--headed` only when the user allows physical input, never to recover from a headless failure.
+Ref actions are headless: no focus, cursor or clipboard. Use the global `--headed` only when the user allows physical input, never to recover from a headless failure.
 
-## Load more only when needed
+## Load more
 
-Most tasks need neither. Run `agent-desktop skills get <name>`.
+Run `agent-desktop skills get <name>` only when a row applies.
 
 | Load | When |
-|------|------|
-| `platform` | `PERM_DENIED`, an empty tree, an OS-specific error |
+|---|---|
+| `platform` | `PERM_DENIED`, an empty tree, an OS-specific error, or before OS-specific work |
 | `desktop core-rules` | Twins, `AMBIGUOUS_TARGET`, unsafe retry, PowerShell |
 | `desktop commands-observation` | Snapshot, find, get, surface details |
 | `desktop commands-interaction` | Choosing an action, an action error |

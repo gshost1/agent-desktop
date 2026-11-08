@@ -7,8 +7,8 @@ agent-desktop version. Each command prints the JSON envelope; the skill's
 markdown is in data.content.
 
 Start here:
-  agent-desktop skills get desktop            # Core guide, any OS
-  agent-desktop skills get platform           # Guide for the OS you run on
+  agent-desktop skills get desktop            # Quickstart, any OS; load first
+  agent-desktop skills get platform           # On an OS-specific error
 
 More:
   agent-desktop skills                        # List skills

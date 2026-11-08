@@ -18,11 +18,11 @@ The app that launches agent-desktop (Terminal, iTerm2, Warp, VS Code, Codex) nee
 
 ## Headless and headed
 
-- Ref actions are semantic by default; a headless `right-click` can use `AXShowMenu`. Under `--headed`, `click`, `right-click`, `type`, `clear` and `scroll` go physical first, while `set-value`, `select`, `toggle`, `check`, `uncheck`, `expand`, `collapse`, `focus` and `scroll-to` stay semantic.
+- Ref actions are semantic by default; a headless `right-click` can use `AXShowMenu`. Under `--headed`, `click`, `right-click`, `type`, `clear` and `scroll` go physical first, except a click on a native menu-bar item, which uses `AXPress` without moving the pointer. A headed pointer action on a window's element focuses that window and checks the hit target first. `set-value`, `select`, `toggle`, `check`, `uncheck`, `expand`, `collapse`, `focus` and `scroll-to` stay semantic.
 - Headless `type` inserts through `AXSelectedText`. A field where that is not settable returns `POLICY_DENIED`: use `set-value`, or `--headed` when the user allows it.
 - `double-click`, `triple-click`, `hover` and `drag` need `--headed`, and return `POLICY_DENIED` without it.
 - `press` sends keys to the app's process without focusing it: `press cmd+s --app "TextEdit"`. Quit combos such as `cmd+q` return `POLICY_DENIED` unless you pass `--force`; quit with `close-app`.
-- An AX success code does not prove an effect. Check with `get`, `is` or a fresh snapshot when it matters.
+- An AX success code does not prove an effect: `delivered_unverified`, such as an `AXPress` with no postcondition, can be `ok: true` with no change. Check that control with `get`, `is`, `find` or `--root`, not a full snapshot.
 
 ## Menus and apps
 

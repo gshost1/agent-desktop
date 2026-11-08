@@ -15,7 +15,7 @@ agent-desktop status                 # permissions, supported_surfaces, state_ro
 agent-desktop skills get platform    # the guide for this OS, in data.content
 ```
 
-`data.permissions.accessibility.state` should be `granted`, and `data.supported_surfaces` should not be empty. Agents load the platform skill before their first action; see [Skills](/desktop/skills).
+`data.permissions.accessibility.state` should be `granted`, and `data.supported_surfaces` should not be empty. An agent loads the desktop quickstart before its first action and the platform skill when it hits a permission or OS-specific error; see [Skills](/desktop/skills).
 
 ## 2. Map the app
 

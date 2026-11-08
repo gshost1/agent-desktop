@@ -93,8 +93,8 @@ Your agent calls the CLI, or the C library in process. Both run the same core, w
 The binary carries guides that match its version:
 
 ```bash
-agent-desktop skills get desktop      # quickstart: common commands, the loop, refs, retry rules
-agent-desktop skills get platform     # what differs on the OS you run on
+agent-desktop skills get desktop      # load first: common commands, the loop, refs, retry rules
+agent-desktop skills get platform     # on a permission or OS-specific error: what differs on this OS
 agent-desktop <command> --help        # flags for one command
 ```
 
@@ -108,7 +108,8 @@ Or add this to your `AGENTS.md`:
 
 ```markdown
 Use `agent-desktop` to see and operate desktop apps. Before the first use, run
-`agent-desktop skills get desktop` and `agent-desktop skills get platform`, and follow them.
+`agent-desktop skills get desktop` and follow it. Run `agent-desktop skills get platform`
+on a permission or OS-specific error, or before OS-specific work.
 ```
 
 Retry a failed command only when `error.disposition.retry` is `safe`. See [JSON output](https://agent-browser.dev/desktop/json-output) for the envelope, error codes, and exit codes.

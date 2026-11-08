@@ -326,3 +326,38 @@ fn desktop_quickstart_names_every_reference_it_ships() {
     }
     assert!(SKILL_DESKTOP_MAIN.contains("`platform`"));
 }
+
+#[test]
+fn macos_quickstart_names_every_reference_it_ships() {
+    for reference in SKILL_MACOS_REFS {
+        let stem = reference
+            .rel_path
+            .trim_start_matches("references/")
+            .trim_end_matches(".md");
+        assert!(
+            SKILL_MACOS_MAIN.contains(&format!("| `{stem}` |")),
+            "the macOS quickstart's reference table must name `{stem}`"
+        );
+    }
+}
+
+#[test]
+fn core_rules_table_names_the_other_references_and_the_platform_skill() {
+    let table = SKILL_DESKTOP_REF_CORE_RULES
+        .split("## Which reference to open")
+        .nth(1)
+        .expect("core-rules has a reference table");
+    for reference in SKILL_DESKTOP_REFS {
+        let stem = reference
+            .rel_path
+            .trim_start_matches("references/")
+            .trim_end_matches(".md");
+        let row = format!("| `{stem}` |");
+        if stem == "core-rules" {
+            assert!(!table.contains(&row), "core-rules must not list itself");
+        } else {
+            assert!(table.contains(&row), "core-rules table must name `{stem}`");
+        }
+    }
+    assert!(table.contains("| `platform`"));
+}

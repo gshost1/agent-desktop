@@ -44,7 +44,7 @@ Snapshot lookup stays inside the selected session. A ref from a session needs th
 
 ## How does an agent learn the tool?
 
-Run `agent-desktop skills get desktop` for the core guide. Run `agent-desktop skills get platform` for the guide for the OS the binary runs on. Run `agent-desktop <command> --help` for a command's flags.
+Run `agent-desktop skills get desktop` before the first action: it is a quickstart with the common commands and rules. Run `agent-desktop skills get platform` on a permission or OS-specific error, or before OS-specific work. Run `agent-desktop <command> --help` for a command's flags.
 
 ## Is agent-desktop free and open source?
 

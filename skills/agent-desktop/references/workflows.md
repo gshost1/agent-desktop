@@ -15,7 +15,7 @@ agent-desktop permissions
 - On Windows, there is no permission dialog for same-integrity targets. Input into an elevated target needs an equally elevated terminal.
 - On Linux, there is no permission dialog. The session needs a running AT-SPI bus and `status` must report `accessibility` as `granted`. Run the tool in the same desktop session as the target app. If `status` reports it denied, read the bus section of the Linux skill.
 
-Then run `agent-desktop skills get platform` for the details of your OS.
+If a permission is denied or a command fails in an OS-specific way, run `agent-desktop skills get platform` for the details of your OS.
 
 ## Dense app: skeleton, drill, act, verify
 
