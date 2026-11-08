@@ -1,0 +1,4 @@
+# n=3 seeded TextEdit for #26 head 7cd59f4c with #27 (0d31005f) stacked, local merge cd5d2efe, against fork main ec3add89, rotated.
+ts26a textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26s textedit-seeded:a:claude-opus-5-5:bench/out/wt-main
+ts26b textedit-seeded:a:claude-opus-5-5:bench/out/wt-main textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26s
+ts26c textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26s textedit-seeded:a:claude-opus-5-5:bench/out/wt-main
