@@ -25,7 +25,7 @@ for m in json.load(sys.stdin).get('data',{}).get('matches',[]):
     if (m.get('value') or '').startswith('untitled folder'): print(m['ref_id']); break"
 }
 mkdir -p bench/out/probe_rename
-for variant in set-value set-value-headed-return type-interval-headed press-keys; do
+for variant in warmup set-value type set-value-headed-return press-keys; do
     name="renamed-$variant"
     bench/out/macctl raise Finder probe-rename
     sleep 0.5
@@ -35,6 +35,7 @@ for variant in set-value set-value-headed-return type-interval-headed press-keys
     [ -n "$ref" ] || { sleep 2; ref=$(field); }
     [ -n "$ref" ] || { echo "$variant: no rename field"; continue; }
     case "$variant" in
+        warmup) $B press escape --app Finder >/dev/null; continue ;;
         set-value) out=$($B set-value "$ref" "$name") ;;
         type) out=$($B type "$ref" "$name") ;;
         type-headed) out=$($B --headed type "$ref" "$name") ;;
