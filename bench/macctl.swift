@@ -18,6 +18,9 @@
 //   macctl perform-focused <app> <action>  perform an AX action (AXConfirm, ...) on the focused element
 //   macctl unfocus-focused <app>         set AXFocused false on the focused element
 //   macctl key <app> <keycode> [cmd,shift,...]  post one key press to <app>'s process only
+//   macctl keypid <pid> <keycode> [mods]  the same, to a pid
+//   macctl owners                        JSON list of on-screen windows: pid, owner, layer, number, bounds
+//   macctl pid-of <bundle id>            pids of running processes with that bundle id
 import AppKit
 import ApplicationServices
 import Foundation
@@ -149,8 +152,16 @@ case "focused":
     AXUIElementCopyActionNames(el, &names)
     var window = ""
     if let w = attr(el, "AXWindow") { window = string(w as! AXUIElement, "AXTitle") ?? "" }
+    var url = ""
+    var cursor: AXUIElement? = el
+    for _ in 0..<6 {
+        guard let current = cursor else { break }
+        if let u = attr(current, "AXURL") { url = (u as? URL)?.absoluteString ?? "\(u)"; break }
+        cursor = attr(current, "AXParent").map { $0 as! AXUIElement }
+    }
     printJSON(["role": string(el, "AXRole") ?? "", "subrole": string(el, "AXSubrole") ?? "",
-               "value": string(el, "AXValue") ?? "", "actions": (names as? [String]) ?? [], "window": window])
+               "value": string(el, "AXValue") ?? "", "actions": (names as? [String]) ?? [], "window": window,
+               "url": url])
 case "set-focused", "perform-focused", "unfocus-focused":
     guard args.count >= 2, let focused = attr(axApp(args[1]), "AXFocusedUIElement") else { fail("no focused element") }
     let el = focused as! AXUIElement
@@ -161,8 +172,18 @@ case "set-focused", "perform-focused", "unfocus-focused":
     default: result = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanFalse)
     }
     print(result.rawValue)
-case "key":
-    guard args.count >= 3, let running = app(args[1]), let code = UInt16(args[2]) else { fail("key <app> <keycode> [mods]") }
+case "owners":
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    printJSON(list.map { w in ["pid": w[kCGWindowOwnerPID as String] ?? 0, "owner": w[kCGWindowOwnerName as String] ?? "",
+                               "layer": w[kCGWindowLayer as String] ?? 0, "number": w[kCGWindowNumber as String] ?? 0,
+                               "bounds": w[kCGWindowBounds as String] ?? [:]] })
+case "pid-of":
+    guard args.count == 2 else { fail("pid-of <bundle id>") }
+    printJSON(NSRunningApplication.runningApplications(withBundleIdentifier: args[1]).map { Int($0.processIdentifier) })
+case "key", "keypid":
+    let target: pid_t?
+    if command == "keypid" { target = Int32(args.count > 1 ? args[1] : "") } else { target = args.count > 1 ? app(args[1])?.processIdentifier : nil }
+    guard args.count >= 3, let pid = target, let code = UInt16(args[2]) else { fail("key <app>|keypid <pid> <keycode> [mods]") }
     var flags = CGEventFlags()
     for m in (args.count > 3 ? args[3] : "").split(separator: ",") {
         switch m { case "cmd": flags.insert(.maskCommand); case "shift": flags.insert(.maskShift)
@@ -171,7 +192,7 @@ case "key":
     for down in [true, false] {
         guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { fail("no event") }
         event.flags = flags
-        event.postToPid(running.processIdentifier)
+        event.postToPid(pid)
         Thread.sleep(forTimeInterval: 0.03)
     }
 default:
