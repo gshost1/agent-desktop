@@ -122,7 +122,7 @@ Retry a failed command only when `error.disposition.retry` is `safe`. See [JSON 
 { "mcpServers": { "agent-desktop": { "command": "agent-desktop", "args": ["mcp"] } } }
 ```
 
-Global flags given to `mcp`, such as `--session`, `--headed` or `--trace`, apply to every call.
+Server-wide global flags given to `mcp`, such as `--session`, `--headed` or `--trace`, apply to every call. `mcp` refuses flags that describe a single command, such as `--debug` or `--wait-for`.
 
 ## Commands
 
