@@ -40,12 +40,15 @@ def http_json(url):
 
 
 def launch_chrome(profile, port, downloads, extra):
-    profile.mkdir(parents=True, exist_ok=True)
-    (profile / "Default").mkdir(exist_ok=True)
+    """Start Chrome on a profile folder that did not exist before this call; it is complete before launch."""
+    profile.mkdir(parents=True)
+    (profile / "Default").mkdir()
     prefs = {"download": {"default_directory": str(downloads), "prompt_for_download": False},
              "profile": {"default_content_setting_values": {"automatic_downloads": 1}},
              "browser": {"has_seen_welcome_page": True}}
-    (profile / "Default" / "Preferences").write_text(json.dumps(prefs))
+    staged = profile / "Default" / "Preferences.tmp"
+    staged.write_text(json.dumps(prefs))
+    os.replace(staged, profile / "Default" / "Preferences")
     args = [CHROME, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
             "--disable-sync", "--password-store=basic", "--use-mock-keychain"] + extra
     if port:
@@ -62,18 +65,33 @@ def launch_chrome(profile, port, downloads, extra):
             return proc
         except Exception:
             time.sleep(0.3)
-    raise RuntimeError("chrome devtools endpoint never came up")
+    stop_chrome(proc, profile)
+    raise RuntimeError("chrome devtools endpoint never came up (a startup dialog blocks it)")
 
 
-def stop_chrome(proc):
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=10)
-    except Exception:
+def profile_processes(profile):
+    out = subprocess.run(["pgrep", "-f", f"--user-data-dir={profile}"], capture_output=True, text=True).stdout
+    return [int(p) for p in out.split()]
+
+
+def stop_chrome(proc, profile):
+    """Stop the run's Chrome and every helper on its profile; True once none is left."""
+    for sig, grace in ((signal.SIGTERM, 10), (signal.SIGKILL, 5)):
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except Exception:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
             pass
+        for pid in profile_processes(profile):
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
+        deadline = time.time() + grace
+        while time.time() < deadline:
+            if proc.poll() is not None and not profile_processes(profile):
+                return True
+            time.sleep(0.2)
+    return proc.poll() is not None and not profile_processes(profile)
 
 
 def discard_profile(profile):
@@ -81,17 +99,40 @@ def discard_profile(profile):
     shutil.rmtree(profile, ignore_errors=True)
 
 
+def bench_dialogs(ad, app="Google Chrome"):
+    """Alerts, sheets and dialogs the bench browser shows. Call only while no other copy of the app runs."""
+    try:
+        out = subprocess.run([ad, "list-surfaces", "--app", app], capture_output=True, text=True, timeout=15).stdout
+        surfaces = json.loads(out).get("data", {}).get("surfaces", [])
+    except Exception:
+        return []
+    return [s.get("title") or s.get("type") for s in surfaces if s.get("type") in ("alert", "sheet", "dialog")]
+
+
+class BenchDialog(RuntimeError):
+    pass
+
+
 @contextlib.contextmanager
-def chrome_session(profile, port, downloads, extra):
-    """Launch Chrome on a fresh profile; stop it and delete the profile however the run ends."""
+def chrome_session(profile, port, downloads, extra, ad=None):
+    """Launch Chrome on a new profile; stop it, wait for every process to exit, then delete the profile.
+
+    With `ad`, a dialog on screen after launch fails the run: the session closes Chrome, so it never stays up.
+    """
     proc = None
     try:
         proc = launch_chrome(profile, port, downloads, extra)
+        if ad and "--headless=new" not in extra:
+            dialogs = bench_dialogs(ad)
+            if dialogs:
+                raise BenchDialog(f"dialog on screen after launch: {dialogs}")
         yield proc
     finally:
-        if proc is not None:
-            stop_chrome(proc)
-        discard_profile(profile)
+        gone = stop_chrome(proc, profile) if proc is not None else not profile_processes(profile)
+        if gone:
+            discard_profile(profile)
+        else:
+            print(f"profile kept, Chrome still running on it: {profile}", flush=True)
 
 
 def kill_apps(names):
@@ -168,7 +209,17 @@ def run_one(args, task, channel, run_idx, out):
     downloads.mkdir(parents=True)
     kill_apps(task.get("kill", []))
     cdp_port = args.cdp_port if channel in ("cdp", "hybrid") else None
-    with chrome_session(work / "profile", cdp_port, downloads, args.chrome_arg) as chrome:
+    stack = contextlib.ExitStack()
+    try:
+        chrome = stack.enter_context(chrome_session(work / "profile", cdp_port, downloads, args.chrome_arg, ad=args.ad))
+    except RuntimeError as e:
+        row = {"task": task["id"], "channel": channel, "run": run_idx, "model": args.model, "ok": False,
+               "why": f"bench launch failed: {e}"}
+        with open(out / "runs.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+        print(json.dumps(row), flush=True)
+        return row
+    with stack:
         ctx = {"base": args.base, "work": str(work), "downloads": str(downloads), "exp": exp, "ad": args.ad}
         prompt = task["prompt"].format(**ctx)
         env = dict(os.environ)
@@ -200,7 +251,11 @@ def run_one(args, task, channel, run_idx, out):
         strays = collect_strays(since, work, out / "strays" / run_id)
         if strays:
             ok, why = False, f"stray saves moved: {strays}; " + why
-        stop_chrome(chrome)
+        if "--headless=new" not in args.chrome_arg:
+            left = bench_dialogs(args.ad)
+            if left:
+                ok, why = False, f"dialog left on screen: {left}; " + why
+        stop_chrome(chrome, work / "profile")
         kill_apps(task.get("kill", []))
         if channel in ("cdp", "hybrid"):
             subprocess.run([f"{args.bin_dir}/agent-browser", "close", "--all"], env=env, capture_output=True, timeout=30)
@@ -244,6 +299,9 @@ def main():
     tasks = [t for t in tasks if not t.get("held")]
     if args.no_lock and "--headless=new" not in args.chrome_arg:
         sys.exit("--no-lock needs --chrome-arg=--headless=new")
+    headed = "--headless=new" not in args.chrome_arg
+    if headed and subprocess.run(["pgrep", "-x", "Google Chrome"], capture_output=True).returncode == 0:
+        sys.exit("Google Chrome is already running: a headed run would drive or inspect the user's browser")
     if not args.no_lock:
         take_lock(args.lock_title)
     try:
