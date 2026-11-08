@@ -93,7 +93,7 @@ Your agent calls the CLI, or the C library in process. Both run the same core, w
 The binary carries guides that match its version:
 
 ```bash
-agent-desktop skills get desktop      # the loop, refs, verification and retry rules
+agent-desktop skills get desktop      # quickstart: common commands, the loop, refs, retry rules
 agent-desktop skills get platform     # what differs on the OS you run on
 agent-desktop <command> --help        # flags for one command
 ```

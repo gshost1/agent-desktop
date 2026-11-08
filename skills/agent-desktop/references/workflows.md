@@ -198,7 +198,7 @@ agent-desktop session end "$AGENT_DESKTOP_SESSION"
 
 ## Anti-patterns
 
-The core skill already states the rules on refs, waits, headed mode and retries. These are the other common mistakes:
+The core skill and the `core-rules` reference already state the rules on refs, waits, headed mode and retries. These are the other common mistakes:
 
 1. **Full snapshots of a dense app.** Use `--skeleton` and `--root`, and re-drill only the region that changed. A full tree costs far more tokens.
 2. **Coordinates when a ref exists.** Semantic actions are more reliable than coordinate clicks.

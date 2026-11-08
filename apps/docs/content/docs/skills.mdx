@@ -12,7 +12,7 @@ Run these three commands before the first action:
 
 ```bash
 agent-desktop status                  # platform, permissions, supported surfaces
-agent-desktop skills get desktop      # the loop, refs, verification, and retry rules
+agent-desktop skills get desktop      # quickstart: common commands, the loop, refs, retry rules
 agent-desktop skills get platform     # what differs on the OS the binary runs on
 ```
 
@@ -71,8 +71,8 @@ agent-desktop skills get desktop | jq -r '.data.content'
     <tr><th>Name</th><th>Alias</th><th>Covers</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>agent-desktop</code></td><td><code>desktop</code></td><td>The core guide for every OS: the snapshot and ref loop, verification and retry rules, and when to open each reference. Load it first.</td></tr>
-    <tr><td><code>agent-desktop-macos</code></td><td><code>macos</code></td><td>What differs on macOS: permissions, Notification Center, troubleshooting.</td></tr>
+    <tr><td><code>agent-desktop</code></td><td><code>desktop</code></td><td>The core quickstart for every OS: the common commands with their flags, the snapshot and ref loop, retry and headless rules, and when to open each reference. Load it first.</td></tr>
+    <tr><td><code>agent-desktop-macos</code></td><td><code>macos</code></td><td>What differs on macOS: permissions, which actions need <code>--headed</code>, menus and surfaces, Notification Center, troubleshooting.</td></tr>
     <tr><td><code>agent-desktop-windows</code></td><td><code>windows</code></td><td>What differs on Windows: PowerShell quoting, elevation, shell surfaces, Chromium and Electron, troubleshooting.</td></tr>
     <tr><td><code>agent-desktop-linux</code></td><td><code>linux</code></td><td>What differs on Linux: the AT-SPI bus, X11 and Wayland, window lifecycle, capture and clipboard, shell and notifications, troubleshooting.</td></tr>
     <tr><td><code>agent-desktop-ffi</code></td><td><code>ffi</code></td><td>Embedding agent-desktop through the <a href="/desktop/ffi">C library</a>: build and link, errors, ownership, threading.</td></tr>
@@ -122,8 +122,8 @@ agent-desktop skills get linux troubleshooting
     <tr><th>Skill</th><th>References</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>desktop</code></td><td><code>commands-observation</code>, <code>commands-interaction</code>, <code>commands-system</code>, <code>workflows</code></td></tr>
-    <tr><td><code>macos</code></td><td><code>troubleshooting</code></td></tr>
+    <tr><td><code>desktop</code></td><td><code>core-rules</code>, <code>commands-observation</code>, <code>commands-interaction</code>, <code>commands-system</code>, <code>workflows</code></td></tr>
+    <tr><td><code>macos</code></td><td><code>platform-details</code>, <code>troubleshooting</code></td></tr>
     <tr><td><code>windows</code></td><td><code>permissions-and-elevation</code>, <code>chromium-and-electron</code>, <code>troubleshooting</code>, <code>shell-and-overlay</code></td></tr>
     <tr><td><code>linux</code></td><td><code>bus-and-permissions</code>, <code>display-servers-and-input</code>, <code>windows-and-lifecycle</code>, <code>capture-and-clipboard</code>, <code>shell-tray-and-notifications</code>, <code>troubleshooting</code></td></tr>
     <tr><td><code>ffi</code></td><td><code>build-and-link</code>, <code>error-handling</code>, <code>ownership</code>, <code>threading</code></td></tr>

@@ -343,3 +343,7 @@ mod contract_command_surface_tests;
 
 #[cfg(test)]
 mod agent_identity_tests;
+
+#[cfg(test)]
+#[path = "skill_quickstart_cli_tests.rs"]
+mod skill_quickstart_cli_tests;

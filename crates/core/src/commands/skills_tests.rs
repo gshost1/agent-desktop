@@ -272,3 +272,57 @@ fn first_time_setup_section(document: &str) -> String {
         .unwrap_or(rest.len());
     rest[..end].to_owned()
 }
+
+#[test]
+fn desktop_and_macos_serve_the_references_that_hold_moved_rules() {
+    let core_rules = get(GetArgs {
+        name: "desktop".into(),
+        full: false,
+        reference: Some("core-rules".into()),
+    })
+    .expect("core-rules reference");
+    let core_rules = core_rules["content"].as_str().expect("string");
+    assert!(core_rules.contains("## Shell syntax"));
+    assert!(core_rules.contains("identity_not_unique"));
+    assert!(core_rules.contains("Only `not_delivered` is safe"));
+
+    let details = get(GetArgs {
+        name: "macos".into(),
+        full: false,
+        reference: Some("platform-details".into()),
+    })
+    .expect("macOS platform-details reference");
+    let details = details["content"].as_str().expect("string");
+    assert!(details.contains("## First contact"));
+    assert!(details.contains("**Notification Center.**"));
+}
+
+#[test]
+fn always_loaded_skills_stay_quickstart_sized() {
+    for (name, body) in [
+        ("agent-desktop", SKILL_DESKTOP_MAIN),
+        ("agent-desktop-macos", SKILL_MACOS_MAIN),
+    ] {
+        assert!(
+            body.len() <= 3_500,
+            "{name}/SKILL.md is loaded on every agent turn; it grew to {} bytes. \
+             Move detail into a reference instead.",
+            body.len()
+        );
+    }
+}
+
+#[test]
+fn desktop_quickstart_names_every_reference_it_ships() {
+    for reference in SKILL_DESKTOP_REFS {
+        let stem = reference
+            .rel_path
+            .trim_start_matches("references/")
+            .trim_end_matches(".md");
+        assert!(
+            SKILL_DESKTOP_MAIN.contains(&format!("`desktop {stem}`")),
+            "the quickstart's reference table must name `desktop {stem}`"
+        );
+    }
+    assert!(SKILL_DESKTOP_MAIN.contains("`platform`"));
+}

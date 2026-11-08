@@ -10,10 +10,14 @@ const SKILL_DESKTOP_REF_SYSTEM: &str =
     include_str!("../../../../skills/agent-desktop/references/commands-system.md");
 const SKILL_DESKTOP_REF_WORKFLOWS: &str =
     include_str!("../../../../skills/agent-desktop/references/workflows.md");
+const SKILL_DESKTOP_REF_CORE_RULES: &str =
+    include_str!("../../../../skills/agent-desktop/references/core-rules.md");
 
 const SKILL_MACOS_MAIN: &str = include_str!("../../../../skills/agent-desktop-macos/SKILL.md");
 const SKILL_MACOS_REF_TROUBLESHOOTING: &str =
     include_str!("../../../../skills/agent-desktop-macos/references/troubleshooting.md");
+const SKILL_MACOS_REF_PLATFORM_DETAILS: &str =
+    include_str!("../../../../skills/agent-desktop-macos/references/platform-details.md");
 
 const SKILL_WINDOWS_MAIN: &str = include_str!("../../../../skills/agent-desktop-windows/SKILL.md");
 const SKILL_WINDOWS_REF_PERMISSIONS: &str = include_str!(
@@ -81,6 +85,10 @@ const CURRENT_PLATFORM: Option<&str> = if cfg!(target_os = "macos") {
 
 const SKILL_DESKTOP_REFS: &[SkillRef] = &[
     SkillRef {
+        rel_path: "references/core-rules.md",
+        body: SKILL_DESKTOP_REF_CORE_RULES,
+    },
+    SkillRef {
         rel_path: "references/commands-observation.md",
         body: SKILL_DESKTOP_REF_OBSERVATION,
     },
@@ -98,10 +106,16 @@ const SKILL_DESKTOP_REFS: &[SkillRef] = &[
     },
 ];
 
-const SKILL_MACOS_REFS: &[SkillRef] = &[SkillRef {
-    rel_path: "references/troubleshooting.md",
-    body: SKILL_MACOS_REF_TROUBLESHOOTING,
-}];
+const SKILL_MACOS_REFS: &[SkillRef] = &[
+    SkillRef {
+        rel_path: "references/platform-details.md",
+        body: SKILL_MACOS_REF_PLATFORM_DETAILS,
+    },
+    SkillRef {
+        rel_path: "references/troubleshooting.md",
+        body: SKILL_MACOS_REF_TROUBLESHOOTING,
+    },
+];
 
 const SKILL_FFI_REFS: &[SkillRef] = &[
     SkillRef {
@@ -172,7 +186,7 @@ const SKILLS: &[Skill] = &[
     Skill {
         canonical: "agent-desktop",
         aliases: &["desktop", "agent-desktop"],
-        summary: "Core guide for every OS: the snapshot/ref loop, verification and retry rules, and when to open each reference. Load this first, then `skills get platform`.",
+        summary: "Core quickstart for every OS: the common commands, the snapshot/ref loop, retry and headless rules, and when to open each reference. Load this first; most tasks need nothing else.",
         platform: None,
         main: SKILL_DESKTOP_MAIN,
         refs: SKILL_DESKTOP_REFS,
@@ -180,7 +194,7 @@ const SKILLS: &[Skill] = &[
     Skill {
         canonical: "agent-desktop-macos",
         aliases: &["macos", "agent-desktop-macos"],
-        summary: "macOS platform guide: Accessibility and Screen Recording permissions, what differs on macOS, Notification Center, troubleshooting.",
+        summary: "macOS platform guide: permissions, which actions need --headed, menus and surfaces, platform details, troubleshooting.",
         platform: Some("macos"),
         main: SKILL_MACOS_MAIN,
         refs: SKILL_MACOS_REFS,
