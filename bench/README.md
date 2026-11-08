@@ -13,6 +13,27 @@ This bench drives George's own Mac. Every run, probe, replay, Mac verification a
 
 Why: on 2026-11-07 a model-free replay reused recorded element numbers on a Finder menu bar that had changed, clicked an unrelated menu item, and opened George's Pictures folder. Model runs had also started on Finder's default Recents window.
 
+## Go to Folder and other path sheets
+
+The Go to Folder sheet's suggestion table lists George's recent and personal folder paths. Every probe, run and writer brief that touches it:
+
+- types or set-values a full bench path (`~/agent-desktop-bench/...`), never a partial one that the suggestions complete;
+- never snapshots, finds or reads inside the suggestion table;
+- never presses Return while focus is in the suggestions; it checks that the path field holds focus right before the key;
+- verifies navigation only by the bench window's title (macctl `windows`), and closes any window whose title is not a bench folder at once.
+
+Why: on 2026-11-08 a probe's Return most likely landed in the suggestion table after AXConfirm, and a Finder window ended up on a personal folder.
+
+## Window hygiene
+
+A probe leaves 0 windows and 0 sheets behind. Run every probe through `bash bench/probe_slot.sh <owner> <timeout_s> <output> <command...>`: it takes the desktop lock, runs the probe, then `bench/post_probe_check.py`, which fails the probe when a bench Finder window, a sheet on one, a bench TextEdit document or a personal-folder window is left, and closes the leftovers. A window with a sheet ignores its close button, so a probe dismisses the sheet (raise, Escape) before it closes the window and checks by title that it is gone.
+
+Why: on 2026-11-08 eight bench windows with Go to Folder sheets, and one personal-folder window, piled up across probes. Their closes had failed silently.
+
+## Brief template
+
+Every writer or probe brief copies `bench/BRIEF_RULES.md` verbatim.
+
 ## Other rules
 
 - Take the desktop lock (`bash bench/lockq.sh take "<owner>" 5`) for anything that drives the GUI, and release it after.
