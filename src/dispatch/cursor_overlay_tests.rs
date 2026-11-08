@@ -47,6 +47,7 @@ fn start_session() -> String {
         name: None,
         no_trace: true,
         screenshots: false,
+        cursor_overlay: None,
     })
     .expect("session start");
     started["session_id"]
