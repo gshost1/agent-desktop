@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run the GUI matrix one round per lock hold, then yield the lock to the other session's next round.
+# Run the GUI matrix one round per lock hold; the shared waiting list (lock.py → lockq.sh) alternates sessions.
 # Usage: rounds.sh FIRST LAST -- <run.py args without --runs/--start-run>
 # POST_ROUND_CMD (optional) runs after each round while the lock is still held, then the lock is released.
 first=$1; last=$2; shift 3
@@ -12,9 +12,4 @@ for r in $(seq "$first" "$last"); do
   fi
   python3 "$here/lock.py" release "feat/unified-browser bench"
   echo "round $r released $(date -u +%T)"
-  [ "$r" -lt "$last" ] || break
-  for _ in $(seq 1 180); do
-    if [ -f "$lock" ] && ! grep -q "feat/unified-browser" "$lock"; then break; fi
-    sleep 20
-  done
 done
