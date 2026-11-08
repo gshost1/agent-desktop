@@ -72,6 +72,14 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Fix.** Put only the file name in the name field. Choose the folder with the panel, read the folder it shows (the `Where` pop-up or the path in the expanded panel), then click Save. Move the misnamed file yourself; agent-desktop does not undo a save.
 
+## Rename reports success but the old name stays
+
+**Symptom.** After New Folder, or a Rename command, `set-value` on the row's name field reported success, `press return` ran, and the item still has its old name, such as `untitled folder`.
+
+**Cause.** While a row is renamed, a separate editor floats over it and holds the text that Return commits. A write to the row's field underneath changes what that field reports, not what the editor commits.
+
+**Fix.** Write to the editor. Run `snapshot --app <App> --surface focused -i`: while the edit is open, the root is the editor, a `textfield` holding the current name. `set-value` its ref with the new name; the result says `application_commit: "pending"`. Then `press return --app <App>` and confirm the new name with an independent read, such as a listing of the folder. A `set-value` on the row's own field also reaches the editor when it can prove the editor belongs to that field.
+
 ## select does not find the menu
 
 **Symptom.** `select` fails to confirm the choice.

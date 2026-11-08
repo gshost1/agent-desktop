@@ -80,16 +80,18 @@ fn prepare_target(
         crate::system::focus::verify_window_main(&window, deadline)?;
     }
     crate::system::focus::verify_app_focused(pid, deadline)?;
-    prepare(element, deadline)?;
-    if !crate::actions::ax_helpers::ax_focus_or_err(element, deadline)? {
-        return Err(AdapterError::new(
-            ErrorCode::ActionNotSupported,
-            "Target element could not be focused for keyboard input",
-        )
-        .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered()));
+    if !focused_element_matches(element, pid, deadline)? {
+        prepare(element, deadline)?;
+        if !crate::actions::ax_helpers::ax_focus_or_err(element, deadline)? {
+            return Err(AdapterError::new(
+                ErrorCode::ActionNotSupported,
+                "Target element could not be focused for keyboard input",
+            )
+            .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered()));
+        }
+        delivery.mark_delivered();
+        wait_for_focused_element(element, pid, deadline)?;
     }
-    delivery.mark_delivered();
-    wait_for_focused_element(element, pid, deadline)?;
     crate::system::focus::verify_app_focused(pid, deadline)?;
     verify_delivery_target(element, identity, deadline)?;
     Ok(identity)
