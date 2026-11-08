@@ -1,8 +1,12 @@
 use std::path::Path;
 
-use crate::{AppError, Deadline, storage::file_lock::FileLock};
+use crate::{
+    AppError, Deadline, refs::ref_persist_budget::PersistBudget, storage::file_lock::FileLock,
+};
 
-const LOCK_TIMEOUT_MS: u64 = 2_000;
+/// The ref-store lock budget, and so the most a save made after its command
+/// deadline can wait past it.
+pub(crate) const LOCK_TIMEOUT_MS: u64 = 2_000;
 
 pub(crate) struct RefStoreLock {
     _lock: FileLock,
@@ -10,16 +14,14 @@ pub(crate) struct RefStoreLock {
 
 impl RefStoreLock {
     pub(crate) fn acquire(path: &Path) -> Result<Self, AppError> {
-        let deadline = Deadline::after(LOCK_TIMEOUT_MS)?;
-        Self::acquire_with_deadline(path, deadline)
+        Self::acquire_for(path, PersistBudget::Inherited)
     }
 
-    /// Recovery-path lock: the budget is detached from an inherited command
-    /// deadline so an already-built partial snapshot or wait result can still
-    /// be persisted.
-    pub(crate) fn acquire_detached(path: &Path) -> Result<Self, AppError> {
-        let deadline = Deadline::detached_after(LOCK_TIMEOUT_MS)?;
-        Self::acquire_with_deadline(path, deadline)
+    /// Takes the lock within [`LOCK_TIMEOUT_MS`], measured the way `budget`
+    /// says: capped by the inherited command deadline, or detached from it
+    /// once the result being saved has already been observed.
+    pub(crate) fn acquire_for(path: &Path, budget: PersistBudget) -> Result<Self, AppError> {
+        Self::acquire_with_deadline(path, budget.lock_deadline(LOCK_TIMEOUT_MS)?)
     }
 
     pub(crate) fn acquire_with_deadline(path: &Path, deadline: Deadline) -> Result<Self, AppError> {
@@ -106,11 +108,12 @@ mod tests {
     }
 
     #[test]
-    fn acquire_detached_survives_an_expired_inherited_deadline() {
+    fn a_post_observation_lock_survives_an_expired_inherited_deadline() {
         let path = lock_path("detached");
         let inherited = Deadline::after(0).unwrap();
         let _scope = crate::wait::deadline::enter_scope(Some(inherited));
-        let _lock = RefStoreLock::acquire_detached(&path).unwrap();
+        let _lock =
+            RefStoreLock::acquire_for(&path, PersistBudget::DetachedAfterObservation).unwrap();
         assert!(lock_holder_is_live(&path));
     }
 }

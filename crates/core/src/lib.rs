@@ -122,6 +122,10 @@ pub use storage::state_root::validate_state_root_env;
 pub use system::app_info::{AppInfo, AppPresentation, app_name_matches};
 pub use system::app_inventory::AppInventory;
 pub use system::app_inventory_query::AppInventoryQuery;
+pub use system::cdp_endpoint::{
+    devtools_http_ok_body, parse_devtools_version_body, read_devtools_http_response,
+};
+pub use system::devtools_websocket_url::DevtoolsWebSocketUrl;
 pub use system::display_info::DisplayInfo;
 pub use system::image_buffer::{ImageBuffer, MAX_PNG_INPUT_BYTES, parse_png_dimensions};
 pub use system::image_format::ImageFormat;
