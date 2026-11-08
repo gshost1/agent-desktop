@@ -37,7 +37,7 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 - Navigate with `open-url`. It does not raise the browser and returns after the load event.
 - Read `data.channel` in the snapshot. `cdp` means refs act through the page, in the background: the window is not raised and the pointer does not move. `ax` means no endpoint reached the browser; it still works, and `data.suggestion` names the `launch --cdp` command.
 - `-i` keeps interactive nodes only. Leave it out to read page text such as totals, codes or table cells. On a long page, pipe the JSON through `jq` or `grep` instead of reading all of it.
-- `click` returns once the click is delivered. It does not wait for the next page, so a snapshot taken at once can still show the old one. After a link or a submit, check `data.url` in the new snapshot, and snapshot again while it still shows the old page. A ref from the old page then fails with `STALE_REF`.
+- `click` returns once the click is delivered. A snapshot taken right after it waits for the page a link or a submit opens, so take it at once, with no `sleep`. Check `data.url` in the new snapshot: a page that navigates later on its own, on a timer, can still show the old one, so snapshot again. A ref from the old page then fails with `STALE_REF`.
 - The page is the visible tab of the window you name. With several Chrome windows, pass `--window-id` from `list-windows`. `list-surfaces --app "Google Chrome"` lists each open page as a `web` surface.
 
 ## Acting on refs
