@@ -53,7 +53,7 @@ pub(crate) fn execute_poll_loop(
                     ResolvedRefAction::new(RefActionContext::new(context, deadline), &handle);
                 state.preflight_attempts = state.preflight_attempts.saturating_add(1);
                 if let Err(error) = preflight_resolved(&target, request, state.stability()) {
-                    let error = error.into_adapter_error();
+                    let error = error.into_adapter_error().unsent();
                     let focus_pending = request.headed_requirement().requires_focus()
                         && failed_check(&error, "receives_events");
                     let scroll_can_help = should_scroll_after_preflight(request, &error)

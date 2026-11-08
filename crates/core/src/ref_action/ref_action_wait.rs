@@ -80,7 +80,6 @@ fn execute_with_deadline(
     let polls = request.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let mut saw_ambiguity = false;
     let mut refusal: Option<AdapterError> = None;
-    let mut focused = false;
     loop {
         let mut state = if polls {
             execute_poll_loop(context, &request, deadline)
@@ -105,7 +104,6 @@ fn execute_with_deadline(
         }
         let lease_started = std::time::Instant::now();
         let shot = execute_single_shot(context, request.clone(), deadline, &lease, &dispatch);
-        focused |= shot.focused;
         match shot.result {
             Ok(mut result) => {
                 state.attach_transient_ambiguity(&mut result);
@@ -119,8 +117,11 @@ fn execute_with_deadline(
             Err(error) => {
                 drop(lease);
                 crate::ref_action::finish_artifacts(RefActionContext::new(context, deadline), &pre);
-                if !(polls && !focused && resolves_again(&error, deadline)) {
+                if !(polls && resolves_again(&error, deadline)) {
                     return Err(error);
+                }
+                if shot.focused {
+                    return Err(stopped_after_focus(error, &state, refusal.as_ref()));
                 }
                 saw_ambiguity |= error.code == crate::ErrorCode::AmbiguousTarget;
                 refusal = Some(error);
@@ -132,12 +133,13 @@ fn execute_with_deadline(
     }
 }
 
-/// Takes the interaction lease for one dispatch attempt. A failure here does
-/// not go back to the wait: the lease already waits out the whole budget, so a
-/// lease timeout, or a budget spent while it was taken, leaves none to wait
-/// with, and the other lease failures (an unsupported lease, a broken lock
-/// file) do not clear by waiting.
-fn acquire_lease(
+/// Takes the interaction lease, refusing with the deadline's `TIMEOUT` when
+/// the wait for it spent the budget. A failure here does not go back to a
+/// wait: the lease already waits out the whole budget, so a lease timeout, or
+/// a budget spent while it was taken, leaves none to wait with, and the other
+/// lease failures (an unsupported lease, a broken lock file) do not clear by
+/// waiting. Callers mark the refusal `not_delivered`, since nothing was sent.
+pub(crate) fn acquire_lease(
     adapter: &dyn crate::PlatformAdapter,
     deadline: Deadline,
 ) -> Result<crate::InteractionLease, AdapterError> {
@@ -148,10 +150,27 @@ fn acquire_lease(
     Ok(lease)
 }
 
+/// Ends the wait after a refusal that would go back to it but came from an
+/// attempt that ran a focus call, so a command raises a window at most once.
+/// It keeps what the other ends of the wait report: the wait metrics, a
+/// transient ambiguity, and the earlier refusal.
+fn stopped_after_focus(
+    error: AdapterError,
+    state: &RefActionPollState,
+    refusal: Option<&AdapterError>,
+) -> AdapterError {
+    let error = state.attach_error_metrics(error);
+    let error = if state.saw_ambiguity {
+        error.with_detail("transient_ambiguity", serde_json::json!(true))
+    } else {
+        error
+    };
+    with_refusal(error, refusal)
+}
+
 /// Whether a dispatch-time refusal goes back to the wait: the full resolution
 /// under the lease failed in a way that may clear, nothing was sent, and the
-/// caller's budget is not spent. The loop also stops once a focus call has run
-/// for the command, so a command raises a window at most once.
+/// caller's budget is not spent.
 fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
     error.disposition == crate::DeliverySemantics::not_delivered()
         && error.is_retryable_resolution_failure()

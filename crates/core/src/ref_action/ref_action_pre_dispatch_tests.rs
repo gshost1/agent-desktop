@@ -17,6 +17,7 @@ enum Lease {
 enum Focus {
     Raises,
     WindowLookupFails,
+    WindowLookupBusyOnce,
     RaiseFails,
     AppBusy,
 }
@@ -33,7 +34,7 @@ struct PreDispatchAdapter {
     focus: Focus,
     under_lease: UnderLease,
     focus_calls: AtomicU32,
-    stale_once_under_lease: AtomicBool,
+    once: AtomicBool,
     lease_calls: AtomicU32,
     dispatches: AtomicU32,
 }
@@ -45,7 +46,7 @@ impl PreDispatchAdapter {
             focus: Focus::Raises,
             under_lease: UnderLease::Fine,
             focus_calls: AtomicU32::new(0),
-            stale_once_under_lease: AtomicBool::new(false),
+            once: AtomicBool::new(false),
             lease_calls: AtomicU32::new(0),
             dispatches: AtomicU32::new(0),
         }
@@ -60,6 +61,8 @@ impl ObservationOps for PreDispatchAdapter {
     ) -> Result<NativeHandle, AdapterError> {
         if self.under_lease == UnderLease::ResolvesStale
             && self.lease_calls.load(Ordering::SeqCst) > 0
+            && (self.focus != Focus::WindowLookupBusyOnce
+                || self.focus_calls.load(Ordering::SeqCst) > 0)
         {
             return Err(
                 AdapterError::new(ErrorCode::StaleRef, "moved under the lease")
@@ -67,9 +70,7 @@ impl ObservationOps for PreDispatchAdapter {
             );
         }
         let leased = self.lease_calls.load(Ordering::SeqCst) == 1;
-        if self.lease == Lease::TimesOutOnRetry
-            && leased
-            && !self.stale_once_under_lease.swap(true, Ordering::SeqCst)
+        if self.lease == Lease::TimesOutOnRetry && leased && !self.once.swap(true, Ordering::SeqCst)
         {
             return Err(
                 AdapterError::new(ErrorCode::StaleRef, "moved under the lease")
@@ -150,6 +151,10 @@ impl SystemOps for PreDispatchAdapter {
         window: &WindowInfo,
         _: Deadline,
     ) -> Result<WindowInfo, AdapterError> {
+        if self.focus == Focus::WindowLookupBusyOnce && !self.once.swap(true, Ordering::SeqCst) {
+            return Err(AdapterError::timeout("window lookup busy")
+                .with_details(serde_json::json!({ "retryable": true })));
+        }
         if self.focus == Focus::WindowLookupFails {
             return Err(AdapterError::timeout("window lookup"));
         }
@@ -340,5 +345,28 @@ fn a_refusal_after_a_successful_focus_is_not_retried_and_records_the_focus() {
     );
     assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 1);
     assert_eq!(adapter.lease_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.dispatches.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_stop_after_focus_keeps_the_earlier_refusal_and_the_wait_metrics() {
+    let mut adapter = PreDispatchAdapter::new(Lease::Granted);
+    adapter.focus = Focus::WindowLookupBusyOnce;
+    adapter.under_lease = UnderLease::ResolvesStale;
+
+    let error = click(&adapter, ActionRequest::headed(Action::Click));
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    let details = error.details.unwrap();
+    assert_eq!(details["preparatory_focus"], "may_have_moved_focus");
+    assert_eq!(details["refusal"]["code"], "TIMEOUT");
+    assert!(
+        details["auto_wait"]["read_only_resolve_attempts"]
+            .as_u64()
+            .is_some()
+    );
+    assert_eq!(adapter.focus_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.lease_calls.load(Ordering::SeqCst), 2);
     assert_eq!(adapter.dispatches.load(Ordering::SeqCst), 0);
 }

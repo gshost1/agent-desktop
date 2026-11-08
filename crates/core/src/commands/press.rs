@@ -26,8 +26,7 @@ pub fn execute(
 
     let mut pressed_process = None;
     let result = if let Some((expected, window)) = target_app(&args, adapter, deadline)? {
-        let lease = adapter
-            .acquire_interaction_lease(deadline)
+        let lease = crate::ref_action::ref_action_wait::acquire_lease(adapter, deadline)
             .map_err(crate::AdapterError::unsent)?;
         let live = crate::commands::helpers::revalidate_app_for_mutation(
             adapter,
@@ -35,7 +34,8 @@ pub fn execute(
             lease.deadline(),
         )
         .map_err(|error| error.into_adapter_error().unsent())?;
-        let process = crate::commands::helpers::process_identity(&live)?;
+        let process = crate::commands::helpers::process_identity(&live)
+            .map_err(|error| error.into_adapter_error().unsent())?;
         pressed_process = Some(process.pid);
         if context.physical_input_policy().is_headed() {
             match &window {
@@ -58,8 +58,7 @@ pub fn execute(
             adapter.press_key_for_app(process, &combo, context.physical_input_policy(), &lease)?
         }
     } else {
-        let lease = adapter
-            .acquire_interaction_lease(deadline)
+        let lease = crate::ref_action::ref_action_wait::acquire_lease(adapter, deadline)
             .map_err(crate::AdapterError::unsent)?;
         let handle = crate::adapter::NativeHandle::null();
         adapter.execute_action(
