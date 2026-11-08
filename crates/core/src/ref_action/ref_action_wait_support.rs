@@ -130,15 +130,10 @@ pub(crate) fn trace_resolve_error(context: &CommandContext, ref_id: &str, err: &
 /// The preparatory scroll moves the view, never the requested action, so a
 /// refusal after it writes nothing: the disposition says so, and the
 /// `preparatory_scroll` detail records that the view may have changed.
-pub(crate) fn after_scroll(mut error: AdapterError) -> AdapterError {
-    if error.disposition == crate::DeliverySemantics::Unknown {
-        error.disposition = crate::DeliverySemantics::not_delivered();
-    }
-    let details = error.details.get_or_insert_with(|| json!({}));
-    if let Some(details) = details.as_object_mut() {
-        details.insert("preparatory_scroll".into(), "may_have_changed_view".into());
-    }
+pub(crate) fn after_scroll(error: AdapterError) -> AdapterError {
     error
+        .unsent()
+        .with_detail("preparatory_scroll", json!("may_have_changed_view"))
 }
 
 pub(crate) fn trace_scroll_error(
