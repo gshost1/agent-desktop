@@ -43,13 +43,6 @@ def quit_app(name):
     macctl("quit", name)
 
 
-def listing(directory):
-    try:
-        return [p.name for p in directory.iterdir()]
-    except OSError:
-        return []
-
-
 def open_bench_finder_window(folder):
     """Open the task's own bench folder in a front Finder window, so the run never
     starts on Finder's default window (Recents, Home or a personal folder)."""
@@ -187,7 +180,6 @@ class TextEditSave(Task):
         self.text = f"hello from run {self.run_id}"
         self.default_dirs = [Path.home() / "Library/Mobile Documents/com~apple~TextEdit/Documents",
                              Path.home() / "Documents", Path.home() / "Desktop"]
-        self.before = {d: set(listing(d)) for d in self.default_dirs}
 
     def prompt(self):
         return (f"Open TextEdit, create a new document containing exactly the text `{self.text}`, "
@@ -195,8 +187,7 @@ class TextEditSave(Task):
                 f"`{self.folder}`. Reply DONE when it is saved.")
 
     def verify(self, answer):
-        strays = [f"{d.name}/{n}" for d in self.default_dirs for n in set(listing(d)) - self.before[d]
-                  if self.run_id in n or self.stem in n]
+        strays = [f"{p.parent.name}/{p.name}" for p in self.stray_paths()]
         if strays:
             return False, f"stray files outside the target folder {strays}"
         entries = sorted(p.name for p in self.folder.iterdir() if p.name != ".DS_Store")
@@ -210,11 +201,15 @@ class TextEditSave(Task):
         quit_app("TextEdit")
         shutil.rmtree(self.folder, ignore_errors=True)
         quarantine = Path(__file__).resolve().parent / "out" / "icloud-strays"
-        for d in self.default_dirs:
-            for n in set(listing(d)) - self.before[d]:
-                if self.stem in n:
-                    quarantine.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(d / n), str(quarantine / n))
+        for path in self.stray_paths():
+            quarantine.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(quarantine / path.name))
+
+    def stray_paths(self):
+        """This run's own file names in TextEdit's default folders, checked by exact
+        path. The folders themselves are never listed: they hold George's files."""
+        names = [self.stem + ext for ext in ("", ".rtf", ".rtfd", ".txt", ".html", ".docx", ".odt")]
+        return [d / n for d in self.default_dirs for n in names if (d / n).exists()]
 
 
 class CalculatorMultiply(Task):

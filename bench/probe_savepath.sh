@@ -7,6 +7,8 @@
 # type of the full path), goto (cmd+shift+g, set-value the path, return; name
 # field gets only the name), goto-headed (same with --headed press).
 set -u
+echo "probe_savepath.sh is disabled: it lists ~/Documents, ~/Desktop and iCloud Drive and browses from the home folder, which bench/README.md forbids." >&2
+exit 1
 cd "$(dirname "$0")/.."
 B="${1:-bench/out/wt-popup/target/release/agent-desktop}"
 METHODS="${2:-goto browse}"
