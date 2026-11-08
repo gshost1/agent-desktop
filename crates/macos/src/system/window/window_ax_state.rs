@@ -9,6 +9,7 @@ pub(crate) struct WindowAxState {
     pub(crate) focused: Option<AxWindowIdentity>,
     pub(crate) minimized_by_id: FxHashMap<i64, bool>,
     pub(crate) accessible_window_ids: FxHashSet<i64>,
+    pub(crate) title_by_id: FxHashMap<i64, String>,
 }
 
 pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, AdapterError> {
@@ -16,12 +17,15 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
     let focused = focused_identity(&app, pid, deadline)?;
     let mut minimized_by_id = FxHashMap::default();
     let mut accessible_window_ids = FxHashSet::default();
+    let mut title_by_id = FxHashMap::default();
     for_each_window(pid, deadline, |window, window_id| {
         accessible_window_ids.insert(window_id);
-        if let Some(minimized) =
-            crate::tree::surface_read::boolean(window, "AXMinimized", deadline)?
-        {
+        let fields = crate::system::window::window_ax_fields::read_window_fields(window, deadline)?;
+        if let Some(minimized) = fields.minimized {
             minimized_by_id.insert(window_id, minimized);
+        }
+        if let Some(title) = fields.title {
+            title_by_id.insert(window_id, title);
         }
         Ok(())
     })?;
@@ -29,6 +33,7 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
         focused,
         minimized_by_id,
         accessible_window_ids,
+        title_by_id,
     })
 }
 
@@ -41,19 +46,41 @@ pub(crate) fn read_frontmost_until(
         focused: focused_identity(&app, pid, deadline)?,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: FxHashSet::default(),
+        title_by_id: FxHashMap::default(),
     })
 }
 
-pub(crate) fn accessible_window_ids_until(
+/// Lists the accessible window ids of `pid` and reads `AXTitle` only for the
+/// windows in `untitled`. Titles are read after the id walk, so they spend only
+/// the budget the walk leaves and a failed title read is no title.
+pub(crate) fn title_probe_until(
     pid: i32,
+    untitled: &FxHashSet<i64>,
     deadline: Instant,
-) -> Result<FxHashSet<i64>, AdapterError> {
-    let mut ids = FxHashSet::default();
-    for_each_window(pid, deadline, |_, id| {
-        ids.insert(id);
+) -> Result<crate::system::window::window_title::WindowTitleProbe, AdapterError> {
+    let mut accessible_window_ids = FxHashSet::default();
+    let mut needs_title = Vec::new();
+    for_each_window(pid, deadline, |window, id| {
+        accessible_window_ids.insert(id);
+        if untitled.contains(&id) {
+            needs_title.push((window.clone(), id));
+        }
         Ok(())
     })?;
-    Ok(ids)
+    let title_by_id = needs_title
+        .into_iter()
+        .filter_map(|(window, id)| {
+            crate::tree::surface_read::string(&window, "AXTitle", deadline)
+                .ok()
+                .flatten()
+                .filter(|title| !title.is_empty())
+                .map(|title| (id, title))
+        })
+        .collect();
+    Ok(crate::system::window::window_title::WindowTitleProbe {
+        accessible_window_ids,
+        title_by_id,
+    })
 }
 
 fn for_each_window(
@@ -75,7 +102,7 @@ fn for_each_window(
 
 pub(crate) fn label_accessibility(
     windows: &mut [WindowInfo],
-    mut read: impl FnMut(i32) -> Result<FxHashSet<i64>, AdapterError>,
+    mut read: impl FnMut(i32) -> Option<FxHashSet<i64>>,
 ) {
     let mut pids = windows.iter().map(|window| window.pid).collect::<Vec<_>>();
     pids.sort_unstable();
@@ -83,7 +110,7 @@ pub(crate) fn label_accessibility(
     for pid in pids {
         let Some(accessible_ids) = crate::system::process::process_identity::to_pid_t(pid)
             .ok()
-            .and_then(|pid| read(pid).ok())
+            .and_then(&mut read)
         else {
             continue;
         };
@@ -202,14 +229,7 @@ mod tests {
     #[test]
     fn failed_pid_probe_keeps_unknown_window_selectable() {
         let mut windows = vec![window(10, "w-1"), window(20, "w-2")];
-
-        label_accessibility(&mut windows, |pid| {
-            if pid == 10 {
-                Ok(FxHashSet::default())
-            } else {
-                Err(agent_desktop_core::AdapterError::timeout("busy"))
-            }
-        });
+        label_accessibility(&mut windows, |pid| (pid == 10).then(FxHashSet::default));
 
         assert!(!windows[0].state.accessible);
         assert!(windows[1].state.accessible);

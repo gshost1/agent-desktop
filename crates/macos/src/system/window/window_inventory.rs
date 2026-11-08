@@ -143,6 +143,7 @@ fn focus_state(
                 focused: None,
                 minimized_by_id: rustc_hash::FxHashMap::default(),
                 accessible_window_ids: rustc_hash::FxHashSet::default(),
+                title_by_id: rustc_hash::FxHashMap::default(),
             })
         }
         Err(error) => Err(error),
@@ -213,23 +214,13 @@ fn windows_from_records_with_focus(
     >,
     mut verify_instance: impl FnMut(i32, &str) -> Result<bool, AdapterError>,
 ) -> Result<Vec<WindowInfo>, AdapterError> {
-    let candidates = records
+    let mut candidates = records
         .into_iter()
         .filter(|record| record.window_number > 0)
         .collect::<Vec<_>>();
     let visible_pids = visible_window_pids(&candidates);
-    let mut title_counts = std::collections::HashMap::new();
-    for record in &candidates {
-        *title_counts
-            .entry((record.pid, record.display_title().to_owned()))
-            .or_insert(0) += 1;
-    }
-
     let mut state_cache = std::collections::HashMap::new();
-    let mut windows = Vec::new();
-    let mut focused_seen = false;
-
-    for record in candidates {
+    for record in &candidates {
         let process_instance = record.process_instance.as_deref().ok_or_else(|| {
             identity_race_error(
                 record.pid,
@@ -242,25 +233,44 @@ fn windows_from_records_with_focus(
                 "window owner changed before accessibility focus read",
             ));
         }
-        let title_count = title_counts
-            .get(&(record.pid, record.display_title().to_owned()))
-            .copied()
-            .unwrap_or(0);
-        let state = match state_cache.entry(record.pid) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(focus_state(
+        if let std::collections::hash_map::Entry::Vacant(entry) = state_cache.entry(record.pid) {
+            entry.insert(focus_state(
                 &mut ax_state,
                 record.pid,
                 focused_only,
                 visible_pids.contains(&record.pid),
-            )?),
-        };
+            )?);
+        }
         if !verify_instance(record.pid, process_instance)? {
             return Err(identity_race_error(
                 record.pid,
                 "window owner changed after accessibility focus read",
             ));
         }
+    }
+    crate::system::window::window_title::fill_missing_titles(&mut candidates, |pid, number| {
+        state_cache
+            .get(&pid)
+            .and_then(|state| state.title_by_id.get(&number))
+            .map(String::as_str)
+    });
+    let mut title_counts = std::collections::HashMap::new();
+    for record in &candidates {
+        *title_counts
+            .entry((record.pid, record.display_title().to_owned()))
+            .or_insert(0) += 1;
+    }
+
+    let mut windows = Vec::new();
+    let mut focused_seen = false;
+    for record in candidates {
+        let Some(state) = state_cache.get(&record.pid) else {
+            continue;
+        };
+        let title_count = title_counts
+            .get(&(record.pid, record.display_title().to_owned()))
+            .copied()
+            .unwrap_or(0);
         let is_focused = !focused_seen
             && matches_focused_window(
                 record.display_title(),

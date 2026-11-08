@@ -48,22 +48,18 @@ fn capture_global_once(
     focused_only: bool,
     deadline: Instant,
 ) -> Result<Vec<WindowInfo>, AdapterError> {
+    use crate::system::window::window_title;
+    let mut probes = FxHashMap::default();
     let mut windows = capture_global_with(
         focused_only,
         || crate::system::app::workspace_apps::window_owner_snapshot_until(deadline),
         |eligible_pids| {
-            crate::system::window::cg_window::window_records_until(
-                deadline,
-                crate::system::window::cg_window::WindowRecordScope::Pids(eligible_pids),
-            )
+            window_title::titled_records_until(eligible_pids, focused_only, deadline, &mut probes)
         },
         |pid| crate::system::window::window_ax_state::read_frontmost_until(pid, deadline),
     )?;
     crate::system::window::window_ax_state::label_accessibility(&mut windows, |pid| {
-        let probe_deadline = Instant::now()
-            .checked_add(std::time::Duration::from_millis(50))
-            .map_or(deadline, |probe| probe.min(deadline));
-        crate::system::window::window_ax_state::accessible_window_ids_until(pid, probe_deadline)
+        window_title::accessible_ids(&probes, pid, focused_only, deadline)
     });
     Ok(windows)
 }
@@ -146,12 +142,23 @@ pub(in crate::system) fn assemble_global_windows<S: OwnerSnapshotView>(
             windows.first().copied()
         }
     };
+    let focused_title = focus_state
+        .as_ref()
+        .and_then(|state| state.focused.as_ref())
+        .and_then(|(title, _)| title.as_deref());
     records
         .into_iter()
         .filter_map(|record| {
+            let mut record = record;
             let is_focused = Some((record.pid, record.window_number)) == focused_window;
             if focused_only && !is_focused {
                 return None;
+            }
+            if is_focused {
+                crate::system::window::window_title::fill_missing_titles(
+                    std::slice::from_mut(&mut record),
+                    |_, _| focused_title,
+                );
             }
             let minimized = if Some(record.pid) == frontmost_pid {
                 focus_state

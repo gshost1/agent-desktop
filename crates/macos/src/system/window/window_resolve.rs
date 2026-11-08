@@ -49,8 +49,12 @@ pub(crate) fn resolve_window_strict(
     win: &WindowInfo,
     deadline: std::time::Instant,
 ) -> Result<WindowInfo, AdapterError> {
-    let (window_number, record) = locate_verified_record_until(win, deadline)?;
+    let (window_number, mut record) = locate_verified_record_until(win, deadline)?;
     let ax_state = crate::system::window::window_ax_state::read_until(record.pid, deadline)?;
+    crate::system::window::window_title::fill_missing_titles(
+        std::slice::from_mut(&mut record),
+        |_, number| ax_state.title_by_id.get(&number).map(String::as_str),
+    );
     verify_window_record(win, &record)?;
     let mut resolved = window_info_from_record(win, &record)?;
     resolved.state.minimized = ax_state.minimized_by_id.get(&window_number).copied();
@@ -120,9 +124,9 @@ fn window_record_matches_source(
             "window moved or resized while immutable source identity remained valid"
         );
     }
-    let title_changed = evidence.title.is_some_and(|title| {
-        !title.is_empty() && record.title.as_deref().unwrap_or(record.app_name.as_str()) != title
-    });
+    let title_changed = evidence
+        .title
+        .is_some_and(|title| !title.is_empty() && record.display_title() != title);
     if title_changed {
         tracing::debug!("window title changed while immutable source identity remained valid");
     }
@@ -176,10 +180,7 @@ fn window_info_from_record(
 ) -> Result<WindowInfo, AdapterError> {
     Ok(WindowInfo {
         id: win.id.clone(),
-        title: record
-            .title
-            .clone()
-            .unwrap_or_else(|| record.app_name.clone()),
+        title: record.display_title().to_owned(),
         app: record.app_name.clone(),
         pid: crate::system::process::process_identity::from_pid_t(record.pid)?,
         process_instance: record.process_instance.clone(),

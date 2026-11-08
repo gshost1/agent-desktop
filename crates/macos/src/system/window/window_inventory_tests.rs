@@ -37,7 +37,34 @@ fn ax_state(
         focused,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: rustc_hash::FxHashSet::default(),
+        title_by_id: FxHashMap::default(),
     }
+}
+
+#[test]
+fn focus_matching_uses_the_accessibility_filled_title() {
+    let mut untitled = record("AgentDeskFixture", 10, "", 1);
+    untitled.title = None;
+    let mut other = record("AgentDeskFixture", 10, "", 2);
+    other.title = None;
+
+    let windows = windows_from_records_with_focus(
+        vec![untitled, other],
+        false,
+        |_| {
+            let mut state = ax_state(Some((Some("AgentDesk Fixture".to_string()), None)));
+            state.title_by_id.insert(1, "AgentDesk Fixture".to_string());
+            state.title_by_id.insert(2, String::new());
+            Ok(state)
+        },
+        |_, _| Ok(true),
+    )
+    .unwrap();
+
+    assert_eq!(windows[0].title, "AgentDesk Fixture");
+    assert!(windows[0].state.is_focused);
+    assert_eq!(windows[1].title, "AgentDeskFixture");
+    assert!(!windows[1].state.is_focused);
 }
 
 #[test]
