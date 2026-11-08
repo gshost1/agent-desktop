@@ -128,8 +128,10 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 10 | `fix/resolve-error-classification` | REFS-4 | [#17](https://github.com/gshost1/agent-desktop/pull/17) | **merged** 2026-11-08 as `704722ca` (rules 1+2); CI 26/26 on head `8f3b3215`, gates green (4585), 3 review rounds | ready (no fork-only dependency) |
 | 11 | `test/wait-timing-budgets` | CI flakes | [#19](https://github.com/gshost1/agent-desktop/pull/19) | **merged** 2026-11-07 as `f969adc8` (rules 1+2); CI 26/26 on head `686ad47b` | fork-only (test budgets) |
 | 12 | `test/trace-temp-dir-cleanup` | /tmp leak | [#20](https://github.com/gshost1/agent-desktop/pull/20) | open; test-only; leftovers per core run 40 -> 0; gates green (4589); CI dispatched | fork-only (test hygiene) |
-| 13 | `fix/dispatch-delivery-settle` | BINARY-5/1/4/6/7 | – | pushed `46f99167`, gates green (4594); review round 1 being applied (exhaustive Commands::effect, session start/end AppInput, LocalWrite keeps mutating scope, shared entry disposition helper) | – |
+| 13 | `fix/dispatch-delivery-settle` | BINARY-5/1/4/6/7 | [#21](https://github.com/gshost1/agent-desktop/pull/21) | open; head `b25843b0`, gates green (4603), 2 review rounds; CI dispatched | ready (when merged) |
 | 14 | `fix/linux-restore-stale-place` | LIFECYCLE-9 | – | pushed `5cb81a38`, gates green (4603); review round 1 being applied (provisional record before the write, display by bounds, hidden reads keep the record) | – |
+| 15 | `fix/notification-identity-key` | SURFACE-3 (+4) | – | writer started (w15); contract change -> draft, needs-issue-first | – |
+| 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | – | writer started (w16) | – |
 
 ## Needs Mac verification
 
@@ -310,6 +312,11 @@ exists and also runs CI's core Win32-leakage check.
   inline code only (no autolink, no backlink).
 
 ## Found (outside scope)
+
+- Flaky `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` (failed on Linux CI for PR #14's head
+  `075586f6` and once locally on plain `main`): `session/gc.rs:59-82` keeps an ended session that shows recent
+  trace or snapshot activity, and a session started and ended within the same moment can count as recently active.
+  A time-dependent liveness rule; belongs with STATE-6 (GC on manifest-less and stale state).
 
 - Test hygiene: `crates/core/src/trace/trace_read/input_tests.rs:6` (`trace-input-*`) and the `agent-desktop-trace-mod-*`
   tests create directories in the system temp dir and never remove them. One day of gate runs here left 792 + ~900
