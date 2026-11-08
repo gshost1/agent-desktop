@@ -16,7 +16,7 @@ agent-desktop skills get desktop    # the guide your agent should load first
 
 - **A tool that agents call.** It is not an agent. The observe, act, and verify loop lives in the calling agent or script.
 - **No model inside.** It never embeds an LLM, has no GUI, and has no interactive prompt. Every command prints one JSON envelope and exits.
-- **Desktop apps only.** It does not automate web pages; use [agent-browser](https://agent-browser.dev) for those. For the web contents of a Chromium or Electron app you launch, agent-desktop opens a DevTools port that agent-browser connects to. See [Chromium and Electron apps](/desktop/guides/chromium-and-electron).
+- **Desktop apps first.** A page in a Chromium browser you launch with `launch --cdp` is read and driven through the same snapshot and ref loop, as `snapshot --surface web`; see [Chromium and Electron apps](/desktop/guides/chromium-and-electron). For general web automation, use [agent-browser](https://agent-browser.dev).
 - **Limited to what apps expose.** It reads accessibility trees and does not match pixels, so it cannot see a UI that publishes no accessibility tree.
 
 ## The loop in four commands

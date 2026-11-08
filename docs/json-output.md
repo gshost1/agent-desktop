@@ -162,6 +162,31 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 | `timed_out` | The wait budget expired without observing the expected state, including when transient read errors persisted through the last poll. `last_observation_error` may hold the last error. |
 | `identity_unavailable` | The ref has no usable process generation, so observation was skipped. |
 
+## Web channel
+
+The envelope version stays `2.6`. The web channel adds fields and one command; nothing existing changes shape.
+
+`snapshot --surface web --app <browser>` reads the page the browser window shows. When the browser exposes a DevTools endpoint that its own process owns, the page is read over CDP and `data` carries:
+
+| Field | Meaning |
+| --- | --- |
+| `channel` | `"cdp"`: the tree came from the page over the DevTools endpoint. |
+| `url` | The page's URL. |
+| `title` | The page's title. |
+| `suggestion` | Present only when cross-origin frames could not be read and are left out. |
+
+Without such an endpoint, the same command reads the browser window through the accessibility tree and `data` carries `"channel": "ax"` and a `suggestion` naming the `launch --cdp` command that enables the web channel. Snapshots of every other surface carry no `channel`. Refs from a CDP read carry an element token of the form `cdp:<targetId>:<backendNodeId>`, are accepted by every ref command, and act through the page without focusing the window or moving the pointer. A web ref whose page closed, whose node left the page, or whose role or name changed returns `STALE_REF`. Ref action results on web refs carry `details.channel: "cdp"`.
+
+`list-surfaces` adds one entry per open page when an endpoint reaches the browser: `{"id": "<targetId>", "type": "web", "title": "<page title, or its URL>"}`.
+
+`open-url <url> --app <browser> [--new-tab] [--window-id <id>]` loads a URL and waits for the load event. `opened` is `current_tab` when the URL replaced the page the window shows, and `new_tab` for `--new-tab` or for a browser that had no page to replace. `data` is:
+
+```json
+{ "url": "https://example.com/", "title": "Example Domain", "channel": "cdp", "target_id": "4C1E...F0", "opened": "current_tab" }
+```
+
+Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
+
 ## Find result shape
 
 `find` match objects report the element's actual accessibility `name`. Elements

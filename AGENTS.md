@@ -4,8 +4,8 @@ Guidance for AI coding agents working in this repository.
 
 agent-desktop is a tool that AI agents invoke, not an agent. It is a Rust CLI and C library that reads native
 accessibility trees and returns structured JSON with ref-based element ids. The observe-act loop lives in the
-calling agent. It never embeds an LLM and has no GUI or interactive prompt. It does not automate web pages (use
-agent-browser). It cannot see UIs that expose no accessibility tree.
+calling agent. It never embeds an LLM and has no GUI or interactive prompt. It reads and drives a web page only through the
+browser's DevTools endpoint, as the `web` snapshot surface; general web automation belongs to agent-browser. It cannot see UIs that expose no accessibility tree.
 
 ## Critical: fixes must be application-agnostic
 

@@ -43,9 +43,18 @@ The port exists only for a fresh process. `launch` never quits a running app for
 | `cdp_switch_conflict` (`INVALID_ARGS`) | `--arg` carried a `--remote-debugging-*` or `--remote-allow-origins` switch | Drop that `--arg` |
 | `cdp_endpoint_unavailable` | No endpoint answered before the deadline | The app stays running. Use the accessibility path |
 
-Handoff: agent-desktop never talks to the port itself. Check `command -v agent-browser`. If it exists, run `agent-browser connect <port>` and use its snapshot, click and type workflow (`agent-browser skills get electron` has the guide). Playwright, Puppeteer and other CDP clients also work. Do not write raw CDP by hand or call app-internal APIs. If no client exists, ask the user to run `npm install -g agent-browser`, or stay on the accessibility path.
+After `launch --cdp`, agent-desktop drives the web contents itself. Snapshot the page with `--surface web` and act on its refs with the same commands you use on native apps (see `workflows.md`, "Web pages: one loop"). Read `data.channel` in the snapshot: `cdp` means the page was read over the endpoint and its refs act through the page, in the background; `ax` means no endpoint reached the browser, the window was read through the accessibility tree, and `data.suggestion` names the `launch --cdp` command that enables the web channel. The web channel only uses an endpoint whose listener the browser process itself owns: one `launch --cdp` started, or the `DevToolsActivePort` of the browser's default profile.
 
-Keep these on agent-desktop even with CDP connected: the native menu bar, file dialogs and sheets, window management, notifications, screenshots, and any app you did not launch. While the port is open, any local process of the same user can control the app's web contents. Request `--cdp` only for the step that needs it. `close-app` ends the exposure.
+Keep these on the native surfaces: the menu bar, file dialogs and sheets, window management, notifications and screenshots. While the port is open, any local process of the same user can control the browser's web contents. Request `--cdp` only for the task that needs it. `close-app` ends the exposure.
+
+## open-url
+
+```bash
+agent-desktop open-url "https://example.com/" --app "Google Chrome"
+agent-desktop open-url "https://example.com/" --app "Google Chrome" --new-tab
+```
+
+Loads a URL in the tab the browser window shows, or with `--new-tab` in a new background tab, and returns after the page's load event: `{ "url", "title", "channel": "cdp", "target_id", "opened" }`. `opened` is `current_tab` when the URL replaced the shown page and `new_tab` when it went to a new background tab, which also happens when the browser has no page at all (a fresh profile shows only its first-run dialog). It never raises the window or the tab. `--window-id` picks the window when the browser has several. It needs a DevTools endpoint (`launch --cdp`); without one it returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when no one approves in time; do not retry in a loop.
 
 ## close-app
 
