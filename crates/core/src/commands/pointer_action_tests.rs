@@ -145,6 +145,7 @@ fn terminal_stale_ref_is_preserved_after_retry_budget_expires() {
 
     let err = match wait_for_point_with_deadline(
         point_args(&snapshot_id),
+        &mut PointerFocus::new(point_args(&snapshot_id)),
         deadline,
         &adapter,
         &crate::CommandContext::default(),
@@ -213,6 +214,7 @@ fn explicitly_retryable_app_unresponsive_recovers_within_shared_deadline() {
 
     let resolved = wait_for_point_with_deadline(
         point_args(&snapshot_id),
+        &mut PointerFocus::new(point_args(&snapshot_id)),
         deadline,
         &adapter,
         &crate::CommandContext::default(),
@@ -287,6 +289,7 @@ fn an_unchanged_bounds_hash_after_scroll_stops_the_scroll_retries() {
 
     let err = match wait_for_point_with_deadline(
         point_args(&snapshot_id),
+        &mut PointerFocus::new(point_args(&snapshot_id)),
         deadline,
         &adapter,
         &crate::CommandContext::default(),
@@ -347,6 +350,7 @@ fn a_pointer_action_on_a_gone_element_fails_fast_with_stale_ref() {
 
     let Err(err) = wait_for_point_with_deadline(
         point_args(&snapshot_id),
+        &mut PointerFocus::new(point_args(&snapshot_id)),
         crate::Deadline::after(5_000).unwrap(),
         &adapter,
         &crate::CommandContext::default(),

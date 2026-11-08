@@ -9,6 +9,10 @@ use serde_json::{Value, json};
 
 use crate::actionability::pointer_timeout::point_actionability_timeout;
 
+#[path = "pointer_action_focus_phase.rs"]
+mod focus_phase;
+pub(crate) use focus_phase::PointerFocus;
+
 struct EntryPointResolve<'a> {
     ref_id: &'a str,
     entry: &'a RefEntry,
@@ -166,6 +170,7 @@ pub(crate) fn point_deadline(timeout_ms: Option<u64>) -> Result<crate::Deadline,
 
 pub(crate) fn wait_for_point_with_deadline<'a>(
     args: crate::commands::point_resolve::PointResolveArgs<'a>,
+    focus: &mut PointerFocus<'_>,
     deadline: crate::Deadline,
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
@@ -214,7 +219,7 @@ pub(crate) fn wait_for_point_with_deadline<'a>(
                 if point_requires_scroll(&err)
                     && !(observed.is_some() && observed == last_scrolled_bounds_hash)
                 {
-                    scroll_point_target(args, &entry, deadline, adapter, context)?;
+                    scroll_point_target(focus, &entry, deadline, adapter, context)?;
                     last_scrolled_bounds_hash = observed;
                     std::thread::sleep(POLL_INTERVAL.min(deadline.remaining()));
                     continue;
@@ -231,22 +236,6 @@ pub(crate) fn wait_for_point_with_deadline<'a>(
             }
         }
     }
-}
-
-pub(crate) fn focus_point_under_lease(
-    args: crate::commands::point_resolve::PointResolveArgs<'_>,
-    lease: &crate::InteractionLease,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<bool, AppError> {
-    if !args.headed_requirement.requires_focus() {
-        return Ok(false);
-    }
-    let Some(ref_id) = args.ref_id else {
-        return Ok(false);
-    };
-    let entry = load_ref_entry(ref_id, context)?;
-    crate::commands::point_resolve::focus_for_physical_input(Some(&entry), adapter, context, lease)
 }
 
 pub(crate) fn resolve_point_under_lease<'a>(
@@ -306,14 +295,14 @@ pub(crate) fn retry_leased_point_phase<T>(
 }
 
 fn scroll_point_target(
-    args: crate::commands::point_resolve::PointResolveArgs<'_>,
+    focus: &mut PointerFocus<'_>,
     entry: &RefEntry,
     deadline: crate::Deadline,
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<(), AppError> {
     let lease = adapter.acquire_interaction_lease(deadline)?;
-    focus_point_under_lease(args, &lease, adapter, context)?;
+    focus.ensure(&lease, adapter, context)?;
     let handle = resolve_handle_within_deadline(adapter, entry, deadline, Some(&lease))?;
     adapter.scroll_into_view(&handle, &lease)?;
     Ok(())

@@ -6,9 +6,9 @@ use crate::{
         operation_response::operation_response,
         point_resolve::{PointResolveArgs, require_cursor_policy, require_pointer_capability},
         pointer_action::{
-            PointResolveAttempt, before_first_event, ensure_point_deadline,
-            focus_point_under_lease, point_deadline, resolve_point_under_lease,
-            retry_leased_point_phase, wait_for_point_with_deadline,
+            PointResolveAttempt, PointerFocus, before_first_event, ensure_point_deadline,
+            point_deadline, resolve_point_under_lease, retry_leased_point_phase,
+            wait_for_point_with_deadline,
         },
     },
     context::CommandContext,
@@ -67,14 +67,16 @@ pub fn execute(
     };
     let auto_wait = args.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let cursor = crate::cursor_overlay::hold_cursor(context, deadline);
+    let mut focus = PointerFocus::new(from_args);
     let (from, to, lease, params) = before_first_event(|| {
         if auto_wait {
-            wait_for_point_with_deadline(from_args, deadline, adapter, context)?;
-            wait_for_point_with_deadline(to_args, deadline, adapter, context)?;
+            wait_for_point_with_deadline(from_args, &mut focus, deadline, adapter, context)?;
+            let mut to_focus = PointerFocus::new(to_args);
+            wait_for_point_with_deadline(to_args, &mut to_focus, deadline, adapter, context)?;
         }
         let (from, to, lease) = retry_leased_point_phase(args.timeout_ms, deadline, || {
             let lease = adapter.acquire_interaction_lease(deadline)?;
-            let focused = focus_point_under_lease(from_args, &lease, adapter, context)?;
+            let focused = focus.ensure(&lease, adapter, context)?;
             let from = resolve_point_under_lease(
                 PointResolveAttempt {
                     args: from_args,
