@@ -118,6 +118,36 @@ class LaunchChromeTest(unittest.TestCase):
         self.assertFalse((self.work / "profile" / "Default" / "Preferences.tmp").exists())
 
 
+class LaunchChromeAdTest(unittest.TestCase):
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp(prefix="launch-ad-test."))
+        self.addCleanup(run.shutil.rmtree, self.work, True)
+
+    def test_agent_desktop_launches_chrome_on_the_run_profile_with_its_home(self):
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen["cmd"], seen["env"] = cmd, kwargs["env"]
+            seen["prefs"] = (self.work / "profile" / "Default" / "Preferences").exists()
+            return mock.Mock(stdout=json.dumps({"ok": True, "data": {"pid": 4242}}), stderr="")
+
+        with mock.patch.object(run.subprocess, "run", fake_run):
+            chrome = run.launch_chrome_ad("ad", self.work / "home", self.work / "profile", self.work / "dl", [])
+        self.assertEqual(chrome.pid, 4242)
+        self.assertTrue(seen["prefs"])
+        self.assertEqual(seen["cmd"][:6], ["ad", "launch", "Google Chrome", "--cdp", "--download-dir", str(self.work / "dl")])
+        self.assertIn(f"--arg=--user-data-dir={self.work / 'profile'}", seen["cmd"])
+        self.assertIn("--arg=--no-first-run", seen["cmd"])
+        self.assertEqual(seen["env"]["AGENT_DESKTOP_HOME"], str(self.work / "home"))
+
+    def test_a_failed_launch_raises_so_the_session_discards_the_profile(self):
+        failed = mock.Mock(stdout=json.dumps({"ok": False, "error": {"code": "APP_NOT_FOUND"}}), stderr="")
+        with mock.patch.object(run.subprocess, "run", return_value=failed), \
+             mock.patch.object(run, "profile_processes", return_value=[]):
+            with self.assertRaises(RuntimeError):
+                run.launch_chrome_ad("ad", self.work / "home", self.work / "profile", self.work / "dl", [])
+
+
 class StopChromeTest(unittest.TestCase):
     def test_stop_waits_until_no_helper_runs_on_the_profile(self):
         helpers = [[11, 12], [12], []]

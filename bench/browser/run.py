@@ -41,14 +41,7 @@ def http_json(url):
 
 def launch_chrome(profile, port, downloads, extra):
     """Start Chrome on a profile folder that did not exist before this call; it is complete before launch."""
-    profile.mkdir(parents=True)
-    (profile / "Default").mkdir()
-    prefs = {"download": {"default_directory": str(downloads), "prompt_for_download": False},
-             "profile": {"default_content_setting_values": {"automatic_downloads": 1}},
-             "browser": {"has_seen_welcome_page": True}}
-    staged = profile / "Default" / "Preferences.tmp"
-    staged.write_text(json.dumps(prefs))
-    os.replace(staged, profile / "Default" / "Preferences")
+    write_profile(profile, downloads)
     args = [CHROME, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
             "--disable-sync", "--password-store=basic", "--use-mock-keychain"] + extra
     if port:
@@ -67,6 +60,55 @@ def launch_chrome(profile, port, downloads, extra):
             time.sleep(0.3)
     stop_chrome(proc, profile)
     raise RuntimeError("chrome devtools endpoint never came up (a startup dialog blocks it)")
+
+
+class LaunchedChrome:
+    """A Chrome that agent-desktop launched through Launch Services: not this process's child, so it is polled by pid."""
+
+    def __init__(self, pid):
+        self.pid = pid
+
+    def poll(self):
+        try:
+            os.kill(self.pid, 0)
+            return None
+        except ProcessLookupError:
+            return 0
+
+
+def write_profile(profile, downloads):
+    profile.mkdir(parents=True)
+    (profile / "Default").mkdir()
+    prefs = {"download": {"default_directory": str(downloads), "prompt_for_download": False},
+             "profile": {"default_content_setting_values": {"automatic_downloads": 1}},
+             "browser": {"has_seen_welcome_page": True}}
+    staged = profile / "Default" / "Preferences.tmp"
+    staged.write_text(json.dumps(prefs))
+    os.replace(staged, profile / "Default" / "Preferences")
+
+
+def ad_launch_command(ad, profile, downloads, extra):
+    flags = [f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+             "--disable-sync", "--password-store=basic", "--use-mock-keychain"] + extra
+    return [ad, "launch", "Google Chrome", "--cdp", "--download-dir", str(downloads)] + [f"--arg={f}" for f in flags]
+
+
+def launch_chrome_ad(ad, home, profile, downloads, extra):
+    """The ad-web channel: agent-desktop launches Chrome with its own DevTools endpoint, recorded under `home`."""
+    write_profile(profile, downloads)
+    env = dict(os.environ, AGENT_DESKTOP_HOME=str(home))
+    p = subprocess.run(ad_launch_command(ad, profile, downloads, extra), capture_output=True, text=True, timeout=60, env=env)
+    try:
+        data = json.loads(p.stdout)
+    except ValueError:
+        data = {}
+    pid = (data.get("data") or {}).get("pid")
+    if not data.get("ok") or not pid:
+        if profile_processes(profile):
+            for pid_left in profile_processes(profile):
+                os.kill(pid_left, signal.SIGTERM)
+        raise RuntimeError(f"agent-desktop launch --cdp failed: {p.stdout.strip()[:300]} {p.stderr.strip()[:200]}")
+    return LaunchedChrome(pid)
 
 
 def profile_processes(profile):
@@ -114,14 +156,14 @@ class BenchDialog(RuntimeError):
 
 
 @contextlib.contextmanager
-def chrome_session(profile, port, downloads, extra, ad=None):
+def chrome_session(profile, port, downloads, extra, ad=None, launcher=None):
     """Launch Chrome on a new profile; stop it, wait for every process to exit, then delete the profile.
 
     With `ad`, a dialog on screen after launch fails the run: the session closes Chrome, so it never stays up.
     """
     proc = None
     try:
-        proc = launch_chrome(profile, port, downloads, extra)
+        proc = (launcher or launch_chrome)(profile, port, downloads, extra)
         if ad and "--headless=new" not in extra:
             dialogs = bench_dialogs(ad)
             if dialogs:
@@ -150,7 +192,8 @@ def channel_prompt(channel, cdp_port):
           "agent-browser command. Learn it with `agent-browser skills get core` before you start.")
     adweb = ("You operate this Mac and its web pages only through the `agent-desktop` CLI (on PATH). "
              "For web pages, learn it with `agent-desktop skills get web` before you start; only if the task "
-             "also needs a native app, read `agent-desktop skills get desktop` too.")
+             "also needs a native app, read `agent-desktop skills get desktop` too. agent-desktop already launched "
+             "Chrome with its DevTools endpoint, so do not launch it again.")
     common = (" Google Chrome is already open. Do not use any other program (no curl, osascript, open, python). "
               "When finished, reply with one line: DONE <answer if the task asks for one>.")
     return {"ax": ad, "cdp": ab, "hybrid": ab + " For native macOS apps use the `agent-desktop` CLI (on PATH): " + ad,
@@ -211,7 +254,11 @@ def run_one(args, task, channel, run_idx, out):
     cdp_port = args.cdp_port if channel in ("cdp", "hybrid") else None
     stack = contextlib.ExitStack()
     try:
-        chrome = stack.enter_context(chrome_session(work / "profile", cdp_port, downloads, args.chrome_arg, ad=args.ad))
+        launcher = None
+        if channel == "ad-web":
+            launcher = lambda profile, port, dl, extra: launch_chrome_ad(args.ad, work / "ad-home", profile, dl, extra)
+        chrome = stack.enter_context(chrome_session(work / "profile", cdp_port, downloads, args.chrome_arg, ad=args.ad,
+                                                    launcher=launcher))
     except RuntimeError as e:
         row = {"task": task["id"], "channel": channel, "run": run_idx, "model": args.model, "ok": False,
                "why": f"bench launch failed: {e}"}
