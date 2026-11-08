@@ -38,6 +38,7 @@ pub(super) fn close_app(
         close_app_command::CloseAppArgs {
             app: args.app,
             force: args.force,
+            timeout_ms: args.timeout_ms,
         },
         adapter,
     )

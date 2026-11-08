@@ -60,9 +60,10 @@ The Linux windows reference includes a Bash recipe that selects a fresh Close re
 ```bash
 agent-desktop close-app "TextEdit"
 agent-desktop close-app "TextEdit" --force
+agent-desktop close-app "TextEdit" --timeout-ms 15000
 ```
 
-Success is reported only after the process is seen gone: `{ "method": "graceful" | "force", "disposition": { "delivery": "delivered_unverified" | "delivered_verified" | "not_delivered" }, "target": { "kind": "app", ... } }`. `not_delivered` means the app had already exited. Read `disposition`, not `ok`, to learn what was proved. If a save dialog appears, snapshot it and answer it. `--force` ends the process. Protected system processes return `INVALID_ARGS` with `not_delivered`, not `PERM_DENIED`.
+Success is reported only after the process is seen gone: `{ "method": "graceful" | "force", "disposition": { "delivery": "delivered_unverified" | "delivered_verified" | "not_delivered" }, "target": { "kind": "app", ... } }`. `not_delivered` means the app had already exited, or exited on its own before the close was sent. `--timeout-ms` (default 5000) bounds the whole close: finding the app and waiting for the desktop lease get the first half, and sending the close and confirming the exit keep the second half. `TIMEOUT` with `not_delivered` means the lease never came free and nothing was sent; retry. `TIMEOUT` with `delivered_unverified` means the app was still running at the deadline; check `list-apps` before retrying. Read `disposition`, not `ok`, to learn what was proved. If a save dialog appears, snapshot it and answer it. `--force` ends the process. Protected system processes return `INVALID_ARGS` with `not_delivered`, not `PERM_DENIED`.
 
 ## list-apps
 

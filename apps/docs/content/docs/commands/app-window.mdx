@@ -93,7 +93,7 @@ Platform limits: the accepted `APP` forms differ by OS. See [macOS](/desktop/pla
 Quits an app and all its windows, and succeeds only after the process is seen gone. No command closes a single window: click that window's Close button instead.
 
 ```bash
-agent-desktop close-app <APP> [--force]
+agent-desktop close-app <APP> [--force] [--timeout-ms MS]
 ```
 
 <table>
@@ -103,6 +103,7 @@ agent-desktop close-app <APP> [--force]
   <tbody>
     <tr><td><code>APP</code></td><td>required</td><td>Application name as <code>list-apps</code> prints it.</td></tr>
     <tr><td><code>--force</code></td><td>off</td><td>Terminate the process instead of quitting gracefully.</td></tr>
+    <tr><td><code>--timeout-ms MS</code></td><td><code>5000</code></td><td>Upper bound for the whole close. Finding the app and waiting for another command to finish get the first half; the second half is kept for sending the close and confirming the exit.</td></tr>
   </tbody>
 </table>
 
@@ -130,9 +131,10 @@ agent-desktop close-app <APP> [--force]
 }
 ```
 
-`method` is `graceful` or `force`. If the app had already exited, the report is `not_delivered` with `details.evidence: "process_instance_not_running"`. Errors specific to `close-app`:
+`method` is `graceful` or `force`. If the app had already exited, the report is `not_delivered` with `details.evidence: "process_instance_not_running"`. An app that exits while the close is in progress is reported the same way, or as `delivered_verified` when the close request was sent. Errors specific to `close-app`:
 
 - `APP_NOT_FOUND` when no running app matches, `AMBIGUOUS_TARGET` when several instances share the name.
+- `TIMEOUT` with `not_delivered` when another command held the desktop until the first half of the budget ran out. Nothing was sent, so retry. `TIMEOUT` with `delivered_unverified` means the close was sent but the app was still running at the deadline.
 - `INVALID_ARGS` for a protected system process, with or without `--force`.
 - A save prompt keeps the app open. Read it with `snapshot --surface sheet`, answer it, then close again.
 

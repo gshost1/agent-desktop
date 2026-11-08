@@ -126,10 +126,17 @@ pub(crate) fn instance_matches_launch_time(
     Ok(parse_token(pid, token)?.matches_launch_time(launch_time))
 }
 
+/// The identity a core process names, without asking whether it still runs.
+pub(crate) fn parse_core(
+    process: &agent_desktop_core::ProcessIdentity,
+) -> Result<ProcessIdentity, AdapterError> {
+    parse_token(to_pid_t(process.pid)?, &process.instance)
+}
+
 pub(crate) fn require_core(
     process: &agent_desktop_core::ProcessIdentity,
 ) -> Result<ProcessIdentity, AdapterError> {
-    let expected = parse_token(to_pid_t(process.pid)?, &process.instance)?;
+    let expected = parse_core(process)?;
     if expected.still_matches()? {
         Ok(expected)
     } else {
