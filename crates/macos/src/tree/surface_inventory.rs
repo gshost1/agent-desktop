@@ -1,47 +1,70 @@
 use crate::tree::{AXElement, properties::element::element_for_pid};
-use agent_desktop_core::{AdapterError, SurfaceInfo};
+use agent_desktop_core::{AdapterError, ErrorCode, SurfaceInfo};
 use std::time::Instant;
 
 pub(crate) fn list_surfaces_for_process(
     identity: crate::system::process::process_identity::ProcessIdentity,
     deadline: Instant,
 ) -> Result<Vec<SurfaceInfo>, AdapterError> {
-    super::app_menu::observe(identity, deadline, || {
-        list_surfaces_once(identity.pid(), deadline)
-    })
+    let pid = identity.pid();
+    let windows = super::app_menu::observe(identity, deadline, || {
+        focused_window_surfaces(pid, deadline)
+    })?;
+    let menus = super::app_menu::observe(identity, deadline, || open_menu_surfaces(pid, deadline));
+    combine_surfaces(windows, menus)
 }
 
-fn list_surfaces_once(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
+fn focused_window_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let app = element_for_pid(pid);
-    list_surfaces_with(
-        deadline,
-        || {
-            let mut surfaces = Vec::new();
-            if let Some(window) = read_element(&app, "AXFocusedWindow", deadline)? {
-                collect_window_surfaces(&window, "focused-window", deadline, &mut surfaces)?;
-            }
-            Ok(surfaces)
-        },
-        || {
-            let mut surfaces = Vec::new();
-            for (kind, id, menu) in super::app_menu::open_menus_for_pid(pid, deadline)? {
-                push_menu_surface(&menu, kind, id, deadline, &mut surfaces)?;
-            }
-            Ok(surfaces)
-        },
-    )
+    let mut surfaces = Vec::new();
+    if let Some(window) = read_element(&app, "AXFocusedWindow", deadline)? {
+        collect_window_surfaces(&window, "focused-window", deadline, &mut surfaces)?;
+    }
+    Ok(surfaces)
 }
 
-fn list_surfaces_with(
-    deadline: Instant,
-    window_surfaces: impl FnOnce() -> Result<Vec<SurfaceInfo>, AdapterError>,
-    menu_surfaces: impl FnOnce() -> Result<Vec<SurfaceInfo>, AdapterError>,
-) -> Result<Vec<SurfaceInfo>, AdapterError> {
-    ensure_before_deadline(deadline)?;
-    let mut surfaces = menu_surfaces()?;
-    surfaces.extend(window_surfaces()?);
-    ensure_before_deadline(deadline)?;
+fn open_menu_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    let mut surfaces = Vec::new();
+    for (kind, id, menu) in super::app_menu::open_menus_for_pid(pid, deadline)? {
+        push_menu_surface(&menu, kind, id, deadline, &mut surfaces)?;
+    }
     Ok(surfaces)
+}
+
+/// Proving that no context menu is open takes a walk of the whole application
+/// tree, which a large application does not finish inside a short budget. The
+/// sheets and alerts of the focused window were already read, so an unfinished
+/// menu scan keeps them and marks the menu kind unread on the application's
+/// menu bar, the owner of every macOS menu. A missing `menu` entry is then
+/// never mistaken for an observed absence.
+fn combine_surfaces(
+    windows: Vec<SurfaceInfo>,
+    menus: Result<Vec<SurfaceInfo>, AdapterError>,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    match menus {
+        Ok(mut surfaces) => {
+            surfaces.extend(windows);
+            Ok(surfaces)
+        }
+        Err(error) if menu_scan_unfinished(&error) => {
+            let mut surfaces = windows;
+            surfaces.push(SurfaceInfo {
+                id: UNREAD_MENU_OWNER_ID.into(),
+                kind: "menubar".into(),
+                title: None,
+                item_count: None,
+                unclassified: vec!["menu".into()],
+            });
+            Ok(surfaces)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+const UNREAD_MENU_OWNER_ID: &str = "app/menubar";
+
+fn menu_scan_unfinished(error: &AdapterError) -> bool {
+    matches!(error.code, ErrorCode::AppUnresponsive | ErrorCode::Timeout)
 }
 
 fn push_menu_surface(
@@ -142,10 +165,6 @@ fn read_element(
     deadline: Instant,
 ) -> Result<Option<AXElement>, AdapterError> {
     crate::tree::surface_read::element(element, attribute, deadline)
-}
-
-fn ensure_before_deadline(deadline: Instant) -> Result<(), AdapterError> {
-    crate::tree::surface_read::ensure_before_deadline(deadline)
 }
 
 #[cfg(test)]
