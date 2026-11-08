@@ -8,6 +8,10 @@ if [ -z "${AGENT_DESKTOP_INTERACTION_LEASE_FD:-}" ]; then
         echo "macOS is required for the native accessibility E2E suite" >&2
         exit 2
     fi
+    if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+        echo "python3 3.10 or newer is required; found $(python3 --version 2>&1). Put a newer python3 first on PATH" >&2
+        exit 2
+    fi
     if [ "${AGENT_DESKTOP_E2E_EXCLUSIVE:-}" != "1" ]; then
         echo "SKIP (blocked): native E2E requires an exclusive desktop" >&2
         exit 2
@@ -154,7 +158,7 @@ if [ "$fixture_owned" -eq 0 ] || "$bin" close-app "$app" --force >/dev/null 2>&1
         if python3 "$repo/scripts/cursor-multi-agent-probe.py" \
             --bin "$raw_bin" \
             --fixture "$fixture_app/Contents/MacOS/AgentDeskFixture" \
-            --out "$suite_root/multi-agent-cursor-$mode" "${cursor_flags[@]}"; then
+            --out "$suite_root/multi-agent-cursor-$mode" ${cursor_flags[@]+"${cursor_flags[@]}"}; then
             okmsg "$mode multi-agent cursors share session state and preserve renderer isolation"
         else
             badmsg "$mode multi-agent cursor probe failed"
