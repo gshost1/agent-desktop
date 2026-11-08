@@ -9,6 +9,8 @@ cd "$(dirname "$0")/.."
 root="$PWD"
 out=bench/out/check_window_title.txt; : > "$out"
 export AGENT_DESKTOP_HOME="$root/bench/out/home-probe"
+git -C bench/out/wt-wintitle fetch -q origin && git -C bench/out/wt-wintitle checkout -q --detach origin/fix/window-title-from-ax
+echo "head $(git -C bench/out/wt-wintitle rev-parse --short HEAD)" | tee -a "$out"
 (cd bench/out/wt-wintitle && nice cargo build --release -q -p agent-desktop)
 fixture=bench/out/perf-wt-cold/fixture/AgentDeskFixture.app/Contents/MacOS/AgentDeskFixture
 AGENT_DESKTOP_FIXTURE_NO_ACTIVATE=1 "$fixture" >/dev/null 2>&1 &
