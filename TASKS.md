@@ -110,6 +110,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 71a | ACTION-12 | Pointer retry loop re-focus | core `commands/pointer_action.rs:~250` (`retry_leased_point_phase`, `focus_point_under_lease`, `scroll_point_target`) | headed `hover`/`drag` call `focus_entry_window` on every retry attempt, raising the window up to every 100 ms for the whole `--timeout`; ref actions now focus once per command (ACTION-1) | repeated focus round trips | B | C (review of ACTION-1) | none | planned |
 | 71b | ACTION-13 | `preparatory_focus` parity outside ref actions | core `commands/press.rs`, `commands/pointer_action.rs` | headed `press` and pointer commands that fail after a successful focus call do not carry `details.preparatory_focus`, unlike ref actions | – | B (low) | C (review of ACTION-1) | none | planned |
 | 71c | SURFACE-12 | macOS Notification Center empty read before windows populate | macos `notifications/` NcSession `list_entries` (`windows.is_empty()` early return) | opening Notification Center and reading before its AXWindows exist returns `Ok(vec![])`, a settled "no notifications" answer instead of a retryable read; a wait seed or record taken from it lets existing notifications look new | – | B | S (code review of SURFACE-2) | none | planned (mac draft) |
+| 71d | STATE-20 | FFI native handles outlive their adapter | ffi `actions/native_handle.rs`, `adapter.rs` | `ad_adapter_destroy` leaves the adapter's native handles in the per-thread `HANDLES` map until `ad_free_handle` or thread exit, so platform objects are released after the adapter's runtime teardown (leak per destroyed adapter on long-lived threads) | – | B (low) | C (code review of STATE-1) | none | planned |
 | – | D rows | REFS-8, REFS-9, ACTION-11, BINARY-13, BINARY-14, LIFECYCLE-13/14/15, STATE-2, STATE-3, STATE-19, SURFACE-11, ADAPTERS-11..18 | see `audit/` | no reachable illegal transition found, or code clarity only | small | D | – | – | – |
 
 ## PRs (fork only)
@@ -133,9 +134,9 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 15 | `fix/notification-identity-key` | SURFACE-3 | [#34](https://github.com/gshost1/agent-desktop/pull/34) (draft) | head `82709a44` (main `89a3723e`), tests 4654/0, review applied; draft: contract change + device checks | needs-issue-first (new list field and --key flag) |
 | 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | [#23](https://github.com/gshost1/agent-desktop/pull/23) | open; head `43711bc2` (main `ec3add89`), gates green (4639), 2 review rounds; CI dispatched | ready (when merged) |
 | 17 | `fix/session-start-atomic` | STATE-5 / BINARY-10 | [#35](https://github.com/gshost1/agent-desktop/pull/35) | open; head `1519ad1c` (main `89a3723e`), gates green (4635), review applied; CI on pull_request | ready (when merged; upstream register item 12) |
-| 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | – | writer started (w18) | – |
-| 19 | `fix/ffi-last-error-code` | STATE-1 (+2/3) | – | writer started (w19) | – |
-| 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | open; test-only (250 ms -> 5 s for the success cases); turned #23's CI red | fork-only (test budgets) |
+| 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | – | pushed `6a3a71c1`, tests green (4639); review round 1 being applied (uncertain close + gone = delivered_unverified, refusals surface, confirm slice waits); macOS edit -> draft | – |
+| 19 | `fix/ffi-last-error-code` | STATE-1 / STATE-2 / STATE-3 (docs) | – | pushed `9c4138e7`, gates green (4633); review round 1 being applied (every site returns set_last_error, must_use) | – |
+| 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | **merged** 2026-11-08 as `a7d301d7` (rules 1+2); CI 13/13 on head `17f6ece2`, gates green (4630) | fork-only (test budgets) |
 | 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | **merged** 2026-11-08 as `89a3723e` (rules 1+2); CI 13/13 on head `a690a037` | fork-only (test isolation) |
 
 ## Needs Mac verification
@@ -329,7 +330,7 @@ exists and also runs CI's core Win32-leakage check.
   each time; work survived in the worktrees (uncommitted) and writers were resumed. Writers now commit and push early. Restarts traced to memory pressure (4-5 parallel Rust builds on 14 GB, swap full); limit is now two builds at a time.
 - CI flake queue (each gets a small test PR): `wait_selector` gone-wait 250 ms (PR #29, also hit the Mac session's
   `feat/press-menu-shortcut`); npm bundled fixture race (PR #31); Windows `context::scope_tests::a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease`
-  failed once on `main` run 42450666424 (not yet fixed); `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` (see below).
+  failed once on `main` run 42450666424 (not yet fixed); `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` and `dispatch::session::tests::session_gc_ended_reclaims_an_ended_session_that_recorded_trace_events` (same time-dependent GC liveness rule, see below).
 
 - Flaky `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` (failed on Linux CI for PR #14's head
   `075586f6` and once locally on plain `main`): `session/gc.rs:59-82` keeps an ended session that shows recent
