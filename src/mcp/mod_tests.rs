@@ -5,7 +5,7 @@ fn server() -> Server {
         tools: catalog::tools(),
         globals: Vec::new(),
         calls: calls::Calls::default(),
-        lease: lease_inheritance::LeaseInheritance::Owned,
+        lease: Arc::new(lease_inheritance::LeaseInheritance::Owned),
     }
 }
 

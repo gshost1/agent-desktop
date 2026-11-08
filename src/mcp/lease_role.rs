@@ -3,13 +3,15 @@
 use clap::Parser;
 
 use crate::cli::{Cli, Commands};
-use crate::command_policy::{PermissionNeed, policy_for};
+use crate::command_policy::requires_permission_report;
 
-/// `Exclusive` for a call that can inject input or steal focus: it changes something, reads the permission
-/// report (which can release stuck keys), or reads notifications with `--headed`. It holds the lease alone,
-/// one at a time in arrival order. `Shared` for a read that may take the lease itself, such as renderer
-/// accessibility activation: it injects no input, so it gets the lease beside the holder. `Unused` for a
-/// command that never takes the lease and needs no platform permission: its child gets nothing.
+/// `Exclusive` for a call that can inject input or steal focus: it changes something (`permissions
+/// --request` included) or reads notifications with `--headed`. It holds the lease alone, one at a time in
+/// arrival order. `Shared` for a read that may take the lease itself, such as the permission report or
+/// renderer accessibility activation, so it gets the lease beside the holder. A shared read sends no input
+/// under it: the one input a read can send, the stale-input sweep of the permission report, runs only under
+/// a lease its process owns, never under an adopted one. `Unused` for a command that reads no permission
+/// report and so never takes the lease: its child gets nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LeaseRole {
     Exclusive,
@@ -34,16 +36,12 @@ impl LeaseRole {
     }
 
     fn of(command: &Commands, headed: bool) -> Self {
-        let steals_focus = headed && reads_notifications(command);
-        if command.is_mutating()
-            || steals_focus
-            || matches!(command, Commands::Status | Commands::Permissions(_))
-        {
+        if command.is_mutating() || (headed && reads_notifications(command)) {
             Self::Exclusive
-        } else if policy_for(command) == PermissionNeed::None {
-            Self::Unused
-        } else {
+        } else if requires_permission_report(command) {
             Self::Shared
+        } else {
+            Self::Unused
         }
     }
 }
@@ -55,3 +53,7 @@ fn reads_notifications(command: &Commands) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+#[path = "lease_role_tests.rs"]
+mod tests;

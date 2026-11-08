@@ -49,14 +49,14 @@ pub(crate) fn command() -> Command {
 
 /// Serves MCP over stdin and stdout until stdin closes, then finishes the tool calls already running.
 /// At most `MAX_CONCURRENT_CALLS` calls run at once, and a message longer than `MAX_MESSAGE_BYTES` is refused unread.
-/// Under an interaction lease inherited from the parent, calls that may take the lease run one at a time,
-/// in arrival order.
+/// Under an interaction lease inherited from the parent, calls that can inject input or steal focus run one
+/// at a time, in arrival order, each waiting for its turn at most `inherited_lease::QUEUE_WAIT_BOUND`.
 pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
     let server = Arc::new(Server {
         tools: catalog::tools(),
         globals: forwarded_globals(matches),
         calls: calls::Calls::default(),
-        lease: lease_inheritance::LeaseInheritance::from_env(),
+        lease: Arc::new(lease_inheritance::LeaseInheritance::from_env()),
     });
     let out = Arc::new(Mutex::new(std::io::stdout()));
     let mut input = std::io::stdin().lock();
@@ -98,11 +98,18 @@ pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
                 continue;
             }
         }
-        let ticket = server.lease.register(message.get("id"));
-        running.push(std::thread::spawn(move || {
-            let place = queued_ticket::QueuedTicket::new(&server.lease, ticket);
-            server.respond(&out, &message, place.ticket());
-        }));
+        let id = message.get("id").cloned();
+        let ticket = server.lease.register(id.as_ref());
+        let place = queued_ticket::QueuedTicket::new(Arc::clone(&server.lease), ticket);
+        let (call_server, call_out) = (Arc::clone(&server), Arc::clone(&out));
+        let started = place.run_on(
+            |body| std::thread::Builder::new().spawn(body),
+            move |ticket| call_server.respond(&call_out, &message, ticket),
+        );
+        match started {
+            Ok(call) => running.push(call),
+            Err(error) => server.respond_unstarted(&out, id, &error),
+        }
     }
     for call in running {
         let _ = call.join();
@@ -138,7 +145,7 @@ struct Server {
     tools: Vec<catalog::Tool>,
     globals: Vec<String>,
     calls: calls::Calls,
-    lease: lease_inheritance::LeaseInheritance,
+    lease: Arc<lease_inheritance::LeaseInheritance>,
 }
 
 impl Server {
@@ -186,6 +193,22 @@ impl Server {
             out,
             &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
         );
+    }
+
+    fn respond_unstarted(
+        &self,
+        out: &Mutex<std::io::Stdout>,
+        id: Option<Value>,
+        error: &std::io::Error,
+    ) {
+        let Some(id) = id.filter(|id| self.calls.finish(id)) else {
+            return;
+        };
+        let error = RpcError::new(
+            -32603,
+            format!("Cannot start a thread for this call: {error}"),
+        );
+        write_line(out, &error.response(id));
     }
 
     fn handle(

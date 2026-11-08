@@ -40,7 +40,7 @@ pub(super) fn call(
     let lease = match server.lease.child_lease(ticket, role) {
         Ok(lease) => lease,
         Err(LeaseRefusal::Cancelled) => return error_result(CANCELLED),
-        Err(LeaseRefusal::Unusable(error)) => return refused(tool, &error),
+        Err(LeaseRefusal::Refused(error)) => return refused(tool, &error),
     };
     let mut command = child_command(&exe, &server.globals, &argv, &lease);
     let (stdout, stderr) = match server.calls.start(id, &mut command) {

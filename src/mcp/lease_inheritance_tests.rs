@@ -1,7 +1,7 @@
 use super::*;
 use crate::mcp::call::child_command;
 use crate::mcp::queued_ticket::QueuedTicket;
-use agent_desktop_core::{AppError, ErrorCode};
+use agent_desktop_core::{AppError, DeliverySemantics, ErrorCode};
 use serde_json::json;
 use std::ffi::OsStr;
 use std::path::Path;
@@ -252,26 +252,36 @@ fn a_call_thread_that_unwinds_before_its_turn_gives_up_its_place() {
 }
 
 #[test]
-fn an_unusable_inherited_value_refuses_lease_calls_at_once_and_withholds_it_from_the_rest() {
+fn an_unusable_inherited_value_refuses_exclusive_calls_at_once_and_runs_the_rest_without_it() {
     let lease = LeaseInheritance::Unusable {
         variable: TEST_VARIABLE,
         value: "2".to_owned(),
     };
-    for role in [LeaseRole::Exclusive, LeaseRole::Shared] {
-        let Err(LeaseRefusal::Unusable(error)) = lease.child_lease(None, || role) else {
-            panic!("{role:?} must be refused");
+    let Err(LeaseRefusal::Refused(AppError::Adapter(error))) =
+        lease.child_lease(None, || LeaseRole::Exclusive)
+    else {
+        panic!("an exclusive call must be refused with an adapter error");
+    };
+    assert_eq!(error.code, ErrorCode::PolicyDenied);
+    assert!(error.message.contains("AGENT_DESKTOP_MCP_LEASE_TEST=2"));
+    for role in [LeaseRole::Shared, LeaseRole::Unused] {
+        let Ok(child) = lease.child_lease(None, || role) else {
+            panic!("a {role:?} call must run without the unusable variable");
         };
-        let AppError::Adapter(error) = error else {
-            panic!("an adapter error");
-        };
-        assert_eq!(error.code, ErrorCode::PolicyDenied);
-        assert!(error.message.contains("AGENT_DESKTOP_MCP_LEASE_TEST=2"));
+        assert_eq!(lease_variable(&child), Some(None), "{role:?}");
     }
-    let unused = lease
-        .child_lease(None, || LeaseRole::Unused)
-        .ok()
-        .expect("unused");
-    assert_eq!(lease_variable(&unused), Some(None));
+}
+
+#[test]
+fn an_exclusive_call_with_no_place_in_line_is_an_internal_refusal() {
+    let lease = inherited();
+    let Err(LeaseRefusal::Refused(AppError::Adapter(error))) =
+        lease.child_lease(None, || LeaseRole::Exclusive)
+    else {
+        panic!("an exclusive call without a ticket must be refused with an answer");
+    };
+    assert_eq!(error.code, ErrorCode::Internal);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
 }
 
 #[test]
@@ -285,44 +295,6 @@ fn without_an_inherited_lease_children_are_left_to_take_it_themselves() {
     ] {
         let child = owned.child_lease(None, || role).ok().expect("owned call");
         assert_eq!(lease_variable(&child), None);
-    }
-}
-
-#[test]
-fn input_and_focus_are_exclusive_reads_are_shared_and_lease_free_commands_get_nothing() {
-    let role = |globals: &[&str], argv: &[&str]| LeaseRole::of_call(&words(globals), &words(argv));
-    for argv in [
-        &["status"][..],
-        &["permissions"],
-        &["click", "--", "@s8f3k2p9:e1"],
-        &["press", "--", "ctrl+c"],
-        &["clipboard-get", "--out=/tmp/x"],
-        &["no-such-command"],
-    ] {
-        assert_eq!(role(&[], argv), LeaseRole::Exclusive, "{argv:?}");
-    }
-    for argv in [&["list-notifications"][..], &["wait", "--notification"]] {
-        assert_eq!(role(&["--headed"], argv), LeaseRole::Exclusive, "{argv:?}");
-        assert_eq!(role(&[], argv), LeaseRole::Shared, "{argv:?}");
-    }
-    for argv in [
-        &["snapshot"][..],
-        &["find", "--role=button"],
-        &["wait", "--text=Done"],
-        &["screenshot"],
-        &["list-surfaces"],
-    ] {
-        assert_eq!(role(&["--headed"], argv), LeaseRole::Shared, "{argv:?}");
-    }
-    for argv in [
-        &["list-apps"][..],
-        &["list-windows"],
-        &["list-displays"],
-        &["version"],
-        &["skills", "list"],
-        &["clipboard-get"],
-    ] {
-        assert_eq!(role(&[], argv), LeaseRole::Unused, "{argv:?}");
     }
 }
 

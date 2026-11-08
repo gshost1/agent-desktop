@@ -3,20 +3,32 @@
 //! Every child that adopts the inherited descriptor shares one open file description, and taking a lock
 //! through a description that already holds it always succeeds, so the lock cannot tell siblings apart.
 //! The slot does: a call that can inject input or steal focus receives the variable naming the lease only
-//! while it holds the slot, and the slot passes on only after its child has been reaped. Reads that inject
-//! no input share the lease beside the holder, and commands that never take it get nothing. On Unix the
+//! while it holds the slot, and the slot passes on only after its child has been reaped. Reads that may
+//! take the lease share it beside the holder; they send no input under it, because the stale-input sweep
+//! runs only under a lease its process owns, never under an adopted one. Commands that never take the
+//! lease get nothing, and an unusable inherited value refuses only exclusive calls. On Unix the
 //! descriptor itself is close-on-exec in this server and opened up only in a child the lease is lent to.
-//! On Windows exclusivity rests on the variable alone: the inherited handle stays inheritable, so every
-//! child holds a copy it never adopts.
+//! An exclusive call waits for its turn at most `QUEUE_WAIT_BOUND` and is then refused with TIMEOUT.
+//!
+//! Known limits. On Windows exclusivity rests on the variable alone: the inherited handle stays
+//! inheritable, so every child holds a copy it never adopts, and any integer value is taken for a handle.
+//! A call waiting for its turn counts against the server's `MAX_CONCURRENT_CALLS`. Each call parses its
+//! command line once more to find its `LeaseRole`.
 
+use agent_desktop_core::{AdapterError, AppError, DeliverySemantics, ErrorCode};
 use std::ffi::OsString;
 use std::process::Command;
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use super::child_lease::ChildLease;
+use super::lease_refusal::LeaseRefusal;
 use super::lease_slot::{LeaseSlot, Ticket};
 use super::slot_step::SlotStep;
+
+/// How long an exclusive call waits for its turn before it is refused; the CLI's default wait budget.
+pub(crate) const QUEUE_WAIT_BOUND: Duration = Duration::from_secs(30);
 
 pub(crate) struct InheritedLease {
     variable: &'static str,
@@ -25,6 +37,7 @@ pub(crate) struct InheritedLease {
     descriptor: Option<std::os::fd::RawFd>,
     slot: Mutex<LeaseSlot>,
     changed: Condvar,
+    queue_bound: Duration,
 }
 
 impl InheritedLease {
@@ -36,7 +49,14 @@ impl InheritedLease {
             descriptor: None,
             slot: Mutex::default(),
             changed: Condvar::new(),
+            queue_bound: QUEUE_WAIT_BOUND,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_queue_bound(mut self, queue_bound: Duration) -> Self {
+        self.queue_bound = queue_bound;
+        self
     }
 
     /// Lends `descriptor`, already close-on-exec in this server, to each child the lease is lent to.
@@ -54,15 +74,28 @@ impl InheritedLease {
         self.lock().register(id)
     }
 
-    /// Waits for the slot in arrival order and lends the lease to `ticket`; `None` when it was cancelled.
-    pub(crate) fn lend_to(&self, ticket: Ticket) -> Option<ChildLease<'_>> {
+    /// Waits for the slot in arrival order and lends the lease to `ticket`. Refused when it was cancelled
+    /// first, and with TIMEOUT, out of line, when its turn has not come within the queue bound.
+    pub(crate) fn lend_to(&self, ticket: Ticket) -> Result<ChildLease<'_>, LeaseRefusal> {
+        let started = Instant::now();
         let mut slot = self.lock();
         loop {
             match slot.advance(ticket) {
-                SlotStep::Take => return Some(ChildLease::Lent(self, ticket)),
-                SlotStep::Wait => slot = self.wait(slot),
-                _ => return None,
+                SlotStep::Take => return Ok(ChildLease::Lent(self, ticket)),
+                SlotStep::Wait => {}
+                _ => return Err(LeaseRefusal::Cancelled),
             }
+            let remaining = self.queue_bound.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                slot.forget(ticket);
+                drop(slot);
+                self.changed.notify_all();
+                return Err(LeaseRefusal::Refused(queue_timeout(self.queue_bound)));
+            }
+            slot = self
+                .changed
+                .wait_timeout(slot, remaining)
+                .map_or_else(|poisoned| poisoned.into_inner().0, |(slot, _)| slot);
         }
     }
 
@@ -117,6 +150,19 @@ impl InheritedLease {
     }
 }
 
+fn queue_timeout(bound: Duration) -> AppError {
+    AdapterError::new(
+        ErrorCode::Timeout,
+        format!(
+            "The inherited interaction lease is held by an earlier call; this call waited {} ms for its turn and did not run",
+            bound.as_millis()
+        ),
+    )
+    .with_suggestion("Retry once the earlier call has finished")
+    .with_disposition(DeliverySemantics::not_delivered())
+    .into()
+}
+
 #[cfg(unix)]
 fn lend_descriptor(command: &mut Command, descriptor: Option<std::os::fd::RawFd>) {
     use std::os::unix::process::CommandExt;
@@ -136,3 +182,7 @@ fn open_to_child(descriptor: std::os::fd::RawFd) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "inherited_lease_tests.rs"]
+mod tests;
