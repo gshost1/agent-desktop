@@ -118,7 +118,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 1 | `fix/carry-upstream-602-state-transitions` | upstream #1-#8 | [#1](https://github.com/gshost1/agent-desktop/pull/1) | **merged** 2026-11-07 as `c4d39615`; CI 13/13 green on head, gates green (4402), reviews done | overlaps `#602` (goes back as a note to its author, not as our PR) |
 | 2 | `fix/type-interval-post-delivery-state` | ACTION-2 | [#2](https://github.com/gshost1/agent-desktop/pull/2) | **merged** 2026-11-07 as `f6a426db`; CI 13/13 green on head `de04c3a9`, gates green (4404), E2E no regression vs `main` | ready (no dependency on fork-only work) |
 | 3 | `fix/ref-action-pre-dispatch-phase` | ACTION-1 | [#10](https://github.com/gshost1/agent-desktop/pull/10) | **merged** 2026-11-07 as `4e9420d0`; CI green on head `3b203a7f` (dispatch + pull_request runs), gates green (4423), 4 review rounds | ready (builds on the `#602` carry, so upstream needs `#602` first or a rebase) |
-| 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | pushed `2cac4100`, rebased; review round 1 done; gates green (4413) | ready (when merged; touches `src/mcp/calls.rs`, which `#602` also changes) |
+| 4 | `fix/mcp-inherited-lease-exclusive` | STATE-9 | – | local head `1d4e515e` (round 3, gates green 4435, not pushed); round 4 with a fresh writer: stale-input sweep only under an owned lease (security F1), bounded slot wait, Unusable refuses Exclusive only | ready (when merged; touches `src/mcp/calls.rs`, which `#602` also changes) |
 | 5 | `fix/capture-verdict-not-ambiguous` | REFS-2 | – | pushed `7736b3e6`, rebased; envelope 2.7 done; gates red on 4 lock-contention tests (re-run needed); draft when opened | needs-issue-first (changes the JSON contract: envelope 2.6 -> 2.7, AMBIGUOUS_TARGET -> STALE_REF) |
 
 ## Needs Mac verification
@@ -250,6 +250,12 @@ Release `disabled_manually` (a push to `main` touching it would cut a fork relea
 control thread.
 
 ## Incidents
+
+- 2026-11-07: the harness flagged the STATE-9 writer for a possible "security weakening" action. I stopped it and
+  checked: nothing outside the worktree changed (`~/.claude/settings.json` untouched since Nov 3, `core.hooksPath`
+  intact, lock dir still 0700), its last commit was not pushed, and its code matched the decided design. A
+  read-only security review of that commit found no deliberate weakening but one real hole (Shared reads run the
+  Linux stale-input sweep under the adopted lease); a fresh writer fixes it in round 4.
 
 - PR #1's first body (2026-11-07) mentioned the upstream author with a bare @-handle and linked upstream PR 602 by
   URL. Fixed within a minute, but GitHub already notified the author and recorded a cross-reference on upstream
