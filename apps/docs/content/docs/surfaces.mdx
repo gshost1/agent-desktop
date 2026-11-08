@@ -63,7 +63,7 @@ You rarely need to poll for a surface. `click`, `double-click`, `right-click`, `
 }
 ```
 
-A `menu`, `sheet`, or `alert` entry means the app is waiting on that overlay. Observe it next with `snapshot --surface` or `find --surface`. The field is omitted when nothing is open or the read failed.
+A `menu`, `sheet`, or `alert` entry means the app is waiting on that overlay. Observe it next with `snapshot --surface` or `find --surface`. The read gets at most one second after the action. The field is omitted when nothing is open or the read failed, and an entry whose `unclassified` names a kind means that kind could not be read in time. Neither proves the overlay is closed: when you expect one, snapshot that surface.
 
 ## Snapshot or search a surface
 
@@ -150,7 +150,7 @@ agent-desktop list-surfaces --app gtk3-widget-factory
 }
 ```
 
-`list-surfaces` returns the overlays an app presents now, which are the kinds `snapshot --surface` accepts for it. Shell surfaces belong to the OS and never appear here. An entry can carry `"unclassified": ["sheet"]` or `["menu"]` when the check could not read that window, often because the app was busy. Treat the missing entry as unknown, not absent.
+`list-surfaces` returns the overlays an app presents now, which are the kinds `snapshot --surface` accepts for it. Shell surfaces belong to the OS and never appear here. An entry can carry `"unclassified": ["sheet"]` or `["menu"]` when the check could not read that window, often because the app was busy. Treat the missing entry as unknown, not absent. On macOS menus belong to the application, and proving none is open walks the whole app tree. When that walk cannot finish, the sheets and alerts already read are kept and an `app/menubar` entry carries `"unclassified": ["menu"]`.
 
 ## Open an OS shell surface
 
