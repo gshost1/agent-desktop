@@ -239,6 +239,9 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     tasks = [t for t in TASKS if args.tasks == "all" or t["id"] in args.tasks.split(",")]
+    for t in [t for t in tasks if t.get("held")]:
+        print(f"skipping {t['id']}: {t['held']}", flush=True)
+    tasks = [t for t in tasks if not t.get("held")]
     if args.no_lock and "--headless=new" not in args.chrome_arg:
         sys.exit("--no-lock needs --chrome-arg=--headless=new")
     if not args.no_lock:

@@ -1,40 +1,25 @@
-"""Stray-save check: a run fails if it leaves files in the iCloud TextEdit folder or names starting with ':'.
+"""Stray-save check: a run fails if it leaves a fresh file whose name starts with ':' in its work folder.
 
 A Save panel given a full path as the file name saves `:private:tmp:...` into its default folder and the
-tool still reports success. Strays are moved (never deleted) into the run's results folder.
+tool still reports success. Only folders the bench created are read: the user's personal folders (Documents,
+Desktop, Downloads, iCloud, Pictures and the rest) are never opened or listed. Strays are moved (never
+deleted) into the run's results folder.
 """
 import shutil
-import subprocess
 from pathlib import Path
-
-ICLOUD_TEXTEDIT = Path.home() / "Library/Mobile Documents/com~apple~TextEdit/Documents"
-WATCHED = [ICLOUD_TEXTEDIT, Path.home() / "Documents", Path.home() / "Desktop", Path.home() / "Downloads"]
-
-
-def _list(folder):
-    try:
-        out = subprocess.run(["ls", "-A", str(folder)], capture_output=True, text=True, timeout=10).stdout
-    except Exception:
-        return []
-    return [folder / n for n in out.splitlines() if n]
 
 
 def collect_strays(since, work, dest):
     found = []
-    for folder in WATCHED + [Path(work)]:
-        for p in _list(folder):
-            try:
-                fresh = p.lstat().st_mtime >= since
-            except OSError:
-                continue
-            if not fresh:
-                continue
-            if folder == ICLOUD_TEXTEDIT or p.name.startswith(":"):
+    for p in Path(work).rglob(":*"):
+        try:
+            if p.is_file() and p.lstat().st_mtime >= since:
                 found.append(p)
+        except OSError:
+            continue
     moved = []
     for p in found:
         Path(dest).mkdir(parents=True, exist_ok=True)
-        target = Path(dest) / p.name
-        shutil.move(str(p), str(target))
+        shutil.move(str(p), str(Path(dest) / p.name))
         moved.append(f"{p.parent.name}/{p.name[-60:]}")
     return moved

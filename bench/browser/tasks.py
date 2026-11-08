@@ -7,6 +7,8 @@ from pathlib import Path
 WEB = ["ax", "cdp", "hybrid", "ad-web"]
 CROSS = ["ax", "hybrid", "ad-web"]
 
+PERSONAL_FOLDERS_HOLD = ("held: the Save panel and a new Finder window start in the user's personal folders "
+                         "(iCloud, Documents, Recents), and no bench may open or read those")
 TASKS = [
     {"id": "w1", "channels": WEB,
      "prompt": "In Google Chrome, open {base}/w1/ and tell me the order total shown on the page."},
@@ -19,13 +21,13 @@ TASKS = [
                 "and confirm. Tell me the confirmation code.")},
     {"id": "w4", "channels": WEB,
      "prompt": "In Google Chrome, open {base}/w4/ and tell me how many units of '{exp[w4_name]}' are in stock."},
-    {"id": "x1", "channels": CROSS, "kill": ["TextEdit"],
+    {"id": "x1", "channels": CROSS, "kill": ["TextEdit"], "held": PERSONAL_FOLDERS_HOLD,
      "prompt": ("In Google Chrome, open {base}/x1/ and copy the quote text. Put it into a new plain-text TextEdit "
                 "document (Format > Make Plain Text) and save it through the Save dialog as {work}/x1.txt .")},
     {"id": "x2", "channels": CROSS, "kill": ["Calculator"],
      "prompt": ("In Google Chrome, open {base}/x2/ , read the units and the unit price, then use the Calculator app "
                 "to multiply them. Leave the product on Calculator's display.")},
-    {"id": "x3", "channels": CROSS, "kill": ["Finder-noop"],
+    {"id": "x3", "channels": CROSS, "kill": ["Finder-noop"], "held": PERSONAL_FOLDERS_HOLD,
      "prompt": ("In Google Chrome, open {base}/x3/ and download the weekly report. Chrome saves downloads to "
                 "{downloads} . Then, in Finder, go to that folder and rename the downloaded file to x3-done.csv .")},
 ]
