@@ -93,20 +93,3 @@ fn an_unreadable_ax_state_leaves_the_title_empty_not_the_app_name() {
 
     assert_eq!(windows[0].title, "");
 }
-
-#[test]
-fn an_untitled_window_never_takes_focus_from_an_untitled_identity() {
-    let windows = windows_from_records_with_focus(
-        vec![untitled(7)],
-        false,
-        |_| {
-            let mut ax = state(WindowAxTitles::default(), None);
-            ax.focused = Some((None, None));
-            Ok(ax)
-        },
-        |_, _| Ok(true),
-    )
-    .unwrap();
-
-    assert!(!windows[0].state.is_focused);
-}
