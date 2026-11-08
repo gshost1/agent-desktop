@@ -95,6 +95,10 @@ while IFS= read -r line <&3; do
         case "$entry" in sh:*) bash "${entry#sh:}" < /dev/null; continue ;; esac
         IFS=: read -r task cfg model tree <<< "$entry"
         echo "== round $label task $task config $cfg model $model tree ${tree:-bench}"
+        if [ -n "$tree" ] && ! bash bench/check_binary_tree.sh "$tree"; then
+            echo "round $label: binary in $tree is not from its own tree; entry skipped"
+            continue
+        fi
         python3 bench/driver.py --task "$task" --config "$cfg" --model "$model" ${tree:+--tree "$tree"} < /dev/null || echo "driver failed"
     done
     log "round $label done"
