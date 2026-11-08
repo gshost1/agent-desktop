@@ -204,7 +204,7 @@ fn find_materializes_refs_from_the_application_surface() {
 fn a_missing_document_window_does_not_satisfy_a_menu_disappearance_wait() {
     let _guard = HomeGuard::new();
     let adapter = MenuAdapter::windowless();
-    for gone in [false, true] {
+    for (gone, timeout_ms) in [(false, 10_000), (true, 30)] {
         let result = wait_selector::execute(
             wait_selector::WaitSelectorInput {
                 query_raw: "menuitem:Help".into(),
@@ -212,7 +212,7 @@ fn a_missing_document_window_does_not_satisfy_a_menu_disappearance_wait() {
                 app: Some("MenuApp".into()),
                 window_id: None,
                 opts: options(SnapshotSurface::Menubar),
-                timeout_ms: 30,
+                timeout_ms,
             },
             &adapter,
             &CommandContext::default(),

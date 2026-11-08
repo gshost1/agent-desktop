@@ -84,7 +84,7 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Symptom.** `press return --app <App>` on a sheet, such as Finder's Go to Folder after `set-value` on its path field, fails with `ACTION_FAILED` and `details.modal_key.effect: "none_observed"`, and the sheet is still open.
 
-**Cause.** The text field accepted the confirm action, but the sheet acts only on a Return it sees through its own key handling, and the real key that followed changed nothing either. Some sheets ignore keys sent to an app in the background.
+**Cause.** The text field accepted the confirm action, but the sheet acts only on a Return it sees through its own key handling. `press` then put focus back on the field and sent a real key, and the sheet still neither closed nor gave way to another. Some sheets ignore keys sent to an app in the background.
 
 **Fix.** Do not repeat the same press; the disposition is `retry: unsafe`. Run `snapshot --app <App> --surface sheet -i`. Click the default button by ref when `default_button` is `true`. Otherwise send the key once more with `--headed`, which brings the window forward before the real key. To dismiss the sheet, click its Close or Cancel button.
 

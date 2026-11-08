@@ -2,7 +2,7 @@ use agent_desktop_core::{ErrorCode, Point};
 use serde_json::json;
 
 use super::quad_center;
-use crate::act::act_fixture::{deadline, proven, session, token};
+use crate::act::act_fixture::{deadline, laid_out, metrics, proven, session, token};
 use crate::transport::scripted_transport::ScriptedTransport;
 use crate::{CdpConnection, click, scroll_into_view};
 
@@ -16,13 +16,9 @@ fn the_center_of_a_quad_is_the_mean_of_its_corners() {
 }
 
 #[test]
-fn click_presses_and_releases_at_the_box_center_without_a_separate_liveness_check() {
-    let transport = proven(ScriptedTransport::new())
-        .expect("DOM.scrollIntoViewIfNeeded", json!({}))
-        .expect(
-            "DOM.getBoxModel",
-            json!({ "model": { "border": [0, 0, 100, 0, 100, 40, 0, 40] } }),
-        )
+fn click_presses_and_releases_at_the_box_center_once_the_point_hits_the_node() {
+    let transport = boxed_node()
+        .expect("DOM.getNodeForLocation", json!({ "backendNodeId": 9 }))
         .expect("Input.dispatchMouseEvent", json!({}))
         .expect("Input.dispatchMouseEvent", json!({}));
     let sent = transport.sent_log();
@@ -32,11 +28,55 @@ fn click_presses_and_releases_at_the_box_center_without_a_separate_liveness_chec
 
     assert_eq!(point, Point { x: 50.0, y: 20.0 });
     let sent = sent.lock().unwrap();
-    assert_eq!(sent.len(), 5);
-    assert_eq!(sent[3]["params"]["type"], "mousePressed");
-    assert_eq!(sent[3]["params"]["x"], 50.0);
-    assert_eq!(sent[4]["params"]["type"], "mouseReleased");
-    assert_eq!(sent[4]["params"]["button"], "left");
+    assert_eq!(sent.len(), 7);
+    assert_eq!(sent[4]["method"], "DOM.getNodeForLocation");
+    assert_eq!(sent[5]["params"]["type"], "mousePressed");
+    assert_eq!(sent[5]["params"]["x"], 50.0);
+    assert_eq!(sent[6]["params"]["type"], "mouseReleased");
+    assert_eq!(sent[6]["params"]["button"], "left");
+}
+
+#[test]
+fn a_click_whose_point_another_element_covers_sends_no_input() {
+    let transport = boxed_node()
+        .expect("DOM.getNodeForLocation", json!({ "backendNodeId": 31 }))
+        .expect(
+            "DOM.resolveNode",
+            json!({ "object": { "objectId": "target" } }),
+        )
+        .expect(
+            "DOM.resolveNode",
+            json!({ "object": { "objectId": "hit" } }),
+        )
+        .expect(
+            "Runtime.callFunctionOn",
+            json!({ "result": { "type": "boolean", "value": false } }),
+        )
+        .expect("Runtime.releaseObject", json!({}))
+        .expect("Runtime.releaseObject", json!({}));
+    let sent = transport.sent_log();
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let error = click(&mut connection, &session(), &token(9), deadline()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(
+        error.details.as_ref().unwrap()["kind"],
+        "cdp_click_intercepted"
+    );
+    assert!(
+        sent.lock()
+            .unwrap()
+            .iter()
+            .all(|request| request["method"] != "Input.dispatchMouseEvent")
+    );
+}
+
+fn boxed_node() -> ScriptedTransport {
+    laid_out(
+        proven(ScriptedTransport::new()).expect("DOM.scrollIntoViewIfNeeded", json!({})),
+        json!([[0, 0, 100, 0, 100, 40, 0, 40]]),
+    )
 }
 
 #[test]
@@ -72,7 +112,12 @@ fn a_lost_session_during_scroll_is_target_gone_not_stale() {
 fn a_hidden_element_has_no_box_to_click() {
     let transport = proven(ScriptedTransport::new())
         .expect("DOM.scrollIntoViewIfNeeded", json!({}))
-        .expect_error("DOM.getBoxModel", -32000, "Could not compute box model.");
+        .expect("Page.getLayoutMetrics", metrics(0.0))
+        .expect_error(
+            "DOM.getContentQuads",
+            -32000,
+            "Could not compute content quads.",
+        );
     let mut connection = CdpConnection::new(transport.boxed());
 
     let error = click(&mut connection, &session(), &token(9), deadline()).unwrap_err();

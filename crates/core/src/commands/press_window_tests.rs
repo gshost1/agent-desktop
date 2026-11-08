@@ -130,6 +130,7 @@ fn press_with(
             combo: "cmd+k".into(),
             app: app.map(str::to_owned),
             window_id: window_id.map(str::to_owned),
+            ref_id: None,
             force: false,
         },
         adapter,

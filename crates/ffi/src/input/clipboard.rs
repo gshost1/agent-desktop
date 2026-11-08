@@ -34,19 +34,15 @@ pub unsafe extern "C" fn ad_get_clipboard(
                 };
                 let c = string_to_c(&text);
                 if c.is_null() {
-                    error::set_last_error(&agent_desktop_core::AdapterError::new(
+                    return error::set_last_error(&agent_desktop_core::AdapterError::new(
                         agent_desktop_core::ErrorCode::Internal,
                         "clipboard text contains an interior NUL and cannot be represented as a C string",
                     ));
-                    return AdResult::ErrInternal;
                 }
                 *out = c;
                 AdResult::Ok
             }
-            Err(e) => {
-                error::set_last_error(&e);
-                error::last_error_code()
-            }
+            Err(e) => error::set_last_error(&e),
         }
     })
 }
@@ -67,8 +63,7 @@ pub unsafe extern "C" fn ad_set_clipboard(
         let text = match required_adapter_string(text, "text") {
             Ok(text) => text,
             Err(error) => {
-                error::set_last_error(&error);
-                return AdResult::ErrInvalidArgs;
+                return error::set_last_error(&error);
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
@@ -78,10 +73,7 @@ pub unsafe extern "C" fn ad_set_clipboard(
             .set_clipboard_content(&ClipboardContent::Text(text), &lease)
         {
             Ok(_) => AdResult::Ok,
-            Err(e) => {
-                error::set_last_error(&e);
-                error::last_error_code()
-            }
+            Err(e) => error::set_last_error(&e),
         }
     })
 }
@@ -98,10 +90,7 @@ pub unsafe extern "C" fn ad_clear_clipboard(adapter: *const AdAdapter) -> AdResu
         let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
         match adapter.inner.clear_clipboard(&lease) {
             Ok(_) => AdResult::Ok,
-            Err(e) => {
-                error::set_last_error(&e);
-                error::last_error_code()
-            }
+            Err(e) => error::set_last_error(&e),
         }
     })
 }

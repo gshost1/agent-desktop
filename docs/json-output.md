@@ -125,18 +125,24 @@ On macOS, `press --app` and `press --window-id` with `return`, `enter` or
 or dialog, or carries a sheet. The key first runs as the focused control's
 `AXConfirm` or `AXCancel` action. A succeeded action is not taken as proof: a
 text field can end editing while the sheet that acts on Return never sees a
-key. If within 750 ms the sheet or dialog has not closed and the app's
-window-server windows have not changed, a real key is sent, and that is judged
-the same way, where a change in the focused element's value also counts. An
-observed effect makes the result `delivered_verified` with
-`details.modal_key: { "surface": "sheet" | "dialog", "effect": "observed",
-"observed_after": "<step label>" }`. No effect after either route is an
-`ACTION_FAILED` error with `delivered_unverified` delivery, `retry: unsafe` and
+key. The surface counts as having reacted only when the same signal holds on
+two consecutive reads within 750 ms: `surface_closed` (its element is gone,
+or its window or the app no longer lists it) or `surface_replaced` (another
+sheet or dialog took the keyboard). Window size and title changes never count.
+With no reaction, focus goes back to the control that held it before the
+action, because the action can move focus elsewhere in the sheet, and a real
+key is sent and judged the same way. There, `text_edited` also counts, but
+only for a multi-line text area. A reaction makes the result
+`delivered_verified` with `details.modal_key: { "surface": "sheet" | "dialog",
+"effect": "observed", "signal": "<signal>", "observed_after": "<step label>" }`.
+No reaction after either route is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
 `details.modal_key.effect: "none_observed"`, plus `routes` (the step labels
-tried) and `default_button` (for Return) or `cancel_button` (for Escape), which
-says whether the surface names such a button. Read the surface again and use
-its controls by ref instead of repeating the key. Presses with modifiers, other
-keys, and presses with no sheet or dialog in the focused window are unchanged.
+tried, `AXFocused` when focus was restored) and `default_button` (for Return)
+or `cancel_button` (for Escape), which says whether the surface names such a
+button. Read the surface again and use its controls by ref instead of
+repeating the key. Presses with modifiers, other keys, and presses with no
+sheet or dialog in the focused window are unchanged.
 
 ## Version 2.4 migration
 
@@ -225,6 +231,31 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 | `observation_failed` | A terminal read error stopped observation; inspect `last_observation_error`. |
 | `timed_out` | The wait budget expired without observing the expected state, including when transient read errors persisted through the last poll. `last_observation_error` may hold the last error. |
 | `identity_unavailable` | The ref has no usable process generation, so observation was skipped. |
+
+## Web channel
+
+The envelope version stays `2.6`. The web channel adds fields and one command; nothing existing changes shape.
+
+`snapshot --surface web --app <browser>` reads the page the browser window shows. When the browser exposes a DevTools endpoint that its own process owns, the page is read over CDP and `data` carries:
+
+| Field | Meaning |
+| --- | --- |
+| `channel` | `"cdp"`: the tree came from the page over the DevTools endpoint. |
+| `url` | The page's URL. |
+| `title` | The page's title. |
+| `suggestion` | Present only when cross-origin frames could not be read and are left out. |
+
+Without such an endpoint, the same command reads the browser window through the accessibility tree and `data` carries `"channel": "ax"` and a `suggestion` naming the `launch --cdp` command that enables the web channel. Snapshots of every other surface carry no `channel`. Refs from a CDP read carry an element token of the form `cdp:<targetId>:<frameId>:<loaderId>:<backendNodeId>`, are accepted by every ref command, and act through the page without focusing the window or moving the pointer. A web ref whose frame now shows another document (`details.kind: "cdp_document_replaced"`), whose node left the page, or whose role or name changed returns `STALE_REF`; a ref whose tab or frame closed returns `WINDOW_NOT_FOUND` with `details.kind: "cdp_target_gone"`. A click lands on the visible part of the element, on its first line that is not covered when it wraps; an element another element covers at every such point returns `ACTION_FAILED` with `details.kind: "cdp_click_intercepted"` and nothing delivered. Ref action results on web refs carry `details.channel: "cdp"`.
+
+`list-surfaces` adds one entry per open page when an endpoint reaches the browser: `{"id": "<targetId>", "type": "web", "title": "<page title, or its URL>"}`.
+
+`open-url <url> --app <browser> [--new-tab] [--window-id <id>]` loads a URL and waits for the load event. `opened` is `current_tab` when the URL replaced the page the window shows, and `new_tab` for `--new-tab` or for a browser that had no page to replace. `data` is:
+
+```json
+{ "url": "https://example.com/", "title": "Example Domain", "channel": "cdp", "target_id": "4C1E...F0", "opened": "current_tab" }
+```
+
+Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
 
 ## Find result shape
 
