@@ -52,10 +52,10 @@ agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read
 Each call is a turn. These forms each save one:
 
 ```
-agent-desktop launch "Calculator" && agent-desktop snapshot --app "Calculator" -i --compact
-R=$(agent-desktop find --app "Calculator" --role button --name "All Clear" | jq -r '.data.matches[0].ref_id')
-agent-desktop click "${R}" -w ":0"
-agent-desktop wait --app "Calculator" --text "0" --timeout 5000
+agent-desktop launch "Font Book" && agent-desktop snapshot --app "Font Book" -i --compact
+R=$(agent-desktop find --app "Font Book" --role button --name "Hide Sidebar" | jq -r '.data.matches[0].ref_id')
+agent-desktop click "${R}" -w "button:Show Sidebar"
+agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
 ```
 
 - Chain `launch` and the first snapshot in one call.
