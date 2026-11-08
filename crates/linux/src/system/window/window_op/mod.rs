@@ -19,7 +19,8 @@ use self::window_place::PlaceStore;
 use super::window_client::{ClientWorld, client_of};
 use super::window_op::window_op_shadow::{Shadow, to_client, to_visible, visible_of};
 use super::window_op::window_op_verdict::{
-    POSITION_TOLERANCE, observed_of, requested, unconfirmed, unreadable_after, unverified,
+    POSITION_TOLERANCE, observed_of, requested, unconfirmed, unreadable_after, unsettled,
+    unverified,
 };
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::focus::focus_cause::Cause;
@@ -217,7 +218,10 @@ fn outcome(
         Settled::Held(_) => return Ok(()),
         Settled::Unheld(observed) => unverified(write, observed.as_ref(), &world.displays()),
         Settled::Unreadable(matched) => unreadable_after(write, &matched),
-        Settled::Unconfirmed(observed) => unconfirmed(write, &observed, deadline.timeout_error()),
+        Settled::Unconfirmed(observed) if deadline.remaining() < CONFIRM_PAUSE => {
+            unconfirmed(write, &observed, deadline.timeout_error())
+        }
+        Settled::Unconfirmed(observed) => unsettled(write, &observed),
     };
     Err(reobserve(world, client, error))
 }

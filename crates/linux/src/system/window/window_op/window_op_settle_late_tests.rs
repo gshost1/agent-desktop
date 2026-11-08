@@ -220,9 +220,11 @@ fn a_place_that_shifts_within_the_tolerance_after_the_budget_is_reached_but_unco
         2_000,
     )
     .expect_err("the place moved within the tolerance during its confirmation");
-    assert_eq!(error.code, ErrorCode::Timeout);
+    assert_eq!(error.code, ErrorCode::ActionFailed);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
-    assert_eq!(error.details.expect("details")["observed"]["x"], 300);
+    let details = error.details.expect("details");
+    assert_eq!(details["cause"], "readback_unsettled");
+    assert_eq!(details["observed"]["x"], 300);
 }
 
 #[test]

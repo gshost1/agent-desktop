@@ -148,6 +148,25 @@ pub(in crate::system) fn unconfirmed(
     error
 }
 
+/// The error of a request whose read-back reached the place but kept moving
+/// within the tolerance after the settle budget, while the deadline still had
+/// time: the place was reached and not held still, so its effect is unverified.
+pub(in crate::system) fn unsettled(write: &WindowWrite, observed: &WindowFacts) -> AdapterError {
+    AdapterError::new(
+        ErrorCode::ActionFailed,
+        "The window reached the requested place but kept moving, so it was not confirmed as held",
+    )
+    .with_suggestion(
+        "The window manager is still adjusting the window; read its place from 'list-windows' before sending the request again",
+    )
+    .with_details(json!({
+        "cause": "readback_unsettled",
+        "requested": requested_of(write),
+        "observed": observed_of(Some(observed)),
+    }))
+    .with_disposition(DeliverySemantics::delivered_unverified())
+}
+
 fn invalid(message: &str) -> AdapterError {
     AdapterError::new(ErrorCode::InvalidArgs, message)
         .with_disposition(DeliverySemantics::not_delivered())
