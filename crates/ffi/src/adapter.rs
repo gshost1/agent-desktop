@@ -130,14 +130,14 @@ fn create_adapter(session_id: Option<String>) -> *mut AdAdapter {
     let inner = match build_adapter() {
         Ok(inner) => inner,
         Err(error) => {
-            error::set_last_error(&error);
+            let _ = error::set_last_error(&error);
             return std::ptr::null_mut();
         }
     };
     let session_lease = match crate::session_lease::acquire(session_id.as_deref()) {
         Ok(lease) => lease,
         Err(error) => {
-            error::set_last_error(&error);
+            let _ = error::set_last_error(&error);
             return std::ptr::null_mut();
         }
     };
@@ -148,7 +148,7 @@ fn create_adapter(session_id: Option<String>) -> *mut AdAdapter {
     }) {
         Ok(handle) => handle,
         Err(error) => {
-            error::set_last_error(&error);
+            let _ = error::set_last_error(&error);
             std::ptr::null_mut()
         }
     }
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn ad_adapter_create_with_session(session: *const c_char) 
         let session_id = match optional_adapter_string(session, "session") {
             Ok(opt) => opt,
             Err(err) => {
-                error::set_last_error(&err);
+                let _ = error::set_last_error(&err);
                 return std::ptr::null_mut();
             }
         };
@@ -199,7 +199,7 @@ pub unsafe extern "C" fn ad_adapter_create_with_session(session: *const c_char) 
                         other.to_string(),
                     ),
                 };
-                error::set_last_error(&adapter_err);
+                let _ = error::set_last_error(&adapter_err);
                 return std::ptr::null_mut();
             }
         }
@@ -217,13 +217,15 @@ pub unsafe extern "C" fn ad_adapter_create_with_session(session: *const c_char) 
 /// return. Calls beginning after destruction fail with `ErrInvalidArgs`.
 /// Platform teardown runs after the adapter registry is unlocked, so other
 /// threads and log callbacks can keep calling `ad_*` functions meanwhile.
+/// When an in-flight call still holds the adapter, teardown runs later, when
+/// that call returns, on that call's thread.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ad_adapter_destroy(adapter: *mut AdAdapter) {
     trap_panic_void(|| {
         if !adapter.is_null() {
             let removed = lock_adapters().remove(&adapter.addr());
             if removed.is_none() {
-                error::set_last_error(&AdapterError::new(
+                let _ = error::set_last_error(&AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     "adapter handle is invalid or has already been destroyed",
                 ));
@@ -249,16 +251,13 @@ pub unsafe extern "C" fn ad_check_permissions(adapter: *const AdAdapter) -> AdRe
         };
         match report.accessibility {
             PermissionState::Granted => AdResult::Ok,
-            PermissionState::Denied { suggestion } => {
-                error::set_last_error(
-                    &agent_desktop_core::AdapterError::new(
-                        agent_desktop_core::ErrorCode::PermDenied,
-                        "Accessibility permission not granted",
-                    )
-                    .with_suggestion(suggestion),
-                );
-                AdResult::ErrPermDenied
-            }
+            PermissionState::Denied { suggestion } => error::set_last_error(
+                &agent_desktop_core::AdapterError::new(
+                    agent_desktop_core::ErrorCode::PermDenied,
+                    "Accessibility permission not granted",
+                )
+                .with_suggestion(suggestion),
+            ),
             PermissionState::NotRequired => AdResult::Ok,
             PermissionState::Unknown => unknown_permission_result(adapter.inner.as_ref()),
         }

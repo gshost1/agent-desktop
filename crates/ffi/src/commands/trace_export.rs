@@ -42,8 +42,7 @@ pub unsafe extern "C" fn ad_trace_export(
         let path = match optional_adapter_string(out_path, "out_path") {
             Ok(value) => value,
             Err(e) => {
-                set_last_error(&e);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&e);
             }
         };
 

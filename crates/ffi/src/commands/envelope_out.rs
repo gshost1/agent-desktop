@@ -63,8 +63,7 @@ pub(crate) unsafe fn write_command_envelope(
                 ErrorCode::Internal,
                 format!("failed to serialize {command} envelope: {e}"),
             );
-            set_last_error(&ae);
-            return AdResult::ErrInternal;
+            return set_last_error(&ae);
         }
     };
 
@@ -74,8 +73,7 @@ pub(crate) unsafe fn write_command_envelope(
             ErrorCode::Internal,
             format!("{command} JSON contains interior NUL"),
         );
-        set_last_error(&ae);
-        return AdResult::ErrInternal;
+        return set_last_error(&ae);
     }
 
     unsafe { *out = c_ptr };
@@ -86,7 +84,7 @@ pub(crate) unsafe fn write_command_envelope(
 mod tests {
     use super::*;
     use crate::convert::string::free_c_string;
-    use crate::error::{ad_last_error_code as last_error_code, clear_last_error};
+    use crate::error::{ad_last_error_code, clear_last_error};
     use agent_desktop_core::AdapterError;
     use std::ffi::CStr;
 
@@ -111,7 +109,7 @@ mod tests {
             "returned code must be ErrStaleRef"
         );
         assert_eq!(
-            last_error_code(),
+            ad_last_error_code(),
             AdResult::ErrStaleRef,
             "errno must equal returned code"
         );
@@ -130,7 +128,7 @@ mod tests {
     #[test]
     fn ok_path_writes_envelope_and_preserves_prior_errno() {
         let prior = AdapterError::new(ErrorCode::Timeout, "prior error");
-        set_last_error(&prior);
+        let _ = set_last_error(&prior);
 
         let mut out: *mut c_char = std::ptr::null_mut();
         let rc = unsafe {
@@ -139,7 +137,7 @@ mod tests {
 
         assert_eq!(rc, AdResult::Ok, "returned code must be Ok on success");
         assert_eq!(
-            last_error_code(),
+            ad_last_error_code(),
             AdResult::ErrTimeout,
             "success must not clear prior last-error"
         );

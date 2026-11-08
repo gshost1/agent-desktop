@@ -44,32 +44,28 @@ pub unsafe extern "C" fn ad_notification_action(
         let index = match super::index::notification_index(request.index) {
             Ok(index) => index,
             Err(error) => {
-                set_last_error(&error);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&error);
             }
         };
         let action = match required_adapter_string(request.action_name, "action_name") {
             Ok(action) => action,
             Err(error) => {
-                set_last_error(&error);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&error);
             }
         };
         let identity = match super::identity::decode(request.identity.app, request.identity.title) {
             Ok(identity) => identity,
             Err(error) => {
-                set_last_error(&error);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&error);
             }
         };
         let policy = match AdPolicyKind::from_c(request.policy) {
             Some(policy) => policy.to_interaction_policy(),
             None => {
-                set_last_error(&agent_desktop_core::AdapterError::new(
+                return set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     "Invalid notification action policy",
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
         if !policy.allow_focus_steal {

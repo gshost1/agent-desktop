@@ -31,11 +31,10 @@ pub unsafe extern "C" fn ad_screenshot(
         let kind = match AdScreenshotKind::from_c(t.kind) {
             Some(k) => k,
             None => {
-                set_last_error(&agent_desktop_core::AdapterError::new(
+                return set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     "invalid screenshot kind discriminant",
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
         let core_target = match kind {
@@ -46,8 +45,7 @@ pub unsafe extern "C" fn ad_screenshot(
                         agent_desktop_core::ErrorCode::InvalidArgs,
                         "screen_index exceeds the supported display limit",
                     );
-                    set_last_error(&error);
-                    return AdResult::ErrInvalidArgs;
+                    return set_last_error(&error);
                 }
             },
             AdScreenshotKind::FullScreen => CoreScreenshotTarget::FullScreen,

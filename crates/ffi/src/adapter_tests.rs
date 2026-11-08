@@ -109,11 +109,14 @@ impl SystemOps for RegistryProbeAdapter {}
 impl Drop for RegistryProbeAdapter {
     fn drop(&mut self) {
         let free = (0..200).any(|_| {
-            let acquired = adapters().try_lock().is_ok();
-            if !acquired {
+            let held = matches!(
+                adapters().try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            );
+            if held {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
-            acquired
+            !held
         });
         REGISTRY_FREE_DURING_TEARDOWN.store(free, std::sync::atomic::Ordering::SeqCst);
     }

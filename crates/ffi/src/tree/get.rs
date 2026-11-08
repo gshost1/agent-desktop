@@ -52,8 +52,7 @@ unsafe fn get_core_tree(
     let surface = match snapshot_surface_from_c(options.surface, "snapshot surface") {
         Ok(surface) => surface,
         Err(e) => {
-            set_last_error(&e);
-            return AdResult::ErrInvalidArgs;
+            return set_last_error(&e);
         }
     };
     let core_opts = agent_desktop_core::TreeOptions {

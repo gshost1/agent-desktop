@@ -50,21 +50,19 @@ pub unsafe extern "C" fn ad_get(
         let prop = match c_to_string(property) {
             Some(s) => s,
             None => {
-                set_last_error(&agent_desktop_core::AdapterError::new(
+                return set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     "property is null or invalid UTF-8",
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
         let property = match Property::parse(&prop) {
             Some(property) => property,
             None => {
-                set_last_error(&agent_desktop_core::AdapterError::new(
+                return set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     "unknown property — expected one of: value, bounds",
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
         let adapter_id = adapter.addr();
@@ -73,8 +71,7 @@ pub unsafe extern "C" fn ad_get(
             match crate::actions::native_handle::acquire_ffi_handle(adapter_id, &*handle) {
                 Ok(native) => native,
                 Err(error) => {
-                    set_last_error(&error);
-                    return AdResult::ErrInvalidArgs;
+                    return set_last_error(&error);
                 }
             };
         let deadline = crate::operation::operation_deadline!();

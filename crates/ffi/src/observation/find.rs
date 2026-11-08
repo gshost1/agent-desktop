@@ -56,8 +56,7 @@ unsafe fn find_in_window(
     let (locator, request) = match unsafe { decode_query(query) } {
         Ok(decoded) => decoded,
         Err(error) => {
-            set_last_error(&error);
-            return AdResult::ErrInvalidArgs;
+            return set_last_error(&error);
         }
     };
     let adapter_id = adapter.addr();
@@ -82,7 +81,7 @@ unsafe fn find_in_window(
         }
     } else {
         if !resolution.meta.selection_complete {
-            set_last_error(
+            return set_last_error(
                 &AdapterError::timeout("Locator traversal could not prove the selected result")
                     .with_details(serde_json::json!({
                         "kind": "locator_incomplete",
@@ -90,24 +89,21 @@ unsafe fn find_in_window(
                         "query_stats": resolution.stats,
                     })),
             );
-            return AdResult::ErrTimeout;
         }
         let Some(selected) = resolution.matches.into_iter().next() else {
-            set_last_error(&AdapterError::new(
+            return set_last_error(&AdapterError::new(
                 ErrorCode::ElementNotFound,
                 "Locator query matched no elements",
             ));
-            return AdResult::ErrElementNotFound;
         };
         selected
     };
     let entry = selected.into_entry();
     let Some(process_instance) = entry.process.process_instance.clone() else {
-        set_last_error(&AdapterError::new(
+        return set_last_error(&AdapterError::new(
             ErrorCode::InvalidArgs,
             "resolved element has no process-generation identity",
         ));
-        return AdResult::ErrInvalidArgs;
     };
     let process = agent_desktop_core::ProcessIdentity::new(entry.process.pid, process_instance);
     match adapter

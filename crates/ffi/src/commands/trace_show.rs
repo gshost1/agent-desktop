@@ -42,8 +42,7 @@ pub unsafe extern "C" fn ad_trace_show(
         let event = match optional_adapter_string(event_prefix, "event_prefix") {
             Ok(value) => value,
             Err(e) => {
-                set_last_error(&e);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&e);
             }
         };
 

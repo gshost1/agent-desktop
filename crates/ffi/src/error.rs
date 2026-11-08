@@ -117,11 +117,7 @@ fn error_code_to_result(code: &ErrorCode) -> AdResult {
     }
 }
 
-/// Records `err` as the calling thread's last error and returns its `AdResult`.
-///
-/// The returned code comes from `err`, never from thread-local storage, so a
-/// failing call still reports failure when the last-error slot is borrowed or
-/// already destroyed during thread teardown.
+#[must_use = "a failing call must return the code mapped from its error"]
 pub(crate) fn set_last_error(err: &AdapterError) -> AdResult {
     let code = error_code_to_result(&err.code);
     let message = match CString::new(err.message.as_str()) {
