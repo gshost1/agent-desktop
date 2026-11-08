@@ -47,6 +47,23 @@ agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read
 - An action that opens a menu, sheet or alert lists it in `data.surfaces`. Target that overlay next. The report gets at most one second, so in an app with a large tree it can be missing or carry `unclassified`; when you expect a dialog, snapshot `--surface sheet` or `--surface alert`.
 - After an async step, use `wait` (see `commands-system.md`). A fixed sleep is a race.
 
+## Fewer round trips
+
+Each call is a turn. These forms each save one:
+
+```
+agent-desktop launch "Calculator" && agent-desktop snapshot --app "Calculator" -i --compact
+R=$(agent-desktop find --app "Calculator" --role button --name "All Clear" | jq -r '.data.matches[0].ref_id')
+agent-desktop click "${R}" -w ":0"
+agent-desktop wait --app "Calculator" --text "0" --timeout 5000
+```
+
+- Chain `launch` and the first snapshot in one call.
+- `find` the element you will act on, by its own name. The pane that holds it is often open already, so finding the parent first costs a turn.
+- Never cut a snapshot with `head -c`: the cut drops refs and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, or `jq` over the whole output.
+- After an action, `-w "role:text"` (or `-w ":text"`) polls until the effect shows and returns the snapshot, so the read is not a separate call. A separate `wait` takes `--timeout` in ms.
+- Before a run of clicks, check each ref against its node's `name`. A wrong ref costs a corrected rerun, and a rerun is safe only when `disposition.retry` is `safe`.
+
 ## Refs
 
 - Output refs are qualified: `@<snapshot_id>:e<N>`, for example `@s8f3k2p9:e1`. Pass them to later commands as they are.
