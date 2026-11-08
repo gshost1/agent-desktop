@@ -410,5 +410,159 @@ class KeyboardAndRefChurnLegTests(unittest.TestCase):
         self.assertIn("INVALID_ARGS 1 not_delivered", source)
 
 
+PRIVATE_ENV = "AGENT_DESKTOP_E2E_SKIP_PRIVATE"
+PRIVATE_SITE_PATTERN = re.compile(
+    r"osascript|System Events|list-notifications|NotificationCenter|dismiss-notification",
+    re.IGNORECASE,
+)
+PRIVATE_GUARDS = {
+    "run.sh": ("if private_skip_enabled; then", 'osascript -e "tell application'),
+    "scenarios/notifications.sh": (
+        "if private_skip_enabled; then",
+        'if osascript -e "display notification',
+    ),
+    "scenarios/os_surfaces.sh": (
+        "if private_skip_enabled; then",
+        'volume_original="$(os_volume)"',
+    ),
+    "scenarios/acceptance.sh": (
+        "elif private_skip_enabled && [ \"$automation_state\" = \"denied\" ]; then",
+        'nc_probe="$("$bin" list-notifications',
+    ),
+    "native-menus.py": (
+        'os.environ.get("AGENT_DESKTOP_E2E_SKIP_PRIVATE") == "1"',
+        "return run(binary)",
+    ),
+}
+
+
+class PrivateSkipTests(unittest.TestCase):
+    def run_bash(self, body: str, private: bool, calls: Path):
+        mock_bin = calls.parent / "agent-desktop"
+        mock_bin.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$MOCK_CALLS"\nexit 1\n')
+        mock_bin.chmod(0o700)
+        environment = os.environ.copy()
+        environment.pop(PRIVATE_ENV, None)
+        if private:
+            environment[PRIVATE_ENV] = "1"
+        environment["MOCK_CALLS"] = str(calls)
+        script = (
+            'source "$1"\n'
+            'bin="$2"\n'
+            f'json_tool="{E2E_ROOT / "json_tool.py"}"\n'
+            'osascript() { echo "osascript $*" >> "$MOCK_CALLS"; return 1; }\n'
+            "sleep() { :; }\n" + body
+        )
+        return subprocess.run(
+            ["bash", "-c", script, "private", str(E2E_ROOT / "lib.sh"), str(mock_bin)],
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+
+    def test_every_private_site_in_the_suite_is_covered_by_a_guard(self):
+        found = set()
+        for path in sorted(E2E_ROOT.rglob("*")):
+            relative = path.relative_to(E2E_ROOT).as_posix()
+            if path.suffix not in (".sh", ".py") or relative.startswith("test_"):
+                continue
+            if PRIVATE_SITE_PATTERN.search(path.read_text()):
+                found.add(relative)
+        found.discard("lib.sh")
+        self.assertEqual(found - set(PRIVATE_GUARDS), set(), "unguarded private site")
+
+    def test_each_private_site_is_guarded_before_its_first_call(self):
+        for relative, (guard, first_call) in PRIVATE_GUARDS.items():
+            source = (E2E_ROOT / relative).read_text()
+            self.assertIn(guard, source, relative)
+            self.assertIn(first_call, source, relative)
+            self.assertLess(source.index(guard), source.index(first_call), relative)
+
+    def test_skip_helper_never_touches_the_pass_counter(self):
+        body = r"""
+pass=0; fail=0; skip=0; skips=()
+private_skip "step one"
+private_skip "step two"
+printf 'pass=%s fail=%s skip=%s private=%s\n' "$pass" "$fail" "$skip" "${#private_skips[@]}"
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_bash(body, True, Path(directory) / "calls")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("SKIP (private): step one", result.stdout)
+        self.assertIn("SKIP (private): step two", result.stdout)
+        self.assertNotIn("PASS", result.stdout)
+        self.assertIn("pass=0 fail=0 skip=0 private=2", result.stdout)
+
+    def test_summary_lists_the_private_skips_with_a_count(self):
+        body = 'fixture_started=1\nprivate_skip "step one"\nprivate_skip "step two"\nfinish\n'
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_bash(body, True, Path(directory) / "calls")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = result.stdout.split("Summary", 1)[1]
+        self.assertIn("passed: 0  failed: 0  skipped: 0", summary)
+        self.assertIn("private skips: 2", summary)
+        self.assertIn("- SKIP (private): step one", summary)
+        self.assertIn("- SKIP (private): step two", summary)
+        self.assertNotIn("all asserted E2E scenarios passed\n", summary)
+
+    def test_summary_is_unchanged_when_the_variable_is_unset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_bash("okmsg one >/dev/null\nfinish\n", False, Path(directory) / "calls")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = result.stdout.split("Summary", 1)[1]
+        self.assertNotIn("private", summary)
+        self.assertTrue(summary.endswith("  all asserted E2E scenarios passed\n"), summary)
+
+    def test_notification_scenario_runs_nothing_private_when_skipped(self):
+        scenario = E2E_ROOT / "scenarios" / "notifications.sh"
+        body = f'source "{scenario}"\nfinish\n'
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory) / "calls"
+            result = self.run_bash(body, True, calls)
+            self.assertFalse(calls.exists(), calls.read_text() if calls.exists() else "")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("SKIP (private): NT1-NT4", result.stdout)
+        self.assertNotIn("PASS", result.stdout)
+        self.assertNotIn("FAIL", result.stdout)
+
+    def test_os_surfaces_scenario_never_calls_osascript_when_skipped(self):
+        scenario = E2E_ROOT / "scenarios" / "os_surfaces.sh"
+        body = f'source "{scenario}"\nfinish\n'
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory) / "calls"
+            result = self.run_bash(body, True, calls)
+            recorded = calls.read_text() if calls.exists() else ""
+        self.assertNotIn("osascript", recorded)
+        self.assertIn("SKIP (private): OS surfaces Control Center volume", result.stdout)
+        self.assertNotIn("PASS SKIP", result.stdout)
+
+    def test_native_menus_skips_before_touching_the_machine(self):
+        script = E2E_ROOT / "native-menus.py"
+        environment = os.environ.copy()
+        environment[PRIVATE_ENV] = "1"
+        skipped = subprocess.run(
+            ["python3", str(script), "--bin", "/nonexistent/agent-desktop"],
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(skipped.returncode, 0, skipped.stderr)
+        self.assertIn("SKIP (private): native TextEdit menu regression", skipped.stdout)
+        self.assertIn("private skips: 1", skipped.stdout)
+        self.assertNotIn("PASS", skipped.stdout)
+        environment.pop(PRIVATE_ENV)
+        unset = subprocess.run(
+            ["python3", str(script), "--bin", "/nonexistent/agent-desktop"],
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+        self.assertNotEqual(unset.returncode, 0)
+        self.assertNotIn("SKIP (private)", unset.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

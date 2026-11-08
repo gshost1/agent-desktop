@@ -116,6 +116,11 @@ else
     "$bin" close-app "$dock_launch" --force >/dev/null 2>&1
 fi
 
+if private_skip_enabled; then
+    private_skip "OS surfaces Control Center volume set and restore (osascript volume reads and sets)"
+    return 0
+fi
+
 volume_original="$(os_volume)"
 case "$volume_original" in
     ''|*[!0-9]*)
