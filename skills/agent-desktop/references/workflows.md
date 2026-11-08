@@ -175,7 +175,7 @@ agent-desktop wait --download --app "Google Chrome" --timeout 60000
 ```
 
 - `data.path` is the saved file under its suggested name. Rename, move or open it there.
-- Keep `--arg=--user-data-dir` absolute, as above, so `data.cdp.download_scope` is `profile` and clicks return without waiting for a download. With `connection`, each web `click`, `double-click` and `press` waits up to 200 ms for a download to begin; a slower server's download lands in the browser's own folder, so run the click and `wait --download` in one `batch`.
+- Keep `--arg=--user-data-dir` absolute, as above, so `data.cdp.download_scope` is `profile` and clicks return without waiting for a download. With `connection`, each web `click`, `double-click` and `press` waits up to 100 ms for a navigation or download to start and returns at once when none does; when one starts, it waits until the download begins or the page stops loading, at most 3 s; a download that begins later lands in the browser's own folder, so for a slower server run the click and `wait --download` in one `batch`.
 - A canceled or interrupted download is an error, never a path. Start it again.
 
 ## Notifications
