@@ -91,8 +91,9 @@ pub(crate) fn absent(entry: &RefEntry) -> AdapterError {
 /// The stored path landed an element that does not match the ref, right after
 /// the whole-window count found the ref's element exactly once. The element
 /// existed a moment earlier, so this is a path that moved under the descent
-/// (a list re-sorting, rows refreshing), not proof the element is gone: it is
-/// stamped retryable, and the next attempt counts again.
+/// (a list re-sorting, rows refreshing), not proof the element is gone. Only
+/// the descent disagreed with the count, so the evidence is incomplete and
+/// retryable, and the next attempt counts again.
 pub(crate) fn landing_moved(entry: &RefEntry) -> AdapterError {
     AdapterError::stale_ref_because(
         "The saved ref's element was found, but a different element took its place before it could be reached",
@@ -104,7 +105,7 @@ pub(crate) fn landing_moved(entry: &RefEntry) -> AdapterError {
     .with_details(json!({
         "kind": "saved_ref_landing_moved",
         "retryable": true,
-        "complete": true,
+        "complete": false,
         "role": entry.identity.role,
     }))
 }

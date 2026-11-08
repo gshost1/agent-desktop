@@ -28,15 +28,12 @@ impl ActionOps for CompleteNoCandidateAdapter {}
 impl InputOps for CompleteNoCandidateAdapter {}
 impl SystemOps for CompleteNoCandidateAdapter {}
 
-/// A complete search that found no candidate is stamped retryable by every
-/// platform, because the element may be drawn again. The read-only wait honours
-/// that stamp like `wait --element` and the dispatch-time retry do: it polls out
-/// the budget and only then reports the last complete answer.
 #[test]
-fn expand_complete_no_candidate_polls_out_the_budget_then_reports_stale_ref() {
+fn expand_complete_no_candidate_fails_immediately_with_stale_ref() {
     let adapter = CompleteNoCandidateAdapter {
         resolve_calls: AtomicU32::new(0),
     };
+    let started = std::time::Instant::now();
     let error = execute_with_auto_wait(
         RefActionWaitCtx {
             adapter: &adapter,
@@ -44,50 +41,24 @@ fn expand_complete_no_candidate_polls_out_the_budget_then_reports_stale_ref() {
             ref_id: "@e1",
             context: &CommandContext::default(),
         },
-        ActionRequest::headless(Action::Expand).with_timeout_ms(Some(400)),
+        ActionRequest::headless(Action::Expand).with_timeout_ms(Some(5_000)),
         crate::ref_action::ref_action_single::dispatch_resolved,
     )
     .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::StaleRef);
-    let details = error.details.expect("the last complete answer");
-    assert_eq!(details["kind"], "resolve_no_candidate");
-    assert!(details.get("elapsed_ms").is_some(), "{details}");
-    assert!(
-        adapter.resolve_calls.load(Ordering::SeqCst) > 2,
-        "a retryable complete absence is polled again while budget remains"
+    assert_eq!(
+        adapter.resolve_calls.load(Ordering::SeqCst),
+        2,
+        "one provisional landing and one full resolution, then no retry"
     );
-}
-
-#[test]
-fn a_retryable_complete_absence_that_clears_within_the_budget_lands() {
-    let adapter = SequencedAdapter {
-        resolve_calls: AtomicU32::new(0),
-        failures: 2,
-        retryable: true,
-    };
-    let result = execute_with_auto_wait(
-        RefActionWaitCtx {
-            adapter: &adapter,
-            entry: &entry(),
-            ref_id: "@e1",
-            context: &CommandContext::default(),
-        },
-        request_with_timeout(5_000),
-        crate::ref_action::ref_action_single::dispatch_resolved,
-    )
-    .expect("the element was drawn again inside the budget");
-
-    assert_eq!(result.action, "click");
-    assert!(adapter.resolve_calls.load(Ordering::SeqCst) > 2);
+    assert!(started.elapsed() < std::time::Duration::from_millis(500));
 }
 
 #[test]
 fn a_settled_complete_absence_still_stops_at_once() {
-    let adapter = SequencedAdapter {
+    let adapter = SettledAbsenceAdapter {
         resolve_calls: AtomicU32::new(0),
-        failures: u32::MAX,
-        retryable: false,
     };
     let started = std::time::Instant::now();
     let error = execute_with_auto_wait(
@@ -157,36 +128,31 @@ fn incomplete_resolution_still_polls_until_success() {
     assert!(adapter.resolve_calls.load(Ordering::SeqCst) >= 3);
 }
 
-struct SequencedAdapter {
+struct SettledAbsenceAdapter {
     resolve_calls: AtomicU32,
-    failures: u32,
-    retryable: bool,
 }
 
-impl ObservationOps for SequencedAdapter {
+impl ObservationOps for SettledAbsenceAdapter {
     fn resolve_element_strict(
         &self,
         _entry: &RefEntry,
         _deadline: crate::Deadline,
     ) -> Result<NativeHandle, AdapterError> {
-        let call = self.resolve_calls.fetch_add(1, Ordering::SeqCst);
-        if call < self.failures {
-            return Err(
-                AdapterError::stale_ref_because("No candidate").with_details(serde_json::json!({
-                    "kind": if self.retryable { "resolve_no_candidate" } else { "resolve_gone" },
-                    "complete": true,
-                    "retryable": self.retryable,
-                })),
-            );
-        }
-        Ok(NativeHandle::null())
+        self.resolve_calls.fetch_add(1, Ordering::SeqCst);
+        Err(
+            AdapterError::stale_ref_because("Gone").with_details(serde_json::json!({
+                "kind": "resolve_gone",
+                "complete": true,
+                "retryable": false,
+            })),
+        )
     }
 
     crate::adapter::complete_live_observation!("button", "Run", [capability::CLICK]);
     crate::adapter::saved_ref_scope!("button", Some("Run"));
 }
 
-impl ActionOps for SequencedAdapter {
+impl ActionOps for SettledAbsenceAdapter {
     fn execute_action(
         &self,
         _handle: &NativeHandle,
@@ -197,9 +163,9 @@ impl ActionOps for SequencedAdapter {
     }
 }
 
-impl InputOps for SequencedAdapter {}
+impl InputOps for SettledAbsenceAdapter {}
 
-impl SystemOps for SequencedAdapter {
+impl SystemOps for SettledAbsenceAdapter {
     crate::adapter::guarded_interaction_lease!();
 }
 

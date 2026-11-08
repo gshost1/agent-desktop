@@ -61,7 +61,7 @@ fn a_landed_element_that_is_not_the_counted_one_is_a_retryable_moved_landing() {
     assert!(error.is_explicitly_retryable());
     let details = error.details.unwrap();
     assert_eq!(details["kind"], "saved_ref_landing_moved");
-    assert_eq!(details["complete"], true);
+    assert_eq!(details["complete"], false);
     assert_eq!(details["retryable"], true);
     assert_eq!(adapter.anchors.load(Ordering::SeqCst), 1);
 }

@@ -290,11 +290,11 @@ fn policy_denied_disabled_target_fails_fast_without_exhausting_wait_budget() {
     );
 }
 
-struct UnsettledStaleAdapter {
+struct SettledStaleAdapter {
     resolve_calls: AtomicU32,
 }
 
-impl ObservationOps for UnsettledStaleAdapter {
+impl ObservationOps for SettledStaleAdapter {
     fn resolve_element_strict(
         &self,
         _entry: &RefEntry,
@@ -315,7 +315,7 @@ impl ObservationOps for UnsettledStaleAdapter {
     crate::adapter::saved_ref_scope!("button", Some("Run"));
 }
 
-impl ActionOps for UnsettledStaleAdapter {
+impl ActionOps for SettledStaleAdapter {
     fn execute_action(
         &self,
         _handle: &NativeHandle,
@@ -326,19 +326,19 @@ impl ActionOps for UnsettledStaleAdapter {
     }
 }
 
-impl InputOps for UnsettledStaleAdapter {}
+impl InputOps for SettledStaleAdapter {}
 
-impl SystemOps for UnsettledStaleAdapter {
+impl SystemOps for SettledStaleAdapter {
     crate::adapter::guarded_interaction_lease!();
 }
 
 /// A ref that stays unresolvable through a complete search must surface the
-/// complete `STALE_REF` when the budget runs out, not a `TIMEOUT` claiming the
-/// application may be busy: the polling loop retries it because its producer
-/// stamped it retryable, but must not discard that diagnosis.
+/// settled `STALE_REF` when the budget runs out, not a `TIMEOUT` claiming the
+/// application may be busy: the resolver already proved the target is gone,
+/// and the polling loop must not discard that diagnosis.
 #[test]
-fn complete_no_candidate_reports_stale_ref_when_the_budget_runs_out() {
-    let adapter = UnsettledStaleAdapter {
+fn complete_no_candidate_returns_stale_ref_without_exhausting_budget() {
+    let adapter = SettledStaleAdapter {
         resolve_calls: AtomicU32::new(0),
     };
     let err = execute_with_auto_wait(
@@ -358,10 +358,10 @@ fn complete_no_candidate_reports_stale_ref_when_the_budget_runs_out() {
     let details = err.details.expect("settled details");
     assert_eq!(details["kind"], "resolve_no_candidate");
     assert_eq!(details["complete"], true);
-    assert!(details.get("elapsed_ms").is_some(), "{details}");
-    assert!(
-        adapter.resolve_calls.load(Ordering::SeqCst) > 2,
-        "a retryable complete answer is polled again while budget remains"
+    assert_eq!(
+        adapter.resolve_calls.load(Ordering::SeqCst),
+        2,
+        "one provisional landing and one full resolution, then no retry"
     );
 }
 

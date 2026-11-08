@@ -96,16 +96,16 @@ fn handle_actionability_failure(
     Ok(())
 }
 
-/// Ends the wait on a settled refusal and polls again on any other, under the
-/// one verdict every re-resolving caller shares, so a complete answer its
-/// producer stamped retryable is waited on here as it is under the lease.
+/// Ends the wait on a refusal the ref-action verdict settles, a complete
+/// absence included, and polls again on any other. The dispatch-time retry
+/// under the lease applies the same verdict.
 fn handle_resolve_failure(
     context: RefActionWaitContext<'_>,
     state: &mut RefActionPollState,
     error: AdapterError,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    let verdict = ResolveVerdict::of_ref_action(&error);
+    let verdict = ResolveVerdict::for_ref_action(&error);
     if !verdict.retries() {
         trace_resolve_error(context.context, context.ref_id, &error);
         return Err(error);
