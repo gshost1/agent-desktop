@@ -28,7 +28,7 @@ fn shadowed() -> World {
     world
         .clients
         .replace([ControlRead::Ready(vec![shadowed])].into());
-    world.reaction = Some(client_rectangle);
+    world.reaction = Some(|written: &[WindowWrite]| ControlRead::Ready(client_rectangle(written)));
     world
 }
 

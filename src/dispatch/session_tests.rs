@@ -92,6 +92,80 @@ fn session_start_reports_the_adapter_overlay_result() {
 }
 
 #[test]
+fn renderer_failure_leaves_a_listed_active_session_that_ends_by_id() {
+    let _home = HomeGuard::new();
+    let failing = OverlayAdapter {
+        fail: true,
+        ..Default::default()
+    };
+    let started = super::dispatch(
+        SessionArgs {
+            action: SessionAction::Start(crate::cli_args::session::SessionStartArgs {
+                name: None,
+                no_trace: true,
+                screenshots: false,
+                cursor: true,
+                multi_agent: false,
+            }),
+        },
+        &failing,
+        &CommandContext::default(),
+    )
+    .expect("a renderer failure does not fail the start");
+    let run = |action| {
+        super::dispatch(
+            SessionArgs { action },
+            &NoopAdapter,
+            &CommandContext::default(),
+        )
+    };
+    let id = started["session_id"].as_str().unwrap().to_owned();
+    assert_eq!(started["rendered"], false);
+    assert_eq!(started["cursor_overlay"]["enabled"], true);
+    let listed = run(SessionAction::List).unwrap();
+    assert_eq!(listed["sessions"][0]["session_id"], id.as_str());
+    assert!(listed["sessions"][0]["ended_at"].is_null());
+
+    let ended = run(SessionAction::End(SessionEndArgs {
+        id: Some(id.clone()),
+    }))
+    .expect("the returned id ends the session");
+
+    assert!(ended["ended_at"].is_number());
+    let listed = run(SessionAction::List).unwrap();
+    assert_eq!(listed["sessions"].as_array().unwrap().len(), 1);
+    assert!(listed["sessions"][0]["ended_at"].is_number());
+}
+
+/// Every manifest read-modify-write (`set_cursor_overlay`, `cursor-overlay
+/// enable`, `end_session`) takes the session's `refstore.lock`, and a plain
+/// one-write start never does. The lock file therefore marks a second manifest
+/// write added after the start, which can fail once the session is active.
+#[test]
+fn cursor_start_does_not_rewrite_the_manifest_after_creating_it() {
+    let _home = HomeGuard::new();
+    let started = super::dispatch(
+        SessionArgs {
+            action: SessionAction::Start(crate::cli_args::session::SessionStartArgs {
+                name: None,
+                no_trace: true,
+                screenshots: false,
+                cursor: true,
+                multi_agent: false,
+            }),
+        },
+        &OverlayAdapter::default(),
+        &CommandContext::default(),
+    )
+    .unwrap();
+
+    let id = started["session_id"].as_str().unwrap();
+    let dir = agent_desktop_core::session::session_dir(id).unwrap();
+    assert!(dir.join("session.json").is_file());
+    assert!(!dir.join("refstore.lock").exists());
+}
+
+#[test]
 fn explicit_session_end_id_precedes_active_scope() {
     assert_eq!(
         resolve_end_session_id(Some("explicit".into()), Some("active")).unwrap(),
@@ -222,18 +296,24 @@ fn session_gc_ended_reclaims_an_ended_session_that_recorded_trace_events() {
     std::fs::write(&segment, b"{\"event\":\"command.end\"}\n").unwrap();
     agent_desktop_core::session::end_session(&manifest.id).unwrap();
 
-    let value = super::dispatch(
-        SessionArgs {
-            action: SessionAction::Gc(SessionGcArgs {
-                older_than: Some(0),
-                ended: true,
-            }),
-        },
-        &NoopAdapter,
-        &CommandContext::default(),
-    )
-    .expect("gc of ended sessions runs");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut removed = Vec::new();
+    while removed.is_empty() && std::time::Instant::now() < deadline {
+        let value = super::dispatch(
+            SessionArgs {
+                action: SessionAction::Gc(SessionGcArgs {
+                    older_than: Some(0),
+                    ended: true,
+                }),
+            },
+            &NoopAdapter,
+            &CommandContext::default(),
+        )
+        .expect("gc of ended sessions runs");
+        removed = value["removed"].as_array().cloned().unwrap_or_default();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 
-    assert_eq!(value["removed"], serde_json::json!([manifest.id]));
+    assert_eq!(removed, vec![serde_json::json!(manifest.id)]);
     assert!(!home.path().join("sessions").join(&manifest.id).exists());
 }
