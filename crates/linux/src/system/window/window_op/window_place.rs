@@ -1,18 +1,22 @@
 use std::path::{Path, PathBuf};
 
-use serde_json::{Value, json};
+use agent_desktop_core::WindowInfo;
+use serde_json::Value;
 
+use super::remembered_place::RememberedPlace;
 use crate::system::app::runtime_store::{instance_stem, runtime_subdir, write_private_atomically};
-use crate::tree::Extents;
+use crate::system::process::{process_facts, process_lookup::Lookup};
 
 const PLACE_DIR: &str = "agent-desktop-window-places";
 const STALE_PENDING: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// The client rectangles windows had before they were maximized, kept in a
-/// private directory of the runtime dir (mode 0700, files 0600). An entry is
-/// keyed by the window id and the start-time token of the owning process, so
-/// a reused window id never matches, and entries of processes that are gone
-/// are dropped on every save.
+/// The places windows had before the agent maximized them, kept in a private
+/// directory of the runtime dir (mode 0700, files 0600) so a later process
+/// can give them back. An entry is keyed by the window id and the start-time
+/// token of the owning process, and both are checked again on every load, so
+/// a reused window id never matches; entries of processes that are gone are
+/// dropped on every save. A loaded entry is still only a claim about the
+/// window: callers check it against the live window before acting on it.
 pub(super) struct PlaceStore {
     dir: PathBuf,
 }
@@ -31,23 +35,41 @@ impl PlaceStore {
             .join(format!("{}.json", instance_stem(window, instance)))
     }
 
+    /// Records `place` for the window of `win`, or drops its record when
+    /// `place` is `None`. A window listed without a process instance has no
+    /// record.
+    pub(super) fn remember(win: &WindowInfo, client: u32, place: Option<RememberedPlace>) {
+        let (Some(store), Some(instance)) =
+            (Self::in_runtime_dir(), win.process_instance.as_deref())
+        else {
+            return;
+        };
+        match place {
+            Some(place) => {
+                let alive = |pid: u32, instance: &str| matches!(process_facts::lookup(pid), Lookup::Found(facts) if facts.instance == instance);
+                let _ = store.save(client, win.pid.get(), instance, place, &alive);
+            }
+            None => store.forget(client, instance),
+        }
+    }
+
+    pub(super) fn recall(win: &WindowInfo, client: u32) -> Option<RememberedPlace> {
+        Self::in_runtime_dir()?.load(client, win.process_instance.as_deref()?)
+    }
+
     pub(super) fn save(
         &self,
         window: u32,
         pid: u32,
         instance: &str,
-        place: Extents,
+        place: RememberedPlace,
         alive: &dyn Fn(u32, &str) -> bool,
     ) -> std::io::Result<()> {
         self.sweep(alive);
-        let record = json!({
-            "pid": pid,
-            "instance": instance,
-            "x": place.x,
-            "y": place.y,
-            "width": place.width,
-            "height": place.height,
-        });
+        let mut record = place.to_json();
+        record["pid"] = pid.into();
+        record["instance"] = instance.into();
+        record["window"] = window.into();
         write_private_atomically(
             &self.dir,
             &self.path(window, instance),
@@ -55,17 +77,12 @@ impl PlaceStore {
         )
     }
 
-    pub(super) fn load(&self, window: u32, instance: &str) -> Option<Extents> {
+    pub(super) fn load(&self, window: u32, instance: &str) -> Option<RememberedPlace> {
         let value: Value =
             serde_json::from_slice(&std::fs::read(self.path(window, instance)).ok()?).ok()?;
-        let field = |name: &str| i32::try_from(value[name].as_i64()?).ok();
-        (value["instance"].as_str() == Some(instance)).then_some(())?;
-        Some(Extents {
-            x: field("x")?,
-            y: field("y")?,
-            width: field("width")?,
-            height: field("height")?,
-        })
+        (value["instance"].as_str() == Some(instance)
+            && value["window"].as_u64() == Some(u64::from(window)))
+        .then(|| RememberedPlace::from_json(&value))?
     }
 
     pub(super) fn forget(&self, window: u32, instance: &str) {

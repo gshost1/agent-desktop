@@ -1,15 +1,24 @@
 use std::os::unix::fs::PermissionsExt;
 
 use super::*;
+use crate::tree::Extents;
 
 const INSTANCE: &str = "abcd1234:99";
 
-fn place() -> Extents {
-    Extents {
-        x: -20,
-        y: 90,
-        width: 500,
-        height: 380,
+fn place() -> RememberedPlace {
+    RememberedPlace::Maximized {
+        before: Extents {
+            x: -20,
+            y: 90,
+            width: 500,
+            height: 380,
+        },
+        maximized: Extents {
+            x: 0,
+            y: 21,
+            width: 1280,
+            height: 779,
+        },
     }
 }
 
@@ -47,6 +56,38 @@ fn a_reused_window_id_of_another_process_instance_never_matches() {
         .expect("a save");
     assert_eq!(store.load(0x40_0003, "ffff0000:99"), None);
     assert_eq!(store.load(0x40_0004, INSTANCE), None);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_entry_naming_another_window_or_instance_inside_reads_as_nothing() {
+    let (store, dir) = store("inside");
+    store
+        .save(0x40_0003, 99, INSTANCE, place(), &everyone_lives)
+        .expect("a save");
+    let path = store.path(0x40_0003, INSTANCE);
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("a read")).expect("json");
+    for (field, other) in [
+        ("window", Value::from(0x40_0004)),
+        ("instance", "abcd1234_99".into()),
+    ] {
+        let mut changed = saved.clone();
+        changed[field] = other;
+        std::fs::write(&path, changed.to_string()).expect("a write");
+        assert_eq!(store.load(0x40_0003, INSTANCE), None, "{field}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_entry_of_the_older_shape_without_a_phase_reads_as_nothing() {
+    let (store, dir) = store("older");
+    let older = serde_json::json!({
+        "pid": 99, "instance": INSTANCE, "x": 120, "y": 90, "width": 500, "height": 380,
+    });
+    std::fs::write(store.path(0x40_0003, INSTANCE), older.to_string()).expect("a write");
+    assert_eq!(store.load(0x40_0003, INSTANCE), None);
     let _ = std::fs::remove_dir_all(dir);
 }
 

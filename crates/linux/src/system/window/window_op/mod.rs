@@ -7,10 +7,12 @@ use agent_desktop_core::{
 use serde_json::Value;
 
 use self::hold::{
-    confirm_rectangle, give_back_place, holds_place, is_resize, move_client, remember_place,
+    confirm_rectangle, give_back_place, holds_place, is_resize, keep_for_retry, move_client,
+    place_before_maximize, recall_place, remember_maximized,
 };
 use self::owner::{ensure_owned_after, ensure_owned_before};
 use self::refuse::{no_client, refused, unreadable, unsupported_session, write_failed};
+use self::remembered_place::RememberedPlace;
 use self::window_place::PlaceStore;
 use super::window_client::{ClientWorld, client_of};
 use super::window_op::window_op_shadow::{Shadow, to_client, to_visible, visible_of};
@@ -55,8 +57,8 @@ trait OpWorld: ClientWorld {
     fn overview_open(&self) -> Option<bool>;
     fn displays(&self) -> Vec<Rect>;
     fn on_wayland(&self) -> bool;
-    fn remember(&self, win: &WindowInfo, client: u32, rectangle: Option<Extents>);
-    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<Extents>;
+    fn remember(&self, win: &WindowInfo, client: u32, place: Option<RememberedPlace>);
+    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<RememberedPlace>;
 }
 
 struct Live<'a> {
@@ -120,24 +122,12 @@ impl OpWorld for Live<'_> {
         self.frame.overview_open()
     }
 
-    fn remember(&self, win: &WindowInfo, client: u32, rectangle: Option<Extents>) {
-        let (Some(store), Some(instance)) = (
-            PlaceStore::in_runtime_dir(),
-            win.process_instance.as_deref(),
-        ) else {
-            return;
-        };
-        match rectangle {
-            Some(place) => {
-                let alive = |pid: u32, instance: &str| matches!(process_facts::lookup(pid), Lookup::Found(facts) if facts.instance == instance);
-                let _ = store.save(client, win.pid.get(), instance, place, &alive);
-            }
-            None => store.forget(client, instance),
-        }
+    fn remember(&self, win: &WindowInfo, client: u32, place: Option<RememberedPlace>) {
+        PlaceStore::remember(win, client, place);
     }
 
-    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<Extents> {
-        PlaceStore::in_runtime_dir()?.load(client, win.process_instance.as_deref()?)
+    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<RememberedPlace> {
+        PlaceStore::recall(win, client)
     }
 
     fn displays(&self) -> Vec<Rect> {
@@ -216,9 +206,11 @@ fn apply(
     write: &WindowWrite,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    if *write == WindowWrite::SetMaximized(true) {
-        remember_place(world, win, client);
-    }
+    let before_maximize = if *write == WindowWrite::SetMaximized(true) {
+        place_before_maximize(world, client)
+    } else {
+        None
+    };
     let before = if is_resize(write) {
         world.facts(client).ready().map(|facts| facts.client)
     } else {
@@ -227,6 +219,9 @@ fn apply(
     world.write(client, write).map_err(write_failed)?;
     let (verdict, observed) = settle(world, client, write, deadline);
     ensure_owned_after(world, win, client)?;
+    if verdict == Verdict::Satisfied {
+        remember_maximized(world, win, client, before_maximize, observed);
+    }
     let outcome = match verdict {
         Verdict::Satisfied => Ok(()),
         Verdict::Pending | Verdict::Mismatch => {
@@ -273,17 +268,19 @@ fn restore(
         current = read_before(world, client)
             .map_err(|error| error.with_disposition(DeliverySemantics::delivered_unverified()))?;
     }
-    if !current.maximized_vertical && !current.maximized_horizontal {
-        return give_back_place(world, win, client, deadline);
+    let place = recall_place(world, win, client, &current);
+    if current.maximized_vertical || current.maximized_horizontal {
+        let unmaximize = WindowWrite::SetMaximized(false);
+        if let Err(error) = apply(world, win, client, &unmaximize, deadline) {
+            if let Some(place) = place {
+                keep_for_retry(world, win, client, place);
+            }
+            return Err(error);
+        }
     }
-    apply(
-        world,
-        win,
-        client,
-        &WindowWrite::SetMaximized(false),
-        deadline,
-    )?;
-    give_back_place(world, win, client, deadline)
+    place.map_or(Ok(()), |place| {
+        give_back_place(world, win, client, place, deadline)
+    })
 }
 
 fn reobserve(world: &impl OpWorld, client: u32, mut error: AdapterError) -> AdapterError {
@@ -387,6 +384,8 @@ mod hold;
 mod owner;
 #[path = "window_op_refuse.rs"]
 mod refuse;
+#[path = "remembered_place.rs"]
+mod remembered_place;
 pub(in crate::system) mod window_op_shadow;
 pub(in crate::system) mod window_op_verdict;
 #[path = "window_place.rs"]

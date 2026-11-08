@@ -45,18 +45,59 @@ pub(super) fn move_client(
     Ok(())
 }
 
+/// The place to give back to a window whose live state is `live`. A record
+/// the live window no longer matches is stale, so it is dropped and nothing
+/// is given back.
+pub(super) fn recall_place(
+    world: &impl OpWorld,
+    win: &WindowInfo,
+    client: u32,
+    live: &WindowFacts,
+) -> Option<Extents> {
+    let record = world.remembered(win, client)?;
+    let place = record.place_for(live, &world.displays());
+    if place.is_none() {
+        world.remember(win, client, None);
+    }
+    place
+}
+
+/// Moves the window back to `place` and drops the record once it lands. A
+/// give-back that did not land keeps the place for a retry, tied to where
+/// the window was left.
 pub(super) fn give_back_place(
     world: &impl OpWorld,
     win: &WindowInfo,
     client: u32,
+    place: Extents,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    let Some(place) = world.remembered(win, client) else {
-        return Ok(());
-    };
-    move_client(world, win, client, place, deadline)?;
-    world.remember(win, client, None);
-    Ok(())
+    let moved = move_client(world, win, client, place, deadline);
+    if moved.is_ok() {
+        world.remember(win, client, None);
+    } else {
+        keep_for_retry(world, win, client, place);
+    }
+    moved
+}
+
+/// Ties the place to the window's current rectangle after a restore that did
+/// not finish, when the window reads back un-maximized and shown. Otherwise
+/// the record stays as it was and the next restore checks it again.
+pub(super) fn keep_for_retry(world: &impl OpWorld, win: &WindowInfo, client: u32, place: Extents) {
+    if let ControlRead::Ready(facts) = world.facts(client)
+        && !facts.maximized_vertical
+        && !facts.maximized_horizontal
+        && !facts.hidden
+    {
+        let kept = RememberedPlace::Unmaximized {
+            before: place,
+            left: facts.client,
+        };
+        if world.remembered(win, client) != Some(kept) {
+            world.remember(win, client, Some(kept));
+        }
+    }
 }
 
 /// Whether a window of `size` can sit at `place` on one display. A window the
@@ -94,12 +135,34 @@ pub(super) fn move_to(x: i32, y: i32) -> WindowWrite {
     }
 }
 
-pub(super) fn remember_place(world: &impl OpWorld, win: &WindowInfo, client: u32) {
-    if let ControlRead::Ready(facts) = world.facts(client)
-        && !facts.maximized_vertical
-        && !facts.maximized_horizontal
-        && !facts.hidden
-    {
-        world.remember(win, client, Some(facts.client));
+/// The client rectangle to give back after a maximize, read before it: only
+/// a window that is shown and not maximized has one.
+pub(super) fn place_before_maximize(world: &impl OpWorld, client: u32) -> Option<Extents> {
+    match world.facts(client) {
+        ControlRead::Ready(facts)
+            if !facts.maximized_vertical && !facts.maximized_horizontal && !facts.hidden =>
+        {
+            Some(facts.client)
+        }
+        _ => None,
+    }
+}
+
+/// Records `before` once the maximize was observed, tied to the maximized
+/// rectangle the window was seen at.
+pub(super) fn remember_maximized(
+    world: &impl OpWorld,
+    win: &WindowInfo,
+    client: u32,
+    before: Option<Extents>,
+    observed: Option<WindowFacts>,
+) {
+    if let (Some(before), Some(facts)) = (before, observed) {
+        let maximized = facts.client;
+        world.remember(
+            win,
+            client,
+            Some(RememberedPlace::Maximized { before, maximized }),
+        );
     }
 }
