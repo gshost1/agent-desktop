@@ -16,10 +16,12 @@ and headline.py skip it.
 Usage: python3 bench/driver.py --task weather --config a [--model claude-opus-5-5] [--runs 3]
 """
 import argparse
+import atexit
 import errno
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -30,7 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 sys.path.insert(0, str(ROOT))
-from tasks import TASKS, audit_command, reset_desktop  # noqa: E402
+from tasks import TASKS, audit_command, reset_desktop, restore_save_folder  # noqa: E402
 
 REAL_BIN = REPO / "target" / "release" / "agent-desktop"
 SKILL = REPO / "skills" / "agent-desktop" / "SKILL.md"
@@ -335,6 +337,8 @@ def main():
     if not holds_lock():
         sys.exit(f"take the bench lock first: {LOCK}")
     (ROOT / "runs").mkdir(exist_ok=True)
+    atexit.register(restore_save_folder)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     for _ in range(a.runs):
         run_once(a.task, a.config, a.model, a.effort)
 

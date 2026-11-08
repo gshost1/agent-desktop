@@ -1,0 +1,4 @@
+# n=3 Finder runs for #24 (inline editor) and #25 (menu chords) against fork main ec3add89. TextEdit waits for the Save-panel decision.
+fx1 finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24 finder:a:claude-opus-5-5:bench/out/wt-pr25
+fx2 finder:a:claude-opus-5-5:bench/out/wt-pr24 finder:a:claude-opus-5-5:bench/out/wt-pr25 finder:a:claude-opus-5-5:bench/out/wt-main
+fx3 finder:a:claude-opus-5-5:bench/out/wt-pr25 finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24

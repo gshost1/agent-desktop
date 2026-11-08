@@ -43,6 +43,71 @@ def quit_app(name):
     macctl("quit", name)
 
 
+TEXTEDIT_PREFS = Path.home() / "Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit"
+SAVE_FOLDER_KEY = "NSNavLastRootDirectory"
+SAVE_FOLDER_ORIGINAL = Path(__file__).resolve().parent / "out" / "textedit-save-folder-original.json"
+SAVE_FOLDER_LOG = Path(__file__).resolve().parent / "out" / "textedit-save-folder.log"
+
+
+def log_save_folder(event, **fields):
+    with open(SAVE_FOLDER_LOG, "a") as fh:
+        fh.write(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), "event": event, **fields}) + "\n")
+
+
+def read_save_folder():
+    """TextEdit's last save folder from its container prefs, as (present, value). Reads only that key."""
+    done = subprocess.run(["defaults", "read", str(TEXTEDIT_PREFS), SAVE_FOLDER_KEY],
+                          capture_output=True, text=True, timeout=10)
+    return (True, done.stdout.strip()) if done.returncode == 0 else (False, None)
+
+
+def quit_textedit_for_prefs():
+    quit_app("TextEdit")
+    for _ in range(50):
+        if subprocess.run(["pgrep", "-x", "TextEdit"], capture_output=True).returncode != 0:
+            return
+        time.sleep(0.2)
+    raise RuntimeError("TextEdit is still running; its save-folder pref was not touched")
+
+
+def restore_save_folder():
+    """Put back the save folder recorded by point_save_folder, if one is pending. Safe to call any time."""
+    if not SAVE_FOLDER_ORIGINAL.exists():
+        return
+    original = json.loads(SAVE_FOLDER_ORIGINAL.read_text())
+    quit_textedit_for_prefs()
+    if original["present"]:
+        subprocess.run(["defaults", "write", str(TEXTEDIT_PREFS), SAVE_FOLDER_KEY, "-string", original["value"]],
+                       check=True, timeout=10)
+    else:
+        subprocess.run(["defaults", "delete", str(TEXTEDIT_PREFS), SAVE_FOLDER_KEY],
+                       capture_output=True, timeout=10)
+    now = read_save_folder()
+    restored = now == (original["present"], original["value"])
+    log_save_folder("restore", original=original, now={"present": now[0], "value": now[1]}, restored=restored)
+    if not restored:
+        raise RuntimeError(f"TextEdit save folder not restored: now {now}, original {original}")
+    SAVE_FOLDER_ORIGINAL.unlink()
+
+
+def point_save_folder(folder):
+    """Make TextEdit's Save panel open in the run's bench folder, so it never shows
+    iCloud, Documents or any other folder of George's. Records the original first."""
+    if BENCH_DIR not in Path(folder).resolve().parents:
+        raise ValueError(f"refusing to point TextEdit's save folder outside {BENCH_DIR}: {folder}")
+    restore_save_folder()
+    quit_textedit_for_prefs()
+    present, value = read_save_folder()
+    SAVE_FOLDER_ORIGINAL.write_text(json.dumps({"present": present, "value": value}))
+    subprocess.run(["defaults", "write", str(TEXTEDIT_PREFS), SAVE_FOLDER_KEY, "-string", str(folder)],
+                   check=True, timeout=10)
+    now = read_save_folder()
+    log_save_folder("point", old={"present": present, "value": value}, new=str(folder), now=now[1])
+    if now != (True, str(folder)):
+        restore_save_folder()
+        raise RuntimeError(f"TextEdit save folder did not take: {now}")
+
+
 def open_bench_finder_window(folder):
     """Open the task's own bench folder in a front Finder window, so the run never
     starts on Finder's default window (Recents, Home or a personal folder)."""
@@ -176,6 +241,7 @@ class TextEditSave(Task):
         if self.folder.exists():
             shutil.rmtree(self.folder)
         self.folder.mkdir(parents=True)
+        point_save_folder(self.folder)
         self.stem = f"note-{self.run_id}"
         self.text = f"hello from run {self.run_id}"
         self.default_dirs = [Path.home() / "Library/Mobile Documents/com~apple~TextEdit/Documents",
@@ -199,6 +265,7 @@ class TextEditSave(Task):
 
     def cleanup(self):
         quit_app("TextEdit")
+        restore_save_folder()
         shutil.rmtree(self.folder, ignore_errors=True)
         quarantine = Path(__file__).resolve().parent / "out" / "icloud-strays"
         for path in self.stray_paths():
