@@ -134,6 +134,8 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | [#23](https://github.com/gshost1/agent-desktop/pull/23) | open; head `43711bc2` (main `ec3add89`), gates green (4639), 2 review rounds; CI dispatched | ready (when merged) |
 | 17 | `fix/session-start-atomic` | STATE-5 / BINARY-10 | – | pushed `674ca6fa`, gates green (4593); review round 1 being applied (nothing fallible after the write, remove the dir on a failed write, cursor in SessionAction::Start) | – |
 | 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | – | writer started (w18) | – |
+| 19 | `fix/ffi-last-error-code` | STATE-1 (+2/3) | – | writer started (w19) | – |
+| 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | open; test-only (250 ms -> 5 s for the success cases); turned #23's CI red | fork-only (test budgets) |
 
 ## Needs Mac verification
 
@@ -297,6 +299,9 @@ Merge own fork PRs when all hold, and name the rule used in the PR body:
    touches. Any overlap re-cycles (merge `main`, gates, CI).
 Plus: reviews done, not a draft; `gh pr merge <n> --squash --delete-branch`; watch `main`'s CI after each merge and
 fix it if red. A PR that touches root `Cargo.toml`: first confirm Release shows `disabled_manually`.
+CI and pushing (control room, approved by George): push each head as soon as it is ready so CI runs in parallel with
+the local gates; no manual `workflow_dispatch` (`pull_request` CI triggers on the fork); a flaky timing test that turns
+CI red gets its own small test PR (like #19), not a re-run; one PR merged at a time.
 Host set since `a1873d35` (fork PR #8): add `-p agent-desktop-web`; `audit/tools/gates.sh` does it when `crates/web`
 exists and also runs CI's core Win32-leakage check.
 
