@@ -1,12 +1,11 @@
-use std::fs;
 use std::io;
 use std::os::fd::BorrowedFd;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use agent_desktop_core::INTERACTION_LEASE_FD_ENV;
-use rustix::io::{FdFlags, fcntl_getfd, fcntl_setfd};
+use agent_desktop_core::{INTERACTION_LEASE_FD_ENV, protect_inherited_lease_descriptor};
+use rustix::io::{FdFlags, fcntl_setfd};
 
 use super::owner_entry::{
     BUILD_IDENTITY_ENV, DISPLAY_ENV, MARKER_ENV, NONCE_ENV, PAYLOAD_FD_ENV, build_identity,
@@ -20,7 +19,6 @@ const INHERITED_FROM_PARENT: [&str; 5] = [
     "AGENT_DESKTOP_HOME",
     "HOME",
 ];
-const LOWEST_INHERITED_FD: i32 = 3;
 
 fn share_with_child(payload_fd: i32) -> io::Result<()> {
     let descriptor = unsafe { BorrowedFd::borrow_raw(payload_fd) };
@@ -69,19 +67,9 @@ pub(crate) fn build_command(
 /// the owner never holds the interaction lock. Only a number above the
 /// standard streams that names an open descriptor is touched.
 pub(crate) fn protect_lease_descriptor(parent_env: &dyn Fn(&str) -> Option<String>) -> bool {
-    let Some(number) = parent_env(INTERACTION_LEASE_FD_ENV)
-        .and_then(|value| value.parse::<i32>().ok())
-        .filter(|number| *number >= LOWEST_INHERITED_FD)
-    else {
-        return false;
-    };
-    if fs::metadata(format!("/proc/self/fd/{number}")).is_err() {
-        return false;
-    }
-    let descriptor = unsafe { BorrowedFd::borrow_raw(number) };
-    fcntl_getfd(descriptor)
-        .and_then(|flags| fcntl_setfd(descriptor, flags | FdFlags::CLOEXEC))
-        .is_ok()
+    parent_env(INTERACTION_LEASE_FD_ENV)
+        .and_then(|value| protect_inherited_lease_descriptor(&value))
+        .is_some()
 }
 
 #[cfg(test)]
