@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::set_checked;
 use crate::CdpConnection;
-use crate::act::act_fixture::{deadline, resolved, session, token};
+use crate::act::act_fixture::{deadline, laid_out, resolved, session, token};
 use crate::transport::scripted_transport::ScriptedTransport;
 
 fn read(transport: ScriptedTransport, checked: Value) -> ScriptedTransport {
@@ -14,14 +14,13 @@ fn read(transport: ScriptedTransport, checked: Value) -> ScriptedTransport {
 }
 
 fn click(transport: ScriptedTransport) -> ScriptedTransport {
-    transport
-        .expect("DOM.scrollIntoViewIfNeeded", json!({}))
-        .expect(
-            "DOM.getBoxModel",
-            json!({ "model": { "border": [0, 0, 10, 0, 10, 10, 0, 10] } }),
-        )
-        .expect("Input.dispatchMouseEvent", json!({}))
-        .expect("Input.dispatchMouseEvent", json!({}))
+    laid_out(
+        transport.expect("DOM.scrollIntoViewIfNeeded", json!({})),
+        json!([[0, 0, 10, 0, 10, 10, 0, 10]]),
+    )
+    .expect("DOM.getNodeForLocation", json!({ "backendNodeId": 3 }))
+    .expect("Input.dispatchMouseEvent", json!({}))
+    .expect("Input.dispatchMouseEvent", json!({}))
 }
 
 fn released(transport: ScriptedTransport) -> ScriptedTransport {
@@ -47,7 +46,7 @@ fn a_differing_box_is_clicked_and_verified_with_one_resolve() {
     assert!(set_checked(&mut connection, &session(), &token(3), true, deadline()).unwrap());
 
     let sent = sent.lock().unwrap();
-    assert_eq!(sent.len(), 9);
+    assert_eq!(sent.len(), 11);
     let resolves = sent
         .iter()
         .filter(|request| request["method"] == "DOM.resolveNode")

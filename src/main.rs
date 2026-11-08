@@ -338,7 +338,13 @@ fn emit_response(response: &impl serde::Serialize) -> std::io::Result<()> {
     writer.flush()
 }
 
+/// The platform adapter, wrapped so web pages in a browser that exposes a
+/// DevTools endpoint are read and driven over CDP through the same commands.
 fn build_adapter() -> impl agent_desktop_core::PlatformAdapter {
+    agent_desktop_web::WebChannelAdapter::new(build_platform_adapter())
+}
+
+fn build_platform_adapter() -> impl agent_desktop_core::PlatformAdapter {
     #[cfg(target_os = "macos")]
     {
         agent_desktop_macos::MacOSAdapter::new()

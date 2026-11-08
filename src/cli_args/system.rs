@@ -115,6 +115,32 @@ pub(crate) struct FocusWindowArgs {
 
 #[derive(Parser, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct OpenUrlArgs {
+    #[arg(
+        value_name = "URL",
+        help = "Absolute URL to load, such as https://example.com"
+    )]
+    pub url: String,
+    #[arg(long, help = "Browser application name")]
+    pub app: String,
+    #[arg(
+        long,
+        help = "Open the URL in a new background tab instead of the window's visible tab"
+    )]
+    #[serde(default)]
+    pub new_tab: bool,
+    #[arg(long, name = "window-id", help = "Browser window ID from list-windows")]
+    pub window_id: Option<String>,
+    #[arg(
+        long,
+        value_name = "MS",
+        help = "Deadline for the page to finish loading in milliseconds (default 15000)"
+    )]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Parser, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ResizeWindowCliArgs {
     #[command(flatten)]
     #[serde(flatten)]

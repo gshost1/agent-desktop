@@ -29,8 +29,7 @@ pub unsafe extern "C" fn ad_list_notifications(
         let core_filter = match filter_from_c(filter) {
             Ok(f) => f,
             Err(e) => {
-                set_last_error(&e);
-                return crate::error::last_error_code();
+                return set_last_error(&e);
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
@@ -45,8 +44,7 @@ pub unsafe extern "C" fn ad_list_notifications(
                 if let Err(error) =
                     crate::resource::validate_list_len(notifications.len(), "Notification list")
                 {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 let items: Vec<AdNotificationInfo> =
                     notifications.iter().map(notification_info_to_c).collect();
@@ -56,10 +54,7 @@ pub unsafe extern "C" fn ad_list_notifications(
                 *out = Box::into_raw(list);
                 AdResult::Ok
             }
-            Err(e) => {
-                set_last_error(&e);
-                crate::error::last_error_code()
-            }
+            Err(e) => set_last_error(&e),
         }
     })
 }

@@ -242,6 +242,7 @@ fn press_with(
         combo: combo.to_owned(),
         app: Some(app.to_owned()),
         window_id: window_id.map(str::to_owned),
+        ref_id: None,
         force: true,
     };
     press_execute(args, &rig.adapter, &context)
