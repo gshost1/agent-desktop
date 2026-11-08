@@ -195,7 +195,12 @@ pub(crate) fn recorded_window(
     match resolved {
         Ok(window) if belongs_to_entry(&window, entry) => return Ok(window),
         Ok(_) => {}
-        Err(error) => failure = Some(adapter_error(error)),
+        Err(error) => {
+            failure = Some(crate::refs::resolve_errors::owner_gone(
+                adapter_error(error),
+                entry,
+            ))
+        }
     }
     if entry.source.source_window_id.is_some() {
         return Err(failure.unwrap_or_else(gone));

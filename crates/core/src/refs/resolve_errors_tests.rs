@@ -84,3 +84,35 @@ fn mark_deadline_elapsed_fills_missing_details() {
 
     assert_eq!(stamped.details, Some(json!({ "deadline_elapsed": true })));
 }
+
+#[test]
+fn a_recorded_application_no_lookup_finds_is_a_stale_ref_that_no_refresh_restores() {
+    let entry = entry_with_role("button");
+    let gone = AdapterError::new(
+        ErrorCode::AppNotFound,
+        "No running application matches 'calc'",
+    );
+
+    let error = owner_gone(gone, &entry);
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert!(!error.permits_retry_by_default());
+    let details = error.details.expect("stale details");
+    assert_eq!(details["kind"], "saved_ref_absent");
+    assert_eq!(details["complete"], true);
+    assert_eq!(details["retryable"], false);
+}
+
+#[test]
+fn an_owner_lookup_that_failed_another_way_is_returned_as_it_is() {
+    let entry = entry_with_role("button");
+    for failure in [
+        AdapterError::timeout("The registry did not answer"),
+        AdapterError::new(ErrorCode::AmbiguousTarget, "two apps"),
+        AdapterError::new(ErrorCode::AppUnresponsive, "stopped"),
+        AdapterError::new(ErrorCode::WindowNotFound, "the recorded window closed"),
+    ] {
+        let code = failure.code.clone();
+        assert_eq!(owner_gone(failure, &entry).code, code);
+    }
+}

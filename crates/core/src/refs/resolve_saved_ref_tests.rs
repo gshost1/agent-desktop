@@ -283,3 +283,59 @@ fn a_landing_with_no_count_behind_it_that_does_not_match_is_absent() {
     assert!(!error.permits_retry_by_default());
     assert_eq!(error.details.unwrap()["kind"], "saved_ref_absent");
 }
+
+struct GoneOwner(super::test_support::RuleAdapter);
+
+impl crate::adapter::ObservationOps for GoneOwner {
+    fn list_apps_scoped(
+        &self,
+        _name: &str,
+        _bundle_id: Option<&str>,
+        _deadline: crate::Deadline,
+    ) -> Result<Vec<crate::AppInfo>, crate::AdapterError> {
+        Ok(Vec::new())
+    }
+
+    fn list_windows(
+        &self,
+        _filter: &crate::adapter::WindowFilter,
+        _deadline: crate::Deadline,
+    ) -> Result<Vec<crate::WindowInfo>, crate::AdapterError> {
+        Err(crate::AdapterError::new(
+            ErrorCode::AppNotFound,
+            "No running application matches 'Fixture'",
+        ))
+    }
+
+    fn observe_tree(
+        &self,
+        root: crate::locator::live_locator::ObservationRoot<'_>,
+        request: &crate::locator::live_locator::ObservationRequest,
+    ) -> Result<crate::locator::live_locator::ObservedTree, crate::AdapterError> {
+        self.0.observe_tree(root, request)
+    }
+}
+
+impl crate::adapter::ActionOps for GoneOwner {}
+impl crate::adapter::InputOps for GoneOwner {}
+impl crate::adapter::SystemOps for GoneOwner {}
+
+#[test]
+fn a_ref_whose_application_exited_is_stale_and_not_app_not_found() {
+    let _guard = HomeGuard::new();
+    let adapter = GoneOwner(RuleAdapter::new(tree_with(vec![node("button", "Run")])));
+
+    let Err(error) = crate::refs::resolve_saved_ref::resolve_saved_ref(
+        &adapter,
+        &entry(),
+        crate::Deadline::standard().unwrap(),
+        None,
+    ) else {
+        panic!("a ref of an exited application cannot resolve");
+    };
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "saved_ref_absent");
+    assert_eq!(details["retryable"], false);
+}

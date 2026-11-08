@@ -88,6 +88,17 @@ pub(crate) fn absent(entry: &RefEntry) -> AdapterError {
         }))
 }
 
+/// A lookup that found no running application for a ref's recorded owner is
+/// complete evidence that no live element can match the ref, so it answers as
+/// a stale ref. Any other failure is returned as it is, including a closed
+/// window of a running application, which stays `WINDOW_NOT_FOUND`.
+pub(crate) fn owner_gone(error: AdapterError, entry: &RefEntry) -> AdapterError {
+    match error.code {
+        ErrorCode::AppNotFound => absent(entry),
+        _ => error,
+    }
+}
+
 /// The refusal for a landed element that does not match the ref. After a
 /// whole-window count found the ref's element just before the landing
 /// (`counted`), the path moved under the descent; with no count behind the
