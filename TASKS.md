@@ -245,13 +245,18 @@ re-runs; keep running local gates and pushing at checkpoints. PR #2 had merged j
 **Lifted the same day:** Actions re-enabled with George's approval; normal merge rules apply. Dispatch CI only when a
 head is ready for review, not on every push.
 
-## Merge rule (George, 2026-11-07)
+## Merge rule (George, 2026-11-07, updated)
 
-Merge own fork PRs when: every CI check on the head SHA is green (dispatch runs count), local gates and reviews are
-done, not a draft, rebased on current `origin/main` and re-tested. `gh pr merge <n> --squash --delete-branch`.
-A PR that touches root `Cargo.toml`: first confirm `gh workflow list --repo gshost1/agent-desktop --all` shows
-Release `disabled_manually` (a push to `main` touching it would cut a fork release); otherwise hold and tell the
-control thread.
+Merge own fork PRs when all hold, and name the rule used in the PR body:
+1. The head has the latest `main` merged in, local gates passed on it, and CI is 13/13 green on that head.
+2. GitHub reports `CLEAN`.
+3. If `main` moved during that CI run, the files changed on `main` since then do not overlap the PR's files. Always
+   overlap: `Cargo.toml`, `Cargo.lock`, `.github/**`, `crates/core/src/lib.rs`, `AGENTS.md`, and skill files the PR
+   touches. Any overlap re-cycles (merge `main`, gates, CI).
+Plus: reviews done, not a draft; `gh pr merge <n> --squash --delete-branch`; watch `main`'s CI after each merge and
+fix it if red. A PR that touches root `Cargo.toml`: first confirm Release shows `disabled_manually`.
+Host set since `a1873d35` (fork PR #8): add `-p agent-desktop-web`; `audit/tools/gates.sh` does it when `crates/web`
+exists and also runs CI's core Win32-leakage check.
 
 ## Incidents
 
