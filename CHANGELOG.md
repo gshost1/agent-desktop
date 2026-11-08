@@ -21,6 +21,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 * On macOS, find the window of a control that omits `AXWindow`, so `select`, `click` and `expand` on System Settings popups no longer time out. ([#6](https://github.com/gshost1/agent-desktop/pull/6))
 * On macOS, read window titles through accessibility without Screen Recording permission, so `list-windows`, `snapshot` and `wait --window` can tell windows apart. ([#32](https://github.com/gshost1/agent-desktop/pull/32))
 * Stop `find` and surface walks from repeating reads that cannot finish within the budget. ([#33](https://github.com/gshost1/agent-desktop/pull/33))
+* Keep `find` and snapshots from reporting an incomplete walk with no cause. A list's rows read after the rest of the window could be skipped as false cycles, so `find` failed with `TIMEOUT` `locator_incomplete` in under a second and snapshots came back incomplete. ([#67](https://github.com/gshost1/agent-desktop/pull/67))
 * Bound the surface report after an action to one second, so a slow report no longer adds its full timeout to the action. ([#4](https://github.com/gshost1/agent-desktop/pull/4))
 * Give a batch's permission preflight its own budget, capped at 15 seconds, so a slow check no longer fails the batch with `TIMEOUT` before its first entry. ([#57](https://github.com/gshost1/agent-desktop/pull/57))
 * Keep a paced `type` burst from reporting delivered text as unsent when the refmap changes mid-burst. ([#2](https://github.com/gshost1/agent-desktop/pull/2))
