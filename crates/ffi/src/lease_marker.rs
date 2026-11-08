@@ -6,28 +6,38 @@ thread_local! {
     static OPERATION_HOLDS_LEASE: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Marks this thread's running FFI operation as holding, or about to take, the interaction lease, until it
-/// is dropped. A mutating call made from a log callback while the mark is set is refused instead of waiting
-/// for a lease that only the callback's own thread can release.
+/// Marks this thread's running FFI operation as holding the interaction lease until it is dropped.
 pub(crate) struct LeaseMarker {
-    previous: bool,
+    _private: (),
 }
 
 impl LeaseMarker {
-    pub(crate) fn enter() -> Result<Self, AdapterError> {
-        if crate::log_callback::in_callback() && OPERATION_HOLDS_LEASE.get() {
-            return Err(reentrant());
-        }
-        Ok(Self {
-            previous: OPERATION_HOLDS_LEASE.replace(true),
-        })
+    pub(crate) fn hold() -> Self {
+        OPERATION_HOLDS_LEASE.set(true);
+        Self { _private: () }
     }
 }
 
 impl Drop for LeaseMarker {
     fn drop(&mut self) {
-        OPERATION_HOLDS_LEASE.set(self.previous);
+        OPERATION_HOLDS_LEASE.set(false);
     }
+}
+
+/// Refuses a mutation started from a log callback while this thread's running FFI operation holds the
+/// interaction lease, which only this thread can release once the callback returns.
+pub(crate) fn refuse_reentrant_mutation() -> Result<(), AdapterError> {
+    if crate::log_callback::in_callback() && OPERATION_HOLDS_LEASE.get() {
+        return Err(reentrant());
+    }
+    Ok(())
+}
+
+/// Marks a mutation whose lease core takes internally. Core offers no hook at the moment it acquires,
+/// so the mark covers the whole call, including the work before the lease is taken.
+pub(crate) fn mark_core_mutation() -> Result<LeaseMarker, AdapterError> {
+    refuse_reentrant_mutation()?;
+    Ok(LeaseMarker::hold())
 }
 
 fn reentrant() -> AdapterError {

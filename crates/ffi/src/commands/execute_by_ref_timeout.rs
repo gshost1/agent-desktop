@@ -73,7 +73,7 @@ pub unsafe extern "C" fn ad_execute_by_ref_timeout(
         let caller_ip = caller_policy.to_interaction_policy();
 
         let adapter_ref = crate::adapter::acquire_adapter!(adapter);
-        let _lease_marker = match crate::lease_marker::LeaseMarker::enter() {
+        let _lease_marker = match crate::lease_marker::mark_core_mutation() {
             Ok(marker) => marker,
             Err(error) => {
                 return set_last_error(&error);
