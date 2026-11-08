@@ -203,6 +203,7 @@ fn find_and_snapshot_reach_the_same_sheet_and_respect_an_explicit_window() {
                         last: false,
                         nth: None,
                         limit: None,
+                        allow_partial: false,
                     },
                     timeout_ms: None,
                 },

@@ -78,6 +78,17 @@ impl TraceConfig {
         session_id: Option<&str>,
         fields: impl FnOnce() -> Value,
     ) -> Result<(), AppError> {
+        self.emit_recorded(event, session_id, fields).map(|_| ())
+    }
+
+    /// Emits like `emit_lazy` and returns the `seq` of the written line, or
+    /// `None` when no line was written (no sink, or a tolerated failure).
+    pub(crate) fn emit_recorded(
+        &self,
+        event: &str,
+        session_id: Option<&str>,
+        fields: impl FnOnce() -> Value,
+    ) -> Result<Option<u64>, AppError> {
         let _emission = self
             .state
             .emission
@@ -89,14 +100,14 @@ impl TraceConfig {
                 Err(error) if self.strict => return Err(error),
                 Err(error) => {
                     tracing::warn!("trace recording limit unavailable: {error}");
-                    return Ok(());
+                    return Ok(None);
                 }
             },
             _ => None,
         };
         let writer = match self.ensure_writer()? {
             Some(writer) => writer,
-            None => return Ok(()),
+            None => return Ok(None),
         };
         match writer
             .lock()
@@ -107,11 +118,11 @@ impl TraceConfig {
                     write_event_locked(file, event, session_id, fields(), budget.as_mut())
                 })
             }) {
-            Ok(()) => Ok(()),
+            Ok(seq) => Ok(Some(seq)),
             Err(err) if self.strict => Err(err),
             Err(err) => {
                 tracing::warn!("trace write failed: {err}");
-                Ok(())
+                Ok(None)
             }
         }
     }
@@ -221,6 +232,7 @@ fn write_meta_header_locked(
         }),
         budget,
     )
+    .map(|_| ())
 }
 
 #[cfg(test)]
@@ -231,7 +243,7 @@ fn write_event(
     fields: Value,
 ) -> Result<(), AppError> {
     with_exclusive_file(file, |file| {
-        write_event_locked(file, event, session_id, fields, None)
+        write_event_locked(file, event, session_id, fields, None).map(|_| ())
     })
 }
 
@@ -241,7 +253,7 @@ fn write_event_locked(
     session_id: Option<&str>,
     fields: Value,
     budget: Option<&mut TraceWriteBudget>,
-) -> Result<(), AppError> {
+) -> Result<u64, AppError> {
     let envelope_bytes = event
         .len()
         .saturating_mul(6)
@@ -269,10 +281,8 @@ fn write_event_locked(
                 .as_millis()
         ),
     );
-    body.insert(
-        "seq".to_string(),
-        json!(EVENT_SEQ.fetch_add(1, Ordering::Relaxed)),
-    );
+    let seq = EVENT_SEQ.fetch_add(1, Ordering::Relaxed);
+    body.insert("seq".to_string(), json!(seq));
     body.insert("writer_pid".to_string(), json!(std::process::id()));
     body.insert(
         "writer_proc_start_ms".to_string(),
@@ -288,7 +298,8 @@ fn write_event_locked(
     if let Some(budget) = budget {
         budget.reserve_line(line.len())?;
     }
-    file.write_all(&line).map_err(AppError::from)
+    file.write_all(&line).map_err(AppError::from)?;
+    Ok(seq)
 }
 
 fn value_fits(value: &Value, max_bytes: usize) -> bool {

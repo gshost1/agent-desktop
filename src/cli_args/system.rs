@@ -1,6 +1,7 @@
 use clap::{Args, Parser};
 use serde::Deserialize;
 
+use super::launch_flags::{LaunchAttachArgs, LaunchCdpArgs};
 use super::{Surface, WindowScope};
 
 fn default_launch_timeout() -> u64 {
@@ -40,45 +41,12 @@ pub(crate) struct LaunchArgs {
     pub env: Vec<String>,
     #[arg(long, help = "Working directory for the launched process")]
     pub cwd: Option<std::path::PathBuf>,
-    #[arg(
-        long = "no-attach",
-        help = "Start a fresh instance instead of attaching to a running one (Windows fails if the app is already running)"
-    )]
-    #[serde(default)]
-    pub no_attach: bool,
-    #[arg(
-        long,
-        help = "Bring the app forward so it presents a window, and wait for one"
-    )]
-    #[serde(default)]
-    pub activate: bool,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub attach: LaunchAttachArgs,
     #[command(flatten)]
     #[serde(flatten)]
     pub cdp: LaunchCdpArgs,
-}
-
-/// The DevTools flags of `launch`: the endpoint port and the folder the
-/// browser saves downloads to.
-#[derive(Args, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct LaunchCdpArgs {
-    #[arg(
-        long,
-        value_name = "PORT",
-        num_args = 0..=1,
-        default_missing_value = "0",
-        help = "Expose the app's DevTools protocol endpoint on this port (0 or omitted picks a free port)"
-    )]
-    #[serde(default)]
-    pub cdp: Option<u16>,
-    #[arg(
-        long = "download-dir",
-        value_name = "DIR",
-        requires = "cdp",
-        help = "With --cdp: save the browser's downloads in this folder, created if missing; wait --download returns each saved file"
-    )]
-    #[serde(default)]
-    pub download_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Parser, Debug, Deserialize)]

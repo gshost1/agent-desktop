@@ -45,6 +45,7 @@ fn rooted_find_and_drill_validate_the_observed_menu_context_before_publishing() 
                     last: false,
                     nth: None,
                     limit: None,
+                    allow_partial: false,
                 },
                 timeout_ms: Some(1000),
             },

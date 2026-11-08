@@ -59,6 +59,28 @@ impl ObservedTree {
         self.channel.as_ref()
     }
 
+    /// Records that this observation read every node except the rows of list
+    /// and table containers, which it left unread on request. The tree stays
+    /// incomplete and never exhaustive; only a `--first` selection may answer
+    /// from it, with the first match outside those rows. The mark lives on the
+    /// roots, which an observation reaches only once its walk is over.
+    pub fn mark_rows_unread(&mut self) {
+        for root in &self.roots {
+            if let Some(node) = self.nodes.get_mut(*root as usize) {
+                node.completeness.rows_unread = true;
+            }
+        }
+    }
+
+    pub(crate) fn rows_unread(&self) -> bool {
+        !self.roots.is_empty()
+            && self.roots.iter().all(|root| {
+                self.nodes
+                    .get(*root as usize)
+                    .is_some_and(|node| node.completeness.rows_unread)
+            })
+    }
+
     /// Whether this observation read the whole window: complete, and with no
     /// container whose descendants it left unread. A capture proof and a
     /// tokenless resolution both rest on it, because both count evidence over
@@ -268,6 +290,10 @@ impl ObservedTree {
             .cloned()
             .unwrap_or_else(|| "unknown".into());
         let child_indices = node.children.clone();
+        let derived_name = node.evidence.derived_name().map(str::to_owned);
+        let mut descriptors = node.evidence.ref_evidence.descriptors.clone();
+        descriptors.derived_name = None;
+        descriptors.name_source = descriptors.name_source.filter(|_| derived_name.is_some());
         let projected = AccessibilityNode {
             ref_id: node.ref_id.take(),
             role,
@@ -277,7 +303,7 @@ impl ObservedTree {
                     .identifiers
                     .retained_object()
                     .map(str::to_owned),
-                name: node.evidence.name.meaningful_string(),
+                name: node.evidence.name.meaningful_string().or(derived_name),
                 value: node.evidence.value.meaningful_string(),
                 description: node.evidence.description.meaningful_string(),
                 native_id: node.evidence.identifiers.preferred_identifier().cloned(),
@@ -293,7 +319,7 @@ impl ObservedTree {
                     .unwrap_or_default(),
                 bounds: node.evidence.ref_evidence.bounds.known().copied(),
                 ref_bounds: node.evidence.ref_evidence.window_bounds.known().copied(),
-                descriptors: node.evidence.ref_evidence.descriptors.clone(),
+                descriptors,
             },
             children_count: node.children_count,
             subtree_truncated: !node.completeness.subtree_complete,
