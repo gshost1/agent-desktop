@@ -1,43 +1,20 @@
-use crate::adapter::hit_test::HitTestResult;
-use crate::adapter::{ActionOps, InputOps, NativeHandle, ObservationOps, SystemOps};
+use super::*;
 use crate::commands::{drag, hover};
-use crate::refs::refs_store::RefStore;
-use crate::refs::refs_test_support::HomeGuard;
-use crate::refs::{RefEntry, RefMap};
-use crate::{AdapterError, CommandContext, DragParams, ErrorCode, Rect};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use crate::{CommandContext, DragParams};
 
 struct FocusCountingAdapter {
     focuses: AtomicU32,
-    focus_failures_left: AtomicU32,
-    occlusions_left: AtomicU32,
-    hidden_until_focused: bool,
-    raised: AtomicBool,
-    scrolls: AtomicU32,
     leases: AtomicU32,
+    focus_fails_retryably: bool,
 }
 
 impl FocusCountingAdapter {
-    fn occluded_for(attempts: u32) -> Self {
+    fn new(focus_fails_retryably: bool) -> Self {
         Self {
             focuses: AtomicU32::new(0),
-            focus_failures_left: AtomicU32::new(0),
-            occlusions_left: AtomicU32::new(attempts),
-            hidden_until_focused: false,
-            raised: AtomicBool::new(false),
-            scrolls: AtomicU32::new(0),
             leases: AtomicU32::new(0),
+            focus_fails_retryably,
         }
-    }
-
-    fn hidden_until_focused(mut self) -> Self {
-        self.hidden_until_focused = true;
-        self
-    }
-
-    fn failing_focus(self, failures: u32) -> Self {
-        self.focus_failures_left.store(failures, Ordering::SeqCst);
-        self
     }
 
     fn focuses(&self) -> u32 {
@@ -54,25 +31,17 @@ impl ObservationOps for FocusCountingAdapter {
         Ok(NativeHandle::null())
     }
 
-    fn observe_pointer(
+    fn get_element_bounds(
         &self,
         _handle: &NativeHandle,
         _deadline: crate::Deadline,
-    ) -> Result<crate::PointerObservation, AdapterError> {
-        let states = if self.hidden_until_focused && !self.raised.load(Ordering::SeqCst) {
-            vec![crate::tree::state::OFFSCREEN.to_string()]
-        } else {
-            Vec::new()
-        };
-        Ok(crate::PointerObservation {
-            bounds: Some(Rect {
-                x: 100.0,
-                y: 200.0,
-                width: 20.0,
-                height: 10.0,
-            }),
-            states,
-        })
+    ) -> Result<Option<Rect>, AdapterError> {
+        Ok(Some(Rect {
+            x: 100.0,
+            y: 200.0,
+            width: 20.0,
+            height: 10.0,
+        }))
     }
 
     fn hit_test(
@@ -81,34 +50,16 @@ impl ObservationOps for FocusCountingAdapter {
         _point: crate::Point,
         _deadline: crate::Deadline,
     ) -> Result<HitTestResult, AdapterError> {
-        let occluded = self
-            .occlusions_left
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
-                left.checked_sub(1)
-            })
-            .is_ok();
-        if occluded {
-            return Ok(HitTestResult::InterceptedBy {
-                role: Some("AXSheet".into()),
-                name: Some("Transient overlay".into()),
-                bounds: None,
-            });
-        }
-        Ok(HitTestResult::ReachesTarget)
+        Ok(HitTestResult::InterceptedBy {
+            role: Some("window".into()),
+            name: Some("Another app raised over the target".into()),
+            bounds: None,
+        })
     }
     crate::adapter::saved_ref_scope!("button", Some("Target"));
 }
 
-impl ActionOps for FocusCountingAdapter {
-    fn scroll_into_view(
-        &self,
-        _handle: &NativeHandle,
-        _lease: &crate::InteractionLease,
-    ) -> Result<(), AdapterError> {
-        self.scrolls.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-}
+impl ActionOps for FocusCountingAdapter {}
 
 impl InputOps for FocusCountingAdapter {
     fn mouse_event(
@@ -151,91 +102,38 @@ impl SystemOps for FocusCountingAdapter {
         _lease: &crate::InteractionLease,
     ) -> Result<(), AdapterError> {
         self.focuses.fetch_add(1, Ordering::SeqCst);
-        let failed = self
-            .focus_failures_left
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
-                left.checked_sub(1)
-            })
-            .is_ok();
-        if failed {
-            return Err(AdapterError::new(
-                ErrorCode::ActionFailed,
-                "The window manager refused to raise the window",
-            ));
+        if self.focus_fails_retryably {
+            return Err(AdapterError::app_unresponsive("Fixture")
+                .with_details(json!({ "retryable": true })));
         }
-        self.raised.store(true, Ordering::SeqCst);
         Ok(())
     }
 }
 
-fn snapshot() -> String {
-    let store = RefStore::new().unwrap();
-    let mut refmap = RefMap::new();
-    for pid in [42, 99] {
-        refmap.allocate(RefEntry {
-            process: crate::RefProcess {
-                pid: crate::ProcessId::new(pid),
-                process_instance: Some("test-instance".into()),
-            },
-            identity: crate::RefEntryIdentity {
-                retained_object: None,
-                role: "button".into(),
-                name: Some("Target".into()),
-                value: None,
-                description: None,
-                native_id: None,
-                unique_at_capture: true,
-            },
-            geometry: crate::RefGeometry {
-                bounds_space: None,
-                bounds: None,
-                bounds_hash: None,
-            },
-            capabilities: crate::RefCapabilities {
-                states: vec![],
-                available_actions: vec![crate::actions::capability::CLICK.into()],
-            },
-            source: crate::RefSource {
-                source_app: Some(format!("App {pid}")),
-                source_window_id: Some(format!("w-{pid}")),
-                source_window_title: Some(format!("Window {pid}")),
-                source_window_bounds_hash: None,
-                source_surface: crate::adapter::SnapshotSurface::Window,
-                renderer_accessibility_forced: false,
-            },
-            scope: crate::RefScope {
-                root_ref: None,
-                path_is_absolute: false,
-                path: smallvec::SmallVec::new(),
-            },
-        });
-    }
-    store.save_new_snapshot(&refmap).unwrap()
-}
+const TIMEOUT_MS: u64 = 1_000;
 
-fn hover_args() -> hover::HoverArgs {
+fn hover_args(snapshot_id: &str) -> hover::HoverArgs {
     hover::HoverArgs {
-        ref_id: Some(format!("@{}:e1", snapshot())),
+        ref_id: Some(format!("@{snapshot_id}:e1")),
         xy: None,
         duration_ms: None,
-        timeout_ms: Some(5_000),
+        timeout_ms: Some(TIMEOUT_MS),
     }
 }
 
-fn drag_args() -> drag::DragArgs {
-    let snapshot_id = snapshot();
+fn drag_args(snapshot_id: &str) -> drag::DragArgs {
     drag::DragArgs {
         from: drag::DragEndpoint {
             ref_id: Some(format!("@{snapshot_id}:e1")),
             xy: None,
         },
         to: drag::DragEndpoint {
-            ref_id: Some(format!("@{snapshot_id}:e2")),
-            xy: None,
+            ref_id: None,
+            xy: Some((400.0, 300.0)),
         },
         duration_ms: None,
         drop_delay_ms: None,
-        timeout_ms: Some(5_000),
+        timeout_ms: Some(TIMEOUT_MS),
         wait_for_scope: drag::WaitForScope::default(),
     }
 }
@@ -244,49 +142,59 @@ fn headed() -> CommandContext {
     CommandContext::default().with_headed(true)
 }
 
-#[test]
-fn headed_hover_raises_the_window_once_across_retried_attempts() {
-    let _guard = HomeGuard::new();
-    let adapter = FocusCountingAdapter::occluded_for(2);
-
-    let value = hover::execute(hover_args(), &adapter, &headed()).unwrap();
-
-    assert_eq!(adapter.leases.load(Ordering::SeqCst), 3);
-    assert_eq!(adapter.focuses(), 1);
-    assert_eq!(value["focused"], true);
+fn assert_stopped_promptly(started: std::time::Instant) {
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(TIMEOUT_MS / 2),
+        "the command waited out its budget after raising the window"
+    );
 }
 
 #[test]
-fn headed_drag_raises_the_source_window_once_across_retried_attempts() {
+fn headed_hover_ends_with_the_refusal_of_the_attempt_that_raised_the_window() {
     let _guard = HomeGuard::new();
-    let adapter = FocusCountingAdapter::occluded_for(2);
+    let snapshot_id = point_ref_snapshot();
+    let adapter = FocusCountingAdapter::new(false);
+    let started = std::time::Instant::now();
 
-    let value = drag::execute(drag_args(), &adapter, &headed()).unwrap();
-
-    assert_eq!(adapter.leases.load(Ordering::SeqCst), 3);
-    assert_eq!(adapter.focuses(), 1);
-    assert_eq!(value["focused"], true);
-}
-
-#[test]
-fn a_focus_run_by_the_wait_scroll_is_reused_by_the_leased_attempts() {
-    let _guard = HomeGuard::new();
-    let adapter = FocusCountingAdapter::occluded_for(1).hidden_until_focused();
-
-    let value = hover::execute(hover_args(), &adapter, &headed()).unwrap();
-
-    assert_eq!(adapter.scrolls.load(Ordering::SeqCst), 1);
-    assert_eq!(adapter.focuses(), 1);
-    assert_eq!(value["focused"], true);
-}
-
-#[test]
-fn a_failed_focus_stays_the_command_failure() {
-    let _guard = HomeGuard::new();
-    let adapter = FocusCountingAdapter::occluded_for(0).failing_focus(1);
-
-    let error = hover::execute(hover_args(), &adapter, &headed()).unwrap_err();
+    let error = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap_err();
 
     assert_eq!(error.code(), "ACTION_FAILED");
+    assert!(point_failed_check(&error, "receives_events"));
     assert_eq!(adapter.focuses(), 1);
+    assert_stopped_promptly(started);
+    assert_eq!(adapter.leases.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn headed_drag_ends_with_the_refusal_of_the_attempt_that_raised_the_window() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = point_ref_snapshot();
+    let adapter = FocusCountingAdapter::new(false);
+    let started = std::time::Instant::now();
+
+    let error = drag::execute(drag_args(&snapshot_id), &adapter, &headed()).unwrap_err();
+
+    assert_eq!(error.code(), "ACTION_FAILED");
+    assert!(point_failed_check(&error, "receives_events"));
+    assert_eq!(adapter.focuses(), 1);
+    assert_stopped_promptly(started);
+    assert_eq!(adapter.leases.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_focus_call_that_raised_and_failed_retryably_ends_the_command() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = point_ref_snapshot();
+    let adapter = FocusCountingAdapter::new(true);
+    let started = std::time::Instant::now();
+
+    let error = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap_err();
+
+    assert_eq!(error.code(), "APP_UNRESPONSIVE");
+    let AppError::Adapter(error) = error else {
+        panic!("expected an adapter error");
+    };
+    assert!(error.moved_focus());
+    assert_eq!(adapter.focuses(), 1);
+    assert_stopped_promptly(started);
 }

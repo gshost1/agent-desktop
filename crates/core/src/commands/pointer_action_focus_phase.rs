@@ -1,59 +1,72 @@
+use super::{focus_point_under_lease, is_retryable_point_error, point_error_report};
 use crate::{
-    AppError,
-    adapter::PlatformAdapter,
-    commands::{
-        helpers::load_ref_entry,
-        point_resolve::{PointResolveArgs, focus_for_physical_input},
-    },
-    context::CommandContext,
+    AppError, actionability::pointer_timeout::point_actionability_timeout,
+    adapter::PlatformAdapter, commands::point_resolve::PointResolveArgs, context::CommandContext,
+    refs::ref_resolve_deadline::POLL_INTERVAL,
 };
 
-/// The headed focus a pointer command runs before its first pointer event.
-/// It runs once per command: the first attempt that reaches it raises the
-/// target window, and every later attempt, whether the wait's scroll or a
-/// retried attempt under a new lease, reuses that outcome instead of raising
-/// the window again. A focus that fails leaves the phase `Unfocused` and the
-/// refusal goes to the caller as it was raised.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PointerFocus<'a> {
-    /// The target needs no focus: a coordinate target, or one whose headed
-    /// requirement does not ask for a focused window.
-    NotRequired,
-    /// The target's window has not been focused in this command yet.
-    Unfocused { ref_id: &'a str },
-    /// The focus ran; `raised` says whether it raised a window, which it does
-    /// not when the physical input policy forbids stealing focus.
-    Focused { raised: bool },
+/// What one leased attempt of a pointer command did to the target's window.
+/// The focus runs under the attempt's own lease, next to the hit test and the
+/// input it serves, so each attempt starts `Unfocused`. An attempt that
+/// raised the window, including a focus call that raised it and then failed,
+/// is `Raised`, and its refusal ends the command: a command raises a window
+/// at most once, as a ref action does.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AttemptFocus {
+    Unfocused,
+    Raised,
 }
 
-impl<'a> PointerFocus<'a> {
-    pub(crate) fn new(args: PointResolveArgs<'a>) -> Self {
-        match args.ref_id {
-            Some(ref_id) if args.headed_requirement.requires_focus() => Self::Unfocused { ref_id },
-            _ => Self::NotRequired,
-        }
-    }
-
-    /// Runs the focus if this command has not run it yet and returns whether
-    /// the command raised the target window.
-    pub(crate) fn ensure(
+impl AttemptFocus {
+    /// Focuses the target's window when headed input needs it and returns
+    /// whether a window was raised.
+    pub(crate) fn run(
         &mut self,
+        args: PointResolveArgs<'_>,
         lease: &crate::InteractionLease,
         adapter: &dyn PlatformAdapter,
         context: &CommandContext,
     ) -> Result<bool, AppError> {
-        let ref_id = match *self {
-            Self::NotRequired => return Ok(false),
-            Self::Focused { raised } => return Ok(raised),
-            Self::Unfocused { ref_id } => ref_id,
+        let outcome = focus_point_under_lease(args, lease, adapter, context);
+        let raised = match &outcome {
+            Ok(raised) => *raised,
+            Err(AppError::Adapter(error)) => error.moved_focus(),
+            Err(_) => false,
         };
-        let entry = load_ref_entry(ref_id, context)?;
-        let raised = focus_for_physical_input(Some(&entry), adapter, context, lease)?;
-        *self = Self::Focused { raised };
-        Ok(raised)
+        if raised {
+            *self = Self::Raised;
+        }
+        outcome
     }
 }
 
-#[cfg(test)]
-#[path = "pointer_action_focus_phase_tests.rs"]
-mod tests;
+/// Runs a pointer command's leased attempts until one resolves. A refusal
+/// that may clear goes back to the wait while the budget lasts, unless the
+/// attempt raised the target's window: that refusal is the command's result.
+pub(crate) fn retry_leased_point_phase<T>(
+    timeout_ms: Option<u64>,
+    deadline: crate::Deadline,
+    mut attempt: impl FnMut(&mut AttemptFocus) -> Result<T, AppError>,
+) -> Result<T, AppError> {
+    let auto_wait = timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
+    loop {
+        let mut focus = AttemptFocus::Unfocused;
+        match attempt(&mut focus) {
+            Ok(value) => return Ok(value),
+            Err(error)
+                if auto_wait
+                    && focus == AttemptFocus::Unfocused
+                    && is_retryable_point_error(&error) =>
+            {
+                let remaining = deadline.remaining();
+                if remaining.is_zero() {
+                    return Err(point_actionability_timeout(Some(point_error_report(
+                        &error,
+                    ))));
+                }
+                std::thread::sleep(POLL_INTERVAL.min(remaining));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}

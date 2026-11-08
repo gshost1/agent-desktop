@@ -113,7 +113,6 @@ fn a_minimized_source_window_is_restored_before_the_wait_scrolls_its_target() {
 
     let resolved = wait_for_point_with_deadline(
         headed_point_args(&snapshot_id),
-        &mut PointerFocus::new(headed_point_args(&snapshot_id)),
         crate::Deadline::after(5_000).unwrap(),
         &adapter,
         &crate::CommandContext::default().with_headed(true),
@@ -132,7 +131,6 @@ fn a_window_the_manager_keeps_hidden_ends_the_wait_with_the_focus_refusal() {
 
     let err = match wait_for_point_with_deadline(
         headed_point_args(&snapshot_id),
-        &mut PointerFocus::new(headed_point_args(&snapshot_id)),
         crate::Deadline::after(5_000).unwrap(),
         &adapter,
         &crate::CommandContext::default().with_headed(true),

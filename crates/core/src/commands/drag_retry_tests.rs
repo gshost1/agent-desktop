@@ -325,7 +325,7 @@ fn drag_does_not_dispatch_when_endpoints_cannot_remain_visible_together() {
 
     let error = execute(args, &adapter, &CommandContext::default().with_headed(true)).unwrap_err();
 
-    assert_eq!(error.code(), "TIMEOUT");
+    assert_eq!(error.code(), "ACTION_FAILED");
     assert_eq!(adapter.dispatched.load(Ordering::SeqCst), 0);
 }
 
