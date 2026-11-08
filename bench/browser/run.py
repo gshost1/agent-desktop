@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import shutil
 import socket
 import signal
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -139,8 +141,45 @@ def profile_processes(profile):
     return [int(p) for p in out.split()]
 
 
+def devtools_endpoint(profile):
+    """(port, browser websocket path) of the DevTools endpoint a process on `profile` was started with, or None."""
+    for pid in profile_processes(profile):
+        args = subprocess.run(["ps", "-ww", "-o", "args=", "-p", str(pid)], capture_output=True, text=True).stdout
+        found = re.search(r"--remote-debugging-port=(\d+)", args)
+        if not found:
+            continue
+        port = int(found.group(1))
+        try:
+            socket_url = http_json(f"http://127.0.0.1:{port}/json/version")["webSocketDebuggerUrl"]
+        except Exception:
+            return None
+        return port, urllib.parse.urlparse(socket_url).path
+    return None
+
+
+def quit_chrome_gracefully(proc, profile, grace=20):
+    """Ask Chrome to quit over DevTools so it removes its code-sign clone, then wait for every profile process."""
+    endpoint = devtools_endpoint(profile)
+    node = shutil.which("node")
+    if endpoint is None or node is None:
+        return False
+    port, path = endpoint
+    try:
+        subprocess.run([node, str(HERE / "cdp_close.mjs"), str(port), path], capture_output=True, timeout=15)
+    except subprocess.TimeoutExpired:
+        return False
+    deadline = time.time() + grace
+    while time.time() < deadline:
+        if proc.poll() is not None and not profile_processes(profile):
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def stop_chrome(proc, profile):
-    """Stop the run's Chrome and every helper on its profile; True once none is left."""
+    """Quit the run's Chrome over DevTools, then kill what is left; True once no process of the profile remains."""
+    if quit_chrome_gracefully(proc, profile):
+        return True
     for sig, grace in ((signal.SIGTERM, 10), (signal.SIGKILL, 5)):
         try:
             os.killpg(proc.pid, sig)

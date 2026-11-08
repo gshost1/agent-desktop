@@ -175,10 +175,6 @@ class StopChromeTest(unittest.TestCase):
             self.assertFalse(run.stop_chrome(proc, Path("/nonexistent/profile")))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class CdpPortTest(unittest.TestCase):
     def test_every_run_gets_a_port_nothing_listens_on(self):
         port = run.free_port()
@@ -213,3 +209,74 @@ class ProfileProcessesTest(unittest.TestCase):
         self.addCleanup(child.kill)
         run.time.sleep(0.5)
         self.assertIn(child.pid, run.profile_processes(profile))
+
+
+class GracefulStopTest(unittest.TestCase):
+    def setUp(self):
+        self.profile = Path(tempfile.mkdtemp(prefix="stop-test."))
+        self.addCleanup(run.shutil.rmtree, self.profile, True)
+        patch = mock.patch.object(run, "devtools_endpoint", return_value=(9222, "/devtools/browser/abc"))
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.proc = mock.Mock(pid=10)
+        self.events = []
+
+    def test_chrome_is_asked_to_quit_before_anything_is_killed(self):
+        self.proc.poll.return_value = 0
+        with mock.patch.object(run.subprocess, "run", side_effect=lambda *a, **k: self.events.append("close")), \
+                mock.patch.object(run, "profile_processes", return_value=[]), \
+                mock.patch.object(run.os, "killpg", side_effect=lambda *a: self.events.append("kill")), \
+                mock.patch.object(run.os, "kill", side_effect=lambda *a: self.events.append("kill")):
+            self.assertTrue(run.stop_chrome(self.proc, self.profile))
+        self.assertEqual(self.events, ["close"])
+
+    def test_the_close_request_names_the_profiles_browser_endpoint(self):
+        self.proc.poll.return_value = 0
+        with mock.patch.object(run.subprocess, "run") as called, \
+                mock.patch.object(run, "profile_processes", return_value=[]):
+            run.stop_chrome(self.proc, self.profile)
+        self.assertEqual(called.call_args.args[0][-2:], ["9222", "/devtools/browser/abc"])
+
+    def test_chrome_that_ignores_the_close_request_is_killed_afterwards(self):
+        alive = {"value": True}
+        self.proc.poll.side_effect = lambda: None if alive["value"] else 0
+
+        def kill(*args):
+            self.events.append("kill")
+            alive["value"] = False
+
+        clock = iter(range(0, 10_000))
+        with mock.patch.object(run.subprocess, "run", side_effect=lambda *a, **k: self.events.append("close")), \
+                mock.patch.object(run, "profile_processes", side_effect=lambda p: [11] if alive["value"] else []), \
+                mock.patch.object(run.os, "killpg", side_effect=kill), mock.patch.object(run.os, "kill", side_effect=kill), \
+                mock.patch.object(run.time, "sleep"), mock.patch.object(run.time, "time", lambda: next(clock)):
+            self.assertTrue(run.stop_chrome(self.proc, self.profile))
+        self.assertEqual(self.events[0], "close")
+        self.assertIn("kill", self.events)
+
+    def test_a_profile_without_a_devtools_port_goes_straight_to_the_kill_path(self):
+        run.devtools_endpoint.return_value = None
+        self.proc.poll.return_value = 0
+        with mock.patch.object(run.subprocess, "run") as called, \
+                mock.patch.object(run, "profile_processes", return_value=[]), \
+                mock.patch.object(run.os, "killpg"), mock.patch.object(run.os, "kill"):
+            self.assertTrue(run.stop_chrome(self.proc, self.profile))
+        called.assert_not_called()
+
+
+class DevtoolsEndpointTest(unittest.TestCase):
+    def test_the_port_comes_from_the_flag_a_profile_process_was_started_with(self):
+        ps = mock.Mock(stdout="Chrome --user-data-dir=/p --remote-debugging-port=64098 --remote-debugging-address=127.0.0.1\n")
+        with mock.patch.object(run, "profile_processes", return_value=[5]), \
+                mock.patch.object(run.subprocess, "run", return_value=ps), \
+                mock.patch.object(run, "http_json", return_value={"webSocketDebuggerUrl": "ws://127.0.0.1:64098/devtools/browser/x"}):
+            self.assertEqual(run.devtools_endpoint(Path("/p")), (64098, "/devtools/browser/x"))
+
+    def test_a_profile_without_the_flag_has_no_endpoint(self):
+        ps = mock.Mock(stdout="Chrome --user-data-dir=/p\n")
+        with mock.patch.object(run, "profile_processes", return_value=[5]), mock.patch.object(run.subprocess, "run", return_value=ps):
+            self.assertIsNone(run.devtools_endpoint(Path("/p")))
+
+
+if __name__ == "__main__":
+    unittest.main()
