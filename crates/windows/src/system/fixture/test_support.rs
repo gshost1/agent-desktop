@@ -43,7 +43,7 @@ pub(crate) static FIXTURE_APP_NAME_LOCK: Mutex<()> = Mutex::new(());
 pub(crate) static SHELL_SURFACE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Serializes every test that reaches the real, machine-global interaction
-/// lease - `ProcessLeaseGuard`'s state is process-wide, so two lease
+/// lease - `ProcessLeaseGuard`'s `AtomicBool` is process-wide, so two lease
 /// tests in different OS threads of the same `cargo test` binary contend on
 /// it even when each targets its own scratch lock-file root. Held for the
 /// entire body of any such test, never just around one call.

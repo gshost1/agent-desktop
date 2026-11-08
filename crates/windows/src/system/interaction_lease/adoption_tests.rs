@@ -39,13 +39,9 @@ fn adoption_of_share_zero_handle_succeeds_and_still_blocks_a_fresh_acquire() {
             windows_sys::Win32::Foundation::CloseHandle(raw);
         }
 
-        let contender_root = root.clone();
-        let contender = std::thread::spawn(move || {
-            acquire_at(&contender_root, Deadline::after(50).unwrap()).err()
-        });
-        let error = match contender.join().unwrap() {
-            None => panic!("the adopted duplicate must still hold the lease exclusively"),
-            Some(error) => error,
+        let error = match acquire_at(&root, Deadline::after(50).unwrap()) {
+            Ok(_) => panic!("the adopted duplicate must still hold the lease exclusively"),
+            Err(error) => error,
         };
         assert_eq!(error.code, ErrorCode::Timeout);
 

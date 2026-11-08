@@ -1,12 +1,18 @@
 use agent_desktop_core::{AdapterError, Deadline, InteractionLease, PlatformAdapter};
 
+use crate::ffi_lease::FfiLease;
+
 pub(crate) const DEFAULT_FFI_TIMEOUT_MS: u64 = 5_000;
 
 pub(crate) fn deadline() -> Result<Deadline, AdapterError> {
     Deadline::after(DEFAULT_FFI_TIMEOUT_MS)
 }
 
-pub(crate) fn lease(adapter: &dyn PlatformAdapter) -> Result<InteractionLease, AdapterError> {
+pub(crate) fn lease(adapter: &dyn PlatformAdapter) -> Result<FfiLease, AdapterError> {
+    FfiLease::take(|| acquire(adapter))
+}
+
+fn acquire(adapter: &dyn PlatformAdapter) -> Result<InteractionLease, AdapterError> {
     let deadline = deadline()?;
     #[cfg(unix)]
     if let Some(raw_fd) = inherited_lease_fd()? {

@@ -1,17 +1,21 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, c_char};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use agent_desktop_core::{
-    ActionOps, AdapterError, Deadline, InputOps, InteractionLease, MouseEvent, ObservationOps,
-    OperationReport, ProcessLeaseGuard, SystemOps,
+    ActionOps, AdapterError, Deadline, DisplayInfo, InputOps, InteractionLease, MouseEvent,
+    ObservationOps, OperationReport, ProcessLeaseGuard, SystemOps,
 };
 
 use super::ad_set_log_callback;
 use crate::adapter::{AdAdapter, ad_adapter_destroy, register_adapter};
+use crate::displays::list::ad_list_displays;
 use crate::error::{AdResult, ad_last_error_details};
 use crate::input::mouse::ad_mouse_event;
 use crate::types::{AdMouseEvent, AdPoint};
+
+const CALLBACK_HOLD: Duration = Duration::from_millis(150);
 
 struct LoggingAdapter {
     takes_process_lease: bool,
@@ -31,6 +35,11 @@ impl SystemOps for LoggingAdapter {
         }
         InteractionLease::guarded(deadline, ())
     }
+
+    fn list_displays(&self, _deadline: Deadline) -> Result<Vec<DisplayInfo>, AdapterError> {
+        tracing::warn!(operation = "list_displays");
+        Err(AdapterError::not_supported("list_displays"))
+    }
 }
 
 impl InputOps for LoggingAdapter {
@@ -44,10 +53,13 @@ impl InputOps for LoggingAdapter {
     }
 }
 
+type TimedCall = (AdResult, Duration);
+
 thread_local! {
     static ARMED_ADAPTER: Cell<*mut AdAdapter> = const { Cell::new(std::ptr::null_mut()) };
     static CALLBACK_RUNS: Cell<u32> = const { Cell::new(0) };
     static INNER_CALL: RefCell<Option<(AdResult, Duration, String)>> = const { RefCell::new(None) };
+    static CONTENDER: RefCell<Option<JoinHandle<TimedCall>>> = const { RefCell::new(None) };
 }
 
 fn move_event() -> AdMouseEvent {
@@ -71,22 +83,41 @@ fn last_error_kind() -> String {
         .unwrap_or_default()
 }
 
+fn timed_mouse_event(adapter: *mut AdAdapter) -> TimedCall {
+    let event = move_event();
+    let started = Instant::now();
+    let result = unsafe { ad_mouse_event(adapter, &event) };
+    (result, started.elapsed())
+}
+
 unsafe extern "C" fn reenter(_level: i32, _message: *const c_char) {
     CALLBACK_RUNS.set(CALLBACK_RUNS.get().saturating_add(1));
     let adapter = ARMED_ADAPTER.replace(std::ptr::null_mut());
     if adapter.is_null() {
         return;
     }
-    let event = move_event();
-    let started = Instant::now();
-    let result = unsafe { ad_mouse_event(adapter, &event) };
-    let elapsed = started.elapsed();
+    let (result, elapsed) = timed_mouse_event(adapter);
     INNER_CALL.set(Some((result, elapsed, last_error_kind())));
 }
 
-fn run_outer_call_reentered_by_callback(
+unsafe extern "C" fn start_contender(_level: i32, _message: *const c_char) {
+    let adapter = ARMED_ADAPTER.replace(std::ptr::null_mut());
+    if adapter.is_null() {
+        return;
+    }
+    let address = adapter.expose_provenance();
+    let contender = std::thread::spawn(move || {
+        timed_mouse_event(std::ptr::with_exposed_provenance_mut(address))
+    });
+    CONTENDER.set(Some(contender));
+    std::thread::sleep(CALLBACK_HOLD);
+}
+
+fn with_logging_adapter<R>(
     takes_process_lease: bool,
-) -> (AdResult, AdResult, Duration, String) {
+    callback: unsafe extern "C" fn(i32, *const c_char),
+    outer_call: impl FnOnce(*mut AdAdapter) -> R,
+) -> R {
     let _serial = super::tests::log_test_serialization();
     let adapter = register_adapter(AdAdapter {
         inner: Box::new(LoggingAdapter {
@@ -97,31 +128,55 @@ fn run_outer_call_reentered_by_callback(
     })
     .unwrap();
     CALLBACK_RUNS.set(0);
-    assert_eq!(ad_set_log_callback(Some(reenter)), AdResult::Ok);
+    assert_eq!(ad_set_log_callback(Some(callback)), AdResult::Ok);
     ARMED_ADAPTER.set(adapter);
-    let outer = unsafe { ad_mouse_event(adapter, &move_event()) };
+    let outer = outer_call(adapter);
     ARMED_ADAPTER.set(std::ptr::null_mut());
     assert_eq!(ad_set_log_callback(None), AdResult::Ok);
     unsafe { ad_adapter_destroy(adapter) };
-    let (inner, elapsed, kind) = INNER_CALL
+    outer
+}
+
+fn inner_call() -> (AdResult, Duration, String) {
+    INNER_CALL
         .take()
-        .expect("the log callback must run inside the outer call");
-    (outer, inner, elapsed, kind)
+        .expect("the log callback must run inside the outer call")
 }
 
 #[test]
 fn a_log_callback_can_call_back_into_the_library() {
-    let (outer, inner, elapsed, kind) = run_outer_call_reentered_by_callback(false);
+    let outer = with_logging_adapter(false, reenter, |adapter| unsafe {
+        let mut displays = std::ptr::null_mut();
+        ad_list_displays(adapter, &mut displays)
+    });
+    let (inner, elapsed, kind) = inner_call();
     assert_eq!(inner, AdResult::Ok, "kind {kind:?} after {elapsed:?}");
-    assert_eq!(outer, AdResult::Ok);
+    assert_ne!(outer, AdResult::ErrInternal);
     assert_eq!(CALLBACK_RUNS.get(), 1);
 }
 
 #[test]
 fn a_mutation_from_a_log_callback_inside_a_mutation_is_refused_at_once() {
-    let (outer, inner, elapsed, kind) = run_outer_call_reentered_by_callback(true);
+    let outer = with_logging_adapter(true, reenter, |adapter| unsafe {
+        ad_mouse_event(adapter, &move_event())
+    });
+    let (inner, elapsed, kind) = inner_call();
     assert_eq!(outer, AdResult::Ok);
     assert_eq!(inner, AdResult::ErrPolicyDenied, "after {elapsed:?}");
     assert_eq!(kind, "reentrant_interaction_lease");
     assert!(elapsed < Duration::from_millis(100), "took {elapsed:?}");
+}
+
+#[test]
+fn another_thread_waits_for_the_lease_a_logging_mutation_holds() {
+    let (outer, (result, waited)) = with_logging_adapter(true, start_contender, |adapter| {
+        let outer = unsafe { ad_mouse_event(adapter, &move_event()) };
+        let contender = CONTENDER
+            .take()
+            .expect("the log callback must start the contender inside the outer call");
+        (outer, contender.join().unwrap())
+    });
+    assert_eq!(outer, AdResult::Ok);
+    assert_eq!(result, AdResult::Ok, "after {waited:?}");
+    assert!(waited >= CALLBACK_HOLD / 2, "waited only {waited:?}");
 }

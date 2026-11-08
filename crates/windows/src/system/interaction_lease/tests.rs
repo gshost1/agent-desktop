@@ -121,8 +121,8 @@ fn cross_process_contention_times_out_with_lock_timeout_kind() {
     });
 }
 
-/// A second in-process acquire from another thread refuses through
-/// `ProcessLeaseGuard` before the file is ever opened, which is a different shape from cross-process
+/// A second in-process acquire refuses through `ProcessLeaseGuard` before the
+/// file is ever opened, which is a different shape from cross-process
 /// contention: `CreateFileW` with `dwShareMode = 0` also refuses a second
 /// open from the *same* process, so asserting the file-lock kind here would
 /// be untestable - this proves the in-process guard is what actually fires.
@@ -131,13 +131,9 @@ fn in_process_second_acquire_times_out_with_process_lock_kind() {
     with_interaction_lease_test_lock(|| {
         let root = scratch_root("in-process");
         let first = acquire_at(&root, Deadline::after(1_000).unwrap()).unwrap();
-        let contender_root = root.clone();
-        let contender = std::thread::spawn(move || {
-            acquire_at(&contender_root, Deadline::after(50).unwrap()).err()
-        });
-        let error = match contender.join().unwrap() {
-            None => panic!("in-process double acquire unexpectedly succeeded"),
-            Some(error) => error,
+        let error = match acquire_at(&root, Deadline::after(50).unwrap()) {
+            Ok(_) => panic!("in-process double acquire unexpectedly succeeded"),
+            Err(error) => error,
         };
         assert_eq!(error.code, ErrorCode::Timeout);
         assert_eq!(
@@ -205,15 +201,11 @@ fn success_path_reports_earned_contention_count() {
 fn success_path_includes_process_guard_contention() {
     with_interaction_lease_test_lock(|| {
         let root = scratch_root("process-guard-contention");
-        let holder_root = root.clone();
-        let (held, held_signal) = std::sync::mpsc::channel();
+        let first = acquire_at(&root, Deadline::after(2_000).unwrap()).unwrap();
         let releaser = std::thread::spawn(move || {
-            let first = acquire_at(&holder_root, Deadline::after(2_000).unwrap()).unwrap();
-            held.send(()).unwrap();
             std::thread::sleep(Duration::from_millis(80));
             drop(first);
         });
-        held_signal.recv().unwrap();
 
         let lease = acquire_at(&root, Deadline::after(2_000).unwrap()).unwrap();
         assert!(

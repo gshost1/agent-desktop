@@ -1,6 +1,9 @@
 #![cfg(unix)]
 
-use std::{sync::MutexGuard, time::Duration};
+use std::{
+    sync::{Mutex, MutexGuard},
+    time::Duration,
+};
 
 use super::*;
 
@@ -30,8 +33,12 @@ fn wait_for_marker(path: &std::path::Path) -> bool {
     path.is_file()
 }
 
+static INTERACTION_LEASE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 fn interaction_lease_test_guard() -> MutexGuard<'static, ()> {
-    crate::session::process_lease_guard::test_serialization()
+    INTERACTION_LEASE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn test_root(label: &str) -> PathBuf {
@@ -49,13 +56,9 @@ fn a_second_lease_times_out_and_drop_releases_the_first() {
     let root = test_root("contention");
     let first = acquire_unix_interaction_lease_at(Deadline::after(100).unwrap(), &root).unwrap();
     let deadline = Deadline::after(10).unwrap();
-    let contender_root = root.clone();
-    let contended = std::thread::spawn(move || {
-        acquire_unix_interaction_lease_at(deadline, &contender_root).err()
-    });
-    let error = match contended.join().unwrap() {
-        None => panic!("contended lease unexpectedly acquired"),
-        Some(error) => error,
+    let error = match acquire_unix_interaction_lease_at(deadline, &root) {
+        Ok(_) => panic!("contended lease unexpectedly acquired"),
+        Err(error) => error,
     };
     assert_eq!(error.code, ErrorCode::Timeout);
     assert!(
@@ -80,13 +83,9 @@ fn a_recovery_lease_retains_file_and_process_ownership_after_parent_drop() {
     let inherited = recovery.duplicate_inheritable_fd().unwrap();
     drop(original);
     assert!(FileLock::is_held(&interaction_lock_path_at(&root).unwrap()));
-    let contender_root = root.clone();
-    let error = std::thread::spawn(move || {
-        acquire_unix_interaction_lease_at(Deadline::after(10).unwrap(), &contender_root).err()
-    })
-    .join()
-    .unwrap()
-    .expect("the recovery lease must retain the process guard");
+    let error = acquire_unix_interaction_lease_at(Deadline::after(10).unwrap(), &root)
+        .err()
+        .expect("the recovery lease must retain the process guard");
     assert_eq!(
         error.details.unwrap()["kind"],
         "interaction_process_lock_timeout"

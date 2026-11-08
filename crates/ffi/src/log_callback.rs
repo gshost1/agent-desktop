@@ -112,8 +112,12 @@ fn format_event(event: &Event<'_>) -> Option<CString> {
     CString::new(serde_json::to_string(&sanitized).ok()?).ok()
 }
 
+pub(crate) fn in_callback() -> bool {
+    IN_CALLBACK.get()
+}
+
 pub(crate) fn with_dispatch<R>(body: impl FnOnce() -> R) -> R {
-    if current_callback().is_none() || IN_CALLBACK.get() {
+    if IN_CALLBACK.get() || current_callback().is_none() {
         return body();
     }
     let subscriber = tracing_subscriber::registry().with(CallbackLayer);
@@ -131,8 +135,12 @@ pub(crate) fn with_dispatch<R>(body: impl FnOnce() -> R) -> R {
 ///
 /// The callback may call other `ad_*` functions. Events those nested calls emit
 /// are not delivered to it. A mutating call made from the callback while the
-/// call that logged holds the interaction lease fails at once with
+/// call that logged is itself a mutation fails at once with
 /// `AD_RESULT_ERR_POLICY_DENIED` and details kind `reentrant_interaction_lease`.
+/// Any other nested call that needs the interaction lease while the call that
+/// logged holds it, including an observation that takes the lease internally,
+/// waits for a release that happens only after the callback returns, so it can
+/// time out. Do not make such calls from the callback.
 ///
 /// The message pointer is valid only until the callback returns. The callback
 /// must not unwind across this C ABI boundary; C++ exceptions and Rust panics
