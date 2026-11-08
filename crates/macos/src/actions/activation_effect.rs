@@ -159,12 +159,12 @@ mod imp {
         element: &AXElement,
         deadline: Deadline,
     ) -> bool {
-        if before.focus.is_none() && before.sheet.is_none() {
+        if !before.observable() {
             return false;
         }
         let deadline = deadline.capped(std::time::Duration::from_millis(SETTLE_BUDGET_MS));
         while !deadline.is_expired() {
-            if before.sheet_closed(deadline) || changed_now(&before.focus, element, deadline) {
+            if before.surface_changed(deadline) || changed_now(&before.focus, element, deadline) {
                 return true;
             }
             std::thread::sleep(

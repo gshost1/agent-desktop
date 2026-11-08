@@ -50,7 +50,7 @@ mod imp {
             PerformSignal::ReportedUnsupported => Ok(DeliveryOutcome::NotDelivered),
             PerformSignal::ReportedDelivered => Ok(DeliveryOutcome::from_delivery(
                 true,
-                before.sheet_closed(deadline)
+                before.surface_changed(deadline)
                     || activation_effect::changed_now(&before.focus, el, deadline),
             )),
             PerformSignal::Uninformative => ax_mutation::settle_uninformative_perform(
