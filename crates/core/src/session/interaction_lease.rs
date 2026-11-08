@@ -242,7 +242,7 @@ fn validate_unix_runtime_directory(
 
 #[cfg(unix)]
 fn runtime_io_error(error: std::io::Error) -> AdapterError {
-    AdapterError::new(ErrorCode::Internal, error.to_string())
+    crate::storage::file_lock::state_io_error(error)
 }
 
 #[cfg(test)]

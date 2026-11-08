@@ -16,7 +16,8 @@ pub struct FileLock {
 
 impl FileLock {
     pub fn acquire(path: &Path, deadline: Deadline, purpose: &str) -> Result<Self, AdapterError> {
-        let file = crate::storage::private_file::open_private_lock(path, true).map_err(io_error)?;
+        let file =
+            crate::storage::private_file::open_private_lock(path, true).map_err(state_io_error)?;
         lock_file(file, deadline, purpose, path)
     }
 
@@ -45,7 +46,7 @@ impl FileLock {
 
         let duplicated = unsafe { libc::fcntl(self._file.as_raw_fd(), libc::F_DUPFD, 3) };
         if duplicated < 0 {
-            return Err(io_error(std::io::Error::last_os_error()));
+            return Err(state_io_error(std::io::Error::last_os_error()));
         }
         Ok(unsafe { std::os::fd::OwnedFd::from_raw_fd(duplicated) })
     }
@@ -62,21 +63,21 @@ impl FileLock {
 
         let duplicated = unsafe { libc::fcntl(raw_fd, libc::F_DUPFD_CLOEXEC, 3) };
         if duplicated < 0 {
-            return Err(io_error(std::io::Error::last_os_error()));
+            return Err(state_io_error(std::io::Error::last_os_error()));
         }
         let original_flags = unsafe { libc::fcntl(raw_fd, libc::F_GETFD) };
         if original_flags < 0
             || unsafe { libc::fcntl(raw_fd, libc::F_SETFD, original_flags | libc::FD_CLOEXEC) } != 0
         {
             unsafe { libc::close(duplicated) };
-            return Err(io_error(std::io::Error::last_os_error()));
+            return Err(state_io_error(std::io::Error::last_os_error()));
         }
         let inherited = File::from(unsafe { OwnedFd::from_raw_fd(duplicated) });
-        let inherited_meta =
-            crate::storage::private_file::validate_private_regular(&inherited).map_err(io_error)?;
+        let inherited_meta = crate::storage::private_file::validate_private_regular(&inherited)
+            .map_err(state_io_error)?;
         let canonical = crate::storage::private_file::open_private_lock(canonical_path, false)
-            .map_err(io_error)?;
-        let canonical_meta = canonical.metadata().map_err(io_error)?;
+            .map_err(state_io_error)?;
+        let canonical_meta = canonical.metadata().map_err(state_io_error)?;
         if inherited_meta.dev() != canonical_meta.dev()
             || inherited_meta.ino() != canonical_meta.ino()
         {
@@ -145,6 +146,26 @@ fn lock_timeout(
     }))
 }
 
-fn io_error(error: std::io::Error) -> AdapterError {
+/// A permission refusal on agent-desktop's own state files keeps
+/// `PERM_DENIED` and names the fix. The caller can repair a state directory
+/// that other users can read, so `INTERNAL`, which offers no action, is the
+/// wrong answer for it.
+pub(crate) fn state_io_error(error: std::io::Error) -> AdapterError {
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        return AdapterError::new(ErrorCode::PermDenied, error.to_string())
+            .with_suggestion(
+                "agent-desktop keeps its state private. Make the state directory \
+                 (AGENT_DESKTOP_HOME, default ~/.agent-desktop) and the folders inside it owned \
+                 by you and closed to other users: chmod 700 <dir>",
+            )
+            .with_details(serde_json::json!({
+                "kind": "state_directory_permission",
+                "retryable": false,
+            }));
+    }
     AdapterError::new(ErrorCode::Internal, error.to_string())
 }
+
+#[cfg(test)]
+#[path = "file_lock_tests.rs"]
+mod tests;

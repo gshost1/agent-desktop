@@ -41,7 +41,7 @@ Exit codes: `0` success, `1` structured error, `2` argument error. The `error` o
 
 | Code | Meaning | Recovery |
 |------|---------|----------|
-| `PERM_DENIED` | A required OS permission is missing | Read the platform skill |
+| `PERM_DENIED` | A required OS permission is missing, or `details.kind` is `state_directory_permission` | Read the platform skill; for the state directory, apply the suggested `chmod 700` |
 | `ELEMENT_NOT_FOUND` | Ref is absent, or the requested surface is absent | Read `details.kind` and `details.surface`; open an absent menu or refresh only after checking the UI |
 | `STALE_REF` | Ref no longer matches the live UI | Snapshot again, use the new ref |
 | `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or it was not proven unique at capture | Act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
