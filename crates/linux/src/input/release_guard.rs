@@ -1,5 +1,6 @@
 use agent_desktop_core::AdapterError;
 
+use super::emergency_release::EmergencyRelease;
 use super::held_input::HeldInput;
 
 use super::keyboard::keymap_edit::KeymapEdit;
@@ -80,7 +81,6 @@ impl<'a> ReleaseGuard<'a> {
 
     fn edge(&mut self, keyboard: bool, code: u8, down: bool) -> Result<(), SinkError> {
         if down {
-            self.state.arm();
             let (held, touched) = if keyboard {
                 (&mut self.held.keys, &mut self.touched.keys)
             } else {
@@ -131,7 +131,6 @@ impl<'a> ReleaseGuard<'a> {
     pub(crate) fn edit_keymap(&mut self, edit: &KeymapEdit) -> Result<(), SinkError> {
         let current = self.sink.keymap()?;
         let original = current.keysyms_of(edit.keycode);
-        self.state.arm();
         let restoring = self
             .remaps
             .iter()
@@ -167,25 +166,39 @@ impl<'a> ReleaseGuard<'a> {
     }
 
     pub(crate) fn finish(&mut self) -> Result<(), SinkError> {
-        let outcome = self.release_everything();
-        if outcome.is_ok() {
-            self.state.disarm();
-        }
-        outcome
+        self.release_everything()
     }
 
-    pub(crate) fn abort(&mut self, error: AdapterError, suggestion: &str) -> AdapterError {
-        let enriched = self.state.enrich_error(error, suggestion);
-        let _ = self.release_everything();
-        self.state.disarm();
-        enriched
+    /// Ends the sequence after `error`: posts corrective input only for what is still held or
+    /// remapped, then reports the error with the release's real outcome.
+    pub(crate) fn abort(mut self, error: AdapterError, suggestion: &str) -> AdapterError {
+        let release = if self.holding() {
+            let acknowledged = self.release_everything().is_ok();
+            self.surrender();
+            EmergencyRelease::Posted { acknowledged }
+        } else {
+            let _ = self.sync_journal();
+            EmergencyRelease::NotNeeded
+        };
+        self.state.enrich_error(error, release, suggestion)
+    }
+
+    fn holding(&self) -> bool {
+        !self.held.keys.is_empty() || !self.held.buttons.is_empty() || !self.remaps.is_empty()
+    }
+
+    /// Leaves whatever the emergency release could not clear to the held-input journal's stale
+    /// sweep, so dropping the guard does not post the same release a second time.
+    fn surrender(&mut self) {
+        self.held = HeldInput::default();
+        self.remaps.clear();
     }
 
     fn release_everything(&mut self) -> Result<(), SinkError> {
         let mut outcome = Ok(());
         if !self.held.buttons.is_empty() {
             if let Some((x, y)) = self.origin {
-                keep_first(&mut outcome, self.move_to(x, y));
+                keep_first(&mut outcome, self.return_to(x, y));
             }
             for code in self.held.buttons.iter().rev() {
                 keep_first(&mut outcome, self.sink.button(*code, false));
@@ -205,6 +218,11 @@ impl<'a> ReleaseGuard<'a> {
         }
         outcome
     }
+
+    fn return_to(&mut self, x: i32, y: i32) -> Result<(), SinkError> {
+        let (x, y) = (pointer_coordinate(x)?, pointer_coordinate(y)?);
+        self.sink.move_to(x, y)
+    }
 }
 
 fn keep_first(outcome: &mut Result<(), SinkError>, next: Result<(), SinkError>) {
@@ -215,9 +233,8 @@ fn keep_first(outcome: &mut Result<(), SinkError>, next: Result<(), SinkError>) 
 
 impl Drop for ReleaseGuard<'_> {
     fn drop(&mut self) {
-        if self.state.should_release() {
+        if self.holding() {
             let _ = self.release_everything();
-            self.state.disarm();
         }
     }
 }

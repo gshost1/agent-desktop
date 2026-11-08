@@ -1,3 +1,5 @@
+use agent_desktop_core::{AdapterError, DeliverySemantics};
+
 use super::ReleaseGuard;
 use crate::input::keyboard::keymap_edit::KeymapEdit;
 use crate::input::x11::fake_sink::{FakeSink, Recorded, start_keymap};
@@ -148,4 +150,61 @@ fn a_remap_is_journaled_with_the_original_keysyms_before_it_is_sent() {
     assert_eq!(pending[0].remaps, [restore()]);
     guard.finish().expect("finish");
     assert!(observer.stale_entries(&|_, _| false).is_empty());
+}
+
+#[test]
+fn an_abort_after_every_key_came_back_up_posts_nothing_and_claims_no_emergency_release() {
+    let fake = FakeSink::new();
+    let mut sink = fake.clone();
+    let mut guard = ReleaseGuard::new(&mut sink);
+    guard.key(38, true).expect("press");
+    guard.key(38, false).expect("release");
+    let before = without_round_trips(&fake);
+
+    let error = guard.abort(AdapterError::timeout("between characters"), "inspect");
+
+    assert_eq!(without_round_trips(&fake), before);
+    let details = error.details.expect("delivered input reports evidence");
+    assert_eq!(details["delivered_events"], 2);
+    assert!(details.get("emergency_release_posted").is_none());
+    assert!(details.get("emergency_release_acknowledged").is_none());
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+}
+
+#[test]
+fn an_abort_while_a_key_is_held_releases_exactly_that_key_and_reports_the_round_trip() {
+    let fake = FakeSink::new();
+    let mut sink = fake.clone();
+    let mut guard = ReleaseGuard::new(&mut sink);
+    guard.key(37, true).expect("ctrl");
+    guard.key(38, true).expect("a down");
+    guard.key(38, false).expect("a up");
+    let before = without_round_trips(&fake).len();
+
+    let error = guard.abort(AdapterError::timeout("mid chord"), "inspect");
+
+    assert_eq!(
+        without_round_trips(&fake)[before..],
+        [Recorded::Key(37, false)]
+    );
+    let details = error.details.expect("evidence");
+    assert_eq!(details["delivered_events"], 3);
+    assert_eq!(details["emergency_release_posted"], true);
+    assert_eq!(details["emergency_release_acknowledged"], true);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+}
+
+#[test]
+fn an_abort_whose_release_fails_reports_it_unacknowledged() {
+    let fake = FakeSink::new();
+    let mut sink = fake.clone();
+    let mut guard = ReleaseGuard::new(&mut sink);
+    guard.key(37, true).expect("ctrl");
+    fake.world().fail_on_event = Some(2);
+
+    let error = guard.abort(AdapterError::timeout("mid chord"), "inspect");
+
+    let details = error.details.expect("evidence");
+    assert_eq!(details["emergency_release_posted"], true);
+    assert_eq!(details["emergency_release_acknowledged"], false);
 }

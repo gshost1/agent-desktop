@@ -15,6 +15,7 @@ use super::worker::{self, ABORT_SUGGESTION, Link, Report};
 use super::worker_slot::{self, WorkerSlot};
 use super::xtest_sink::XtestSink;
 use crate::input::delivery::{Delivery, Gate};
+use crate::input::emergency_release::EmergencyRelease;
 use crate::input::keyboard::keymap::Keymap;
 use crate::input::plan::Plan;
 use crate::input::release_state::ReleaseState;
@@ -180,7 +181,14 @@ fn interrupted(error: AdapterError, progress: &Progress, releasing: bool) -> Ada
     let delivered = progress.delivered();
     let started = progress.has_started();
     let error = worker::mark_started(error, started);
-    ReleaseState::resumed(delivered, releasing && started).enrich_error(error, ABORT_SUGGESTION)
+    let release = if releasing && started {
+        EmergencyRelease::Posted {
+            acknowledged: false,
+        }
+    } else {
+        EmergencyRelease::NotNeeded
+    };
+    ReleaseState::resumed(delivered).enrich_error(error, release, ABORT_SUGGESTION)
 }
 
 #[cfg(test)]
