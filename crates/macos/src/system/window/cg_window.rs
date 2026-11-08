@@ -162,7 +162,7 @@ pub(in crate::system) fn records_from_dictionaries(
     Ok(records)
 }
 
-fn window_dictionaries() -> Result<Vec<WindowDictionary>, AdapterError> {
+pub(in crate::system) fn window_dictionaries() -> Result<Vec<WindowDictionary>, AdapterError> {
     use crate::tree::properties::cf_type::borrowed_cf_dictionary;
     use core_graphics::display::CGDisplay;
     let options = window_list_options();
@@ -319,7 +319,7 @@ fn required_string_field(dict: &WindowDictionary, key: &str) -> Result<String, A
     string_field(dict, key).ok_or_else(|| missing_field_error(key))
 }
 
-fn int_field(dict: &WindowDictionary, key: &str) -> Option<i64> {
+pub(in crate::system) fn int_field(dict: &WindowDictionary, key: &str) -> Option<i64> {
     use crate::tree::properties::cf_type::borrowed_cf_number;
     use core_foundation::base::TCFType;
 

@@ -29,8 +29,10 @@ fn press_for_app(
     let identity = crate::system::process::process_identity::require_core(&process)?;
     let pid = identity.pid();
     let app = crate::tree::element_for_pid(pid);
+    let hosted = crate::system::window::hosted_focus_read::resolve(&app, pid, deadline)?;
+    let host_owns_keys = !hosted.as_ref().is_some_and(|focus| focus.is_hosted_view());
 
-    if uses_menu_shortcut(combo, policy) {
+    if host_owns_keys && uses_menu_shortcut(combo, policy) {
         match menu::try_menu_bar_shortcut(&app, combo, deadline) {
             Ok(true) => {
                 return post_delivery_process_result(&process, semantic_step("AXPress menu item"));
@@ -42,7 +44,8 @@ fn press_for_app(
             Err(error) => return Err(error),
         }
     }
-    if let Some(action) = simple_key_action(combo)
+    if host_owns_keys
+        && let Some(action) = simple_key_action(combo)
         && try_simple_key_action(&app, action, deadline)?
     {
         return post_delivery_process_result(&process, semantic_step(action));
@@ -56,13 +59,26 @@ fn press_for_app(
     crate::system::process::process_identity::require_core(&process)?;
     require_focused_element(&app, policy, deadline)?;
     crate::system::process::process_identity::require_core(&process)?;
-    crate::input::keyboard::synthesize_key(combo, Some(pid), deadline)?;
-    post_delivery_process_result(
+    let (delivery_pid, watch) = match &hosted {
+        Some(focus) => (
+            focus.delivery_pid(&app, deadline)?,
+            crate::system::window::hosted_focus_effect::watch(focus, &app, deadline)?,
+        ),
+        None => (pid, None),
+    };
+    crate::input::keyboard::synthesize_key(combo, Some(delivery_pid), deadline)?;
+    let result = post_delivery_process_result(
         &process,
         ActionStep::succeeded("CGEventPostToPid")
             .with_mechanism(StepMechanism::PhysicalSynthetic)
             .with_verified(false),
-    )
+    )?;
+    match &hosted {
+        Some(focus) => crate::system::window::hosted_focus_effect::finish_press(
+            focus, &app, watch, result, deadline,
+        ),
+        None => Ok(result),
+    }
 }
 
 fn semantic_step(label: &'static str) -> ActionStep {

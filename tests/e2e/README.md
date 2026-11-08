@@ -14,6 +14,7 @@ AGENT_DESKTOP_E2E_EXCLUSIVE=1 bash tests/e2e/run.sh
 The single prerequisite gate requires:
 
 - macOS;
+- `python3` 3.10 or newer on `PATH` (macOS ships 3.9 at `/usr/bin/python3`);
 - Accessibility permission granted to the terminal or runner; and
 - a buildable Swift fixture app.
 
