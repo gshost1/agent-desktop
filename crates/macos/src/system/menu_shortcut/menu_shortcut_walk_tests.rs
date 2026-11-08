@@ -70,3 +70,20 @@ fn only_menu_roles_are_descended() {
     }
     assert!(!holds_menu_items(None));
 }
+
+#[test]
+fn submenu_reads_get_a_short_slice_and_top_level_reads_the_whole_budget() {
+    let lookup = Deadline::from_duration(Duration::from_millis(1_000)).unwrap();
+    for depth in [0, 1, 2] {
+        assert!(
+            read_slice(lookup, depth).remaining() > SUBMENU_READ_SLICE,
+            "{depth}"
+        );
+    }
+    for depth in [3, 4, 7] {
+        assert!(
+            read_slice(lookup, depth).remaining() <= SUBMENU_READ_SLICE,
+            "{depth}"
+        );
+    }
+}

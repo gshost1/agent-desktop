@@ -1,6 +1,6 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::{
     menu_match::MenuMatch,
@@ -15,7 +15,8 @@ const MAX_MENU_NODES: usize = 2_048;
 const MAX_MENU_CHILDREN: usize = 256;
 const MAX_MENU_DEPTH: u8 = 8;
 const MENU_BAR_ITEM_DEPTH: u8 = 1;
-const SUBMENU_PARENT_DEPTH: u8 = 3;
+const TOP_LEVEL_MENU_DEPTH: u8 = 2;
+const SUBMENU_READ_SLICE: Duration = Duration::from_millis(100);
 
 struct Pending {
     element: AXElement,
@@ -26,17 +27,18 @@ struct Pending {
 /// Walks the application's menu bar breadth-first, one batched read and one
 /// child read per element, and collects every item whose shortcut equals the
 /// target. The menu bar and its top-level menus must read completely. Below
-/// them, a submenu the application cannot hand over, which system-provided
-/// submenus filled on demand often cannot, is recorded in `unread_menus` and
-/// stepped over rather than discarding the whole walk. It stops as soon as two
-/// matches can press, and when a menu-bar title reports an open menu.
+/// them each read gets its own short slice, because a submenu the system fills
+/// on demand can hold the application's reply for longer than the whole
+/// budget. A read that misses its slice is recorded in `unread_menus` and
+/// stepped over, and a budget that runs out below the top-level menus ends the
+/// walk with what it read and the count it did not. It stops as soon as two
+/// enabled items match, and when a menu-bar title reports an open menu.
 pub(crate) fn scan_menu_bar(
     app: &AXElement,
     target: &ShortcutTarget,
-    enabled_is_current: bool,
-    deadline: Deadline,
+    lookup: Deadline,
 ) -> Result<MenuScan, AdapterError> {
-    let Some(menu_bar) = crate::tree::surface_read::element(app, "AXMenuBar", instant(deadline)?)?
+    let Some(menu_bar) = crate::tree::surface_read::element(app, "AXMenuBar", instant(lookup)?)?
     else {
         return Ok(MenuScan::Complete(MenuWalk::default()));
     };
@@ -48,12 +50,21 @@ pub(crate) fn scan_menu_bar(
     }]);
     let mut walk = MenuWalk::default();
     while let Some(pending) = queue.pop_front() {
-        deadline.ensure_remaining()?;
+        if lookup.is_expired() {
+            if pending.depth > TOP_LEVEL_MENU_DEPTH {
+                walk.unread_after_budget = queue.len() + 1;
+                break;
+            }
+            return Err(incomplete_menu_error("deadline", &pending, &walk));
+        }
         walk.visited += 1;
         if walk.visited > MAX_MENU_NODES {
             return Err(incomplete_menu_error("node_limit", &pending, &walk));
         }
-        let node = match read_menu_node(&pending.element, &names, deadline) {
+        let started = Instant::now();
+        let read = read_menu_node(&pending.element, &names, read_slice(lookup, pending.depth));
+        walk.note_read(started, || unread_label(pending.menu.as_deref(), None));
+        let node = match read {
             Ok(node) => node,
             Err(error) => {
                 step_over(error, &pending, None, &mut walk)?;
@@ -71,12 +82,7 @@ pub(crate) fn scan_menu_bar(
         if node.shortcut.matches(target) {
             walk.matches
                 .push(menu_match(&pending.element, &node, menu.clone()));
-            let pressable = walk
-                .matches
-                .iter()
-                .filter(|found| found.enabled || !enabled_is_current)
-                .count();
-            if pressable > 1 {
+            if walk.matches.iter().filter(|found| found.enabled).count() > 1 {
                 return Ok(MenuScan::Complete(walk));
             }
         }
@@ -84,7 +90,12 @@ pub(crate) fn scan_menu_bar(
             continue;
         }
         let here = Pending { menu, ..pending };
-        let children = match children(&here.element, here.depth, deadline) {
+        let started = Instant::now();
+        let read = children(&here.element, here.depth, read_slice(lookup, here.depth));
+        walk.note_read(started, || {
+            unread_label(here.menu.as_deref(), node.title.as_deref())
+        });
+        let children = match read {
             Ok(children) => children,
             Err(error) => {
                 step_over(error, &here, node.title.as_deref(), &mut walk)?;
@@ -100,6 +111,14 @@ pub(crate) fn scan_menu_bar(
     Ok(MenuScan::Complete(walk))
 }
 
+fn read_slice(lookup: Deadline, depth: u8) -> Deadline {
+    if depth > TOP_LEVEL_MENU_DEPTH {
+        lookup.capped(SUBMENU_READ_SLICE)
+    } else {
+        lookup
+    }
+}
+
 /// Records an unreadable element inside a top-level menu and continues. A
 /// failure on the menu bar or a top-level menu, a permission failure and an
 /// exhausted deadline still end the walk.
@@ -112,7 +131,7 @@ fn step_over(
     if error.code == ErrorCode::PermDenied {
         return Err(error);
     }
-    if pending.depth < SUBMENU_PARENT_DEPTH {
+    if pending.depth <= TOP_LEVEL_MENU_DEPTH {
         let kind = error
             .details
             .as_ref()
@@ -206,13 +225,14 @@ fn incomplete_menu_error(kind: &str, pending: &Pending, walk: &MenuWalk) -> Adap
         ErrorCode::AppUnresponsive,
         "Menu shortcut lookup could not read the menu bar within its bounds",
     )
-    .with_details(serde_json::json!({
-        "kind": kind,
-        "complete": false,
-        "depth": pending.depth,
-        "menu": pending.menu,
-        "visited": walk.visited,
-    }))
+    .with_details({
+        let mut fields = walk.report_fields();
+        fields.insert("kind".into(), kind.into());
+        fields.insert("complete".into(), false.into());
+        fields.insert("depth".into(), pending.depth.into());
+        fields.insert("menu".into(), serde_json::json!(pending.menu));
+        serde_json::Value::Object(fields)
+    })
 }
 
 #[cfg(test)]

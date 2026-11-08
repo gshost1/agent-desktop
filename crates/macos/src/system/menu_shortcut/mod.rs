@@ -1,8 +1,10 @@
 //! Runs a command-key chord through the application's menu bar. A chord posted
 //! as keystrokes lands only while the app is frontmost with the right window
 //! key; pressing the menu item that publishes the chord as its shortcut runs
-//! the same command without either. The keyboard path stays the fallback
-//! whenever the lookup cannot name exactly one enabled item.
+//! the same command without either, provided the item is enabled. The keyboard
+//! path stays the fallback whenever the lookup cannot name exactly one enabled
+//! item, except that a background app's disabled item is refused: its command
+//! would not run, and neither would a keystroke to a background app.
 
 pub(crate) mod menu_item_shortcut;
 pub(crate) mod menu_match;
@@ -16,11 +18,12 @@ pub(crate) mod shortcut_key;
 pub(crate) mod shortcut_target;
 pub(crate) mod window_overlay;
 
-use agent_desktop_core::{AdapterError, Deadline, ErrorCode, KeyCombo, ProcessIdentity};
+use agent_desktop_core::{
+    AdapterError, Deadline, DeliverySemantics, ErrorCode, KeyCombo, ProcessIdentity,
+};
 use std::time::{Duration, Instant};
 
 use crate::tree::AXElement;
-use menu_match::MenuMatch;
 use menu_scan::MenuScan;
 use menu_shortcut_choice::MenuShortcutChoice;
 use menu_shortcut_outcome::MenuShortcutOutcome;
@@ -48,36 +51,38 @@ pub(crate) fn press_menu_shortcut(
         Ok(true) => return Ok(MenuShortcutOutcome::skipped("window_overlay")),
         Err(error) => return fallback_after(error, deadline, "overlay_check"),
     }
-    let enabled_is_current = app_is_frontmost(app, end);
-    let walk = match menu_shortcut_walk::scan_menu_bar(app, &target, enabled_is_current, lookup) {
+    let walk = match menu_shortcut_walk::scan_menu_bar(app, &target, lookup) {
         Ok(MenuScan::Complete(walk)) => walk,
         Ok(MenuScan::MenuOpen) => return Ok(MenuShortcutOutcome::skipped("menu_open")),
         Err(error) => return fallback_after(error, deadline, "menu_walk"),
     };
-    let pressable = pressable_flags(&walk.matches, enabled_is_current);
-    let mut matches = walk.matches;
-    let index = match MenuShortcutChoice::choose(&pressable) {
+    let enabled: Vec<bool> = walk.matches.iter().map(|found| found.enabled).collect();
+    let index = match MenuShortcutChoice::choose(&enabled) {
         MenuShortcutChoice::Press(index) => index,
-        MenuShortcutChoice::Ambiguous => return Ok(MenuShortcutOutcome::skipped("ambiguous")),
-        MenuShortcutChoice::Disabled => return Ok(MenuShortcutOutcome::skipped("disabled")),
+        MenuShortcutChoice::Ambiguous => return Ok(skipped_after(&walk, "ambiguous")),
+        MenuShortcutChoice::Disabled => {
+            return only_disabled_matches(&walk, app_is_frontmost(app, end));
+        }
         MenuShortcutChoice::NoMatch => return Ok(MenuShortcutOutcome::NotApplicable),
     };
-    let found = matches.swap_remove(index);
+    let Some(found) = walk.matches.get(index) else {
+        return Ok(MenuShortcutOutcome::NotApplicable);
+    };
     crate::system::process::process_identity::require_core(process)?;
     if !crate::actions::ax_helpers::try_ax_action_or_err(&found.element, "AXPress", deadline)? {
-        return Ok(MenuShortcutOutcome::skipped("not_pressable"));
+        return Ok(skipped_after(&walk, "not_pressable"));
     }
-    Ok(MenuShortcutOutcome::Pressed(pressed_details(
-        &found,
-        enabled_is_current,
-        &walk.unread_menus,
+    let mut details = walk.report_fields();
+    details.insert("menu".into(), serde_json::json!(found.menu));
+    details.insert("item".into(), serde_json::json!(found.item));
+    Ok(MenuShortcutOutcome::Pressed(serde_json::Value::Object(
+        details,
     )))
 }
 
-/// AppKit validates menu items against the key window's responder chain, and
-/// an application that is not frontmost has no key window, so its window
-/// commands read as disabled whether or not they would run. Only the
-/// frontmost application's `AXEnabled` is a current answer.
+/// AppKit enables menu items against the key window's responder chain, and an
+/// application that is not frontmost has no key window. Its window commands
+/// read as disabled there, and pressing one reports success while nothing runs.
 fn app_is_frontmost(app: &AXElement, end: Instant) -> bool {
     crate::tree::surface_read::boolean(app, "AXFrontmost", end)
         .ok()
@@ -85,29 +90,55 @@ fn app_is_frontmost(app: &AXElement, end: Instant) -> bool {
         == Some(true)
 }
 
-fn pressable_flags(matches: &[MenuMatch], enabled_is_current: bool) -> Vec<bool> {
-    matches
-        .iter()
-        .map(|found| found.enabled || !enabled_is_current)
-        .collect()
+/// A frontmost app's disabled item falls back to keys, which reach the key
+/// window and may be handled there; a background app's is refused.
+fn only_disabled_matches(
+    walk: &menu_walk::MenuWalk,
+    frontmost: bool,
+) -> Result<MenuShortcutOutcome, AdapterError> {
+    if frontmost {
+        Ok(skipped_after(walk, "disabled"))
+    } else {
+        Err(disabled_in_background(walk))
+    }
 }
 
-fn pressed_details(
-    found: &MenuMatch,
-    enabled_is_current: bool,
-    unread_menus: &[String],
-) -> serde_json::Value {
-    let mut details = serde_json::json!({
-        "menu": found.menu,
-        "item": found.item,
-        "enabled": if enabled_is_current { serde_json::json!(found.enabled) } else { serde_json::json!("unvalidated") },
-    });
-    if !unread_menus.is_empty()
-        && let Some(fields) = details.as_object_mut()
-    {
-        fields.insert("unread_menus".into(), serde_json::json!(unread_menus));
-    }
-    details
+fn skipped_after(walk: &menu_walk::MenuWalk, reason: &'static str) -> MenuShortcutOutcome {
+    let mut details = walk.report_fields();
+    details.insert("skipped".into(), reason.into());
+    MenuShortcutOutcome::Skipped(serde_json::Value::Object(details))
+}
+
+/// Refuses a chord whose only menu item is disabled in a background app. The
+/// command would not run, and a keystroke posted to a background app does not
+/// land either, so reporting either as delivered would be false.
+fn disabled_in_background(walk: &menu_walk::MenuWalk) -> AdapterError {
+    let mut menu_shortcut = walk.report_fields();
+    let found = walk.matches.first();
+    menu_shortcut.insert(
+        "menu".into(),
+        serde_json::json!(found.and_then(|found| found.menu.as_deref())),
+    );
+    menu_shortcut.insert(
+        "item".into(),
+        serde_json::json!(found.and_then(|found| found.item.as_deref())),
+    );
+    menu_shortcut.insert("enabled".into(), false.into());
+    menu_shortcut.insert("frontmost".into(), false.into());
+    AdapterError::new(
+        ErrorCode::ActionFailed,
+        "Menu item for this shortcut is disabled while the app is in the background; nothing was sent",
+    )
+    .with_details(serde_json::json!({
+        "kind": "menu_item_disabled_in_background",
+        "menu_shortcut": menu_shortcut,
+        "physical_delivery_started": false,
+    }))
+    .with_suggestion(
+        "Retry with --headed, or bring the app's window forward with focus-window and press again; \
+         the app enables window commands only while it is frontmost",
+    )
+    .with_disposition(DeliverySemantics::not_delivered())
 }
 
 /// The lookup is an optimization over the keyboard path, so any failure that
@@ -132,7 +163,15 @@ fn fallback_after(
     if let (Some(fields), Some(serde_json::Value::Object(extra))) =
         (details.as_object_mut(), error.details)
     {
-        for key in ["kind", "menu", "depth", "visited"] {
+        for key in [
+            "kind",
+            "menu",
+            "depth",
+            "visited",
+            "unread_menus",
+            "unread_after_budget",
+            "slowest_read",
+        ] {
             if let Some(value) = extra.get(key) {
                 fields.insert(key.into(), value.clone());
             }

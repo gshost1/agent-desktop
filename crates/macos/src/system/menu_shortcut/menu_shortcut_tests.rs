@@ -1,3 +1,4 @@
+use super::menu_match::MenuMatch;
 use super::*;
 use agent_desktop_core::Modifier;
 
@@ -34,38 +35,52 @@ fn chords_without_command_never_read_the_menu_bar() {
     }
 }
 
-#[test]
-fn a_background_apps_disabled_reading_does_not_block_the_press() {
-    assert_eq!(pressable_flags(&[found(false)], false), [true]);
-    assert_eq!(
-        pressable_flags(&[found(false), found(true)], false),
-        [true, true]
-    );
+fn walk_with(matches: Vec<MenuMatch>) -> menu_walk::MenuWalk {
+    menu_walk::MenuWalk {
+        matches,
+        visited: 9,
+        ..menu_walk::MenuWalk::default()
+    }
 }
 
 #[test]
-fn the_frontmost_apps_disabled_reading_is_trusted() {
-    assert_eq!(pressable_flags(&[found(false)], true), [false]);
+fn a_disabled_item_in_a_background_app_is_refused_as_not_delivered() {
+    let error = disabled_in_background(&walk_with(vec![found(false)]));
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "menu_item_disabled_in_background");
+    assert_eq!(details["physical_delivery_started"], false);
     assert_eq!(
-        pressable_flags(&[found(false), found(true)], true),
-        [false, true]
-    );
-}
-
-#[test]
-fn a_press_in_a_background_app_says_its_enabled_state_was_not_validated() {
-    let details = pressed_details(&found(false), false, &[]);
-    assert_eq!(
-        details,
-        serde_json::json!({ "menu": "File", "item": "New Folder", "enabled": "unvalidated" })
-    );
-    let details = pressed_details(&found(true), true, &["Edit > AutoFill".into()]);
-    assert_eq!(
-        details,
+        details["menu_shortcut"],
         serde_json::json!({
-            "menu": "File", "item": "New Folder", "enabled": true,
-            "unread_menus": ["Edit > AutoFill"]
+            "menu": "File", "item": "New Folder", "enabled": false, "frontmost": false, "visited": 9
         })
+    );
+    assert!(error.suggestion.unwrap().contains("--headed"));
+}
+
+#[test]
+fn only_disabled_matches_refuse_in_the_background_and_fall_back_in_front() {
+    let walk = walk_with(vec![found(false)]);
+    let error = only_disabled_matches(&walk, false).unwrap_err();
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        only_disabled_matches(&walk, true).unwrap(),
+        MenuShortcutOutcome::Skipped(serde_json::json!({ "skipped": "disabled", "visited": 9 }))
+    );
+}
+
+#[test]
+fn a_skip_carries_the_walk_report() {
+    let mut walk = walk_with(Vec::new());
+    walk.unread_menus.push("Edit > AutoFill".into());
+    assert_eq!(
+        skipped_after(&walk, "ambiguous"),
+        MenuShortcutOutcome::Skipped(serde_json::json!({
+            "skipped": "ambiguous", "visited": 9, "unread_menus": ["Edit > AutoFill"]
+        }))
     );
 }
 
