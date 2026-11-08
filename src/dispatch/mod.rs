@@ -63,9 +63,7 @@ fn dispatch_command(
         None
     };
     let mut batch_effects = None;
-    let scope = if matches!(&cmd, Commands::Session(args)
-        if matches!(&args.action, crate::cli_args::session::SessionAction::End(_)))
-    {
+    let scope = if cmd.runs_in_an_ended_session() {
         context.session_end_scope()?
     } else if effect != CommandEffect::ReadOnly {
         context.mutating_command_scope(cmd.name())?

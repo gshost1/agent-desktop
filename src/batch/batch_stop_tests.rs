@@ -1,11 +1,27 @@
 use serde_json::json;
 
 use super::BatchStop;
+use crate::batch::entry_outcome::EntryOutcome;
+
+fn outcome(failed: bool, deadline_timeout: bool, oversized: bool) -> EntryOutcome {
+    EntryOutcome {
+        index: 3,
+        failed,
+        deadline_timeout,
+        oversized,
+    }
+}
 
 #[test]
-fn a_batch_deadline_timeout_is_a_deadline_stop_whatever_stop_on_error_says() {
-    for stop_on_error in [false, true] {
-        let stop = BatchStop::after_entry(3, Some("TIMEOUT"), false, true, stop_on_error);
+fn a_batch_deadline_timeout_is_a_deadline_stop_on_any_entry_whatever_stop_on_error_says() {
+    for (deadline_stops_rest, stop_on_error) in
+        [(true, false), (true, true), (false, false), (false, true)]
+    {
+        let stop = BatchStop::after_entry(
+            &outcome(true, true, false),
+            deadline_stops_rest,
+            stop_on_error,
+        );
 
         assert_eq!(stop, Some(BatchStop::DeadlineAfterEntry { index: 3 }));
     }
@@ -13,29 +29,29 @@ fn a_batch_deadline_timeout_is_a_deadline_stop_whatever_stop_on_error_says() {
 
 #[test]
 fn another_failure_with_stop_on_error_is_a_stop_on_error_stop() {
-    let expired = BatchStop::after_entry(1, Some("STALE_REF"), false, true, true);
-    let running = BatchStop::after_entry(1, Some("TIMEOUT"), false, false, true);
+    for deadline_stops_rest in [false, true] {
+        let stop = BatchStop::after_entry(&outcome(true, false, false), deadline_stops_rest, true);
 
-    assert_eq!(expired, Some(BatchStop::StopOnError { index: 1 }));
-    assert_eq!(running, Some(BatchStop::StopOnError { index: 1 }));
+        assert_eq!(stop, Some(BatchStop::StopOnError { index: 3 }));
+    }
 }
 
 #[test]
 fn the_output_limit_outranks_every_other_reason() {
-    let stop = BatchStop::after_entry(2, Some("TIMEOUT"), true, true, true);
+    let stop = BatchStop::after_entry(&outcome(true, true, true), true, true);
 
-    assert_eq!(stop, Some(BatchStop::OutputLimit { index: 2 }));
+    assert_eq!(stop, Some(BatchStop::OutputLimit { index: 3 }));
 }
 
 #[test]
 fn a_failure_without_stop_on_error_continues_until_the_deadline() {
     assert_eq!(
-        BatchStop::after_entry(0, Some("STALE_REF"), false, false, false),
+        BatchStop::after_entry(&outcome(true, false, false), false, false),
         None
     );
     assert_eq!(
-        BatchStop::after_entry(0, Some("STALE_REF"), false, true, false),
-        Some(BatchStop::DeadlineAfterEntry { index: 0 })
+        BatchStop::after_entry(&outcome(true, false, false), true, false),
+        Some(BatchStop::DeadlineAfterEntry { index: 3 })
     );
 }
 

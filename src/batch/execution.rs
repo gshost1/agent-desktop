@@ -4,16 +4,14 @@ use agent_desktop_core::{
 };
 use serde_json::{Value, json};
 
-use crate::{
-    cli::Commands,
-    cli_args::{batch::BatchArgs, session::SessionAction},
-    command_policy::CommandEffect,
-};
+use crate::{cli::Commands, cli_args::batch::BatchArgs, command_policy::CommandEffect};
 
 use super::{
     batch_stop::BatchStop,
     bounded_json::serialized_size,
-    pending_seed::PendingSeed,
+    entry_errors::{baseline_error, batch_session_ended, batch_timeout, wait_baseline_error},
+    entry_outcome::EntryOutcome,
+    pending_seed::{PendingSeed, read_seed, seed_context},
     preparation::{MAX_BATCH_ENTRIES, MAX_BATCH_JSON_BYTES, PreparedCommand, prepare},
     result_entry::{MAX_BATCH_OUTPUT_BYTES, not_started_entry},
     seed_plan::SeedPlan,
@@ -54,7 +52,7 @@ pub(super) fn execute(
             break;
         }
 
-        let current_seed = PendingSeed::take_for(&mut pending_seed, index);
+        let current_seed = pending_seed.take_if(|seed| seed.is_for(index));
 
         if let Some(ended_session) = session_ended_for(&commands[index]) {
             let error = batch_session_ended(index, &commands[index].name, &ended_session);
@@ -70,36 +68,75 @@ pub(super) fn execute(
             continue;
         }
 
-        if let Some(wait_index) = seed_plan.wait_read_before(index) {
-            match PendingSeed::capture(wait_index, &commands[wait_index], adapter, deadline) {
-                Ok(seed) => pending_seed = seed,
-                Err(error) => {
-                    let blocked_command = commands[index].name.clone();
+        let current_seed = match current_seed.map(PendingSeed::into_read) {
+            Some((read_at, Err(error))) => {
+                let read_command = &commands[read_at].name;
+                let error =
+                    wait_baseline_error(index, &commands[index].name, read_at, read_command, error);
+                push_small_entry(
+                    &mut results,
+                    &mut results_bytes,
+                    not_started_entry(
+                        index,
+                        &commands[index].name,
+                        "pre_action_baseline_failed",
+                        error,
+                    ),
+                );
+                if args.stop_on_error {
+                    stopped = Some(BatchStop::StopOnError { index });
+                    break;
+                }
+                continue;
+            }
+            Some((_, Ok(values))) => Some(values),
+            None => None,
+        };
+
+        if let Some(wait_index) = seed_plan.read_before(index) {
+            match read_seed(&commands[wait_index], adapter, deadline) {
+                Err(_) if deadline.is_expired() => {
+                    let error = batch_timeout(index, &commands[index].name, args.timeout_ms);
+                    push_small_entry(
+                        &mut results,
+                        &mut results_bytes,
+                        not_started_entry(index, &commands[index].name, "deadline", error),
+                    );
+                    stopped = Some(BatchStop::DeadlineBeforeEntry { index });
+                    break;
+                }
+                Err(error) if wait_index == index + 1 => {
                     let wait_command = commands[wait_index].name.clone();
-                    let error =
-                        baseline_error(index, &blocked_command, wait_index, &wait_command, error);
+                    let error = baseline_error(
+                        index,
+                        &commands[index].name,
+                        wait_index,
+                        &wait_command,
+                        error,
+                    );
                     push_small_entry(
                         &mut results,
                         &mut results_bytes,
                         not_started_entry(
                             index,
-                            &blocked_command,
+                            &commands[index].name,
                             "pre_action_baseline_failed",
                             error,
                         ),
                     );
                     stopped = Some(BatchStop::BaselineFailed {
                         blocked_index: index,
-                        blocked_command,
+                        blocked_command: commands[index].name.clone(),
                         wait_index,
                         wait_command,
                     });
                     break;
                 }
+                read => pending_seed = PendingSeed::held(wait_index, index, read),
             }
         }
 
-        let item_context = PendingSeed::seed_context(
+        let item_context = seed_context(
             current_seed,
             commands[index]
                 .context
@@ -107,37 +144,37 @@ pub(super) fn execute(
                 .with_inherited_deadline(deadline),
         );
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
-        let effect = entry_effects[index];
+        let batch_remaining_ms = deadline.remaining_ms();
         let entry = super::result_entry::completed_entry(
             index,
             &commands[index].name,
             crate::dispatch::dispatch(command, adapter, permission_report, &item_context),
         );
-        let failure = (entry["ok"] != true).then(|| {
-            entry["error"]["code"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned()
-        });
+        let outcome = EntryOutcome::of(index, &entry, batch_remaining_ms, deadline.is_expired());
         let (entry, oversized) = super::result_entry::bounded_completed_entry(
             index,
             &commands[index].name,
-            effect,
+            entry_effects[index],
             entry,
             results_bytes,
         );
         completed += usize::from(entry["execution"] == "completed");
         push_small_entry(&mut results, &mut results_bytes, entry);
 
+        let outcome = outcome.with_oversized(oversized);
         stopped = BatchStop::after_entry(
-            index,
-            failure.as_deref(),
-            oversized,
+            &outcome,
             deadline.is_expired() && index + 1 < total,
             args.stop_on_error,
         );
         if stopped.is_some() {
             break;
+        }
+        if !outcome.failed
+            && let Some(wait_index) = seed_plan.read_again_after(index)
+        {
+            let read = read_seed(&commands[wait_index], adapter, deadline);
+            pending_seed = PendingSeed::held(wait_index, index, read);
         }
     }
 
@@ -186,38 +223,10 @@ pub(super) fn execute(
     Ok(body)
 }
 
-fn baseline_error(
-    blocked_index: usize,
-    blocked_command: &str,
-    wait_index: usize,
-    wait_command: &str,
-    mut source: AdapterError,
-) -> AppError {
-    let cause_details = source.details.take();
-    source.message = format!(
-        "Batch entry {blocked_index} ('{blocked_command}') was not started because the baseline for following wait entry {wait_index} ('{wait_command}') failed: {}",
-        source.message
-    );
-    let mut details = json!({
-        "kind": "pre_action_baseline_failed",
-        "blocked_index": blocked_index,
-        "blocked_command": blocked_command,
-        "wait_index": wait_index,
-        "wait_command": wait_command,
-    });
-    if let Some(cause_details) = cause_details {
-        details["cause_details"] = cause_details;
-    }
-    source.details = Some(details);
-    source.disposition = DeliverySemantics::not_delivered();
-    source.into()
-}
-
-/// The session an entry would be refused for because it has ended. A
-/// `session end` entry is never refused: teardown is repeatable on an ended
-/// session, as it is outside a batch.
+/// The session an entry would be refused for because it has ended, unless
+/// the command runs in an ended session, as `session end` does.
 fn session_ended_for(command: &PreparedCommand) -> Option<String> {
-    if runs_in_an_ended_session(&command.command) {
+    if command.command.runs_in_an_ended_session() {
         return None;
     }
     let session_id = command.context.session_id()?;
@@ -225,43 +234,6 @@ fn session_ended_for(command: &PreparedCommand) -> Option<String> {
         Ok(Some(manifest)) if manifest.ended_at.is_some() => Some(session_id.to_owned()),
         _ => None,
     }
-}
-
-fn runs_in_an_ended_session(command: &Commands) -> bool {
-    match command {
-        Commands::Session(args) => matches!(args.action, SessionAction::End(_)),
-        _ => false,
-    }
-}
-
-fn batch_session_ended(index: usize, command: &str, session_id: &str) -> AppError {
-    AdapterError::new(
-        ErrorCode::InvalidArgs,
-        format!(
-            "Batch entry {index} ('{command}') was not started because session '{session_id}' has ended"
-        ),
-    )
-    .with_suggestion("Re-run the entry outside the ended session or start a new session")
-    .with_details(json!({
-        "kind": "batch_session_ended",
-        "batch_index": index,
-        "batch_command": command,
-        "session_id": session_id,
-    }))
-    .with_disposition(DeliverySemantics::not_delivered())
-    .into()
-}
-
-fn batch_timeout(index: usize, command: &str, timeout_ms: u64) -> AppError {
-    AdapterError::timeout("Batch deadline elapsed before the entry started")
-        .with_details(json!({
-            "kind": "batch_deadline",
-            "batch_index": index,
-            "batch_command": command,
-            "timeout_ms": timeout_ms,
-        }))
-        .with_disposition(DeliverySemantics::not_delivered())
-        .into()
 }
 
 fn push_small_entry(results: &mut Vec<Value>, used: &mut usize, entry: Value) {

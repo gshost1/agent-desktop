@@ -1,8 +1,9 @@
-//! Why a batch stopped before its last entry, and the one place that decides
+//! Why a batch stopped early, and the one place that decides
 //! which reason wins when several apply to the same entry.
 
-use agent_desktop_core::ErrorCode;
 use serde_json::{Value, json};
+
+use super::entry_outcome::EntryOutcome;
 
 /// The reason a batch ended early, serialized as the body's `stopped`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,26 +29,24 @@ pub(super) enum BatchStop {
 }
 
 impl BatchStop {
-    /// Decides whether the batch stops after the completed entry at `index`.
-    /// `failure` is the entry's error code when it failed, and
-    /// `deadline_stops` is whether the batch deadline has expired with
-    /// entries left. A failure that is the batch deadline itself reports the
-    /// deadline, so the reason does not depend on `--stop-on-error`.
+    /// Decides whether the batch stops after the completed entry in
+    /// `outcome`. `deadline_stops_rest` is whether the batch deadline has
+    /// expired with entries left. A failure caused by the batch deadline
+    /// reports the deadline, also on the last entry, so the reason does not
+    /// depend on `--stop-on-error`.
     pub(super) fn after_entry(
-        index: usize,
-        failure: Option<&str>,
-        oversized: bool,
-        deadline_stops: bool,
+        outcome: &EntryOutcome,
+        deadline_stops_rest: bool,
         stop_on_error: bool,
     ) -> Option<Self> {
-        let timed_out = failure == Some(ErrorCode::Timeout.as_str());
-        if oversized {
+        let index = outcome.index;
+        if outcome.oversized {
             Some(Self::OutputLimit { index })
-        } else if deadline_stops && timed_out {
+        } else if outcome.deadline_timeout {
             Some(Self::DeadlineAfterEntry { index })
-        } else if failure.is_some() && stop_on_error {
+        } else if outcome.failed && stop_on_error {
             Some(Self::StopOnError { index })
-        } else if deadline_stops {
+        } else if deadline_stops_rest {
             Some(Self::DeadlineAfterEntry { index })
         } else {
             None

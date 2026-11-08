@@ -11,17 +11,24 @@ fn entry(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
 }
 
-fn reads(commands: Value) -> Vec<Option<usize>> {
+fn plan(commands: Value) -> (SeedPlan, usize) {
     let prepared = prepare(
         &commands.to_string(),
         &PermissionReport::default(),
         &CommandContext::default(),
     )
     .unwrap();
-    let plan = SeedPlan::new(&prepared);
-    (0..prepared.len())
-        .map(|index| plan.wait_read_before(index))
-        .collect()
+    (SeedPlan::new(&prepared), prepared.len())
+}
+
+fn reads(commands: Value) -> Vec<Option<usize>> {
+    let (plan, len) = plan(commands);
+    (0..len).map(|index| plan.read_before(index)).collect()
+}
+
+fn reads_again(commands: Value) -> Vec<Option<usize>> {
+    let (plan, len) = plan(commands);
+    (0..len).map(|index| plan.read_again_after(index)).collect()
 }
 
 #[test]
@@ -75,4 +82,21 @@ fn a_first_entry_wait_and_unseeded_waits_are_never_read_ahead() {
     ]));
 
     assert_eq!(plan, vec![None, None, None]);
+}
+
+#[test]
+fn only_a_wait_of_the_same_kind_is_read_again_after_the_earlier_wait() {
+    let other_app = json!({"command": "wait", "args": {"event": "window-opened", "app": "Other"}});
+    let focus = json!({"command": "wait", "args": {"event": "focus-changed"}});
+
+    let again = reads_again(json!([
+        entry(ACTION),
+        entry(EVENT_WAIT),
+        {"command": "version", "args": {}},
+        entry(EVENT_WAIT),
+        other_app,
+        focus
+    ]));
+
+    assert_eq!(again, vec![None, Some(3), None, None, None, None]);
 }

@@ -260,6 +260,13 @@ impl Commands {
         self.metadata().post_action_wait
     }
 
+    /// Whether the command still runs when its session has ended. Only
+    /// `session end` does: teardown is repeatable on an ended session.
+    pub(crate) fn runs_in_an_ended_session(&self) -> bool {
+        matches!(self, Self::Session(args)
+            if matches!(args.action, crate::cli_args::session::SessionAction::End(_)))
+    }
+
     pub(crate) fn is_mutating(&self) -> bool {
         self.effect() != CommandEffect::ReadOnly
     }

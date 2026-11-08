@@ -19,10 +19,13 @@ use crate::{
 
 mod batch_stop;
 mod bounded_json;
+mod entry_errors;
+mod entry_outcome;
 mod execution;
 mod pending_seed;
 mod preparation;
 mod result_entry;
+mod seed_kind;
 mod seed_plan;
 
 #[cfg(test)]
@@ -36,6 +39,10 @@ mod open_system_surface_parity_tests;
 #[cfg(test)]
 #[path = "session_end_tests.rs"]
 mod session_end_tests;
+
+#[cfg(test)]
+#[path = "seed_read_tests.rs"]
+mod seed_read_tests;
 
 pub(crate) use result_entry::{entry_disposition, trace_failure_details};
 
