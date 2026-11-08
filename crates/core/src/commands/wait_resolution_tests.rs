@@ -255,3 +255,66 @@ fn element_wait_aborts_terminal_permission_error() {
 
     assert_eq!(err.code(), "PERM_DENIED");
 }
+
+struct DrawnAgainAdapter {
+    resolve_calls: std::sync::atomic::AtomicU32,
+}
+
+impl ObservationOps for DrawnAgainAdapter {
+    fn resolve_element_strict(
+        &self,
+        _entry: &RefEntry,
+        _deadline: crate::Deadline,
+    ) -> Result<NativeHandle, AdapterError> {
+        let call = self
+            .resolve_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if call < 2 {
+            return Err(
+                AdapterError::stale_ref_because("No candidate").with_details(serde_json::json!({
+                    "kind": "resolve_no_candidate",
+                    "complete": true,
+                    "retryable": true,
+                })),
+            );
+        }
+        Ok(NativeHandle::null())
+    }
+    crate::adapter::saved_ref_scope!("button", Some("Run"));
+}
+
+impl ActionOps for DrawnAgainAdapter {}
+
+impl InputOps for DrawnAgainAdapter {}
+
+impl SystemOps for DrawnAgainAdapter {}
+
+/// `wait --element` waits for an element to appear, so a complete absence its
+/// producer stamped retryable is polled until the element is drawn again,
+/// where a ref action would answer `STALE_REF` at once.
+#[test]
+fn element_wait_polls_a_retryable_complete_absence_until_the_element_appears() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = snapshot_with_one_ref();
+    let adapter = DrawnAgainAdapter {
+        resolve_calls: std::sync::atomic::AtomicU32::new(0),
+    };
+
+    let value = wait_for_element_test(
+        "@e1".into(),
+        Some(snapshot_id),
+        wait_predicate::ElementPredicate::Exists,
+        2000,
+        &adapter,
+        &crate::context::CommandContext::default(),
+    )
+    .unwrap();
+
+    assert_eq!(value["observed"]["exists"], true);
+    assert_eq!(
+        adapter
+            .resolve_calls
+            .load(std::sync::atomic::Ordering::SeqCst),
+        3
+    );
+}
