@@ -40,6 +40,8 @@ def load_runs(results, since):
         run = json.loads(line)
         if run.get("run_id", "") < since:
             continue
+        if run.get("valid") is False:
+            continue
         if run["run_id"] in corrections:
             run["success"] = corrections[run["run_id"]]["success"]
         runs.append(run)

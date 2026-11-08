@@ -13,6 +13,11 @@
 # The plan is read on fd 3 and every child gets /dev/null as stdin: a child that
 # reads stdin would otherwise consume the plan file and end the plan early.
 #
+# Before each round it checks free space on the data volume. Under
+# BENCH_MIN_FREE_GB (15) it does not start the round: it logs a DISK_LOW line
+# and checks again every 2 minutes, without holding the desktop lock. A full
+# disk once ran rounds for two hours that wrote no results.
+#
 # Usage: bash bench/orchestrate.sh bench/plan.txt [pid to wait for first]
 set -u
 cd "$(dirname "$0")/.."
@@ -21,7 +26,24 @@ previous="${2:-}"
 lock="$HOME/.agent-desktop/bench.lock"
 owner="perf/speed-cost bench (agent-desktop worktree perf-speed-cost)"
 
+data_volume=/System/Volumes/Data
+min_free_gb="${BENCH_MIN_FREE_GB:-15}"
+disk_retry_s=120
+
 log() { echo "[$(date +%H:%M:%S)] $*"; }
+
+free_gb() { df -k "$data_volume" | awk 'NR == 2 { print int($4 / 1048576) }'; }
+
+wait_for_disk() {
+    local free paused=0
+    while free=$(free_gb); [ "${free:-0}" -lt "$min_free_gb" ]; do
+        log "DISK_LOW ${free:-?}G free on $data_volume, under ${min_free_gb}G: round $1 not started, retrying in ${disk_retry_s}s"
+        paused=1
+        sleep "$disk_retry_s"
+    done
+    [ "$paused" = 1 ] && log "disk ok: ${free}G free, round $1 resumes"
+    return 0
+}
 
 holder() { head -1 "$lock" 2>/dev/null; }
 
@@ -60,6 +82,7 @@ while IFS= read -r line <&3; do
     if [ "$line" = "wait-browser" ]; then wait_for_browser_round; continue; fi
     label="${line%% *}"
     entries="${line#* }"
+    wait_for_disk "$label"
     take_lock
     log "round $label start"
     for entry in $entries; do

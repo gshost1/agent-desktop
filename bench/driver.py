@@ -8,13 +8,18 @@ subscription (`claude -p`, no API key).
 
 Per run it writes bench/runs/<run_id>/ (gitignored: transcripts hold desktop
 content): stream.jsonl (timestamped events), ad.log (CLI calls), summary.json.
-Every summary line is appended to bench/runs/results.jsonl.
+Every summary line is appended to bench/runs/results.jsonl, with the data
+volume's free space after the run. A run that saw ENOSPC, or ended with under
+2 GB free, is written with "valid": false and an "invalid_reason"; analyze.py
+and headline.py skip it.
 
 Usage: python3 bench/driver.py --task weather --config a [--model claude-opus-5-5] [--runs 3]
 """
 import argparse
+import errno
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -46,6 +51,9 @@ MCP_CONFIGS = {"m", "mx"}
 NO_SKILL = {"mx", "x"}
 LOCK = Path.home() / ".agent-desktop" / "bench.lock"
 RUN_TIMEOUT_S = 900
+DATA_VOLUME = "/System/Volumes/Data"
+MIN_VALID_FREE_GB = 2
+ENOSPC_MARKERS = ("No space left on device", "ENOSPC")
 
 MCP_RULES = (
     "You operate this Mac's GUI through the agent-desktop MCP tools, with accessibility granted. "
@@ -79,8 +87,56 @@ def classify(cmd):
     return "action"
 
 
+def disk_free_gb():
+    return shutil.disk_usage(DATA_VOLUME).free / 1024 ** 3
+
+
+def enospc_seen(stderr, rdir):
+    texts = [stderr]
+    for name in ("stream.jsonl", "ad.log"):
+        path = rdir / name
+        if path.exists():
+            texts.append(path.read_text(errors="replace"))
+    return any(marker in text for text in texts for marker in ENOSPC_MARKERS)
+
+
+def validity(stderr, rdir):
+    free = disk_free_gb()
+    reasons = []
+    if enospc_seen(stderr, rdir):
+        reasons.append("ENOSPC during the run")
+    if free < MIN_VALID_FREE_GB:
+        reasons.append(f"{free:.1f} GB free after the run, under {MIN_VALID_FREE_GB} GB")
+    fields = {"disk_free_gb": round(free, 2), "valid": not reasons}
+    if reasons:
+        fields["invalid_reason"] = "; ".join(reasons)
+    return fields
+
+
+def record_enospc(run_id, task_key, config, model, effort, exc):
+    row = {"run_id": run_id, "task": task_key, "config": config, "model": model, "tree": TREE,
+           "effort": effort or "default", "success": False, "verify": f"driver hit ENOSPC: {exc}",
+           "valid": False, "invalid_reason": "ENOSPC during the run"}
+    try:
+        row["disk_free_gb"] = round(disk_free_gb(), 2)
+        with open(ROOT / "runs" / "results.jsonl", "a") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError as write_exc:
+        print(f"{run_id} INVALID ENOSPC, row not written either: {write_exc}", flush=True)
+
+
 def run_once(task_key, config, model, effort):
     run_id = time.strftime("%m%d%H%M%S") + "-" + uuid.uuid4().hex[:4]
+    try:
+        return run_measured(run_id, task_key, config, model, effort)
+    except OSError as exc:
+        if exc.errno != errno.ENOSPC:
+            raise
+        record_enospc(run_id, task_key, config, model, effort, exc)
+        sys.exit(f"{run_id} INVALID ENOSPC: {exc}")
+
+
+def run_measured(run_id, task_key, config, model, effort):
     rdir = ROOT / "runs" / run_id
     rdir.mkdir(parents=True)
     task = TASKS[task_key](run_id.replace("-", ""), str(REAL_BIN))
@@ -136,6 +192,7 @@ def run_once(task_key, config, model, effort):
                 break
     proc.wait()
     wall = time.time() - t0
+    stderr = proc.stderr.read()
     summary = summarize(events, rdir, wall)
     answer = summary.get("answer", "")
     try:
@@ -150,13 +207,15 @@ def run_once(task_key, config, model, effort):
     task.cleanup()
     summary.update({"run_id": run_id, "task": task_key, "config": config, "model": model, "tree": TREE,
                     "effort": effort or "default", "success": ok, "verify": why})
+    summary.update(validity(stderr, rdir))
     del summary["commands"]
     (rdir / "summary.json").write_text(json.dumps(summary, indent=1))
     with open(ROOT / "runs" / "results.jsonl", "a") as fh:
         fh.write(json.dumps(summary) + "\n")
     print(f"{run_id} {task_key:10} cfg={config} {model:16} ok={ok!s:5} wall={wall:6.1f}s "
           f"calls={summary['api_calls']:3} in={summary['input_total']:8} out={summary['output_tokens']:6} "
-          f"cli={summary['cli_s']:5.1f}s | {why}", flush=True)
+          f"cli={summary['cli_s']:5.1f}s free={summary['disk_free_gb']:.0f}G"
+          f"{'' if summary['valid'] else ' INVALID ' + summary['invalid_reason']} | {why}", flush=True)
     return summary
 
 

@@ -89,7 +89,9 @@ def main():
     for r in runs:
         if r["run_id"] in corrections:
             r["success"] = corrections[r["run_id"]]["success"]
-    lines = [f"Calibrated JSON rate: {rate:.2f} bytes/token. Runs: {len(runs)}.", ""]
+    invalid = [r for r in runs if r.get("valid") is False]
+    runs = [r for r in runs if r.get("valid") is not False]
+    lines = [f"Calibrated JSON rate: {rate:.2f} bytes/token. Runs: {len(runs)} ({len(invalid)} invalid skipped).", ""]
 
     groups = defaultdict(list)
     for r in runs:
