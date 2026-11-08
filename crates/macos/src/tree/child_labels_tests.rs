@@ -150,7 +150,7 @@ fn transient_child_label_error_degrades_name_to_unknown_and_incomplete() {
     let children = [AXElement(std::ptr::null_mut())];
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
 
-    let (evidence, complete) = complete_name_evidence_with_deadline(
+    let (evidence, derived, complete) = complete_name_evidence_with_deadline(
         &crate::tree::NodeAttrs::default(),
         "button",
         &children,
@@ -163,6 +163,7 @@ fn transient_child_label_error_degrades_name_to_unknown_and_incomplete() {
     .expect("a transient child-label read error must not abort the traversal");
 
     assert_eq!(evidence.child_label, None);
+    assert_eq!(derived, None);
     assert!(!complete);
 }
 

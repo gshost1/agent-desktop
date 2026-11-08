@@ -37,8 +37,9 @@ use windows_sys::Win32::System::Threading::GetCurrentProcess;
 /// Deliberately distinct from a live e2e harness's own process-handoff
 /// variable: this one is the product's own protocol, so no non-agent child
 /// ever inherits it by accident, and the harness's own handoff stays
-/// independently testable from the product's adoption path.
-pub(crate) const INTERACTION_LEASE_HANDLE_ENV: &str = "AGENT_DESKTOP_INTERACTION_LEASE_HANDLE";
+/// independently testable from the product's adoption path. Defined in core
+/// so the MCP server can withhold it from tool-call children.
+pub(crate) use agent_desktop_core::INTERACTION_LEASE_HANDLE_ENV;
 
 const LOCK_FILE_NAME: &str = "interaction.lock";
 const LEASE_PURPOSE: &str = "desktop interaction lease";

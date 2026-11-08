@@ -20,7 +20,7 @@ Starts an app, or attaches to a running instance, and returns once its process i
 
 ```bash
 agent-desktop launch <APP> [--timeout MS] [--arg VALUE]... [--env KEY=VALUE]... [--cwd PATH] \
-                           [--no-attach] [--activate] [--cdp [PORT]]
+                           [--no-attach] [--activate] [--reopen] [--cdp [PORT]] [--download-dir DIR]
 ```
 
 <table>
@@ -35,9 +35,13 @@ agent-desktop launch <APP> [--timeout MS] [--arg VALUE]... [--env KEY=VALUE]... 
     <tr><td><code>--cwd PATH</code></td><td>none</td><td>Working directory for the launched process.</td></tr>
     <tr><td><code>--no-attach</code></td><td>off</td><td>Start a fresh instance instead of attaching to a running one.</td></tr>
     <tr><td><code>--activate</code></td><td>off</td><td>Bring the app forward so it presents a window, and wait for one up to <code>--timeout</code>. This takes the foreground.</td></tr>
+    <tr><td><code>--reopen</code></td><td>off</td><td>macOS: send a running app a reopen, so an app with no window opens its default window. Without it a running app is never reopened. Cannot be combined with <code>--no-attach</code>. Windows and Linux have no reopen event and return <code>ACTION_NOT_SUPPORTED</code>.</td></tr>
     <tr><td><code>--cdp [PORT]</code></td><td>off</td><td>Launch with a loopback-only Chrome DevTools Protocol endpoint and verify that it answers. Omit <code>PORT</code>, or pass <code>0</code>, to pick a free port.</td></tr>
+    <tr><td><code>--download-dir DIR</code></td><td>none</td><td>With <code>--cdp</code>: save the browser's downloads in this folder, created if missing. <code>wait --download</code> returns each saved file. With an absolute <code>--arg=--user-data-dir=DIR</code>, launch writes the folder into that profile's download preference and <code>data.cdp.download_scope</code> is <code>profile</code>.</td></tr>
   </tbody>
 </table>
+
+On macOS, `data.launch_path` says which route ran: `attached_running` (running app, no `--activate`), `activated_running` (running app brought forward without Launch Services), `launched` (a new process through Launch Services), or `reopened` (`--reopen`). Only the last two can make an app open a window you did not ask for, because Launch Services sends a running app a reopen event and an app with no window answers by opening its default one. `--activate` on a running app therefore returns the windows it already has and creates none. `--arg` and `--env` reach only a new process: on a running app they are not delivered, and `data.suggestion` says so. Windows and Linux omit `launch_path`.
 
 ```bash
 agent-desktop launch gtk3-demo
@@ -223,7 +227,7 @@ agent-desktop list-windows [--app NAME] [--timeout-ms MS]
 
 ## focus-window
 
-Brings a window to the front and succeeds only when the OS reports that window as focused on two consecutive reads.
+Brings a window to the front and succeeds when the platform confirms that window is focused. A platform failure is returned as its own error.
 
 ```bash
 agent-desktop focus-window [--window-id ID] [--app NAME] [--title TEXT]
@@ -240,7 +244,12 @@ agent-desktop focus-window [--window-id ID] [--app NAME] [--title TEXT]
   </tbody>
 </table>
 
-Pass at least one flag; with none the command fails with `INVALID_ARGS`. `data.focused` is the window that holds focus afterward, with the same fields as a `list-windows` entry. When a modal dialog holds the focus, `focused` is the dialog, so read `focused.title` before you act.
+Pass at least one flag; with none the command fails with `INVALID_ARGS`. After the platform confirms the focus, one follow-up read, bounded at 750 ms, looks for the focused window. `data.focused` has the same fields as a `list-windows` entry:
+
+- When the read sees the window you named, or another window of the same process such as a dialog, `focused` is that window and `data.focus_observed` is `true`. Read `focused.title` before you act.
+- When the read fails, sees no focused window, sees a window of another process, or the deadline has run out, `focused` is the window you named with `is_focused: true`, as the platform confirmed it, and `focus_observed` is `false`. Its other fields come from the window list read before the focus.
+
+A modal dialog behaves differently per platform. On Linux, a window its application's modal dialog blocks fails with `ACTION_FAILED`, cause `blocked_by_modal_dialog`, and `details.dialog` names the dialog; focus the dialog instead. On other platforms the platform can confirm the window while its dialog holds the focus, and `focused` is then the dialog.
 
 ```json
 {
@@ -253,12 +262,13 @@ Pass at least one flag; with none the command fails with `INVALID_ARGS`. `data.f
       "id": "w-1.10-org-a11y-atspi-accessible-162",
       "is_focused": true,
       "title": "Untitled Document 1 - gedit"
-    }
+    },
+    "focus_observed": true
   }
 }
 ```
 
-The example above is trimmed to four fields. Errors: `WINDOW_NOT_FOUND` when nothing matches, `AMBIGUOUS_TARGET` when several windows still match, and `ACTION_FAILED` when the OS never reports the window focused. The command takes the foreground but does not need `--headed`.
+The example above is trimmed to four fields. Errors: `WINDOW_NOT_FOUND` when nothing matches, `AMBIGUOUS_TARGET` when several windows still match, and the platform's own error, usually `ACTION_FAILED` with a `details.cause`, when it cannot confirm the window focused. The command takes the foreground but does not need `--headed`.
 
 Platform limits: Linux needs X11. See [Linux](/desktop/platforms/linux) and [Windows](/desktop/platforms/windows).
 

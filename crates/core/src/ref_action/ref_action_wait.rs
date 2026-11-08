@@ -1,5 +1,6 @@
 use crate::{
     ActionRequest, ActionResult, AdapterError, AppError, Deadline,
+    ref_action::action_artifacts::ActionArtifacts,
     ref_action::ref_action_context::RefActionContext,
     ref_action::ref_action_poll::execute_poll_loop,
     ref_action::ref_action_poll_state::RefActionPollState,
@@ -22,31 +23,31 @@ pub(crate) fn execute_with_auto_wait(
         &crate::InteractionLease,
     ) -> Result<ActionResult, AppError>,
 ) -> Result<ActionResult, AdapterError> {
-    let (result, lease, pre, deadline, _lease_started) =
+    let (result, lease, artifacts, _lease_started) =
         execute_with_auto_wait_and_lease(context, request, dispatch)?;
     drop(lease);
-    crate::ref_action::finish_artifacts(RefActionContext::new(context, deadline), &pre);
+    artifacts.finish_with_post(result.disposition());
     Ok(result)
 }
 
-pub(crate) fn execute_with_auto_wait_and_lease(
-    context: RefActionWaitContext<'_>,
+/// A dispatched ref action: its result, the lease it still holds, its
+/// artifact pair awaiting the post screenshot, and when the lease was taken.
+pub(crate) type LeasedOutcome<'a> = (
+    ActionResult,
+    crate::InteractionLease,
+    ActionArtifacts<'a>,
+    std::time::Instant,
+);
+
+pub(crate) fn execute_with_auto_wait_and_lease<'a>(
+    context: RefActionWaitContext<'a>,
     request: ActionRequest,
     dispatch: impl Fn(
         RefActionContext<'_>,
         ActionRequest,
         &crate::InteractionLease,
     ) -> Result<ActionResult, AppError>,
-) -> Result<
-    (
-        ActionResult,
-        crate::InteractionLease,
-        crate::trace::trace_artifacts::ArtifactOutcome,
-        Deadline,
-        std::time::Instant,
-    ),
-    AdapterError,
-> {
+) -> Result<LeasedOutcome<'a>, AdapterError> {
     let deadline = operation_deadline(&request)?;
     let result = execute_with_deadline(context, request, deadline, dispatch);
     result.map_err(|error| {
@@ -58,8 +59,8 @@ pub(crate) fn execute_with_auto_wait_and_lease(
     })
 }
 
-fn execute_with_deadline(
-    context: RefActionWaitContext<'_>,
+fn execute_with_deadline<'a>(
+    context: RefActionWaitContext<'a>,
     mut request: ActionRequest,
     deadline: Deadline,
     dispatch: impl Fn(
@@ -67,48 +68,33 @@ fn execute_with_deadline(
         ActionRequest,
         &crate::InteractionLease,
     ) -> Result<ActionResult, AppError>,
-) -> Result<
-    (
-        ActionResult,
-        crate::InteractionLease,
-        crate::trace::trace_artifacts::ArtifactOutcome,
-        Deadline,
-        std::time::Instant,
-    ),
-    AdapterError,
-> {
+) -> Result<LeasedOutcome<'a>, AdapterError> {
     let polls = request.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let mut saw_ambiguity = false;
     let mut refusal: Option<AdapterError> = None;
+    let mut moved = crate::ref_action::ref_action_moved_landings::MovedLandings::default();
+    let mut artifacts = ActionArtifacts::new(context, deadline);
     loop {
         let mut state = if polls {
-            execute_poll_loop(context, &request, deadline)
+            execute_poll_loop(context, &request, deadline, &mut moved)
                 .map_err(|error| with_refusal(error, refusal.as_ref()))?
         } else {
             RefActionPollState::default()
         };
         state.saw_ambiguity |= saw_ambiguity;
-        let pre = crate::ref_action::capture_pre_artifact(
-            context.context,
-            context.adapter,
-            context.entry,
-            deadline,
-        );
+        artifacts.capture_pre_once();
         let cursor = crate::cursor_overlay::hold_cursor(context.context, deadline);
         crate::ref_action::presentation::before_lease(context, &request, deadline, cursor.is_ok());
-        let lease = context
-            .adapter
-            .acquire_interaction_lease(deadline)
-            .map_err(|error| state.attach_error_metrics(error))?;
-        if deadline.is_expired() {
-            let error = state.attach_error_metrics(deadline.timeout_error());
-            return Err(with_refusal(error, refusal.as_ref()));
-        }
+        let lease = acquire_lease(context.adapter, deadline)
+            .map_err(AdapterError::unsent)
+            .map_err(|error| with_refusal(state.attach_error_metrics(error), refusal.as_ref()))?;
         if polls {
             request.timeout_ms = Some(deadline.remaining_ms());
         }
         let lease_started = std::time::Instant::now();
-        match execute_single_shot(context, request.clone(), deadline, &lease, &dispatch) {
+        artifacts.attempting();
+        let shot = execute_single_shot(context, request.clone(), deadline, &lease, &dispatch);
+        match shot.result {
             Ok(mut result) => {
                 state.attach_transient_ambiguity(&mut result);
                 state.attach_wait_metrics(
@@ -116,13 +102,27 @@ fn execute_with_deadline(
                     &lease,
                     u64::try_from(lease_started.elapsed().as_millis()).unwrap_or(u64::MAX),
                 );
-                return Ok((result, lease, pre, deadline, lease_started));
+                return Ok((result, lease, artifacts, lease_started));
             }
             Err(error) => {
                 drop(lease);
-                crate::ref_action::finish_artifacts(RefActionContext::new(context, deadline), &pre);
+                if error.disposition != crate::DeliverySemantics::not_delivered() {
+                    artifacts.finish_with_post(error.disposition);
+                    return Err(error);
+                }
+                if shot.focused || scrolled_view(&error) {
+                    std::mem::replace(&mut artifacts, ActionArtifacts::new(context, deadline))
+                        .finish_with_post(error.disposition);
+                }
                 if !(polls && resolves_again(&error, deadline)) {
                     return Err(error);
+                }
+                if shot.focused {
+                    return Err(stopped_after_focus(error, &state, refusal.as_ref()));
+                }
+                let verdict = crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(&error);
+                if let Some(absent) = moved.exhausted(verdict, context.entry) {
+                    return Err(with_refusal(absent, Some(&error)));
                 }
                 saw_ambiguity |= error.code == crate::ErrorCode::AmbiguousTarget;
                 refusal = Some(error);
@@ -134,19 +134,62 @@ fn execute_with_deadline(
     }
 }
 
-/// Whether a dispatch-time refusal goes back to the wait: the full resolution
-/// under the lease failed in a way that may clear, nothing was sent, and the
-/// caller's budget is not spent.
+/// Takes the interaction lease, refusing with the deadline's `TIMEOUT` when
+/// the wait for it spent the budget. A failure here does not go back to a
+/// wait: the lease already waits out the whole budget, so a lease timeout, or
+/// a budget spent while it was taken, leaves none to wait with, and the other
+/// lease failures (an unsupported lease, a broken lock file) do not clear by
+/// waiting. Callers mark the refusal `not_delivered`, since nothing was sent.
+pub(crate) fn acquire_lease(
+    adapter: &dyn crate::PlatformAdapter,
+    deadline: Deadline,
+) -> Result<crate::InteractionLease, AdapterError> {
+    let lease = adapter.acquire_interaction_lease(deadline)?;
+    if deadline.is_expired() {
+        return Err(deadline.timeout_error());
+    }
+    Ok(lease)
+}
+
+/// Ends the wait after a refusal that would go back to it but came from an
+/// attempt that ran a focus call, so a command raises a window at most once.
+/// It keeps what the other ends of the wait report: the wait metrics, a
+/// transient ambiguity, and the earlier refusal.
+fn stopped_after_focus(
+    error: AdapterError,
+    state: &RefActionPollState,
+    refusal: Option<&AdapterError>,
+) -> AdapterError {
+    let error = state.attach_error_metrics(error);
+    let error = if state.saw_ambiguity {
+        error.with_detail("transient_ambiguity", serde_json::json!(true))
+    } else {
+        error
+    };
+    with_refusal(error, refusal)
+}
+
+/// Whether a refusal records a preparatory scroll, which may have moved the
+/// view although nothing of the action was sent.
+fn scrolled_view(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .is_some_and(|details| details.get("preparatory_scroll").is_some())
+}
+
+/// Whether a dispatch-time refusal that sent nothing goes back to the wait:
+/// the full resolution under the lease failed in a way that may clear, and
+/// the caller's budget is not spent.
 fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
-    error.disposition == crate::DeliverySemantics::not_delivered()
-        && error.is_retryable_resolution_failure()
+    crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(error).retries()
         && !deadline.is_expired()
 }
 
 /// Carries the dispatch-time refusal that sent the action back to the wait as
 /// `details.refusal`, so a budget that runs out there still reports why the
 /// ref was not acted on.
-fn with_refusal(mut error: AdapterError, refusal: Option<&AdapterError>) -> AdapterError {
+fn with_refusal(error: AdapterError, refusal: Option<&AdapterError>) -> AdapterError {
     let Some(refusal) = refusal else {
         return error;
     };
@@ -157,17 +200,7 @@ fn with_refusal(mut error: AdapterError, refusal: Option<&AdapterError>) -> Adap
     if let (Some(object), Some(details)) = (recorded.as_object_mut(), &refusal.details) {
         object.insert("details".into(), details.clone());
     }
-    let mut details = error
-        .details
-        .take()
-        .unwrap_or_else(|| serde_json::json!({}));
-    match details.as_object_mut() {
-        Some(object) => {
-            object.insert("refusal".into(), recorded);
-        }
-        None => details = serde_json::json!({ "error_details": details, "refusal": recorded }),
-    }
-    error.with_details(details)
+    error.with_detail("refusal", recorded)
 }
 
 pub(crate) fn operation_deadline(request: &ActionRequest) -> Result<Deadline, AdapterError> {
@@ -200,3 +233,7 @@ mod exactly_once_tests;
 #[cfg(test)]
 #[path = "ref_action_focus_order_tests.rs"]
 mod focus_order_tests;
+
+#[cfg(test)]
+#[path = "ref_action_pre_dispatch_tests.rs"]
+mod pre_dispatch_tests;

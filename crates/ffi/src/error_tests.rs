@@ -108,7 +108,7 @@ fn error_code_and_ad_result_error_variants_stay_in_bijection() {
 fn test_set_and_get_error() {
     let err = AdapterError::new(ErrorCode::ElementNotFound, "element @e5 gone")
         .with_suggestion("run snapshot");
-    set_last_error(&err);
+    assert_eq!(set_last_error(&err), AdResult::ErrElementNotFound);
     assert_eq!(last_error_code(), AdResult::ErrElementNotFound);
     assert_eq!(last_error_message_str().unwrap(), "element @e5 gone");
     assert_eq!(last_error_suggestion_str().unwrap(), "run snapshot");
@@ -120,7 +120,7 @@ fn test_set_and_get_error() {
 fn last_error_preserves_delivery_and_retry_semantics() {
     let err = AdapterError::timeout("clipboard helper timed out")
         .with_disposition(DeliverySemantics::uncertain());
-    set_last_error(&err);
+    let _ = set_last_error(&err);
     let mut semantics = AdDeliverySemantics::unknown();
 
     assert_eq!(
@@ -145,8 +145,7 @@ fn test_set_and_get_structured_details() {
             "role": "button"
         }),
     );
-    set_last_error(&err);
-
+    assert_eq!(set_last_error(&err), AdResult::ErrAmbiguousTarget);
     assert_eq!(last_error_code(), AdResult::ErrAmbiguousTarget);
     let details: serde_json::Value =
         serde_json::from_str(&last_error_details_str().unwrap()).unwrap();
@@ -157,7 +156,7 @@ fn test_set_and_get_structured_details() {
 #[test]
 fn test_clear_error() {
     let err = AdapterError::internal("oops");
-    set_last_error(&err);
+    let _ = set_last_error(&err);
     clear_last_error();
     assert!(last_error_message_str().is_none());
 }
@@ -166,7 +165,7 @@ fn test_clear_error() {
 fn test_error_isolation_across_threads() {
     clear_last_error();
     let err = AdapterError::internal("thread1");
-    set_last_error(&err);
+    let _ = set_last_error(&err);
 
     let handle = std::thread::spawn(|| last_error_message_str().is_none());
     assert!(handle.join().unwrap(), "other thread should see no error");
@@ -176,9 +175,50 @@ fn test_error_isolation_across_threads() {
 #[test]
 fn test_interior_nul_falls_back_to_static() {
     let err = AdapterError::new(ErrorCode::Internal, "before\0after");
-    set_last_error(&err);
+    let _ = set_last_error(&err);
     assert_eq!(
         last_error_message_str().unwrap(),
         "(message contained null byte)"
+    );
+}
+
+fn failing_call_with_unknown_adapter() -> AdResult {
+    unsafe { crate::adapter::ad_check_permissions(std::ptr::without_provenance(usize::MAX)) }
+}
+
+#[test]
+fn failing_call_reports_failure_while_last_error_is_borrowed() {
+    let result = with_last_error_mutably_borrowed(failing_call_with_unknown_adapter);
+
+    assert_eq!(result, AdResult::ErrInvalidArgs);
+}
+
+static TEARDOWN_RESULT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(i32::MIN);
+
+struct TeardownCaller;
+
+impl Drop for TeardownCaller {
+    fn drop(&mut self) {
+        let result = failing_call_with_unknown_adapter();
+        TEARDOWN_RESULT.store(result as i32, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+thread_local! {
+    static TEARDOWN_CALLER: TeardownCaller = const { TeardownCaller };
+}
+
+#[test]
+fn failing_call_reports_failure_after_last_error_storage_is_destroyed() {
+    std::thread::spawn(|| {
+        TEARDOWN_CALLER.with(|_| {});
+        set_last_error_static(AdResult::ErrInternal, c"registers last-error storage");
+    })
+    .join()
+    .unwrap();
+
+    assert_eq!(
+        TEARDOWN_RESULT.load(std::sync::atomic::Ordering::SeqCst),
+        AdResult::ErrInvalidArgs as i32
     );
 }

@@ -57,8 +57,7 @@ pub unsafe extern "C" fn ad_wait(
         let mut wait_args = match wait_args_from_ffi(ffi_args) {
             Ok(args) => args,
             Err(err) => {
-                error::set_last_error(&err);
-                return error::last_error_code();
+                return error::set_last_error(&err);
             }
         };
         let adapter_ref = crate::adapter::acquire_adapter!(adapter);
@@ -67,8 +66,7 @@ pub unsafe extern "C" fn ad_wait(
             Ok(c) => c,
             Err(app_err) => {
                 let adapter_err = app_error_to_adapter(app_err);
-                error::set_last_error(&adapter_err);
-                return error::last_error_code();
+                return error::set_last_error(&adapter_err);
             }
         };
 

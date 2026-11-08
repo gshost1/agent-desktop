@@ -4,11 +4,13 @@ mod liveness;
 mod manifest;
 pub(crate) mod process_lease_guard;
 pub(crate) mod session_affinity;
+mod start;
 mod tree;
 
 pub use gc::{GcOptions, GcReport, gc, is_live};
 pub use liveness::SessionLivenessLease;
 pub use manifest::{ArtifactsMode, SessionManifest, SessionTraceMode};
+pub use start::{StartSessionOptions, start_session, start_session_with_cursor_overlay};
 
 use crate::{
     AppError, CursorOverlayConfig, context::validate_session_id, refs::refs_store::RefStore,
@@ -31,22 +33,6 @@ pub const SESSION_MANIFEST_FILE: &str = "session.json";
 const MAX_SESSION_MANIFEST_BYTES: u64 = 64 * 1024;
 pub(super) const TRACE_LIVENESS_WINDOW: Duration = Duration::from_secs(300);
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-pub struct StartSessionOptions {
-    pub name: Option<String>,
-    pub trace: SessionTraceMode,
-    pub artifacts: ArtifactsMode,
-}
-
-impl Default for StartSessionOptions {
-    fn default() -> Self {
-        Self {
-            name: None,
-            trace: SessionTraceMode::On,
-            artifacts: ArtifactsMode::Events,
-        }
-    }
-}
 
 pub fn agent_desktop_dir() -> Result<PathBuf, AppError> {
     crate::storage::state_root::resolve_configured_state_root()
@@ -118,6 +104,8 @@ pub fn set_cursor_overlay(
     session_id: &str,
     cursor_overlay: CursorOverlayConfig,
 ) -> Result<SessionManifest, AppError> {
+    validate_session_id(session_id)?;
+    let _lock = liveness::lock_started_session(session_id, crate::Deadline::standard()?)?;
     let mut manifest = read_manifest(session_id)?.ok_or_else(|| {
         AppError::invalid_input_with_suggestion(
             format!("Session '{session_id}' has no manifest"),
@@ -296,38 +284,9 @@ pub fn list_sessions() -> Result<Vec<SessionManifest>, AppError> {
     Ok(manifests)
 }
 
-pub fn start_session(options: StartSessionOptions) -> Result<SessionManifest, AppError> {
-    if matches!(options.trace, SessionTraceMode::Off)
-        && matches!(options.artifacts, ArtifactsMode::Full)
-    {
-        return Err(AppError::invalid_input_with_suggestion(
-            "Artifacts mode full requires tracing",
-            "Remove --no-trace or omit --screenshots.",
-        ));
-    }
-    let id = new_session_id();
-    let name = options
-        .name
-        .map(|name| validate_session_name(&name))
-        .transpose()?;
-    let dir = session_dir(&id)?;
-    tree::create(&dir)?;
-    let manifest = SessionManifest {
-        id: id.clone(),
-        name,
-        created_at: now_millis(),
-        ended_at: None,
-        trace: options.trace,
-        artifacts: options.artifacts,
-        cursor_overlay: CursorOverlayConfig::default(),
-    };
-    write_manifest(&manifest)?;
-    Ok(manifest)
-}
-
 pub fn end_session(session_id: &str) -> Result<SessionManifest, AppError> {
     validate_session_id(session_id)?;
-    let _lease = acquire_liveness_lease(session_id)?;
+    let _lock = liveness::lock_started_session(session_id, crate::Deadline::standard()?)?;
     let id = session_id.to_string();
     let mut manifest = read_manifest(&id)?.ok_or_else(|| {
         AppError::invalid_input_with_suggestion(

@@ -63,7 +63,7 @@ Off macOS, identical twins have no ref path: only `--headed mouse-click --xy X,Y
 
 ### Surfaces
 
-Surfaces include `menu`, `menubar`, `sheet`, `popover`, `alert`, `focused`, and OS shell kinds supported on each platform. On macOS, `menu` and `menubar` are application-owned. A kind this OS does not have returns `INVALID_ARGS` with the supported list in `details`; an adapter with no supported surfaces returns `PLATFORM_NOT_SUPPORTED`. A shell surface needs no `--app`, except that macOS `menu-bar-extras` with `--app` reads that app's own status item. A closed shell surface returns `WINDOW_NOT_FOUND`; a complete lookup of an absent macOS menu returns `ELEMENT_NOT_FOUND` with `details.kind: "surface_absent"`. Raise a shell surface with `open-system-surface`.
+Surfaces include `menu`, `menubar`, `sheet`, `popover`, `alert`, `focused`, `web`, and OS shell kinds supported on each platform. On macOS, `menu` and `menubar` are application-owned. A kind this OS does not have returns `INVALID_ARGS` with the supported list in `details`; an adapter with no supported surfaces returns `PLATFORM_NOT_SUPPORTED`. A shell surface needs no `--app`, except that macOS `menu-bar-extras` with `--app` reads that app's own status item. A closed shell surface returns `WINDOW_NOT_FOUND`; a complete lookup of an absent macOS menu returns `ELEMENT_NOT_FOUND` with `details.kind: "surface_absent"`. Raise a shell surface with `open-system-surface`.
 
 Use a surface snapshot for dialogs and menus, not a window snapshot. To reach one item inside an overlay, use `find --surface` instead of a full dump.
 
@@ -83,7 +83,10 @@ agent-desktop find --app "App" --role button --count
 - `--text` also matches ancestors whose subtree text contains the text. Use `--name` to match the node itself.
 - `--role` is case-insensitive; `textarea`, `textbox` and `searchfield` fold to `textfield`. When a role filter matches nothing, `data.roles_present` lists the roles in the searched tree. Use it to tell a wrong role name from an empty screen.
 - Unnamed elements omit `name`. Their content is in `value`, so search it with `--value`.
-- A large tree, such as a file dialog, can pass the 5000 ms default `--timeout-ms`. Raise it or narrow the search. A timeout here does not mean the app hangs.
+- A row, tree item or cell labelled only by one text field, as in a file list or outline, takes that field's value as its `name`, marked `"name_source": "child_field_value"` in snapshots, so `--name` finds it. That name locates and displays the element but is never ref identity.
+- A large tree, such as a file dialog, can pass the 5000 ms default `--timeout-ms`. Raise it or narrow the search. A timeout here does not mean the app hangs. The walk gets the budget less up to one second kept for checking matches. When the walk runs out, find returns `TIMEOUT` at once with `details.kind: "locator_transient_incomplete"` and `details.last_incomplete.deadline_exhausted` above zero. A retry with the same budget fails the same way.
+- `--first` returns the first match in traversal order. On a platform that reads list and table rows last, a match outside those rows wins and find answers without reading them, so `find --first` reaches a button beside a long file list without reading the list. The platform skill says whether it does.
+- `--allow-partial` turns that `TIMEOUT` into an answer: `data.complete: false`, `data.truncated: true`, the matches seen so far, and `total_matches` as a lower bound. Use it when any visible match will do, such as a button beside a long file list, or when you want to see what the walk reached before you raise `--timeout-ms`. Do not use it to prove a match is unique or absent; only `complete: true` proves either. In an incomplete answer only matches with an element token get a `ref_id` (macOS), each re-read by its token before it is published; a match without a token, or one the deadline cuts off, carries `bounds` instead. A complete walk answers exactly as without the flag, plus `data.complete: true`. An incomplete walk still spends its budget before it answers, so pair the flag with a smaller `--timeout-ms` when you want the partial answer sooner.
 
 Every non-count response returns the `snapshot_id` that owns its refs:
 
@@ -127,7 +130,7 @@ Lists displays as `{ id, bounds, is_primary, scale }`, primary first. Use the ar
 agent-desktop list-surfaces --app "Finder"
 ```
 
-Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent.
+Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent. On macOS menus belong to the application, and proving none is open walks the whole app tree; when that walk cannot finish, the sheets and alerts already read are kept and an `app/menubar` entry carries `"unclassified": ["menu"]`.
 
 ## open-system-surface
 

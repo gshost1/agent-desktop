@@ -1,18 +1,18 @@
 use crate::{
-    AdapterError, AppError, CursorOverlayConfig, SignalBaseline, actions::action::Action,
-    actions::action_request::ActionRequest, actions::interaction_policy::InteractionPolicy,
-    session, trace::TraceConfig,
+    AdapterError, AppError, CursorOverlayConfig, NotificationSeed, SignalBaseline,
+    actions::action::Action, actions::action_request::ActionRequest,
+    actions::interaction_policy::InteractionPolicy, session, trace::TraceConfig,
 };
-use serde_json::{Value, json};
-use std::cell::Cell;
+use serde_json::Value;
 use std::path::PathBuf;
-use std::time::Instant;
 
+pub(crate) mod command_scope;
 mod cursor;
 mod options;
 mod session_scope;
 mod wait_selector;
 
+use command_scope::CommandScope;
 use options::CommandOptions;
 use session_scope::SessionScope;
 pub use wait_selector::WaitSelector;
@@ -26,60 +26,6 @@ pub struct CommandContext {
     options: CommandOptions,
 }
 
-/// Emits `command.start` on construction and `command.end` on `complete`.
-/// The `Drop` guard emits a fallback `command.end` for a scope abandoned
-/// without `complete` (normal early return, or a panic under the unwind
-/// test profile). It cannot fire on a genuine panic in the release binary:
-/// `[profile.release]` uses `panic = "abort"`, which terminates without
-/// unwinding `Drop`. A panicked release command therefore leaves an
-/// unpaired `command.start`, which the trace reader tolerates as an
-/// `unpaired_command` warning rather than a lost record.
-pub struct CommandScope<'a> {
-    context: &'a CommandContext,
-    command: &'static str,
-    success_disposition: crate::DeliverySemantics,
-    started: Instant,
-    finished: Cell<bool>,
-    _deadline_scope: crate::wait::deadline::DeadlineScope,
-}
-
-impl CommandScope<'_> {
-    pub fn complete(self, result: &Result<Value, AppError>) -> Result<(), AppError> {
-        self.finished.set(true);
-        let emitted = match result {
-            Ok(_) => self.emit_end(true, None),
-            Err(err) => self.emit_end(false, Some(err.code())),
-        };
-        emitted.map_err(|error| {
-            trace_error_with_disposition(
-                error,
-                result_disposition(result, self.success_disposition),
-            )
-        })
-    }
-
-    fn emit_end(&self, ok: bool, code: Option<&str>) -> Result<(), AppError> {
-        let mut fields = json!({
-            "command": self.command,
-            "ok": ok,
-            "duration_ms": self.started.elapsed().as_millis(),
-        });
-        if let Some(code) = code {
-            fields["code"] = json!(code);
-        }
-        self.context.trace("command.end", fields)
-    }
-}
-
-impl Drop for CommandScope<'_> {
-    fn drop(&mut self) {
-        if self.finished.get() {
-            return;
-        }
-        let _ = self.emit_end(false, Some("INTERNAL"));
-    }
-}
-
 impl CommandContext {
     pub fn new(
         session_id: Option<String>,
@@ -89,9 +35,9 @@ impl CommandContext {
         if let Some(id) = session_id.as_deref() {
             validate_session_id(id)?;
         }
+        let session = acquire_session_scope(session_id.clone(), None)?;
         let (segment_dir, artifacts_full) =
             session_trace_state(session_id.as_deref(), trace_path.is_some())?;
-        let session = acquire_session_scope(session_id, None)?;
         let cursor_overlay =
             session::cursor_overlay_for_session(session.as_ref().map(|scope| scope.id.as_str()))?;
         Ok(Self {
@@ -169,6 +115,17 @@ impl CommandContext {
         self.options.event_baseline.as_ref()
     }
 
+    /// Seeds a `wait --notification` with notifications listed before the
+    /// action that precedes it, instead of the wait's own first list.
+    pub fn with_notification_seed(mut self, seed: Option<NotificationSeed>) -> Self {
+        self.options.notification_seed = seed;
+        self
+    }
+
+    pub fn notification_seed(&self) -> Option<&NotificationSeed> {
+        self.options.notification_seed.as_ref()
+    }
+
     pub fn command_scope(&self, command: &'static str) -> Result<CommandScope<'_>, AppError> {
         self.command_scope_with_disposition(
             command,
@@ -198,18 +155,7 @@ impl CommandContext {
             session.ensure_active()?;
         }
         let deadline_scope = crate::wait::deadline::enter_scope(self.inherited_deadline);
-        self.trace("command.start", json!({ "command": command }))
-            .map_err(|error| {
-                trace_error_with_disposition(error, crate::DeliverySemantics::not_delivered())
-            })?;
-        Ok(CommandScope {
-            context: self,
-            command,
-            success_disposition,
-            started: Instant::now(),
-            finished: Cell::new(false),
-            _deadline_scope: deadline_scope,
-        })
+        CommandScope::begin(self, command, success_disposition, deadline_scope)
     }
 
     pub fn request(&self, action: Action, base: InteractionPolicy) -> ActionRequest {
@@ -243,6 +189,11 @@ impl CommandContext {
         let reuses_parent_session = session_id.as_deref() == self.session_id();
         let reuses_parent_trace = reuses_parent_session
             || (self.trace.pending_file_path().is_some() && self.trace.has_sink());
+        let session = if reuses_parent_session {
+            self.session.clone()
+        } else {
+            acquire_session_scope(session_id.clone(), self.inherited_deadline)?
+        };
         let (trace, artifacts_full) = if reuses_parent_trace {
             (self.trace.clone(), self.artifacts_full)
         } else {
@@ -251,11 +202,6 @@ impl CommandContext {
                 self.trace.clone_with_session_segment(segment_dir)?,
                 artifacts_full,
             )
-        };
-        let session = if reuses_parent_session {
-            self.session.clone()
-        } else {
-            acquire_session_scope(session_id, self.inherited_deadline)?
         };
         let cursor_overlay = if reuses_parent_session {
             self.options.cursor_overlay.clone()
@@ -276,6 +222,11 @@ impl CommandContext {
 
     pub fn trace(&self, event: &str, fields: Value) -> Result<(), AppError> {
         self.trace.emit(event, self.session_id(), fields)
+    }
+
+    fn trace_recorded(&self, event: &str, fields: Value) -> Result<Option<u64>, AppError> {
+        self.trace
+            .emit_recorded(event, self.session_id(), || fields)
     }
 
     pub fn trace_lazy(&self, event: &str, fields: impl FnOnce() -> Value) -> Result<(), AppError> {

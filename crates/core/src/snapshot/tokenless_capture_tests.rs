@@ -55,7 +55,7 @@ fn a_whole_window_read_cut_short_keeps_the_complete_shallow_tree() {
     assert_eq!(adapter.captures(), 2);
     assert!(captured.complete, "the shallow walk finished");
     assert_eq!(
-        captured.identity_unproven.as_deref(),
+        captured.notes.identity_unproven.as_deref(),
         Some("the whole-window read was cut short")
     );
     let tree = serde_json::to_string(&captured.tree).expect("the tree serializes");
@@ -78,7 +78,7 @@ fn a_failed_whole_window_read_keeps_the_shallow_tree() {
     let captured = snapshot(&adapter);
     assert!(captured.complete, "the shallow walk finished");
     assert_eq!(
-        captured.identity_unproven.as_deref(),
+        captured.notes.identity_unproven.as_deref(),
         Some("a node below the shallow depth faulted")
     );
     assert!(entries(&captured.refmap).is_empty());
@@ -102,7 +102,7 @@ fn the_whole_window_read_carries_the_forced_renderer_hint() {
         Deadline::standard().expect("a standard deadline"),
     )
     .expect("the window snapshots");
-    assert!(captured.identity_unproven.is_none());
+    assert!(captured.notes.identity_unproven.is_none());
     let (anchor_ref, anchor) = named(&captured.refmap, "Sidebar");
     assert!(
         anchor.identity.unique_at_capture,
@@ -194,7 +194,7 @@ fn a_deep_capture_cut_short_is_flagged_as_unproven() {
         "a deep capture is its own whole read"
     );
     assert_eq!(
-        captured.identity_unproven.as_deref(),
+        captured.notes.identity_unproven.as_deref(),
         Some("the window read was cut short")
     );
 }

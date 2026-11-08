@@ -1,12 +1,13 @@
 use super::segment::{MAX_LINE_BYTES, parse_segment_filename, read_segment_events};
+use crate::refs::refs_test_support::TempDir;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
 
-fn temp_dir(prefix: &str) -> PathBuf {
+fn temp_dir(prefix: &str) -> TempDir {
     loop {
         let dir = std::env::temp_dir().join(format!(
             "agent-desktop-{prefix}-{}-{}",
@@ -14,7 +15,7 @@ fn temp_dir(prefix: &str) -> PathBuf {
             NEXT_DIR.fetch_add(1, Ordering::Relaxed)
         ));
         match fs::create_dir(&dir) {
-            Ok(()) => return dir,
+            Ok(()) => return TempDir::adopt(dir),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => panic!("create a private segment directory: {error}"),
         }

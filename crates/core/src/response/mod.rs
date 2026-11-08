@@ -1,4 +1,5 @@
 pub(crate) mod adapter_error;
+pub(crate) mod adapter_error_evidence;
 pub(crate) mod app_error;
 pub(crate) mod delivery_disposition;
 pub(crate) mod error_code;

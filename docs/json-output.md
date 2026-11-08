@@ -67,12 +67,119 @@ is one of `unknown`, `safe` or `unsafe`, and it follows from `delivery`:
 `not_delivered` is `safe`, and every other non-`unknown` value is `unsafe`.
 
 `unknown` means the command established nothing about delivery. A failure of a
-mutating command that carries no delivery evidence, such as a `TIMEOUT` on an
-operation that may already have landed, keeps it. A read-only command sends
-nothing and invalid arguments never reach the application, so their errors, and
-a lookup failure such as `APP_NOT_FOUND`, carry `not_delivered`. Treat `unknown`
-as not safe to retry automatically: read `error.code` and the message, and
-choose a recovery strategy only when `disposition.retry` is `safe`.
+command that sends input to an application and carries no delivery evidence,
+such as a `TIMEOUT` on an operation that may already have landed, keeps it. A
+read-only command sends nothing, and neither does a command that only writes a
+local file or local state (`screenshot <PATH>`, `clipboard-get --out`,
+`trace export` and `session gc`), so their errors carry `not_delivered`.
+`session start` and `session end` change session state and drive the cursor
+overlay, so they are treated like commands that send input. Invalid arguments never reach the application, so
+their errors, and a lookup failure such as `APP_NOT_FOUND`, carry
+`not_delivered` too. The exception is an `INVALID_ARGS` error with no
+disposition of its own that carries `details.preparatory_focus` or
+`details.preparatory_scroll`: a focus or scroll ran before the refusal, so it
+keeps `unknown`. Treat `unknown` as not safe to retry automatically: read
+`error.code` and the message, and choose a recovery strategy only when
+`disposition.retry` is `safe`.
+
+A `batch` entry whose result does not fit the batch output limit is replaced by
+an `INVALID_ARGS` error with `details.result_omitted: true`. It keeps the
+entry's own disposition: the result's `data.disposition` or
+`error.disposition`, `not_delivered` for a command that sends no input, and
+`delivered_unverified` for a successful command that sends input and reports
+none.
+
+Under `--trace-strict`, a `batch` whose closing trace record cannot be written
+fails with the trace error and `details.kind: "batch_trace_end_failed"`. Every
+entry has already run, so `details.batch` holds the batch body with each
+per-entry result, and `details.cause_details` keeps the trace error's own
+details. A body that would push the response past the batch output limit is
+left out: `details.result_omitted` is `true` and only `total_entries`,
+`completed_entries`, `not_started_entries` and `stopped` are kept. The
+disposition is `not_delivered` when no entry can have delivered (each entry's
+disposition is `not_delivered`, or it is a successful command that sends no
+input), and `delivery_uncertain` otherwise. Any other command whose closing
+trace record fails after it succeeded reports `delivered_unverified` unless it
+is read-only.
+
+A ref action that fails after it starts waiting on the interaction lease and
+before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
+waiting for the lease, a deadline spent while taking it, a failed headed focus
+step, a failed resolve or actionability check under the lease, and a failed
+trace write at dispatch start. The focus step of a headed pointer command, and
+the lease, a deadline spent while taking it, target revalidation and focus step
+of `press`, are `not_delivered` the same way. A key refusal that `press`
+raises after its headed focus carries `details.preparatory_focus` too. Once a focus call has run, a
+failure raised later in the ref action's dispatch (the focus itself, the resolve
+and actionability check under the lease, the action and its verification)
+carries `details.preparatory_focus: "may_have_moved_focus"`, because that call
+may have raised a window; its disposition still says whether the action was
+sent. A failure before the focus call, such as a window that no longer matches,
+carries no such detail, and neither does a failure in a step after the action,
+such as a `--wait-for` condition or writing the result. A ref action makes at
+most one focus attempt: once a focus call has run it does not go back to
+waiting, even when the error is retryable.
+
+On macOS, `press --app` reports `data.details.keyboard_target` when the app's
+keyboard focus may belong to another process, such as a Save panel that a
+service draws in the app's sheet. `pid` received the key and `host_pid` is the
+app. With `route: "hosted_view"` the key went to the process that owns the
+focused control. With `route: "host"` the key went to the app as before, and
+`focus_owner_pid` and `unproven` say which process looked like the owner and
+why it was not proven: `focus_frame_unknown`, `focus_outside_host_windows`,
+`owner_has_no_window_server_presence`, `owner_focus_not_linked` or
+`owner_process_exited`. `candidates` lists the evidence for each process
+considered: `owns_host_focus` (the app's focused element names it),
+`focused_application` (it is the system's focused application),
+`responsible_to_host` (macOS attributes its work to the app), `owns_window`,
+and `focus_frame_matches` (its own focused element has the app's focus frame;
+`null` when not read). The field is omitted when no other process is tied to
+the app's focus.
+
+When the key went to a proven owner, or to the app while an unproven owner's
+focused element is the app's focused control, `press` reads the app's focused
+element and the windows of both processes before and after delivery, for up to
+750 ms. A change makes the result `delivered_verified` with
+`keyboard_target.effect: "observed"`. No change is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
+`details.keyboard_target.effect: "none_observed"`: the key may have been lost,
+or may have acted without a visible change, so read the panel and use its
+controls by ref instead of repeating the key.
+
+On macOS, `press --app` and `press --window-id` with `return`, `enter` or
+`escape` and no modifiers check the effect when the focused window is a sheet
+or dialog, or carries a sheet. A real key goes first, before any semantic
+action, because `AXConfirm` on a text field ends editing and moves focus off
+it, after which the sheet ignores Return. The press is verified only by a
+postcondition the window server shows, held on two consecutive reads within
+750 ms: `surface_window_closed`, the sheet's or dialog's own window has left
+the screen. `text_edited` also counts, but only for a multi-line text area.
+Accessibility listings, window size and title changes never count. When the
+real key cannot be sent or the surface's window stays on screen, the focused
+control's `AXConfirm` or `AXCancel` runs and is judged the same way. A
+verified press is `delivered_verified` with `details.modal_key: { "surface":
+"sheet" | "dialog", "effect": "observed", "signal": "<signal>",
+"observed_after": "<step label>" }`. When the surface's own window cannot be
+told apart from the window it is attached to, only the real key is sent and
+the result is `delivered_unverified` with `modal_key.effect: "unobservable"`.
+A surface still on screen after both routes is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
+`details.modal_key.effect: "none_observed"`, plus `routes` (the step labels
+tried) and `default_button` (for Return) or `cancel_button` (for Escape), which
+says whether the surface names such a button. Read the surface again and use
+its controls by ref instead of repeating the key. Presses with modifiers, other
+keys, and presses with no sheet or dialog in the focused window are unchanged.
+
+The two reports meet only through `keyboard_target`. While a proven hosted
+view owns the keys (`route: "hosted_view"`), the sheet and dialog check does not
+run: the key goes to the hosted view's process, no `AXConfirm` or `AXCancel` is
+tried, and the hosted focus effect alone verifies it, so the result carries
+`keyboard_target` and no `modal_key`. Otherwise the app owns its keys, and on a
+sheet or dialog the real key goes to the app and `modal_key` alone verifies the
+press; `keyboard_target` is added beside it, without `effect`, when an unproven
+owner was reported. A late report never replaces an earlier one:
+`keyboard_target`, `modal_key` and `menu_shortcut` sit side by side in
+`details`.
 
 ## Version 2.4 migration
 
@@ -162,6 +269,64 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 | `timed_out` | The wait budget expired without observing the expected state, including when transient read errors persisted through the last poll. `last_observation_error` may hold the last error. |
 | `identity_unavailable` | The ref has no usable process generation, so observation was skipped. |
 
+## Web channel
+
+The envelope version stays `2.6`. The web channel adds fields and one command; nothing existing changes shape.
+
+`snapshot --surface web --app <browser>` reads the page the browser window shows. When the browser exposes a DevTools endpoint that its own process owns, the page is read over CDP and `data` carries:
+
+| Field | Meaning |
+| --- | --- |
+| `channel` | `"cdp"`: the tree came from the page over the DevTools endpoint. |
+| `url` | The page's URL. |
+| `title` | The page's title. |
+| `suggestion` | Present only when cross-origin frames could not be read and are left out. |
+
+Without such an endpoint, the same command reads the browser window through the accessibility tree and `data` carries `"channel": "ax"` and a `suggestion` naming the `launch --cdp` command that enables the web channel. Snapshots of every other surface carry no `channel`. Refs from a CDP read carry an element token of the form `cdp:<targetId>:<frameId>:<loaderId>:<backendNodeId>`, are accepted by every ref command, and act through the page without focusing the window or moving the pointer. A web ref whose frame now shows another document (`details.kind: "cdp_document_replaced"`), whose node left the page, or whose role or name changed returns `STALE_REF`; a ref whose tab or frame closed returns `WINDOW_NOT_FOUND` with `details.kind: "cdp_target_gone"`. A click lands on the visible part of the element, on its first line that is not covered when it wraps; an element another element covers at every such point returns `ACTION_FAILED` with `details.kind: "cdp_click_intercepted"` and nothing delivered. Ref action results on web refs carry `details.channel: "cdp"`.
+
+`list-surfaces` adds one entry per open page when an endpoint reaches the browser: `{"id": "<targetId>", "type": "web", "title": "<page title, or its URL>"}`.
+
+`open-url <url> --app <browser> [--new-tab] [--window-id <id>]` loads a URL and waits for the load event. `opened` is `current_tab` when the URL replaced the page the window shows, and `new_tab` for `--new-tab` or for a browser that had no page to replace. `data` is:
+
+```json
+{ "url": "https://example.com/", "title": "Example Domain", "channel": "cdp", "target_id": "4C1E...F0", "opened": "current_tab" }
+```
+
+A URL the browser saves as a file instead of showing returns `"opened": "download"` with the requested URL and an empty `title`; `wait --download` returns the file.
+
+Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
+
+### Downloads
+
+`launch --cdp --download-dir <dir>` adds `download_dir`, the folder's absolute path, and `download_scope` to `data.cdp`. `download_scope` is `profile` when launch wrote the folder into the download preference of the profile an absolute `--user-data-dir` named, so the browser saves every download there under its real name. It is `connection` when only each DevTools connection points downloads at the folder; the profile was left as it was because the arguments named no user-data directory, a relative one, a browser's default one, or a `Preferences` file that is not JSON. With `connection`, each web `click`, `double-click` and `press` waits up to 100 ms for a navigation or download to start and returns at once when none does; when one starts, it waits until the download begins or the page stops loading, at most 3 s, so the download begins while the command's connection still points it at the folder.
+
+`wait --download --app <browser>` returns the browser's oldest download no earlier download wait returned:
+
+```json
+{ "path": "/Users/me/work/downloads/report.csv", "suggested_filename": "report.csv", "url": "https://example.com/report.csv", "state": "completed", "bytes": 2048, "elapsed_ms": 412 }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `path` | The saved file, under `suggested_filename` with ` (n)` added before the extension when that name is taken. |
+| `suggested_filename` | The name the server suggested, made safe as a file name. For a file found only in the download folder, the saved name. |
+| `url` | The URL the file came from. Absent for a file the browser saved after the command that started it had exited, which no DevTools connection saw begin. |
+| `state` | Always `"completed"`; any other ending is an error. |
+| `bytes` | The size received. |
+| `elapsed_ms` | How long the wait took. |
+
+Errors carry `details.kind`:
+
+| Code | `details.kind` | Meaning |
+| --- | --- | --- |
+| `ACTION_FAILED` | `cdp_download_canceled` | The browser or its user canceled the download. |
+| `ACTION_FAILED` | `cdp_download_interrupted` | The partial file vanished without a finished file. |
+| `ACTION_NOT_SUPPORTED` | `cdp_download_untracked` | The download began in an earlier command of a browser launched without `--download-dir`. |
+| `ACTION_NOT_SUPPORTED` | `cdp_endpoint_missing` | No DevTools endpoint reaches the browser. |
+| `TIMEOUT` | `wait_timeout`, with `cause` `cdp_download_not_started` or `cdp_download_in_progress` | The timeout passed first. |
+
+Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
+
 ## Find result shape
 
 `find` match objects report the element's actual accessibility `name`. Elements
@@ -170,6 +335,63 @@ Earlier output synthesized a display name, falling back to `value` or
 `description`, then a `(unnamed <role>)` placeholder, so consumers that treated
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
+
+### Which match `--first` returns
+
+`--first` returns the first match in traversal order, not in document order.
+Where the platform reads list and table rows last (macOS: outlines, tables,
+browsers and lists), a match outside those rows comes before any match inside
+them, and `find --first` answers it without reading the rows. Only when nothing
+outside the rows matches does it read them, and then it returns the first match
+inside them. Platforms that read the tree in document order return the first
+match in document order. A ref from such an answer re-identifies by element
+token. A platform without one keeps its usual rule: an element it cannot prove
+unique gets the `identity_not_unique` refusal when you act on it.
+
+### Partial results
+
+By default a `find` that cannot finish its walk within `--timeout-ms` returns
+`TIMEOUT`. With `--allow-partial` it returns the matches it observed instead.
+The data then carries `complete`:
+
+```json
+{ "data": { "complete": false, "truncated": true, "total_matches": 3,
+  "matches": [ { "role": "button", "name": "Cancel", "bounds": { } } ] } }
+```
+
+- `complete: true` means the answer is the same one the default contract gives.
+  Matches, refs and `total_matches` are unchanged.
+- `complete: false` comes with `truncated: true`. The matches are the ones seen
+  before the budget ran out, and `total_matches` (or `count` with `--count`) is a
+  lower bound. With `--first`, `--last` or `--nth`, `match` is the one picked
+  from the observed matches, which an unread part of the tree could change.
+- In an incomplete answer, a match carries `ref_id` only when the platform
+  re-identifies it by element token (macOS). find re-reads each such match by its
+  token, the same check a complete answer makes, to fill the fields the walk
+  skipped. A match it cannot re-read before the deadline, and every match without
+  a token, has no ref and carries `bounds` when the platform reports them.
+- Without the flag the data has no `complete` field, and an incomplete walk is
+  still `TIMEOUT`.
+
+## Derived names
+
+A `row`, `treeitem` or `cell` that no accessible-name source names, but whose
+only text-field child holds its label, takes that field's value as its `name`
+and carries `"name_source": "child_field_value"`:
+
+```json
+{ "ref_id": "@s8f3k2p9:e7", "role": "treeitem", "name": "notes.txt", "name_source": "child_field_value" }
+```
+
+File lists and outlines whose rows rename inline report rows this way. The
+element has no secure field, no static-text label and exactly one text field
+among the children read; otherwise it stays unnamed. Snapshot nodes carry the
+marker; `find` match objects report the derived `name` without it. `find --name`
+matches a derived name. It is a control
+value, so it is never ref identity: the ref entry records no name for that
+element, the capture proof and re-identification leave it out, and
+`get <ref> --property title` returns `null`. A node whose name comes from an
+accessible-name source omits `name_source`.
 
 ## Ref re-identification details
 
@@ -182,9 +404,13 @@ Every ref is re-identified from its stored entry or refused, and `details.kind` 
 | `saved_ref_ambiguous` | `AMBIGUOUS_TARGET` | An element identical to the captured one appeared, so two or more live elements match the stored role and stable fields. A fresh snapshot refuses both as twins; act on a control that is unique in the window. |
 | `identity_not_unique` | `AMBIGUOUS_TARGET` | The ref was not proven the only element matching its role and stable fields when it was captured, so nothing is searched. Either an identical twin existed, or the window could not be read whole within the snapshot timeout (retake the snapshot with a larger `--timeout-ms`). It is reached on Windows, on Linux, and on macOS when the element yields no address. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
 
-The fifth outcome is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
+Two outcomes are retryable. `saved_ref_landing_moved` carries `STALE_REF` with `details.complete: false` and `details.retryable: true`: the whole-window count found the element exactly once, but a different element sat at its path when the resolver reached it, as when a list re-sorts during the read. The element was there and only the descent disagreed, so this is not `saved_ref_absent`; the next attempt counts again. A ref action retries it at most twice in a row and answers the third with `saved_ref_absent`. A landing with no count just before it, such as the C find entry point's first-match landing, reports `saved_ref_absent` instead.
+
+The other is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
 
 After the core resolver chooses the element, the platform adapter lands it, and a landing failure keeps the adapter's own `details.kind` (for example `resolve_no_candidate` on Linux and Windows, or `resolution_complete_absence` on macOS). The platform skills list those kinds. `saved_ref_absent`, `saved_ref_ambiguous` and `identity_not_unique` carry `details.retryable: false`, because waiting cannot change the answer. Every one of these is `not_delivered`.
+
+A refusal without `details.retryable: true` ends every wait at once. With it, what happens next depends on the caller. A ref action (its auto-wait, its retry under the interaction lease, and the pointer actions' waits) treats a known complete absence, a `STALE_REF` with `details.complete: true` and kind `resolve_no_candidate`, `resolution_complete_absence` or `saved_ref_absent`, as final and answers at once, whatever its `retryable` stamp, because the recovery is a new snapshot. That includes a list rebuilt under the lease while the action resolved it. It polls any other retryable resolution refusal within its budget; when the budget runs out on a retryable `STALE_REF` or `AMBIGUOUS_TARGET` read over complete evidence, it reports that refusal with `details.elapsed_ms` instead of the actionability `TIMEOUT`. `wait --element` waits for an element to appear, so it keeps polling every retryable refusal, a complete absence included, until its deadline.
 
 ## Error codes
 
@@ -209,4 +435,4 @@ After the core resolver chooses the element, the platform adapter lands it, and 
 
 ## Exit codes
 
-`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`).
+`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`). `mcp` also exits `2` when it refuses its startup flags, and writes that envelope to stderr, since its stdout carries only JSON-RPC.

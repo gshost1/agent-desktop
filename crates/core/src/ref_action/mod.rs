@@ -8,19 +8,20 @@ use crate::refs::{RefEntry, resolve_saved_ref::resolve_saved_ref};
 use crate::{AdapterError, AppError, actionability};
 use serde_json::json;
 
+pub(crate) mod action_artifacts;
 pub(crate) mod presentation;
 pub(crate) mod ref_action_actionability;
 pub(crate) mod ref_action_context;
+pub(crate) mod ref_action_moved_landings;
 pub(crate) mod ref_action_poll;
 pub(crate) mod ref_action_poll_state;
 pub(crate) mod ref_action_single;
+pub(crate) mod ref_action_single_shot;
 pub(crate) mod ref_action_wait;
 pub(crate) mod ref_action_wait_context;
 pub(crate) mod ref_action_wait_evidence;
 pub(crate) mod ref_action_wait_support;
-
-const TRACE_CAPTURE_BUDGET_MS: u64 = 1_000;
-const PRE_CAPTURE_DISPATCH_RESERVE_MS: u64 = 100;
+pub(crate) mod settled_surface;
 
 /// A strictly resolved ref-action target plus the tracing identity for it.
 pub(crate) struct ResolvedRefAction<'a> {
@@ -78,7 +79,7 @@ pub(crate) fn dispatch_resolved_landing(
         .ok_or_else(|| AdapterError::stale_ref_because("target process instance is unavailable"))?;
     let expected_process = crate::ProcessIdentity::new(target.entry.process.pid, process_instance);
     let mut handle = resolve_saved_ref(target.adapter, target.entry, target.deadline, Some(lease))
-        .map_err(mark_pre_dispatch_resolution_failure)
+        .map_err(AdapterError::unsent)
         .inspect_err(|error| {
             crate::ref_action::ref_action_wait_support::trace_resolve_error(
                 target.context,
@@ -91,7 +92,7 @@ pub(crate) fn dispatch_resolved_landing(
     let preflight = match stable_preflight(&initial_target, &request) {
         Ok(preflight) => preflight,
         Err(error) => {
-            let error = into_adapter_error(error);
+            let error = error.into_adapter_error().unsent();
             if !crate::ref_action::ref_action_wait_evidence::should_scroll_after_preflight(
                 &request, &error,
             ) {
@@ -122,7 +123,7 @@ pub(crate) fn dispatch_resolved_landing(
             };
             let scrolled_target = ResolvedRefAction::new(target, &handle);
             stable_preflight(&scrolled_target, &request)
-                .map_err(|error| after_scroll(into_adapter_error(error)))?
+                .map_err(|error| after_scroll(error.into_adapter_error()))?
         }
     };
     if matches!(
@@ -135,10 +136,13 @@ pub(crate) fn dispatch_resolved_landing(
         .with_verified_point(preflight.verified_point.clone())
         .with_expected_process(expected_process.clone());
     let final_target = ResolvedRefAction::new(target, &handle);
-    final_target.context.trace_lazy(
-        "action.dispatch.start",
-        || json!({ "ref": final_target.ref_id, "action": request.action.name() }),
-    )?;
+    final_target
+        .context
+        .trace_lazy(
+            "action.dispatch.start",
+            || json!({ "ref": final_target.ref_id, "action": request.action.name() }),
+        )
+        .map_err(|error| error.into_adapter_error().unsent())?;
     let action_name = request.action.name();
     let raises_surface = request.action.may_raise_surface();
     let presentation_action = request.action.clone();
@@ -159,7 +163,11 @@ pub(crate) fn dispatch_resolved_landing(
     );
     let mut result = dispatch_result?;
     if raises_surface {
-        result.surfaces = settled_surfaces(&final_target, expected_process);
+        result.surfaces = settled_surface::read(
+            final_target.adapter,
+            expected_process,
+            final_target.deadline,
+        );
     }
     final_target
         .context
@@ -171,91 +179,11 @@ pub(crate) fn dispatch_resolved_landing(
     Ok((result, handle))
 }
 
-/// An action that opens a sheet, menu, or alert leaves the caller staring at a
-/// success envelope with no hint that the application is now waiting on a
-/// dialog. Reporting the overlays saves a round of window archaeology. Purely
-/// informational, so a failed read never disturbs delivered work.
-fn settled_surfaces(
-    target: &ResolvedRefAction<'_>,
-    process: crate::ProcessIdentity,
-) -> Vec<crate::SurfaceInfo> {
-    target
-        .adapter
-        .list_surfaces(process, target.deadline)
-        .unwrap_or_default()
-}
-
-pub(crate) fn mark_pre_dispatch_resolution_failure(error: AdapterError) -> AdapterError {
-    match error.disposition {
-        crate::DeliverySemantics::Unknown | crate::DeliverySemantics::NotDelivered => {
-            error.with_disposition(crate::DeliverySemantics::not_delivered())
-        }
-        crate::DeliverySemantics::DeliveryUncertain
-        | crate::DeliverySemantics::DeliveredUnverified
-        | crate::DeliverySemantics::DeliveredVerified => error,
-    }
-}
-
-pub(crate) fn capture_pre_artifact(
-    context: &CommandContext,
-    adapter: &dyn PlatformAdapter,
-    entry: &RefEntry,
-    deadline: crate::Deadline,
-) -> crate::trace::trace_artifacts::ArtifactOutcome {
-    let Some(capture_deadline) = pre_trace_capture_deadline(deadline) else {
-        return crate::trace::trace_artifacts::ArtifactOutcome::Skipped("dispatch_budget".into());
-    };
-    crate::trace::trace_artifacts::capture_action_screenshot(
-        context,
-        adapter,
-        entry,
-        "pre",
-        capture_deadline,
-    )
-}
-
-pub(crate) fn finish_artifacts(
-    target: RefActionContext<'_>,
-    pre: &crate::trace::trace_artifacts::ArtifactOutcome,
-) {
-    let post = crate::trace::trace_artifacts::capture_action_screenshot(
-        target.context,
-        target.adapter,
-        target.entry,
-        "post",
-        trace_capture_deadline(target.deadline),
-    );
-    if let Err(error) = crate::trace::trace_artifacts::emit_action_artifacts(
-        target.context,
-        target.ref_id,
-        pre,
-        &post,
-    ) {
-        tracing::warn!(error = %error, ref_id = target.ref_id, "action artifact emission failed");
-    }
-}
-
 fn trace_error_after_delivery(error: AppError) -> AppError {
     crate::context::trace_error_with_disposition(
         error,
         crate::DeliverySemantics::delivered_unverified(),
     )
-}
-
-fn trace_capture_deadline(parent: crate::Deadline) -> crate::Deadline {
-    parent.capped(std::time::Duration::from_millis(TRACE_CAPTURE_BUDGET_MS))
-}
-
-fn pre_trace_capture_deadline(parent: crate::Deadline) -> Option<crate::Deadline> {
-    let remaining = parent.remaining();
-    let reserve = std::time::Duration::from_millis(PRE_CAPTURE_DISPATCH_RESERVE_MS);
-    if remaining <= reserve {
-        return None;
-    }
-    let capture_budget = remaining
-        .saturating_sub(reserve)
-        .min(std::time::Duration::from_millis(TRACE_CAPTURE_BUDGET_MS));
-    Some(parent.capped(capture_budget))
 }
 
 /// Samples stability and eligible application-pointer geometry gaps within the action deadline.
@@ -309,17 +237,21 @@ pub(crate) fn execute_resolved(
     request: ActionRequest,
     lease: &crate::InteractionLease,
 ) -> Result<ActionResult, AppError> {
-    let pre = capture_pre_artifact(
-        target.context,
-        target.adapter,
-        target.entry,
-        target.deadline,
-    );
+    let mut artifacts = action_artifacts::ActionArtifacts::new(*target.target, target.deadline);
+    artifacts.capture_pre_once();
     let stability =
         actionability::StabilityExpectation::permissive(target.entry.geometry.bounds_hash);
     preflight_resolved(&target, &request, stability)?;
+    artifacts.attempting();
     let result = ref_action_single::dispatch_resolved(target.target, request, lease);
-    finish_artifacts(target.target, &pre);
+    let delivery = match &result {
+        Ok(result) => result.disposition(),
+        Err(crate::AppError::Adapter(error)) => error.disposition,
+        Err(_) => crate::DeliverySemantics::unknown(),
+    };
+    if delivery != crate::DeliverySemantics::not_delivered() {
+        artifacts.finish_with_post(delivery);
+    }
     result
 }
 
@@ -386,13 +318,6 @@ pub fn execute_entry(
     request: ActionRequest,
 ) -> Result<ActionResult, AdapterError> {
     execute_entry_with_context(adapter, entry, request, &CommandContext::default())
-}
-
-pub(crate) fn into_adapter_error(err: AppError) -> AdapterError {
-    match err {
-        AppError::Adapter(err) => err,
-        other => AdapterError::internal(other.to_string()),
-    }
 }
 
 #[cfg(test)]

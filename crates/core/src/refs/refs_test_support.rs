@@ -43,13 +43,37 @@ impl TempDir {
         Self(path)
     }
 
+    pub(crate) fn adopt(path: PathBuf) -> Self {
+        Self(path)
+    }
+
     pub(crate) fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for TempDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TempDir {
+    fn as_ref(&self) -> &Path {
         &self.0
     }
 }
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        if fs::remove_dir_all(&self.0).is_err() {
+            let _ = fs::remove_file(&self.0);
+        }
     }
 }
+
+#[cfg(test)]
+#[path = "refs_test_support_tests.rs"]
+mod tests;

@@ -3,14 +3,23 @@
 mod call;
 mod calls;
 mod catalog;
+mod child_lease;
+mod global_forward;
+mod global_scope;
+mod inherited_lease;
+mod lease_inheritance;
+mod lease_refusal;
+mod lease_role;
+mod lease_slot;
+mod queued_ticket;
+mod slot_holder;
+mod slot_step;
 
-use clap::{ArgAction, ArgMatches, Command, CommandFactory, parser::ValueSource};
+use clap::{ArgMatches, Command};
 use serde_json::{Map, Value, json};
 use std::io::{BufRead, Write};
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
-
-use crate::cli::Cli;
 
 const MODERN_VERSION: &str = "2026-07-28";
 const LEGACY_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -26,25 +35,35 @@ false with error; a call rejected before the command runs returns plain text. Re
 desktop_skills_get with name \"desktop\" first for the observe-act loop, and with name \
 \"platform\" for what differs on this OS. The skills use CLI syntax: `agent-desktop snapshot \
 --app Finder` is desktop_snapshot with {\"app\": \"Finder\"}, and the input schema replaces \
---help. Global flags (--session, --agent-id, --headed, --wait-for, --trace) are fixed \
-by how this server was started and cannot be passed per call. Refs such as @s8f3k2p9:e1 come from \
+--help. Global flags (--session, --agent-id, --headed, --trace) are fixed by how this \
+server was started and cannot be passed per call. Refs such as @s8f3k2p9:e1 come from \
 desktop_snapshot and go stale when the UI changes: on STALE_REF or AMBIGUOUS_TARGET, snapshot \
 again. Repeat an action only when its disposition.retry is \"safe\".";
 
 /// The `mcp` subcommand; it lives outside `Commands` because it serves commands rather than being one.
 pub(crate) fn command() -> Command {
     Command::new("mcp").about(
-        "Serve every command as an MCP tool over stdio; global flags given here apply to every call",
+        "Serve every command as an MCP tool over stdio; server-wide global flags given here apply to every call",
     )
 }
 
 /// Serves MCP over stdin and stdout until stdin closes, then finishes the tool calls already running.
 /// At most `MAX_CONCURRENT_CALLS` calls run at once, and a message longer than `MAX_MESSAGE_BYTES` is refused unread.
+/// Under an interaction lease inherited from the parent, calls that can inject input or steal focus run one
+/// at a time, in arrival order, each waiting for its turn at most `inherited_lease::QUEUE_WAIT_BOUND`.
+/// Global flags that apply to a single command, such as `--debug` or `--wait-for`, refuse to start it, and so
+/// does an invalid `--session` or `--agent-id`.
 pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
+    let globals = match global_forward::collect_forwarded_globals(matches) {
+        Ok(globals) => globals,
+        Err(error) => return global_forward::refuse_start(&error),
+    };
+    global_forward::init_server_logging(matches);
     let server = Arc::new(Server {
         tools: catalog::tools(),
-        globals: forwarded_globals(matches),
+        globals,
         calls: calls::Calls::default(),
+        lease: Arc::new(lease_inheritance::LeaseInheritance::from_env()),
     });
     let out = Arc::new(Mutex::new(std::io::stdout()));
     let mut input = std::io::stdin().lock();
@@ -70,7 +89,7 @@ pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
         let server = Arc::clone(&server);
         let out = Arc::clone(&out);
         if message["method"] != "tools/call" {
-            server.respond(&out, &message);
+            server.respond(&out, &message, None);
             continue;
         }
         running.retain(|call: &std::thread::JoinHandle<()>| !call.is_finished());
@@ -86,7 +105,18 @@ pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
                 continue;
             }
         }
-        running.push(std::thread::spawn(move || server.respond(&out, &message)));
+        let id = message.get("id").cloned();
+        let ticket = server.lease.register(id.as_ref());
+        let place = queued_ticket::QueuedTicket::new(Arc::clone(&server.lease), ticket);
+        let (call_server, call_out) = (Arc::clone(&server), Arc::clone(&out));
+        let started = place.run_on(
+            |body| std::thread::Builder::new().spawn(body),
+            move |ticket| call_server.respond(&call_out, &message, ticket),
+        );
+        match started {
+            Ok(call) => running.push(call),
+            Err(error) => server.respond_unstarted(&out, id, &error),
+        }
     }
     for call in running {
         let _ = call.join();
@@ -122,13 +152,19 @@ struct Server {
     tools: Vec<catalog::Tool>,
     globals: Vec<String>,
     calls: calls::Calls,
+    lease: Arc<lease_inheritance::LeaseInheritance>,
 }
 
 impl Server {
-    fn respond(&self, out: &Mutex<std::io::Stdout>, message: &Value) {
+    fn respond(
+        &self,
+        out: &Mutex<std::io::Stdout>,
+        message: &Value,
+        ticket: Option<lease_slot::Ticket>,
+    ) {
         if message["method"] == "notifications/cancelled" {
             if let Some(id) = message["params"].get("requestId") {
-                self.calls.cancel(id);
+                self.lease.cancel(id, || self.calls.cancel(id));
             }
             return;
         }
@@ -137,7 +173,7 @@ impl Server {
         };
         let method = message["method"].as_str().unwrap_or_default();
         let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
-        let result = self.handle(&id, method, &params);
+        let result = self.handle(&id, method, &params, ticket);
         if method == "tools/call" && !self.calls.finish(&id) {
             return;
         }
@@ -166,7 +202,29 @@ impl Server {
         );
     }
 
-    fn handle(&self, id: &Value, method: &str, params: &Value) -> Result<Value, RpcError> {
+    fn respond_unstarted(
+        &self,
+        out: &Mutex<std::io::Stdout>,
+        id: Option<Value>,
+        error: &std::io::Error,
+    ) {
+        let Some(id) = id.filter(|id| self.calls.finish(id)) else {
+            return;
+        };
+        let error = RpcError::new(
+            -32603,
+            format!("Cannot start a thread for this call: {error}"),
+        );
+        write_line(out, &error.response(id));
+    }
+
+    fn handle(
+        &self,
+        id: &Value,
+        method: &str,
+        params: &Value,
+        ticket: Option<lease_slot::Ticket>,
+    ) -> Result<Value, RpcError> {
         if let Some(requested) = params["_meta"][PROTOCOL_VERSION_META].as_str() {
             if requested != MODERN_VERSION {
                 return Err(
@@ -191,7 +249,7 @@ impl Server {
                 "ttlMs": TOOLS_TTL_MS,
                 "cacheScope": "public",
             }),
-            "tools/call" => self.call(id, params)?,
+            "tools/call" => self.call(id, params, ticket)?,
             other => return Err(RpcError::new(-32601, format!("Method not found: {other}"))),
         };
         result["resultType"] = Value::from("complete");
@@ -199,7 +257,12 @@ impl Server {
         Ok(result)
     }
 
-    fn call(&self, id: &Value, params: &Value) -> Result<Value, RpcError> {
+    fn call(
+        &self,
+        id: &Value,
+        params: &Value,
+        ticket: Option<lease_slot::Ticket>,
+    ) -> Result<Value, RpcError> {
         let name = params["name"]
             .as_str()
             .ok_or_else(|| RpcError::new(-32602, "tools/call requires a tool name"))?;
@@ -213,7 +276,7 @@ impl Server {
             Some(Value::Object(arguments)) => arguments.clone(),
             Some(_) => return Err(RpcError::new(-32602, "Tool arguments must be an object")),
         };
-        Ok(call::call(tool, &arguments, &self.globals, &self.calls, id))
+        Ok(call::call(self, tool, &arguments, id, ticket))
     }
 }
 
@@ -238,24 +301,6 @@ fn supported_versions() -> Vec<&'static str> {
 
 fn server_info() -> Value {
     json!({ "name": "agent-desktop", "version": env!("CARGO_PKG_VERSION") })
-}
-
-fn forwarded_globals(matches: &ArgMatches) -> Vec<String> {
-    let root = Cli::command();
-    let mut globals = Vec::new();
-    for arg in root.get_arguments().filter(|arg| arg.is_global_set()) {
-        let id = arg.get_id().as_str();
-        let Some(long) = arg.get_long() else { continue };
-        if matches.value_source(id) != Some(ValueSource::CommandLine) {
-            continue;
-        }
-        if matches!(arg.get_action(), ArgAction::SetTrue) {
-            globals.push(format!("--{long}"));
-        } else if let Some(values) = matches.get_raw(id) {
-            globals.extend(values.map(|value| format!("--{long}={}", value.to_string_lossy())));
-        }
-    }
-    globals
 }
 
 fn write_line(out: &Mutex<std::io::Stdout>, message: &Value) {

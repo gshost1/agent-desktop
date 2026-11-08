@@ -7,11 +7,14 @@ App lifecycle, windows, notifications, clipboard, wait, batch, sessions, health.
 ```bash
 agent-desktop launch "System Settings"       # macOS display name
 agent-desktop launch "TextEdit" --activate
+agent-desktop launch "TextEdit" --reopen
 agent-desktop launch "MyTool" --arg /tmp/notes.txt --env KEY=VALUE --no-attach
 agent-desktop launch "Obsidian" --cdp
 ```
 
 `launch` returns once the process runs. The identifier differs by OS: the examples use macOS display names, and the platform skill names the form for its OS. By default it attaches to a running instance. `--no-attach` starts a fresh instance instead of attaching: on Windows it returns `ACTION_FAILED` if a matching app is already running; on macOS it launches a second instance alongside the running one. For an `--arg` value that starts with `-`, use `--arg=<value>`.
+
+On macOS, `launch --activate` on an app that is already running only brings it forward and returns the windows it already has. It no longer opens a window, so an app with none (Finder with every window closed, a document app with no document) stays windowless and `data.window` is absent. To get the app's default or a new window, add `--reopen`: it sends the app a reopen, and a running app with no window opens its default one (a new untitled document, or Finder's default folder). Use `--reopen` only when you want that window; a bare `launch --activate` is the safe way to switch to an app. `--reopen` cannot be combined with `--no-attach`. `data.launch_path` is `attached_running` (no `--activate`), `activated_running`, `launched` (a new process) or `reopened`. `--arg` and `--env` apply only to a new process, so on a running app they are not delivered and `data.suggestion` says so; add `--no-attach` to start a new instance with them. Windows and Linux have no reopen event: `--reopen` returns `ACTION_NOT_SUPPORTED` and `launch_path` is absent.
 
 The process running and the app showing a window are separate facts:
 
@@ -20,7 +23,7 @@ The process running and the app showing a window are separate facts:
 ```
 
 - `window` is present when the app already has one, and omitted when it has none. Its absence is not a failure. `launch` still returns `ok: true`.
-- A document-based app may open its first window only when brought forward. Use `--activate`: it asks the app to present a window and waits for it up to `--timeout` (default 30000). This brings the app forward, so it is not headless. Or trigger the window yourself and use `wait --event window-opened`.
+- A document-based app may open its first window only when brought forward. Use `--activate` on an app that is starting up: it asks the app to present a window and waits for it up to `--timeout` (default 30000). On a macOS app that is already running with no window, `--activate` does not open one; add `--reopen`, or open one yourself with a menu or key command. This brings the app forward, so it is not headless. Or trigger the window yourself and use `wait --event window-opened`.
 - A process that exits before it shows a window returns `APP_UNRESPONSIVE`.
 - Windowless and menu-bar-only apps report no `window`. Use `list-apps` and read `presentation`.
 - An app built on Chromium may return `renderer: "chromium"` and a `suggestion`. These are hints. The accessibility path still works. A missing `renderer` never proves the app is native.
@@ -43,7 +46,9 @@ The port exists only for a fresh process. `launch` never quits a running app for
 | `cdp_switch_conflict` (`INVALID_ARGS`) | `--arg` carried a `--remote-debugging-*` or `--remote-allow-origins` switch | Drop that `--arg` |
 | `cdp_endpoint_unavailable` | No endpoint answered before the deadline | The app stays running. Use the accessibility path |
 
-Handoff: agent-desktop never talks to the port itself. Check `command -v agent-browser`. If it exists, run `agent-browser connect <port>` and use its snapshot, click and type workflow (`agent-browser skills get electron` has the guide). Playwright, Puppeteer and other CDP clients also work. Do not write raw CDP by hand or call app-internal APIs. If no client exists, ask the user to run `npm install -g agent-browser`, or stay on the accessibility path.
+`--download-dir <dir>` (with `--cdp`) names the folder the browser saves downloads to; `wait --download` returns each file saved there. Run `agent-desktop skills get web` for the download loop.
+
+Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
 Keep these on agent-desktop even with CDP connected: the native menu bar, file dialogs and sheets, window management, notifications, screenshots, and any app you did not launch. While the port is open, any local process of the same user can control the app's web contents. Request `--cdp` only for the step that needs it. `close-app` ends the exposure.
 
@@ -78,9 +83,9 @@ agent-desktop move-window --app "TextEdit" --x 0 --y 0
 agent-desktop minimize --app "TextEdit"   # maximize, restore likewise
 ```
 
-- `list-windows` returns `{ id, title, app_name, pid, bounds, is_focused, accessible }`. Use a `w-<id>` with `--window-id` when an app has several windows.
+- `list-windows` returns `{ id, title, app_name, pid, bounds, is_focused, accessible }`. Use a `w-<id>` with `--window-id` when an app has several windows. An empty `title` means the platform reported no title for that window; target it by `--window-id`.
 - `accessible: false` means semantic commands cannot reach that window. Targeting it returns `ACTION_NOT_SUPPORTED` with `kind: "window_without_accessibility_element"`. It still accepts screenshots and coordinate input. Choose another window. Wait polling treats this error as transient. In particular, `--wait-for-gone` does not count it as absence; it keeps polling until the window disappears from the inventory or the wait times out.
-- `focus-window` needs at least one identifier. It confirms the OS reports that window as focused. Otherwise it returns `ACTION_FAILED`.
+- `focus-window` needs at least one identifier. It succeeds when the platform confirms the window focused; a platform failure comes back as its own error. `data.focused` is what one follow-up read sees when it names that window or another window of its process, such as a dialog, so check `data.focused.title`. `data.focus_observed: false` means the read saw nothing usable and `focused` is the named window as confirmed, with its other fields from before the focus. On Linux a window blocked by a modal dialog fails with cause `blocked_by_modal_dialog` instead.
 - `restore` undoes a minimize and returns the window to its earlier placement. It does not promise to un-maximize.
 
 ## Notifications
@@ -93,7 +98,7 @@ Commands: `list-notifications`, `dismiss-notification`, `dismiss-all-notificatio
 - `list-notifications` returns `{ index, app_name, title, body, actions }`, with 1-based indexes. `--app`, `--text`, `--limit` filter.
 - `notification-action INDEX "Reply"` clicks a named button. An action the entry lacks returns `ACTION_NOT_SUPPORTED` and changes nothing.
 - `dismiss-all-notifications` returns `{ dismissed_count, failures, failed_count }`. A failure to close the surface afterward is not reported as an error.
-- `wait --notification` detects a new entry against a baseline taken at wait start. Transient errors retry within `--timeout`. On macOS and Windows, a headless wait sees only an already-open surface.
+- `wait --notification` reports an entry when a notification (same app, title and body; the action buttons do not count) has more entries than it last saw. The record starts at the wait's first listing and drops when two listings in a row show fewer entries, so a notification that was dismissed and then arrives again is new. To count one the previous step produces, put the step and the wait in one headless `batch`: the listing is then taken before the step runs. Transient errors retry within `--timeout`. On macOS and Windows, a headless wait sees only an already-open surface.
 
 ## Clipboard
 
@@ -124,6 +129,7 @@ agent-desktop wait --element @s8f3k2p9:e5 --predicate value --value "Done"
 agent-desktop wait --window "Save As" --app "TextEdit"
 agent-desktop wait --text "Loading complete" --app "Safari"
 agent-desktop wait --menu --app "Finder"
+agent-desktop wait --download --app "Google Chrome" --timeout 60000
 agent-desktop wait --event window-opened --app "Finder"
 ```
 
@@ -134,6 +140,7 @@ Use `wait`, not a fixed sleep. `--timeout` defaults to 30000 ms. Modes:
 - **Window.** Waits for a window whose title contains the text. `--app` narrows. On timeout, `details.last_observed` lists the scoped window count and up to eight titles.
 - **Text.** Selects one app window, then waits for text in that tree. `--count N` waits until exactly N nodes match, and the result carries `count`. Several eligible windows, such as a document and its save dialog, return `AMBIGUOUS_TARGET` before any text check. `--window-id` does not narrow a text wait. To recover, find the target with `list-windows --app <app>` and inspect it with `snapshot --app <app> --window-id <id> -i`. For a dialog, use `wait --window <title> --app <app>`, then `snapshot --surface sheet` (see the dialog workflow). `--window` and `--text` are separate modes and cannot combine.
 - **Menu.** `--menu` waits for a menu surface to open. `--menu-closed` waits for it to close.
+- **Download.** `--download --app <browser>` returns the browser's oldest download that no earlier `wait --download` returned, including one that finished before the wait started, and otherwise waits for one to begin and finish: `{ "path", "suggested_filename", "url", "state": "completed", "bytes", "elapsed_ms" }`. `path` is the saved file under the name the server suggested, with ` (1)` added when that name is taken. A file the browser saved after the command that started it had exited carries no `url`, and its `suggested_filename` is the saved name. Files that were in the folder at launch are never returned. It needs a DevTools endpoint; launch the browser with `--cdp --download-dir <dir>` so a download started by an earlier command can be followed from the folder. A canceled download is `ACTION_FAILED` with `details.kind: "cdp_download_canceled"`, one whose partial file vanished is `cdp_download_interrupted`, and neither returns a path. A timeout carries `details.cause`: `cdp_download_not_started` or `cdp_download_in_progress`. Without `--download-dir`, a download that began in an earlier command cannot be followed (`cdp_download_untracked`); run the click and the wait in one `batch` instead.
 - **Event.** `--event` is one of `window-opened`, `window-closed`, `app-launched`, `app-terminated`, `focus-changed`, `surface-appeared`, `surface-dismissed`. It diffs a baseline taken at wait start against fresh reads, so you need no window id up front. `--window-id` and `--window` narrow it.
 
 For `wait --event` only, `--app` resolves once, at wait start, to one process instance. (`wait --window` filters by app name on every poll.) A later process of the same name is invisible to the wait. Two running instances return `AMBIGUOUS_TARGET`. When no app matches:
@@ -163,9 +170,9 @@ agent-desktop batch '[
 ]' --stop-on-error
 ```
 
-Batch runs entries in order in one process. It is not a transaction. Entries use the same typed commands, policy checks and dispatch as the CLI. Use `args`, not `params`. Unknown fields are rejected, and nested `batch` is rejected. Pass `--stop-on-error` to halt at the first failure. Each entry may carry `"session": "id"`, otherwise it inherits the top-level session. An entry whose session ended before dispatch is `not_started` with reason `session_ended`. An ended top-level session refuses the whole batch with `INVALID_ARGS` (`details.kind: session_ended`) before any entry runs. Snapshot args use `skeleton`, `root`, `interactive_only`.
+Batch runs entries in order in one process. It is not a transaction. Entries use the same typed commands, policy checks and dispatch as the CLI. Use `args`, not `params`. Unknown fields are rejected, and nested `batch` is rejected. Pass `--stop-on-error` to halt at the first failure. An entry that fails with `TIMEOUT` once the batch `--timeout-ms` has run out stops the batch with `stopped.reason: "deadline"` and `stopped.after_index`, with or without `--stop-on-error`, including the last entry. Each entry may carry `"session": "id"`, otherwise it inherits the top-level session. An entry whose session ended before dispatch is `not_started` with reason `session_ended`, except `session end`, which is repeatable in a batch as it is outside one. An ended top-level session refuses the whole batch with `INVALID_ARGS` (`details.kind: session_ended`) before any entry runs. Snapshot args use `skeleton`, `root`, `interactive_only`.
 
-Wait entries use flat JSON keys matching the wait argument fields. For event waits, use `event` and optional `app`, `timeout` (milliseconds; defaults to 30000), `window`, and `window_id`. For example, the batch above waits up to five seconds for a new TextEdit window. `window` and `window_id` narrow only window lifecycle events (`window-opened`, `window-closed`, `focus-changed`); they do not scope text waits. In an action-then-event sequence, the batch captures the event baseline before the action, and does not start the action if that baseline read fails.
+Wait entries use flat JSON keys matching the wait argument fields. For event waits, use `event` and optional `app`, `timeout` (milliseconds; defaults to 30000), `window`, and `window_id`. For example, the batch above waits up to five seconds for a new TextEdit window. `window` and `window_id` narrow only window lifecycle events (`window-opened`, `window-closed`, `focus-changed`); they do not scope text waits. In an action-then-event sequence, the batch captures the event baseline before the action, also when other entries (`screenshot`, `version`, `clipboard-set`, another `wait`) sit between them. Every event or notification wait reads its baseline before the nearest earlier action that can change windows, apps, surfaces, notifications or focus (clipboard writes, session commands and notification dismissals do not count), so several waits after one action all measure from that action, and two waits whose filters overlap can both report the same new window. A wait with no earlier action takes its own first read, and so does a wait whose action did not run (its session ended). If the read fails and the wait directly follows the action, the action does not start. Otherwise the entries before the wait still run, and the wait is `not_started` with reason `pre_action_baseline_failed`. A read that runs out the batch `--timeout-ms` stops the batch with reason `deadline`. An action followed in the same way by a headless `wait` with `notification: true` gets a notification listing taken before the action; if that listing fails, or the wait is headed, the action still runs and the wait result carries `pre_action_seed` (`unavailable` or `skipped_headed`).
 
 Keys are the command's own field names, so a positional argument is named after itself rather than after its placeholder: `press COMBO` is `{"combo":"cmd+s"}`, `click REF` is `{"ref_id":"@s8f3k2p9:e1"}`, and `type REF TEXT` takes `ref_id` and `text`. A flag drops its leading `--` and writes `-` as `_`, so `--timeout-ms` is `timeout_ms`.
 
@@ -190,7 +197,7 @@ agent-desktop session end "$AGENT_DESKTOP_SESSION"
 
 ### Cursor overlay
 
-`cursor-overlay enable` draws an agent cursor and ripple for actions. It affects presentation only. `enable` returns `data.rendered`: `false` means the setting was saved but nothing was drawn. `session start --cursor` enables it at start. `agent-desktop cursor-overlay enable --help` lists the style, image and motion flags with their ranges and defaults. Settings persist in the session and in per-agent profiles. After an upgrade, run `cursor-overlay disable`, then `enable`, to restart the renderer with the new settings.
+`cursor-overlay enable` draws an agent cursor and ripple for actions. It affects presentation only. `enable` returns `data.rendered`: `false` means the setting was saved but nothing was drawn. `session start --cursor` enables it at start, saving the session and its overlay setting in one write: an error means no session was started, and a renderer that cannot draw still returns the session id with `rendered: false`. `agent-desktop cursor-overlay enable --help` lists the style, image and motion flags with their ranges and defaults. Settings persist in the session and in per-agent profiles. After an upgrade, run `cursor-overlay disable`, then `enable`, to restart the renderer with the new settings.
 
 On macOS:
 

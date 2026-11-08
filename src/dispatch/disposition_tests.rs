@@ -2,6 +2,7 @@ use super::dispatch;
 use super::disposition::settle_unknown_delivery;
 use crate::cli::Cli;
 use crate::cli_args::batch::BatchArgs;
+use crate::command_policy::CommandEffect;
 use agent_desktop_core::{
     ActionOps, AdapterError, AppError, AppInfo, Deadline, DeliveryDisposition, DeliverySemantics,
     ErrorCode, InputOps, InteractionLease, ObservationOps, OperationReport, PermissionReport,
@@ -145,7 +146,8 @@ fn a_read_only_failure_that_is_not_an_adapter_error_keeps_its_code_and_message()
         let code = failure.code().to_owned();
         let message = failure.to_string();
 
-        let AppError::Adapter(settled) = settle_unknown_delivery(failure, true) else {
+        let AppError::Adapter(settled) = settle_unknown_delivery(failure, CommandEffect::ReadOnly)
+        else {
             panic!("a read-only failure must carry a delivery verdict");
         };
 
@@ -157,7 +159,10 @@ fn a_read_only_failure_that_is_not_an_adapter_error_keeps_its_code_and_message()
 
 #[test]
 fn a_mutations_failure_that_is_not_an_adapter_error_is_left_as_it_came() {
-    let settled = settle_unknown_delivery(AppError::Io(std::io::Error::other("disk full")), false);
+    let settled = settle_unknown_delivery(
+        AppError::Io(std::io::Error::other("disk full")),
+        CommandEffect::AppInput,
+    );
 
     assert!(matches!(settled, AppError::Io(_)));
 }
@@ -208,4 +213,55 @@ fn stdin_dispatch_omits_values_and_preserves_delivery() {
         crate::cli_args::stdin::redact_result(Ok(data), true).unwrap(),
         redacted
     );
+}
+
+#[test]
+fn a_local_write_failure_is_not_delivered() {
+    let unwritable = "/proc/agent-desktop-unwritable/out.png";
+    for arguments in [
+        vec!["screenshot", "--app", "Finder", unwritable],
+        vec!["clipboard-get", "--out", unwritable],
+    ] {
+        let error = failure_of(AdapterError::timeout("lookup timed out"), &arguments);
+
+        assert_eq!(
+            error.disposition.delivery(),
+            DeliveryDisposition::NotDelivered,
+            "{arguments:?}"
+        );
+        assert_eq!(error.disposition.retry(), RetryDisposition::Safe);
+    }
+    let written = settle_unknown_delivery(
+        AppError::Io(std::io::Error::other("disk full")),
+        CommandEffect::LocalWrite,
+    );
+    let AppError::Adapter(written) = written else {
+        panic!("a local-write failure must carry a delivery verdict");
+    };
+    assert_eq!(written.disposition, DeliverySemantics::not_delivered());
+}
+
+#[test]
+fn an_argument_refusal_after_a_preparatory_step_keeps_unknown_delivery() {
+    for step in ["preparatory_focus", "preparatory_scroll"] {
+        let refused = AdapterError::new(ErrorCode::InvalidArgs, "key is not in the layout")
+            .with_details(json!({ step: "may_have_moved_focus" }));
+
+        let error = failure_of(refused, &["clipboard-clear"]);
+
+        assert_eq!(error.code, ErrorCode::InvalidArgs, "{step}");
+        assert_eq!(error.disposition, DeliverySemantics::unknown(), "{step}");
+    }
+}
+
+#[test]
+fn a_permission_denied_failure_before_dispatch_keeps_its_code() {
+    let denied = AppError::Io(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+
+    let AppError::Adapter(error) = super::disposition::pre_dispatch_error(denied) else {
+        panic!("a pre-dispatch failure must carry a delivery verdict");
+    };
+
+    assert_eq!(error.code, ErrorCode::PermDenied);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
 }

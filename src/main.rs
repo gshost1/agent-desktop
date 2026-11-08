@@ -18,7 +18,7 @@ mod visual_debug;
 mod test_noop_ops;
 
 use agent_desktop_core::{
-    AdapterError, AppError, DeliverySemantics, ErrorCode, SystemOps,
+    AdapterError, AppError, Deadline, ErrorCode, SystemOps,
     context::{CommandContext, WaitSelector},
     response::output::{ErrorPayload, Response},
     session::resolve_active_session,
@@ -26,6 +26,7 @@ use agent_desktop_core::{
 use clap::{CommandFactory, FromArgMatches};
 use cli::{Cli, Commands};
 use cli_args::skills::SkillsAction;
+use dispatch::pre_dispatch_error;
 use std::io::{BufWriter, Write};
 use std::process::ExitCode;
 
@@ -147,6 +148,21 @@ fn execute(cli: Cli, cmd: Commands) -> Result<serde_json::Value, AppError> {
     execute_with_deadline(cli, cmd, None, None)
 }
 
+/// Cap on a top-level batch's permission preflight, which may outlast five seconds.
+const BATCH_PREFLIGHT_CAP_MS: u64 = 15_000;
+
+/// The preflight deadline: the caller's, a batch's capped budget, else the standard one.
+fn preflight_deadline(
+    cmd: &Commands,
+    deadline: Option<Deadline>,
+) -> Result<Deadline, AdapterError> {
+    match (cmd, deadline) {
+        (_, Some(deadline)) => Ok(deadline),
+        (Commands::Batch(a), None) => Deadline::after(a.timeout_ms.min(BATCH_PREFLIGHT_CAP_MS)),
+        (_, None) => Deadline::standard(),
+    }
+}
+
 fn execute_with_deadline(
     cli: Cli,
     cmd: Commands,
@@ -263,8 +279,7 @@ fn execute_with_adapter(
     let adapter = build_adapter();
     let adapter: &dyn agent_desktop_core::PlatformAdapter = &adapter;
     let report = if command_policy::requires_permission_report(&cmd) {
-        match deadline
-            .map_or_else(agent_desktop_core::Deadline::standard, Ok)
+        match preflight_deadline(&cmd, deadline)
             .map_err(AppError::from)
             .and_then(|deadline| adapter.permission_report(deadline).map_err(AppError::from))
         {
@@ -305,18 +320,6 @@ fn execute_with_adapter(
     result
 }
 
-fn pre_dispatch_error(error: AppError) -> AppError {
-    match error {
-        AppError::Adapter(mut source) => {
-            source.disposition = DeliverySemantics::not_delivered();
-            source.into()
-        }
-        other => AdapterError::new(ErrorCode::Internal, other.to_string())
-            .with_disposition(DeliverySemantics::not_delivered())
-            .into(),
-    }
-}
-
 fn finish(cmd_name: &str, result: Result<serde_json::Value, AppError>) -> ExitCode {
     let response = response(cmd_name, result);
     if let Err(write_err) = emit_response(&response) {
@@ -342,14 +345,24 @@ fn report_output_failure(write_err: std::io::Error) -> ExitCode {
 }
 
 fn emit_response(response: &impl serde::Serialize) -> std::io::Result<()> {
-    let stdout = std::io::stdout();
-    let mut writer = BufWriter::new(stdout.lock());
+    write_response(std::io::stdout().lock(), response)
+}
+
+/// Writes `response` to `out` as one JSON line and flushes it.
+fn write_response(out: impl Write, response: &impl serde::Serialize) -> std::io::Result<()> {
+    let mut writer = BufWriter::new(out);
     serde_json::to_writer(&mut writer, response).map_err(std::io::Error::other)?;
     writer.write_all(b"\n")?;
     writer.flush()
 }
 
+/// The platform adapter, wrapped so web pages in a browser that exposes a
+/// DevTools endpoint are read and driven over CDP through the same commands.
 fn build_adapter() -> impl agent_desktop_core::PlatformAdapter {
+    agent_desktop_web::WebChannelAdapter::new(build_platform_adapter())
+}
+
+fn build_platform_adapter() -> impl agent_desktop_core::PlatformAdapter {
     #[cfg(target_os = "macos")]
     {
         agent_desktop_macos::MacOSAdapter::new()
