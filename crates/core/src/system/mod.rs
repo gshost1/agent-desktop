@@ -10,6 +10,8 @@ pub(crate) mod image_buffer;
 pub(crate) mod image_format;
 pub mod launch_options;
 pub mod launch_result;
+pub(crate) mod open_url_request;
+pub(crate) mod opened_page;
 pub(crate) mod operation_report;
 pub(crate) mod operation_report_build;
 pub(crate) mod operation_report_dispatch;
