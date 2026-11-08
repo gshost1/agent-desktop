@@ -125,3 +125,42 @@ fn a_focused_editor_inside_a_window_is_an_ordinary_field() {
         ..floating_editor()
     }));
 }
+
+#[test]
+fn a_write_aimed_at_the_focused_windowless_editor_is_an_in_place_edit() {
+    use super::{InPlaceEdit, classify_edit};
+
+    assert_eq!(
+        classify_edit(&floating_editor(), None, true),
+        InPlaceEdit::TargetIsEditor
+    );
+    assert_eq!(
+        classify_edit(&row_field(), None, true),
+        InPlaceEdit::None,
+        "a focused field inside a window is an ordinary field"
+    );
+    assert_eq!(
+        classify_edit(&row_field(), Some(&floating_editor()), false),
+        InPlaceEdit::TargetIsShadowed
+    );
+    assert_eq!(classify_edit(&row_field(), None, false), InPlaceEdit::None);
+}
+
+#[test]
+fn an_editor_floats_in_a_window_only_when_its_center_is_inside() {
+    let window = rect(0.0, 0.0, 400.0, 300.0);
+
+    assert!(super::editor_floats_in(
+        window,
+        rect(100.0, 100.0, 120.0, 20.0)
+    ));
+    assert!(!super::editor_floats_in(
+        window,
+        rect(500.0, 100.0, 120.0, 20.0)
+    ));
+    assert!(!super::editor_floats_in(window, None));
+    assert!(!super::editor_floats_in(
+        None,
+        rect(100.0, 100.0, 120.0, 20.0)
+    ));
+}

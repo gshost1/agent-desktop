@@ -20,8 +20,8 @@ pub(crate) fn editor_for(
     )
 }
 
-/// Live actionability of a field an editor is editing: the field itself
-/// accepts no inserted text, but `type` and `set-value` reach its editor.
+/// Live actionability of a field in an in-place edit: `type` and `set-value`
+/// reach its editor even where the field itself accepts no inserted text.
 pub(crate) fn with_editor_capabilities(
     field: &AXElement,
     role: &str,

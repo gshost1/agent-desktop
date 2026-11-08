@@ -43,6 +43,47 @@ pub(crate) fn may_be_edited_in_place(ax_role: Option<&str>) -> bool {
     role_in(ax_role, &EDITED_ROLES)
 }
 
+/// Whether a text write aimed at `target` is part of an in-place edit: either
+/// `target` is itself the windowless editor holding focus, or the focused
+/// element edits it in place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InPlaceEdit {
+    None,
+    TargetIsEditor,
+    TargetIsShadowed,
+}
+
+pub(crate) fn classify_edit(
+    target: &EditorFacts,
+    focused: Option<&EditorFacts>,
+    target_has_focus: bool,
+) -> InPlaceEdit {
+    if target_has_focus {
+        return if is_windowless_editor(target) {
+            InPlaceEdit::TargetIsEditor
+        } else {
+            InPlaceEdit::None
+        };
+    }
+    match focused {
+        Some(editor) if edits_in_place(target, editor) => InPlaceEdit::TargetIsShadowed,
+        _ => InPlaceEdit::None,
+    }
+}
+
+/// True when a windowless editor floats over the focused window, so the
+/// editor, not the window, is where keyboard focus is.
+pub(crate) fn editor_floats_in(window: Option<Rect>, editor: Option<Rect>) -> bool {
+    window.zip(editor).is_some_and(|(window, editor)| {
+        let center_x = editor.x + editor.width / 2.0;
+        let center_y = editor.y + editor.height / 2.0;
+        center_x >= window.x
+            && center_x <= window.x + window.width
+            && center_y >= window.y
+            && center_y <= window.y + window.height
+    })
+}
+
 fn role_in(role: Option<&str>, roles: &[&str]) -> bool {
     role.is_some_and(|role| roles.contains(&role))
 }
@@ -57,44 +98,52 @@ fn covers(field: Rect, editor: Rect) -> bool {
     smaller > 0.0 && width * height >= smaller * MIN_SHARED_AREA
 }
 
-/// The editor editing `field` in place, or `None` when the relationship
-/// cannot be proven from the application's focused element.
+/// The editor a text write to `target` must reach during an in-place edit:
+/// `target` itself when it is that editor, the focused editor when it edits
+/// `target` in place, or `None` when no in-place edit can be proven.
 #[cfg(target_os = "macos")]
 pub(crate) fn live_editor_for(
-    field: &AXElement,
+    target: &AXElement,
     deadline: Instant,
 ) -> Result<Option<AXElement>, AdapterError> {
-    let Some(field_facts) = read_facts(field, deadline)? else {
+    let Some(target_facts) = read_facts(target, deadline)? else {
         return Ok(None);
     };
-    if !may_be_edited_in_place(field_facts.role.as_deref()) {
+    if !may_be_edited_in_place(target_facts.role.as_deref()) {
         return Ok(None);
     }
-    let Some(editor) = focused_element(field_facts.pid, deadline)? else {
+    let Some(focused) = focused_element(target_facts.pid, deadline)? else {
         return Ok(None);
     };
-    if super::same_element(&editor, field) {
-        return Ok(None);
-    }
-    let Some(editor_facts) = read_facts(&editor, deadline)? else {
-        return Ok(None);
+    let target_has_focus = super::same_element(&focused, target);
+    let focused_facts = if target_has_focus {
+        None
+    } else {
+        read_facts(&focused, deadline)?
     };
-    Ok(edits_in_place(&field_facts, &editor_facts).then_some(editor))
+    Ok(
+        match classify_edit(&target_facts, focused_facts.as_ref(), target_has_focus) {
+            InPlaceEdit::None => None,
+            InPlaceEdit::TargetIsEditor => Some(target.clone()),
+            InPlaceEdit::TargetIsShadowed => Some(focused),
+        },
+    )
 }
 
-/// The process's focused element when it is a windowless text editor.
+/// The process's focused element and its bounds when it is a windowless
+/// text editor.
 #[cfg(target_os = "macos")]
 pub(crate) fn focused_editor_for_pid(
     pid: i32,
     deadline: Instant,
-) -> Result<Option<AXElement>, AdapterError> {
+) -> Result<Option<(AXElement, Option<Rect>)>, AdapterError> {
     let Some(focused) = focused_element(pid, deadline)? else {
         return Ok(None);
     };
     let Some(facts) = read_facts(&focused, deadline)? else {
         return Ok(None);
     };
-    Ok((facts.pid == pid && is_windowless_editor(&facts)).then_some(focused))
+    Ok((facts.pid == pid && is_windowless_editor(&facts)).then_some((focused, facts.bounds)))
 }
 
 #[cfg(target_os = "macos")]
@@ -131,7 +180,7 @@ pub(crate) fn live_editor_for(
 pub(crate) fn focused_editor_for_pid(
     _pid: i32,
     _deadline: Instant,
-) -> Result<Option<AXElement>, AdapterError> {
+) -> Result<Option<(AXElement, Option<Rect>)>, AdapterError> {
     Ok(None)
 }
 

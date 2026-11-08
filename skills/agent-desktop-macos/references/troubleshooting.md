@@ -78,7 +78,7 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Cause.** While a row is renamed, a separate editor floats over it and holds the text that Return commits. A write to the row's field underneath changes what that field reports, not what the editor commits.
 
-**Fix.** Write to the editor. `set-value @field "New name"` does this by itself when it can prove the editor belongs to the field; the result then says `application_commit: "pending"`. If the result says `verification_scope: "element_value"` instead, the editor was not proven; while no window reports focus, `snapshot --app <App> --surface focused -i` returns the editor, and you can `set-value` its ref. Then `press return --app <App>` and confirm the new name with an independent read, such as a listing of the folder.
+**Fix.** Write to the editor. Run `snapshot --app <App> --surface focused -i`: while the edit is open, the root is the editor, a `textfield` holding the current name. `set-value` its ref with the new name; the result says `application_commit: "pending"`. Then `press return --app <App>` and confirm the new name with an independent read, such as a listing of the folder. A `set-value` on the row's own field also reaches the editor when it can prove the editor belongs to that field.
 
 ## select does not find the menu
 
