@@ -143,6 +143,8 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 25 | `fix/linux-window-settle-provisional` | LIFECYCLE-8 | [#43](https://github.com/gshost1/agent-desktop/pull/43) | **merged** 2026-11-08 as `8806c6c2` (rules 1+2); CI 13/13 on head `29fe91d4`, gates green (4659), 2 review rounds + `readback_unsettled` fix | ready (Linux only; adds error cause `readback_unsettled`) |
 | 26 | `test/inventory-poll-sibling-clock` | CI flake | [#45](https://github.com/gshost1/agent-desktop/pull/45) | **merged** 2026-11-08 as `24574e93` (rules 1+2); CI 13/13 on head `dcb62c28`, gates green (4647) | fork-only (test determinism) |
 | 27 | `fix/focus-window-confirmation` | LIFECYCLE-10 | [#46](https://github.com/gshost1/agent-desktop/pull/46) | open; reworked to "adapter Ok is the verdict, follow-up read is data" (`5e071561`, gates 4792), re-cycled onto `47194fa6` as `c7a51851`; round 2 (medium): filter the read to the target's app, add `data.focus_observed`, cap the read, fix docs; writer applying | ready |
+| 28 | `fix/trace-command-pairing` | STATE-7 | – | writer started (w28): pair command.end to its start by `command_seq`, legacy count fallback | ready (upstream `#602` item 16) |
+| 29 | `fix/mcp-forwarded-globals` | STATE-4 / BINARY-9 | – | writer started (w29): allowlist of forwardable globals; `mcp` refuses per-command visual-debug flags | ready (upstream `#602` item 11; `#587` edits the same file) |
 | 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | **merged** 2026-11-08 as `89a3723e` (rules 1+2); CI 13/13 on head `a690a037` | fork-only (test isolation) |
 
 ## Needs Mac verification
