@@ -359,3 +359,7 @@ mod contract_command_surface_tests;
 
 #[cfg(test)]
 mod agent_identity_tests;
+
+#[cfg(test)]
+#[path = "skill_recipe_tests.rs"]
+mod skill_recipe_tests;

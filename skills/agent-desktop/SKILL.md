@@ -27,7 +27,7 @@ Examples use a POSIX shell. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), b
 
 1. Run `agent-desktop status`. It reports the platform, permissions and `supported_surfaces`.
 2. Run `agent-desktop skills get platform`. It loads the skill for the OS the binary runs on (macOS, Windows or Linux).
-3. For flags and syntax, run `agent-desktop <command> --help`. This skill does not repeat flag lists.
+3. The synopsis below covers the five commands agents use most. For any other command's flags, run `agent-desktop <command> --help`.
 
 ## The loop
 
@@ -46,6 +46,24 @@ agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read
 - Never skeleton a surface (`--surface menu`, `sheet`, `alert`). A surface is already focused.
 - An action that opens a menu, sheet or alert lists it in `data.surfaces`. Target that overlay next. The report gets at most one second, so in an app with a large tree it can be missing or carry `unclassified`; when you expect a dialog, snapshot `--surface sheet` or `--surface alert`.
 - After an async step, use `wait` (see `commands-system.md`). A fixed sleep is a race.
+
+## Command synopsis
+
+Each line is a runnable example. The comment after it is the full form.
+
+```
+agent-desktop press cmd+s --app "TextEdit"                   # COMBO [--app NAME | --window-id ID] [--force]
+agent-desktop find --app "Finder" --role textfield --first   # [--app NAME] [--window-id ID] [--role R] [--name N] [--value V] [--text T] [--exact] [--root REF | --surface S] [--first | --last | --nth N | --limit N | --count]
+agent-desktop type @s8f3k2p9:e2 "hello"                      # REF TEXT [--interval-ms N] [--timeout-ms N]
+agent-desktop select @s8f3k2p9:e4 "Option B"                 # REF VALUE [--timeout-ms N]
+agent-desktop set-value @s8f3k2p9:e2 "new value"             # REF VALUE [--timeout-ms N]
+```
+
+## Spend fewer calls
+
+- **Look before you navigate.** `list-windows --app "<App>"` is one cheap call. When a window's `title` already names the folder or document you need, act in it. Do not open a navigation dialog or a new window.
+- **Read an in-place editor in one call.** After a create or rename, run `snapshot --app "<App>" --surface focused -i`. Do not search the window or open a details panel. See the macOS skill.
+- **Chain steps that need no new ref.** `batch` runs several commands in one process. See Batch in `workflows`.
 
 ## Refs
 

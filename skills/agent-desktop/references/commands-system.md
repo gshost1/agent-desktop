@@ -167,6 +167,8 @@ Batch runs entries in order in one process. It is not a transaction. Entries use
 
 Wait entries use flat JSON keys matching the wait argument fields. For event waits, use `event` and optional `app`, `timeout` (milliseconds; defaults to 30000), `window`, and `window_id`. For example, the batch above waits up to five seconds for a new TextEdit window. `window` and `window_id` narrow only window lifecycle events (`window-opened`, `window-closed`, `focus-changed`); they do not scope text waits. In an action-then-event sequence, the batch captures the event baseline before the action, and does not start the action if that baseline read fails. An action followed by a headless `wait` with `notification: true` gets a notification listing taken before the action; if that listing fails, or the wait is headed, the action still runs and the wait result carries `pre_action_seed` (`unavailable` or `skipped_headed`).
 
+An entry cannot use a ref that an earlier entry produces: the whole array is parsed and validated before the first entry runs, and ref arguments are literal strings. Take refs from a `snapshot` or `find` call made before the batch (see Batch in `workflows`).
+
 Keys are the command's own field names, so a positional argument is named after itself rather than after its placeholder: `press COMBO` is `{"combo":"cmd+s"}`, `click REF` is `{"ref_id":"@s8f3k2p9:e1"}`, and `type REF TEXT` takes `ref_id` and `text`. A flag drops its leading `--` and writes `-` as `_`, so `--timeout-ms` is `timeout_ms`.
 
 ## Sessions and traces

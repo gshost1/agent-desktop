@@ -127,6 +127,34 @@ agent-desktop --headed drag --from-xy 100,200 --to-xy 500,400 --drop-delay 800
 
 Drag is physical and needs `--headed`. Confirm the drop by reading the destination state, not the command's `ok`.
 
+## Check list-windows before you navigate
+
+The window you need may already be open. Look first.
+
+```bash
+agent-desktop list-windows --app "Finder"
+agent-desktop snapshot --app "Finder" --window-id w-5678 -i
+```
+
+- `list-windows` returns one object per window with `id`, `title`, `app_name`, `pid`, `bounds` and `is_focused`. A `title` that names the folder or document you need means the work happens in that window. Snapshot it with its `--window-id` and act.
+- Open a navigation dialog, a new window or a menu path only when no listed `title` matches.
+- Several windows can share a title. Pick by `id`, and use `is_focused` to prefer the one the user is looking at.
+
+## Edit a name in place
+
+A create or rename can open a text editor over the row instead of a dialog, as when a file manager makes a new folder or renames an item. Read the editor with one call. Do not search the whole window, and do not open a details or info panel to rename.
+
+```bash
+agent-desktop snapshot --app "Finder" --surface focused -i
+agent-desktop set-value @s8f3k2p9:e1 "Reports"
+agent-desktop press return --app "Finder"
+```
+
+- The first call returns the editor as the root of the surface, a `textfield` holding the current name. Write the new name to its ref with `set-value`, or with `type`. The result is `delivered_unverified` with `application_commit: "pending"` until the commit key is pressed.
+- `press return --app <App>` commits. Then confirm with an independent read, such as a listing of the folder or `list-windows` titles.
+- The two actions need no new ref, so they can go in one `batch` after the snapshot (see Batch).
+- This reads the focused surface, which is where an in-place editor lives on macOS. The macOS skill has the details and the failure case.
+
 ## Multiple windows
 
 ```bash
@@ -171,15 +199,26 @@ macOS (Notification Center), Windows (Action Center) and Linux (GNOME Shell) sup
 
 ## Batch
 
+`batch` takes a JSON array of `{"command", "args"}` objects and runs them in order in one process. Use it when you already hold every ref the steps need.
+
 ```bash
 agent-desktop batch '[
-  {"command":"click","args":{"ref_id":"@s8f3k2p9:e1"}},
+  {"command":"set-value","args":{"ref_id":"@s8f3k2p9:e3","value":"Quarterly report"}},
+  {"command":"set-value","args":{"ref_id":"@s8f3k2p9:e4","value":"Draft"}},
+  {"command":"check","args":{"ref_id":"@s8f3k2p9:e6"}},
+  {"command":"click","args":{"ref_id":"@s8f3k2p9:e8"}},
   {"command":"wait","args":{"ms":200}},
-  {"command":"press","args":{"combo":"return"}}
+  {"command":"press","args":{"combo":"return","app":"Notes"}}
 ]' --stop-on-error
 ```
 
-Batch saves process starts. It is not a transaction. Entries after a failure run unless you pass `--stop-on-error`.
+- Each entry's `args` uses the command's own field names: `ref_id`, `value`, `text`, `combo`, `app`. A flag drops its leading `--` and writes `-` as `_`, so `--timeout-ms` is `timeout_ms`. Unknown fields fail the whole batch before any entry runs.
+- Every ref in the array must exist before the batch starts. The array is parsed and validated up front, and an entry cannot read the output of an earlier one. A `snapshot` or `find` entry does not feed a later `click`; its refs are new, and you only see them after the batch returns.
+- So the useful shape is one `snapshot` or `find` call, then one batch of actions on those refs. A fill-and-submit that takes six calls takes two.
+- A chain saves calls when its steps are independent of what the earlier steps show: field fills, checkboxes, key presses, waits, `launch`, `close-app`. It does not help when a step opens something you must read first, such as a dialog or a menu.
+- `--stop-on-error` halts at the first failed entry. Without it, later entries still run. An action that changes the tree can make later refs return `STALE_REF` for that entry alone.
+- Read `data.results` entry by entry. Each carries its own `ok` and `execution`. The envelope's `ok` is true whenever the batch ran, even if an entry failed.
+- A batch holds at most 64 entries. Batches cannot nest, and `type` and `set-value` need their text in the JSON, not from `--stdin`.
 
 ## Trace a multi-step run
 
