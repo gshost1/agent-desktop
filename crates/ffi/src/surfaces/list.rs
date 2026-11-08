@@ -27,8 +27,7 @@ pub unsafe extern "C" fn ad_list_surfaces_exact(
         let process = match process_identity_for_pid(adapter.inner.as_ref(), pid, deadline) {
             Ok(process) => process,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         match adapter.inner.list_surfaces(process, deadline) {
@@ -36,12 +35,10 @@ pub unsafe extern "C" fn ad_list_surfaces_exact(
                 if let Err(error) =
                     crate::resource::validate_list_len(surfaces.len(), "Exact surface list")
                 {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 if let Err(error) = surfaces.iter().try_for_each(validate_surface_info) {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 let items: Vec<AdExactSurfaceInfo> =
                     surfaces.iter().map(exact_surface_info_to_c).collect();
@@ -50,10 +47,7 @@ pub unsafe extern "C" fn ad_list_surfaces_exact(
                 }));
                 AdResult::Ok
             }
-            Err(error) => {
-                set_last_error(&error);
-                crate::error::last_error_code()
-            }
+            Err(error) => set_last_error(&error),
         }
     })
 }

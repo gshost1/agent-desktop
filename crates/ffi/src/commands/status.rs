@@ -44,8 +44,7 @@ pub unsafe extern "C" fn ad_status(
             Ok(c) => c,
             Err(app_err) => {
                 let ae = app_error_to_adapter(app_err);
-                error::set_last_error(&ae);
-                return error::last_error_code();
+                return error::set_last_error(&ae);
             }
         };
 
@@ -53,8 +52,7 @@ pub unsafe extern "C" fn ad_status(
         let report = match adapter.inner.permission_report(deadline) {
             Ok(report) => report,
             Err(error) => {
-                error::set_last_error(&error);
-                return error::last_error_code();
+                return error::set_last_error(&error);
             }
         };
 
