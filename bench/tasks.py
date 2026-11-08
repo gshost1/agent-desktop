@@ -162,24 +162,51 @@ PERSONAL_FINDER_TITLES = ["Pictures", "Documents", "Desktop", "Downloads", "Movi
 
 
 def close_bench_finder_windows():
-    macctl("close-discard", "Finder", *BENCH_FINDER_PREFIXES)
+    close_finder_windows(lambda title: title.startswith(tuple(BENCH_FINDER_PREFIXES)))
+
+
+def close_finder_windows(matches):
+    """Close the Finder windows whose title matches. A window with a sheet open (a Go to Folder
+    sheet left by a probe) ignores its close button, so each one is raised, sent Escape and
+    closed, and the result is checked. Returns (closed, left)."""
+    closed = 0
+    for _ in range(30):
+        titles = json.loads(macctl("windows", "Finder") or "[]")
+        targets = [title for title in titles if matches(title)]
+        if not targets:
+            return closed, 0
+        title = targets[0]
+        macctl("close-discard", "Finder", title)
+        time.sleep(0.4)
+        if json.loads(macctl("windows", "Finder") or "[]").count(title) < titles.count(title):
+            closed += 1
+            continue
+        macctl("raise", "Finder", title)
+        time.sleep(0.3)
+        if (json.loads(macctl("windows", "Finder") or "[]") or [""])[0] != title:
+            break
+        macctl("key", "Finder", "53")
+        time.sleep(0.5)
+        macctl("close-discard", "Finder", title)
+        time.sleep(0.4)
+        if json.loads(macctl("windows", "Finder") or "[]").count(title) < titles.count(title):
+            closed += 1
+        else:
+            break
+    left = sum(1 for title in json.loads(macctl("windows", "Finder") or "[]") if matches(title))
+    return closed, left
 
 
 PERSONAL_CLOSE_LOG = MACCTL.parent / "personal-window-closes.log"
 
 
 def close_personal_finder_windows(context):
-    """Close Finder windows on George's own folders (a Finder reopen lands on Home or Recents) by
-    title only, never reading their contents. Logs the count with its context, never a title."""
-    titles = json.loads(macctl("windows", "Finder") or "[]")
-    closed = 0
-    for title in titles:
-        if title in PERSONAL_FINDER_TITLES:
-            macctl("close-discard", "Finder", title)
-            closed += 1
-    if closed:
+    """Close Finder windows on George's own folders by title only, never reading their contents.
+    Logs the verified count with its context, never a title."""
+    closed, left = close_finder_windows(lambda title: title in PERSONAL_FINDER_TITLES)
+    if closed or left:
         with open(PERSONAL_CLOSE_LOG, "a") as log:
-            log.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {context} closed={closed}\n")
+            log.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {context} closed={closed} left={left}\n")
     return closed
 
 
