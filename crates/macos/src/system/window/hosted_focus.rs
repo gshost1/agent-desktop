@@ -4,91 +4,105 @@
 //! An out-of-process panel, such as the Open and Save panel of a sandboxed
 //! application, draws inside a sheet window that the window server attributes
 //! to the application, while its controls and its keyboard event queue belong
-//! to the process that serves the panel. A key event posted to the
-//! application's pid never reaches such a panel. The rules here decide, from
-//! observed focus ownership and window geometry only, when keyboard input for
-//! the application must go to the serving process instead.
+//! to the process that serves the panel. The application's own accessibility
+//! focus can report the panel's control under the application's pid, so a key
+//! posted to that pid never reaches the panel. The rules here decide, from
+//! process relationships, focus and window-server evidence only, which process
+//! must receive the application's keyboard input.
 
 use agent_desktop_core::Rect;
 
+use super::keyboard_route::KeyboardRoute;
+
 const FRAME_TOLERANCE: f64 = 1.0;
 
-/// Process ids observed for the keyboard focus of one application.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct FocusPids {
-    pub(crate) host: i32,
-    pub(crate) host_focus: Option<i32>,
-    pub(crate) system_focus: Option<i32>,
-    pub(crate) system_focus_is_host_focus: bool,
-    pub(crate) focused_application: Option<i32>,
+/// One process other than the application that may own its keyboard focus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Candidate {
+    pub(crate) pid: i32,
+    /// The application's focused element reports this pid.
+    pub(crate) owns_host_focus: bool,
+    /// The system-wide focused application is this process.
+    pub(crate) focused_application: bool,
+    /// macOS names the application as responsible for this process.
+    pub(crate) responsible_to_host: bool,
+    /// This process's own focused element has the application's focus frame;
+    /// `None` when it was not read.
+    pub(crate) focus_frame_matches: Option<bool>,
+    pub(crate) owns_window: bool,
 }
 
-/// Window-server evidence that a focused view sits inside the host's window
-/// and that its owning process can receive keyboard events.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct HostingEvidence<'a> {
-    pub(crate) focus_frame: Option<Rect>,
-    pub(crate) host_windows: &'a [Rect],
-    pub(crate) candidate_has_window: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum KeyboardRoute {
-    Host,
-    HostedView { pid: i32 },
-    Unproven { pid: i32, reason: &'static str },
-}
-
-impl KeyboardRoute {
-    pub(crate) fn hosted_pid(self) -> Option<i32> {
-        match self {
-            Self::HostedView { pid } => Some(pid),
-            Self::Host | Self::Unproven { .. } => None,
+impl Candidate {
+    /// Why this process is not proven to own the application's keyboard focus.
+    pub(crate) fn rejection(&self) -> Option<&'static str> {
+        if !self.focused_application && !self.owns_window {
+            return Some("owner_has_no_window_server_presence");
         }
+        let same_control = self.owns_host_focus
+            || self.focus_frame_matches == Some(true)
+            || (self.focused_application && self.responsible_to_host);
+        if !same_control {
+            return Some("owner_focus_not_linked");
+        }
+        None
+    }
+
+    /// A process with no tie to the application's focus is not worth
+    /// reporting unless the focused element sits outside any app window.
+    pub(crate) fn is_relevant(&self, host_focus_has_window: bool) -> bool {
+        self.owns_host_focus
+            || self.focused_application
+            || self.focus_frame_matches == Some(true)
+            || (self.responsible_to_host && !host_focus_has_window)
+    }
+
+    pub(crate) fn evidence(&self) -> serde_json::Value {
+        serde_json::json!({
+            "pid": self.pid,
+            "owns_host_focus": self.owns_host_focus,
+            "focused_application": self.focused_application,
+            "responsible_to_host": self.responsible_to_host,
+            "focus_frame_matches": self.focus_frame_matches,
+            "owns_window": self.owns_window,
+        })
     }
 }
 
-/// The process other than the host that the host's own focus points into, if
-/// any. The system-wide focus counts only when it is the host's focused
-/// element, so a different application's focus never redirects input.
-pub(crate) fn focus_owner_candidate(pids: &FocusPids) -> Option<i32> {
-    let foreign = |pid: Option<i32>| pid.filter(|pid| *pid > 0 && *pid != pids.host);
-    foreign(pids.host_focus).or_else(|| {
-        if pids.system_focus_is_host_focus {
-            foreign(pids.system_focus)
-        } else {
-            None
-        }
-    })
-}
-
-pub(crate) fn decide_route(pids: &FocusPids, evidence: &HostingEvidence<'_>) -> KeyboardRoute {
-    let Some(pid) = focus_owner_candidate(pids) else {
+/// `focus_inside_host` is whether the application's focused element lies in a
+/// visible window the application owns, `None` when its frame is unknown.
+pub(crate) fn decide_route(
+    focus_inside_host: Option<bool>,
+    candidates: &[Candidate],
+) -> KeyboardRoute {
+    let Some(first) = candidates.first() else {
         return KeyboardRoute::Host;
     };
-    let Some(frame) = evidence.focus_frame.filter(has_area) else {
-        return KeyboardRoute::Unproven {
-            pid,
-            reason: "focus_frame_unknown",
-        };
+    let reason = match focus_inside_host {
+        None => Some("focus_frame_unknown"),
+        Some(false) => Some("focus_outside_host_windows"),
+        Some(true) => None,
     };
-    if !evidence
-        .host_windows
+    if let Some(reason) = reason {
+        return KeyboardRoute::Unproven {
+            pid: first.pid,
+            reason,
+        };
+    }
+    if let Some(proven) = candidates
         .iter()
-        .any(|window| contains(window, &frame))
+        .find(|candidate| candidate.rejection().is_none())
     {
-        return KeyboardRoute::Unproven {
-            pid,
-            reason: "focus_outside_host_windows",
-        };
+        return KeyboardRoute::HostedView { pid: proven.pid };
     }
-    if pids.focused_application != Some(pid) && !evidence.candidate_has_window {
-        return KeyboardRoute::Unproven {
-            pid,
-            reason: "owner_has_no_window_server_presence",
-        };
+    KeyboardRoute::Unproven {
+        pid: first.pid,
+        reason: first.rejection().unwrap_or("owner_focus_not_linked"),
     }
-    KeyboardRoute::HostedView { pid }
+}
+
+pub(crate) fn frame_inside(frame: Option<Rect>, windows: &[Rect]) -> Option<bool> {
+    let frame = frame.filter(|frame| frame.width > 0.0 && frame.height > 0.0)?;
+    Some(windows.iter().any(|window| contains(window, &frame)))
 }
 
 pub(crate) fn same_frame(a: &Rect, b: &Rect) -> bool {
@@ -96,28 +110,6 @@ pub(crate) fn same_frame(a: &Rect, b: &Rect) -> bool {
         && (a.y - b.y).abs() <= FRAME_TOLERANCE
         && (a.width - b.width).abs() <= FRAME_TOLERANCE
         && (a.height - b.height).abs() <= FRAME_TOLERANCE
-}
-
-pub(crate) fn route_details(host: i32, route: KeyboardRoute) -> Option<serde_json::Value> {
-    match route {
-        KeyboardRoute::Host => None,
-        KeyboardRoute::HostedView { pid } => Some(serde_json::json!({
-            "pid": pid,
-            "host_pid": host,
-            "route": "hosted_view",
-        })),
-        KeyboardRoute::Unproven { pid, reason } => Some(serde_json::json!({
-            "pid": host,
-            "host_pid": host,
-            "route": "host",
-            "focus_owner_pid": pid,
-            "unproven": reason,
-        })),
-    }
-}
-
-fn has_area(frame: &Rect) -> bool {
-    frame.width > 0.0 && frame.height > 0.0
 }
 
 fn contains(outer: &Rect, inner: &Rect) -> bool {

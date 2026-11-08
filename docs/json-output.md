@@ -120,13 +120,21 @@ such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
 
-On macOS, `press --app` that delivers a key event while the app's focus is in a
-view another process serves, such as a Save panel drawn in the app's sheet,
-carries `data.details.keyboard_target`: `pid` received the key, `host_pid` is
-the app, and `route` is `hosted_view`. When that ownership could not be proven,
-the key goes to the app as before and `keyboard_target` has `route: "host"`,
-`focus_owner_pid` and an `unproven` reason. The field is omitted when the app
-owns its focus.
+On macOS, `press --app` reports `data.details.keyboard_target` when the app's
+keyboard focus may belong to another process, such as a Save panel that a
+service draws in the app's sheet. `pid` received the key and `host_pid` is the
+app. With `route: "hosted_view"` the key went to the process that owns the
+focused control. With `route: "host"` the key went to the app as before, and
+`focus_owner_pid` and `unproven` say which process looked like the owner and
+why it was not proven: `focus_frame_unknown`, `focus_outside_host_windows`,
+`owner_has_no_window_server_presence`, `owner_focus_not_linked` or
+`owner_process_exited`. `candidates` lists the evidence for each process
+considered: `owns_host_focus` (the app's focused element names it),
+`focused_application` (it is the system's focused application),
+`responsible_to_host` (macOS attributes its work to the app), `owns_window`,
+and `focus_frame_matches` (its own focused element has the app's focus frame;
+`null` when not read). The field is omitted when no other process is tied to
+the app's focus.
 
 ## Version 2.4 migration
 
