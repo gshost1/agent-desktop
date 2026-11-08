@@ -122,9 +122,12 @@ pub(crate) fn execute_with_ref(
         },
     );
     match result {
-        Ok(Some(SelectorCompletion::Matched(result))) => {
-            materialized_response(*result, context, &input, start.elapsed().as_millis())
-        }
+        Ok(Some(SelectorCompletion::Matched(result))) => materialized_response(
+            *result,
+            context,
+            (&input, &query),
+            start.elapsed().as_millis(),
+        ),
         Ok(Some(SelectorCompletion::Absent)) => Ok(target_absent_response(
             &input.query_raw,
             start.elapsed().as_millis(),
@@ -291,10 +294,13 @@ fn build_snapshot(
     snapshot::build_for_owners(adapter, &input.opts, owners, deadline)
 }
 
+/// A refmap cut can leave the matched element out of the saved tree, since the
+/// match ran against the tree as observed. `match_cut` says so, beside the
+/// `refmap_capped` the snapshot fields already carry.
 fn materialized_response(
     mut result: snapshot::SnapshotResult,
     context: &CommandContext,
-    input: &WaitSelectorInput,
+    (input, query): (&WaitSelectorInput, &crate::LocatorQuery),
     elapsed_ms: u128,
 ) -> Result<Value, AppError> {
     let store = RefStore::for_session(context.session_id())?;
@@ -302,7 +308,12 @@ fn materialized_response(
     trace_artifacts::copy_refmap_if_full(context, &store, &snapshot_id, &result.refmap)?;
     result.bind_snapshot_id(snapshot_id);
     emit_snapshot_saved(context, &result)?;
-    snapshot_cmd::format_snapshot_fields(&result, Some(elapsed_ms), Some(&input.query_raw))
+    let mut body =
+        snapshot_cmd::format_snapshot_fields(&result, Some(elapsed_ms), Some(&input.query_raw))?;
+    if result.notes.refmap_capped && !query::tree_has_match(&result.tree, query) {
+        body["match_cut"] = json!(true);
+    }
+    Ok(body)
 }
 
 fn target_absent_response(query_raw: &str, elapsed_ms: u128) -> Value {
@@ -341,3 +352,7 @@ pub(crate) fn is_transient_poll_error(err: &AppError, window_id: Option<&str>) -
 #[cfg(test)]
 #[path = "wait_selector_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "wait_selector_refmap_cap_tests.rs"]
+mod refmap_cap_tests;

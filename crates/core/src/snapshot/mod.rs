@@ -29,11 +29,14 @@ impl SnapshotResult {
     /// A refmap above the store's size cap is first cut to fit, and the tree
     /// with it (see `refmap_fit`), which makes the result partial. The cut
     /// happens here rather than in `build`, so a wait that matches against the
-    /// built tree still sees every node it observed.
+    /// built tree still sees every node it observed. Structural hints are
+    /// recomputed after a cut, so a splitter that lost columns no longer
+    /// states a total.
     pub(crate) fn save_refmap(&mut self, store: &RefStore) -> Result<String, AppError> {
         if refmap_fit::fit_refmap_cap(&mut self.tree, &mut self.refmap)? {
             self.complete = false;
             self.notes.refmap_capped = true;
+            crate::snapshot::hints::add_structural_hints(&mut self.tree);
         }
         store.save_new_snapshot(&self.refmap)
     }

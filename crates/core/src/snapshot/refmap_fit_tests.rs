@@ -204,3 +204,44 @@ fn a_root_ref_that_cannot_fit_leaves_the_bare_root_marked() {
     assert!(root.subtree_truncated);
     assert!(refmap.is_empty());
 }
+
+#[test]
+fn a_ref_the_map_does_not_hold_is_removed_from_its_node() {
+    let (mut tree, mut refmap) = small_tree();
+    tree.children[0].ref_id = Some("@e99".into());
+    let cap = cap_for_refs(&refmap, 3);
+
+    assert!(fit_refmap_within(&mut tree, &mut refmap, cap).unwrap());
+    assert!(tree.children[0].ref_id.is_none());
+    let mut kept = Vec::new();
+    ref_ids_in_order(&tree, &mut kept);
+    assert!(kept.iter().all(|ref_id| refmap.get(ref_id).is_some()));
+}
+
+#[test]
+fn a_splitter_cut_by_the_cap_states_no_column_total() {
+    let _guard = HomeGuard::new();
+    let columns = 3;
+    let per_column = 1_000;
+    let mut splitter = node("splitter", "");
+    splitter.children = (0..columns)
+        .map(|column| group(buttons(column * per_column..(column + 1) * per_column)))
+        .collect();
+    let adapter = CaptureAdapter::new(window(vec![splitter]));
+
+    let result = crate::snapshot::run(&adapter, &drill_opts(), Some("Fixture"), None).unwrap();
+
+    let splitter = &result.tree.children[0];
+    assert_eq!(splitter.role, "splitter");
+    assert!(splitter.subtree_truncated);
+    assert!(splitter.children.len() < columns);
+    let hints: Vec<_> = splitter
+        .children
+        .iter()
+        .map(|column| column.presentation.hint.clone())
+        .collect();
+    let expected: Vec<_> = (1..=splitter.children.len())
+        .map(|index| Some(format!("column {index}")))
+        .collect();
+    assert_eq!(hints, expected);
+}

@@ -27,19 +27,16 @@ struct RefBudget<'a> {
 }
 
 impl RefBudget<'_> {
-    fn admit(&mut self, ref_id: &str) -> Result<bool, AppError> {
-        let Some(entry_len) = self.refmap.serialized_entry_len(ref_id)? else {
-            return Ok(true);
-        };
+    fn admit(&mut self, ref_id: &str, entry_len: usize) -> bool {
         let separator = usize::from(!self.kept.is_empty());
         let cost = entry_len + separator;
         if cost > self.remaining {
             self.exhausted = true;
-            return Ok(false);
+            return false;
         }
         self.remaining -= cost;
         self.kept.insert(ref_id.to_string());
-        Ok(true)
+        true
     }
 }
 
@@ -79,9 +76,11 @@ pub(crate) fn fit_refmap_within(
 }
 
 /// Walks `node` in allocation order. Returns `false` when `node` itself does
-/// not fit, so its parent drops it and every later sibling. A kept node whose
-/// walk ran the budget out is an ancestor of the cut and is marked, as an
-/// exhausted observation marks every ancestor of the node it stopped at.
+/// not fit, so its parent drops it and every later sibling. A ref the map does
+/// not hold is removed from its node, so every ref left in the tree is stored.
+/// A kept node whose walk ran the budget out is an ancestor of the cut and is
+/// marked, as an exhausted observation marks every ancestor of the node it
+/// stopped at.
 fn keep_allocated_prefix(
     node: &mut AccessibilityNode,
     budget: &mut RefBudget<'_>,
@@ -89,10 +88,12 @@ fn keep_allocated_prefix(
     if budget.exhausted {
         return Ok(false);
     }
-    if let Some(ref_id) = node.ref_id.as_deref()
-        && !budget.admit(ref_id)?
-    {
-        return Ok(false);
+    if let Some(ref_id) = node.ref_id.clone() {
+        match budget.refmap.serialized_entry_len(&ref_id)? {
+            Some(entry_len) if !budget.admit(&ref_id, entry_len) => return Ok(false),
+            Some(_) => {}
+            None => node.ref_id = None,
+        }
     }
     let mut kept_children = node.children.len();
     for (index, child) in node.children.iter_mut().enumerate() {

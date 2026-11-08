@@ -57,12 +57,23 @@ the store keeps per snapshot. Refs are kept in allocation order (depth first,
 a node before its children) up to the first one that does not fit; that node
 and every node after it are left out of the tree, every kept ancestor of the
 cut carries `"subtree_truncated": true`, and `data` carries `"complete": false`,
-`"truncated": true`, `nodes_observed` and `"refmap_capped": true`. Every ref in
-the tree is stored and resolves, and no ref is handed out for a node that was
-left out. `refmap_capped` is omitted otherwise, and a larger `--timeout-ms`
+`"truncated": true`, `nodes_observed` and `"refmap_capped": true`. Every ref
+left in the tree is saved with the snapshot, so it resolves like any other ref,
+and no ref is handed out for a node that was left out. `refmap_capped` is omitted otherwise, and a larger `--timeout-ms`
 does not change this cut. A `--root` drill-down is all or nothing here too:
 a drill whose refs would push the stored refmap past 1 MB fails with `INTERNAL`
 and replaces nothing.
+
+`wait --text` and `--wait-for` match against the tree they observed, then save
+it, so the cut can drop the match from the saved snapshot. A `wait --text`
+result over a cut snapshot adds `"complete": false` and `"refmap_capped": true`.
+With `"match_cut": true` the first match lies past the cut and `ref` is `null`
+because the snapshot does not hold it. With `--count`, `count` stays the number
+the complete read found and `stored_count` is how many of those the saved
+snapshot holds. A `--wait-for` result already carries the snapshot fields,
+including `refmap_capped`, and adds `"match_cut": true` when no node in the
+returned tree matches the selector. `match_cut` and `stored_count` are omitted
+otherwise.
 
 Version 2.1 replaces the 2.0 `error.retry_command` string with the structured
 `error.recovery` object and adds `error.disposition`. Consumers must select a
