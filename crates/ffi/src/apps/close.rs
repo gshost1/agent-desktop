@@ -29,6 +29,12 @@ pub unsafe extern "C" fn ad_close_app(
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
+        let _lease_marker = match crate::lease_marker::mark_core_mutation() {
+            Ok(marker) => marker,
+            Err(error) => {
+                return set_last_error(&error);
+            }
+        };
         match agent_desktop_core::commands::close_app::execute(
             agent_desktop_core::commands::close_app::CloseAppArgs { app: id_str, force },
             adapter.inner.as_ref(),
