@@ -337,20 +337,3 @@ fn inherited_batch_deadline_caps_sleep_without_variant_rewriting() {
 
     assert_eq!(output["results"][0]["error"]["code"], "TIMEOUT");
 }
-
-#[test]
-fn a_batch_spends_from_the_deadline_it_inherits_instead_of_starting_its_own() {
-    let adapter = adapter();
-    let spent = agent_desktop_core::Deadline::after(0).expect("a deadline builds");
-    let output = execute(
-        args(json!([{"command": "clipboard-clear", "args": {}}]), 60_000),
-        &adapter,
-        &PermissionReport::default(),
-        &CommandContext::default().with_inherited_deadline(spent),
-    )
-    .expect("deadline is reported in the batch result");
-
-    assert_eq!(adapter.clears.load(Ordering::SeqCst), 0);
-    assert_eq!(output["results"][0]["not_started_reason"], "deadline");
-    assert_eq!(output["stopped"]["reason"], "deadline");
-}

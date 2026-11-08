@@ -37,7 +37,6 @@ mod baseline_tests;
 #[path = "open_system_surface_parity_tests.rs"]
 mod open_system_surface_parity_tests;
 
-pub(crate) use execution::budget;
 pub(crate) use result_entry::{entry_disposition, trace_failure_details};
 
 #[cfg(test)]
