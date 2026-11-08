@@ -341,4 +341,4 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 
 ## Exit codes
 
-`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`).
+`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`). `mcp` also exits `2` when it refuses its startup flags, and writes that envelope to stderr, since its stdout carries only JSON-RPC.
