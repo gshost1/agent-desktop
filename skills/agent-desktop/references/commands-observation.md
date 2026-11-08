@@ -83,6 +83,7 @@ agent-desktop find --app "App" --role button --count
 - `--text` also matches ancestors whose subtree text contains the text. Use `--name` to match the node itself.
 - `--role` is case-insensitive; `textarea`, `textbox` and `searchfield` fold to `textfield`. When a role filter matches nothing, `data.roles_present` lists the roles in the searched tree. Use it to tell a wrong role name from an empty screen.
 - Unnamed elements omit `name`. Their content is in `value`, so search it with `--value`.
+- A row, tree item or cell labelled only by one text field, as in a file list or outline, takes that field's value as its `name`, marked `"name_source": "child_field_value"` in snapshots, so `--name` finds it. That name locates and displays the element but is never ref identity.
 - A large tree, such as a file dialog, can pass the 5000 ms default `--timeout-ms`. Raise it or narrow the search. A timeout here does not mean the app hangs.
 
 Every non-count response returns the `snapshot_id` that owns its refs:

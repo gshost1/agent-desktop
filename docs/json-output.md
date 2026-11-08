@@ -275,6 +275,26 @@ Earlier output synthesized a display name, falling back to `value` or
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
 
+## Derived names
+
+A `row`, `treeitem` or `cell` that no accessible-name source names, but whose
+only text-field child holds its label, takes that field's value as its `name`
+and carries `"name_source": "child_field_value"`:
+
+```json
+{ "ref_id": "@s8f3k2p9:e7", "role": "treeitem", "name": "notes.txt", "name_source": "child_field_value" }
+```
+
+File lists and outlines whose rows rename inline report rows this way. The
+element has no secure field, no static-text label and exactly one text field
+among the children read; otherwise it stays unnamed. Snapshot nodes carry the
+marker; `find` match objects report the derived `name` without it. `find --name`
+matches a derived name. It is a control
+value, so it is never ref identity: the ref entry records no name for that
+element, the capture proof and re-identification leave it out, and
+`get <ref> --property title` returns `null`. A node whose name comes from an
+accessible-name source omits `name_source`.
+
 ## Ref re-identification details
 
 Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these four kinds:

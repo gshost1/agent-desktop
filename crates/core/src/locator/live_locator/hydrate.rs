@@ -54,7 +54,11 @@ pub(super) fn selected_matches(
             return Err(anchor_missing(&preliminary).into());
         }
         if matched.fully_observed {
-            let name = preliminary.identity.name.clone().unwrap_or_default();
+            let name = observed
+                .nodes
+                .get(index)
+                .and_then(|node| node.evidence.display_name())
+                .unwrap_or_default();
             let value = preliminary.identity.value.clone();
             record_match(matched, preliminary, name, value, &mut refmap)?;
             continue;
@@ -98,7 +102,7 @@ pub(super) fn selected_matches(
                 identity: preliminary.identity.clone(),
                 ..super::materialize::ref_entry(node, &hydrated.source, query)
             };
-            let name = node.evidence.name.meaningful_string().unwrap_or_default();
+            let name = node.evidence.display_name().unwrap_or_default();
             let value = node.evidence.value.meaningful_string();
             let screen_bounds = super::materialize::screen_bounds(&node.evidence);
             (entry, name, value, node.document_order, screen_bounds)
