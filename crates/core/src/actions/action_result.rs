@@ -42,6 +42,28 @@ impl ActionResult {
         result
     }
 
+    /// Text delivered into an editor the application floats over a field while
+    /// it edits that field in place. The editor holds the text, but the field
+    /// underneath and the application's model change only when the edit is
+    /// committed, so the result is never verified and names the commit key.
+    pub fn awaiting_commit(action: &Action, steps: Vec<ActionStep>, commit_key: &str) -> Self {
+        Self::delivered_unverified(action.name())
+            .with_steps(steps)
+            .with_details(serde_json::json!({
+                "verification_scope": "inline_editor",
+                "application_commit": PENDING_COMMIT,
+                "commit_key": commit_key,
+            }))
+    }
+
+    /// True for a result built by [`ActionResult::awaiting_commit`].
+    pub fn awaits_application_commit(&self) -> bool {
+        self.details
+            .as_ref()
+            .and_then(|details| details["application_commit"].as_str())
+            == Some(PENDING_COMMIT)
+    }
+
     pub fn satisfied_without_delivery(action: impl Into<String>) -> Self {
         Self {
             action: action.into(),
@@ -111,6 +133,8 @@ fn delivery_summary(steps: &[ActionStep]) -> (bool, bool) {
     }
     (delivered, verification.unwrap_or(false))
 }
+
+const PENDING_COMMIT: &str = "pending";
 
 const fn default_action_disposition() -> DeliverySemantics {
     DeliverySemantics::delivered_unverified()
