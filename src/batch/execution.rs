@@ -1,6 +1,7 @@
 use agent_desktop_core::{
-    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, PermissionReport,
-    PlatformAdapter, SignalBaseline, SignalFilter, context::CommandContext,
+    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, NotificationBaseline,
+    NotificationFilter, PermissionReport, PlatformAdapter, SignalBaseline, SignalFilter,
+    context::CommandContext,
 };
 use serde_json::{Value, json};
 
@@ -28,6 +29,7 @@ pub(super) fn execute(
     let mut completed = 0;
     let mut pending_baseline: Option<Result<SignalBaseline, AdapterError>> =
         context.event_baseline().cloned();
+    let mut pending_notification = context.notification_baseline().cloned();
     let mut stopped = None;
 
     for index in 0..total {
@@ -43,6 +45,7 @@ pub(super) fn execute(
         }
 
         let current_baseline = pending_baseline.take();
+        let current_notification = pending_notification.take();
 
         if let Some(ended_session) = session_ended_for(&commands[index]) {
             let error = batch_session_ended(index, &commands[index].name, &ended_session);
@@ -58,47 +61,48 @@ pub(super) fn execute(
             continue;
         }
 
-        pending_baseline = match commands.get(index + 1).and_then(event_filter) {
-            Some(filter) => match adapter.capture_signal_baseline(&filter, deadline) {
-                Ok(baseline) => Some(Ok(baseline)),
-                Err(error) => {
-                    let wait_index = index + 1;
-                    let wait_command = &commands[wait_index].name;
-                    let error = baseline_error(
+        match pre_action_seed(commands.get(index + 1), adapter, deadline) {
+            Ok((event, notification)) => {
+                pending_baseline = event.map(Ok);
+                pending_notification = notification;
+            }
+            Err(error) => {
+                let wait_index = index + 1;
+                let wait_command = &commands[wait_index].name;
+                let error = baseline_error(
+                    index,
+                    &commands[index].name,
+                    wait_index,
+                    wait_command,
+                    error,
+                );
+                push_small_entry(
+                    &mut results,
+                    &mut results_bytes,
+                    not_started_entry(
                         index,
                         &commands[index].name,
-                        wait_index,
-                        wait_command,
+                        "pre_action_baseline_failed",
                         error,
-                    );
-                    push_small_entry(
-                        &mut results,
-                        &mut results_bytes,
-                        not_started_entry(
-                            index,
-                            &commands[index].name,
-                            "pre_action_baseline_failed",
-                            error,
-                        ),
-                    );
-                    stopped = Some(json!({
-                        "reason": "pre_action_baseline_failed",
-                        "blocked_index": index,
-                        "blocked_command": commands[index].name,
-                        "wait_index": wait_index,
-                        "wait_command": wait_command,
-                    }));
-                    break;
-                }
-            },
-            None => None,
-        };
+                    ),
+                );
+                stopped = Some(json!({
+                    "reason": "pre_action_baseline_failed",
+                    "blocked_index": index,
+                    "blocked_command": commands[index].name,
+                    "wait_index": wait_index,
+                    "wait_command": wait_command,
+                }));
+                break;
+            }
+        }
 
         let item_context = commands[index]
             .context
             .clone()
             .with_inherited_deadline(deadline)
-            .with_event_baseline(current_baseline);
+            .with_event_baseline(current_baseline)
+            .with_notification_baseline(current_notification);
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
         let entry = super::result_entry::completed_entry(
             index,
@@ -174,14 +178,46 @@ pub(super) fn execute(
     Ok(body)
 }
 
-fn event_filter(command: &PreparedCommand) -> Option<SignalFilter> {
-    match &command.command {
-        Commands::Wait(args) if args.event.event.is_some() => Some(SignalFilter {
+type PreActionSeed = (Option<SignalBaseline>, Option<NotificationBaseline>);
+
+/// Reads what the following wait entry diffs against before the current entry
+/// runs, so a window, surface or notification the current entry produces is
+/// reported as new instead of being absorbed into the wait's own first read.
+fn pre_action_seed(
+    next: Option<&PreparedCommand>,
+    adapter: &dyn PlatformAdapter,
+    deadline: Deadline,
+) -> Result<PreActionSeed, AdapterError> {
+    let Some(next) = next else {
+        return Ok((None, None));
+    };
+    let Commands::Wait(args) = &next.command else {
+        return Ok((None, None));
+    };
+    if args.mode.notification {
+        let filter = NotificationFilter {
+            app: args.app.clone(),
+            text: args.mode.text.clone(),
+            ..Default::default()
+        };
+        let context = next.context.clone().with_inherited_deadline(deadline);
+        let baseline =
+            agent_desktop_core::commands::wait_notification::capture_notification_baseline(
+                &filter, deadline, adapter, &context,
+            )?;
+        return Ok((None, Some(baseline)));
+    }
+    if args.event.event.is_some() {
+        let filter = SignalFilter {
             app: args.app.clone(),
             process: None,
-        }),
-        _ => None,
+        };
+        return Ok((
+            Some(adapter.capture_signal_baseline(&filter, deadline)?),
+            None,
+        ));
     }
+    Ok((None, None))
 }
 
 fn baseline_error(

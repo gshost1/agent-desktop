@@ -83,6 +83,7 @@ pub use locator::{
 pub use notifications::dismiss_all_notifications_request::DismissAllNotificationsRequest;
 pub use notifications::dismiss_notification_request::DismissNotificationRequest;
 pub use notifications::notification_action_request::NotificationActionRequest;
+pub use notifications::notification_baseline::NotificationBaseline;
 pub use notifications::notification_filter::NotificationFilter;
 pub use notifications::notification_identity::NotificationIdentity;
 pub use notifications::notification_identity_check::verify_notification_identity;

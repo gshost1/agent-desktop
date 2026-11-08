@@ -3,7 +3,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use crate::{
-    AppError, NotificationFilter, NotificationInfo,
+    AdapterError, AppError, Deadline, NotificationBaseline, NotificationFilter,
     adapter::PlatformAdapter,
     commands::{wait::is_retryable_wait_poll_error, wait_timeout},
     context::CommandContext,
@@ -32,7 +32,7 @@ pub(crate) fn wait_for_notification(
         },
         deadline,
     );
-    let mut baseline: Option<std::collections::HashMap<NotificationFingerprint, usize>> = None;
+    let mut baseline: Option<NotificationBaseline> = context.notification_baseline().cloned();
     let mut last_error = None;
 
     loop {
@@ -42,12 +42,12 @@ pub(crate) fn wait_for_notification(
         match super::notification_policy::list_with_foreground_lease(
             &filter, deadline, adapter, context,
         ) {
-            Ok(current) => match &baseline {
+            Ok(current) => match baseline.as_mut() {
                 None => {
-                    baseline = Some(notification_counts(&current));
+                    baseline = Some(NotificationBaseline::from_list(&current));
                 }
                 Some(baseline) => {
-                    if let Some(notif) = first_new_notification(&current, baseline) {
+                    if let Some(notif) = baseline.observe(&current) {
                         let elapsed = start.elapsed().as_millis();
                         return Ok(json!({
                             "condition": "notification",
@@ -83,49 +83,21 @@ pub(crate) fn wait_for_notification(
     }
 }
 
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub(crate) struct NotificationFingerprint {
-    app_name: String,
-    title: String,
-    body: Option<String>,
-    actions: Vec<String>,
+/// Lists the notifications `filter` selects and records them, so that a
+/// `wait --notification` seeded with the result reports a notification that
+/// arrives between this call and the wait's first list.
+pub fn capture_notification_baseline(
+    filter: &NotificationFilter,
+    deadline: Deadline,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Result<NotificationBaseline, AdapterError> {
+    adapter.check_notification_support(deadline)?;
+    super::notification_policy::list_with_foreground_lease(filter, deadline, adapter, context)
+        .map(|current| NotificationBaseline::from_list(&current))
+        .map_err(AppError::into_adapter_error)
 }
 
-impl From<&NotificationInfo> for NotificationFingerprint {
-    fn from(info: &NotificationInfo) -> Self {
-        Self {
-            app_name: info.app_name.clone(),
-            title: info.title.clone(),
-            body: info.body.clone(),
-            actions: info.actions.clone(),
-        }
-    }
-}
-
-pub(crate) fn notification_counts(
-    notifications: &[NotificationInfo],
-) -> std::collections::HashMap<NotificationFingerprint, usize> {
-    let mut counts = std::collections::HashMap::new();
-    for notification in notifications {
-        *counts
-            .entry(NotificationFingerprint::from(notification))
-            .or_insert(0) += 1;
-    }
-    counts
-}
-
-pub(crate) fn first_new_notification<'a>(
-    current: &'a [NotificationInfo],
-    baseline: &std::collections::HashMap<NotificationFingerprint, usize>,
-) -> Option<&'a NotificationInfo> {
-    let mut seen = std::collections::HashMap::new();
-    for notification in current {
-        let fingerprint = NotificationFingerprint::from(notification);
-        let current_count = seen.entry(fingerprint.clone()).or_insert(0);
-        *current_count += 1;
-        if *current_count > baseline.get(&fingerprint).copied().unwrap_or(0) {
-            return Some(notification);
-        }
-    }
-    None
-}
+#[cfg(test)]
+#[path = "wait_notification_tests.rs"]
+mod tests;
