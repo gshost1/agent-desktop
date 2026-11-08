@@ -51,6 +51,17 @@ pub trait ObservationOps: Send + Sync {
         Ok(self.is_nonspatial_target(handle))
     }
 
+    /// Whether the adapter delivers this action to this nonspatial target
+    /// through its own protocol, with no pointer and no screen position, so a
+    /// headless request needs no bounds and no hit test.
+    fn delivers_action_without_pointer(
+        &self,
+        _handle: &NativeHandle,
+        _action: &crate::Action,
+    ) -> bool {
+        false
+    }
+
     fn observe_tree(
         &self,
         _root: ObservationRoot<'_>,

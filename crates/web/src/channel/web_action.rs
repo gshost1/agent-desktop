@@ -57,6 +57,27 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
     }
 }
 
+/// The actions `run` drives through the page over CDP; every other action is
+/// refused there as unsupported.
+pub(crate) fn runs_through_the_page(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Click
+            | Action::DoubleClick
+            | Action::SetValue(_)
+            | Action::Clear
+            | Action::TypeText(_)
+            | Action::Select(_)
+            | Action::Check
+            | Action::Uncheck
+            | Action::Toggle
+            | Action::SetFocus
+            | Action::ScrollTo
+            | Action::Scroll(_, _)
+            | Action::PressKey(_)
+    )
+}
+
 fn run(target: &mut WebTarget<'_>, action: &Action) -> Result<ActionResult, AdapterError> {
     let name = action.name();
     match action {

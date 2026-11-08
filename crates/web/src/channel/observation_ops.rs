@@ -24,6 +24,17 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         WebHandle::of(handle).is_some() || self.inner.is_nonspatial_target(handle)
     }
 
+    fn delivers_action_without_pointer(
+        &self,
+        handle: &NativeHandle,
+        action: &agent_desktop_core::Action,
+    ) -> bool {
+        match WebHandle::of(handle) {
+            Some(_) => super::web_action::runs_through_the_page(action),
+            None => self.inner.delivers_action_without_pointer(handle, action),
+        }
+    }
+
     fn is_nonspatial_target_with_deadline(
         &self,
         handle: &NativeHandle,

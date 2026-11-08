@@ -199,3 +199,15 @@ fn a_native_handle_never_reaches_the_devtools_connection() {
     assert_eq!(web.inner().recorded(), vec!["execute_action"]);
     assert!(opens.lock().unwrap().is_empty());
 }
+
+#[test]
+fn the_page_takes_double_click_and_scroll_but_never_hover_or_triple_click() {
+    assert!(super::runs_through_the_page(&Action::DoubleClick));
+    assert!(super::runs_through_the_page(&Action::Scroll(
+        Direction::Down,
+        3
+    )));
+    assert!(!super::runs_through_the_page(&Action::Hover));
+    assert!(!super::runs_through_the_page(&Action::TripleClick));
+    assert!(!super::runs_through_the_page(&Action::RightClick));
+}
