@@ -16,5 +16,5 @@ Why: on 2026-11-07 a model-free replay reused recorded element numbers on a Find
 ## Other rules
 
 - Take the desktop lock (`bash bench/lockq.sh take "<owner>" 5`) for anything that drives the GUI, and release it after.
-- Every cargo build or test on this Mac, in any worktree, goes through `bash bench/serial_cargo.sh <command>`: one at a time, `nice -n 20`, 2 jobs, 2 test threads, the shared `~/.agent-desktop-bench-target`, never while the desktop lock is held. No per-worktree `target/`. Keep bench build output under 10 GB.
+- Every cargo build or test on this Mac, in any worktree, goes through `bash bench/serial_cargo.sh <command>`: one at a time, `nice -n 20`, 2 jobs, 2 test threads, the shared `~/.agent-desktop-bench-target`, never while the desktop lock is held. No per-worktree `target/`. Commits go through it too (`bash bench/serial_cargo.sh git commit ...`), because the pre-commit hook runs fmt, clippy and tests. Keep bench build output under 10 GB.
 - `bench/replay.py` is disabled until it checks every action's target role and name against the recorded run and stays inside bench folders.
