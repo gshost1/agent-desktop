@@ -14,6 +14,7 @@ use crate::{
         skills::{SkillsAction, SkillsArgs, SkillsGetArgs},
         trace::{TraceAction, TraceArgs, TraceExportArgs, TraceShowArgs},
     },
+    command_policy::CommandEffect,
 };
 
 mod bounded_json;
@@ -29,13 +30,27 @@ mod baseline_tests;
 #[path = "open_system_surface_parity_tests.rs"]
 mod open_system_surface_parity_tests;
 
+pub(crate) use result_entry::{entry_disposition, trace_failure_details};
+
+#[cfg(test)]
 pub(crate) fn execute(
     args: BatchArgs,
     adapter: &dyn PlatformAdapter,
     permission_report: &PermissionReport,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    execution::execute(args, adapter, permission_report, context)
+    execution::execute(args, adapter, permission_report, context, &mut Vec::new())
+}
+
+/// Runs the batch and records each prepared entry's effect by its index.
+pub(crate) fn execute_recording_effects(
+    args: BatchArgs,
+    adapter: &dyn PlatformAdapter,
+    permission_report: &PermissionReport,
+    context: &CommandContext,
+    entry_effects: &mut Vec<CommandEffect>,
+) -> Result<Value, AppError> {
+    execution::execute(args, adapter, permission_report, context, entry_effects)
 }
 
 pub(crate) fn parse_command(item: BatchCommand) -> Result<Commands, AppError> {
