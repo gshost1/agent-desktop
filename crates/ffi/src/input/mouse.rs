@@ -130,21 +130,17 @@ pub unsafe extern "C" fn ad_mouse_event(
         let core_event = match build_mouse_event(ev, Vec::new()) {
             Ok(e) => e,
             Err(msg) => {
-                error::set_last_error(&agent_desktop_core::AdapterError::new(
+                return error::set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     msg,
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
         let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
         match adapter.inner.mouse_event(core_event, &lease) {
             Ok(_) => AdResult::Ok,
-            Err(e) => {
-                error::set_last_error(&e);
-                error::last_error_code()
-            }
+            Err(e) => error::set_last_error(&e),
         }
     })
 }
@@ -174,31 +170,26 @@ pub unsafe extern "C" fn ad_mouse_event_with_modifiers(
         let mods = match modifiers_from_c(modifiers, modifier_count) {
             Ok(m) => m,
             Err(msg) => {
-                error::set_last_error(&agent_desktop_core::AdapterError::new(
+                return error::set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     msg,
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
         let core_event = match build_mouse_event(ev, mods) {
             Ok(e) => e,
             Err(msg) => {
-                error::set_last_error(&agent_desktop_core::AdapterError::new(
+                return error::set_last_error(&agent_desktop_core::AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     msg,
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
         let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
         match adapter.inner.mouse_event(core_event, &lease) {
             Ok(_) => AdResult::Ok,
-            Err(e) => {
-                error::set_last_error(&e);
-                error::last_error_code()
-            }
+            Err(e) => error::set_last_error(&e),
         }
     })
 }
@@ -229,8 +220,7 @@ pub unsafe extern "C" fn ad_mouse_wheel(
                 agent_desktop_core::ErrorCode::InvalidArgs,
                 "wheel coordinates and line deltas must be finite",
             );
-            error::set_last_error(&err);
-            return AdResult::ErrInvalidArgs;
+            return error::set_last_error(&err);
         }
         let modifiers = match modifiers_from_mask(modifier_mask) {
             Ok(modifiers) => modifiers,
@@ -239,8 +229,7 @@ pub unsafe extern "C" fn ad_mouse_wheel(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     message,
                 );
-                error::set_last_error(&err);
-                return AdResult::ErrInvalidArgs;
+                return error::set_last_error(&err);
             }
         };
         let event = CoreMouseEvent {
@@ -253,10 +242,7 @@ pub unsafe extern "C" fn ad_mouse_wheel(
         let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
         match adapter.inner.mouse_event(event, &lease) {
             Ok(_) => AdResult::Ok,
-            Err(err) => {
-                error::set_last_error(&err);
-                error::last_error_code()
-            }
+            Err(err) => error::set_last_error(&err),
         }
     })
 }
