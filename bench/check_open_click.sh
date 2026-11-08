@@ -53,9 +53,10 @@ for label, binary, name in (("base", base, "folder-31"), ("head", head, "folder-
     if not wid:
         results[label] = {"error": "probe-many window not found"}; continue
     _, s = ad(binary, "snapshot", "--window-id", wid, "-i", "--timeout-ms", "20000")
-    target = next((n for n in walk(s.get("data", {}).get("tree", {}))
-                   if n.get("ref_id") and n.get("role") in ("image", "textfield", "statictext")
-                   and (n.get("name") or n.get("value")) == name), None)
+    items = [n for n in walk(s.get("data", {}).get("tree", {}))
+             if n.get("ref_id") and n.get("role") in ("image", "textfield", "statictext")
+             and (n.get("name") or n.get("value")) == name]
+    target = next((n for role in ("textfield", "statictext", "image") for n in items if n.get("role") == role), None)
     if not target:
         results[label] = {"error": f"no icon-view item for {name}"}; continue
     ms, e = ad(binary, "click", target["ref_id"])
