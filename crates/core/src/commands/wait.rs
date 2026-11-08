@@ -244,11 +244,13 @@ fn wait_for_text(
                     emit_snapshot_saved(context, &result)?;
                     let elapsed = start.elapsed().as_millis();
                     let found = matches.first();
+                    let stored_ref = found
+                        .and_then(|found| found.ref_id.as_deref())
+                        .filter(|ref_id| result.refmap.get(ref_id).is_some());
                     let mut body = json!({
                         "found": true,
                         "text": text,
-                        "ref": found
-                            .and_then(|found| found.ref_id.as_deref())
+                        "ref": stored_ref
                             .map(|ref_id| crate::refs::ref_token::qualify_ref_id(&snapshot_id, ref_id)),
                         "role": found.map(|found| found.role.clone()),
                         "snapshot_id": snapshot_id,

@@ -186,7 +186,7 @@ fn timeout_response(
             Err(_) => {}
         }
     }
-    let snapshot_id = persist_last_built(context, last_built.as_ref())?;
+    let snapshot_id = persist_last_built(context, last_built.as_mut())?;
     wait_timeout::selector(
         &input.query_raw,
         input.gone,
@@ -198,13 +198,13 @@ fn timeout_response(
 
 fn persist_last_built(
     context: &CommandContext,
-    last_built: Option<&snapshot::SnapshotResult>,
+    last_built: Option<&mut snapshot::SnapshotResult>,
 ) -> Result<Option<String>, AppError> {
     let Some(result) = last_built else {
         return Ok(None);
     };
     let store = RefStore::for_session(context.session_id())?;
-    let snapshot_id = store.save_new_snapshot(&result.refmap)?;
+    let snapshot_id = result.save_refmap(&store)?;
     trace_artifacts::copy_refmap_if_full(context, &store, &snapshot_id, &result.refmap)?;
     Ok(Some(snapshot_id))
 }

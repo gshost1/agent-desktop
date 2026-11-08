@@ -52,6 +52,18 @@ a `TIMEOUT` error no longer signals an oversized tree. A `--root` drill-down is
 unaffected: it replaces refs inside an existing snapshot, so an incomplete
 observation still returns `TIMEOUT` rather than a partial tree.
 
+A full snapshot is also partial when its refs would not fit the 1 MB refmap
+the store keeps per snapshot. Refs are kept in allocation order (depth first,
+a node before its children) up to the first one that does not fit; that node
+and every node after it are left out of the tree, every kept ancestor of the
+cut carries `"subtree_truncated": true`, and `data` carries `"complete": false`,
+`"truncated": true`, `nodes_observed` and `"refmap_capped": true`. Every ref in
+the tree is stored and resolves, and no ref is handed out for a node that was
+left out. `refmap_capped` is omitted otherwise, and a larger `--timeout-ms`
+does not change this cut. A `--root` drill-down is all or nothing here too:
+a drill whose refs would push the stored refmap past 1 MB fails with `INTERNAL`
+and replaces nothing.
+
 Version 2.1 replaces the 2.0 `error.retry_command` string with the structured
 `error.recovery` object and adds `error.disposition`. Consumers must select a
 recovery strategy from `recovery.strategy` only when `disposition.retry` is
