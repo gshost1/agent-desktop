@@ -53,16 +53,6 @@ impl BrowserWindow {
             )),
         }
     }
-
-    /// Whether this window's bounds are `other`'s within `tolerance` points
-    /// on every edge.
-    pub fn matches_bounds(&self, other: &Rect, tolerance: f64) -> bool {
-        let close = |a: f64, b: f64| (a - b).abs() <= tolerance;
-        close(self.bounds.x, other.x)
-            && close(self.bounds.y, other.y)
-            && close(self.bounds.width, other.width)
-            && close(self.bounds.height, other.height)
-    }
 }
 
 #[cfg(test)]

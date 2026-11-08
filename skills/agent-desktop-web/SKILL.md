@@ -72,6 +72,7 @@ agent-desktop batch '[
 | `ACTION_FAILED`, `cdp_node_not_rendered` | The element has no box on screen (hidden, collapsed) | Open the section that holds it, snapshot again |
 | `WINDOW_NOT_FOUND`, `cdp_target_gone` | The tab closed | `list-surfaces --app "Google Chrome"` or `open-url` |
 | `WINDOW_NOT_FOUND`, `cdp_browser_has_no_page` or `cdp_page_not_found` | No page to read (a fresh profile, a minimized window) | `open-url`, or restore the window |
+| `AMBIGUOUS_TARGET`, `cdp_window_indistinct` | Two browser windows have the same title and frame, so the named window's page can't be told apart | Bring the window to the front or move one of them, then snapshot again |
 | `ACTION_NOT_SUPPORTED`, `cdp_not_a_browser` | `open-url` on an app that embeds web content for its own interface (an Electron app) | Read and act with `snapshot --surface web`; open URLs in a web browser |
 | `PERM_DENIED`, `cdp_approval_required` | Chrome asked its user to allow the connection | Ask the user; do not retry in a loop |
 
