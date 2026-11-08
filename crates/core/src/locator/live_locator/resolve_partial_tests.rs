@@ -13,19 +13,33 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct BudgetCutAdapter {
     builds: AtomicUsize,
+    hydrations: AtomicUsize,
+}
+
+fn cancel_button() -> super::LocatorEvidence {
+    let mut cancel = evidence("button", Some("Cancel"));
+    cancel.identifiers = IdentifierEvidence::absent().with_retained_object("axtok1:cancel".into());
+    cancel
 }
 
 impl ObservationOps for BudgetCutAdapter {
     fn observe_tree(
         &self,
-        _root: ObservationRoot<'_>,
+        root: ObservationRoot<'_>,
         request: &ObservationRequest,
     ) -> Result<ObservedTree, AdapterError> {
+        if matches!(root, ObservationRoot::Element { .. }) {
+            self.hydrations.fetch_add(1, Ordering::SeqCst);
+            return Ok(tree(
+                vec![node(0, cancel_button(), Vec::new(), &[])],
+                vec![0],
+                true,
+            ));
+        }
         self.builds.fetch_add(1, Ordering::SeqCst);
         crate::wait::deadline::sleep(request.deadline.remaining());
-        let mut cancel = evidence("button", Some("Cancel"));
-        cancel.identifiers =
-            IdentifierEvidence::absent().with_retained_object("axtok1:cancel".into());
+        let mut cancel = cancel_button();
+        cancel.states = super::LocatorField::Unknown;
         let mut observed = tree(
             vec![
                 node(0, evidence("window", Some("Fixture")), vec![1, 2], &[]),
@@ -40,6 +54,14 @@ impl ObservationOps for BudgetCutAdapter {
         observed.stats = stats;
         Ok(observed)
     }
+
+    fn resolve_locator_anchor(
+        &self,
+        _entry: &crate::RefEntry,
+        _deadline: crate::Deadline,
+    ) -> Result<crate::NativeHandle, AdapterError> {
+        Ok(crate::NativeHandle::null())
+    }
 }
 
 impl ActionOps for BudgetCutAdapter {}
@@ -51,6 +73,7 @@ fn a_walk_the_budget_cuts_answers_with_what_it_saw_when_partial_is_allowed() {
     let _clock = crate::wait::deadline::VirtualClock::freeze();
     let adapter = BudgetCutAdapter {
         builds: AtomicUsize::new(0),
+        hydrations: AtomicUsize::new(0),
     };
     let request = LocatorResolveRequest {
         selection: LocatorSelection::All { limit: Some(50) },
@@ -82,7 +105,12 @@ fn a_walk_the_budget_cuts_answers_with_what_it_saw_when_partial_is_allowed() {
         .iter()
         .map(|found| (found.data.name.as_str(), found.data.ref_id.is_some()))
         .collect();
-    assert_eq!(refs, [("Cancel", true), ("Save", false)]);
+    assert_eq!(
+        refs,
+        [("Cancel", true), ("Save", false)],
+        "a token-backed match the walk read only in part still gets its ref through hydration"
+    );
+    assert_eq!(adapter.hydrations.load(Ordering::SeqCst), 1);
     assert_eq!(adapter.builds.load(Ordering::SeqCst), 1);
     assert_eq!(resolution.stats.elapsed_us, 4_000_000);
 }

@@ -272,9 +272,10 @@ The data then carries `complete`:
   lower bound. With `--first`, `--last` or `--nth`, `match` is the one picked
   from the observed matches, which an unread part of the tree could change.
 - In an incomplete answer, a match carries `ref_id` only when the platform
-  re-identifies it by element token (macOS) and the walk read every field the ref
-  needs. Every other match has no ref and carries `bounds` when the platform
-  reports them.
+  re-identifies it by element token (macOS). find re-reads each such match by its
+  token, the same check a complete answer makes, to fill the fields the walk
+  skipped. A match it cannot re-read before the deadline, and every match without
+  a token, has no ref and carries `bounds` when the platform reports them.
 - Without the flag the data has no `complete` field, and an incomplete walk is
   still `TIMEOUT`.
 

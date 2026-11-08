@@ -223,7 +223,6 @@ fn finish_partial(
     mut aggregate: LocatorStats,
     started: Instant,
 ) -> Result<LocatorResolution, AppError> {
-    super::partial::publish_observed_matches(&mut resolution)?;
     aggregate.elapsed_us = elapsed_us_since(started);
     resolution.stats = aggregate;
     Ok(resolution)
@@ -345,9 +344,10 @@ fn resolve_observed_attempt(
     )?;
     let rows_left_unread = tree.rows_unread();
     let unanswered = !resolution.meta.selection_complete;
-    let published_as_partial = attempt.allow_partial && unanswered;
-    if request.materialization == super::LocatorMaterialization::SelectedMatches
-        && !published_as_partial
+    let published_as_partial = attempt.allow_partial && unanswered && !rows_left_unread;
+    if published_as_partial {
+        super::partial::publish_observed_matches(adapter, query, request, &mut resolution, &tree)?;
+    } else if request.materialization == super::LocatorMaterialization::SelectedMatches
         && !(rows_left_unread && unanswered)
     {
         if let Err(error) =
