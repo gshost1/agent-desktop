@@ -9,6 +9,9 @@ use crate::tree::AXElement;
 #[path = "key_dispatch_menu.rs"]
 mod menu;
 
+#[path = "key_dispatch_modal.rs"]
+mod modal;
+
 pub(crate) fn press_for_app_impl(
     process: ProcessIdentity,
     combo: &KeyCombo,
@@ -42,27 +45,105 @@ fn press_for_app(
             Err(error) => return Err(error),
         }
     }
-    if let Some(action) = simple_key_action(combo)
-        && try_simple_key_action(&app, action, deadline)?
-    {
-        return post_delivery_process_result(&process, semantic_step(action));
+    if let Some(action) = simple_key_action(combo) {
+        if let Some(modal) = modal::ModalWatch::capture(&app, pid, action, deadline)? {
+            return press_on_modal(&process, &app, (combo, policy), &modal, deadline);
+        }
+        if try_simple_key_action(&app, action, deadline)? {
+            return post_delivery_process_result(&process, semantic_step(action));
+        }
+    }
+    let step = send_physical_key(&process, &app, combo, policy, deadline)?;
+    post_delivery_process_result(&process, step)
+}
+
+/// A confirm or cancel key on a sheet or dialog. The semantic action runs
+/// first; when the surface shows no effect, a real key follows, and a press
+/// that changed nothing after either route fails instead of reporting success.
+fn press_on_modal(
+    process: &ProcessIdentity,
+    app: &AXElement,
+    (combo, policy): (&KeyCombo, InteractionPolicy),
+    modal: &modal::ModalWatch,
+    deadline: Deadline,
+) -> Result<ActionResult, AdapterError> {
+    let mut routes = LiveModalRoutes {
+        process,
+        app,
+        combo,
+        policy,
+        modal,
+        edited: None,
+        deadline,
+    };
+    let (observed, mut steps) = modal::run_routes(&mut routes)?;
+    if !observed {
+        return Err(modal.ignored(&steps));
+    }
+    crate::system::process::process_identity::require_core(process)
+        .map_err(|error| error.with_disposition(DeliverySemantics::delivered_unverified()))?;
+    if let Some(last) = steps.pop() {
+        steps.push(last.with_verified(true));
+    }
+    Ok(modal.verified(steps))
+}
+
+struct LiveModalRoutes<'a> {
+    process: &'a ProcessIdentity,
+    app: &'a AXElement,
+    combo: &'a KeyCombo,
+    policy: InteractionPolicy,
+    modal: &'a modal::ModalWatch,
+    edited: Option<modal::FocusedValue>,
+    deadline: Deadline,
+}
+
+impl modal::ModalRoutes for LiveModalRoutes<'_> {
+    fn semantic(&mut self) -> Result<Option<ActionStep>, AdapterError> {
+        let action = self.modal.action();
+        Ok(try_simple_key_action(self.app, action, self.deadline)?.then(|| semantic_step(action)))
     }
 
+    fn physical(&mut self) -> Result<ActionStep, AdapterError> {
+        self.edited = modal::FocusedValue::read(self.app, self.deadline);
+        send_physical_key(
+            self.process,
+            self.app,
+            self.combo,
+            self.policy,
+            self.deadline,
+        )
+    }
+
+    fn effect_observed(&mut self) -> Result<bool, AdapterError> {
+        self.modal.settle(self.edited.as_ref(), self.deadline)
+    }
+}
+
+fn send_physical_key(
+    process: &ProcessIdentity,
+    app: &AXElement,
+    combo: &KeyCombo,
+    policy: InteractionPolicy,
+    deadline: Deadline,
+) -> Result<ActionStep, AdapterError> {
+    let pid = app_pid(process)?;
     crate::input::keyboard::keyboard_map::key_name_to_code(&combo.key)?;
     if policy.allow_focus_steal {
-        crate::system::process::process_identity::require_core(&process)?;
+        crate::system::process::process_identity::require_core(process)?;
         crate::system::focus::verify_app_focused(pid, deadline)?;
     }
-    crate::system::process::process_identity::require_core(&process)?;
-    require_focused_element(&app, policy, deadline)?;
-    crate::system::process::process_identity::require_core(&process)?;
+    crate::system::process::process_identity::require_core(process)?;
+    require_focused_element(app, policy, deadline)?;
+    crate::system::process::process_identity::require_core(process)?;
     crate::input::keyboard::synthesize_key(combo, Some(pid), deadline)?;
-    post_delivery_process_result(
-        &process,
-        ActionStep::succeeded("CGEventPostToPid")
-            .with_mechanism(StepMechanism::PhysicalSynthetic)
-            .with_verified(false),
-    )
+    Ok(ActionStep::succeeded("CGEventPostToPid")
+        .with_mechanism(StepMechanism::PhysicalSynthetic)
+        .with_verified(false))
+}
+
+fn app_pid(process: &ProcessIdentity) -> Result<i32, AdapterError> {
+    Ok(crate::system::process::process_identity::require_core(process)?.pid())
 }
 
 fn semantic_step(label: &'static str) -> ActionStep {

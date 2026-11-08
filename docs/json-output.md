@@ -120,6 +120,24 @@ such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
 
+On macOS, `press --app` and `press --window-id` with `return`, `enter` or
+`escape` and no modifiers check the effect when the focused window is a sheet
+or dialog, or carries a sheet. The key first runs as the focused control's
+`AXConfirm` or `AXCancel` action. A succeeded action is not taken as proof: a
+text field can end editing while the sheet that acts on Return never sees a
+key. If within 750 ms the sheet or dialog has not closed and the app's
+window-server windows have not changed, a real key is sent, and that is judged
+the same way, where a change in the focused element's value also counts. An
+observed effect makes the result `delivered_verified` with
+`details.modal_key: { "surface": "sheet" | "dialog", "effect": "observed",
+"observed_after": "<step label>" }`. No effect after either route is an
+`ACTION_FAILED` error with `delivered_unverified` delivery, `retry: unsafe` and
+`details.modal_key.effect: "none_observed"`, plus `routes` (the step labels
+tried) and `default_button` (for Return) or `cancel_button` (for Escape), which
+says whether the surface names such a button. Read the surface again and use
+its controls by ref instead of repeating the key. Presses with modifiers, other
+keys, and presses with no sheet or dialog in the focused window are unchanged.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.
