@@ -17,6 +17,7 @@ fn cdp_launch_injects_both_the_port_and_the_loopback_address_switch() {
 
     execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options,
         },
@@ -45,6 +46,7 @@ fn cdp_launch_rejects_a_conflicting_remote_debugging_address_switch() {
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },
@@ -75,6 +77,7 @@ fn cdp_launch_rejects_a_conflicting_remote_allow_origins_switch() {
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },
@@ -116,6 +119,7 @@ fn cdp_launch_rejects_an_already_running_instance_matched_by_bundle_id() {
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "md.obsidian".into(),
                 options,
             },
@@ -154,6 +158,7 @@ fn cdp_launch_rejects_a_busy_requested_port_without_ever_calling_launch() {
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },
@@ -191,6 +196,7 @@ fn cdp_launch_verification_failure_carries_the_probes_details_merged_with_launch
     let error = adapter_error(
         execute(
             LaunchArgs {
+                download_dir: None,
                 app: "Fixture".into(),
                 options,
             },

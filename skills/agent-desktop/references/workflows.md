@@ -149,6 +149,22 @@ Read `data.window` in the launch result. If it is absent and you need a window, 
 
 Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
+### Downloads
+
+Launch with a download folder, click the download, and let `wait --download` return the file. Do not look for the file in Finder or the browser's downloads list:
+
+```bash
+agent-desktop launch "Google Chrome" --cdp --download-dir "$PWD/downloads" --arg=--user-data-dir="$PWD/chrome-profile" --arg=--no-first-run --arg=--no-default-browser-check
+agent-desktop open-url "https://example.com/reports" --app "Google Chrome"
+agent-desktop snapshot --app "Google Chrome" --surface web -i
+agent-desktop click @s8f3k2p9:e4
+agent-desktop wait --download --app "Google Chrome" --timeout 60000
+```
+
+- `data.path` is the saved file under its suggested name. Rename, move or open it there.
+- Keep `--arg=--user-data-dir` absolute, as above, so `data.cdp.download_scope` is `profile` and clicks return without waiting for a download. With `connection`, each web `click`, `double-click` and `press` waits up to 100 ms for a navigation or download to start and returns at once when none does; when one starts, it waits until the download begins or the page stops loading, at most 3 s; a download that begins later lands in the browser's own folder, so for a slower server run the click and `wait --download` in one `batch`.
+- A canceled or interrupted download is an error, never a path. Start it again.
+
 ## Notifications
 
 ```bash
