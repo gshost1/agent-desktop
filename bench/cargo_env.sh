@@ -4,23 +4,11 @@
 # <tree>/target/release/agent-desktop, where driver.py and the probes look.
 export CARGO_TARGET_DIR="${BENCH_CARGO_TARGET_DIR:-$HOME/.agent-desktop-bench-target}"
 BENCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BENCH_TARGET_CAP_KB=$((8 * 1024 * 1024))
-
-bench_trim_target() {
-    local kb
-    kb=$(du -sk "$CARGO_TARGET_DIR" 2>/dev/null | awk '{print $1}')
-    if [ "${kb:-0}" -gt "$BENCH_TARGET_CAP_KB" ]; then
-        echo "bench target at $((kb / 1024 / 1024)) GB, over the 8 GB cap: cleaning" >&2
-        rm -rf "$CARGO_TARGET_DIR"
-    fi
-}
-
 bench_build() {
     local dir="$1"
     (cd "$dir" && bash "$BENCH_ROOT/serial_cargo.sh" cargo build --release -q -p agent-desktop) || return 1
     mkdir -p "$dir/target/release"
     cp "$CARGO_TARGET_DIR/release/agent-desktop" "$dir/target/release/agent-desktop"
-    bench_trim_target
 }
 
 bench_prune_tree() {

@@ -21,12 +21,11 @@ for pair in "$@"; do
         set -o pipefail
         bash scripts/check-rust-file-size.sh && bash scripts/check-no-phase-references.sh \
             && bash scripts/check-architecture.sh && cargo fmt --all -- --check \
-            && nice cargo clippy "${HOST_PKGS[@]}" --all-targets -- -D warnings \
-            && nice bash scripts/cargo-test-isolated-home.sh test "${HOST_PKGS[@]}"
+            && bash "$root/bench/serial_cargo.sh" cargo clippy "${HOST_PKGS[@]}" --all-targets -- -D warnings \
+            && bash "$root/bench/serial_cargo.sh" bash scripts/cargo-test-isolated-home.sh test "${HOST_PKGS[@]}"
     ) > "$log" 2>&1
     status=$?
     passed=$(grep -o '[0-9]* passed' "$log" | awk '{s+=$1} END {print s+0}')
     failed=$(grep -o '[0-9]* failed' "$log" | awk '{s+=$1} END {print s+0}')
     echo "$label $(git -C "$gate" rev-parse --short HEAD) exit=$status passed=$passed failed=$failed" | tee -a bench/out/gate.txt
-    bench_trim_target
 done

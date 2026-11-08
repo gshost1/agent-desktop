@@ -22,5 +22,10 @@ with open(os.path.expanduser("~/.agent-desktop-bench-build.lock"), "w") as lock:
     print("serial_cargo: waiting for the build lock", file=sys.stderr, flush=True)
     fcntl.flock(lock, fcntl.LOCK_EX)
     print("serial_cargo: build lock taken", file=sys.stderr, flush=True)
+    target = os.environ["CARGO_TARGET_DIR"]
+    used = subprocess.run(["du", "-sk", target], capture_output=True, text=True).stdout.split()
+    if used and int(used[0]) > 20 * 1024 * 1024:
+        print(f"serial_cargo: {target} is over 20 GB; cleaning it under the build lock", file=sys.stderr, flush=True)
+        subprocess.call(["rm", "-rf", target])
     sys.exit(subprocess.call(["nice", "-n", "20", *sys.argv[1:]]))
 ' "$@"
