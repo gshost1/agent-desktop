@@ -1,7 +1,7 @@
 use agent_desktop_core::Deadline;
 use serde_json::json;
 
-use super::listens_for_clicks;
+use super::{listens_for_clicks, responds_to_clicks};
 use crate::transport::scripted_transport::ScriptedTransport;
 use crate::{CdpConnection, PageSession};
 
@@ -74,4 +74,41 @@ fn a_node_the_page_cannot_resolve_counts_as_no_listener() {
     let (listens, methods) = listens(transport);
     assert!(!listens);
     assert_eq!(methods, ["DOM.resolveNode"]);
+}
+
+#[test]
+fn a_node_without_its_own_listener_is_looked_up_in_a_fresh_capture() {
+    let capture = json!({ "strings": ["SPAN"], "documents": [{ "nodes": {
+        "backendNodeId": [7], "nodeName": [0], "isClickable": { "index": [0] },
+    } }] });
+    let transport = with_listeners(json!([])).expect("DOMSnapshot.captureSnapshot", capture);
+    let mut connection = CdpConnection::new(transport.boxed());
+    assert!(
+        responds_to_clicks(
+            &mut connection,
+            &session(),
+            7,
+            Deadline::after(1_000).unwrap()
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn a_capture_the_browser_refuses_counts_as_not_clickable() {
+    let transport = with_listeners(json!([])).expect_error(
+        "DOMSnapshot.captureSnapshot",
+        -32000,
+        "DOMSnapshot agent is not enabled",
+    );
+    let mut connection = CdpConnection::new(transport.boxed());
+    assert!(
+        !responds_to_clicks(
+            &mut connection,
+            &session(),
+            7,
+            Deadline::after(1_000).unwrap()
+        )
+        .unwrap()
+    );
 }

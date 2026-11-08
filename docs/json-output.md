@@ -394,17 +394,20 @@ element, the capture proof and re-identification leave it out, and
 accessible-name source omits `name_source`.
 
 On the `web` surface, an element that exposes no control and no accessible
-name, but whose DOM node has a `click`, `mousedown` or `mouseup` listener of
-its own, takes the text it contains as its `name` and carries
+name, but that Chrome reports as clickable (the `isClickable` flag of
+`DOMSnapshot`, in practice a `click`, `mousedown` or `mouseup` listener on the
+element itself), takes the text it contains as its `name` and carries
 `"name_source": "contained_text"`:
 
 ```json
 { "ref_id": "@s8f3k2p9:e9", "role": "group", "name": "Springfield, IL", "name_source": "contained_text", "available_actions": ["Click"] }
 ```
 
-The text is the element's text runs joined with single spaces and cut to 200
-characters. Like a field value, it locates and displays the element and is
-never ref identity: the ref re-identifies by its element token.
+The text is the element's text runs joined with single spaces. An element
+holding more than 200 characters of text, a link or control, or a child frame
+gets no ref, and neither does a document's `html` or `body` or a container of
+items or regions. Like a field value, the name locates and displays the
+element and is never ref identity: the ref re-identifies by its element token.
 
 ## Ref re-identification details
 

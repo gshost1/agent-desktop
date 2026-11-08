@@ -185,21 +185,40 @@ fn a_named_node_keeps_its_accessible_name_and_a_control_keeps_its_actions() {
 }
 
 #[test]
-fn a_long_contained_text_is_cut_to_a_bounded_name() {
-    let long = "word ".repeat(200);
+fn a_node_holding_more_text_than_a_name_keeps_is_a_region_and_takes_no_click() {
+    let long = "word ".repeat(41);
     let root = build(choice_list(&[(long.as_str(), 4)]), &[4]);
+    assert!(clickable_nodes(&root).is_empty());
 
+    let fits = "word ".repeat(40);
+    let root = build(choice_list(&[(fits.as_str(), 4)]), &[4]);
     let row = clickable_nodes(&root)[0];
-    let name = row
-        .node
-        .presentation
-        .descriptors
-        .derived_name
-        .as_deref()
-        .unwrap();
-    assert!(name.chars().count() <= 200);
-    assert!(name.starts_with("word word"));
-    assert!(!name.ends_with(' '));
+    let name = row.node.presentation.descriptors.derived_name.as_deref();
+    assert_eq!(name.map(|name| name.chars().count()), Some(199));
+}
+
+#[test]
+fn a_clickable_wrapper_around_a_child_frame_takes_no_click() {
+    let raw = json!([
+        { "nodeId": "1", "role": role("RootWebArea"), "childIds": ["2"], "backendDOMNodeId": 1 },
+        { "nodeId": "2", "role": role("generic"), "childIds": ["3"], "backendDOMNodeId": 2 },
+        { "nodeId": "3", "role": role("generic"), "childIds": ["4"], "backendDOMNodeId": 3 },
+        { "nodeId": "4", "role": role("Iframe"), "backendDOMNodeId": 4 },
+    ]);
+
+    assert!(clickable_nodes(&build(raw, &[2])).is_empty());
+}
+
+#[test]
+fn live_regions_and_tab_panels_that_listen_for_clicks_take_none() {
+    for container in ["tabpanel", "status", "log", "alert", "timer", "marquee"] {
+        let raw = json!([
+            { "nodeId": "1", "role": role("RootWebArea"), "childIds": ["2"], "backendDOMNodeId": 1 },
+            { "nodeId": "2", "role": role(container), "childIds": ["3"], "backendDOMNodeId": 2 },
+            { "nodeId": "3", "role": role("StaticText"), "name": text("Saved"), "backendDOMNodeId": 3 },
+        ]);
+        assert!(clickable_nodes(&build(raw, &[2])).is_empty(), "{container}");
+    }
 }
 
 #[test]

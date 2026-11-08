@@ -3,7 +3,7 @@ use agent_desktop_core::{AccessibilityNode, AdapterError, Deadline};
 use serde_json::{Value, json};
 
 use super::cdp_ax_node::CdpAxNode;
-use super::click_listener::listens_for_clicks;
+use super::click_listener::responds_to_clicks;
 use super::click_promotion::{grant_click, may_take_click};
 use super::dom_facts::DomFacts;
 use super::frame_build::convert;
@@ -16,8 +16,8 @@ use crate::{CdpConnection, ElementToken, PageSession};
 /// Re-reads one DOM node's accessibility node: its mapped role, name, value,
 /// states and the capabilities this crate can deliver to it, in the form a
 /// snapshot gave it. A node whose accessibility node exposes no control but
-/// whose DOM node listens for clicks advertises `Click`, as a snapshot
-/// promotes it. A node of a replaced document, or one the page dropped,
+/// whose DOM node Chromium reports as clickable advertises `Click`, as a
+/// snapshot promotes it. A node of a replaced document, or one the page dropped,
 /// is `STALE_REF`. A node the
 /// browser leaves out of its accessibility tree, such as one hidden by CSS,
 /// reads as hidden.
@@ -61,7 +61,7 @@ pub fn read_node(
             &raw_role,
             &built.presentation.available_actions,
         )
-        && listens_for_clicks(connection, session, backend_node_id, deadline)?
+        && responds_to_clicks(connection, session, backend_node_id, deadline)?
     {
         grant_click(&mut built, token.to_string());
     }

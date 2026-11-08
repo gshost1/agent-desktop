@@ -122,13 +122,35 @@ fn a_plain_node_whose_dom_node_listens_for_clicks_reads_back_clickable() {
     );
 }
 
-#[test]
-fn a_plain_node_without_a_click_listener_reads_back_inert() {
-    let transport = live()
+fn without_own_listener() -> ScriptedTransport {
+    live()
         .expect("Accessibility.getPartialAXTree", generic_row())
         .expect("DOM.resolveNode", json!({ "object": { "objectId": "O" } }))
         .expect("DOMDebugger.getEventListeners", json!({ "listeners": [] }))
-        .expect("Runtime.releaseObjectGroup", json!({}));
+        .expect("Runtime.releaseObjectGroup", json!({}))
+}
+
+fn capture_listing(clickable_index: Vec<usize>) -> serde_json::Value {
+    json!({ "strings": ["DIV"], "documents": [{ "nodes": {
+        "backendNodeId": [11, 12],
+        "nodeName": [0, 0],
+        "isClickable": { "index": clickable_index },
+    } }] })
+}
+
+#[test]
+fn a_plain_node_chrome_reports_clickable_without_its_own_listener_reads_back_clickable() {
+    let transport =
+        without_own_listener().expect("DOMSnapshot.captureSnapshot", capture_listing(vec![1]));
+    let mut connection = CdpConnection::new(transport.boxed());
+    let node = read_node(&mut connection, &session(), &token(12), deadline()).unwrap();
+    assert_eq!(node.presentation.available_actions, ["Click"]);
+}
+
+#[test]
+fn a_plain_node_chrome_does_not_report_clickable_reads_back_inert() {
+    let transport =
+        without_own_listener().expect("DOMSnapshot.captureSnapshot", capture_listing(vec![0]));
     let mut connection = CdpConnection::new(transport.boxed());
     let node = read_node(&mut connection, &session(), &token(12), deadline()).unwrap();
     assert!(node.presentation.available_actions.is_empty());

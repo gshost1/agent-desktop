@@ -78,3 +78,24 @@ fn clickable_nodes_come_from_each_documents_is_clickable_indexes() {
 
     assert_eq!(collect_clickable(&capture), HashSet::from([20, 200]));
 }
+
+#[test]
+fn a_documents_html_and_body_are_never_clickable_targets() {
+    let capture = json!({
+        "strings": ["#document", "HTML", "BODY", "DIV", "body"],
+        "documents": [
+            { "nodes": {
+                "backendNodeId": [1, 2, 3, 4],
+                "nodeName": [0, 1, 2, 3],
+                "isClickable": { "index": [1, 2, 3] },
+            } },
+            { "nodes": {
+                "backendNodeId": [10, 11],
+                "nodeName": [4, 3],
+                "isClickable": { "index": [0, 1] },
+            } },
+        ],
+    });
+
+    assert_eq!(collect_clickable(&capture), HashSet::from([4, 11]));
+}

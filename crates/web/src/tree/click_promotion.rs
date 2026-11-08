@@ -30,6 +30,12 @@ const CONTAINER_ROLES: &[&str] = &[
     "document",
     "dialog",
     "alertdialog",
+    "tabpanel",
+    "log",
+    "status",
+    "alert",
+    "marquee",
+    "timer",
 ];
 
 /// Whether a node of `role` may take a click it does not advertise because
@@ -47,14 +53,23 @@ pub(crate) fn may_take_click(role: &str, raw_role: &str, available_actions: &[St
 /// Advertises `Click` on a node whose DOM node responds to clicks while its
 /// accessibility node exposes no control, as a `<div>` or `<span>` with a
 /// click listener reads, and gives it the element token every web ref
-/// carries. A node with a ref-able descendant is a container whose controls
-/// are the targets, so it stays as it is. A promoted node with no accessible
+/// carries. A node with a ref-able descendant, or with a child frame among
+/// its descendants (`owns_frame`), whose controls are grafted in later, is a
+/// container whose controls are the targets, so it stays as it is. So does a
+/// node holding more text than a derived name keeps, which is a region of the
+/// page rather than one control. A promoted node with no accessible
 /// name is named by the text it contains, marked as derived so that ref
 /// identity never reads it; a lone static-text child repeating that text is
 /// dropped.
-pub(crate) fn promote_clickable(built: &mut WebNode, children: &mut Vec<WebNode>, raw_role: &str) {
+pub(crate) fn promote_clickable(
+    built: &mut WebNode,
+    children: &mut Vec<WebNode>,
+    raw_role: &str,
+    owns_frame: bool,
+) {
     let node = &built.node;
-    if !may_take_click(&node.role, raw_role, &node.presentation.available_actions)
+    if owns_frame
+        || !may_take_click(&node.role, raw_role, &node.presentation.available_actions)
         || children.iter().any(holds_ref_able)
     {
         return;
@@ -62,6 +77,10 @@ pub(crate) fn promote_clickable(built: &mut WebNode, children: &mut Vec<WebNode>
     let Some(token) = built.origin.as_ref().map(|origin| origin.element_token()) else {
         return;
     };
+    let text = contained_text(children);
+    if text.chars().count() > CONTAINED_TEXT_CAP {
+        return;
+    }
     grant_click(&mut built.node, token.to_string());
     let node = &mut built.node;
     if node
@@ -72,9 +91,9 @@ pub(crate) fn promote_clickable(built: &mut WebNode, children: &mut Vec<WebNode>
     {
         return;
     }
-    let Some(text) = contained_text(children) else {
+    if text.is_empty() {
         return;
-    };
+    }
     if let [only] = children.as_slice()
         && only.node.role == "statictext"
         && only.children.is_empty()
@@ -104,33 +123,21 @@ fn holds_ref_able(node: &WebNode) -> bool {
     is_ref_able(&node.node) || node.children.iter().any(holds_ref_able)
 }
 
-fn contained_text(children: &[WebNode]) -> Option<String> {
+fn contained_text(children: &[WebNode]) -> String {
     let mut parts = Vec::new();
-    let mut length = 0;
     for child in children {
-        collect_leaf_text(child, &mut parts, &mut length);
+        collect_leaf_text(child, &mut parts);
     }
-    let text: String = collapse_whitespace(&parts.join(" "))
-        .chars()
-        .take(CONTAINED_TEXT_CAP)
-        .collect();
-    let text = text.trim_end().to_owned();
-    (!text.is_empty()).then_some(text)
+    collapse_whitespace(&parts.join(" "))
 }
 
-fn collect_leaf_text<'a>(node: &'a WebNode, parts: &mut Vec<&'a str>, length: &mut usize) {
-    if *length > CONTAINED_TEXT_CAP {
-        return;
-    }
+fn collect_leaf_text<'a>(node: &'a WebNode, parts: &mut Vec<&'a str>) {
     if node.children.is_empty() {
-        if let Some(name) = node.node.identity.name.as_deref() {
-            *length += name.len();
-            parts.push(name);
-        }
+        parts.extend(node.node.identity.name.as_deref());
         return;
     }
     for child in &node.children {
-        collect_leaf_text(child, parts, length);
+        collect_leaf_text(child, parts);
     }
 }
 

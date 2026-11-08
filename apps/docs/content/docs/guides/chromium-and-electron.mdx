@@ -67,7 +67,7 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 
 `click`, `double-click`, `set-value`, `type`, `clear`, `select`, `check`, `uncheck`, `toggle`, `focus`, `scroll` and `scroll-to` work on web refs. Other actions return `ACTION_NOT_SUPPORTED`, and `--headed` is refused. `click` returns once the click is delivered, not when the next page loads, so check `data.url` in the next snapshot. A ref from a page that has since navigated fails with `STALE_REF` and `details.kind: cdp_document_replaced`.
 
-An element the page makes clickable with a script, such as a `<div>` or `<span>` with a click listener and no ARIA role, gets a ref as a `group` that advertises `Click`. When it has no accessible name, its text becomes its `name` with `"name_source": "contained_text"`. An element that holds a link or button gets no ref of its own, and neither does one whose click handler sits only on a parent element.
+An element the page makes clickable with a script, such as a `<div>` or `<span>` with a click listener and no ARIA role, gets a ref as a `group` that advertises `Click`. When it has no accessible name, its text becomes its `name` with `"name_source": "contained_text"`. An element that holds a link, a button, an iframe or more than 200 characters of text gets no ref of its own, and neither does one whose click handler sits only on a parent element.
 
 A click on an element that something else covers is refused before it is sent:
 

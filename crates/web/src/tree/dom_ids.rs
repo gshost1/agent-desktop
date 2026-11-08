@@ -30,9 +30,24 @@ pub(crate) fn read_dom_facts(
 
 /// The backend node ids the capture's `isClickable` list names: nodes with a
 /// `click`, `mousedown` or `mouseup` listener of their own, links, and
-/// editable content. The list holds indexes into each document's nodes.
+/// editable content. The list holds indexes into each document's nodes. A
+/// document's `<html>` and `<body>` are left out: a listener there handles
+/// clicks for the whole page and makes neither a click target.
 pub(crate) fn collect_clickable(capture: &Value) -> HashSet<i64> {
     let empty = Vec::new();
+    let strings = capture
+        .get("strings")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
+    let is_page_root = |name: Option<&Value>| {
+        name.and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| strings.get(index))
+            .and_then(Value::as_str)
+            .is_some_and(|name| {
+                name.eq_ignore_ascii_case("html") || name.eq_ignore_ascii_case("body")
+            })
+    };
     let documents = capture
         .get("documents")
         .and_then(Value::as_array)
@@ -49,11 +64,13 @@ pub(crate) fn collect_clickable(capture: &Value) -> HashSet<i64> {
         let (Some(backends), Some(indexes)) = (backends, indexes) else {
             continue;
         };
+        let names = nodes.get("nodeName").and_then(Value::as_array);
         clickable.extend(
             indexes
                 .iter()
                 .filter_map(Value::as_u64)
                 .filter_map(|index| usize::try_from(index).ok())
+                .filter(|index| !is_page_root(names.and_then(|names| names.get(*index))))
                 .filter_map(|index| backends.get(index))
                 .filter_map(Value::as_i64),
         );

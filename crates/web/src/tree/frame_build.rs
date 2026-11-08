@@ -78,7 +78,8 @@ fn build_node(
         .as_ref()
         .is_some_and(|origin| context.dom.clickable.contains(&origin.backend_node_id))
     {
-        promote_clickable(&mut built, &mut children, &raw_role);
+        let owns_frame = holds_frame_owner(node, by_id);
+        promote_clickable(&mut built, &mut children, &raw_role, owns_frame);
     }
     if matches!(built.node.role.as_str(), "statictext" | "textfield") {
         children.clear();
@@ -93,6 +94,27 @@ fn build_node(
         return children;
     }
     vec![WebNode { children, ..built }]
+}
+
+/// Whether a frame-owner element sits anywhere below `node` in the frame's
+/// accessibility tree. A child frame's tree is grafted beneath its owner only
+/// after every frame is built, so the built children cannot show its controls.
+fn holds_frame_owner(node: &CdpAxNode, by_id: &NodeIndex<'_>) -> bool {
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut pending: Vec<&str> = node.child_ids.iter().map(String::as_str).collect();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let Some(child) = by_id.get(id) else {
+            continue;
+        };
+        if is_frame_owner_role(&child.raw_role()) {
+            return true;
+        }
+        pending.extend(child.child_ids.iter().map(String::as_str));
+    }
+    false
 }
 
 pub(crate) fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'_>) -> WebNode {
