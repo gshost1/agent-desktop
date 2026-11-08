@@ -62,7 +62,14 @@ agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
 - `find` the element you will act on, by its own name. The pane that holds it is often open already, so finding the parent first costs a turn.
 - Never cut a snapshot with `head -c`: the cut drops refs and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, or `jq` over the whole output.
 - After an action, `-w "role:text"` (or `-w ":text"`) polls until the effect shows and returns the snapshot, so the read is not a separate call. A separate `wait` takes `--timeout` in ms.
-- Before a run of clicks, check each ref against its node's `name`. A wrong ref costs a corrected rerun, and a rerun is safe only when `disposition.retry` is `safe`.
+- To act on several elements, look each ref up by its name with `jq` instead of reading it off the JSON. A misread ref costs a corrected rerun, and a rerun is safe only when `disposition.retry` is `safe`:
+
+```
+J=$(agent-desktop snapshot --app "Font Book" -i --compact)
+for n in "View as List" "View as Grid"; do
+  agent-desktop click "$(jq -r --arg n "$n" 'first(.. | objects | select(.name? == $n) | .ref_id)' <<<"$J")"
+done
+```
 
 ## Refs
 
