@@ -88,6 +88,41 @@ pub(crate) fn absent(entry: &RefEntry) -> AdapterError {
         }))
 }
 
+/// The refusal for a landed element that does not match the ref. After a
+/// whole-window count found the ref's element just before the landing
+/// (`counted`), the path moved under the descent; with no count behind the
+/// landing, as in the C find entry point's first-match landing, nothing shows
+/// the element still exists, so it is absent.
+pub(crate) fn landed_elsewhere(entry: &RefEntry, counted: bool) -> AdapterError {
+    if counted {
+        landing_moved(entry)
+    } else {
+        absent(entry)
+    }
+}
+
+/// The stored path landed an element that does not match the ref, right after
+/// the whole-window count found the ref's element exactly once. The element
+/// existed a moment earlier, so this is a path that moved under the descent
+/// (a list re-sorting, rows refreshing), not proof the element is gone. Only
+/// the descent disagreed with the count, so the evidence is incomplete and
+/// retryable, and the next attempt counts again.
+pub(crate) fn landing_moved(entry: &RefEntry) -> AdapterError {
+    AdapterError::stale_ref_because(
+        "The saved ref's element was found, but a different element took its place before it could be reached",
+    )
+    .with_suggestion(
+        "The window was changing while the ref was resolved. Retry; if it keeps changing, \
+         take a fresh snapshot once it settles.",
+    )
+    .with_details(json!({
+        "kind": "saved_ref_landing_moved",
+        "retryable": true,
+        "complete": false,
+        "role": entry.identity.role,
+    }))
+}
+
 #[cfg(test)]
 #[path = "resolve_errors_tests.rs"]
 mod tests;

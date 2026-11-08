@@ -265,11 +265,15 @@ fn a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease(
     let dir = crate::session::session_dir(&manifest.id).unwrap();
     let lock = crate::refs::refs_lock::RefStoreLock::acquire(&dir.join("refstore.lock")).unwrap();
     let id = manifest.id.clone();
+    let started = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let command_started = std::sync::Arc::clone(&started);
     let command = std::thread::spawn(move || {
         crate::refs::set_home_override(Some(home));
+        command_started.wait();
         CommandContext::new(Some(id), None, false)
     });
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    started.wait();
+    std::thread::sleep(std::time::Duration::from_millis(300));
     std::fs::remove_dir_all(&dir).unwrap();
     drop(lock);
 

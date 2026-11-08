@@ -43,7 +43,7 @@ The port exists only for a fresh process. `launch` never quits a running app for
 | `cdp_switch_conflict` (`INVALID_ARGS`) | `--arg` carried a `--remote-debugging-*` or `--remote-allow-origins` switch | Drop that `--arg` |
 | `cdp_endpoint_unavailable` | No endpoint answered before the deadline | The app stays running. Use the accessibility path |
 
-Handoff: agent-desktop never talks to the port itself. Check `command -v agent-browser`. If it exists, run `agent-browser connect <port>` and use its snapshot, click and type workflow (`agent-browser skills get electron` has the guide). Playwright, Puppeteer and other CDP clients also work. Do not write raw CDP by hand or call app-internal APIs. If no client exists, ask the user to run `npm install -g agent-browser`, or stay on the accessibility path.
+Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
 Keep these on agent-desktop even with CDP connected: the native menu bar, file dialogs and sheets, window management, notifications, screenshots, and any app you did not launch. While the port is open, any local process of the same user can control the app's web contents. Request `--cdp` only for the step that needs it. `close-app` ends the exposure.
 
@@ -93,7 +93,7 @@ Commands: `list-notifications`, `dismiss-notification`, `dismiss-all-notificatio
 - `list-notifications` returns `{ index, app_name, title, body, actions }`, with 1-based indexes. `--app`, `--text`, `--limit` filter.
 - `notification-action INDEX "Reply"` clicks a named button. An action the entry lacks returns `ACTION_NOT_SUPPORTED` and changes nothing.
 - `dismiss-all-notifications` returns `{ dismissed_count, failures, failed_count }`. A failure to close the surface afterward is not reported as an error.
-- `wait --notification` detects a new entry against a baseline taken at wait start. Transient errors retry within `--timeout`. On macOS and Windows, a headless wait sees only an already-open surface.
+- `wait --notification` reports an entry when a notification (same app, title and body; the action buttons do not count) has more entries than it last saw. The record starts at the wait's first listing and drops when two listings in a row show fewer entries, so a notification that was dismissed and then arrives again is new. To count one the previous step produces, put the step and the wait in one headless `batch`: the listing is then taken before the step runs. Transient errors retry within `--timeout`. On macOS and Windows, a headless wait sees only an already-open surface.
 
 ## Clipboard
 
@@ -165,7 +165,7 @@ agent-desktop batch '[
 
 Batch runs entries in order in one process. It is not a transaction. Entries use the same typed commands, policy checks and dispatch as the CLI. Use `args`, not `params`. Unknown fields are rejected, and nested `batch` is rejected. Pass `--stop-on-error` to halt at the first failure. Each entry may carry `"session": "id"`, otherwise it inherits the top-level session. An entry whose session ended before dispatch is `not_started` with reason `session_ended`. An ended top-level session refuses the whole batch with `INVALID_ARGS` (`details.kind: session_ended`) before any entry runs. Snapshot args use `skeleton`, `root`, `interactive_only`.
 
-Wait entries use flat JSON keys matching the wait argument fields. For event waits, use `event` and optional `app`, `timeout` (milliseconds; defaults to 30000), `window`, and `window_id`. For example, the batch above waits up to five seconds for a new TextEdit window. `window` and `window_id` narrow only window lifecycle events (`window-opened`, `window-closed`, `focus-changed`); they do not scope text waits. In an action-then-event sequence, the batch captures the event baseline before the action, and does not start the action if that baseline read fails.
+Wait entries use flat JSON keys matching the wait argument fields. For event waits, use `event` and optional `app`, `timeout` (milliseconds; defaults to 30000), `window`, and `window_id`. For example, the batch above waits up to five seconds for a new TextEdit window. `window` and `window_id` narrow only window lifecycle events (`window-opened`, `window-closed`, `focus-changed`); they do not scope text waits. In an action-then-event sequence, the batch captures the event baseline before the action, and does not start the action if that baseline read fails. An action followed by a headless `wait` with `notification: true` gets a notification listing taken before the action; if that listing fails, or the wait is headed, the action still runs and the wait result carries `pre_action_seed` (`unavailable` or `skipped_headed`).
 
 Keys are the command's own field names, so a positional argument is named after itself rather than after its placeholder: `press COMBO` is `{"combo":"cmd+s"}`, `click REF` is `{"ref_id":"@s8f3k2p9:e1"}`, and `type REF TEXT` takes `ref_id` and `text`. A flag drops its leading `--` and writes `-` as `_`, so `--timeout-ms` is `timeout_ms`.
 
@@ -190,7 +190,7 @@ agent-desktop session end "$AGENT_DESKTOP_SESSION"
 
 ### Cursor overlay
 
-`cursor-overlay enable` draws an agent cursor and ripple for actions. It affects presentation only. `enable` returns `data.rendered`: `false` means the setting was saved but nothing was drawn. `session start --cursor` enables it at start. `agent-desktop cursor-overlay enable --help` lists the style, image and motion flags with their ranges and defaults. Settings persist in the session and in per-agent profiles. After an upgrade, run `cursor-overlay disable`, then `enable`, to restart the renderer with the new settings.
+`cursor-overlay enable` draws an agent cursor and ripple for actions. It affects presentation only. `enable` returns `data.rendered`: `false` means the setting was saved but nothing was drawn. `session start --cursor` enables it at start, saving the session and its overlay setting in one write: an error means no session was started, and a renderer that cannot draw still returns the session id with `rendered: false`. `agent-desktop cursor-overlay enable --help` lists the style, image and motion flags with their ranges and defaults. Settings persist in the session and in per-agent profiles. After an upgrade, run `cursor-overlay disable`, then `enable`, to restart the renderer with the new settings.
 
 On macOS:
 

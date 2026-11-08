@@ -23,16 +23,14 @@ pub unsafe extern "C" fn ad_dismiss_notification(
         let index = match super::index::notification_index(index) {
             Ok(index) => index,
             Err(error) => {
-                set_last_error(&error);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&error);
             }
         };
         let filter = decode_optional_filter!(app_filter, "app_filter");
         let identity = match super::identity::decode(expected_app, expected_title) {
             Ok(identity) => identity,
             Err(error) => {
-                set_last_error(&error);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&error);
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
@@ -45,10 +43,7 @@ pub unsafe extern "C" fn ad_dismiss_notification(
         };
         match adapter.inner.dismiss_notification(request, &lease) {
             Ok(_) => AdResult::Ok,
-            Err(error) => {
-                set_last_error(&error);
-                crate::error::last_error_code()
-            }
+            Err(error) => set_last_error(&error),
         }
     })
 }

@@ -7,15 +7,20 @@ use agent_desktop_core::{
 use serde_json::Value;
 
 use self::hold::{
-    confirm_rectangle, give_back_place, holds_place, is_resize, move_client, remember_place,
+    confirm_maximized, give_back_place, holds_place, is_resize, keep_for_retry, move_client,
+    recall_place, record_before_maximize,
 };
 use self::owner::{ensure_owned_after, ensure_owned_before};
 use self::refuse::{no_client, refused, unreadable, unsupported_session, write_failed};
+use self::remembered_place::RememberedPlace;
+use self::settle::settle;
+use self::settled::Settled;
 use self::window_place::PlaceStore;
 use super::window_client::{ClientWorld, client_of};
 use super::window_op::window_op_shadow::{Shadow, to_client, to_visible, visible_of};
 use super::window_op::window_op_verdict::{
-    POLL, POSITION_TOLERANCE, SETTLE_BUDGET, Verdict, judge, observed_of, requested, unverified,
+    POSITION_TOLERANCE, observed_of, requested, unconfirmed, unreadable_after, unsettled,
+    unverified,
 };
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::focus::focus_cause::Cause;
@@ -55,8 +60,8 @@ trait OpWorld: ClientWorld {
     fn overview_open(&self) -> Option<bool>;
     fn displays(&self) -> Vec<Rect>;
     fn on_wayland(&self) -> bool;
-    fn remember(&self, win: &WindowInfo, client: u32, rectangle: Option<Extents>);
-    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<Extents>;
+    fn remember(&self, win: &WindowInfo, client: u32, place: Option<RememberedPlace>);
+    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<RememberedPlace>;
 }
 
 struct Live<'a> {
@@ -120,24 +125,12 @@ impl OpWorld for Live<'_> {
         self.frame.overview_open()
     }
 
-    fn remember(&self, win: &WindowInfo, client: u32, rectangle: Option<Extents>) {
-        let (Some(store), Some(instance)) = (
-            PlaceStore::in_runtime_dir(),
-            win.process_instance.as_deref(),
-        ) else {
-            return;
-        };
-        match rectangle {
-            Some(place) => {
-                let alive = |pid: u32, instance: &str| matches!(process_facts::lookup(pid), Lookup::Found(facts) if facts.instance == instance);
-                let _ = store.save(client, win.pid.get(), instance, place, &alive);
-            }
-            None => store.forget(client, instance),
-        }
+    fn remember(&self, win: &WindowInfo, client: u32, place: Option<RememberedPlace>) {
+        PlaceStore::remember(win, client, place);
     }
 
-    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<Extents> {
-        PlaceStore::in_runtime_dir()?.load(client, win.process_instance.as_deref()?)
+    fn remembered(&self, win: &WindowInfo, client: u32) -> Option<RememberedPlace> {
+        PlaceStore::recall(win, client)
     }
 
     fn displays(&self) -> Vec<Rect> {
@@ -169,46 +162,6 @@ fn locate(world: &impl OpWorld, win: &WindowInfo) -> Result<(u32, Shadow), Adapt
     Ok((id, shadow))
 }
 
-fn settle(
-    world: &impl OpWorld,
-    client: u32,
-    write: &WindowWrite,
-    deadline: Deadline,
-) -> (Verdict, Option<WindowFacts>) {
-    let limit = deadline.capped(SETTLE_BUDGET);
-    loop {
-        let mut observed = world.facts(client).ready();
-        let at_limit = limit.is_expired();
-        let verdict = match observed {
-            Some(facts) => judge(write, &facts, at_limit),
-            None if at_limit => Verdict::Mismatch,
-            None => Verdict::Pending,
-        };
-        match verdict {
-            Verdict::Satisfied if matches!(write, WindowWrite::MoveResize { .. }) => {
-                if limit.remaining() < CONFIRM_PAUSE {
-                    return (Verdict::Mismatch, observed);
-                }
-                let Some(first) = observed else {
-                    return (Verdict::Mismatch, None);
-                };
-                let (stable, latest) = confirm_rectangle(world, client, first, limit);
-                observed = latest;
-                match observed {
-                    Some(facts) if stable && judge(write, &facts, true) == Verdict::Satisfied => {
-                        return (Verdict::Satisfied, Some(facts));
-                    }
-                    _ if limit.is_expired() => return (Verdict::Mismatch, observed),
-                    _ => {}
-                }
-            }
-            Verdict::Pending => {}
-            _ => return (verdict, observed),
-        }
-        std::thread::sleep(POLL.min(limit.remaining()));
-    }
-}
-
 fn apply(
     world: &impl OpWorld,
     win: &WindowInfo,
@@ -216,32 +169,61 @@ fn apply(
     write: &WindowWrite,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    if *write == WindowWrite::SetMaximized(true) {
-        remember_place(world, win, client);
-    }
+    let settled = attempt(world, win, client, write, deadline)?;
+    outcome(world, client, write, settled, deadline)
+}
+
+/// Writes the request and reads it back until it settles, keeping a resize at
+/// the place it had.
+fn attempt(
+    world: &impl OpWorld,
+    win: &WindowInfo,
+    client: u32,
+    write: &WindowWrite,
+    deadline: Deadline,
+) -> Result<Settled, AdapterError> {
+    let pending =
+        *write == WindowWrite::SetMaximized(true) && record_before_maximize(world, win, client);
     let before = if is_resize(write) {
         world.facts(client).ready().map(|facts| facts.client)
     } else {
         None
     };
     world.write(client, write).map_err(write_failed)?;
-    let (verdict, observed) = settle(world, client, write, deadline);
+    let settled = settle(world, client, write, deadline);
     ensure_owned_after(world, win, client)?;
-    let outcome = match verdict {
-        Verdict::Satisfied => Ok(()),
-        Verdict::Pending | Verdict::Mismatch => {
-            let displays = world.displays();
-            Err(unverified(write, observed.as_ref(), &displays))
-        }
-    };
-    if let (Some(place), Some(facts)) = (before, observed)
+    if let (true, Settled::Held(facts)) = (pending, settled) {
+        confirm_maximized(world, win, client, facts, deadline);
+    }
+    if let (Some(place), Some(facts)) = (before, settled.observed())
         && holds_place(&place, &facts.client, &world.displays())
         && ((facts.client.x - place.x).abs() > POSITION_TOLERANCE
             || (facts.client.y - place.y).abs() > POSITION_TOLERANCE)
     {
         let _ = move_client(world, win, client, place, deadline);
     }
-    outcome.map_err(|error| reobserve(world, client, error))
+    Ok(settled)
+}
+
+/// What a settled request reports: nothing when it held, otherwise the error
+/// that says how far it got, with the window as it is now.
+fn outcome(
+    world: &impl OpWorld,
+    client: u32,
+    write: &WindowWrite,
+    settled: Settled,
+    deadline: Deadline,
+) -> Result<(), AdapterError> {
+    let error = match settled {
+        Settled::Held(_) => return Ok(()),
+        Settled::Unheld(observed) => unverified(write, observed.as_ref(), &world.displays()),
+        Settled::Unreadable(matched) => unreadable_after(write, &matched),
+        Settled::Unconfirmed(observed) if deadline.remaining() < CONFIRM_PAUSE => {
+            unconfirmed(write, &observed, deadline.timeout_error())
+        }
+        Settled::Unconfirmed(observed) => unsettled(write, &observed),
+    };
+    Err(reobserve(world, client, error))
 }
 
 fn read_before(world: &impl OpWorld, client: u32) -> Result<WindowFacts, AdapterError> {
@@ -273,17 +255,19 @@ fn restore(
         current = read_before(world, client)
             .map_err(|error| error.with_disposition(DeliverySemantics::delivered_unverified()))?;
     }
-    if !current.maximized_vertical && !current.maximized_horizontal {
-        return give_back_place(world, win, client, deadline);
+    let place = recall_place(world, win, client, &current);
+    if current.maximized_vertical || current.maximized_horizontal {
+        let unmaximize = WindowWrite::SetMaximized(false);
+        if let Err(error) = apply(world, win, client, &unmaximize, deadline) {
+            if let Some(place) = place {
+                keep_for_retry(world, win, client, place);
+            }
+            return Err(error);
+        }
     }
-    apply(
-        world,
-        win,
-        client,
-        &WindowWrite::SetMaximized(false),
-        deadline,
-    )?;
-    give_back_place(world, win, client, deadline)
+    place.map_or(Ok(()), |place| {
+        give_back_place(world, win, client, place, deadline)
+    })
 }
 
 fn reobserve(world: &impl OpWorld, client: u32, mut error: AdapterError) -> AdapterError {
@@ -381,12 +365,20 @@ pub(crate) fn window_op(
     )
 }
 
+#[path = "window_op_confirmation.rs"]
+mod confirmation;
 #[path = "window_op_hold.rs"]
 mod hold;
 #[path = "window_op_owner.rs"]
 mod owner;
 #[path = "window_op_refuse.rs"]
 mod refuse;
+#[path = "remembered_place.rs"]
+mod remembered_place;
+#[path = "window_op_settle.rs"]
+mod settle;
+#[path = "window_op_settled.rs"]
+mod settled;
 pub(in crate::system) mod window_op_shadow;
 pub(in crate::system) mod window_op_verdict;
 #[path = "window_place.rs"]

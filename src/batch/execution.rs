@@ -1,10 +1,11 @@
 use agent_desktop_core::{
-    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, PermissionReport,
-    PlatformAdapter, SignalBaseline, SignalFilter, context::CommandContext,
+    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, NotificationSeed,
+    PermissionReport, PlatformAdapter, SignalBaseline, SignalFilter,
+    commands::wait_notification as notification_wait, context::CommandContext,
 };
 use serde_json::{Value, json};
 
-use crate::{cli::Commands, cli_args::batch::BatchArgs};
+use crate::{cli::Commands, cli_args::batch::BatchArgs, command_policy::CommandEffect};
 
 use super::{
     bounded_json::serialized_size,
@@ -12,22 +13,28 @@ use super::{
     result_entry::{MAX_BATCH_OUTPUT_BYTES, not_started_entry},
 };
 
+/// Runs the batch and records, in `entry_effects`, the effect of every
+/// prepared entry by its index, so a caller that settles the batch later can
+/// read each entry's disposition with its effect.
 pub(super) fn execute(
     args: BatchArgs,
     adapter: &dyn PlatformAdapter,
     permission_report: &PermissionReport,
     context: &CommandContext,
+    entry_effects: &mut Vec<CommandEffect>,
 ) -> Result<Value, AppError> {
     let deadline = Deadline::after(args.timeout_ms)
         .map_err(|error| error.with_disposition(DeliverySemantics::not_delivered()))?;
     let batch_context = context.clone().with_inherited_deadline(deadline);
     let mut commands = prepare(&args.commands_json, permission_report, &batch_context)?;
     let total = commands.len();
+    entry_effects.extend(commands.iter().map(|prepared| prepared.command.effect()));
     let mut results = Vec::with_capacity(total);
     let mut results_bytes = 0;
     let mut completed = 0;
     let mut pending_baseline: Option<Result<SignalBaseline, AdapterError>> =
         context.event_baseline().cloned();
+    let mut pending_notification = context.notification_seed().cloned();
     let mut stopped = None;
 
     for index in 0..total {
@@ -43,6 +50,7 @@ pub(super) fn execute(
         }
 
         let current_baseline = pending_baseline.take();
+        let current_notification = pending_notification.take();
 
         if let Some(ended_session) = session_ended_for(&commands[index]) {
             let error = batch_session_ended(index, &commands[index].name, &ended_session);
@@ -58,48 +66,50 @@ pub(super) fn execute(
             continue;
         }
 
-        pending_baseline = match commands.get(index + 1).and_then(event_filter) {
-            Some(filter) => match adapter.capture_signal_baseline(&filter, deadline) {
-                Ok(baseline) => Some(Ok(baseline)),
-                Err(error) => {
-                    let wait_index = index + 1;
-                    let wait_command = &commands[wait_index].name;
-                    let error = baseline_error(
+        match pre_action_seed(commands.get(index + 1), adapter, deadline) {
+            Ok((event, notification)) => {
+                pending_baseline = event.map(Ok);
+                pending_notification = notification;
+            }
+            Err(error) => {
+                let wait_index = index + 1;
+                let wait_command = &commands[wait_index].name;
+                let error = baseline_error(
+                    index,
+                    &commands[index].name,
+                    wait_index,
+                    wait_command,
+                    error,
+                );
+                push_small_entry(
+                    &mut results,
+                    &mut results_bytes,
+                    not_started_entry(
                         index,
                         &commands[index].name,
-                        wait_index,
-                        wait_command,
+                        "pre_action_baseline_failed",
                         error,
-                    );
-                    push_small_entry(
-                        &mut results,
-                        &mut results_bytes,
-                        not_started_entry(
-                            index,
-                            &commands[index].name,
-                            "pre_action_baseline_failed",
-                            error,
-                        ),
-                    );
-                    stopped = Some(json!({
-                        "reason": "pre_action_baseline_failed",
-                        "blocked_index": index,
-                        "blocked_command": commands[index].name,
-                        "wait_index": wait_index,
-                        "wait_command": wait_command,
-                    }));
-                    break;
-                }
-            },
-            None => None,
-        };
+                    ),
+                );
+                stopped = Some(json!({
+                    "reason": "pre_action_baseline_failed",
+                    "blocked_index": index,
+                    "blocked_command": commands[index].name,
+                    "wait_index": wait_index,
+                    "wait_command": wait_command,
+                }));
+                break;
+            }
+        }
 
         let item_context = commands[index]
             .context
             .clone()
             .with_inherited_deadline(deadline)
-            .with_event_baseline(current_baseline);
+            .with_event_baseline(current_baseline)
+            .with_notification_seed(current_notification);
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
+        let effect = entry_effects[index];
         let entry = super::result_entry::completed_entry(
             index,
             &commands[index].name,
@@ -109,6 +119,7 @@ pub(super) fn execute(
         let (entry, oversized) = super::result_entry::bounded_completed_entry(
             index,
             &commands[index].name,
+            effect,
             entry,
             results_bytes,
         );
@@ -174,14 +185,43 @@ pub(super) fn execute(
     Ok(body)
 }
 
-fn event_filter(command: &PreparedCommand) -> Option<SignalFilter> {
-    match &command.command {
-        Commands::Wait(args) if args.event.event.is_some() => Some(SignalFilter {
+type PreActionSeed = (Option<SignalBaseline>, Option<NotificationSeed>);
+
+/// Reads what the following wait entry diffs against before the current entry
+/// runs, so a window, surface or notification the current entry produces is
+/// reported as new instead of being absorbed into the wait's own first read.
+/// Only an event baseline failure is an error: a notification seed that cannot
+/// be read falls back to the wait's own first list and never blocks the entry.
+fn pre_action_seed(
+    next: Option<&PreparedCommand>,
+    adapter: &dyn PlatformAdapter,
+    deadline: Deadline,
+) -> Result<PreActionSeed, AdapterError> {
+    let Some(next) = next else {
+        return Ok((None, None));
+    };
+    let Commands::Wait(args) = &next.command else {
+        return Ok((None, None));
+    };
+    if args.mode.notification {
+        let Ok(core_args) = crate::dispatch::system::core_wait_args(args) else {
+            return Ok((None, None));
+        };
+        let context = next.context.clone().with_inherited_deadline(deadline);
+        let seed = notification_wait::pre_action_seed(&core_args, deadline, adapter, &context);
+        return Ok((None, seed));
+    }
+    if args.event.event.is_some() {
+        let filter = SignalFilter {
             app: args.app.clone(),
             process: None,
-        }),
-        _ => None,
+        };
+        return Ok((
+            Some(adapter.capture_signal_baseline(&filter, deadline)?),
+            None,
+        ));
     }
+    Ok((None, None))
 }
 
 fn baseline_error(

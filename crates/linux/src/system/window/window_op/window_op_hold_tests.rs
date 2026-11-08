@@ -23,7 +23,8 @@ fn shifted_by_the_frame(written: &[WindowWrite]) -> WindowFacts {
 #[test]
 fn a_resize_that_shifts_the_client_gives_the_place_back() {
     let mut world = World::showing(state(300, 200, 400, 300));
-    world.reaction = Some(shifted_by_the_frame);
+    world.reaction =
+        Some(|written: &[WindowWrite]| ControlRead::Ready(shifted_by_the_frame(written)));
     let deadline = Deadline::after(2_000).expect("a deadline builds");
     run(&world, &window(), &resize(520.0, 380.0), deadline).expect("a resize that holds place");
     let writes = world.writes.borrow();
@@ -73,7 +74,8 @@ fn a_clamped_resize_that_also_shifted_the_client_still_gives_the_place_back() {
         }
     }
     let mut world = World::showing(state(300, 200, 400, 300));
-    world.reaction = Some(clamped_and_shifted);
+    world.reaction =
+        Some(|written: &[WindowWrite]| ControlRead::Ready(clamped_and_shifted(written)));
     let deadline = Deadline::after(2_000).expect("a deadline builds");
     let error = run(&world, &window(), &resize(5000.0, 5000.0), deadline).expect_err("clamped");
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
@@ -110,7 +112,8 @@ fn oversize_and_shifted(written: &[WindowWrite]) -> WindowFacts {
 #[test]
 fn a_resize_beyond_every_display_is_not_judged_by_the_place_the_manager_gave_it() {
     let mut world = World::showing(state(300, 200, 400, 300));
-    world.reaction = Some(oversize_and_shifted);
+    world.reaction =
+        Some(|written: &[WindowWrite]| ControlRead::Ready(oversize_and_shifted(written)));
     let deadline = Deadline::after(2_000).expect("a deadline builds");
     run(&world, &window(), &resize(5000.0, 5000.0), deadline).expect("the size was taken");
     assert_eq!(world.writes(), 1);
@@ -127,7 +130,8 @@ fn kept_on_the_display(written: &[WindowWrite]) -> WindowFacts {
 #[test]
 fn a_resize_the_manager_moved_to_keep_it_on_the_display_is_judged_by_its_size() {
     let mut world = World::showing(state(400, 450, 494, 291));
-    world.reaction = Some(kept_on_the_display);
+    world.reaction =
+        Some(|written: &[WindowWrite]| ControlRead::Ready(kept_on_the_display(written)));
     let deadline = Deadline::after(2_000).expect("a deadline builds");
     let report = run(&world, &window(), &resize(804.0, 599.0), deadline).expect("the size held");
     assert_eq!(world.writes(), 1);
@@ -154,7 +158,8 @@ fn shifted_and_not_given_back(written: &[WindowWrite]) -> WindowFacts {
 #[test]
 fn a_resize_whose_origin_the_manager_will_not_give_back_still_holds_its_size() {
     let mut world = World::showing(state(300, 200, 400, 300));
-    world.reaction = Some(shifted_and_not_given_back);
+    world.reaction =
+        Some(|written: &[WindowWrite]| ControlRead::Ready(shifted_and_not_given_back(written)));
     let deadline = Deadline::after(2_000).expect("a deadline builds");
     let report = run(&world, &window(), &resize(520.0, 380.0), deadline).expect("the size held");
     assert_eq!(
@@ -183,13 +188,18 @@ fn clamps_the_vertical_axis_of_a_restored_place(written: &[WindowWrite]) -> Wind
 
 #[test]
 fn a_manager_that_clamps_one_axis_of_the_place_still_gets_the_other_given_back() {
-    let mut world = World::showing(state(0, 21, 520, 380));
-    world.reaction = Some(clamps_the_vertical_axis_of_a_restored_place);
-    *world.remembered.borrow_mut() = Some(Extents {
-        x: 300,
-        y: 200,
-        width: 520,
-        height: 380,
+    let left = state(0, 21, 520, 380);
+    let mut world = World::showing(left).keeping(RememberedPlace::Unmaximized {
+        before: Extents {
+            x: 300,
+            y: 200,
+            width: 520,
+            height: 380,
+        },
+        left: left.client,
+    });
+    world.reaction = Some(|written: &[WindowWrite]| {
+        ControlRead::Ready(clamps_the_vertical_axis_of_a_restored_place(written))
     });
     let deadline = Deadline::after(3_000).expect("a deadline builds");
     let error = run(&world, &window(), &WindowOp::Restore, deadline).expect_err("y is clamped");
@@ -205,4 +215,34 @@ fn a_manager_that_clamps_one_axis_of_the_place_still_gets_the_other_given_back()
             height: None
         }
     );
+}
+
+fn reaches_the_place_it_is_sent_to(written: &[WindowWrite]) -> ControlRead<WindowFacts> {
+    ControlRead::Ready(if written.is_empty() {
+        state(10, 10, 400, 300)
+    } else {
+        state(300, 200, 400, 300)
+    })
+}
+
+#[test]
+fn a_place_given_back_that_was_reached_but_not_confirmed_is_not_nudged() {
+    let mut world = World::showing(state(10, 10, 400, 300));
+    world.reaction = Some(reaches_the_place_it_is_sent_to);
+    let place = Extents {
+        x: 300,
+        y: 200,
+        width: 400,
+        height: 300,
+    };
+    let error = super::super::hold::move_client(
+        &world,
+        &window(),
+        CLIENT,
+        place,
+        Deadline::after(100).expect("a deadline builds"),
+    )
+    .expect_err("the place was reached with no time to confirm it");
+    assert_eq!(error.code, ErrorCode::Timeout);
+    assert_eq!(world.writes(), 1);
 }

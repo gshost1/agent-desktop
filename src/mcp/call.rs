@@ -2,21 +2,31 @@
 
 use serde_json::{Map, Value, json};
 use std::io::Read;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
-use super::calls::Calls;
+use super::Server;
 use super::catalog::Tool;
+use super::child_lease::ChildLease;
+use super::lease_refusal::LeaseRefusal;
+use super::lease_role::LeaseRole;
+use super::lease_slot::Ticket;
+use agent_desktop_core::{
+    AppError,
+    response::output::{ErrorPayload, Response},
+};
 
 const CANCELLED: &str = "Cancelled";
 
 /// Runs `tool` with `arguments` for request `id`, prefixed by the server's own global flags, and returns a
-/// `CallToolResult`. A cancelled call returns early; the caller sends no response for it.
-pub(crate) fn call(
+/// `CallToolResult`. A cancelled call returns early; the caller sends no response for it. A child lent the
+/// server's inherited lease keeps it until the child has been reaped, here or by the cancel's reaper.
+pub(super) fn call(
+    server: &Server,
     tool: &Tool,
     arguments: &Map<String, Value>,
-    globals: &[String],
-    calls: &Calls,
     id: &Value,
+    ticket: Option<Ticket>,
 ) -> Value {
     let argv = match tool.argv(arguments) {
         Ok(argv) => argv,
@@ -26,14 +36,14 @@ pub(crate) fn call(
         Ok(exe) => exe,
         Err(error) => return error_result(&format!("Cannot locate agent-desktop: {error}")),
     };
-    let mut command = Command::new(exe);
-    command
-        .args(globals)
-        .args(&argv)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let (stdout, stderr) = match calls.start(id, &mut command) {
+    let role = || LeaseRole::of_call(&server.globals, &argv);
+    let lease = match server.lease.child_lease(ticket, role) {
+        Ok(lease) => lease,
+        Err(LeaseRefusal::Cancelled) => return error_result(CANCELLED),
+        Err(LeaseRefusal::Refused(error)) => return refused(tool, &error),
+    };
+    let mut command = child_command(&exe, &server.globals, &argv, &lease);
+    let (stdout, stderr) = match server.calls.start(id, &mut command) {
         None => return error_result(CANCELLED),
         Some(Err(error)) => return error_result(&format!("Cannot run agent-desktop: {error}")),
         Some(Ok(pipes)) => pipes,
@@ -42,7 +52,7 @@ pub(crate) fn call(
         let stderr = scope.spawn(|| read_all(stderr));
         (read_all(stdout), stderr.join().unwrap_or_default())
     });
-    let Some(mut child) = calls.take(id) else {
+    let Some(mut child) = server.calls.take(id) else {
         return error_result(CANCELLED);
     };
     let status = child
@@ -56,6 +66,30 @@ pub(crate) fn call(
             String::from_utf8_lossy(&stderr).trim()
         )),
     }
+}
+
+/// The child process for one call: this binary with the server's global flags, `argv`, and what `lease` gives it.
+pub(crate) fn child_command(
+    exe: &Path,
+    globals: &[String],
+    argv: &[String],
+    lease: &ChildLease<'_>,
+) -> Command {
+    let mut command = Command::new(exe);
+    command
+        .args(globals)
+        .args(argv)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    lease.apply(&mut command);
+    command
+}
+
+fn refused(tool: &Tool, error: &AppError) -> Value {
+    let command = tool.path.first().map_or("", String::as_str);
+    serde_json::to_value(Response::err(command, ErrorPayload::from_app_error(error)))
+        .map_or_else(|_| error_result(&error.to_string()), envelope_result)
 }
 
 fn read_all(pipe: Option<impl Read>) -> Vec<u8> {

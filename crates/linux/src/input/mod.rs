@@ -3,6 +3,7 @@ pub(crate) mod blocked_combo;
 pub(crate) mod clipboard;
 pub(crate) mod deliver;
 pub(crate) mod delivery;
+pub(crate) mod emergency_release;
 pub(crate) mod held_input;
 pub(crate) mod keyboard;
 pub(crate) mod mouse;
@@ -12,5 +13,7 @@ pub(crate) mod release_guard;
 pub(crate) mod release_state;
 pub(crate) mod standalone;
 pub(crate) mod step;
+#[cfg(test)]
+pub(crate) mod test_scratch;
 pub(crate) mod wayland;
 pub(crate) mod x11;

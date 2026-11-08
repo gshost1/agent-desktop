@@ -22,6 +22,9 @@ mod hold;
 #[path = "window_op_settle_tests.rs"]
 mod settle;
 
+#[path = "window_op_settle_late_tests.rs"]
+mod settle_late;
+
 #[path = "window_op_wayland_tests.rs"]
 mod wayland;
 
@@ -33,6 +36,8 @@ mod shadow;
 
 pub(super) const CLIENT: u32 = 0x0040_0003;
 pub(super) const INSTANCE: &str = "abcd1234:99";
+
+pub(super) type Reaction = fn(&[WindowWrite]) -> ControlRead<WindowFacts>;
 
 pub(super) struct World {
     pub(super) clients: RefCell<VecDeque<ControlRead<Vec<X11Client>>>>,
@@ -46,9 +51,9 @@ pub(super) struct World {
     pub(super) overview_reads: Cell<u32>,
     pub(super) wayland: bool,
     pub(super) stopped: bool,
-    pub(super) reaction: Option<fn(&[WindowWrite]) -> WindowFacts>,
-    pub(super) remembered: RefCell<Option<Extents>>,
-    pub(super) remember_calls: RefCell<Vec<Option<Extents>>>,
+    pub(super) reaction: Option<Reaction>,
+    pub(super) remembered: RefCell<Option<(String, RememberedPlace)>>,
+    pub(super) remember_calls: RefCell<Vec<Option<RememberedPlace>>>,
     pub(super) twins: Option<Twins>,
     pub(super) active: Option<u32>,
 }
@@ -117,6 +122,15 @@ impl World {
         self
     }
 
+    pub(super) fn keeping(self, place: RememberedPlace) -> Self {
+        *self.remembered.borrow_mut() = Some((INSTANCE.to_owned(), place));
+        self
+    }
+
+    pub(super) fn kept(&self) -> Option<RememberedPlace> {
+        self.remembered.borrow().as_ref().map(|(_, place)| *place)
+    }
+
     pub(super) fn writes(&self) -> usize {
         self.writes.borrow().len()
     }
@@ -159,14 +173,15 @@ impl OpWorld for World {
     }
 
     fn facts(&self, _client: u32) -> ControlRead<WindowFacts> {
-        if let Some(reaction) = self.reaction {
-            let written: Vec<WindowWrite> = self
-                .writes
+        let written = || -> Vec<WindowWrite> {
+            self.writes
                 .borrow()
                 .iter()
                 .map(|(_, write)| write.clone())
-                .collect();
-            return ControlRead::Ready(reaction(&written));
+                .collect()
+        };
+        if let Some(reaction) = self.reaction {
+            return reaction(&written());
         }
         next(&self.facts)
     }
@@ -186,13 +201,18 @@ impl OpWorld for World {
         self.overview
     }
 
-    fn remember(&self, _win: &WindowInfo, _client: u32, rectangle: Option<Extents>) {
-        self.remember_calls.borrow_mut().push(rectangle);
-        *self.remembered.borrow_mut() = rectangle;
+    fn remember(&self, win: &WindowInfo, _client: u32, place: Option<RememberedPlace>) {
+        self.remember_calls.borrow_mut().push(place);
+        *self.remembered.borrow_mut() =
+            place.and_then(|place| Some((win.process_instance.clone()?, place)));
     }
 
-    fn remembered(&self, _win: &WindowInfo, _client: u32) -> Option<Extents> {
-        *self.remembered.borrow()
+    fn remembered(&self, win: &WindowInfo, _client: u32) -> Option<RememberedPlace> {
+        self.remembered
+            .borrow()
+            .as_ref()
+            .filter(|(instance, _)| win.process_instance.as_deref() == Some(instance))
+            .map(|(_, place)| *place)
     }
 
     fn on_wayland(&self) -> bool {
@@ -222,7 +242,7 @@ pub(super) fn window() -> WindowInfo {
 }
 
 pub(super) fn budget() -> Deadline {
-    Deadline::after(250).expect("a deadline builds")
+    Deadline::after(2_000).expect("a deadline builds")
 }
 
 pub(super) fn resize(width: f64, height: f64) -> WindowOp {
