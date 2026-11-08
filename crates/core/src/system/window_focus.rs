@@ -1,42 +1,36 @@
-use std::time::Duration;
-
-use super::focus_corroboration::FocusCorroboration;
 use crate::{
-    AdapterError, AppError, Deadline, ErrorCode, InteractionLease, PlatformAdapter, WindowFilter,
-    WindowInfo,
+    AppError, Deadline, ErrorCode, InteractionLease, PlatformAdapter, WindowFilter, WindowInfo,
 };
 
-/// The slice of the lease deadline withheld from the adapter so core's one
-/// corroborating read still has time after a late adapter confirmation.
-pub(crate) const CORROBORATION_RESERVE_MS: u64 = 150;
-
-/// Focuses `window`, then corroborates it with one read. The adapter confirms
-/// focus itself, as the `focus_window` contract requires, within the lease
-/// deadline minus [`CORROBORATION_RESERVE_MS`]; a read that disagrees or
-/// cannot run reports the focus `delivered_unverified`.
+/// Focuses `window` and reports which window a follow-up read sees holding
+/// focus. The adapter's `Ok` is the verdict: `focus_window` returns only after
+/// the window is confirmed focused. The read is informational, so a modal
+/// dialog it sees is reported, and a read that fails, sees nothing or has no
+/// time left reports the target as the adapter confirmed it.
 pub(crate) fn focus_and_confirm(
     adapter: &dyn PlatformAdapter,
     window: &WindowInfo,
     lease: &InteractionLease,
 ) -> Result<WindowInfo, AppError> {
-    let deadline = lease.deadline();
-    adapter.focus_window(window, &lease.with_deadline(adapter_deadline(deadline)))?;
-    let read = corroborating_read(adapter, &window.app, deadline);
-    FocusCorroboration::judge(&window.id, read).into_result()
+    adapter.focus_window(window, lease)?;
+    Ok(follow_up_read(adapter, &window.app, lease.deadline())
+        .unwrap_or_else(|| confirmed_target(window)))
 }
 
-fn adapter_deadline(deadline: Deadline) -> Deadline {
-    let remaining = deadline.remaining();
-    let reserve = Duration::from_millis(CORROBORATION_RESERVE_MS).min(remaining / 4);
-    deadline.capped(remaining.saturating_sub(reserve))
+fn confirmed_target(window: &WindowInfo) -> WindowInfo {
+    let mut confirmed = window.clone();
+    confirmed.state.is_focused = true;
+    confirmed
 }
 
-fn corroborating_read(
+fn follow_up_read(
     adapter: &dyn PlatformAdapter,
     app: &str,
     deadline: Deadline,
-) -> Result<Option<WindowInfo>, AdapterError> {
-    deadline.ensure_remaining()?;
+) -> Option<WindowInfo> {
+    if deadline.is_expired() {
+        return None;
+    }
     match adapter.focused_window(deadline) {
         Err(err) if err.code == ErrorCode::PlatformNotSupported => adapter
             .list_windows(
@@ -46,7 +40,9 @@ fn corroborating_read(
                 },
                 deadline,
             )
-            .map(|windows| windows.into_iter().next()),
-        read => read,
+            .ok()?
+            .into_iter()
+            .next(),
+        read => read.ok().flatten(),
     }
 }

@@ -5,7 +5,6 @@ pub(crate) mod app_lookup;
 pub mod cdp_endpoint;
 pub(crate) mod devtools_websocket_url;
 pub mod display_info;
-pub(crate) mod focus_corroboration;
 pub(crate) mod image_buffer;
 pub(crate) mod image_format;
 pub mod launch_options;
