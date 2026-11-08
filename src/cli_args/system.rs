@@ -52,6 +52,16 @@ pub(crate) struct LaunchArgs {
     )]
     #[serde(default)]
     pub activate: bool,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub cdp: LaunchCdpArgs,
+}
+
+/// The DevTools flags of `launch`: the endpoint port and the folder the
+/// browser saves downloads to.
+#[derive(Args, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LaunchCdpArgs {
     #[arg(
         long,
         value_name = "PORT",
@@ -61,6 +71,14 @@ pub(crate) struct LaunchArgs {
     )]
     #[serde(default)]
     pub cdp: Option<u16>,
+    #[arg(
+        long = "download-dir",
+        value_name = "DIR",
+        requires = "cdp",
+        help = "With --cdp: save the browser's downloads in this folder, created if missing; wait --download returns each saved file"
+    )]
+    #[serde(default)]
+    pub download_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Parser, Debug, Deserialize)]
@@ -245,6 +263,9 @@ pub(crate) struct WaitArgs {
     pub event: WaitEventArgs,
     #[command(flatten)]
     #[serde(flatten)]
+    pub surface: WaitSurfaceArgs,
+    #[command(flatten)]
+    #[serde(flatten)]
     pub predicate: WaitPredicateArgs,
     #[arg(
         long,
@@ -293,6 +314,13 @@ pub(crate) struct WaitModeArgs {
         help = "Block until text appears in the app's accessibility tree; with --notification, filter notification text"
     )]
     pub text: Option<String>,
+}
+
+/// The flag-selected wait modes: a menu opening or closing, a notification,
+/// or a browser download.
+#[derive(Args, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WaitSurfaceArgs {
     #[arg(long, help = "Block until a menu surface is open")]
     #[serde(default)]
     pub menu: bool,
@@ -302,6 +330,12 @@ pub(crate) struct WaitModeArgs {
     #[arg(long, help = "Block until a new notification arrives")]
     #[serde(default)]
     pub notification: bool,
+    #[arg(
+        long,
+        help = "Block until the browser named by --app saves a download, or return one that finished since the last download wait; reports the saved path"
+    )]
+    #[serde(default)]
+    pub download: bool,
 }
 
 #[derive(Args, Debug, Deserialize)]

@@ -25,6 +25,7 @@ pub(super) fn launch(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<
     launch_command::execute(
         launch_command::LaunchArgs {
             app: args.app.clone(),
+            download_dir: args.cdp.download_dir.clone(),
             options: build_launch_options(&args)?,
         },
         adapter,
