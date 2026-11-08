@@ -1,15 +1,16 @@
 use super::{METADATA_LIST_CAP, ReadOptions, TraceWarningKind, cap_list, read_merged};
+use crate::refs::refs_test_support::TempDir;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn temp_dir(prefix: &str) -> PathBuf {
+fn temp_dir(prefix: &str) -> TempDir {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!("agent-desktop-{prefix}-{nanos}"))
+    TempDir::adopt(std::env::temp_dir().join(format!("agent-desktop-{prefix}-{nanos}")))
 }
 
 fn write_segment(dir: &Path, name: &str, lines: &[&str]) {

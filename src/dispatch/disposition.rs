@@ -1,37 +1,42 @@
 use agent_desktop_core::{AdapterError, AppError, DeliverySemantics, ErrorCode};
 
-/// Settles the delivery of an error that carries none. A refusal for invalid
-/// arguments never reached the application, and a read-only command sends
-/// nothing, so a retry of either repeats no effect. Every other unknown stays
-/// unknown: a mutation that timed out may already have landed. An error of a
-/// read-only command that has no disposition slot (`Io`, `Json`, `Internal`)
-/// becomes an adapter error that keeps its code and message.
-pub(super) fn settle_unknown_delivery(error: AppError, read_only: bool) -> AppError {
+use crate::command_policy::CommandEffect;
+
+/// Settles the delivery of an error that carries none, by what the command
+/// can change. A read-only or local-write command sends nothing to an
+/// application, so its failure is `not_delivered`; one that has no
+/// disposition slot (`Io`, `Json`, `Internal`) becomes an adapter error that
+/// keeps its code and message. A command that sends input keeps `unknown`,
+/// because a mutation that timed out may already have landed, except for an
+/// argument refusal raised before any preparatory focus or scroll ran.
+pub(crate) fn settle_unknown_delivery(error: AppError, effect: CommandEffect) -> AppError {
     match error {
-        AppError::Adapter(source) => settle(source, read_only).into(),
-        other if read_only => settle(adapter_form(other), true).into(),
+        AppError::Adapter(source) => settle(source, effect).into(),
+        other if !effect.sends_input() => settle(other.into_adapter_error(), effect).into(),
         other => other,
     }
 }
 
-fn settle(source: AdapterError, read_only: bool) -> AdapterError {
-    let sent_nothing = read_only || source.code == ErrorCode::InvalidArgs;
-    if source.disposition == DeliverySemantics::unknown() && sent_nothing {
+/// A failure raised before dispatch sent nothing. A permission denial keeps
+/// `PERM_DENIED`; any other error that is not an adapter error is `INTERNAL`.
+pub(crate) fn pre_dispatch_error(error: AppError) -> AppError {
+    error
+        .into_adapter_error()
+        .with_disposition(DeliverySemantics::not_delivered())
+        .into()
+}
+
+fn settle(source: AdapterError, effect: CommandEffect) -> AdapterError {
+    if source.disposition == DeliverySemantics::unknown() && sent_nothing(&source, effect) {
         source.with_disposition(DeliverySemantics::not_delivered())
     } else {
         source
     }
 }
 
-fn adapter_form(error: AppError) -> AdapterError {
-    let message = error.to_string();
-    match error {
-        AppError::Adapter(source) => source,
-        AppError::Io(source) if source.kind() == std::io::ErrorKind::PermissionDenied => {
-            AdapterError::new(ErrorCode::PermDenied, message)
-        }
-        AppError::Io(_) | AppError::Json(_) | AppError::Internal(_) => {
-            AdapterError::new(ErrorCode::Internal, message)
-        }
-    }
+fn sent_nothing(source: &AdapterError, effect: CommandEffect) -> bool {
+    !effect.sends_input()
+        || (source.code == ErrorCode::InvalidArgs
+            && !source.moved_focus()
+            && !source.changed_view())
 }
