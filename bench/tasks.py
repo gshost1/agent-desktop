@@ -157,8 +157,21 @@ def clear_finder_alert():
         raise RuntimeError("a Finder dialog other than an OK alert is open; not touching it")
 
 
+PERSONAL_FINDER_TITLES = ["Pictures", "Documents", "Desktop", "Downloads", "Movies", "Music", "iCloud Drive",
+                          "Recents", "Photos", "Applications", Path.home().name]
+
+
 def close_bench_finder_windows():
     macctl("close-discard", "Finder", *BENCH_FINDER_PREFIXES)
+
+
+def close_personal_finder_windows():
+    """Close Finder windows on George's own folders (a run's cmd+n or a Finder reopen lands on
+    Home or Recents) by title only, never reading their contents."""
+    titles = json.loads(macctl("windows", "Finder") or "[]")
+    for title in titles:
+        if title in PERSONAL_FINDER_TITLES:
+            macctl("close-discard", "Finder", title)
 
 
 def reset_desktop():
@@ -166,6 +179,7 @@ def reset_desktop():
         quit_app(app)
     clear_finder_alert()
     close_bench_finder_windows()
+    close_personal_finder_windows()
 
 
 def walk(node):
