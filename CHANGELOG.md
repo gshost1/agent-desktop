@@ -31,6 +31,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 * Make the MCP server forward only server-wide global flags and refuse per-command flags at startup, and lend an inherited interaction lease to one input-capable call at a time. ([#52](https://github.com/gshost1/agent-desktop/pull/52)) ([#13](https://github.com/gshost1/agent-desktop/pull/13))
 * Hold the session lock across manifest updates, write the trace usage ledger atomically, and keep a cancelled MCP call id occupied until its call finishes. ([#1](https://github.com/gshost1/agent-desktop/pull/1))
 * In the C library, return each failing call's own result code, and let a log callback call back into the library. ([#37](https://github.com/gshost1/agent-desktop/pull/37)) ([#55](https://github.com/gshost1/agent-desktop/pull/55))
+* Tell agents to brace a snapshot-qualified ref built from a shell variable (`"${S}:e1"`). In zsh, an unbraced `$S:e1` drops the snapshot id and passes `1`. ([#63](https://github.com/gshost1/agent-desktop/pull/63))
 * On Linux, confirm a window placement that the window manager applies late, report an X11 emergency release only when a key or button was held, and give back a pre-maximize place only while the window is as the agent left it. ([#43](https://github.com/gshost1/agent-desktop/pull/43)) ([#15](https://github.com/gshost1/agent-desktop/pull/15)) ([#22](https://github.com/gshost1/agent-desktop/pull/22))
 
 ### Performance
