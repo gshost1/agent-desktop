@@ -221,10 +221,16 @@ impl Drop for Bench {
     }
 }
 
+#[cfg(unix)]
 fn private(dir: &Path) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).unwrap();
 }
+
+/// A bench folder on Windows inherits the user profile's access list, which
+/// already keeps it private.
+#[cfg(not(unix))]
+fn private(_dir: &Path) {}
 
 fn test_entry_defaults() -> RefEntry {
     RefEntry {
