@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+exec 9>/tmp/claude-1000/gates.serial.lock; flock 9
 # usage: gates.sh <worktree>   runs every AGENTS.md gate on the Linux host set
 set -uo pipefail
 export PATH=$HOME/.cargo/bin:$PATH
@@ -21,7 +22,7 @@ if cargo tree -p agent-desktop-core 2>/dev/null | grep -E 'agent-desktop-(linux|
 D=""; for n in $(shuf -i 100-199); do if [ ! -e /tmp/.X11-unix/X$n ] && [ ! -e /tmp/.X$n-lock ]; then D=$n; break; fi; done
 Xvfb :$D -screen 0 1280x800x24 >/dev/null 2>&1 & XP=$!; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e /tmp/.X11-unix/X$D ] && break; sleep 0.5; done
 echo "== tests (DISPLAY=:$D)"
-DISPLAY=:$D bash scripts/cargo-test-isolated-home.sh test "${H[@]}" >"/tmp/claude-1000/gate.$$.test.log" 2>&1 || { echo "FAIL: tests"; grep -E 'panicked|^    [a-z_:]+$|test result: FAILED' "/tmp/claude-1000/gate.$$.test.log" | head -30; fail=1; }
+DISPLAY=:$D bash scripts/cargo-test-isolated-home.sh test --no-fail-fast "${H[@]}" >"/tmp/claude-1000/gate.$$.test.log" 2>&1 || { echo "FAIL: tests"; grep -E 'panicked|^    [a-z_:]+$|test result: FAILED' "/tmp/claude-1000/gate.$$.test.log" | head -30; fail=1; }
 grep -E '^test result' "/tmp/claude-1000/gate.$$.test.log" | awk '{p+=$4; f+=$6} END {print "tests passed="p" failed="f}'
 kill $XP 2>/dev/null
 echo "GATES: $([ $fail = 0 ] && echo GREEN || echo RED)"
