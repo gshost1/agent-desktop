@@ -261,27 +261,24 @@ fn an_unproven_entry_is_never_landed_provisionally() {
 }
 
 /// A capture that could not prove a ref is a stale ref, not a twin: it names
-/// its reason and sends nothing. Only an incomplete read promises that a fresh
-/// snapshot can prove the ref, so only it carries the fresh-snapshot recovery;
-/// an unknown identity is stamped not retryable.
+/// its reason and sends nothing. Neither reason advertises the generic
+/// fresh-snapshot recovery, which would retake the snapshot the same way; an
+/// incomplete read says to retake it with a larger timeout instead.
 fn assert_unproven(error: &AdapterError, reason: &str) {
     assert_eq!(error.code, ErrorCode::StaleRef, "{error:?}");
     let details = error.details.as_ref().expect("the refusal names its kind");
     assert_eq!(details["kind"], "identity_unproven");
     assert_eq!(details["reason"], reason);
+    assert_eq!(details["retryable"], false);
     assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
     let payload = ErrorPayload::from_app_error(&AppError::Adapter(error.clone()));
-    if reason == "capture_incomplete" {
-        assert!(details.get("retryable").is_none(), "{details}");
-        let recovery = payload
-            .recovery
-            .expect("retaking the snapshot is the recovery");
-        assert_eq!(recovery.strategy, "refresh_snapshot_then_retry_original");
-        assert!(recovery.requires_fresh_snapshot);
-    } else {
-        assert_eq!(details["retryable"], false);
-        assert!(payload.recovery.is_none(), "{:?}", payload.recovery);
-    }
+    assert!(payload.recovery.is_none(), "{:?}", payload.recovery);
+    let suggestion = error.suggestion.as_deref().unwrap_or_default();
+    assert_eq!(
+        suggestion.contains("--timeout-ms"),
+        reason == "capture_incomplete",
+        "{suggestion}"
+    );
 }
 
 #[test]

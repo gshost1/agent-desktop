@@ -8,7 +8,9 @@ use crate::{
     refs::ref_full_predicate::FullPredicate,
     refs::ref_identity::element_token,
     refs::ref_live_predicate::LivePredicate,
-    refs::resolve_errors::{absent, ambiguous_live_match, capture_refusal, identity_unknown_error},
+    refs::resolve_errors::{
+        absent, ambiguous_live_match, identity_unknown_error, refused_before_reading,
+    },
 };
 
 /// The depth a whole-window observation reaches: the limit a snapshot walk
@@ -92,9 +94,7 @@ pub(crate) fn observe_saved_ref(
     identity_only: bool,
 ) -> Result<SavedRefMatch, AdapterError> {
     let token = element_token(entry);
-    if token.is_none()
-        && let Some(refusal) = capture_refusal(entry)
-    {
+    if let Some(refusal) = refused_before_reading(entry) {
         return Err(refusal);
     }
     let window = recorded_window(adapter, entry, deadline)?;

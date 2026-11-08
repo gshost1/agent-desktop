@@ -34,8 +34,9 @@ fn a_capture_records_why_it_could_not_prove_a_ref() {
 }
 
 /// Matches are counted before completeness is judged: a twin a partial read
-/// saw is certain, and an entry whose predicate matches another element alone
-/// names that element, not its own, so both are `Ambiguous`.
+/// saw is certain, so it is `Ambiguous`. An entry whose predicate matches one
+/// other element and not its own has no twin, only an identity the capture
+/// could not tie to its node, so it is `Unknown`.
 #[test]
 fn a_twin_is_ambiguous_however_much_was_read() {
     use CaptureVerdict::{Ambiguous, Incomplete, Unknown};
@@ -56,5 +57,19 @@ fn a_twin_is_ambiguous_however_much_was_read() {
     let mut observed = observed_from(swapped.clone());
     observed.nodes[1].evidence.name = LocatorField::Known("Other".into());
     observed.nodes[2].evidence.name = LocatorField::Known("Send".into());
-    assert_eq!(verdicts(swapped, &observed), [Ambiguous, Unknown]);
+    assert_eq!(verdicts(swapped, &observed), [Unknown, Unknown]);
+}
+
+/// A drill whose root the whole-window read no longer holds is a stale cut a
+/// fresh snapshot re-reads, so its entries are `Incomplete`, not `Unknown`.
+#[test]
+fn a_drill_root_the_read_does_not_hold_is_incomplete() {
+    let root = window(vec![named("button", "Save")]);
+    let observed = observed_from(root);
+    let entry = crate::adapter::minimal_ref_entry("button", Some("Save"));
+    let proof = super::CaptureProof::new(&observed).rooted_at(&[7]);
+    assert_eq!(
+        proof.verdict_at(&entry, &[7, 0]),
+        CaptureVerdict::Incomplete
+    );
 }

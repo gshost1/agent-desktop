@@ -295,9 +295,10 @@ fn terminal_stale_ref_preserves_exited_and_crashed_process_details() {
     }
 }
 
-/// A capture refusal read nothing from the application, so a hung process
-/// does not explain it: it keeps its kind, reason and recovery instead of
-/// becoming `APP_UNRESPONSIVE`, and the process is not probed for it.
+/// A capture refusal reads nothing from the application, so a hung process
+/// does not explain it: the ref action refuses before resolving, keeps the
+/// refusal's kind and reason instead of becoming `APP_UNRESPONSIVE`, and never
+/// probes the process for it.
 #[test]
 fn a_refusal_made_at_capture_is_not_rewritten_by_the_process_state() {
     let adapter = UnresponsiveProcessAdapter {
@@ -306,11 +307,18 @@ fn a_refusal_made_at_capture_is_not_rewritten_by_the_process_state() {
     };
     let mut unproven = entry();
     unproven.identity.capture = crate::CaptureVerdict::Incomplete;
-    let refusal = crate::refs::resolve_errors::capture_refusal(&unproven)
-        .expect("an incomplete capture refuses the ref");
 
-    let error =
-        enrich_with_process_state(&adapter, &unproven, refusal, Deadline::standard().unwrap());
+    let error = execute_with_auto_wait(
+        RefActionWaitCtx {
+            adapter: &adapter,
+            entry: &unproven,
+            ref_id: "@e1",
+            context: &CommandContext::default(),
+        },
+        ActionRequest::headless(Action::Click),
+        crate::ref_action::ref_action_single::dispatch_resolved,
+    )
+    .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::StaleRef);
     let details = error.details.expect("the refusal keeps its details");

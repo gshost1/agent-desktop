@@ -25,12 +25,22 @@ pub fn identity_unknown_error(entry: &RefEntry) -> AdapterError {
 
 /// The refusal a tokenless ref gets from its capture verdict before anything
 /// is read from the application, or `None` when the capture proved it unique.
-pub(crate) fn capture_refusal(entry: &RefEntry) -> Option<AdapterError> {
+fn capture_refusal(entry: &RefEntry) -> Option<AdapterError> {
     match entry.identity.capture {
         CaptureVerdict::Unique => None,
         CaptureVerdict::Ambiguous => Some(identity_not_unique(entry)),
         CaptureVerdict::Incomplete => Some(capture_incomplete(entry)),
         CaptureVerdict::Unknown => Some(capture_unknown(entry)),
+    }
+}
+
+/// The refusal a saved ref gets before anything is read from the application:
+/// a ref carrying an element token is judged by the adapter, every other ref by
+/// its capture verdict.
+pub(crate) fn refused_before_reading(entry: &RefEntry) -> Option<AdapterError> {
+    match crate::refs::ref_identity::element_token(entry) {
+        Some(_) => None,
+        None => capture_refusal(entry),
     }
 }
 
@@ -56,22 +66,23 @@ fn identity_not_unique(entry: &RefEntry) -> AdapterError {
 }
 
 /// A tokenless ref whose capture was not a complete read of the whole window
-/// and saw no twin. A snapshot that reads the whole window can prove it, so
-/// this is a stale ref with the fresh-snapshot recovery rather than a twin. It
-/// carries no `retryable` stamp, because repeating the same ref returns the
-/// same refusal while a new snapshot can succeed.
+/// and saw no twin, so it is stale rather than a twin. It is stamped not
+/// retryable: repeating the ref returns the same refusal, and the generic
+/// fresh-snapshot recovery would retake the snapshot at the timeout that just
+/// fell short, so the suggestion asks for a larger one instead.
 fn capture_incomplete(entry: &RefEntry) -> AdapterError {
     AdapterError::stale_ref_because(
         "Saved ref was not proven unique when it was captured, because the capture did not \
          read the whole window",
     )
     .with_suggestion(
-        "Retake the snapshot, with a larger --timeout-ms for a large window, then retry with \
-         the new ref.",
+        "Retake the snapshot with a larger --timeout-ms, so it can read the whole window, \
+         then retry with the new ref.",
     )
     .with_details(json!({
         "kind": "identity_unproven",
         "reason": "capture_incomplete",
+        "retryable": false,
         "role": entry.identity.role,
     }))
 }
