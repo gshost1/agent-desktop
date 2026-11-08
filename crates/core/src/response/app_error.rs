@@ -24,11 +24,26 @@ impl AppError {
     pub fn code(&self) -> &str {
         match self {
             Self::Adapter(error) => error.code.as_str(),
-            Self::Io(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-                ErrorCode::PermDenied.as_str()
-            }
+            _ if self.is_permission_denied() => ErrorCode::PermDenied.as_str(),
             Self::Io(_) | Self::Json(_) | Self::Internal(_) => "INTERNAL",
         }
+    }
+
+    /// The adapter form of this error. A permission denial keeps
+    /// `PERM_DENIED`, as [`Self::code`] reports it; every other error that is
+    /// not already an adapter error becomes `INTERNAL`.
+    pub(crate) fn into_adapter_error(self) -> AdapterError {
+        match self {
+            Self::Adapter(error) => error,
+            other if other.is_permission_denied() => {
+                AdapterError::new(ErrorCode::PermDenied, other.to_string())
+            }
+            other => AdapterError::internal(other.to_string()),
+        }
+    }
+
+    fn is_permission_denied(&self) -> bool {
+        matches!(self, Self::Io(error) if error.kind() == std::io::ErrorKind::PermissionDenied)
     }
 
     pub fn suggestion(&self) -> Option<&str> {
