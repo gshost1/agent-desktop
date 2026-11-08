@@ -113,7 +113,7 @@ fn format_event(event: &Event<'_>) -> Option<CString> {
 }
 
 pub(crate) fn with_dispatch<R>(body: impl FnOnce() -> R) -> R {
-    if current_callback().is_none() {
+    if current_callback().is_none() || IN_CALLBACK.get() {
         return body();
     }
     let subscriber = tracing_subscriber::registry().with(CallbackLayer);
@@ -128,6 +128,9 @@ pub(crate) fn with_dispatch<R>(body: impl FnOnce() -> R) -> R {
 /// The callback may be invoked concurrently by different host threads. After
 /// it is cleared, each call already in flight on another thread may still
 /// invoke it once.
+///
+/// The callback may call other `ad_*` functions. Events those nested calls emit
+/// are not delivered to it.
 ///
 /// The message pointer is valid only until the callback returns. The callback
 /// must not unwind across this C ABI boundary; C++ exceptions and Rust panics
@@ -152,6 +155,12 @@ mod tests {
     static MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
     static LOG_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    pub(super) fn log_test_serialization() -> std::sync::MutexGuard<'static, ()> {
+        LOG_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     unsafe extern "C" fn record(_level: i32, message: *const c_char) {
         let message = unsafe { CStr::from_ptr(message) }
             .to_string_lossy()
@@ -161,7 +170,7 @@ mod tests {
 
     #[test]
     fn scoped_dispatch_delivers_and_redacts() {
-        let _guard = LOG_TEST_LOCK.lock().unwrap();
+        let _guard = log_test_serialization();
         MESSAGES.lock().unwrap().clear();
         assert_eq!(ad_set_log_callback(Some(record)), AdResult::Ok);
         with_dispatch(|| {
@@ -183,7 +192,7 @@ mod tests {
 
     #[test]
     fn callback_does_not_capture_outside_scope() {
-        let _guard = LOG_TEST_LOCK.lock().unwrap();
+        let _guard = log_test_serialization();
         MESSAGES.lock().unwrap().clear();
         assert_eq!(ad_set_log_callback(Some(record)), AdResult::Ok);
         tracing::error!(operation = "outside");
@@ -191,3 +200,7 @@ mod tests {
         assert!(MESSAGES.lock().unwrap().is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "log_callback_reentrancy_tests.rs"]
+mod reentrancy_tests;

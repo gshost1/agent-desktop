@@ -56,7 +56,7 @@ Snapshots, finds, listings, screenshots, clipboard reads, status, and trace read
 
 - `ad_adapter_destroy` revokes the adapter. Calls already in flight finish; calls that start afterward return `AD_RESULT_ERR_INVALID_ARGS`.
 - `ad_wait` blocks its calling thread for at most `scope.timeout_ms`.
-- The `ad_set_log_callback` callback may run on any thread that calls an `ad_*` function, concurrently, and may still fire briefly after you unregister it. Keep it alive for the process lifetime and never let it unwind across the C ABI.
+- The `ad_set_log_callback` callback may run on any thread that calls an `ad_*` function, concurrently, and may still fire briefly after you unregister it. Keep it alive for the process lifetime and never let it unwind across the C ABI. It may call `ad_*` functions itself; events from those nested calls are not delivered to it.
 - A language runtime's global lock does not give thread affinity; keep native handles in thread-confined objects, or use refs.
 - On macOS, `ad_check_permissions` reports Accessibility trust for the host executable (`python3`, `node`, your app), not for the library.
 

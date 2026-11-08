@@ -1756,6 +1756,9 @@ AdResult ad_mouse_wheel(const struct AdAdapter *adapter,
  * it is cleared, each call already in flight on another thread may still
  * invoke it once.
  *
+ * The callback may call other `ad_*` functions. Events those nested calls emit
+ * are not delivered to it.
+ *
  * The message pointer is valid only until the callback returns. The callback
  * must not unwind across this C ABI boundary; C++ exceptions and Rust panics
  * must be caught inside the callback. Violating that contract may abort the

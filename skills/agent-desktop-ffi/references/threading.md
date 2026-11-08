@@ -80,6 +80,9 @@ to cross an async task or thread boundary.
 `ad_set_log_callback(cb)` may be called from any thread. The callback may be
 invoked from any thread that calls an `ad_*` function.
 
+The callback may itself call `ad_*` functions. Events those nested calls emit
+are not delivered to the callback.
+
 A callback unregistered via `NULL` may still receive an invocation already in
 flight on another thread. Keep the callback and captured state alive for the
 process lifetime, or quiesce active adapter calls before unregistering it.
