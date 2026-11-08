@@ -1,6 +1,6 @@
 use agent_desktop_core::{
     ActionResult, AdapterError, Deadline, ErrorCode, InteractionPolicy, NotificationFilter,
-    NotificationIdentity, NotificationInfo, verify_notification_identity,
+    NotificationInfo, NotificationTarget,
 };
 
 use super::nc_session::{NcSession, close_session};
@@ -10,15 +10,14 @@ use super::nc_session::{NcSession, close_session};
 mod tests;
 
 pub fn dismiss_notification(
-    index: usize,
+    target: &NotificationTarget,
     app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
     require_foreground_policy(policy)?;
     let session = NcSession::open(policy, deadline)?;
-    let result = dismiss_impl(index, app_filter, identity, policy, session.pid(), deadline);
+    let result = dismiss_impl(target, app_filter, policy, session.pid(), deadline);
     close_session(session, result)
 }
 
@@ -34,23 +33,21 @@ pub fn dismiss_all(
 }
 
 pub fn notification_action(
-    index: usize,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     action_name: &str,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<ActionResult, AdapterError> {
     require_foreground_policy(policy)?;
     let session = NcSession::open(policy, deadline)?;
-    let result = action_impl(index, identity, action_name, session.pid(), deadline);
+    let result = action_impl(target, action_name, session.pid(), deadline);
     close_session(session, result)
 }
 
 #[cfg(target_os = "macos")]
 fn dismiss_impl(
-    index: usize,
+    target: &NotificationTarget,
     app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
     policy: InteractionPolicy,
     pid: i32,
     deadline: Deadline,
@@ -58,11 +55,7 @@ fn dismiss_impl(
     let filter = build_filter(app_filter);
     let entries = super::list::list_entries(&filter, pid, deadline)?;
 
-    let entry = entries
-        .iter()
-        .find(|e| e.info.index == index)
-        .ok_or_else(|| AdapterError::notification_not_found(index))?;
-    verify_notification_identity(index, identity, &entry.info)?;
+    let entry = &entries[target.pick(entries.iter().map(|e| &e.info))?];
 
     let info = entry.info.clone();
     let matching_before = super::dismiss_verify::matching_count(&entries, entry);
@@ -198,13 +191,11 @@ fn try_dismiss_button(
     Ok(false)
 }
 
-/// Presses a named action button on the notification at `index`.
-///
-/// When `identity` is provided, rejects rows whose fingerprint no longer matches after NC reordering.
+/// Presses a named action button on the notification core picks from a
+/// fresh read of the Notification Center.
 #[cfg(target_os = "macos")]
 fn action_impl(
-    index: usize,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     action_name: &str,
     pid: i32,
     deadline: Deadline,
@@ -212,12 +203,8 @@ fn action_impl(
     let filter = NotificationFilter::default();
     let entries = super::list::list_entries(&filter, pid, deadline)?;
 
-    let entry = entries
-        .into_iter()
-        .find(|e| e.info.index == index)
-        .ok_or_else(|| AdapterError::notification_not_found(index))?;
-
-    verify_notification_identity(index, identity, &entry.info)?;
+    let entry = &entries[target.pick(entries.iter().map(|e| &e.info))?];
+    let index = entry.info.index;
 
     let children = crate::notifications::read::children(&entry.element, deadline)?;
     let action_lower = action_name.to_lowercase();
@@ -351,9 +338,8 @@ fn all_dismiss_strategies_failed() -> AdapterError {
 
 #[cfg(not(target_os = "macos"))]
 fn dismiss_impl(
-    _index: usize,
+    _target: &NotificationTarget,
     _app_filter: Option<&str>,
-    _identity: Option<&NotificationIdentity>,
     _policy: InteractionPolicy,
     _pid: i32,
     _deadline: Deadline,
@@ -373,8 +359,7 @@ fn dismiss_all_impl(
 
 #[cfg(not(target_os = "macos"))]
 fn action_impl(
-    _index: usize,
-    _identity: Option<&NotificationIdentity>,
+    _target: &NotificationTarget,
     _action_name: &str,
     _pid: i32,
     _deadline: Deadline,

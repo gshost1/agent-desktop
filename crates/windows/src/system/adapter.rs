@@ -329,17 +329,16 @@ impl SystemOps for WindowsAdapter {
 
     /// Every mutation receives the caller's policy beside the lease's
     /// deadline, so the module's foreground floor answers before the session
-    /// raises anything. The identity travels as-is and is verified against a
-    /// fresh read inside the module, never against the index alone.
+    /// raises anything. The target travels as-is and core picks the entry
+    /// from a fresh read inside the module, never by the index alone.
     fn dismiss_notification(
         &self,
         request: DismissNotificationRequest<'_>,
         _lease: &InteractionLease,
     ) -> Result<NotificationInfo, AdapterError> {
         crate::notifications::actions::dismiss_notification(
-            request.index,
+            request.target,
             request.app_filter,
-            Some(request.identity),
             request.policy,
             _lease.deadline(),
         )
@@ -363,8 +362,7 @@ impl SystemOps for WindowsAdapter {
         _lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
         crate::notifications::actions::notification_action(
-            request.index,
-            Some(request.identity),
+            request.target,
             request.action_name,
             request.policy,
             _lease.deadline(),

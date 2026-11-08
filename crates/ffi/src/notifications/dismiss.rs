@@ -28,8 +28,8 @@ pub unsafe extern "C" fn ad_dismiss_notification(
             }
         };
         let filter = decode_optional_filter!(app_filter, "app_filter");
-        let identity = match super::identity::decode(expected_app, expected_title) {
-            Ok(identity) => identity,
+        let target = match super::identity::decode(index, expected_app, expected_title) {
+            Ok(target) => target,
             Err(error) => {
                 set_last_error(&error);
                 return AdResult::ErrInvalidArgs;
@@ -38,9 +38,8 @@ pub unsafe extern "C" fn ad_dismiss_notification(
         let adapter = crate::adapter::acquire_adapter!(adapter);
         let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
         let request = agent_desktop_core::DismissNotificationRequest {
-            index,
+            target: &target,
             app_filter: filter.as_deref(),
-            identity: &identity,
             policy: agent_desktop_core::actions::interaction_policy::InteractionPolicy::headless(),
         };
         match adapter.inner.dismiss_notification(request, &lease) {

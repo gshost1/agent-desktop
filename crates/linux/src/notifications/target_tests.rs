@@ -1,30 +1,34 @@
 use super::*;
 use crate::notifications::fake::{FakeWorld, log, reading, spec};
-use agent_desktop_core::{Deadline, ErrorCode};
+use agent_desktop_core::{Deadline, ErrorCode, NotificationIdentity};
 
 fn deadline() -> Deadline {
     Deadline::after(1_000).expect("a deadline")
 }
 
-fn wanted<'a>(app_filter: Option<&'a str>, identity: &'a NotificationIdentity) -> Wanted<'a> {
-    Wanted {
-        index: 1,
-        app_filter,
-        identity,
-    }
+fn at_one(app: &str) -> NotificationTarget {
+    let identity = NotificationIdentity {
+        expected_app: Some(app.to_owned()),
+        expected_title: None,
+    };
+    NotificationTarget::new(Some(1), None, identity).expect("target")
+}
+
+fn wanted<'a>(app_filter: Option<&'a str>, target: &'a NotificationTarget) -> Wanted<'a> {
+    Wanted { target, app_filter }
 }
 
 #[test]
-fn an_empty_identity_accepts_the_entry() {
+fn an_entry_carrying_the_expected_app_is_located() {
     let world = FakeWorld::new(&log(), vec![reading(&[spec("A", "one")])]);
-    let any = NotificationIdentity::default();
+    let any = at_one("A");
     assert!(locate(&world, wanted(None, &any), deadline()).is_ok());
 }
 
 #[test]
 fn an_app_filter_that_does_not_match_the_entry_is_not_found() {
     let world = FakeWorld::new(&log(), vec![reading(&[spec("A", "one")])]);
-    let any = NotificationIdentity::default();
+    let any = at_one("A");
     let error = locate(&world, wanted(Some("zzz"), &any), deadline())
         .err()
         .expect("none");
@@ -34,7 +38,7 @@ fn an_app_filter_that_does_not_match_the_entry_is_not_found() {
 #[test]
 fn the_same_words_on_another_object_are_not_the_entry_that_was_read_first() {
     let first = FakeWorld::new(&log(), vec![reading(&[spec("A", "one")])]);
-    let any = NotificationIdentity::default();
+    let any = at_one("A");
     let located = locate(&first, wanted(None, &any), deadline()).expect("located");
     let rebuilt = FakeWorld::new(
         &log(),

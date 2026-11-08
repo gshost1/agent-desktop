@@ -1,8 +1,7 @@
-use crate::{InteractionPolicy, NotificationIdentity};
+use crate::{InteractionPolicy, NotificationTarget};
 
 pub struct NotificationActionRequest<'a> {
-    pub index: usize,
-    pub identity: &'a NotificationIdentity,
+    pub target: &'a NotificationTarget,
     pub action_name: &'a str,
     pub policy: InteractionPolicy,
 }

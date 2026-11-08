@@ -15,9 +15,17 @@ pub(crate) struct ListNotificationsCliArgs {
 #[derive(Parser, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DismissNotificationCliArgs {
-    #[arg(value_name = "INDEX", help = "1-based notification index from list-notifications",
+    #[arg(value_name = "INDEX", help = "1-based notification index from list-notifications; with --key the entry must still be at INDEX",
           value_parser = clap::value_parser!(u64).range(1..))]
-    pub index: u64,
+    #[serde(default)]
+    pub index: Option<u64>,
+    #[arg(
+        long,
+        value_name = "KEY",
+        help = "The key list-notifications printed for the entry; without INDEX acts on that entry wherever it now sits; refuses when no entry carries it"
+    )]
+    #[serde(default)]
+    pub key: Option<String>,
     #[arg(
         long,
         help = "Require the notification at INDEX to be from this app; INDEX is its position in the unfiltered list"
@@ -25,13 +33,13 @@ pub(crate) struct DismissNotificationCliArgs {
     pub app: Option<String>,
     #[arg(
         long,
-        help = "Expected app name at INDEX; one expected identity field is required",
+        help = "Expected app name of the entry; without --key, INDEX needs this or --expected-title",
         value_name = "APP"
     )]
     pub expected_app: Option<String>,
     #[arg(
         long,
-        help = "Expected title at INDEX; one expected identity field is required",
+        help = "Expected title of the entry; without --key, INDEX needs this or --expected-app",
         value_name = "TITLE"
     )]
     pub expected_title: Option<String>,
@@ -47,7 +55,7 @@ pub(crate) struct DismissAllNotificationsCliArgs {
 #[derive(Parser, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NotificationActionCliArgs {
-    #[arg(value_name = "INDEX", help = "1-based notification index from list-notifications",
+    #[arg(value_name = "INDEX", help = "1-based notification index from list-notifications; with --key the entry must still be at INDEX",
           value_parser = clap::value_parser!(u64).range(1..))]
     pub index: u64,
     #[arg(
@@ -57,13 +65,20 @@ pub(crate) struct NotificationActionCliArgs {
     pub action: String,
     #[arg(
         long,
-        help = "Expected app name at INDEX; one expected identity field is required",
+        value_name = "KEY",
+        help = "The key list-notifications printed for the entry at INDEX; refuses when the entry at INDEX no longer carries it"
+    )]
+    #[serde(default)]
+    pub key: Option<String>,
+    #[arg(
+        long,
+        help = "Expected app name of the entry; without --key, INDEX needs this or --expected-title",
         value_name = "APP"
     )]
     pub expected_app: Option<String>,
     #[arg(
         long,
-        help = "Expected title at INDEX; one expected identity field is required",
+        help = "Expected title of the entry; without --key, INDEX needs this or --expected-app",
         value_name = "TITLE"
     )]
     pub expected_title: Option<String>,

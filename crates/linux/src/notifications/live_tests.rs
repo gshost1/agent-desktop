@@ -1,7 +1,7 @@
 use agent_desktop_core::{
     Deadline, DismissAllNotificationsRequest, DismissNotificationRequest, InteractionLease,
-    InteractionPolicy, NotificationActionRequest, NotificationFilter, NotificationIdentity,
-    SystemOps,
+    InteractionPolicy, NotificationActionRequest, NotificationFilter, NotificationTarget,
+    SystemOps, notification_keys,
 };
 use std::process::Command;
 use std::time::Duration;
@@ -54,11 +54,14 @@ fn listed(bus: &SharedBus) -> Vec<agent_desktop_core::NotificationInfo> {
     .expect("listed")
 }
 
-fn identity_of(info: &agent_desktop_core::NotificationInfo) -> NotificationIdentity {
-    NotificationIdentity {
-        expected_app: Some(info.app_name.clone()),
-        expected_title: Some(info.title.clone()),
-    }
+fn keyed(bus: &SharedBus, title: &str) -> NotificationTarget {
+    let entries = listed(bus);
+    let keys = notification_keys(&entries);
+    let at = entries
+        .iter()
+        .position(|info| info.title == title)
+        .expect("listed");
+    NotificationTarget::new(None, Some(&keys[at]), Default::default()).expect("target")
 }
 
 #[test]
@@ -93,13 +96,11 @@ fn list_matches_what_the_sender_posted() {
 fn an_entry_that_has_gone_is_not_found() {
     let bus = SharedBus::default();
     let id = notify("live-gone", "vanishing", "");
-    let info = listed(&bus).remove(0);
-    let who = identity_of(&info);
+    let target = keyed(&bus, "vanishing");
     oracle(&["close", &id.to_string()]);
     let request = DismissNotificationRequest {
-        index: info.index,
+        target: &target,
         app_filter: None,
-        identity: &who,
         policy: InteractionPolicy::headed(),
     };
     let error = super::dismiss(&bus, request, &lease()).expect_err("gone");
@@ -143,14 +144,6 @@ fn signals_seen(file: &std::path::Path, pid: u32) -> Vec<String> {
     seen
 }
 
-fn headed(bus: &SharedBus, title: &str) -> (usize, NotificationIdentity) {
-    let info = listed(bus)
-        .into_iter()
-        .find(|info| info.title == title)
-        .expect("listed");
-    (info.index, identity_of(&info))
-}
-
 #[test]
 #[ignore = "needs the private gnome-shell of scripts/notification-live.sh and an X11 pointer"]
 fn dismiss_removes_exactly_the_target_and_the_daemon_reports_reason_two() {
@@ -158,11 +151,10 @@ fn dismiss_removes_exactly_the_target_and_the_daemon_reports_reason_two() {
     let (file, pid) = monitor();
     let keep = notify("live-keep", "keeper", "");
     let dropped = notify("live-drop", "dropped", "");
-    let (index, who) = headed(&bus, "dropped");
+    let target = keyed(&bus, "dropped");
     let request = DismissNotificationRequest {
-        index,
+        target: &target,
         app_filter: None,
-        identity: &who,
         policy: InteractionPolicy::headed(),
     };
     let done = super::dismiss(&bus, request, &lease()).expect("dismissed");
@@ -191,10 +183,9 @@ fn an_action_removes_the_entry_and_the_daemon_reports_the_action_key() {
     let bus = SharedBus::default();
     let (file, pid) = monitor();
     let id = notify("live-act", "actionable", "act1=Reply,act2=Archive");
-    let (index, who) = headed(&bus, "actionable");
+    let target = keyed(&bus, "actionable");
     let request = NotificationActionRequest {
-        index,
-        identity: &who,
+        target: &target,
         action_name: "Reply",
         policy: InteractionPolicy::headed(),
     };

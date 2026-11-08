@@ -1,8 +1,9 @@
-use agent_desktop_core::{ErrorCode, InteractionPolicy, NotificationIdentity, NotificationInfo};
+use agent_desktop_core::{
+    ErrorCode, InteractionPolicy, NotificationIdentity, NotificationInfo, NotificationTarget,
+};
 
 use super::{
     dismiss_all_failures, is_sole_target, require_foreground_policy, unknown_action_error,
-    verify_notification_identity,
 };
 
 fn info(app: &str, title: &str) -> NotificationInfo {
@@ -13,55 +14,6 @@ fn info(app: &str, title: &str) -> NotificationInfo {
         body: None,
         actions: Vec::new(),
     }
-}
-
-#[test]
-fn an_empty_identity_defers_to_the_index() {
-    let identity = NotificationIdentity::default();
-
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Reminder")).is_ok());
-    assert!(verify_notification_identity(1, None, &info("App A", "Reminder")).is_ok());
-}
-
-#[test]
-fn a_matching_identity_is_accepted() {
-    let identity = NotificationIdentity {
-        expected_app: Some("App A".into()),
-        expected_title: Some("Reminder".into()),
-    };
-
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Reminder")).is_ok());
-}
-
-#[test]
-fn a_mismatched_identity_is_notification_not_found_and_names_only_the_index() {
-    let identity = NotificationIdentity {
-        expected_app: Some("App A".into()),
-        expected_title: Some("Reminder".into()),
-    };
-
-    let error =
-        verify_notification_identity(2, Some(&identity), &info("App B", "Moved in underneath"))
-            .expect_err("the surface reordered under the caller");
-
-    assert_eq!(error.code, ErrorCode::NotificationNotFound);
-    assert!(error.message.contains("index 2"));
-    assert!(
-        !error.message.contains("App B"),
-        "the mismatch message is built from the index alone and must never carry the entry that actually sits there"
-    );
-    assert!(!error.message.contains("Moved in underneath"));
-}
-
-#[test]
-fn a_title_only_identity_is_verified_against_the_title() {
-    let identity = NotificationIdentity {
-        expected_app: None,
-        expected_title: Some("Reminder".into()),
-    };
-
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Reminder")).is_ok());
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Other")).is_err());
 }
 
 #[test]
@@ -184,14 +136,17 @@ fn the_dismiss_reaches_the_windows_override_not_the_trait_default() {
     let adapter = crate::adapter::WindowsAdapter::new();
     let lease = InteractionLease::guarded(Deadline::detached_after(5_000).expect("deadline"), ())
         .expect("lease");
-    let identity = NotificationIdentity::default();
+    let identity = NotificationIdentity {
+        expected_app: Some("App A".into()),
+        expected_title: None,
+    };
+    let target = NotificationTarget::new(Some(1), None, identity).expect("target");
 
     let error = SystemOps::dismiss_notification(
         &adapter,
         DismissNotificationRequest {
-            index: 1,
+            target: &target,
             app_filter: None,
-            identity: &identity,
             policy: InteractionPolicy::headless(),
         },
         &lease,

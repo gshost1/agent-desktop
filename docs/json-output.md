@@ -207,6 +207,27 @@ After the core resolver chooses the element, the platform adapter lands it, and 
 
 A refusal without `details.retryable: true` ends every wait at once. With it, what happens next depends on the caller. A ref action (its auto-wait, its retry under the interaction lease, and the pointer actions' waits) treats a known complete absence, a `STALE_REF` with `details.complete: true` and kind `resolve_no_candidate`, `resolution_complete_absence` or `saved_ref_absent`, as final and answers at once, whatever its `retryable` stamp, because the recovery is a new snapshot. That includes a list rebuilt under the lease while the action resolved it. It polls any other retryable resolution refusal within its budget; when the budget runs out on a retryable `STALE_REF` or `AMBIGUOUS_TARGET` read over complete evidence, it reports that refusal with `details.elapsed_ms` instead of the actionability `TIMEOUT`. `wait --element` waits for an element to appear, so it keeps polling every retryable refusal, a complete absence included, until its deadline.
 
+## Notification keys
+
+`list-notifications` gives every entry a `key` beside `index`, `app_name`,
+`title`, `body` and `actions`. The key is opaque: a digest of the app, title
+and body, then `-` and the entry's occurrence among identical entries counted
+from the top (for example `"370187c8c54966aa-1"`). Identical twins get `-1`,
+`-2`, and so on. Filters (`--app`, `--text`, `--limit`) do not change an
+entry's key.
+
+`dismiss-notification` and `notification-action` take it as `--key`. Core
+re-reads the list under the mutation and acts only on the one entry that
+carries the key. With an INDEX the entry must also still sit at that index.
+Otherwise the call returns `NOTIFICATION_NOT_FOUND` with `not_delivered` and
+presses nothing. `dismiss-notification --key` without INDEX acts on the keyed
+entry wherever it now sits. An index with only `--expected-app` or
+`--expected-title` checks just those fields, so it cannot tell two entries
+with the same app and title apart. A bare index is `INVALID_ARGS`.
+
+The `key` field and the `--key` flag are additive, so the envelope version
+stays the same.
+
 ## Error codes
 
 | Code | Meaning |
@@ -225,7 +246,7 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 | `TIMEOUT` | Wait condition expired, or a live identity read stayed incomplete until the deadline |
 | `INVALID_ARGS` | Invalid argument values |
 | `WINDOW_NOT_FOUND` | The requested window does not exist, including a `screenshot --window-id` that matches no window; the disposition is `not_delivered` |
-| `NOTIFICATION_NOT_FOUND` | The notification ID was not found |
+| `NOTIFICATION_NOT_FOUND` | No listed notification carries the requested key, or the entry at the index no longer carries the key or the expected app/title; the disposition is `not_delivered` |
 | `INTERNAL` | Unexpected error or caught panic |
 
 ## Exit codes

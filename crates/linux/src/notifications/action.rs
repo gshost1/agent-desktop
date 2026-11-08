@@ -26,7 +26,7 @@ pub(crate) fn action(
     action_in(&LiveWorld::new(bus), &BusSignals, request, lease)
 }
 
-/// Presses the named action button of the entry at the index, expanding the
+/// Presses the named action button of the targeted entry, expanding the
 /// entry first when its buttons are not laid out. The press only counts when
 /// its effect shows: the entry's own object left the list, with the daemon's
 /// action signal as the sharper proof when exactly one arrived. A press whose
@@ -42,9 +42,8 @@ pub(crate) fn action_in(
 ) -> Result<ActionResult, AdapterError> {
     require_headed(request.policy)?;
     let wanted = Wanted {
-        index: request.index,
+        target: request.target,
         app_filter: None,
-        identity: request.identity,
     };
     let first = locate(world, wanted, lease.deadline())?;
     offered(first.entry(), request.action_name)?;
@@ -60,7 +59,7 @@ fn press(
     first: &Entry,
     lease: &InteractionLease,
 ) -> Result<ActionResult, AdapterError> {
-    let (deadline, name, index) = (lease.deadline(), request.action_name, request.index);
+    let (deadline, name, index) = (lease.deadline(), request.action_name, first.info.index);
     let mut ready = reconfirm(world, wanted, first, deadline)?;
     if !laid_out(ready.entry(), name) {
         let expand = require(ready.entry().expand(), "expand button", index)?;

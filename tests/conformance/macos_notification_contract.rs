@@ -2,7 +2,7 @@ use agent_desktop_core::SystemOps;
 use agent_desktop_core::{
     Deadline, DeliverySemantics, DismissAllNotificationsRequest, DismissNotificationRequest,
     ErrorCode, InteractionLease, InteractionPolicy, NotificationActionRequest,
-    NotificationIdentity,
+    NotificationIdentity, NotificationTarget,
 };
 
 #[test]
@@ -14,14 +14,14 @@ fn notification_mutations_fail_before_foreground_access_under_headless_policy() 
         expected_app: Some("Messages".into()),
         expected_title: Some("New message".into()),
     };
+    let target = NotificationTarget::new(Some(1), None, identity).unwrap();
     let policy = InteractionPolicy::headless();
     let errors = [
         SystemOps::dismiss_notification(
             &adapter,
             DismissNotificationRequest {
-                index: 0,
+                target: &target,
                 app_filter: None,
-                identity: &identity,
                 policy,
             },
             &lease,
@@ -39,8 +39,7 @@ fn notification_mutations_fail_before_foreground_access_under_headless_policy() 
         SystemOps::notification_action(
             &adapter,
             NotificationActionRequest {
-                index: 0,
-                identity: &identity,
+                target: &target,
                 action_name: "Reply",
                 policy,
             },

@@ -8,7 +8,7 @@ These commands drive the OS notification surface: Notification Center on macOS, 
 
 - **Listing** is read-only. Linux lists without `--headed`, even when the list is closed. On macOS and Windows a headless call works only while the surface is already open; otherwise it returns `POLICY_DENIED`, and `--headed` may open the surface.
 - **Mutations** (`dismiss-notification`, `dismiss-all-notifications`, `notification-action`) always need `--headed`, because they open and focus the notification surface.
-- **Identity guard.** Notifications reorder between listings, so `dismiss-notification` and `notification-action` need `--expected-app` or `--expected-title` copied from the same `list-notifications` result. If the row at `INDEX` no longer matches, nothing is pressed and the command returns `NOTIFICATION_NOT_FOUND`.
+- **Identity guard.** Notifications reorder between listings, so `dismiss-notification` and `notification-action` take the `key` of the entry from the same `list-notifications` result as `--key`. The key covers the app, title and body, and tells identical twins apart. If the entry at `INDEX` no longer carries the key, or no entry does, nothing is pressed and the command returns `NOTIFICATION_NOT_FOUND`. `--expected-app` or `--expected-title` instead of `--key` still works, but checks only those fields, so a newer notification with the same app and title at `INDEX` passes.
 
 To block until a new notification arrives, use [`wait --notification`](/desktop/commands/wait#notification). The JSON examples on this page are built from the command code and tests; notifications could not be exercised in the Linux session the other examples came from, which had no notification service:
 
@@ -47,20 +47,21 @@ agent-desktop list-notifications [--app NAME] [--text TEXT] [--limit N]
   "data": {
     "count": 1,
     "notifications": [
-      { "index": 1, "app_name": "Calendar", "title": "Standup in 10 minutes", "body": "Room 4", "actions": ["Snooze", "Open"] }
+      { "index": 1, "app_name": "Calendar", "title": "Standup in 10 minutes", "body": "Room 4", "actions": ["Snooze", "Open"], "key": "74622da481283846-1" }
     ]
   }
 }
 ```
 
-`index` is 1-based and counts the unfiltered list, so a filtered result can start above 1. `body` and `actions` are omitted when empty. Errors: `POLICY_DENIED` on macOS or Windows with the surface closed, and `PLATFORM_NOT_SUPPORTED` when there is no notification service (on Linux, an owner other than GNOME Shell).
+`index` is 1-based and counts the unfiltered list, so a filtered result can start above 1. `body` and `actions` are omitted when empty. `key` is opaque and always present: a digest of app, title and body, then `-` and the entry's count among identical entries from the top. Filters do not change it. Errors: `POLICY_DENIED` on macOS or Windows with the surface closed, and `PLATFORM_NOT_SUPPORTED` when there is no notification service (on Linux, an owner other than GNOME Shell).
 
 ## dismiss-notification
 
-Dismisses one notification by index.
+Dismisses one notification, named by its key.
 
 ```bash
-agent-desktop --headed dismiss-notification INDEX --expected-app NAME
+agent-desktop --headed dismiss-notification INDEX --key KEY
+agent-desktop --headed dismiss-notification --key 74622da481283846-1
 agent-desktop --headed dismiss-notification 2 --expected-title "Standup in 10 minutes"
 ```
 
@@ -69,13 +70,14 @@ agent-desktop --headed dismiss-notification 2 --expected-title "Standup in 10 mi
     <tr><th>Flag or argument</th><th>Default</th><th>Meaning</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>INDEX</code></td><td>required</td><td>1-based index from <code>list-notifications</code>.</td></tr>
-    <tr><td><code>--expected-app APP</code>, <code>--expected-title TITLE</code></td><td>at least one</td><td>The app or title the notification at <code>INDEX</code> must have.</td></tr>
+    <tr><td><code>INDEX</code></td><td>required without <code>--key</code></td><td>1-based index from <code>list-notifications</code>. With <code>--key</code>, the keyed entry must still be at <code>INDEX</code>.</td></tr>
+    <tr><td><code>--key KEY</code></td><td>none</td><td>The entry's <code>key</code> from <code>list-notifications</code>. Without <code>INDEX</code>, dismisses that entry wherever it now sits.</td></tr>
+    <tr><td><code>--expected-app APP</code>, <code>--expected-title TITLE</code></td><td>one, without <code>--key</code></td><td>The app or title the notification must have.</td></tr>
     <tr><td><code>--app NAME</code></td><td>none</td><td>Require the notification to come from this app.</td></tr>
   </tbody>
 </table>
 
-`data.dismissed` is the removed notification, in the `list-notifications` row shape. Errors: `INVALID_ARGS` without an `--expected-*` flag, `POLICY_DENIED` without `--headed`, and `NOTIFICATION_NOT_FOUND` when the row no longer matches.
+`data.dismissed` is the removed notification, in the `list-notifications` row shape. Errors: `INVALID_ARGS` without `--key` and without an `--expected-*` flag beside `INDEX`, or for a malformed key; `POLICY_DENIED` without `--headed`; and `NOTIFICATION_NOT_FOUND` (`not_delivered`) when the key is gone or the entry no longer matches.
 
 ## dismiss-all-notifications
 
@@ -92,9 +94,9 @@ agent-desktop --headed dismiss-all-notifications [--app NAME]
 Presses a named action button on a notification.
 
 ```bash
-agent-desktop --headed notification-action INDEX ACTION --expected-app NAME
+agent-desktop --headed notification-action INDEX ACTION --key KEY
 ```
 
-`ACTION` is a name from the notification's `actions`. The result is an action report, usually `delivered_unverified`: check the effect in the app. Errors: as for `dismiss-notification`, plus `ACTION_NOT_SUPPORTED` when the notification has no button with that name.
+`INDEX` is required, and with `--key` the keyed entry must still be at `INDEX`; `--expected-app` or `--expected-title` instead of `--key` work as for `dismiss-notification`. `ACTION` is a name from the notification's `actions`. The result is an action report, usually `delivered_unverified`: check the effect in the app. Errors: as for `dismiss-notification`, plus `ACTION_NOT_SUPPORTED` when the notification has no button with that name.
 
 Platform limits: GNOME Shell only on Linux, with mutations on X11; see [macOS](/desktop/platforms/macos), [Windows](/desktop/platforms/windows), and [Linux](/desktop/platforms/linux).

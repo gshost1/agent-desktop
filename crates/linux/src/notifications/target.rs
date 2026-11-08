@@ -1,5 +1,5 @@
 use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, ErrorCode, NotificationIdentity,
+    AdapterError, Deadline, DeliverySemantics, ErrorCode, NotificationTarget,
 };
 
 use super::extract::Entry;
@@ -8,13 +8,12 @@ use super::verify::same_identity;
 use super::world::ShellWorld;
 use crate::system::shell::light::{Light, same_object};
 
-/// The entry a mutation aims at: its position, the app scope it was counted
-/// in, and the identity the caller expects there.
+/// The entry a mutation aims at, as core names it, and the app scope the
+/// caller asked for.
 #[derive(Clone, Copy)]
 pub(crate) struct Wanted<'a> {
-    pub(crate) index: usize,
+    pub(crate) target: &'a NotificationTarget,
     pub(crate) app_filter: Option<&'a str>,
-    pub(crate) identity: &'a NotificationIdentity,
 }
 
 /// A fresh read of the list with the entry a mutation targets in it.
@@ -29,23 +28,19 @@ impl Located {
     }
 }
 
-/// Reads the list and picks the entry at the index. The index is a position,
-/// never the identity: the app filter and the expected identity are checked
-/// against what the read found, and a mismatch means the list moved.
+/// Reads the list and lets core pick the targeted entry from it. The app
+/// filter is checked against the entry core picked, and a mismatch means the
+/// list moved.
 pub(crate) fn locate(
     world: &dyn ShellWorld,
     wanted: Wanted<'_>,
     deadline: Deadline,
 ) -> Result<Located, AdapterError> {
     let all = read_listing(world, deadline)?;
-    let at = all
-        .iter()
-        .position(|entry| entry.info.index == wanted.index)
-        .ok_or_else(|| AdapterError::notification_not_found(wanted.index))?;
+    let at = wanted.target.pick(all.iter().map(|entry| &entry.info))?;
     let info = &all[at].info;
-    let app_ok = wanted.app_filter.is_none_or(|app| matches_app(info, app));
-    if !app_ok || !wanted.identity.matches(info) {
-        return Err(moved(wanted.index));
+    if !wanted.app_filter.is_none_or(|app| matches_app(info, app)) {
+        return Err(moved(info.index));
     }
     Ok(Located { all, at })
 }
@@ -59,9 +54,9 @@ pub(crate) fn moved(index: usize) -> AdapterError {
     .with_disposition(DeliverySemantics::not_delivered())
 }
 
-/// Reads again right before a press and refuses it when the entry at the
-/// index is no longer the one the first read found: the same words on the
-/// same accessibility object.
+/// Reads again right before a press and refuses it when the entry core picks
+/// is no longer the one the first read found: the same words on the same
+/// accessibility object.
 pub(crate) fn reconfirm(
     world: &dyn ShellWorld,
     wanted: Wanted<'_>,
@@ -71,7 +66,7 @@ pub(crate) fn reconfirm(
     let again = locate(world, wanted, deadline)?;
     let entry = again.entry();
     if !same_identity(&first.info, &entry.info) || !same_object(&first.node, &entry.node) {
-        return Err(moved(wanted.index));
+        return Err(moved(first.info.index));
     }
     Ok(again)
 }

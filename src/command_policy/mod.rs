@@ -196,19 +196,25 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
             }
         }
         Commands::DismissNotification(args)
-            if args.expected_app.as_deref().is_none_or(str::is_empty)
-                && args.expected_title.as_deref().is_none_or(str::is_empty) =>
+            if unaddressed(
+                &args.key,
+                args.index,
+                [&args.expected_app, &args.expected_title],
+            ) =>
         {
             return Err(AppError::invalid_input(
-                "dismiss-notification requires --expected-app or --expected-title",
+                "dismiss-notification requires --key, or INDEX with --expected-app or --expected-title",
             ));
         }
         Commands::NotificationAction(args)
-            if args.expected_app.as_deref().is_none_or(str::is_empty)
-                && args.expected_title.as_deref().is_none_or(str::is_empty) =>
+            if unaddressed(
+                &args.key,
+                Some(args.index),
+                [&args.expected_app, &args.expected_title],
+            ) =>
         {
             return Err(AppError::invalid_input(
-                "notification-action requires --expected-app or --expected-title",
+                "notification-action requires --key, or INDEX with --expected-app or --expected-title",
             ));
         }
         Commands::Find(_)
@@ -251,6 +257,17 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
         | Commands::Trace(_) => {}
     }
     Ok(())
+}
+
+/// A notification mutation names its target by key, or by an index with at
+/// least one non-empty expected field; anything else could act on a shifted
+/// list.
+fn unaddressed(key: &Option<String>, index: Option<u64>, expected: [&Option<String>; 2]) -> bool {
+    key.is_none()
+        && (index.is_none()
+            || expected
+                .iter()
+                .all(|field| field.as_deref().is_none_or(str::is_empty)))
 }
 
 fn requires_accessibility(permission: PermissionNeed) -> bool {

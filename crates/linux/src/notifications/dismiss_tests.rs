@@ -1,6 +1,8 @@
 use super::*;
 use crate::notifications::fake::{FakeWorld, Spec, lease, log, reading, spec};
-use agent_desktop_core::{ErrorCode, InteractionPolicy, NotificationIdentity};
+use agent_desktop_core::{
+    ErrorCode, InteractionPolicy, NotificationIdentity, NotificationTarget, notification_keys,
+};
 
 fn three() -> Vec<Spec> {
     vec![spec("Mail", "a"), spec("Chat", "b"), spec("Files", "c")]
@@ -13,15 +15,17 @@ fn identity(app: &str, title: &str) -> NotificationIdentity {
     }
 }
 
-fn request<'a>(
-    index: usize,
-    identity: &'a NotificationIdentity,
+fn at(index: usize, identity: &NotificationIdentity) -> NotificationTarget {
+    NotificationTarget::new(Some(index), None, identity.clone()).expect("target")
+}
+
+fn request(
+    target: &NotificationTarget,
     policy: InteractionPolicy,
-) -> DismissNotificationRequest<'a> {
+) -> DismissNotificationRequest<'_> {
     DismissNotificationRequest {
-        index,
+        target,
         app_filter: None,
-        identity,
         policy,
     }
 }
@@ -30,9 +34,10 @@ fn run(
     world: FakeWorld,
     identity: &NotificationIdentity,
 ) -> Result<NotificationInfo, AdapterError> {
+    let target = at(2, identity);
     dismiss_in(
         &world,
-        request(2, identity, InteractionPolicy::headed()),
+        request(&target, InteractionPolicy::headed()),
         &lease(600),
     )
 }
@@ -71,7 +76,7 @@ fn a_reflow_between_the_reads_is_refused_before_the_click() {
     let log = log();
     let moved = vec![spec("New", "n"), spec("Mail", "a"), spec("Chat", "b")];
     let world = FakeWorld::new(&log, vec![reading(&three()), reading(&moved)]).staged_by_reads();
-    let error = run(world, &NotificationIdentity::default()).expect_err("moved");
+    let error = run(world, &identity("Chat", "b")).expect_err("moved");
     assert_eq!(error.code, ErrorCode::NotificationNotFound);
     assert!(!log.borrow().iter().any(|line| line.starts_with("click")));
 }
@@ -140,9 +145,10 @@ fn a_header_button_that_only_expands_is_told_by_its_effect_and_the_next_is_press
             reading(&[spec("Mail", "a"), spec("Files", "c")]),
         ],
     );
+    let target = at(2, &identity("Chat", "b"));
     let done = dismiss_in(
         &world,
-        request(2, &identity("Chat", "b"), InteractionPolicy::headed()),
+        request(&target, InteractionPolicy::headed()),
         &lease(6_000),
     )
     .expect("the second header button closed it");
@@ -166,10 +172,10 @@ fn a_click_the_shell_ignored_is_an_unverified_failure() {
 fn a_headless_policy_is_refused_with_no_event() {
     let log = log();
     let world = FakeWorld::new(&log, vec![reading(&three())]);
-    let none = NotificationIdentity::default();
+    let target = at(2, &identity("Chat", "b"));
     let error = dismiss_in(
         &world,
-        request(2, &none, InteractionPolicy::headless()),
+        request(&target, InteractionPolicy::headless()),
         &lease(600),
     )
     .expect_err("denied");
@@ -207,4 +213,113 @@ fn a_list_that_cannot_be_read_after_the_click_is_a_delivered_unverified_failure(
         agent_desktop_core::DeliverySemantics::delivered_unverified()
     );
     assert!(error.platform_detail.is_some());
+}
+
+fn ann_and_bob() -> Vec<Spec> {
+    vec![
+        spec("Slack", "New message").body("from Bob").object("bob"),
+        spec("Slack", "New message").body("from Ann").object("ann"),
+    ]
+}
+
+fn key_seen_for_ann() -> String {
+    let seen = [agent_desktop_core::NotificationInfo {
+        index: 1,
+        app_name: "Slack".into(),
+        title: "New message".into(),
+        body: Some("from Ann".into()),
+        actions: vec![],
+    }];
+    notification_keys(&seen).remove(0)
+}
+
+#[test]
+fn a_list_shift_between_calls_never_closes_a_different_same_app_entry() {
+    let log = log();
+    let stages = vec![reading(&ann_and_bob()), reading(&ann_and_bob()[..1])];
+    let world = FakeWorld::new(&log, stages);
+    let target = NotificationTarget::new(None, Some(&key_seen_for_ann()), identity_app("Slack"))
+        .expect("target");
+    let done = dismiss_in(
+        &world,
+        request(&target, InteractionPolicy::headed()),
+        &lease(600),
+    )
+    .expect("Ann's entry is closed where it now sits");
+    assert_eq!(done.body.as_deref(), Some("from Ann"));
+    assert_eq!(world_clicks(&log), vec!["/ann/close"]);
+}
+
+#[test]
+fn a_key_pinned_to_a_shifted_index_clicks_nothing() {
+    let log = log();
+    let world = FakeWorld::new(&log, vec![reading(&ann_and_bob())]);
+    let target = NotificationTarget::new(Some(1), Some(&key_seen_for_ann()), identity_app("Slack"))
+        .expect("target");
+    let error = dismiss_in(
+        &world,
+        request(&target, InteractionPolicy::headed()),
+        &lease(600),
+    )
+    .expect_err("index 1 is Bob's now");
+    assert_eq!(error.code, ErrorCode::NotificationNotFound);
+    assert!(world_clicks(&log).is_empty());
+}
+
+#[test]
+fn a_gone_key_is_refused_without_opening_the_list() {
+    let log = log();
+    let world = FakeWorld::new(&log, vec![reading(&ann_and_bob()[..1])]);
+    let target =
+        NotificationTarget::new(None, Some(&key_seen_for_ann()), identity_app("")).expect("target");
+    let error = dismiss_in(
+        &world,
+        request(&target, InteractionPolicy::headed()),
+        &lease(600),
+    )
+    .expect_err("Ann's entry left");
+    assert_eq!(error.code, ErrorCode::NotificationNotFound);
+    assert_eq!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::not_delivered()
+    );
+    assert!(!log.borrow().iter().any(|line| line == "open"));
+}
+
+fn identity_app(app: &str) -> NotificationIdentity {
+    NotificationIdentity {
+        expected_app: Some(app.to_owned()),
+        expected_title: None,
+    }
+}
+
+#[test]
+fn the_second_of_two_identical_twins_is_closed_by_its_own_key() {
+    let log = log();
+    let twins = || {
+        vec![
+            spec("CI", "Build failed").object("first"),
+            spec("CI", "Build failed").object("second"),
+        ]
+    };
+    let listed: Vec<NotificationInfo> = (1..=2)
+        .map(|index| NotificationInfo {
+            index,
+            app_name: "CI".into(),
+            title: "Build failed".into(),
+            body: None,
+            actions: vec![],
+        })
+        .collect();
+    let second = notification_keys(&listed).remove(1);
+    let stages = vec![reading(&twins()), reading(&twins()[..1])];
+    let world = FakeWorld::new(&log, stages);
+    let target = NotificationTarget::new(None, Some(&second), identity_app("")).expect("target");
+    dismiss_in(
+        &world,
+        request(&target, InteractionPolicy::headed()),
+        &lease(600),
+    )
+    .expect("the second twin is closed");
+    assert_eq!(world_clicks(&log), vec!["/second/close"]);
 }

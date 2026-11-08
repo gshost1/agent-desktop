@@ -149,6 +149,7 @@ fn notification_identity_is_required_before_permission_preflight() {
         Commands::NotificationAction(crate::cli_args::notifications::NotificationActionCliArgs {
             index: 1,
             action: "Reply".into(),
+            key: None,
             expected_app: None,
             expected_title: None,
         });
@@ -170,7 +171,8 @@ fn dismiss_notification_identity_is_required_before_permission_preflight() {
     for (expected_app, expected_title) in [(None, None), (Some(String::new()), None)] {
         let command = Commands::DismissNotification(
             crate::cli_args::notifications::DismissNotificationCliArgs {
-                index: 1,
+                index: Some(1),
+                key: None,
                 app: None,
                 expected_app,
                 expected_title,

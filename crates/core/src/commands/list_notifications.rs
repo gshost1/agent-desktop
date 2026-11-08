@@ -1,4 +1,7 @@
-use crate::{AppError, NotificationFilter, adapter::PlatformAdapter, context::CommandContext};
+use crate::{
+    AppError, NotificationFilter, NotificationInfo, adapter::PlatformAdapter,
+    context::CommandContext,
+};
 use serde_json::{Value, json};
 
 pub struct ListNotificationsArgs {
@@ -25,6 +28,23 @@ pub fn execute(
     )?;
     Ok(json!({
         "count": notifications.len(),
-        "notifications": notifications,
+        "notifications": keyed(&notifications)?,
     }))
 }
+
+/// Each entry with the `key` a mutation names it by.
+fn keyed(notifications: &[NotificationInfo]) -> Result<Vec<Value>, AppError> {
+    notifications
+        .iter()
+        .zip(crate::notification_keys(notifications))
+        .map(|(info, key)| {
+            let mut entry = serde_json::to_value(info)?;
+            entry["key"] = json!(key);
+            Ok(entry)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+#[path = "list_notifications_tests.rs"]
+mod tests;

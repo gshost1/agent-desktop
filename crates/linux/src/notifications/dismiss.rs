@@ -16,7 +16,7 @@ pub(crate) fn dismiss(
     dismiss_in(&LiveWorld::new(bus), request, lease)
 }
 
-/// Removes exactly the entry at the index through its own header control and
+/// Removes exactly the targeted entry through its own header control and
 /// proves it by re-reading the list: the entry's object left, and no other
 /// entry's did. The closed list is read first, so a missing or changed entry
 /// is refused without opening anything.
@@ -27,9 +27,8 @@ pub(crate) fn dismiss_in(
 ) -> Result<NotificationInfo, AdapterError> {
     require_headed(request.policy)?;
     let wanted = Wanted {
-        index: request.index,
+        target: request.target,
         app_filter: request.app_filter,
-        identity: request.identity,
     };
     let first = locate(world, wanted, lease.deadline())?;
     let session = Session::open(world, request.policy, lease)?;

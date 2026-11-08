@@ -1,10 +1,13 @@
 use crate::convert::string::optional_adapter_string;
-use agent_desktop_core::{AdapterError, ErrorCode, NotificationIdentity};
+use agent_desktop_core::{AdapterError, ErrorCode, NotificationIdentity, NotificationTarget};
 
+/// The C ABI addresses a notification by index and expected fields; core
+/// checks them against a fresh read under the mutation.
 pub(crate) fn decode(
+    index: usize,
     expected_app: *const std::os::raw::c_char,
     expected_title: *const std::os::raw::c_char,
-) -> Result<NotificationIdentity, AdapterError> {
+) -> Result<NotificationTarget, AdapterError> {
     let identity = NotificationIdentity {
         expected_app: optional_adapter_string(expected_app, "expected_app")?,
         expected_title: optional_adapter_string(expected_title, "expected_title")?,
@@ -15,5 +18,5 @@ pub(crate) fn decode(
             "expected_app or expected_title is required",
         ));
     }
-    Ok(identity)
+    NotificationTarget::new(Some(index), None, identity)
 }

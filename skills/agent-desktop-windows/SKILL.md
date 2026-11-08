@@ -76,7 +76,7 @@ observation, actions and capture there fail or return nothing.
   a display name. Use `list-apps` to find a running app.
 - **Notifications:** `list-notifications` with the Action Center closed needs
   `--headed`. Single-item `dismiss-notification` and `notification-action` need
-  `--headed` and `--expected-app` or `--expected-title` for the entry at INDEX.
+  `--headed` and the entry's `--key` from `list-notifications`.
 - **Surfaces:** an open or context menu is the `menu` surface. Windows does
   not advertise a `menubar` surface.
 - **Commands that raise shell chrome take the foreground.** Strict headless

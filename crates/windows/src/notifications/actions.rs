@@ -1,6 +1,6 @@
 use agent_desktop_core::{
     ActionResult, AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionPolicy,
-    NotificationFilter, NotificationIdentity, NotificationInfo, verify_notification_identity,
+    NotificationFilter, NotificationInfo, NotificationTarget,
 };
 
 use crate::tree::element::UIAElement;
@@ -20,22 +20,20 @@ mod tests;
 /// Removes exactly the identified notification and proves the removal by
 /// re-reading the surface.
 ///
-/// The foreground floor fires before the center is raised, the entry at the
-/// requested index is located by a fresh read, the caller's identity is
-/// verified against what that read found - the index is a position, never the
-/// identity - and only then is the entry's own dismiss control invoked. An
+/// The foreground floor fires before the center is raised, core picks the
+/// target from a fresh read - the index is a position, never the identity -
+/// and only then is the entry's own dismiss control invoked. An
 /// invoke the shell accepts without acting on is reported `ACTION_FAILED`,
 /// never success.
 pub fn dismiss_notification(
-    index: usize,
+    target: &NotificationTarget,
     app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
     require_foreground_policy(policy)?;
     let session = ActionCenterSession::open(policy, deadline)?;
-    let result = dismiss_impl(index, app_filter, identity, session.hwnd(), deadline);
+    let result = dismiss_impl(target, app_filter, session.hwnd(), deadline);
     close_session(session, result)
 }
 
@@ -65,19 +63,18 @@ pub fn dismiss_all(
 /// notification offering no such button is refused with `ACTION_NOT_SUPPORTED`
 /// and is left unchanged, because nothing was invoked.
 pub fn notification_action(
-    index: usize,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     action_name: &str,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<ActionResult, AdapterError> {
     require_foreground_policy(policy)?;
     let session = ActionCenterSession::open(policy, deadline)?;
-    let result = action_impl(index, identity, action_name, session.hwnd(), deadline);
+    let result = action_impl(target, action_name, session.hwnd(), deadline);
     close_session(session, result)
 }
 
-/// Removes the entry at `index` with its own dismiss control, then verifies.
+/// Removes the targeted entry with its own dismiss control, then verifies.
 ///
 /// Measured on this build (A26-3's own cleanup protocol beside this module's
 /// live runs): the shell can accept the entry's dismiss invoke without acting
@@ -87,15 +84,15 @@ pub fn notification_action(
 /// notifications nobody asked to remove, so an accepted-and-ignored invoke
 /// stays an honest `ACTION_FAILED` there.
 fn dismiss_impl(
-    index: usize,
+    target: &NotificationTarget,
     app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
     hwnd: isize,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
     let filter = build_filter(app_filter);
-    let entry = locate_and_verify(index, identity, &filter, hwnd, deadline)?;
+    let entry = locate(target, &filter, hwnd, deadline)?;
     let info = entry.info.clone();
+    let index = info.index;
 
     invoke_dismiss(&entry.element, index)?;
     let mut current = read_settling_without(
@@ -255,15 +252,15 @@ fn dismiss_all_failures(
 }
 
 fn action_impl(
-    index: usize,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     action_name: &str,
     hwnd: isize,
     deadline: Deadline,
 ) -> Result<ActionResult, AdapterError> {
     let filter = NotificationFilter::default();
-    let entry = locate_and_verify(index, identity, &filter, hwnd, deadline)?;
+    let entry = locate(target, &filter, hwnd, deadline)?;
     let original = entry.info.clone();
+    let index = original.index;
     invoke_notification_action(&entry.element, action_name, index)?;
     let current = read_settling_without(std::slice::from_ref(&original), hwnd, &filter, deadline)?;
     let mut result = ActionResult::delivered_unverified(action_name);
@@ -324,27 +321,20 @@ pub(crate) fn require_foreground_policy(policy: InteractionPolicy) -> Result<(),
     ))
 }
 
-/// The index is not trusted as identity: a caller-supplied expected app or
-/// title is compared against what the re-read actually found at that index,
-/// and a mismatch is `NOTIFICATION_NOT_FOUND` - the surface reordered under
-/// the caller, so acting anyway would dismiss the wrong notification.
-/// The listing entry a mutation targets, already checked against the
-/// identity the caller expects it to still carry - the prelude every
-/// mutation runs before it touches anything.
-fn locate_and_verify(
-    index: usize,
-    identity: Option<&NotificationIdentity>,
+/// The listing entry a mutation targets, picked by core from a fresh read -
+/// the prelude every mutation runs before it touches anything. A key that no
+/// longer names an entry, or an entry at the index that no longer carries the
+/// caller's identity, is `NOTIFICATION_NOT_FOUND`: the surface reordered
+/// under the caller, so acting anyway would hit the wrong notification.
+fn locate(
+    target: &NotificationTarget,
     filter: &NotificationFilter,
     hwnd: isize,
     deadline: Deadline,
 ) -> Result<ListEntry, AdapterError> {
-    let entries = list_entries(filter, hwnd, deadline)?;
-    let entry = entries
-        .into_iter()
-        .find(|entry| entry.info.index == index)
-        .ok_or_else(|| AdapterError::notification_not_found(index))?;
-    verify_notification_identity(index, identity, &entry.info)?;
-    Ok(entry)
+    let mut entries = list_entries(filter, hwnd, deadline)?;
+    let at = target.pick(entries.iter().map(|entry| &entry.info))?;
+    Ok(entries.swap_remove(at))
 }
 
 fn build_filter(app_filter: Option<&str>) -> NotificationFilter {

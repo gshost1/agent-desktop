@@ -42,7 +42,6 @@ pub mod mouse_up;
 pub mod mouse_wheel;
 pub mod move_window;
 pub mod notification_action;
-pub(crate) mod notification_identity;
 pub(crate) mod notification_policy;
 pub mod open_system_surface;
 pub(crate) mod operation_response;
