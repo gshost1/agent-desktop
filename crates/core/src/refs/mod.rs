@@ -3,9 +3,8 @@ pub(crate) use crate::RefEntry;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::collections::hash_map::RandomState;
+use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -388,13 +387,13 @@ pub(crate) mod refs_validate;
 pub(crate) mod resolve_attempt_outcome;
 pub mod resolve_errors;
 pub mod resolve_saved_ref;
+pub(crate) mod resolve_verdict;
 #[cfg(test)]
 #[path = "refs_serde_tests.rs"]
 mod serde_tests;
 #[cfg(test)]
-#[path = "refs_tests.rs"]
-mod tests;
-
-#[cfg(test)]
 #[path = "refs_size_tests.rs"]
 mod size_tests;
+#[cfg(test)]
+#[path = "refs_tests.rs"]
+mod tests;
