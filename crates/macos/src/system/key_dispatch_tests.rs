@@ -56,23 +56,75 @@ fn return_and_escape_map_to_default_and_cancel_actions() {
 }
 
 #[test]
-fn headless_press_never_performs_menu_shortcuts() {
-    let headless = agent_desktop_core::InteractionPolicy::headless();
-    assert!(!uses_menu_shortcut(
-        &key("n", vec![Modifier::Meta]),
-        headless
-    ));
-    assert!(!uses_menu_shortcut(
-        &key("n", vec![Modifier::Meta, Modifier::Shift]),
-        headless
-    ));
+fn command_chords_try_the_menu_bar_under_either_policy() {
+    use agent_desktop_core::InteractionPolicy;
+    for policy in [InteractionPolicy::headless(), InteractionPolicy::headed()] {
+        assert!(uses_menu_shortcut(&key("n", vec![Modifier::Meta]), policy));
+        assert!(uses_menu_shortcut(
+            &key("n", vec![Modifier::Meta, Modifier::Shift]),
+            policy
+        ));
+    }
 }
 
 #[test]
-fn focus_authorized_press_keeps_menu_shortcuts_for_modified_keys() {
-    let headed = agent_desktop_core::InteractionPolicy::headed();
-    assert!(uses_menu_shortcut(&key("n", vec![Modifier::Meta]), headed));
-    assert!(!uses_menu_shortcut(&key("n", Vec::new()), headed));
+fn chords_without_command_stay_on_the_keyboard_path() {
+    use agent_desktop_core::InteractionPolicy;
+    for policy in [InteractionPolicy::headless(), InteractionPolicy::headed()] {
+        assert!(!uses_menu_shortcut(&key("n", Vec::new()), policy));
+        assert!(!uses_menu_shortcut(&key("x", vec![Modifier::Ctrl]), policy));
+        assert!(!uses_menu_shortcut(
+            &key("tab", vec![Modifier::Alt]),
+            policy
+        ));
+        assert!(!uses_menu_shortcut(
+            &key("return", vec![Modifier::Shift]),
+            policy
+        ));
+    }
+}
+
+#[test]
+fn a_pressed_menu_item_is_reported_as_its_own_semantic_step() {
+    let report = menu_shortcut_report(&MenuShortcutOutcome::Pressed {
+        menu: Some("File".into()),
+        item: Some("New Folder".into()),
+    });
+    assert_eq!(report.steps.len(), 1);
+    assert_eq!(report.steps[0].label(), MENU_SHORTCUT_STEP);
+    assert_eq!(
+        report.steps[0].mechanism(),
+        Some(StepMechanism::SemanticApi)
+    );
+    assert_eq!(report.steps[0].verified(), Some(false));
+    assert_eq!(
+        report.details,
+        Some(serde_json::json!({
+            "menu_shortcut": { "menu": "File", "item": "New Folder" }
+        }))
+    );
+}
+
+#[test]
+fn a_skipped_lookup_names_its_reason_before_the_keystroke() {
+    let report = menu_shortcut_report(&MenuShortcutOutcome::Skipped("ambiguous"));
+    assert_eq!(report.steps.len(), 1);
+    assert_eq!(report.steps[0].label(), MENU_SHORTCUT_STEP);
+    assert!(matches!(
+        report.steps[0].outcome,
+        agent_desktop_core::ActionStepOutcome::Skipped
+    ));
+    assert_eq!(
+        report.details,
+        Some(serde_json::json!({ "menu_shortcut": { "skipped": "ambiguous" } }))
+    );
+}
+
+#[test]
+fn an_inapplicable_lookup_leaves_the_keyboard_report_unchanged() {
+    let report = menu_shortcut_report(&MenuShortcutOutcome::NotApplicable);
+    assert!(report.steps.is_empty());
+    assert!(report.details.is_none());
 }
 
 #[test]
