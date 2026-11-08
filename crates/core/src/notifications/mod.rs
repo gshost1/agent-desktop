@@ -7,3 +7,4 @@ pub(crate) mod notification_identity;
 pub(crate) mod notification_identity_check;
 pub(crate) mod notification_info;
 pub(crate) mod notification_key;
+pub(crate) mod notification_seed;

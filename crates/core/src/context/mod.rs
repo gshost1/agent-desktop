@@ -1,5 +1,5 @@
 use crate::{
-    AdapterError, AppError, CursorOverlayConfig, NotificationBaseline, SignalBaseline,
+    AdapterError, AppError, CursorOverlayConfig, NotificationSeed, SignalBaseline,
     actions::action::Action, actions::action_request::ActionRequest,
     actions::interaction_policy::InteractionPolicy, session, trace::TraceConfig,
 };
@@ -171,13 +171,13 @@ impl CommandContext {
 
     /// Seeds a `wait --notification` with notifications listed before the
     /// action that precedes it, instead of the wait's own first list.
-    pub fn with_notification_baseline(mut self, baseline: Option<NotificationBaseline>) -> Self {
-        self.options.notification_baseline = baseline;
+    pub fn with_notification_seed(mut self, seed: Option<NotificationSeed>) -> Self {
+        self.options.notification_seed = seed;
         self
     }
 
-    pub fn notification_baseline(&self) -> Option<&NotificationBaseline> {
-        self.options.notification_baseline.as_ref()
+    pub fn notification_seed(&self) -> Option<&NotificationSeed> {
+        self.options.notification_seed.as_ref()
     }
 
     pub fn command_scope(&self, command: &'static str) -> Result<CommandScope<'_>, AppError> {

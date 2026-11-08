@@ -147,6 +147,14 @@ fn wait_as_first_entry_runs_with_event_baseline_none() {
 
 struct NotifyOnClearAdapter {
     sent: AtomicBool,
+    early_lists: std::sync::atomic::AtomicUsize,
+}
+
+fn notify_on_clear() -> NotifyOnClearAdapter {
+    NotifyOnClearAdapter {
+        sent: AtomicBool::new(false),
+        early_lists: std::sync::atomic::AtomicUsize::new(0),
+    }
 }
 
 impl agent_desktop_core::ObservationOps for NotifyOnClearAdapter {}
@@ -181,6 +189,9 @@ impl agent_desktop_core::SystemOps for NotifyOnClearAdapter {
         _deadline: agent_desktop_core::Deadline,
         _lease: Option<&agent_desktop_core::InteractionLease>,
     ) -> Result<Vec<agent_desktop_core::NotificationInfo>, agent_desktop_core::AdapterError> {
+        if !self.sent.load(Ordering::SeqCst) {
+            self.early_lists.fetch_add(1, Ordering::SeqCst);
+        }
         Ok(self
             .sent
             .load(Ordering::SeqCst)
@@ -210,9 +221,7 @@ fn action_then_notification_wait_uses_a_pre_action_baseline() {
         stop_on_error: true,
         timeout_ms: 60_000,
     };
-    let adapter = NotifyOnClearAdapter {
-        sent: AtomicBool::new(false),
-    };
+    let adapter = notify_on_clear();
 
     let value = execute(
         args,
@@ -258,7 +267,7 @@ impl agent_desktop_core::SystemOps for UnreadableNotificationsAdapter {
 }
 
 #[test]
-fn an_unreadable_notification_seed_stops_before_the_action() {
+fn an_unreadable_notification_seed_does_not_block_the_action() {
     let args = BatchArgs {
         commands_json: serde_json::json!([
             {"command": "clipboard-clear", "args": {}},
@@ -280,10 +289,56 @@ fn an_unreadable_notification_seed_stops_before_the_action() {
     )
     .unwrap();
 
-    assert!(!adapter.cleared.load(Ordering::SeqCst), "{value}");
-    assert_eq!(value["stopped"]["reason"], "pre_action_baseline_failed");
+    assert!(adapter.cleared.load(Ordering::SeqCst), "{value}");
+    assert!(value.get("stopped").is_none(), "{value}");
+    assert_eq!(value["results"][0]["ok"], true, "{value}");
     assert_eq!(
-        value["results"][0]["error"]["disposition"]["delivery"], "not_delivered",
+        value["results"][1]["error"]["details"]["pre_action_seed"], "unavailable",
         "{value}"
     );
+}
+
+fn clear_then_wait(
+    wait_args: serde_json::Value,
+    context: agent_desktop_core::CommandContext,
+) -> (serde_json::Value, usize) {
+    let args = BatchArgs {
+        commands_json: serde_json::json!([
+            {"command": "clipboard-clear", "args": {}},
+            {"command": "wait", "args": wait_args}
+        ])
+        .to_string(),
+        stop_on_error: false,
+        timeout_ms: 60_000,
+    };
+    let adapter = notify_on_clear();
+    let value = execute(args, &adapter, &PermissionReport::default(), &context).unwrap();
+    (value, adapter.early_lists.load(Ordering::SeqCst))
+}
+
+#[test]
+fn a_headed_notification_wait_is_not_seeded_before_the_action() {
+    let (value, early_lists) = clear_then_wait(
+        serde_json::json!({"notification": true, "app": "Fixture", "timeout": 200}),
+        agent_desktop_core::CommandContext::default().with_headed(true),
+    );
+
+    assert_eq!(early_lists, 0, "{value}");
+    assert_eq!(value["results"][0]["ok"], true, "{value}");
+    assert_eq!(
+        value["results"][1]["error"]["details"]["pre_action_seed"], "skipped_headed",
+        "{value}"
+    );
+}
+
+#[test]
+fn a_wait_that_does_not_validate_as_a_notification_wait_is_not_seeded() {
+    let (value, early_lists) = clear_then_wait(
+        serde_json::json!({"notification": true, "ms": 5, "timeout": 200}),
+        agent_desktop_core::CommandContext::default(),
+    );
+
+    assert_eq!(early_lists, 0, "{value}");
+    assert_eq!(value["results"][0]["ok"], true, "{value}");
+    assert_eq!(value["results"][1]["ok"], false, "{value}");
 }

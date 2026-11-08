@@ -1,7 +1,7 @@
 use agent_desktop_core::{
-    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, NotificationBaseline,
-    NotificationFilter, PermissionReport, PlatformAdapter, SignalBaseline, SignalFilter,
-    context::CommandContext,
+    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, NotificationSeed,
+    PermissionReport, PlatformAdapter, SignalBaseline, SignalFilter,
+    commands::wait_notification as notification_wait, context::CommandContext,
 };
 use serde_json::{Value, json};
 
@@ -29,7 +29,7 @@ pub(super) fn execute(
     let mut completed = 0;
     let mut pending_baseline: Option<Result<SignalBaseline, AdapterError>> =
         context.event_baseline().cloned();
-    let mut pending_notification = context.notification_baseline().cloned();
+    let mut pending_notification = context.notification_seed().cloned();
     let mut stopped = None;
 
     for index in 0..total {
@@ -102,7 +102,7 @@ pub(super) fn execute(
             .clone()
             .with_inherited_deadline(deadline)
             .with_event_baseline(current_baseline)
-            .with_notification_baseline(current_notification);
+            .with_notification_seed(current_notification);
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
         let entry = super::result_entry::completed_entry(
             index,
@@ -178,11 +178,13 @@ pub(super) fn execute(
     Ok(body)
 }
 
-type PreActionSeed = (Option<SignalBaseline>, Option<NotificationBaseline>);
+type PreActionSeed = (Option<SignalBaseline>, Option<NotificationSeed>);
 
 /// Reads what the following wait entry diffs against before the current entry
 /// runs, so a window, surface or notification the current entry produces is
 /// reported as new instead of being absorbed into the wait's own first read.
+/// Only an event baseline failure is an error: a notification seed that cannot
+/// be read falls back to the wait's own first list and never blocks the entry.
 fn pre_action_seed(
     next: Option<&PreparedCommand>,
     adapter: &dyn PlatformAdapter,
@@ -195,17 +197,12 @@ fn pre_action_seed(
         return Ok((None, None));
     };
     if args.mode.notification {
-        let filter = NotificationFilter {
-            app: args.app.clone(),
-            text: args.mode.text.clone(),
-            ..Default::default()
+        let Ok(core_args) = crate::dispatch::system::core_wait_args(args) else {
+            return Ok((None, None));
         };
         let context = next.context.clone().with_inherited_deadline(deadline);
-        let baseline =
-            agent_desktop_core::commands::wait_notification::capture_notification_baseline(
-                &filter, deadline, adapter, &context,
-            )?;
-        return Ok((None, Some(baseline)));
+        let seed = notification_wait::pre_action_seed(&core_args, deadline, adapter, &context);
+        return Ok((None, seed));
     }
     if args.event.event.is_some() {
         let filter = SignalFilter {

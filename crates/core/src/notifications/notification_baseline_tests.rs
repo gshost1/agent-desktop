@@ -29,9 +29,10 @@ fn a_duplicate_beyond_the_recorded_count_is_new() {
 }
 
 #[test]
-fn a_dismissed_entry_lowers_the_record_so_its_return_is_new() {
+fn an_entry_gone_from_two_lists_is_new_when_it_returns() {
     let mut baseline = NotificationBaseline::from_list(&[entry(0, "A", &[])]);
 
+    assert!(baseline.observe(&[]).is_none());
     assert!(baseline.observe(&[]).is_none());
     let current = [entry(0, "A", &[])];
 
@@ -39,10 +40,32 @@ fn a_dismissed_entry_lowers_the_record_so_its_return_is_new() {
 }
 
 #[test]
+fn one_short_read_does_not_lower_the_record() {
+    let full = [entry(0, "A", &[])];
+    let mut baseline = NotificationBaseline::from_list(&full);
+
+    assert!(baseline.observe(&[]).is_none());
+
+    assert!(baseline.observe(&full).is_none());
+}
+
+#[test]
+fn a_short_read_then_a_different_short_read_does_not_lower_the_record() {
+    let three = [entry(0, "A", &[]), entry(1, "A", &[]), entry(2, "A", &[])];
+    let mut baseline = NotificationBaseline::from_list(&three);
+
+    assert!(baseline.observe(&three[..1]).is_none());
+    assert!(baseline.observe(&three[..2]).is_none());
+
+    assert!(baseline.observe(&three).is_none());
+}
+
+#[test]
 fn one_of_two_twins_leaving_and_returning_is_new() {
     let twins = [entry(0, "A", &[]), entry(1, "A", &[])];
     let mut baseline = NotificationBaseline::from_list(&twins);
 
+    assert!(baseline.observe(&twins[..1]).is_none());
     assert!(baseline.observe(&twins[..1]).is_none());
 
     assert_eq!(baseline.observe(&twins).map(|info| info.index), Some(1));

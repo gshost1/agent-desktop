@@ -9,7 +9,7 @@ mod observation;
 mod overlay_skipped;
 mod parse;
 mod session;
-mod system;
+pub(crate) mod system;
 mod trace;
 
 #[cfg(test)]

@@ -110,7 +110,8 @@ Entries run one at a time through the same dispatch as the CLI, so each entry's 
 </table>
 
 - **Deadline.** Before each entry the batch checks `--timeout-ms`. If it expired, that entry is `not_started` with reason `deadline` and the batch stops.
-- **Event and notification waits.** When a `wait` entry with `event` or `notification` follows another entry, the batch captures the event baseline or the notification listing before that earlier entry runs. If the capture fails, the earlier entry does not start (`pre_action_baseline_failed`).
+- **Event waits.** When a `wait` entry with `event` follows another entry, the batch captures the event baseline before that earlier entry runs. If the capture fails, the earlier entry does not start (`pre_action_baseline_failed`).
+- **Notification waits.** When a headless `wait` entry with `notification` follows another entry, the batch lists notifications before that earlier entry runs. A failed listing never blocks the earlier entry; the wait then takes its own first listing and reports `pre_action_seed: "unavailable"`. A headed wait is not seeded (`pre_action_seed: "skipped_headed"`), so no notification surface opens right before the action.
 - **Sessions.** An entry whose session ended before it starts is `not_started` with reason `session_ended`.
 
 Refs in `args` must already exist when you write the array. A `snapshot` entry inside the batch creates refs you cannot name in later entries, so take the snapshot in a separate call.
