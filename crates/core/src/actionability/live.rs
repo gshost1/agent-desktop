@@ -52,8 +52,7 @@ pub(crate) fn check_live_with_stability(
     request: &ActionRequest,
     stability: StabilityExpectation,
 ) -> Result<ActionabilityReport, AdapterError> {
-    let evidence =
-        observe(target).map_err(crate::ref_action::mark_pre_dispatch_resolution_failure)?;
+    let evidence = observe(target).map_err(AdapterError::unsent)?;
     check_with_stability(
         stability,
         &evidence,
@@ -61,7 +60,7 @@ pub(crate) fn check_live_with_stability(
         Some((target.handle, target.adapter)),
         target.deadline,
     )
-    .map_err(crate::ref_action::mark_pre_dispatch_resolution_failure)
+    .map_err(AdapterError::unsent)
 }
 
 /// [`check_live_with_stability`]'s report-preserving counterpart - see
@@ -86,8 +85,7 @@ pub(crate) fn check_live_before_focus(
     request: &ActionRequest,
     stability: StabilityExpectation,
 ) -> Result<ActionabilityReport, AdapterError> {
-    let evidence =
-        observe(target).map_err(crate::ref_action::mark_pre_dispatch_resolution_failure)?;
+    let evidence = observe(target).map_err(AdapterError::unsent)?;
     super::evaluate::check_before_focus(
         stability,
         &evidence,
@@ -95,7 +93,7 @@ pub(crate) fn check_live_before_focus(
         Some((target.handle, target.adapter)),
         target.deadline,
     )
-    .map_err(crate::ref_action::mark_pre_dispatch_resolution_failure)
+    .map_err(AdapterError::unsent)
 }
 
 fn observe(target: &LiveCheckTarget<'_>) -> Result<ActionabilityEvidence, AdapterError> {

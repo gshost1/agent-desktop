@@ -74,6 +74,23 @@ a lookup failure such as `APP_NOT_FOUND`, carry `not_delivered`. Treat `unknown`
 as not safe to retry automatically: read `error.code` and the message, and
 choose a recovery strategy only when `disposition.retry` is `safe`.
 
+A ref action that fails after it starts waiting on the interaction lease and
+before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
+waiting for the lease, a deadline spent while taking it, a failed headed focus
+step, a failed resolve or actionability check under the lease, and a failed
+trace write at dispatch start. The focus step of a headed pointer command, and
+the lease, a deadline spent while taking it, target revalidation and focus step
+of `press`, are `not_delivered` the same way. Once a focus call has run, a
+failure raised later in the ref action's dispatch (the focus itself, the resolve
+and actionability check under the lease, the action and its verification)
+carries `details.preparatory_focus: "may_have_moved_focus"`, because that call
+may have raised a window; its disposition still says whether the action was
+sent. A failure before the focus call, such as a window that no longer matches,
+carries no such detail, and neither does a failure in a step after the action,
+such as a `--wait-for` condition or writing the result. A ref action makes at
+most one focus attempt: once a focus call has run it does not go back to
+waiting, even when the error is retryable.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.

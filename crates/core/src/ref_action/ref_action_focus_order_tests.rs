@@ -375,6 +375,7 @@ fn headed_click_does_not_resolve_before_window_focus_and_dispatch() {
             Ok(ActionResult::delivered_unverified("click"))
         },
     )
+    .result
     .unwrap();
 }
 
