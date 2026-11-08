@@ -78,9 +78,11 @@ fn a_preferences_file_that_is_not_json_is_left_alone() {
 
 #[test]
 fn only_an_absolute_user_data_dir_that_is_no_browser_default_is_written() {
-    let defaults = vec![PathBuf::from(
-        "/Users/me/Library/Application Support/Google/Chrome",
-    )];
+    let root = std::env::temp_dir();
+    let default_dir = root.join("Google").join("Chrome");
+    let defaults = vec![default_dir.clone()];
+    let flag = |dir: &std::path::Path| format!("--user-data-dir={}", dir.display());
+    let chosen = root.join("p");
 
     assert_eq!(
         preferences_path(&args(&["--no-first-run"]), &defaults),
@@ -91,25 +93,22 @@ fn only_an_absolute_user_data_dir_that_is_no_browser_default_is_written() {
         None
     );
     assert_eq!(
+        preferences_path(&args(&[&flag(&default_dir)]), &defaults),
+        None
+    );
+    assert_eq!(
         preferences_path(
-            &args(&["--user-data-dir=/Users/me/Library/Application Support/Google/Chrome"]),
+            &args(&[&flag(&chosen), "--profile-directory=../escape"]),
             &defaults
         ),
         None
     );
     assert_eq!(
         preferences_path(
-            &args(&["--user-data-dir=/tmp/p", "--profile-directory=../escape"]),
+            &args(&[&flag(&root.join("old")), &flag(&chosen)]),
             &defaults
         ),
-        None
-    );
-    assert_eq!(
-        preferences_path(
-            &args(&["--user-data-dir=/tmp/old", "--user-data-dir=/tmp/p"]),
-            &defaults
-        ),
-        Some(PathBuf::from("/tmp/p/Default/Preferences"))
+        Some(chosen.join("Default").join("Preferences"))
     );
 }
 
