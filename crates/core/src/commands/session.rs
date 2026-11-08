@@ -1,6 +1,6 @@
 use crate::session::{
-    ArtifactsMode, GcOptions, SessionTraceMode, StartSessionOptions, end_session, gc,
-    list_sessions, start_session_with_cursor_overlay,
+    ArtifactsMode, GcOptions, SessionManifest, SessionTraceMode, StartSessionOptions, end_session,
+    gc, list_sessions, start_session_with_cursor_overlay,
 };
 use crate::{AppError, CursorOverlayConfig};
 use serde_json::{Value, json};
@@ -12,6 +12,7 @@ pub enum SessionAction {
         name: Option<String>,
         no_trace: bool,
         screenshots: bool,
+        cursor_overlay: Option<Box<CursorOverlayConfig>>,
     },
     End {
         id: String,
@@ -29,7 +30,14 @@ pub fn execute(action: SessionAction) -> Result<Value, AppError> {
             name,
             no_trace,
             screenshots,
-        } => start(name, no_trace, screenshots, CursorOverlayConfig::default()),
+            cursor_overlay,
+        } => start(
+            name,
+            no_trace,
+            screenshots,
+            cursor_overlay.map(|config| *config),
+        )
+        .map(|(_, response)| response),
         SessionAction::End { id } => {
             let manifest = end_session(&id)?;
             Ok(json!({
@@ -66,13 +74,23 @@ pub fn execute(action: SessionAction) -> Result<Value, AppError> {
     }
 }
 
-/// Starts a session whose manifest carries `cursor_overlay`.
+/// Starts a session, with `cursor_overlay` in the same manifest write when
+/// it is given. Every fallible step, including the response's overlay
+/// echo, runs before that write, so an error never hides a started session.
+/// Returns the manifest beside the response for callers that act on it.
 pub fn start(
     name: Option<String>,
     no_trace: bool,
     screenshots: bool,
-    cursor_overlay: CursorOverlayConfig,
-) -> Result<Value, AppError> {
+    cursor_overlay: Option<CursorOverlayConfig>,
+) -> Result<(SessionManifest, Value), AppError> {
+    let cursor_overlay = cursor_overlay
+        .map(CursorOverlayConfig::validated)
+        .transpose()?;
+    let overlay_echo = cursor_overlay
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()?;
     let manifest = start_session_with_cursor_overlay(
         StartSessionOptions {
             name,
@@ -87,7 +105,7 @@ pub fn start(
                 ArtifactsMode::Events
             },
         },
-        cursor_overlay,
+        cursor_overlay.unwrap_or_default(),
     )?;
     let mut response = json!({
         "session_id": manifest.id,
@@ -98,10 +116,10 @@ pub fn start(
         "next": activation_export(&manifest.id),
         "activation": activation(&manifest.id),
     });
-    if !manifest.cursor_overlay.is_disabled() {
-        response["cursor_overlay"] = serde_json::to_value(&manifest.cursor_overlay)?;
+    if let Some(overlay_echo) = overlay_echo {
+        response["cursor_overlay"] = overlay_echo;
     }
-    Ok(response)
+    Ok((manifest, response))
 }
 
 /// The line a caller pastes into their own shell, so the shell that matters

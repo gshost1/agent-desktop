@@ -2,92 +2,109 @@ use super::*;
 use crate::refs::refs_test_support::HomeGuard;
 use crate::session::{SESSION_MANIFEST_FILE, read_manifest};
 use crate::storage::private_file_ops::{PrivateFileOps, with_test_ops_override};
+use std::cell::Cell;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct ManifestWriteFault {
-    allowed: usize,
-    seen: AtomicUsize,
+thread_local! {
+    static MANIFEST_WRITES: Cell<usize> = const { Cell::new(0) };
+}
+
+struct ManifestWrites {
+    fail: bool,
 }
 
 struct Portable;
 
 impl PrivateFileOps for Portable {}
 
-impl PrivateFileOps for ManifestWriteFault {
+impl PrivateFileOps for ManifestWrites {
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         if path
             .file_name()
             .is_some_and(|name| name == SESSION_MANIFEST_FILE)
-            && self.seen.fetch_add(1, Ordering::SeqCst) >= self.allowed
         {
-            return Err(std::io::Error::other("injected manifest write fault"));
+            MANIFEST_WRITES.with(|writes| writes.set(writes.get() + 1));
+            if self.fail {
+                return Err(std::io::Error::other("injected manifest write fault"));
+            }
         }
         Portable.write_atomic(path, bytes)
     }
 }
 
-fn start_with_manifest_fault(allowed: usize) -> Result<Value, AppError> {
-    let fault = Rc::new(ManifestWriteFault {
-        allowed,
-        seen: AtomicUsize::new(0),
+fn start_counting_manifest_writes(
+    cursor_overlay: Option<CursorOverlayConfig>,
+    fail: bool,
+) -> (Result<Value, AppError>, usize) {
+    MANIFEST_WRITES.with(|writes| writes.set(0));
+    let result = with_test_ops_override(Rc::new(ManifestWrites { fail }), || {
+        execute(SessionAction::Start {
+            name: None,
+            no_trace: true,
+            screenshots: false,
+            cursor_overlay: cursor_overlay.map(Box::new),
+        })
     });
-    with_test_ops_override(fault, || {
-        start(
-            None,
-            true,
-            false,
-            CursorOverlayConfig::enabled(None, 6).unwrap(),
-        )
-    })
-}
-
-fn active_session_ids() -> Vec<String> {
-    list_sessions()
-        .unwrap()
-        .into_iter()
-        .filter(|manifest| manifest.ended_at.is_none())
-        .map(|manifest| manifest.id)
-        .collect()
+    (result, MANIFEST_WRITES.with(Cell::get))
 }
 
 #[test]
-fn cursor_start_never_hides_an_active_session_behind_an_error() {
+fn cursor_start_persists_the_overlay_in_its_only_manifest_write() {
     let _home = HomeGuard::new();
+    let cursor = CursorOverlayConfig::enabled(None, 6).unwrap();
 
-    let started = start_with_manifest_fault(1);
+    let (started, writes) = start_counting_manifest_writes(Some(cursor), false);
 
-    let active = active_session_ids();
-    let started = match started {
-        Ok(started) => started,
-        Err(error) => panic!("start failed with {error} and left active sessions {active:?}"),
-    };
-    let id = started["session_id"].as_str().unwrap();
-    assert_eq!(active, [id]);
+    assert_eq!(
+        writes, 1,
+        "a second manifest write can fail after the session is active"
+    );
+    let started = started.expect("cursor start");
     assert_eq!(started["cursor_overlay"]["enabled"], true);
-    let manifest = read_manifest(id).unwrap().unwrap();
-    assert!(!manifest.cursor_overlay.is_disabled());
+    let id = started["session_id"].as_str().unwrap();
+    assert!(
+        read_manifest(id)
+            .unwrap()
+            .unwrap()
+            .cursor_overlay
+            .is_enabled()
+    );
     assert!(end_session(id).unwrap().ended_at.is_some());
-    assert!(active_session_ids().is_empty());
 }
 
 #[test]
-fn cursor_start_that_cannot_persist_leaves_no_session() {
+fn failed_start_leaves_no_session_and_no_directory() {
     let _home = HomeGuard::new();
+    let cursor = CursorOverlayConfig::enabled(None, 6).unwrap();
 
-    let error = start_with_manifest_fault(0).expect_err("the only manifest write failed");
+    let (started, writes) = start_counting_manifest_writes(Some(cursor), true);
 
+    assert_eq!(writes, 1);
+    let error = started.expect_err("the manifest write failed");
     assert!(error.to_string().contains("injected manifest write fault"));
     assert!(list_sessions().unwrap().is_empty());
+    let leftovers: Vec<_> = std::fs::read_dir(
+        crate::session::agent_desktop_dir()
+            .unwrap()
+            .join("sessions"),
+    )
+    .map(|entries| entries.flatten().map(|entry| entry.file_name()).collect())
+    .unwrap_or_default();
+    assert!(
+        leftovers.is_empty(),
+        "unstarted session left on disk: {leftovers:?}"
+    );
 }
 
 #[test]
-fn plain_start_carries_no_cursor_overlay() {
+fn plain_start_echoes_no_cursor_overlay() {
     let _home = HomeGuard::new();
 
-    let started = start(None, true, false, CursorOverlayConfig::default()).unwrap();
+    let (started, writes) = start_counting_manifest_writes(None, false);
 
+    assert_eq!(writes, 1);
+    let started = started.unwrap();
     assert!(started.get("cursor_overlay").is_none());
     let id = started["session_id"].as_str().unwrap();
     assert!(

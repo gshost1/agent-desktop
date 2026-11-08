@@ -13,15 +13,18 @@ pub(crate) fn dispatch(
 ) -> Result<Value, AppError> {
     match args.action {
         SessionAction::Start(s) => {
-            let cursor_overlay = if s.cursor {
-                CursorOverlayConfig::enabled(None, 6)?.with_multi_agent(s.multi_agent)
-            } else {
-                CursorOverlayConfig::default()
-            };
-            let mut value =
+            let cursor_overlay = s
+                .cursor
+                .then(|| CursorOverlayConfig::enabled(None, 6))
+                .transpose()?
+                .map(|config| config.with_multi_agent(s.multi_agent));
+            let (manifest, mut value) =
                 session::start(s.name, s.no_trace, s.screenshots, cursor_overlay.clone())?;
-            if s.cursor {
-                value["rendered"] = Value::Bool(render_cursor(adapter, &value, &cursor_overlay));
+            if let Some(config) = cursor_overlay {
+                value["rendered"] = Value::from(
+                    !config.is_multi_agent()
+                        && super::cursor_overlay::render(adapter, &manifest.id, &config),
+                );
             }
             Ok(value)
         }
@@ -36,32 +39,6 @@ pub(crate) fn dispatch(
             older_than_secs: g.older_than,
             ended_only: g.ended,
         }),
-    }
-}
-
-/// Draws the cursor of a session whose manifest already enables it. The
-/// overlay is presentation only, so a renderer that cannot draw leaves the
-/// session started and reports `rendered: false`; the next action that needs
-/// the cursor asks for the renderer again.
-fn render_cursor(
-    adapter: &dyn PlatformAdapter,
-    value: &Value,
-    config: &CursorOverlayConfig,
-) -> bool {
-    let Some(id) = value.get("session_id").and_then(Value::as_str) else {
-        return false;
-    };
-    if config.is_multi_agent() {
-        return false;
-    }
-    let control = CursorOverlayControl::enable(id.to_owned(), config.style().clone())
-        .with_motion(config.motion().clone());
-    match adapter.update_cursor_overlay(&control) {
-        Ok(()) => true,
-        Err(error) => {
-            super::overlay_skipped::log(&error);
-            false
-        }
     }
 }
 
