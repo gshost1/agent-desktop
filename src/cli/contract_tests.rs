@@ -140,7 +140,7 @@ fn ci_windows_lane_gates_the_full_package_surface() {
 
     assert!(workflow.contains(
         "cargo clippy --locked -p agent-desktop-core -p agent-desktop-windows \
-         -p agent-desktop -p agent-desktop-ffi --all-targets -- -D warnings"
+         -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web --all-targets -- -D warnings"
     ));
     assert!(workflow.contains("--edges', 'normal,build,dev"));
     assert!(workflow.contains("run: cargo test --locked -p agent-desktop\n"));
