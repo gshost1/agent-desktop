@@ -129,9 +129,10 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 11 | `test/wait-timing-budgets` | CI flakes | [#19](https://github.com/gshost1/agent-desktop/pull/19) | **merged** 2026-11-07 as `f969adc8` (rules 1+2); CI 26/26 on head `686ad47b` | fork-only (test budgets) |
 | 12 | `test/trace-temp-dir-cleanup` | /tmp leak | [#20](https://github.com/gshost1/agent-desktop/pull/20) | open; test-only; leftovers per core run 40 -> 0; gates green (4589); CI dispatched | fork-only (test hygiene) |
 | 13 | `fix/dispatch-delivery-settle` | BINARY-5/1/4/6/7 | [#21](https://github.com/gshost1/agent-desktop/pull/21) | open; head `b25843b0`, gates green (4603), 2 review rounds; CI dispatched | ready (when merged) |
-| 14 | `fix/linux-restore-stale-place` | LIFECYCLE-9 | – | pushed `5cb81a38`, gates green (4603); review round 1 being applied (provisional record before the write, display by bounds, hidden reads keep the record) | – |
-| 15 | `fix/notification-identity-key` | SURFACE-3 (+4) | – | writer started (w15); contract change -> draft, needs-issue-first | – |
-| 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | – | writer started (w16) | – |
+| 14 | `fix/linux-restore-stale-place` | LIFECYCLE-9 | [#22](https://github.com/gshost1/agent-desktop/pull/22) | open; head `e65a688d`, gates green (4612), review applied; CI dispatched | ready (when merged; Linux only) |
+| 15 | `fix/notification-identity-key` | SURFACE-3 | – | pushed `fb8ce39b`, gates green (4603); review round 1 being applied (oldest-first twin count, keys over the full read, one filter order); draft when opened | needs-issue-first (new list field and --key flag) |
+| 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | – | pushed `e50e5ca9`, gates green (4592); review round 1 being applied (post on the action's remaining budget, pre age, focus-only post) | – |
+| 17 | `fix/session-start-atomic` | STATE-5 / BINARY-10 | – | writer started (w17) | – |
 
 ## Needs Mac verification
 
