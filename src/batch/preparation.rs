@@ -89,7 +89,8 @@ fn located_error(index: usize, command: &str, error: AppError) -> AppError {
             source.disposition = DeliverySemantics::not_delivered();
             source.into()
         }
-        other => AdapterError::new(ErrorCode::Internal, other.to_string())
+        other => other
+            .into_adapter_error()
             .with_details(json!({ "batch_index": index, "batch_command": command }))
             .with_disposition(DeliverySemantics::not_delivered())
             .into(),

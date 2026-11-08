@@ -18,7 +18,7 @@ mod visual_debug;
 mod test_noop_ops;
 
 use agent_desktop_core::{
-    AdapterError, AppError, DeliverySemantics, ErrorCode, SystemOps,
+    AdapterError, AppError, ErrorCode, SystemOps,
     context::{CommandContext, WaitSelector},
     response::output::{ErrorPayload, Response},
     session::resolve_active_session,
@@ -26,6 +26,7 @@ use agent_desktop_core::{
 use clap::{CommandFactory, FromArgMatches};
 use cli::{Cli, Commands};
 use cli_args::skills::SkillsAction;
+use dispatch::pre_dispatch_error;
 use std::io::{BufWriter, Write};
 use std::process::ExitCode;
 
@@ -303,18 +304,6 @@ fn execute_with_adapter(
         capture.finish(&mut result, adapter, context);
     }
     result
-}
-
-fn pre_dispatch_error(error: AppError) -> AppError {
-    match error {
-        AppError::Adapter(mut source) => {
-            source.disposition = DeliverySemantics::not_delivered();
-            source.into()
-        }
-        other => AdapterError::new(ErrorCode::Internal, other.to_string())
-            .with_disposition(DeliverySemantics::not_delivered())
-            .into(),
-    }
 }
 
 fn finish(cmd_name: &str, result: Result<serde_json::Value, AppError>) -> ExitCode {

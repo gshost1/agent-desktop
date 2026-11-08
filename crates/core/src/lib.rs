@@ -83,10 +83,12 @@ pub use locator::{
 pub use notifications::dismiss_all_notifications_request::DismissAllNotificationsRequest;
 pub use notifications::dismiss_notification_request::DismissNotificationRequest;
 pub use notifications::notification_action_request::NotificationActionRequest;
+pub use notifications::notification_baseline::NotificationBaseline;
 pub use notifications::notification_filter::NotificationFilter;
 pub use notifications::notification_identity::NotificationIdentity;
 pub use notifications::notification_identity_check::verify_notification_identity;
 pub use notifications::notification_info::NotificationInfo;
+pub use notifications::notification_seed::NotificationSeed;
 pub use refs::RefMap;
 pub use refs::ref_capabilities::RefCapabilities;
 pub use refs::ref_entry::RefEntry;
@@ -104,11 +106,12 @@ pub use response::error_code::ErrorCode;
 pub use response::output::{ErrorPayload, Response};
 pub use response::recovery_hint::RecoveryHint;
 pub use response::retry_disposition::RetryDisposition;
+pub use session::interaction_lease::INTERACTION_LEASE_HANDLE_ENV;
 pub use session::interaction_lease::InteractionLease;
 #[cfg(unix)]
 pub use session::interaction_lease::{
     INTERACTION_LEASE_FD_ENV, acquire_unix_interaction_lease,
-    adopt_inherited_unix_interaction_lease,
+    adopt_inherited_unix_interaction_lease, protect_inherited_lease_descriptor,
 };
 pub use session::process_lease_guard::ProcessLeaseGuard;
 pub use session::session_affinity::SessionAffinity;

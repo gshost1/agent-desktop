@@ -11,6 +11,7 @@ fn list_returns_known_skills() {
     assert!(arr.iter().any(|s| s["name"] == "agent-desktop-windows"));
     assert!(arr.iter().any(|s| s["name"] == "agent-desktop-macos"));
     assert!(arr.iter().any(|s| s["name"] == "agent-desktop-linux"));
+    assert!(arr.iter().any(|s| s["name"] == "agent-desktop-web"));
 }
 
 #[test]
@@ -38,6 +39,35 @@ fn list_marks_platform_skills_and_the_one_for_this_build() {
     assert_eq!(
         entry("agent-desktop-linux")["current"],
         cfg!(target_os = "linux")
+    );
+}
+
+#[test]
+fn the_web_skill_is_served_by_its_alias_on_every_platform() {
+    let entry = list().expect("list")["skills"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|s| s["name"] == "agent-desktop-web")
+        .expect("web skill listed")
+        .clone();
+    assert!(entry.get("platform").is_none());
+    let body = get(GetArgs {
+        name: "web".into(),
+        full: false,
+        reference: None,
+    })
+    .expect("get web");
+    assert_eq!(body["skill"], "agent-desktop-web");
+    let content = body["content"].as_str().expect("string");
+    assert!(content.contains("launch \"Google Chrome\" --cdp"));
+    assert!(content.contains("--surface web"));
+    assert!(
+        path().expect("path")["available"]
+            .as_array()
+            .expect("arr")
+            .iter()
+            .any(|s| s == "agent-desktop-web")
     );
 }
 

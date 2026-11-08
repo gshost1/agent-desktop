@@ -1,27 +1,19 @@
 use agent_desktop_core::{AdapterError, DeliverySemantics};
 
+use super::emergency_release::EmergencyRelease;
+
 #[derive(Debug, Default)]
 pub(crate) struct ReleaseState {
-    armed: bool,
     delivered: u32,
     started: bool,
 }
 
 impl ReleaseState {
-    pub(crate) fn resumed(delivered: u32, armed: bool) -> Self {
+    pub(crate) fn resumed(delivered: u32) -> Self {
         Self {
-            armed,
             delivered,
             started: delivered > 0,
         }
-    }
-
-    pub(crate) fn arm(&mut self) {
-        self.armed = true;
-    }
-
-    pub(crate) fn disarm(&mut self) {
-        self.armed = false;
     }
 
     pub(crate) fn mark_delivered(&mut self) {
@@ -37,11 +29,12 @@ impl ReleaseState {
         self.delivered
     }
 
-    pub(crate) fn should_release(&self) -> bool {
-        self.armed
-    }
-
-    pub(crate) fn enrich_error(&self, error: AdapterError, suggestion: &str) -> AdapterError {
+    pub(crate) fn enrich_error(
+        &self,
+        error: AdapterError,
+        release: EmergencyRelease,
+        suggestion: &str,
+    ) -> AdapterError {
         let started = self.started
             || error
                 .details
@@ -57,10 +50,7 @@ impl ReleaseState {
         if let Some(map) = details.as_object_mut() {
             map.insert("physical_delivery_started".into(), started.into());
             map.insert("delivered_events".into(), self.delivered.into());
-            if self.armed {
-                map.insert("emergency_release_posted".into(), true.into());
-                map.insert("emergency_release_acknowledged".into(), false.into());
-            }
+            release.record_into(map);
         }
         error
             .with_disposition(if self.delivered == 0 {

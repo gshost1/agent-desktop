@@ -18,36 +18,38 @@ pub(super) fn wait(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    wait_command::execute(
-        wait_command::WaitArgs {
-            mode: wait_command::WaitModeArgs {
-                ms: args.mode.ms,
-                element: args.mode.element,
-                window: args.mode.window,
-                text: args.mode.text,
-                surface: SurfaceWait::with_download(
-                    SurfaceWait::from_flags(
-                        args.surface.menu,
-                        args.surface.menu_closed,
-                        args.surface.notification,
-                    )?,
-                    args.surface.download,
+    wait_command::execute(core_wait_args(&args)?, adapter, context)
+}
+
+/// The core form of a `wait` entry, shared by dispatch and by the batch
+/// pre-action seed so both validate the same arguments.
+pub(crate) fn core_wait_args(args: &WaitArgs) -> Result<wait_command::WaitArgs, AppError> {
+    Ok(wait_command::WaitArgs {
+        mode: wait_command::WaitModeArgs {
+            ms: args.mode.ms,
+            element: args.mode.element.clone(),
+            window: args.mode.window.clone(),
+            text: args.mode.text.clone(),
+            surface: SurfaceWait::with_download(
+                SurfaceWait::from_flags(
+                    args.surface.menu,
+                    args.surface.menu_closed,
+                    args.surface.notification,
                 )?,
-                event: args.event.event,
-                window_id: args.event.window_id,
-            },
-            predicate: wait_command::WaitPredicateArgs {
-                predicate: args.predicate.predicate,
-                value: args.predicate.value,
-                action: args.predicate.action,
-                count: args.predicate.count,
-            },
-            timeout_ms: args.timeout,
-            app: args.app,
+                args.surface.download,
+            )?,
+            event: args.event.event.clone(),
+            window_id: args.event.window_id.clone(),
         },
-        adapter,
-        context,
-    )
+        predicate: wait_command::WaitPredicateArgs {
+            predicate: args.predicate.predicate.clone(),
+            value: args.predicate.value.clone(),
+            action: args.predicate.action.clone(),
+            count: args.predicate.count,
+        },
+        timeout_ms: args.timeout,
+        app: args.app.clone(),
+    })
 }
 
 pub(super) fn permissions(

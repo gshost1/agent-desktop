@@ -43,20 +43,11 @@ The port exists only for a fresh process. `launch` never quits a running app for
 | `cdp_switch_conflict` (`INVALID_ARGS`) | `--arg` carried a `--remote-debugging-*` or `--remote-allow-origins` switch | Drop that `--arg` |
 | `cdp_endpoint_unavailable` | No endpoint answered before the deadline | The app stays running. Use the accessibility path |
 
-`--download-dir <dir>` (with `--cdp`) names the folder the browser saves downloads to. The folder is created if missing, and `data.cdp.download_dir` echoes its absolute path. `wait --download` returns each file saved there. With an absolute `--arg=--user-data-dir=<dir>` that is not the browser's default profile, launch writes the folder into that profile's download preference, and `data.cdp.download_scope` is `profile`: the browser saves every download there under its real name, whichever command started it. Otherwise it is `connection`: only a DevTools connection points downloads at the folder, so each web `click`, `double-click` and `press` waits up to 100 ms for a navigation or download to start, returns at once when none does, and otherwise waits until the download begins or the page stops loading, at most 3 s. Without `--download-dir` the browser keeps its own download folder; agent-desktop never redirects downloads it was not told to.
+`--download-dir <dir>` (with `--cdp`) names the folder the browser saves downloads to; `wait --download` returns each file saved there. Run `agent-desktop skills get web` for the download loop.
 
-After `launch --cdp`, agent-desktop drives the web contents itself. Snapshot the page with `--surface web` and act on its refs with the same commands you use on native apps (see `workflows.md`, "Web pages: one loop"). Read `data.channel` in the snapshot: `cdp` means the page was read over the endpoint and its refs act through the page, in the background; `ax` means no endpoint reached the browser, the window was read through the accessibility tree, and `data.suggestion` names the `launch --cdp` command that enables the web channel. The web channel only uses an endpoint whose listener the browser process itself owns: one `launch --cdp` started, or the `DevToolsActivePort` of the browser's default profile.
+Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
-Keep these on the native surfaces: the menu bar, file dialogs and sheets, window management, notifications and screenshots. While the port is open, any local process of the same user can control the browser's web contents. Request `--cdp` only for the task that needs it. `close-app` ends the exposure.
-
-## open-url
-
-```bash
-agent-desktop open-url "https://example.com/" --app "Google Chrome"
-agent-desktop open-url "https://example.com/" --app "Google Chrome" --new-tab
-```
-
-Loads a URL in the tab the browser window shows, or with `--new-tab` in a new background tab, and returns after the page's load event: `{ "url", "title", "channel": "cdp", "target_id", "opened" }`. `opened` is `current_tab` when the URL replaced the shown page and `new_tab` when it went to a new background tab, which also happens when the browser has no page at all (a fresh profile shows only its first-run dialog). A URL the browser saves as a file instead of showing returns `opened: "download"`; run `wait --download` for the saved path. It never raises the window or the tab. `--window-id` picks the window when the browser has several. It needs a DevTools endpoint (`launch --cdp`); without one it returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when no one approves in time; do not retry in a loop.
+Keep these on agent-desktop even with CDP connected: the native menu bar, file dialogs and sheets, window management, notifications, screenshots, and any app you did not launch. While the port is open, any local process of the same user can control the app's web contents. Request `--cdp` only for the step that needs it. `close-app` ends the exposure.
 
 ## close-app
 
@@ -104,7 +95,7 @@ Commands: `list-notifications`, `dismiss-notification`, `dismiss-all-notificatio
 - `list-notifications` returns `{ index, app_name, title, body, actions }`, with 1-based indexes. `--app`, `--text`, `--limit` filter.
 - `notification-action INDEX "Reply"` clicks a named button. An action the entry lacks returns `ACTION_NOT_SUPPORTED` and changes nothing.
 - `dismiss-all-notifications` returns `{ dismissed_count, failures, failed_count }`. A failure to close the surface afterward is not reported as an error.
-- `wait --notification` detects a new entry against a baseline taken at wait start. Transient errors retry within `--timeout`. On macOS and Windows, a headless wait sees only an already-open surface.
+- `wait --notification` reports an entry when a notification (same app, title and body; the action buttons do not count) has more entries than it last saw. The record starts at the wait's first listing and drops when two listings in a row show fewer entries, so a notification that was dismissed and then arrives again is new. To count one the previous step produces, put the step and the wait in one headless `batch`: the listing is then taken before the step runs. Transient errors retry within `--timeout`. On macOS and Windows, a headless wait sees only an already-open surface.
 
 ## Clipboard
 
@@ -178,7 +169,7 @@ agent-desktop batch '[
 
 Batch runs entries in order in one process. It is not a transaction. Entries use the same typed commands, policy checks and dispatch as the CLI. Use `args`, not `params`. Unknown fields are rejected, and nested `batch` is rejected. Pass `--stop-on-error` to halt at the first failure. Each entry may carry `"session": "id"`, otherwise it inherits the top-level session. An entry whose session ended before dispatch is `not_started` with reason `session_ended`. An ended top-level session refuses the whole batch with `INVALID_ARGS` (`details.kind: session_ended`) before any entry runs. Snapshot args use `skeleton`, `root`, `interactive_only`.
 
-Wait entries use flat JSON keys matching the wait argument fields. For event waits, use `event` and optional `app`, `timeout` (milliseconds; defaults to 30000), `window`, and `window_id`. For example, the batch above waits up to five seconds for a new TextEdit window. `window` and `window_id` narrow only window lifecycle events (`window-opened`, `window-closed`, `focus-changed`); they do not scope text waits. In an action-then-event sequence, the batch captures the event baseline before the action, and does not start the action if that baseline read fails.
+Wait entries use flat JSON keys matching the wait argument fields. For event waits, use `event` and optional `app`, `timeout` (milliseconds; defaults to 30000), `window`, and `window_id`. For example, the batch above waits up to five seconds for a new TextEdit window. `window` and `window_id` narrow only window lifecycle events (`window-opened`, `window-closed`, `focus-changed`); they do not scope text waits. In an action-then-event sequence, the batch captures the event baseline before the action, and does not start the action if that baseline read fails. An action followed by a headless `wait` with `notification: true` gets a notification listing taken before the action; if that listing fails, or the wait is headed, the action still runs and the wait result carries `pre_action_seed` (`unavailable` or `skipped_headed`).
 
 Keys are the command's own field names, so a positional argument is named after itself rather than after its placeholder: `press COMBO` is `{"combo":"cmd+s"}`, `click REF` is `{"ref_id":"@s8f3k2p9:e1"}`, and `type REF TEXT` takes `ref_id` and `text`. A flag drops its leading `--` and writes `-` as `_`, so `--timeout-ms` is `timeout_ms`.
 

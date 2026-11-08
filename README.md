@@ -95,6 +95,7 @@ The binary carries guides that match its version:
 ```bash
 agent-desktop skills get desktop      # the loop, refs, verification and retry rules
 agent-desktop skills get platform     # what differs on the OS you run on
+agent-desktop skills get web          # web pages in Chrome; enough on its own for web work
 agent-desktop <command> --help        # flags for one command
 ```
 
