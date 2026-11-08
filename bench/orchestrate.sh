@@ -84,6 +84,7 @@ while IFS= read -r line <&3; do
     entries="${line#* }"
     wait_for_disk "$label"
     take_lock
+    bash bench/wait_builds_idle.sh
     log "round $label start"
     for entry in $entries; do
         refresh_lock

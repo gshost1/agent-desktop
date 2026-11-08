@@ -17,10 +17,24 @@ until [ -z "$(head -1 "$desktop_lock" 2>/dev/null)" ]; do
     sleep 20
 done
 exec python3 -I -c '
-import fcntl, os, subprocess, sys
+import fcntl, os, subprocess, sys, time
+desktop = os.path.expanduser("~/.agent-desktop/bench.lock")
+def desktop_holder():
+    try:
+        with open(desktop) as fh:
+            return fh.readline().strip()
+    except OSError:
+        return ""
 with open(os.path.expanduser("~/.agent-desktop-bench-build.lock"), "w") as lock:
     print("serial_cargo: waiting for the build lock", file=sys.stderr, flush=True)
-    fcntl.flock(lock, fcntl.LOCK_EX)
+    while True:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        holder = desktop_holder()
+        if not holder:
+            break
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        print(f"serial_cargo: desktop lock held by {holder!r}, waiting", file=sys.stderr, flush=True)
+        time.sleep(20)
     print("serial_cargo: build lock taken", file=sys.stderr, flush=True)
     target = os.environ["CARGO_TARGET_DIR"]
     used = subprocess.run(["du", "-sk", target], capture_output=True, text=True).stdout.split()
