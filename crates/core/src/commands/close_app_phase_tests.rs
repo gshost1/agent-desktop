@@ -1,11 +1,11 @@
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use super::*;
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
 use crate::system::process_state::ProcessState;
-use crate::wait::deadline::{VirtualClock, sleep};
+use crate::wait::deadline::{VirtualClock, now, sleep};
 use crate::{AdapterError, DeliverySemantics, ErrorCode};
 
 const EXIT_TAKES: Duration = Duration::from_millis(1_000);
@@ -16,16 +16,20 @@ enum Lease {
     TimesOut,
 }
 
-#[derive(Clone, Copy)]
 enum Close {
     ExitsAfterRequest,
-    ExitsBeforeRequest,
+    FailsThenExits {
+        code: ErrorCode,
+        disposition: DeliverySemantics,
+        exit_after: Duration,
+    },
 }
 
 struct PhasedAdapter {
     lease: Lease,
     close: Close,
-    exited: AtomicBool,
+    slow_inventory: bool,
+    exit_at: Mutex<Option<Instant>>,
     close_calls: AtomicUsize,
     lease_budget: Mutex<Option<Duration>>,
 }
@@ -35,15 +39,24 @@ impl PhasedAdapter {
         Self {
             lease,
             close,
-            exited: AtomicBool::new(false),
+            slow_inventory: false,
+            exit_at: Mutex::new(None),
             close_calls: AtomicUsize::new(0),
             lease_budget: Mutex::new(None),
         }
     }
+
+    fn exit_in(&self, delay: Duration) {
+        *self.exit_at.lock().unwrap() = Some(now() + delay);
+    }
 }
 
 impl ObservationOps for PhasedAdapter {
-    fn list_apps(&self, _deadline: crate::Deadline) -> Result<Vec<crate::AppInfo>, AdapterError> {
+    fn list_apps(&self, deadline: crate::Deadline) -> Result<Vec<crate::AppInfo>, AdapterError> {
+        if self.slow_inventory {
+            sleep(deadline.remaining());
+            return Err(deadline.timeout_error());
+        }
         Ok(vec![crate::AppInfo {
             name: "Editor".into(),
             pid: crate::ProcessId::new(91),
@@ -63,9 +76,7 @@ impl SystemOps for PhasedAdapter {
         &self,
         deadline: crate::Deadline,
     ) -> Result<crate::InteractionLease, AdapterError> {
-        if let Ok(mut budget) = self.lease_budget.lock() {
-            *budget = Some(deadline.remaining());
-        }
+        *self.lease_budget.lock().unwrap() = Some(deadline.remaining());
         match self.lease {
             Lease::GrantedJustBeforeDeadline => {
                 sleep(
@@ -89,13 +100,14 @@ impl SystemOps for PhasedAdapter {
         lease: &crate::InteractionLease,
     ) -> Result<crate::OperationReport, AdapterError> {
         self.close_calls.fetch_add(1, Ordering::SeqCst);
-        match self.close {
-            Close::ExitsBeforeRequest => {
-                self.exited.store(true, Ordering::SeqCst);
-                Err(AdapterError::new(
-                    ErrorCode::AppUnresponsive,
-                    "Target process instance is no longer running",
-                ))
+        match &self.close {
+            Close::FailsThenExits {
+                code,
+                disposition,
+                exit_after,
+            } => {
+                self.exit_in(*exit_after);
+                Err(AdapterError::new(code.clone(), "close failed").with_disposition(*disposition))
             }
             Close::ExitsAfterRequest => {
                 let remaining = lease.deadline().remaining();
@@ -110,7 +122,7 @@ impl SystemOps for PhasedAdapter {
                     );
                 }
                 sleep(EXIT_TAKES);
-                self.exited.store(true, Ordering::SeqCst);
+                self.exit_in(Duration::ZERO);
                 crate::OperationReport::from_close_dispatch(app, Ok(true))
             }
         }
@@ -121,11 +133,12 @@ impl SystemOps for PhasedAdapter {
         _process: crate::ProcessIdentity,
         _deadline: crate::Deadline,
     ) -> Result<ProcessState, AdapterError> {
-        if self.exited.load(Ordering::SeqCst) {
-            Ok(ProcessState::Exited { code: None })
+        let exited = self.exit_at.lock().unwrap().is_some_and(|at| now() >= at);
+        Ok(if exited {
+            ProcessState::Exited { code: None }
         } else {
-            Ok(ProcessState::Running)
-        }
+            ProcessState::Running
+        })
     }
 }
 
@@ -141,6 +154,24 @@ fn close_args_within(timeout_ms: Option<u64>) -> CloseAppArgs {
     }
 }
 
+fn fails_then_exits(code: ErrorCode, disposition: DeliverySemantics) -> PhasedAdapter {
+    PhasedAdapter::new(
+        Lease::GrantedJustBeforeDeadline,
+        Close::FailsThenExits {
+            code,
+            disposition,
+            exit_after: Duration::ZERO,
+        },
+    )
+}
+
+fn adapter_error(err: AppError) -> AdapterError {
+    match err {
+        AppError::Adapter(error) => error,
+        other => panic!("expected an adapter error, got {other:?}"),
+    }
+}
+
 #[test]
 fn contended_lease_still_leaves_the_exit_wait_its_reserved_budget() {
     let _clock = VirtualClock::freeze();
@@ -153,30 +184,85 @@ fn contended_lease_still_leaves_the_exit_wait_its_reserved_budget() {
 }
 
 #[test]
-fn app_that_exits_during_the_close_is_already_satisfied_not_unresponsive() {
-    let _clock = VirtualClock::freeze();
-    let adapter = PhasedAdapter::new(Lease::GrantedJustBeforeDeadline, Close::ExitsBeforeRequest);
+fn failed_close_of_unknown_or_uncertain_delivery_then_gone_is_delivered_unverified() {
+    for disposition in [DeliverySemantics::unknown(), DeliverySemantics::uncertain()] {
+        let _clock = VirtualClock::freeze();
+        let adapter = fails_then_exits(ErrorCode::ActionFailed, disposition);
 
-    let value = execute(close_args(), &adapter).unwrap();
+        let value = execute(close_args(), &adapter).unwrap();
 
-    assert_eq!(value["disposition"]["delivery"], "not_delivered");
-    assert_eq!(value["disposition"]["retry"], "safe");
-    assert_eq!(value["details"]["evidence"], "process_instance_not_running");
+        assert_eq!(value["disposition"]["delivery"], "delivered_unverified");
+        assert_eq!(value["details"]["evidence"], "process_instance_not_running");
+    }
 }
 
 #[test]
-fn lease_timeout_before_the_close_is_sent_is_timeout_not_delivered() {
+fn confirm_watches_the_process_until_it_exits_within_its_slice() {
+    let _clock = VirtualClock::freeze();
+    let adapter = PhasedAdapter::new(
+        Lease::GrantedJustBeforeDeadline,
+        Close::FailsThenExits {
+            code: ErrorCode::Timeout,
+            disposition: DeliverySemantics::delivered_unverified(),
+            exit_after: Duration::from_millis(100),
+        },
+    );
+
+    let value = execute(close_args(), &adapter).unwrap();
+
+    assert_eq!(value["disposition"]["delivery"], "delivered_verified");
+    assert_eq!(value["details"]["evidence"], "process_instance_exited");
+}
+
+#[test]
+fn refusals_and_mismatches_surface_unchanged_even_when_the_process_is_gone() {
+    for (code, disposition) in [
+        (ErrorCode::ActionFailed, DeliverySemantics::not_delivered()),
+        (ErrorCode::InvalidArgs, DeliverySemantics::not_delivered()),
+        (ErrorCode::StaleRef, DeliverySemantics::unknown()),
+        (ErrorCode::StaleRef, DeliverySemantics::uncertain()),
+        (
+            ErrorCode::PlatformNotSupported,
+            DeliverySemantics::unknown(),
+        ),
+        (ErrorCode::AppUnresponsive, DeliverySemantics::unknown()),
+    ] {
+        let _clock = VirtualClock::freeze();
+        let adapter = fails_then_exits(code.clone(), disposition);
+
+        let error = adapter_error(execute(close_args(), &adapter).unwrap_err());
+
+        assert_eq!(error.code, code);
+        assert_eq!(error.disposition, disposition);
+    }
+}
+
+#[test]
+fn lease_timeout_is_not_delivered_and_names_its_phase_and_slice() {
     let _clock = VirtualClock::freeze();
     let adapter = PhasedAdapter::new(Lease::TimesOut, Close::ExitsAfterRequest);
 
-    let err = execute(close_args(), &adapter).unwrap_err();
+    let error = adapter_error(execute(close_args(), &adapter).unwrap_err());
 
-    assert_eq!(err.code(), "TIMEOUT");
-    let AppError::Adapter(error) = err else {
-        panic!("lease timeout must stay an adapter error");
-    };
+    assert_eq!(error.code, ErrorCode::Timeout);
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    let details = error.details.unwrap();
+    assert_eq!(details["phase"], "awaiting_lease");
+    assert_eq!(details["timeout_ms"], 2_500);
     assert_eq!(adapter.close_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn slow_inventory_timeout_names_the_resolving_phase() {
+    let _clock = VirtualClock::freeze();
+    let mut adapter = PhasedAdapter::new(Lease::TimesOut, Close::ExitsAfterRequest);
+    adapter.slow_inventory = true;
+
+    let error = adapter_error(execute(close_args(), &adapter).unwrap_err());
+
+    assert_eq!(error.code, ErrorCode::Timeout);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(error.details.unwrap()["phase"], "resolving");
 }
 
 #[test]
@@ -195,11 +281,11 @@ fn process_still_running_after_a_failed_close_keeps_the_failure() {
     let _clock = VirtualClock::freeze();
     let adapter = PhasedAdapter::new(Lease::GrantedJustBeforeDeadline, Close::ExitsAfterRequest);
 
-    let err = execute(close_args_within(Some(1_500)), &adapter).unwrap_err();
+    let error = adapter_error(execute(close_args_within(Some(2_000)), &adapter).unwrap_err());
 
-    assert_eq!(err.code(), "TIMEOUT");
-    let AppError::Adapter(error) = err else {
-        panic!("exit timeout must stay an adapter error");
-    };
+    assert_eq!(error.code, ErrorCode::Timeout);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let details = error.details.unwrap();
+    assert_eq!(details["phase"], "closing");
+    assert_eq!(details["timeout_ms"], 1_750);
 }
