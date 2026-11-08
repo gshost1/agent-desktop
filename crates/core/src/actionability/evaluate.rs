@@ -263,19 +263,19 @@ fn finish(
         return Ok(report);
     }
     let code = report.terminal_code().unwrap_or(ErrorCode::ActionFailed);
+    let not_supported = code == ErrorCode::ActionNotSupported;
+    let editable_failed = report.checks.iter().any(|check| {
+        check.check == "editable" && check.status == super::status::ActionabilityStatus::Fail
+    });
     let suggestion = if code == ErrorCode::ActionFailed {
         "Wait for the target to become actionable, refresh the snapshot, or use an explicit physical/focus command if intended."
-    } else if evidence.state.role == "cell"
-        && report.checks.iter().any(|check| {
-            check.check == "editable" && check.status == super::status::ActionabilityStatus::Fail
-        })
-    {
+    } else if evidence.state.role == "cell" && editable_failed {
         "This cell is not directly editable. Activate it, take a fresh snapshot, and target the text editor if one appears."
-    } else if code == ErrorCode::ActionNotSupported
-        && matches!(request.action, crate::Action::SetFocus)
-    {
+    } else if evidence.state.role == "incrementor" && editable_failed {
+        "This incrementor has no value of its own to set: it is a stepper, or one part of a date or time field. Set the whole value with set-value on the field that contains it, the parent that advertises SetValue (on the web surface, a datefield or timefield), or step it with press ArrowUp or ArrowDown."
+    } else if not_supported && matches!(request.action, crate::Action::SetFocus) {
         "Choose an element advertising SetFocus in a fresh snapshot. To focus the owning window instead, use focus-window."
-    } else if code == ErrorCode::ActionNotSupported
+    } else if not_supported
         && matches!(
             request.action,
             crate::Action::SetValue(_) | crate::Action::Clear

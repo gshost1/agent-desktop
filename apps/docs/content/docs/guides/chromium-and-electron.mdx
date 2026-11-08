@@ -84,6 +84,14 @@ A click on an element that something else covers is refused before it is sent:
 }
 ```
 
+A date, time, datetime-local, month, week or color input is one ref, with role `datefield`, `timefield` or `colorwell`. `set-value` assigns its value whole, in the format the page reads (`2026-11-08`, `19:30`, `2026-11-08T19:30`, `2026-11`, `2026-W45`, `#ff8800`), fires `input` and `change`, and reads the value back:
+
+```bash
+agent-desktop set-value @s8f3k2p9:e11 "19:30"
+```
+
+A value in another form, such as `7:30 PM`, returns `INVALID_ARGS` with `details.kind: cdp_value_not_canonical`, and the suggestion names the exact value to pass. A value the input refuses, such as `2026-02-30`, returns `ACTION_FAILED` with `details.kind: cdp_value_rejected` and leaves the old value. The `incrementor` refs inside the field (Hours, Minutes, AM/PM) have no value of their own: `set-value` on them returns `ACTION_NOT_SUPPORTED`.
+
 ## 4. Keep the native UI on the accessibility surfaces
 
 The window chrome, menus, and dialogs are not part of the page, so read them with a window or surface snapshot in the same run:
