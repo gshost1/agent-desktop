@@ -23,6 +23,38 @@
 - Release changelog (control, 2026-11-08): web figures say "local test pages" (real-site round 0 has the web channel much slower than agent-browser). Known issues: (1) a snapshot of a very large page can fail with INTERNAL "RefMap exceeds 1MB size"; (2) clickable rows exposed as plain text get no ref. The browser session's Opus writers fix both, due 23:00 PST. Drop each line only if its fix merges before the freeze. Two more writers share the build queue tonight.
 - Found: macOS has no `setsid`; long runs go through a Python `os.setsid()` wrapper with nohup.
 
+## Post-release plan: turn count (written 2026-11-08 ~14:20 PST, no runs tonight)
+
+Source: the 60 runs on main builds today (`wt-final`, `wt-main67`), 20 per task, 60/60 pass, from `bench/runs/results.jsonl`.
+Labels from `python3 bench/turn_causes.py`, then checked by hand against the commands. Ideal is 3 turns per task (one
+look, one act-and-read, the answer); every turn past that is counted. Some `wt-final` calculator runs predate #63.
+
+| Task | Median turns (min-max) | Extra turns | Causes, with counts |
+|---|---|---|---|
+| weather | 5 (3-7) | 36 | 18 re-read after `head -c` cut the snapshot; 5 first look too shallow (`--skeleton`, or `find --role cell` with no match), then a full snapshot; 5 extra `--root` drill or re-drill; 3 `launch` alone in its own turn; 2 `--help`; 1 find to locate the list; 1 re-filter of the same tree; 1 turn with no tool |
+| settings | 6 (5-9) | 60 | 14 find retries (`find --name General` first, then About, or a role/timeout tweak); 13 `--help` (12 `wait --help`), plus 6 click turns split from the read for the same reason; 11 full `-i` snapshot (15 KB) to locate About after finding General; 5 re-read after `head -c`; 4 re-filter; 3 post-click re-read; 3 `launch` alone; 1 no tool |
+| calculator | 4 (3-6) | 22 | 12 wrong key (the model typed `9` for `7` or swapped `7 8`; the snapshot names every key correctly, e.g. `e7` "7" / `Seven`), each costing one rerun; 9 zsh unbraced `$S:e…` (pre-#63 runs only; #63 fixes it); 1 re-read |
+
+Candidate fixes, ranked by turns they could remove (per 20 runs). Each is measured post-release as its own A/B against
+main on weather, settings and calculator, **n≥8 per task per side**, order rotated, under the lock; primary metric
+median turns, then wall and input tokens. Keep a fix only if median turns drop on the task it targets and no task
+regresses.
+1. **Snapshot output shape: a line-per-ref text form** (e.g. `@sX:e7 button "7"`, children indented), opt-in flag,
+   JSON stays the default. Targets the 23 `head -c` re-reads, 5 re-filters, the 11 locate-by-full-snapshot turns,
+   and plausibly the 12 key slips (a long JSON line is where the model mis-maps refs). Cost: a contract addition
+   (`docs/json-output.md`, skill, golden fixture). Biggest potential; app-agnostic.
+2. **Skill text: wait and read after an action.** One worked example `click <ref> && wait --app X --text <t>` with
+   the real flag names (models guessed `--timeout`, `--text` placement). Targets 13 `--help` turns and the 6 split
+   click turns. Cheap; no code.
+3. **Skill text: find the target, not its parent.** "Use `find --name <the thing you will click>`; a parent's
+   pane is usually already open." Targets 14 find retries and 11 locate snapshots on settings. Cheap.
+4. **Skill text: never truncate a snapshot with `head -c`; narrow it with `find`, `--root` or `-i`.** Targets the
+   23 truncation re-reads if fix 1 does not land. Cheap.
+5. **Skill text: chain `launch X && snapshot --app X -i --compact` in one call.** Targets 6 launch-alone turns.
+6. Calculator key slips with no output change: none app-agnostic in skill text beyond "read the key names back
+   from the result before answering"; measure only together with fix 1.
+Order of measurement: 2+3+4+5 as one skill PR first (cheap, one A/B), then fix 1 alone against that.
+
 ## Handoff (2026-11-08 ~19:45Z, speed session → fresh session)
 
 Machine: the Mac. Bench worktree: `/Users/Shost2/.t3/worktrees/agent-desktop/perf-speed-cost`, branch `perf/speed-cost`. Control thread: `mcp:1f6d7f49-e90f-4bb7-8055-7282273fec73` (env `14d05056-c993-4b71-9ef4-75b0e02fc276`); send CHECKPOINTs there.
