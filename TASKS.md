@@ -124,8 +124,8 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 6 | `fix/persist-policy-inherited-deadline` | REFS-5 / ACTION-8 | [#11](https://github.com/gshost1/agent-desktop/pull/11) | **merged** 2026-11-07 as `fe81b5c3`; CI 26/26 green on head `d2185abf`, gates green (4428), review applied | ready (upstream register item 10, no upstream issue) |
 | 7 | `fix/x11-release-guard-armed-state` | ADAPTERS-5 | [#15](https://github.com/gshost1/agent-desktop/pull/15) | **merged** 2026-11-07 as `4acf87bc` (rules 1+2); CI 26/26 green on head `a52c0589`, gates green (4552), review applied | ready (Linux only, no fork-only dependency) |
 | 8 | `fix/notification-wait-baseline` | SURFACE-2 / ACTION-4 | [#16](https://github.com/gshost1/agent-desktop/pull/16) | **merged** 2026-11-07 as `a3a1aedd` (rule 3: `main` moved by non-overlapping Linux files); CI 26/26 green on head `85b9c7c2`, gates green (4564) | ready (upstream register item 19, no issue) |
-| 9 | `fix/menu-close-wait-phase` | SURFACE-1 | – | writer started (w9); core-owned MenuWaitPhase; mac/win edits make it a draft | – |
-| 10 | `fix/resolve-error-classification` | REFS-4 | – | pushed `7886110b`, gates green (4555); decision applied in round 1: keep ref-action fast-fail on complete absence (no 5 s wait for a stale ref), reorder race marked incomplete evidence and retried | – |
+| 9 | `fix/menu-close-wait-phase` | SURFACE-1 | – | pushed `341762c6`, gates green (4558); review round 1 being applied (1.5 s grace, deadline closes AwaitingOpen, two closed reads to leave Open, 500 ms seed cap); mac/win edits -> draft | – |
+| 10 | `fix/resolve-error-classification` | REFS-4 | – | pushed `1e2069e3`, gates green (4578), fast-fail kept; review round 2 being applied (bounded moved-landing retry, pointer actions on the same verdict, Absent by kind) | – |
 
 ## Needs Mac verification
 
