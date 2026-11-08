@@ -125,7 +125,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 7 | `fix/x11-release-guard-armed-state` | ADAPTERS-5 | [#15](https://github.com/gshost1/agent-desktop/pull/15) | **merged** 2026-11-07 as `4acf87bc` (rules 1+2); CI 26/26 green on head `a52c0589`, gates green (4552), review applied | ready (Linux only, no fork-only dependency) |
 | 8 | `fix/notification-wait-baseline` | SURFACE-2 / ACTION-4 | [#16](https://github.com/gshost1/agent-desktop/pull/16) | **merged** 2026-11-07 as `a3a1aedd` (rule 3: `main` moved by non-overlapping Linux files); CI 26/26 green on head `85b9c7c2`, gates green (4564) | ready (upstream register item 19, no issue) |
 | 9 | `fix/menu-close-wait-phase` | SURFACE-1 | – | writer started (w9); core-owned MenuWaitPhase; mac/win edits make it a draft | – |
-| 10 | `fix/resolve-error-classification` | REFS-4 | – | writer started (w10); typed resolve verdict, reorder race transient | – |
+| 10 | `fix/resolve-error-classification` | REFS-4 | – | pushed `7886110b`, gates green (4555); decision applied in round 1: keep ref-action fast-fail on complete absence (no 5 s wait for a stale ref), reorder race marked incomplete evidence and retried | – |
 
 ## Needs Mac verification
 
