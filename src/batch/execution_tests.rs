@@ -1,3 +1,4 @@
+use crate::batch::execute;
 use crate::batch::result_entry::bounded_entry;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -245,6 +246,22 @@ fn an_oversized_successful_action_without_a_report_is_delivered_unverified() {
         "delivered_unverified"
     );
     assert_eq!(entry["error"]["disposition"]["retry"], "unsafe");
+}
+
+#[test]
+fn a_trace_failure_body_over_the_output_limit_is_omitted() {
+    let body = json!({
+        "results": [{ "data": { "payload": "x".repeat(MAX_BATCH_OUTPUT_BYTES) } }],
+        "total_entries": 1,
+        "completed_entries": 1,
+    });
+
+    let details = crate::batch::trace_failure_details(body);
+
+    assert_eq!(details["result_omitted"], true);
+    assert_eq!(details["total_entries"], 1);
+    assert!(details.get("batch").is_none());
+    assert!(serialized_size(&details) < 1024);
 }
 
 struct RecordingReadAdapter {

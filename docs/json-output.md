@@ -71,8 +71,9 @@ command that sends input to an application and carries no delivery evidence,
 such as a `TIMEOUT` on an operation that may already have landed, keeps it. A
 read-only command sends nothing, and neither does a command that only writes a
 local file or local state (`screenshot <PATH>`, `clipboard-get --out`,
-`trace export`, `session start`, `session end` and `session gc`), so their
-errors carry `not_delivered`. Invalid arguments never reach the application, so
+`trace export` and `session gc`), so their errors carry `not_delivered`.
+`session start` and `session end` change session state and drive the cursor
+overlay, so they are treated like commands that send input. Invalid arguments never reach the application, so
 their errors, and a lookup failure such as `APP_NOT_FOUND`, carry
 `not_delivered` too. The exception is an `INVALID_ARGS` error with no
 disposition of its own that carries `details.preparatory_focus` or
@@ -92,8 +93,14 @@ Under `--trace-strict`, a `batch` whose closing trace record cannot be written
 fails with the trace error and `details.kind: "batch_trace_end_failed"`. Every
 entry has already run, so `details.batch` holds the batch body with each
 per-entry result, and `details.cause_details` keeps the trace error's own
-details. The disposition is `not_delivered` when every entry carries
-`not_delivered`, and `delivery_uncertain` otherwise.
+details. A body that would push the response past the batch output limit is
+left out: `details.result_omitted` is `true` and only `total_entries`,
+`completed_entries`, `not_started_entries` and `stopped` are kept. The
+disposition is `not_delivered` when no entry can have delivered (each entry's
+disposition is `not_delivered`, or it is a successful command that sends no
+input), and `delivery_uncertain` otherwise. Any other command whose closing
+trace record fails after it succeeded reports `delivered_unverified` unless it
+is read-only.
 
 A ref action that fails after it starts waiting on the interaction lease and
 before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
@@ -101,7 +108,8 @@ waiting for the lease, a deadline spent while taking it, a failed headed focus
 step, a failed resolve or actionability check under the lease, and a failed
 trace write at dispatch start. The focus step of a headed pointer command, and
 the lease, a deadline spent while taking it, target revalidation and focus step
-of `press`, are `not_delivered` the same way. Once a focus call has run, a
+of `press`, are `not_delivered` the same way. A key refusal that `press`
+raises after its headed focus carries `details.preparatory_focus` too. Once a focus call has run, a
 failure raised later in the ref action's dispatch (the focus itself, the resolve
 and actionability check under the lease, the action and its verification)
 carries `details.preparatory_focus: "may_have_moved_focus"`, because that call

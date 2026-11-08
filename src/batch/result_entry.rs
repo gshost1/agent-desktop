@@ -9,6 +9,7 @@ use crate::command_policy::CommandEffect;
 
 pub(super) const MAX_BATCH_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const OUTPUT_METADATA_RESERVE: usize = 8 * 1024;
+const TRACE_FAILURE_RESERVE: usize = 2 * 1024;
 
 #[cfg(test)]
 pub(super) fn bounded_entry(
@@ -98,7 +99,38 @@ pub(super) fn not_started_entry(
     })
 }
 
-fn entry_disposition(entry: &Value, effect: CommandEffect) -> DeliverySemantics {
+/// The details of a batch whose closing trace record failed under
+/// `--trace-strict`. The body travels whole when it fits the batch output
+/// limit with room for the error around it; otherwise it is omitted and only
+/// its counts and stop reason are kept.
+pub(crate) fn trace_failure_details(body: Value) -> Value {
+    let limit = MAX_BATCH_OUTPUT_BYTES.saturating_sub(TRACE_FAILURE_RESERVE);
+    if serialized_fits(&body, limit) {
+        return json!({ "kind": "batch_trace_end_failed", "batch": body });
+    }
+    let mut details = json!({
+        "kind": "batch_trace_end_failed",
+        "result_omitted": true,
+        "max_output_bytes": MAX_BATCH_OUTPUT_BYTES,
+    });
+    for key in [
+        "total_entries",
+        "completed_entries",
+        "not_started_entries",
+        "stopped",
+    ] {
+        if let Some(value) = body.get(key) {
+            details[key] = value.clone();
+        }
+    }
+    details
+}
+
+/// The disposition of one batch entry: its result's `data.disposition` or
+/// `error.disposition`, else what its effect allows. A command that sends no
+/// input sent nothing; a successful one that sends input reports the
+/// `delivered_unverified` its action scope would.
+pub(crate) fn entry_disposition(entry: &Value, effect: CommandEffect) -> DeliverySemantics {
     let disposition = entry
         .get("data")
         .and_then(|data| data.get("disposition"))

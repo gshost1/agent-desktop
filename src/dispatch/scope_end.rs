@@ -4,25 +4,32 @@
 //! the error's `details.batch` instead of being dropped.
 
 use agent_desktop_core::{AppError, DeliveryDisposition, DeliverySemantics, context::CommandScope};
-use serde_json::{Value, json};
+use serde_json::Value;
 
+use crate::command_policy::CommandEffect;
+
+/// `batch_effects` is the effect of each batch entry by index, present only
+/// when the command is a batch.
 pub(super) fn complete(
     scope: CommandScope<'_>,
     result: Result<Value, AppError>,
-    batch: bool,
+    batch_effects: Option<&[CommandEffect]>,
 ) -> Result<Value, AppError> {
-    match (scope.complete(&result), result) {
-        (Ok(()), result) => result,
-        (Err(trace_error), Ok(body)) if batch => Err(batch_trace_failure(trace_error, body)),
-        (Err(trace_error), _) => Err(trace_error),
+    match (scope.complete(&result), result, batch_effects) {
+        (Ok(()), result, _) => result,
+        (Err(trace_error), Ok(body), Some(effects)) => {
+            Err(batch_trace_failure(trace_error, body, effects))
+        }
+        (Err(trace_error), _, _) => Err(trace_error),
     }
 }
 
-fn batch_trace_failure(trace_error: AppError, body: Value) -> AppError {
-    let disposition = batch_disposition(&body);
+fn batch_trace_failure(trace_error: AppError, body: Value, effects: &[CommandEffect]) -> AppError {
+    let disposition = batch_disposition(&body, effects);
     let mut error = trace_error.into_adapter_error();
-    let mut details = json!({ "kind": "batch_trace_end_failed", "batch": body });
-    if let Some(cause_details) = error.details.take() {
+    let cause_details = error.details.take();
+    let mut details = crate::batch::trace_failure_details(body);
+    if let Some(cause_details) = cause_details {
         details["cause_details"] = cause_details;
     }
     error
@@ -31,30 +38,27 @@ fn batch_trace_failure(trace_error: AppError, body: Value) -> AppError {
         .into()
 }
 
-fn batch_disposition(body: &Value) -> DeliverySemantics {
+fn batch_disposition(body: &Value, effects: &[CommandEffect]) -> DeliverySemantics {
     let sent_nothing = body
         .get("results")
         .and_then(Value::as_array)
-        .is_some_and(|entries| entries.iter().all(entry_sent_nothing));
+        .is_some_and(|entries| {
+            entries.iter().all(|entry| {
+                let effect = entry
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .and_then(|index| effects.get(usize::try_from(index).ok()?))
+                    .copied()
+                    .unwrap_or(CommandEffect::AppInput);
+                crate::batch::entry_disposition(entry, effect).delivery()
+                    == DeliveryDisposition::NotDelivered
+            })
+        });
     if sent_nothing {
         DeliverySemantics::not_delivered()
     } else {
         DeliverySemantics::uncertain()
     }
-}
-
-fn entry_sent_nothing(entry: &Value) -> bool {
-    entry
-        .get("data")
-        .and_then(|data| data.get("disposition"))
-        .or_else(|| {
-            entry
-                .get("error")
-                .and_then(|error| error.get("disposition"))
-        })
-        .cloned()
-        .and_then(|value| serde_json::from_value::<DeliverySemantics>(value).ok())
-        .is_some_and(|disposition| disposition.delivery() == DeliveryDisposition::NotDelivered)
 }
 
 #[cfg(test)]

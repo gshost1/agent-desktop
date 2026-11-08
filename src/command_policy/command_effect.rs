@@ -1,13 +1,9 @@
-//! The widest effect a command can have outside this process. It decides how
-//! a failure that carries no delivery evidence is settled, so a command that
-//! only reads, or only writes a local file, is never reported as possibly
-//! delivered to an application.
+//! The widest effect a command can have outside this process, decided once
+//! per command by `Commands::effect`. It settles a failure that carries no
+//! delivery evidence, so a command that only reads, or only writes a local
+//! file, is never reported as possibly delivered to an application.
 
-use crate::cli::Commands;
-
-/// What a command can change. Mutating commands that are not listed as local
-/// writes default to [`CommandEffect::AppInput`], which never claims that
-/// nothing was delivered.
+/// What a command can change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CommandEffect {
     /// Reads only: nothing is sent and nothing is written.
@@ -20,19 +16,6 @@ pub(crate) enum CommandEffect {
 }
 
 impl CommandEffect {
-    pub(crate) fn of(cmd: &Commands) -> Self {
-        if !cmd.is_mutating() {
-            return Self::ReadOnly;
-        }
-        match cmd {
-            Commands::Screenshot(_)
-            | Commands::ClipboardGet(_)
-            | Commands::Session(_)
-            | Commands::Trace(_) => Self::LocalWrite,
-            _ => Self::AppInput,
-        }
-    }
-
     pub(crate) fn sends_input(self) -> bool {
         self == Self::AppInput
     }

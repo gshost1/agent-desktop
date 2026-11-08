@@ -13,17 +13,22 @@ use super::{
     result_entry::{MAX_BATCH_OUTPUT_BYTES, not_started_entry},
 };
 
+/// Runs the batch and records, in `entry_effects`, the effect of every
+/// prepared entry by its index, so a caller that settles the batch later can
+/// read each entry's disposition with its effect.
 pub(super) fn execute(
     args: BatchArgs,
     adapter: &dyn PlatformAdapter,
     permission_report: &PermissionReport,
     context: &CommandContext,
+    entry_effects: &mut Vec<CommandEffect>,
 ) -> Result<Value, AppError> {
     let deadline = Deadline::after(args.timeout_ms)
         .map_err(|error| error.with_disposition(DeliverySemantics::not_delivered()))?;
     let batch_context = context.clone().with_inherited_deadline(deadline);
     let mut commands = prepare(&args.commands_json, permission_report, &batch_context)?;
     let total = commands.len();
+    entry_effects.extend(commands.iter().map(|prepared| prepared.command.effect()));
     let mut results = Vec::with_capacity(total);
     let mut results_bytes = 0;
     let mut completed = 0;
@@ -104,7 +109,7 @@ pub(super) fn execute(
             .with_event_baseline(current_baseline)
             .with_notification_seed(current_notification);
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
-        let effect = CommandEffect::of(&command);
+        let effect = entry_effects[index];
         let entry = super::result_entry::completed_entry(
             index,
             &commands[index].name,

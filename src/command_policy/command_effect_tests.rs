@@ -9,7 +9,7 @@ fn effect(arguments: &[&str]) -> CommandEffect {
         .expect("command parses")
         .command
         .expect("subcommand is present");
-    CommandEffect::of(&command)
+    command.effect()
 }
 
 #[test]
@@ -17,7 +17,6 @@ fn commands_that_write_only_local_files_or_state_send_no_input() {
     for arguments in [
         &["screenshot", "/tmp/capture.png"][..],
         &["clipboard-get", "--out", "/tmp/clipboard.png"],
-        &["session", "start"],
         &["session", "gc"],
         &["trace", "export"],
     ] {
@@ -50,6 +49,8 @@ fn commands_that_reach_applications_or_shared_state_are_app_input() {
         &["press", "cmd+c"],
         &["clipboard-clear"],
         &["permissions", "--request"],
+        &["session", "start"],
+        &["session", "end", "run_1"],
         &["cursor-overlay", "disable"],
         &["batch", "[]"],
     ] {

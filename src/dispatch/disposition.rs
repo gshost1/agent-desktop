@@ -2,8 +2,6 @@ use agent_desktop_core::{AdapterError, AppError, DeliverySemantics, ErrorCode};
 
 use crate::command_policy::CommandEffect;
 
-const PREPARATORY_STEPS: [&str; 2] = ["preparatory_focus", "preparatory_scroll"];
-
 /// Settles the delivery of an error that carries none, by what the command
 /// can change. A read-only or local-write command sends nothing to an
 /// application, so its failure is `not_delivered`; one that has no
@@ -38,13 +36,7 @@ fn settle(source: AdapterError, effect: CommandEffect) -> AdapterError {
 
 fn sent_nothing(source: &AdapterError, effect: CommandEffect) -> bool {
     !effect.sends_input()
-        || (source.code == ErrorCode::InvalidArgs && !ran_preparatory_step(source))
-}
-
-fn ran_preparatory_step(source: &AdapterError) -> bool {
-    source.details.as_ref().is_some_and(|details| {
-        PREPARATORY_STEPS
-            .iter()
-            .any(|step| details.get(step).is_some())
-    })
+        || (source.code == ErrorCode::InvalidArgs
+            && !source.moved_focus()
+            && !source.changed_view())
 }
