@@ -10,10 +10,10 @@ use crate::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct CountingAdapter {
-    builds: AtomicUsize,
-    observe: Option<fn(usize) -> ObservedTree>,
-    observe_with_request: Option<fn(usize, &ObservationRequest) -> ObservedTree>,
+pub(super) struct CountingAdapter {
+    pub(super) builds: AtomicUsize,
+    pub(super) observe: Option<fn(usize) -> ObservedTree>,
+    pub(super) observe_with_request: Option<fn(usize, &ObservationRequest) -> ObservedTree>,
 }
 
 impl ObservationOps for CountingAdapter {
@@ -36,11 +36,11 @@ impl ActionOps for CountingAdapter {}
 impl InputOps for CountingAdapter {}
 impl SystemOps for CountingAdapter {}
 
-fn request() -> LocatorResolveRequest {
+pub(super) fn request() -> LocatorResolveRequest {
     request_with_timeout(std::time::Duration::from_secs(5))
 }
 
-fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
+pub(super) fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
     LocatorResolveRequest {
         selection: LocatorSelection::Strict,
         deadline: crate::Deadline::from_duration(timeout).unwrap(),
@@ -50,7 +50,7 @@ fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
     }
 }
 
-fn observed_tree(complete: bool, stats: LocatorStats) -> ObservedTree {
+pub(super) fn observed_tree(complete: bool, stats: LocatorStats) -> ObservedTree {
     let root = super::test_support::node(
         0,
         super::test_support::evidence("window", Some("Fixture")),
@@ -259,8 +259,10 @@ fn strict_unknown_incomplete_result_fails_closed() {
         panic!("expected adapter error");
     };
     assert_eq!(error.code, ErrorCode::Timeout);
-    assert_eq!(error.details.unwrap()["kind"], "locator_incomplete");
-    assert_eq!(adapter.builds.load(Ordering::SeqCst), 1);
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "locator_incomplete");
+    assert_eq!(details["query_stats"]["reads"]["observation_attempts"], 2);
+    assert_eq!(adapter.builds.load(Ordering::SeqCst), 2);
 }
 
 fn spends_its_observation_budget(_: usize, request: &ObservationRequest) -> ObservedTree {
