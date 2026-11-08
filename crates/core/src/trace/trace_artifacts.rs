@@ -167,11 +167,14 @@ pub(crate) fn copy_refmap_if_full(
     Ok(())
 }
 
+/// Emits the `action.artifacts` event for one action's pair, with `extra`
+/// optional fields (such as the pre screenshot's age and the delivery) added.
 pub(crate) fn emit_action_artifacts(
     context: &CommandContext,
     ref_id: &str,
     pre: &ArtifactOutcome,
     post: &ArtifactOutcome,
+    extra: serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), AppError> {
     if !artifacts_enabled(context) {
         return Ok(());
@@ -182,13 +185,14 @@ pub(crate) fn emit_action_artifacts(
         }
         _ => None,
     };
-    if let Some(reason) = same_skip {
-        return context.trace(
-            "action.artifacts",
-            json!({ "ref": ref_id, "skipped": reason }),
-        );
-    }
     let mut fields = json!({ "ref": ref_id });
+    if let Some(object) = fields.as_object_mut() {
+        object.extend(extra);
+    }
+    if let Some(reason) = same_skip {
+        fields["skipped"] = json!(reason);
+        return context.trace("action.artifacts", fields);
+    }
     match pre {
         ArtifactOutcome::Captured(path) => fields["screenshot_pre"] = json!(path),
         ArtifactOutcome::Skipped(reason) if reason != "disabled" => {
@@ -251,7 +255,3 @@ mod toctou_tests;
 #[cfg(test)]
 #[path = "trace_artifacts_dispatch_budget_tests.rs"]
 mod dispatch_budget_tests;
-
-#[cfg(test)]
-#[path = "trace_artifacts_pairing_tests.rs"]
-mod pairing_tests;

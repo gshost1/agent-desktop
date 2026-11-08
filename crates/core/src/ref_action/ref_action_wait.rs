@@ -26,7 +26,7 @@ pub(crate) fn execute_with_auto_wait(
     let (result, lease, artifacts, _lease_started) =
         execute_with_auto_wait_and_lease(context, request, dispatch)?;
     drop(lease);
-    artifacts.finish_delivered();
+    artifacts.finish_with_post(result.disposition());
     Ok(result)
 }
 
@@ -73,7 +73,7 @@ fn execute_with_deadline<'a>(
     let mut saw_ambiguity = false;
     let mut refusal: Option<AdapterError> = None;
     let mut moved = crate::ref_action::ref_action_moved_landings::MovedLandings::default();
-    let mut artifacts = ActionArtifacts::new(context);
+    let mut artifacts = ActionArtifacts::new(context, deadline);
     loop {
         let mut state = if polls {
             execute_poll_loop(context, &request, deadline, &mut moved)
@@ -82,7 +82,7 @@ fn execute_with_deadline<'a>(
             RefActionPollState::default()
         };
         state.saw_ambiguity |= saw_ambiguity;
-        artifacts.capture_pre_once(deadline);
+        artifacts.capture_pre_once();
         let cursor = crate::cursor_overlay::hold_cursor(context.context, deadline);
         crate::ref_action::presentation::before_lease(context, &request, deadline, cursor.is_ok());
         let lease = acquire_lease(context.adapter, deadline)
@@ -92,6 +92,7 @@ fn execute_with_deadline<'a>(
             request.timeout_ms = Some(deadline.remaining_ms());
         }
         let lease_started = std::time::Instant::now();
+        artifacts.attempting();
         let shot = execute_single_shot(context, request.clone(), deadline, &lease, &dispatch);
         match shot.result {
             Ok(mut result) => {
@@ -106,14 +107,20 @@ fn execute_with_deadline<'a>(
             Err(error) => {
                 drop(lease);
                 if error.disposition != crate::DeliverySemantics::not_delivered() {
-                    artifacts.finish_delivered();
+                    artifacts.finish_with_post(error.disposition);
                     return Err(error);
                 }
-                if !(polls && resolves_again(&error, deadline)) {
-                    return Err(error);
-                }
+                let waits_again = polls && resolves_again(&error, deadline);
                 if shot.focused {
-                    return Err(stopped_after_focus(error, &state, refusal.as_ref()));
+                    artifacts.finish_with_post(error.disposition);
+                    return Err(if waits_again {
+                        stopped_after_focus(error, &state, refusal.as_ref())
+                    } else {
+                        error
+                    });
+                }
+                if !waits_again {
+                    return Err(error);
                 }
                 let verdict = crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(&error);
                 if let Some(absent) = moved.exhausted(verdict, context.entry) {
@@ -164,12 +171,11 @@ fn stopped_after_focus(
     with_refusal(error, refusal)
 }
 
-/// Whether a dispatch-time refusal goes back to the wait: the full resolution
-/// under the lease failed in a way that may clear, nothing was sent, and the
-/// caller's budget is not spent.
+/// Whether a dispatch-time refusal that sent nothing goes back to the wait:
+/// the full resolution under the lease failed in a way that may clear, and
+/// the caller's budget is not spent.
 fn resolves_again(error: &AdapterError, deadline: Deadline) -> bool {
-    error.disposition == crate::DeliverySemantics::not_delivered()
-        && crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(error).retries()
+    crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(error).retries()
         && !deadline.is_expired()
 }
 

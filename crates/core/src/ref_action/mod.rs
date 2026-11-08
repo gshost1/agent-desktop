@@ -237,13 +237,21 @@ pub(crate) fn execute_resolved(
     request: ActionRequest,
     lease: &crate::InteractionLease,
 ) -> Result<ActionResult, AppError> {
-    let mut artifacts = action_artifacts::ActionArtifacts::new(*target.target);
-    artifacts.capture_pre_once(target.deadline);
+    let mut artifacts = action_artifacts::ActionArtifacts::new(*target.target, target.deadline);
+    artifacts.capture_pre_once();
     let stability =
         actionability::StabilityExpectation::permissive(target.entry.geometry.bounds_hash);
     preflight_resolved(&target, &request, stability)?;
+    artifacts.attempting();
     let result = ref_action_single::dispatch_resolved(target.target, request, lease);
-    artifacts.finish_delivered();
+    let delivery = match &result {
+        Ok(result) => result.disposition(),
+        Err(crate::AppError::Adapter(error)) => error.disposition,
+        Err(_) => crate::DeliverySemantics::unknown(),
+    };
+    if delivery != crate::DeliverySemantics::not_delivered() {
+        artifacts.finish_with_post(delivery);
+    }
     result
 }
 

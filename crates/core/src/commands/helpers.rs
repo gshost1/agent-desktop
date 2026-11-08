@@ -142,7 +142,7 @@ pub(crate) fn execute_ref_action_dispatching(
     };
     let lease_hold_ms = u64::try_from(lease_started.elapsed().as_millis()).unwrap_or(u64::MAX);
     drop(lease);
-    artifacts.finish_delivered();
+    artifacts.finish_with_post(result.disposition());
     let value = serde_json::to_value(result).map_err(|error| {
         post_delivery_error(AppError::Json(error), json!({ "action": "delivered" }))
     })?;
