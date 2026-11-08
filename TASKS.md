@@ -258,6 +258,19 @@ Both were removed within a minute, but GitHub had already notified the author an
 upstream `#602`'s timeline; that event cannot be removed from the fork side. Upstream policy now: nothing goes to
 vercel-labs, references as inline code only.
 
+## Unattended run summary (2026-11-08, laptop, ended ~08:10 PST)
+
+**Rows (77 in the findings table, plus 21 accepted D rows on one line):**
+- Fixed and merged: 24 rows (ACTION-1, ACTION-2, ACTION-3/STATE-8, ADAPTERS-5, BINARY-1/2/3/4/5/6/7, BINARY-9/STATE-4, LIFECYCLE-8, LIFECYCLE-9, LIFECYCLE-10, REFS-4, REFS-5/ACTION-8, STATE-1 (+STATE-2/3 docs), STATE-5/BINARY-10, STATE-7, STATE-9, STATE-17, STATE-21, SURFACE-2/ACTION-4).
+- Open draft PRs: 5 (REFS-2 #14, SURFACE-1 #18, SURFACE-3 #34, LIFECYCLE-6 #38 need device checks; ACTION-12 #58 parked for a design decision).
+- Accepted (D / docs only): 24 (the D-rows line, plus STATE-11, ACTION-6, STATE-18).
+- Owned elsewhere: MAC-SAVE-1.
+- Still open: 44 = 21 fixable here, 11 Mac/Windows drafts to write, 5 carries of open upstream PRs, 7 blocked on a live probe.
+
+**Fork PRs merged overnight:** #37, #39, #40, #42, #43, #45, #46, #51, #52, #53, #55, #57 (28 merged in total on the fork from this work). Main CI green after each checked merge.
+
+**When the ledger will be done:** the 21 fixable-here rows are about 14 PRs; at tonight's pace (12 merged in ~11 h with two to four review rounds each) that is about a day and a half of run time. The 11 Mac/Windows drafts and 5 carries need device verification on the Mac and a Windows box; the 7 probe rows need the Mac or a Java ATK app on Linux and stay open until then.
+
 ## Remaining work plan (2026-11-08)
 
 Every open row above code clarity has one disposition:
