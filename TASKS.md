@@ -163,11 +163,12 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 ## Blocked on George
 
-- Linux E2E prerequisites: `sudo -n apt-get install ...` was denied by this session's Claude Code permission layer
-  before sudo ran. Run on the laptop: `sudo apt-get install -y x11-apps xdotool wmctrl xclip openbox wl-clipboard
-  gnome-terminal python3-pyqt6`, or allow it for the session.
-- Fork CI: `pull_request` runs do not start on fork PRs; CI is dispatched with `workflow_dispatch` on the head SHA
-  (counts for merging per George). CodeQL and Supply Chain are `disabled_fork`.
+- Mac checks for drafts #14, #18, #34, #38 and the Windows check for #34 (commands under "Needs Mac verification" / "Needs Windows verification").
+- Upstream issues for needs-issue-first PRs before anything goes upstream: #14 (envelope 2.7), #34 (new list field), #46 (`data.focus_observed`).
+- CI wiring for PR #51's viewer test: the laptop's `gh` token has no `workflow` scope, so `.github/workflows/ci.yml` cannot be pushed from here. Either run `gh auth refresh -h github.com -s workflow` on the laptop, or make the change from the Mac: in the "Embedded visual viewer tests" step, `run: node --test src/visual_debug/viewer_filter.test.js crates/core/src/trace/trace_read/viewer_group.test.js`.
+- Optional disk cleanup: old build dirs (`w5/target` 16G, `w9/target` 16G, main `target` 9.3G); nothing deleted without a yes.
+- Upstream `#602` carries one cross-reference event from PR #1's first body (edited within a minute; the event persists).
+- Resolved: Linux E2E packages installed by George (2026-11-07); `pull_request` CI runs on fork PRs again.
 
 ## Handoff (laptop → VPS), 2026-11-07: REVERSED, do not act on it
 
