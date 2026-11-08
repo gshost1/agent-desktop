@@ -4,6 +4,7 @@ pub(crate) mod candidate_origin;
 pub(crate) mod cdp_connector;
 pub(crate) mod embedded_runtime;
 pub(crate) mod endpoint_candidate;
+pub(crate) mod endpoint_mismatch;
 pub(crate) mod endpoint_registry;
 pub(crate) mod input_ops;
 pub(crate) mod link_access;
