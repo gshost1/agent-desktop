@@ -5,6 +5,7 @@ use serde_json::json;
 use crate::{
     ActionRequest, AdapterError, Deadline, ErrorCode,
     ref_action::ref_action_context::RefActionContext,
+    ref_action::ref_action_moved_landings::MovedLandings,
     ref_action::ref_action_poll_state::RefActionPollState,
     ref_action::ref_action_wait_context::RefActionWaitContext,
     ref_action::ref_action_wait_evidence::{failed_check, should_scroll_after_preflight},
@@ -30,6 +31,7 @@ pub(crate) fn execute_poll_loop(
     context: RefActionWaitContext<'_>,
     request: &ActionRequest,
     deadline: Deadline,
+    moved: &mut MovedLandings,
 ) -> Result<RefActionPollState, AdapterError> {
     let mut state = RefActionPollState {
         expected_bounds_hash: context
@@ -44,7 +46,7 @@ pub(crate) fn execute_poll_loop(
         match land_within_deadline(context.adapter, context.entry, deadline) {
             ResolveAttemptOutcome::DeadlinePassed => return Err(timeout(&state, deadline)),
             ResolveAttemptOutcome::Failed(error) => {
-                handle_resolve_failure(context, &mut state, error.unsent(), deadline)?;
+                handle_resolve_failure(context, &mut state, error.unsent(), deadline, moved)?;
             }
             ResolveAttemptOutcome::Resolved(handle) => {
                 trace_resolve_ok(context.context, context.ref_id);
@@ -97,18 +99,24 @@ fn handle_actionability_failure(
 }
 
 /// Ends the wait on a refusal the ref-action verdict settles, a complete
-/// absence included, and polls again on any other. The dispatch-time retry
-/// under the lease applies the same verdict.
+/// absence included, or on a moved landing past its retry limit, and polls
+/// again on any other. The dispatch-time retry under the lease applies the
+/// same verdict and the same count.
 fn handle_resolve_failure(
     context: RefActionWaitContext<'_>,
     state: &mut RefActionPollState,
     error: AdapterError,
     deadline: Deadline,
+    moved: &mut MovedLandings,
 ) -> Result<(), AdapterError> {
     let verdict = ResolveVerdict::for_ref_action(&error);
     if !verdict.retries() {
         trace_resolve_error(context.context, context.ref_id, &error);
         return Err(error);
+    }
+    if let Some(refusal) = moved.exhausted(verdict, context.entry) {
+        trace_resolve_error(context.context, context.ref_id, &refusal);
+        return Err(refusal);
     }
     state.saw_ambiguity |= error.code == ErrorCode::AmbiguousTarget;
     state.record_resolve_error(&error, verdict);

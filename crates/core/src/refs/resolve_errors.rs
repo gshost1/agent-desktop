@@ -88,6 +88,19 @@ pub(crate) fn absent(entry: &RefEntry) -> AdapterError {
         }))
 }
 
+/// The refusal for a landed element that does not match the ref. After a
+/// whole-window count found the ref's element just before the landing
+/// (`counted`), the path moved under the descent; with no count behind the
+/// landing, as in the C find entry point's first-match landing, nothing shows
+/// the element still exists, so it is absent.
+pub(crate) fn landed_elsewhere(entry: &RefEntry, counted: bool) -> AdapterError {
+    if counted {
+        landing_moved(entry)
+    } else {
+        absent(entry)
+    }
+}
+
 /// The stored path landed an element that does not match the ref, right after
 /// the whole-window count found the ref's element exactly once. The element
 /// existed a moment earlier, so this is a path that moved under the descent

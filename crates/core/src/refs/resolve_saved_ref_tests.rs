@@ -261,3 +261,25 @@ fn an_unproven_entry_is_never_landed_provisionally() {
     assert_eq!(error.details.unwrap()["kind"], "identity_not_unique");
     assert_eq!(adapter.counts(), (0, 0, 0, 0));
 }
+
+/// The C find entry point lands its first match with no whole-window count
+/// behind it, so a landed element that does not match proves nothing about a
+/// moved path: it stays a settled `saved_ref_absent`.
+#[test]
+fn a_landing_with_no_count_behind_it_that_does_not_match_is_absent() {
+    let _guard = HomeGuard::new();
+    let mut adapter = RuleAdapter::new(tree_with(vec![node("button", "Run")]));
+    adapter.landed = Some(node("button", "Cancel"));
+
+    let error = super::confirm_landed_element(
+        &adapter,
+        &entry(),
+        &crate::adapter::NativeHandle::new("anchor"),
+        crate::Deadline::standard().unwrap(),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert!(!error.permits_retry_by_default());
+    assert_eq!(error.details.unwrap()["kind"], "saved_ref_absent");
+}

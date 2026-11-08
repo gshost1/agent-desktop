@@ -90,6 +90,7 @@ fn a_settled_complete_absence_still_stops_at_once() {
 fn a_landing_raced_by_a_reorder_retries_and_then_lands() {
     let adapter = ReorderingAdapter {
         element_reads: AtomicU32::new(0),
+        moved_reads: 2,
     };
     let result = execute_with_auto_wait(
         RefActionWaitCtx {
@@ -126,6 +127,38 @@ fn incomplete_resolution_still_polls_until_success() {
 
     assert_eq!(result.action, "click");
     assert!(adapter.resolve_calls.load(Ordering::SeqCst) >= 3);
+}
+
+/// A path that keeps landing a different element is not a list that is
+/// settling: after two retried moved landings the action stops with a
+/// stale-ref diagnosis instead of a generic timeout at the end of its budget.
+#[test]
+fn a_landing_that_keeps_moving_stops_as_saved_ref_absent_after_two_retries() {
+    let adapter = ReorderingAdapter {
+        element_reads: AtomicU32::new(0),
+        moved_reads: u32::MAX,
+    };
+    let started = std::time::Instant::now();
+    let error = execute_with_auto_wait(
+        RefActionWaitCtx {
+            adapter: &adapter,
+            entry: &entry(),
+            ref_id: "@e1",
+            context: &CommandContext::default(),
+        },
+        request_with_timeout(5_000),
+        crate::ref_action::ref_action_single::dispatch_resolved,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(error.details.expect("details")["kind"], "saved_ref_absent");
+    assert_eq!(
+        adapter.element_reads.load(Ordering::SeqCst),
+        6,
+        "three attempts, each a provisional landing and a counted one"
+    );
+    assert!(started.elapsed() < std::time::Duration::from_millis(2_000));
 }
 
 struct SettledAbsenceAdapter {
@@ -169,10 +202,12 @@ impl SystemOps for SettledAbsenceAdapter {
     crate::adapter::guarded_interaction_lease!();
 }
 
-/// The recorded path holds a same-role sibling for the first two element reads,
-/// as a list re-sorting under the descent would, then the recorded element.
+/// The recorded path holds a same-role sibling for the first `moved_reads`
+/// element reads, as a list re-sorting under the descent would, then the
+/// recorded element.
 struct ReorderingAdapter {
     element_reads: AtomicU32,
+    moved_reads: u32,
 }
 
 impl ObservationOps for ReorderingAdapter {
@@ -187,7 +222,7 @@ impl ObservationOps for ReorderingAdapter {
         ) {
             return crate::adapter::saved_ref_tree(root, "button", Some("Run"));
         }
-        if self.element_reads.fetch_add(1, Ordering::SeqCst) < 2 {
+        if self.element_reads.fetch_add(1, Ordering::SeqCst) < self.moved_reads {
             return crate::adapter::observed_tree(
                 &root,
                 crate::adapter::minimal_accessibility_node("button", "Other"),

@@ -83,6 +83,29 @@ fn timeout_keeps_timeout_when_the_resolve_search_was_incomplete() {
     );
 }
 
+/// Only identity refusals are kept as the answer a wait reports when it runs
+/// out: a retryable read that timed out keeps the actionability timeout even
+/// when its producer marked it complete.
+#[test]
+fn timeout_keeps_timeout_for_a_complete_retryable_timeout_or_unresponsive_read() {
+    for code in [ErrorCode::Timeout, ErrorCode::AppUnresponsive] {
+        let mut state = RefActionPollState::default();
+        record(
+            &mut state,
+            &AdapterError::new(code, "slow read")
+                .with_details(json!({ "complete": true, "retryable": true })),
+        );
+
+        let error = timeout(&state, Deadline::after(1).expect("deadline"));
+
+        assert_eq!(error.code, ErrorCode::Timeout);
+        assert_eq!(
+            error.details.expect("timeout details")["kind"],
+            "actionability_timeout"
+        );
+    }
+}
+
 #[test]
 fn timeout_prefers_an_earlier_unsettled_answer_over_a_later_cutoff() {
     let mut state = RefActionPollState::default();
