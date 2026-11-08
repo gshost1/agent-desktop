@@ -36,8 +36,7 @@ pub unsafe extern "C" fn ad_get_tree_exact(
         let window = match crate::windows::ad_exact_window_to_core(&*win) {
             Ok(window) => window,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         get_core_tree(adapter, &window, &*opts, out)
@@ -82,15 +81,9 @@ unsafe fn get_core_tree(
                     unsafe { *out = tree };
                     AdResult::Ok
                 }
-                Err(error) => {
-                    set_last_error(&error);
-                    crate::error::last_error_code()
-                }
+                Err(error) => set_last_error(&error),
             }
         }
-        Err(e) => {
-            set_last_error(&e);
-            crate::error::last_error_code()
-        }
+        Err(e) => set_last_error(&e),
     }
 }

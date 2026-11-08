@@ -73,11 +73,10 @@ pub unsafe extern "C" fn ad_notification_action(
             }
         };
         if !policy.allow_focus_steal {
-            set_last_error(&agent_desktop_core::AdapterError::policy_denied_for_policy(
+            return set_last_error(&agent_desktop_core::AdapterError::policy_denied_for_policy(
                 "Notification actions open and focus the operating system notification surface",
                 policy,
             ));
-            return crate::error::last_error_code();
         }
         let adapter = crate::adapter::acquire_adapter!(adapter);
         let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
@@ -92,10 +91,7 @@ pub unsafe extern "C" fn ad_notification_action(
                 *out = action_result_to_c(&result);
                 AdResult::Ok
             }
-            Err(e) => {
-                set_last_error(&e);
-                crate::error::last_error_code()
-            }
+            Err(e) => set_last_error(&e),
         }
     })
 }

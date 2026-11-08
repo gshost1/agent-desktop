@@ -52,8 +52,7 @@ pub unsafe extern "C" fn ad_execute_by_ref_timeout(
 
         if let Err(app_err) = validate_ref_id(&ref_str) {
             let ae = app_error_to_adapter(app_err);
-            set_last_error(&ae);
-            return crate::error::last_error_code();
+            return set_last_error(&ae);
         }
 
         let caller_policy = match AdPolicyKind::from_c(policy) {
@@ -82,8 +81,7 @@ pub unsafe extern "C" fn ad_execute_by_ref_timeout(
             Ok(ctx) => ctx,
             Err(e) => {
                 let ae = app_error_to_adapter(e);
-                set_last_error(&ae);
-                return crate::error::last_error_code();
+                return set_last_error(&ae);
             }
         };
 

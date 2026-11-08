@@ -96,8 +96,7 @@ pub unsafe extern "C" fn ad_execute_action_with_policy(
         if let Action::Drag(params) = &request.action
             && let Err(error) = params.validate(lease.deadline())
         {
-            error::set_last_error(&error);
-            return error::last_error_code();
+            return error::set_last_error(&error);
         }
         match agent_desktop_core::execute_verified_action(
             adapter.inner.as_ref(),
@@ -109,10 +108,7 @@ pub unsafe extern "C" fn ad_execute_action_with_policy(
                 *out = action_result_to_c(&result);
                 AdResult::Ok
             }
-            Err(e) => {
-                error::set_last_error(&e);
-                error::last_error_code()
-            }
+            Err(e) => error::set_last_error(&e),
         }
     })
 }
@@ -142,8 +138,7 @@ pub unsafe extern "C" fn ad_execute_ref_action_exact_with_policy(
         crate::pointer_guard::guard_non_null!(entry, c"entry is null");
         crate::pointer_guard::guard_non_null!(action, c"action is null");
         if let Err(error) = core_ref_entry_from_exact(&*entry) {
-            error::set_last_error(&error);
-            return error::last_error_code();
+            return error::set_last_error(&error);
         }
         if let Err(result) = decode_action(&*action) {
             return result;
@@ -152,8 +147,7 @@ pub unsafe extern "C" fn ad_execute_ref_action_exact_with_policy(
             return result;
         }
         let _live = crate::adapter::acquire_adapter!(adapter);
-        error::set_last_error(&exact_entry_unsupported());
-        error::last_error_code()
+        error::set_last_error(&exact_entry_unsupported())
     })
 }
 

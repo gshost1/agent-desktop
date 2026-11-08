@@ -40,8 +40,7 @@ pub unsafe extern "C" fn ad_find_exact(
         let window = match crate::windows::ad_exact_window_to_core(&*win) {
             Ok(window) => window,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         find_in_window(adapter, &window, &*query, out_handle)
@@ -71,16 +70,14 @@ unsafe fn find_in_window(
     ) {
         Ok(resolution) => resolution,
         Err(e) => {
-            set_last_error(&crate::commands::app_error_to_adapter(e));
-            return crate::error::last_error_code();
+            return set_last_error(&crate::commands::app_error_to_adapter(e));
         }
     };
     let selected = if request.selection == LocatorSelection::Strict {
         match agent_desktop_core::require_unique(resolution) {
             Ok(selected) => selected,
             Err(error) => {
-                set_last_error(&crate::commands::app_error_to_adapter(error));
-                return crate::error::last_error_code();
+                return set_last_error(&crate::commands::app_error_to_adapter(error));
             }
         }
     } else {
@@ -124,24 +121,17 @@ unsafe fn find_in_window(
                 &handle,
                 request.deadline,
             ) {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
             match crate::actions::native_handle::into_ffi_handle(adapter_id, handle, process) {
                 Ok(token) => {
                     unsafe { (*out_handle).ptr = token };
                     AdResult::Ok
                 }
-                Err(error) => {
-                    set_last_error(&error);
-                    crate::error::last_error_code()
-                }
+                Err(error) => set_last_error(&error),
             }
         }
-        Err(e) => {
-            set_last_error(&e);
-            crate::error::last_error_code()
-        }
+        Err(e) => set_last_error(&e),
     }
 }
 

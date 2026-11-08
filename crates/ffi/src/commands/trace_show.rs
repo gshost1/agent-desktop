@@ -58,8 +58,7 @@ pub unsafe extern "C" fn ad_trace_show(
             Ok(ctx) => ctx,
             Err(e) => {
                 let ae = app_error_to_adapter(e);
-                set_last_error(&ae);
-                return crate::error::last_error_code();
+                return set_last_error(&ae);
             }
         };
 

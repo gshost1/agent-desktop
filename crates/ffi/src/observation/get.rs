@@ -86,10 +86,7 @@ pub unsafe extern "C" fn ad_get(
                     AdResult::Ok
                 }
                 Ok(None) => AdResult::Ok,
-                Err(e) => {
-                    set_last_error(&e);
-                    crate::error::last_error_code()
-                }
+                Err(e) => set_last_error(&e),
             },
             Property::Bounds => match adapter.inner.get_element_bounds(native.as_ref(), deadline) {
                 Ok(Some(r)) => {
@@ -101,10 +98,7 @@ pub unsafe extern "C" fn ad_get(
                     AdResult::Ok
                 }
                 Ok(None) => AdResult::Ok,
-                Err(e) => {
-                    set_last_error(&e);
-                    crate::error::last_error_code()
-                }
+                Err(e) => set_last_error(&e),
             },
         }
     })

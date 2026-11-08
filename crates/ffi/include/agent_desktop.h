@@ -1209,6 +1209,8 @@ struct AdAdapter *ad_adapter_create_with_session(const char *session);
  *
  * Calls that acquired the adapter before destruction retain it until they
  * return. Calls beginning after destruction fail with `ErrInvalidArgs`.
+ * Platform teardown runs after the adapter registry is unlocked, so other
+ * threads and log callbacks can keep calling `ad_*` functions meanwhile.
  */
 void ad_adapter_destroy(struct AdAdapter *adapter);
 
@@ -1744,10 +1746,13 @@ AdResult ad_mouse_wheel(const struct AdAdapter *adapter,
                         uint32_t modifier_mask);
 
 /**
- * Registers or clears the callback used for events emitted synchronously
- * inside later `ad_*` calls on the same thread.
+ * Registers or clears the process-wide callback used for events emitted
+ * synchronously inside later `ad_*` calls on any thread. The callback runs on
+ * the thread that made the call.
  *
- * The callback may be invoked concurrently by different host threads. The
+ * The callback may be invoked concurrently by different host threads. After
+ * it is cleared, a call already in flight on another thread may still invoke
+ * it once. The
  * message pointer is valid only until the callback returns. The callback must
  * not unwind across this C ABI boundary; C++ exceptions and Rust panics must
  * be caught inside the callback. Violating that contract may abort the host.

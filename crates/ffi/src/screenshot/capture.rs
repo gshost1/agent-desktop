@@ -75,8 +75,7 @@ pub unsafe extern "C" fn ad_screenshot_window_exact(
         let window = match crate::windows::ad_exact_window_to_core(&*window) {
             Ok(window) => window,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         capture(adapter, CoreScreenshotTarget::ExactWindow(window), out)
@@ -93,8 +92,7 @@ unsafe fn capture(
     match adapter.inner.screenshot(target, deadline) {
         Ok(image) => {
             if let Err(error) = crate::resource::validate_image(&image) {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
             let buffer = Box::new(AdImageBuffer {
                 data: image.data.into_boxed_slice(),
@@ -109,9 +107,6 @@ unsafe fn capture(
             unsafe { *out = Box::into_raw(buffer) };
             AdResult::Ok
         }
-        Err(error) => {
-            set_last_error(&error);
-            crate::error::last_error_code()
-        }
+        Err(error) => set_last_error(&error),
     }
 }

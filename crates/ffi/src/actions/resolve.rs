@@ -25,11 +25,9 @@ pub unsafe extern "C" fn ad_resolve_element_exact(
         crate::pointer_guard::guard_non_null!(adapter, c"adapter is null");
         crate::pointer_guard::guard_non_null!(entry, c"entry is null");
         if let Err(error) = core_ref_entry_from_exact(&*entry) {
-            error::set_last_error(&error);
-            return error::last_error_code();
+            return error::set_last_error(&error);
         }
         let _live = crate::adapter::acquire_adapter!(adapter);
-        error::set_last_error(&exact_entry_unsupported());
-        error::last_error_code()
+        error::set_last_error(&exact_entry_unsupported())
     })
 }

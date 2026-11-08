@@ -45,10 +45,7 @@ pub unsafe extern "C" fn ad_dismiss_notification(
         };
         match adapter.inner.dismiss_notification(request, &lease) {
             Ok(_) => AdResult::Ok,
-            Err(error) => {
-                set_last_error(&error);
-                crate::error::last_error_code()
-            }
+            Err(error) => set_last_error(&error),
         }
     })
 }

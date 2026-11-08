@@ -17,9 +17,10 @@ use std::ffi::c_char;
 /// **Err path** (`result` is `Err(app_err)`): builds `Response::err(command,
 /// payload)` with the full error details, serialises it into `*out` (so
 /// JSON-first consumers can inspect the error envelope), sets last-error, and
-/// returns the matching negative `AdResult` code via `last_error_code()`.
+/// returns the matching negative `AdResult` code mapped from the error itself.
 /// The returned code is always identical to the code stored in last-error
-/// (errno invariant).
+/// (errno invariant), and stays negative even when last-error storage is
+/// unavailable.
 ///
 /// **Serialisation/NUL failure** (interior NUL or `serde_json` error): sets
 /// last-error to `ErrInternal`, leaves `*out` null, and returns `ErrInternal`.
@@ -45,13 +46,13 @@ pub(crate) unsafe fn write_command_envelope(
     result: Result<Value, AppError>,
     out: *mut *mut c_char,
 ) -> AdResult {
-    let (envelope, had_error) = match result {
-        Ok(data) => (Response::ok(command, data), false),
+    let (envelope, code) = match result {
+        Ok(data) => (Response::ok(command, data), AdResult::Ok),
         Err(app_err) => {
             let payload = ErrorPayload::from_app_error(&app_err);
             let ae = app_error_to_adapter(app_err);
-            set_last_error(&ae);
-            (Response::err(command, payload), true)
+            let code = set_last_error(&ae);
+            (Response::err(command, payload), code)
         }
     };
 
@@ -78,19 +79,14 @@ pub(crate) unsafe fn write_command_envelope(
     }
 
     unsafe { *out = c_ptr };
-
-    if had_error {
-        crate::error::last_error_code()
-    } else {
-        AdResult::Ok
-    }
+    code
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::convert::string::free_c_string;
-    use crate::error::{clear_last_error, last_error_code};
+    use crate::error::{ad_last_error_code as last_error_code, clear_last_error};
     use agent_desktop_core::AdapterError;
     use std::ffi::CStr;
 

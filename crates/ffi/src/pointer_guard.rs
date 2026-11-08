@@ -42,7 +42,7 @@ mod tests {
     #[test]
     fn null_pointer_short_circuits_with_invalid_args() {
         assert!(matches!(null_case(), AdResult::ErrInvalidArgs));
-        assert_eq!(crate::error::last_error_code(), AdResult::ErrInvalidArgs);
+        assert_eq!(crate::error::ad_last_error_code(), AdResult::ErrInvalidArgs);
     }
 
     #[test]

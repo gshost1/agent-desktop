@@ -182,3 +182,44 @@ fn test_interior_nul_falls_back_to_static() {
         "(message contained null byte)"
     );
 }
+
+fn failing_call_with_unknown_adapter() -> AdResult {
+    unsafe { crate::adapter::ad_check_permissions(std::ptr::without_provenance(usize::MAX)) }
+}
+
+#[test]
+fn failing_call_reports_failure_while_last_error_is_borrowed() {
+    let result = with_last_error_mutably_borrowed(failing_call_with_unknown_adapter);
+
+    assert_eq!(result, AdResult::ErrInvalidArgs);
+}
+
+static TEARDOWN_RESULT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(i32::MIN);
+
+struct TeardownCaller;
+
+impl Drop for TeardownCaller {
+    fn drop(&mut self) {
+        let result = failing_call_with_unknown_adapter();
+        TEARDOWN_RESULT.store(result as i32, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+thread_local! {
+    static TEARDOWN_CALLER: TeardownCaller = const { TeardownCaller };
+}
+
+#[test]
+fn failing_call_reports_failure_after_last_error_storage_is_destroyed() {
+    std::thread::spawn(|| {
+        TEARDOWN_CALLER.with(|_| {});
+        set_last_error_static(AdResult::ErrInternal, c"registers last-error storage");
+    })
+    .join()
+    .unwrap();
+
+    assert_eq!(
+        TEARDOWN_RESULT.load(std::sync::atomic::Ordering::SeqCst),
+        AdResult::ErrInvalidArgs as i32
+    );
+}
