@@ -1,27 +1,64 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use agent_desktop_core::{AdapterError, Deadline};
 use serde_json::{Value, json};
 
+use super::dom_facts::DomFacts;
 use crate::{CdpConnection, PageSession};
 
 /// Reads the DOM `id` attribute of every element in the target's local
-/// frames and shadow trees, keyed by backend node id. One
-/// `DOMSnapshot.captureSnapshot` serves the whole target: its reply is flat
-/// arrays however deep the DOM nests, and unlike `DOM.getDocument` it does
-/// not switch on the DOM domain's mutation events.
-pub(crate) fn read_dom_ids(
+/// frames and shadow trees, and the nodes that respond to mouse clicks, keyed
+/// by backend node id. One `DOMSnapshot.captureSnapshot` serves the whole
+/// target: its reply is flat arrays however deep the DOM nests, and unlike
+/// `DOM.getDocument` it does not switch on the DOM domain's mutation events.
+pub(crate) fn read_dom_facts(
     connection: &mut CdpConnection,
     session: &PageSession,
     deadline: Deadline,
-) -> Result<HashMap<i64, String>, AdapterError> {
+) -> Result<DomFacts, AdapterError> {
     let capture = connection.call(
         "DOMSnapshot.captureSnapshot",
         json!({ "computedStyles": [] }),
         Some(&session.session_id),
         deadline,
     )?;
-    Ok(collect_dom_ids(&capture))
+    Ok(DomFacts {
+        ids: collect_dom_ids(&capture),
+        clickable: collect_clickable(&capture),
+    })
+}
+
+/// The backend node ids the capture's `isClickable` list names: nodes with a
+/// `click`, `mousedown` or `mouseup` listener of their own, links, and
+/// editable content. The list holds indexes into each document's nodes.
+pub(crate) fn collect_clickable(capture: &Value) -> HashSet<i64> {
+    let empty = Vec::new();
+    let documents = capture
+        .get("documents")
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
+    let mut clickable = HashSet::new();
+    for nodes in documents
+        .iter()
+        .filter_map(|document| document.get("nodes"))
+    {
+        let backends = nodes.get("backendNodeId").and_then(Value::as_array);
+        let indexes = nodes
+            .pointer("/isClickable/index")
+            .and_then(Value::as_array);
+        let (Some(backends), Some(indexes)) = (backends, indexes) else {
+            continue;
+        };
+        clickable.extend(
+            indexes
+                .iter()
+                .filter_map(Value::as_u64)
+                .filter_map(|index| usize::try_from(index).ok())
+                .filter_map(|index| backends.get(index))
+                .filter_map(Value::as_i64),
+        );
+    }
+    clickable
 }
 
 /// Pairs each node's `backendNodeId` with its `id` attribute. Attribute

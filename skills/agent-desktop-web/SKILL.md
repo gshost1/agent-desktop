@@ -51,6 +51,8 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 | Choose a radio button | `check @ref` |
 | Press Enter or another key in a field | `press return --ref @ref` |
 
+A row, menu entry or card that the page makes clickable with a script, such as a `<div>` or `<span>` with a click listener and no ARIA role, is a `group` with a ref and `Click` in its `available_actions`. When the page gives it no accessible name, its text becomes its `name`, marked `"name_source": "contained_text"`, so `find --name` finds it and `click @ref` clicks it. A clickable element that holds a link or button keeps no ref of its own: click the control inside it. An element whose click handler sits only on a parent element has no ref. Reach it through the page's keyboard path where one exists, such as `press down --ref @field` and then `press return --ref @field` in a field that opened a suggestion list.
+
 `type`, `clear`, `toggle`, `focus`, `scroll`, `scroll-to` and `double-click` also work on web refs. Other actions return `ACTION_NOT_SUPPORTED`, and `--headed` is refused. To press a key in a page field, name the field: `press return --ref @ref` sends the key through the page, in the background. Web refs take single keys; a combo with a modifier returns `ACTION_NOT_SUPPORTED`. `press` without `--ref` is an OS key event that goes wherever the browser's keyboard focus is, often the address bar, so it can miss the field that `focus` chose.
 
 Several steps on one page cost one turn as a `batch`:

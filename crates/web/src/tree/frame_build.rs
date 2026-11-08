@@ -8,6 +8,7 @@ use agent_desktop_core::{
 
 use super::ax_value::AxValue;
 use super::cdp_ax_node::CdpAxNode;
+use super::click_promotion::promote_clickable;
 use super::frame_context::FrameContext;
 use super::node_actions::actions_of;
 use super::node_states::states_of;
@@ -20,7 +21,9 @@ use crate::NodeOrigin;
 /// children; text fragments are dropped with their subtrees; a static-text
 /// child that only repeats its parent's name is dropped. Static text and
 /// text fields are leaves, as the native AX path exposes them: their
-/// children are inline text boxes and the field's inner editor.
+/// children are inline text boxes and the field's inner editor. A node the
+/// DOM snapshot reports as clickable, whose accessibility node exposes no
+/// control, takes a click (see [`promote_clickable`]).
 pub(crate) fn build_frame(nodes: Vec<CdpAxNode>, context: &FrameContext<'_>) -> Vec<WebNode> {
     let children: HashSet<&str> = nodes
         .iter()
@@ -69,7 +72,14 @@ fn build_node(
     if node.ignored {
         return children;
     }
-    let built = convert(node, &raw_role, context);
+    let mut built = convert(node, &raw_role, context);
+    if built
+        .origin
+        .as_ref()
+        .is_some_and(|origin| context.dom.clickable.contains(&origin.backend_node_id))
+    {
+        promote_clickable(&mut built, &mut children, &raw_role);
+    }
     if matches!(built.node.role.as_str(), "statictext" | "textfield") {
         children.clear();
     } else if let Some(name) = built.node.identity.name.as_deref() {
@@ -101,7 +111,7 @@ pub(crate) fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'
         .map(|origin| origin.element_token().to_string());
     let native_id = node
         .backend_dom_node_id
-        .and_then(|backend| context.dom_ids.get(&backend))
+        .and_then(|backend| context.dom.ids.get(&backend))
         .map(|value| ElementIdentifier {
             kind: IdentifierKind::AxDomIdentifier,
             value: value.clone(),

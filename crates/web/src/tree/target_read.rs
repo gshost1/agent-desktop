@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-
 use agent_desktop_core::{AdapterError, Deadline};
 use serde_json::{Value, json};
 
 use super::cdp_ax_node::CdpAxNode;
-use super::dom_ids::read_dom_ids;
+use super::dom_facts::DomFacts;
+use super::dom_ids::read_dom_facts;
 use super::frame_build::build_frame;
 use super::frame_context::FrameContext;
 use super::frame_graft::FrameNodes;
@@ -24,9 +23,9 @@ pub(crate) fn read_target(
     deadline: Deadline,
 ) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
     let frames = list_frames(connection, session, deadline)?;
-    let dom_ids = match read_dom_ids(connection, session, deadline) {
-        Ok(ids) => ids,
-        Err(error) if is_protocol_error(&error) => HashMap::new(),
+    let dom = match read_dom_facts(connection, session, deadline) {
+        Ok(facts) => facts,
+        Err(error) if is_protocol_error(&error) => DomFacts::default(),
         Err(error) => return Err(error),
     };
     let session_id = session.session_id.as_str();
@@ -59,7 +58,7 @@ pub(crate) fn read_target(
             target_id: &session.target_id,
             frame_id: &entry.frame_id,
             loader_id: &entry.loader_id,
-            dom_ids: &dom_ids,
+            dom: &dom,
         };
         built.push(FrameNodes {
             frame_id: entry.frame_id.clone(),

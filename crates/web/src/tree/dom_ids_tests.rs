@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use agent_desktop_core::Deadline;
 use serde_json::json;
 
-use super::{collect_dom_ids, read_dom_ids};
+use super::{collect_clickable, collect_dom_ids, read_dom_facts};
 use crate::transport::scripted_transport::ScriptedTransport;
 use crate::{CdpConnection, PageSession};
 
@@ -51,10 +51,30 @@ fn a_dom_too_deep_for_a_nested_reply_is_read_from_one_flat_capture() {
         session_id: "S".into(),
     };
 
-    let ids = read_dom_ids(&mut connection, &session, Deadline::after(1_000).unwrap()).unwrap();
+    let facts = read_dom_facts(&mut connection, &session, Deadline::after(1_000).unwrap()).unwrap();
 
-    assert_eq!(ids.get(&depth).map(String::as_str), Some("leaf"));
+    assert_eq!(facts.ids.get(&depth).map(String::as_str), Some("leaf"));
     let sent = sent.lock().unwrap();
     assert_eq!(sent[0]["params"], json!({ "computedStyles": [] }));
     assert!(connection.take_events().is_empty());
+}
+
+#[test]
+fn clickable_nodes_come_from_each_documents_is_clickable_indexes() {
+    let capture = json!({
+        "strings": [],
+        "documents": [
+            { "nodes": {
+                "backendNodeId": [1, 20, 30],
+                "isClickable": { "index": [1, 7] },
+            } },
+            { "nodes": { "backendNodeId": [100, 101] } },
+            { "nodes": {
+                "backendNodeId": [200, 201],
+                "isClickable": { "index": [0] },
+            } },
+        ],
+    });
+
+    assert_eq!(collect_clickable(&capture), HashSet::from([20, 200]));
 }
