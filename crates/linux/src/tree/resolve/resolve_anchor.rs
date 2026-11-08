@@ -5,7 +5,7 @@ use super::landing::Landing;
 use super::path_descent::descend;
 use super::resolve_errors::no_candidate;
 use crate::tree::AtspiElement;
-use crate::tree::resolve::{Source, settle_outcome, settle_read_error};
+use crate::tree::resolve::{Source, guarded, settle_read_error};
 use crate::tree::walk::walker_expand::UNKNOWN_PID;
 
 fn attempt<S: Source>(
@@ -79,11 +79,7 @@ pub(crate) fn resolve_anchor<S: Source>(
     entry: &RefEntry,
     deadline: Deadline,
 ) -> Result<AtspiElement, AdapterError> {
-    if let Some(name) = source.stopped_app(entry.process.pid.get()) {
-        return Err(AdapterError::app_unresponsive(&name));
-    }
-    let outcome = attempt(source, entry, deadline);
-    settle_outcome(source, entry, outcome)
+    guarded(source, entry, |source| attempt(source, entry, deadline))
 }
 
 #[cfg(test)]

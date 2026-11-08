@@ -192,3 +192,19 @@ fn a_stopped_process_is_unresponsive_before_the_window_or_path_is_read() {
     assert_eq!(error.code, ErrorCode::AppUnresponsive);
     assert_eq!(fake.reads.gate + fake.reads.levels + fake.reads.evidence, 0);
 }
+
+#[test]
+fn a_timeout_that_ends_an_attempt_on_a_stopped_process_is_unresponsive() {
+    let mut fake = files();
+    let entry = fake.entry_of("/opts2", true);
+    fake.stopped = Some("files".into());
+
+    let error = crate::tree::resolve::settle_outcome(
+        &mut fake,
+        &entry,
+        Err(AdapterError::timeout("the descent ran out of time")),
+    )
+    .expect_err("a timeout stays a refusal");
+
+    assert_eq!(error.code, ErrorCode::AppUnresponsive);
+}
