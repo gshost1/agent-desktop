@@ -64,6 +64,9 @@ pub fn execute(
             Ok(json!({ "waited_ms": ms }))
         }
         WaitMode::Menu { app, open } => wait_for_menu(app, open, timeout_ms, adapter),
+        WaitMode::Download { app } => {
+            crate::commands::wait_download::wait_for_download(&app, timeout_ms, adapter)
+        }
         WaitMode::Notification { app, text } => {
             wait_notification::wait_for_notification(app, text, timeout_ms, adapter, context)
         }

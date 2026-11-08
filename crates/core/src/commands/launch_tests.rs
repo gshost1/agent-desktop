@@ -67,6 +67,7 @@ fn launch_lease_uses_the_requested_timeout() {
 
     execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options,
         },
@@ -86,6 +87,7 @@ fn zero_launch_timeout_keeps_a_bounded_lease_for_the_single_attempt() {
 
     execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options: LaunchOptions {
                 timeout_ms: 0,
@@ -114,6 +116,7 @@ fn plain_launch_without_cdp_never_calls_list_apps() {
 
     execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options: LaunchOptions::default(),
         },

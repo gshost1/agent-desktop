@@ -13,6 +13,7 @@ use crate::{create_background_tab, list_page_targets, navigate};
 const BLANK_PAGE: &str = "about:blank";
 const CURRENT_TAB: &str = "current_tab";
 const NEW_TAB: &str = "new_tab";
+const DOWNLOAD: &str = "download";
 
 /// Where `open-url` put the page: its target and how it got there.
 struct Placement {
@@ -22,7 +23,9 @@ struct Placement {
 
 impl<P: PlatformAdapter> WebChannelAdapter<P> {
     /// Loads a URL over CDP: in the tab the request's window shows, or in a
-    /// new background tab. `Ok(None)` means no endpoint reaches the browser.
+    /// new background tab. A URL the browser saves as a download instead of
+    /// showing is recorded for `wait --download` and reported as
+    /// `opened: "download"`. `Ok(None)` means no endpoint reaches the browser.
     pub(crate) fn open_web_url(
         &self,
         request: &OpenUrlRequest<'_>,
@@ -42,8 +45,20 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
                 }
             };
             let session = link.session(&target_id, deadline)?;
-            navigate(&mut link.connection, &session, request.url, deadline)?;
-            opened_page(link, Placement { target_id, opened }, request.url, deadline)
+            let navigated = navigate(&mut link.connection, &session, request.url, deadline);
+            let linger = navigated.is_err() && link.download_folder.is_some();
+            let download_began = self.note_downloads(link, linger, deadline);
+            match navigated {
+                Ok(()) => opened_page(link, Placement { target_id, opened }, request.url, deadline),
+                Err(_) if download_began => Ok(OpenedPage {
+                    url: request.url.to_owned(),
+                    title: String::new(),
+                    channel: "cdp".into(),
+                    target_id,
+                    opened: DOWNLOAD.into(),
+                }),
+                Err(error) => Err(error),
+            }
         })
     }
 

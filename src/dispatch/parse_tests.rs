@@ -114,6 +114,9 @@ fn launch_args(args: &[String], env: &[String]) -> crate::cli_args::system::Laun
         cwd: None,
         no_attach: false,
         activate: false,
-        cdp: None,
+        cdp: crate::cli_args::system::LaunchCdpArgs {
+            cdp: None,
+            download_dir: None,
+        },
     }
 }
