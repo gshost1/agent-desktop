@@ -21,13 +21,6 @@ pub(in crate::system) const SETTLE_BUDGET: Duration = Duration::from_millis(250)
 const MAX_DIMENSION: f64 = 1_000_000.0;
 const MAX_COORDINATE: f64 = 1_000_000.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::system) enum Verdict {
-    Satisfied,
-    Pending,
-    Mismatch,
-}
-
 fn near(wanted: i64, observed: i32) -> bool {
     (wanted - i64::from(observed)).abs() <= i64::from(POSITION_TOLERANCE)
 }
@@ -36,7 +29,9 @@ fn field(wanted: Option<i64>, observed: i32) -> bool {
     wanted.is_none_or(|wanted| near(wanted, observed))
 }
 
-fn holds(write: &WindowWrite, observed: &WindowFacts) -> bool {
+/// Whether a read-back of the window satisfies the write, within
+/// [`POSITION_TOLERANCE`] for a rectangle.
+pub(super) fn holds(write: &WindowWrite, observed: &WindowFacts) -> bool {
     match write {
         WindowWrite::MoveResize {
             x,
@@ -56,21 +51,6 @@ fn holds(write: &WindowWrite, observed: &WindowFacts) -> bool {
         WindowWrite::SetMaximized(false) => {
             !observed.maximized_vertical && !observed.maximized_horizontal
         }
-    }
-}
-
-/// Judges one read-back of the window against what was asked. A read-back
-/// that does not hold is `Pending` while the window manager may still be
-/// applying the request and `Mismatch` only once `at_limit` says it is not.
-pub(in crate::system) fn judge(
-    write: &WindowWrite,
-    observed: &WindowFacts,
-    at_limit: bool,
-) -> Verdict {
-    match (holds(write, observed), at_limit) {
-        (true, _) => Verdict::Satisfied,
-        (false, false) => Verdict::Pending,
-        (false, true) => Verdict::Mismatch,
     }
 }
 
@@ -136,6 +116,36 @@ pub(in crate::system) fn unverified(
         .with_suggestion(suggestion)
         .with_details(details)
         .with_disposition(DeliverySemantics::delivered_unverified())
+}
+
+/// The error of a request whose confirming read failed after a read-back
+/// matched: its effect is unknown, and the read that matched is kept as what
+/// was seen.
+pub(in crate::system) fn unreadable_after(
+    write: &WindowWrite,
+    matched: &WindowFacts,
+) -> AdapterError {
+    let mut error = unverified(write, None, &[]);
+    if let Some(Value::Object(details)) = error.details.as_mut() {
+        details.insert("observed".to_owned(), observed_of(Some(matched)));
+    }
+    error
+}
+
+/// The error of a request whose read-back matched but could not be confirmed
+/// before the deadline: the deadline's `timeout`, with what was asked and the
+/// latest read-back, so a caller sees the window reached the place.
+pub(in crate::system) fn unconfirmed(
+    write: &WindowWrite,
+    observed: &WindowFacts,
+    timeout: AdapterError,
+) -> AdapterError {
+    let mut error = timeout.with_disposition(DeliverySemantics::delivered_unverified());
+    if let Some(Value::Object(details)) = error.details.as_mut() {
+        details.insert("requested".to_owned(), requested_of(write));
+        details.insert("observed".to_owned(), observed_of(Some(observed)));
+    }
+    error
 }
 
 fn invalid(message: &str) -> AdapterError {

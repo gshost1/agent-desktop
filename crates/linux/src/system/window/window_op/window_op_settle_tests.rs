@@ -10,14 +10,14 @@ fn a_resize_with_continuous_rectangle_drift_is_not_verified() {
         state(x, 0, 520, 380)
     }
     let mut world = World::showing(state(0, 0, 400, 300));
-    world.reaction = Some(drifting);
+    world.reaction = Some(|written: &[WindowWrite]| ControlRead::Ready(drifting(written)));
     let settled = super::super::settle(
         &world,
         CLIENT,
         &requested(&resize(520.0, 380.0)).unwrap().unwrap(),
         Deadline::after(2_000).unwrap(),
     );
-    assert!(matches!(settled, Settled::Unheld(Some(_))), "{settled:?}");
+    assert!(matches!(settled, Settled::Unconfirmed(_)), "{settled:?}");
 }
 
 #[test]
@@ -86,6 +86,22 @@ fn a_move_without_time_for_the_confirmation_pause_is_unverified() {
     assert_eq!(error.code, ErrorCode::Timeout);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     assert_eq!(world.writes(), 1);
+    let details = error.details.expect("details");
+    assert_eq!(details["requested"]["x"], 300);
+    assert_eq!(details["observed"]["x"], 300);
+    assert_eq!(details["observed"]["y"], 200);
+}
+
+#[test]
+fn a_short_command_whose_place_lands_at_once_is_confirmed() {
+    let world = World::showing(state(300, 200, 400, 300));
+    run(
+        &world,
+        &window(),
+        &WindowOp::Move { x: 300.0, y: 200.0 },
+        Deadline::after(200).expect("a deadline builds"),
+    )
+    .expect("the pause fits in the command, so the place is confirmed");
 }
 
 #[test]

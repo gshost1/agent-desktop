@@ -35,70 +35,100 @@ fn counted_read() -> u32 {
     READS.with(|reads| reads.replace(reads.get() + 1))
 }
 
-fn landing_after(written: &[WindowWrite], after: Duration) -> WindowFacts {
+fn landing_after(written: &[WindowWrite], after: Duration) -> ControlRead<WindowFacts> {
     if !written.is_empty() && since_the_write() >= after {
-        asked()
+        ControlRead::Ready(asked())
     } else {
-        before()
+        ControlRead::Ready(before())
     }
 }
 
-fn lands_after_most_of_the_settle_budget(written: &[WindowWrite]) -> WindowFacts {
+fn lands_after_most_of_the_settle_budget(written: &[WindowWrite]) -> ControlRead<WindowFacts> {
     landing_after(written, Duration::from_millis(150))
 }
 
-fn lands_just_after_the_settle_budget(written: &[WindowWrite]) -> WindowFacts {
+fn lands_just_after_the_settle_budget(written: &[WindowWrite]) -> ControlRead<WindowFacts> {
     landing_after(written, SETTLE_BUDGET + Duration::from_millis(10))
 }
 
-fn lands_well_after_the_settle_budget(written: &[WindowWrite]) -> WindowFacts {
+fn lands_well_after_the_settle_budget(written: &[WindowWrite]) -> ControlRead<WindowFacts> {
     landing_after(written, SETTLE_BUDGET + Duration::from_millis(500))
 }
 
-fn matching_read_that_returns_after_the_settle_budget(written: &[WindowWrite]) -> WindowFacts {
+fn matching_read_that_returns_after_the_settle_budget(
+    written: &[WindowWrite],
+) -> ControlRead<WindowFacts> {
     if written.is_empty() || since_the_write() < SETTLE_BUDGET - POLL {
-        return before();
+        return ControlRead::Ready(before());
     }
     wait_until(SETTLE_BUDGET + POLL);
-    asked()
+    ControlRead::Ready(asked())
 }
 
-fn slow_first_read_then_lands(written: &[WindowWrite]) -> WindowFacts {
+fn after_a_read_across_the_settle_budget(
+    written: &[WindowWrite],
+    landing_read: u32,
+) -> ControlRead<WindowFacts> {
     if written.is_empty() {
-        return before();
+        return ControlRead::Ready(before());
     }
-    match counted_read() {
-        0 => {
-            wait_until(SETTLE_BUDGET + POLL * 2);
-            before()
-        }
-        1 => before(),
+    let read = counted_read();
+    if read == 0 {
+        wait_until(SETTLE_BUDGET + POLL * 2);
+    }
+    ControlRead::Ready(if read >= landing_read {
+        asked()
+    } else {
+        before()
+    })
+}
+
+fn lands_on_the_read_after_one_across_the_budget(
+    written: &[WindowWrite],
+) -> ControlRead<WindowFacts> {
+    after_a_read_across_the_settle_budget(written, 1)
+}
+
+fn lands_two_reads_after_one_across_the_budget(
+    written: &[WindowWrite],
+) -> ControlRead<WindowFacts> {
+    after_a_read_across_the_settle_budget(written, 2)
+}
+
+fn shifts_within_the_tolerance_after_the_budget(
+    written: &[WindowWrite],
+) -> ControlRead<WindowFacts> {
+    if written.is_empty() || since_the_write() < SETTLE_BUDGET - Duration::from_millis(10) {
+        return ControlRead::Ready(before());
+    }
+    ControlRead::Ready(match counted_read() {
+        0 => state(301, 200, 400, 300),
         _ => asked(),
-    }
+    })
 }
 
 fn confirmation_returning_after_the_deadline(
     written: &[WindowWrite],
     late: WindowFacts,
-) -> WindowFacts {
+) -> ControlRead<WindowFacts> {
     if written.is_empty() {
-        return before();
+        return ControlRead::Ready(before());
     }
-    match counted_read() {
+    ControlRead::Ready(match counted_read() {
         0 => asked(),
         1 => {
             wait_until(LATE_CONFIRMATION);
             late
         }
         _ => late,
-    }
+    })
 }
 
-fn late_and_moved_again(written: &[WindowWrite]) -> WindowFacts {
+fn late_and_moved_again(written: &[WindowWrite]) -> ControlRead<WindowFacts> {
     confirmation_returning_after_the_deadline(written, state(60, 90, 400, 300))
 }
 
-fn late_and_unchanged(written: &[WindowWrite]) -> WindowFacts {
+fn late_and_unchanged(written: &[WindowWrite]) -> ControlRead<WindowFacts> {
     confirmation_returning_after_the_deadline(written, asked())
 }
 
@@ -121,7 +151,7 @@ fn move_landing(world: &World, deadline_ms: u64) -> Result<OperationReport, Adap
     )
 }
 
-fn reacting(reaction: fn(&[WindowWrite]) -> WindowFacts) -> World {
+fn reacting(reaction: Reaction) -> World {
     let mut world = World::showing(before());
     world.reaction = Some(reaction);
     world
@@ -162,9 +192,37 @@ fn a_match_read_back_only_after_the_settle_budget_still_gets_its_confirmation() 
 }
 
 #[test]
-fn a_read_sent_before_the_settle_budget_is_not_its_last_look() {
-    move_landing(&reacting(slow_first_read_then_lands), 2_000)
-        .expect("the read after the slow one is the last look, and it matched");
+fn a_read_across_the_settle_budget_is_followed_by_its_last_look() {
+    move_landing(
+        &reacting(lands_on_the_read_after_one_across_the_budget),
+        2_000,
+    )
+    .expect("the last look after the slow read matched");
+}
+
+#[test]
+fn a_read_across_the_settle_budget_gets_one_last_look_only() {
+    let error = move_landing(
+        &reacting(lands_two_reads_after_one_across_the_budget),
+        2_000,
+    )
+    .expect_err("the one last look after the slow read did not match");
+    assert_eq!(
+        error.details.expect("details")["cause"],
+        "readback_mismatch"
+    );
+}
+
+#[test]
+fn a_place_that_shifts_within_the_tolerance_after_the_budget_is_reached_but_unconfirmed() {
+    let error = move_landing(
+        &reacting(shifts_within_the_tolerance_after_the_budget),
+        2_000,
+    )
+    .expect_err("the place moved within the tolerance during its confirmation");
+    assert_eq!(error.code, ErrorCode::Timeout);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert_eq!(error.details.expect("details")["observed"]["x"], 300);
 }
 
 #[test]
@@ -176,7 +234,7 @@ fn a_late_match_without_room_to_confirm_before_the_deadline_is_unconfirmed() {
         &world,
         CLIENT,
         &place,
-        Deadline::after(300).expect("a deadline builds"),
+        Deadline::after(250).expect("a deadline builds"),
     );
     assert_eq!(settled, Settled::Unconfirmed(asked()));
 }
@@ -200,12 +258,11 @@ fn a_confirmation_that_agrees_but_returns_after_the_deadline_is_not_a_held_place
 }
 
 #[test]
-fn an_unreadable_confirmation_reports_the_read_that_matched() {
-    let mut world = World::showing(before());
-    world.reading = Some(unreadable_after_the_match);
-    let error = move_landing(&world, 2_000).expect_err("the confirmation could not be read");
+fn an_unreadable_confirmation_leaves_the_effect_unknown_and_keeps_the_read_that_matched() {
+    let error = move_landing(&reacting(unreadable_after_the_match), 2_000)
+        .expect_err("the confirmation could not be read");
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     let details = error.details.expect("details");
-    assert_eq!(details["cause"], "readback_mismatch");
+    assert_eq!(details["cause"], "readback_unavailable");
     assert_eq!(details["observed"]["x"], 300);
 }

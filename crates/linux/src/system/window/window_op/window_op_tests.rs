@@ -37,7 +37,7 @@ mod shadow;
 pub(super) const CLIENT: u32 = 0x0040_0003;
 pub(super) const INSTANCE: &str = "abcd1234:99";
 
-pub(super) type Reading = fn(&[WindowWrite]) -> ControlRead<WindowFacts>;
+pub(super) type Reaction = fn(&[WindowWrite]) -> ControlRead<WindowFacts>;
 
 pub(super) struct World {
     pub(super) clients: RefCell<VecDeque<ControlRead<Vec<X11Client>>>>,
@@ -51,8 +51,7 @@ pub(super) struct World {
     pub(super) overview_reads: Cell<u32>,
     pub(super) wayland: bool,
     pub(super) stopped: bool,
-    pub(super) reaction: Option<fn(&[WindowWrite]) -> WindowFacts>,
-    pub(super) reading: Option<Reading>,
+    pub(super) reaction: Option<Reaction>,
     pub(super) remembered: RefCell<Option<(String, RememberedPlace)>>,
     pub(super) remember_calls: RefCell<Vec<Option<RememberedPlace>>>,
     pub(super) twins: Option<Twins>,
@@ -111,7 +110,6 @@ impl World {
             wayland: false,
             stopped: false,
             reaction: None,
-            reading: None,
             remembered: RefCell::new(None),
             remember_calls: RefCell::new(Vec::new()),
             twins: None,
@@ -182,11 +180,8 @@ impl OpWorld for World {
                 .map(|(_, write)| write.clone())
                 .collect()
         };
-        if let Some(reading) = self.reading {
-            return reading(&written());
-        }
         if let Some(reaction) = self.reaction {
-            return ControlRead::Ready(reaction(&written()));
+            return reaction(&written());
         }
         next(&self.facts)
     }

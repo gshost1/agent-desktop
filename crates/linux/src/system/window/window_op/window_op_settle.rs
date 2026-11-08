@@ -1,12 +1,10 @@
 use std::ops::ControlFlow;
 
+use super::confirmation::Confirmation;
+use super::hold::confirm_rectangle;
 use super::settled::Settled;
-use super::window_op_verdict::{POLL, SETTLE_BUDGET, Verdict, judge};
+use super::window_op_verdict::{POLL, SETTLE_BUDGET, holds};
 use super::*;
-
-/// How much of the command deadline the confirming read may take once the
-/// confirmation pause is over.
-const CONFIRM_READ: Duration = Duration::from_millis(100);
 
 /// Where a write stands while the window manager applies it. A read-back that
 /// matches a move or resize can be one frame of an animation, so it is only
@@ -18,10 +16,10 @@ enum Phase {
     Polling { limit: Deadline },
     /// `limit` ran out without a match; one read a poll later decides.
     LastLook { limit: Deadline },
-    /// A read-back of a move or resize matched as `first`. It holds once a
-    /// read a confirmation pause later, inside the command deadline, finds the
-    /// same rectangle. A confirming read that matches a shifted rectangle
-    /// starts a new confirmation while `limit` lasts.
+    /// A read-back of a move or resize matched as `first`, and waits for its
+    /// confirmation inside the command deadline. A confirming read that still
+    /// matches but shifted starts the next confirmation while `limit` lasts,
+    /// and after it reports the place reached but unconfirmed.
     Provisional { first: WindowFacts, limit: Deadline },
 }
 
@@ -30,15 +28,12 @@ impl Phase {
         write: &WindowWrite,
         first: WindowFacts,
         limit: Deadline,
-        deadline: Deadline,
     ) -> ControlFlow<Settled, Self> {
-        if !matches!(write, WindowWrite::MoveResize { .. }) {
-            return ControlFlow::Break(Settled::Held(first));
+        if matches!(write, WindowWrite::MoveResize { .. }) {
+            ControlFlow::Continue(Self::Provisional { first, limit })
+        } else {
+            ControlFlow::Break(Settled::Held(first))
         }
-        if deadline.remaining() < CONFIRM_PAUSE + CONFIRM_READ {
-            return ControlFlow::Break(Settled::Unconfirmed(first));
-        }
-        ControlFlow::Continue(Self::Provisional { first, limit })
     }
 
     fn step(
@@ -49,45 +44,41 @@ impl Phase {
         deadline: Deadline,
     ) -> ControlFlow<Settled, Self> {
         match self {
-            Self::Polling { limit } => {
-                let at_limit = limit.is_expired();
-                match world.facts(client).ready() {
-                    Some(facts) if judge(write, &facts, false) == Verdict::Satisfied => {
-                        Self::matched(write, facts, limit, deadline)
-                    }
-                    _ if at_limit => {
-                        std::thread::sleep(POLL.min(deadline.remaining()));
-                        ControlFlow::Continue(Self::LastLook { limit })
-                    }
-                    _ => {
-                        std::thread::sleep(POLL.min(limit.remaining()));
-                        ControlFlow::Continue(self)
-                    }
+            Self::Polling { limit } => match world.facts(client).ready() {
+                Some(facts) if holds(write, &facts) => Self::matched(write, facts, limit),
+                _ if limit.is_expired() => {
+                    std::thread::sleep(POLL.min(deadline.remaining()));
+                    ControlFlow::Continue(Self::LastLook { limit })
                 }
-            }
+                _ => {
+                    std::thread::sleep(POLL.min(limit.remaining()));
+                    ControlFlow::Continue(self)
+                }
+            },
             Self::LastLook { limit } => match world.facts(client).ready() {
-                Some(facts) if judge(write, &facts, true) == Verdict::Satisfied => {
-                    Self::matched(write, facts, limit, deadline)
-                }
+                Some(facts) if holds(write, &facts) => Self::matched(write, facts, limit),
                 observed => ControlFlow::Break(Settled::Unheld(observed)),
             },
             Self::Provisional { first, limit } => {
-                std::thread::sleep(CONFIRM_PAUSE);
-                let latest = world.facts(client).ready();
-                match latest {
-                    Some(facts) if judge(write, &facts, true) == Verdict::Satisfied => {
-                        if deadline.is_expired() {
+                match confirm_rectangle(world, client, first, deadline) {
+                    Confirmation::Stable(facts) => ControlFlow::Break(Settled::Held(facts)),
+                    Confirmation::OutOfTime(facts) if holds(write, &facts) => {
+                        ControlFlow::Break(Settled::Unconfirmed(facts))
+                    }
+                    Confirmation::Changed(facts) if holds(write, &facts) => {
+                        if limit.is_expired() {
                             ControlFlow::Break(Settled::Unconfirmed(facts))
-                        } else if facts.client == first.client {
-                            ControlFlow::Break(Settled::Held(facts))
-                        } else if limit.is_expired() {
-                            ControlFlow::Break(Settled::Unheld(Some(facts)))
                         } else {
-                            Self::matched(write, facts, limit, deadline)
+                            Self::matched(write, facts, limit)
                         }
                     }
-                    _ if limit.is_expired() => {
-                        ControlFlow::Break(Settled::Unheld(latest.or(Some(first))))
+                    Confirmation::Unreadable if limit.is_expired() => {
+                        ControlFlow::Break(Settled::Unreadable(first))
+                    }
+                    Confirmation::OutOfTime(facts) | Confirmation::Changed(facts)
+                        if limit.is_expired() =>
+                    {
+                        ControlFlow::Break(Settled::Unheld(Some(facts)))
                     }
                     _ => {
                         std::thread::sleep(POLL.min(limit.remaining()));

@@ -18,7 +18,9 @@ use self::settled::Settled;
 use self::window_place::PlaceStore;
 use super::window_client::{ClientWorld, client_of};
 use super::window_op::window_op_shadow::{Shadow, to_client, to_visible, visible_of};
-use super::window_op::window_op_verdict::{POSITION_TOLERANCE, observed_of, requested, unverified};
+use super::window_op::window_op_verdict::{
+    POSITION_TOLERANCE, observed_of, requested, unconfirmed, unreadable_after, unverified,
+};
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::focus::focus_cause::Cause;
 use crate::system::focus::focus_window::FocusWorld;
@@ -166,6 +168,19 @@ fn apply(
     write: &WindowWrite,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
+    let settled = attempt(world, win, client, write, deadline)?;
+    outcome(world, client, write, settled, deadline)
+}
+
+/// Writes the request and reads it back until it settles, keeping a resize at
+/// the place it had.
+fn attempt(
+    world: &impl OpWorld,
+    win: &WindowInfo,
+    client: u32,
+    write: &WindowWrite,
+    deadline: Deadline,
+) -> Result<Settled, AdapterError> {
     let pending =
         *write == WindowWrite::SetMaximized(true) && record_before_maximize(world, win, client);
     let before = if is_resize(write) {
@@ -179,16 +194,6 @@ fn apply(
     if let (true, Settled::Held(facts)) = (pending, settled) {
         confirm_maximized(world, win, client, facts, deadline);
     }
-    let outcome = match settled {
-        Settled::Held(_) => Ok(()),
-        Settled::Unheld(observed) => {
-            let displays = world.displays();
-            Err(unverified(write, observed.as_ref(), &displays))
-        }
-        Settled::Unconfirmed(_) => Err(deadline
-            .timeout_error()
-            .with_disposition(DeliverySemantics::delivered_unverified())),
-    };
     if let (Some(place), Some(facts)) = (before, settled.observed())
         && holds_place(&place, &facts.client, &world.displays())
         && ((facts.client.x - place.x).abs() > POSITION_TOLERANCE
@@ -196,7 +201,25 @@ fn apply(
     {
         let _ = move_client(world, win, client, place, deadline);
     }
-    outcome.map_err(|error| reobserve(world, client, error))
+    Ok(settled)
+}
+
+/// What a settled request reports: nothing when it held, otherwise the error
+/// that says how far it got, with the window as it is now.
+fn outcome(
+    world: &impl OpWorld,
+    client: u32,
+    write: &WindowWrite,
+    settled: Settled,
+    deadline: Deadline,
+) -> Result<(), AdapterError> {
+    let error = match settled {
+        Settled::Held(_) => return Ok(()),
+        Settled::Unheld(observed) => unverified(write, observed.as_ref(), &world.displays()),
+        Settled::Unreadable(matched) => unreadable_after(write, &matched),
+        Settled::Unconfirmed(observed) => unconfirmed(write, &observed, deadline.timeout_error()),
+    };
+    Err(reobserve(world, client, error))
 }
 
 fn read_before(world: &impl OpWorld, client: u32) -> Result<WindowFacts, AdapterError> {
@@ -338,6 +361,8 @@ pub(crate) fn window_op(
     )
 }
 
+#[path = "window_op_confirmation.rs"]
+mod confirmation;
 #[path = "window_op_hold.rs"]
 mod hold;
 #[path = "window_op_owner.rs"]
