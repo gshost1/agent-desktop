@@ -10,10 +10,10 @@ use crate::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct CountingAdapter {
-    builds: AtomicUsize,
-    observe: Option<fn(usize) -> ObservedTree>,
-    observe_with_request: Option<fn(usize, &ObservationRequest) -> ObservedTree>,
+pub(super) struct CountingAdapter {
+    pub(super) builds: AtomicUsize,
+    pub(super) observe: Option<fn(usize) -> ObservedTree>,
+    pub(super) observe_with_request: Option<fn(usize, &ObservationRequest) -> ObservedTree>,
 }
 
 impl ObservationOps for CountingAdapter {
@@ -36,11 +36,11 @@ impl ActionOps for CountingAdapter {}
 impl InputOps for CountingAdapter {}
 impl SystemOps for CountingAdapter {}
 
-fn request() -> LocatorResolveRequest {
+pub(super) fn request() -> LocatorResolveRequest {
     request_with_timeout(std::time::Duration::from_secs(5))
 }
 
-fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
+pub(super) fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
     LocatorResolveRequest {
         selection: LocatorSelection::Strict,
         deadline: crate::Deadline::from_duration(timeout).unwrap(),
@@ -50,7 +50,7 @@ fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
     }
 }
 
-fn observed_tree(complete: bool, stats: LocatorStats) -> ObservedTree {
+pub(super) fn observed_tree(complete: bool, stats: LocatorStats) -> ObservedTree {
     let root = super::test_support::node(
         0,
         super::test_support::evidence("window", Some("Fixture")),
@@ -263,62 +263,6 @@ fn strict_unknown_incomplete_result_fails_closed() {
     assert_eq!(details["kind"], "locator_incomplete");
     assert_eq!(details["query_stats"]["reads"]["observation_attempts"], 2);
     assert_eq!(adapter.builds.load(Ordering::SeqCst), 2);
-}
-
-fn causeless_then_complete(attempt: usize) -> ObservedTree {
-    observed_tree(attempt > 0, LocatorStats::default())
-}
-
-#[test]
-fn an_incomplete_walk_with_no_recorded_cause_is_walked_again() {
-    let adapter = CountingAdapter {
-        builds: AtomicUsize::new(0),
-        observe: Some(causeless_then_complete),
-        observe_with_request: None,
-    };
-
-    let resolution = resolve_query(
-        &adapter,
-        &LocatorQuery::default(),
-        ObservationRoot::Window(&window()),
-        &request(),
-    )
-    .expect("an incompleteness with no recorded cause must not end the resolution");
-
-    assert!(resolution.meta.selection_complete);
-    assert_eq!(adapter.builds.load(Ordering::SeqCst), 2);
-    assert_eq!(resolution.stats.reads.counts.observation_attempts, 2);
-}
-
-fn invalidated_twice_then_stable(attempt: usize) -> ObservedTree {
-    let mut stats = LocatorStats::default();
-    if attempt < 2 {
-        stats.reads.health.invalidated_elements = 1;
-        observed_tree(false, stats)
-    } else {
-        observed_tree(true, stats)
-    }
-}
-
-#[test]
-fn elements_destroyed_during_a_walk_are_transient_incompleteness() {
-    let adapter = CountingAdapter {
-        builds: AtomicUsize::new(0),
-        observe: Some(invalidated_twice_then_stable),
-        observe_with_request: None,
-    };
-
-    let resolution = resolve_query(
-        &adapter,
-        &LocatorQuery::default(),
-        ObservationRoot::Window(&window()),
-        &request(),
-    )
-    .expect("a walk the interface changed under must be retried while time remains");
-
-    assert!(resolution.meta.complete);
-    assert_eq!(adapter.builds.load(Ordering::SeqCst), 3);
-    assert_eq!(resolution.stats.reads.health.invalidated_elements, 2);
 }
 
 fn spends_its_observation_budget(_: usize, request: &ObservationRequest) -> ObservedTree {

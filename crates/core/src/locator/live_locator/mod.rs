@@ -105,6 +105,8 @@ mod observed_tree_tests;
 #[cfg(test)]
 mod ownership_tests;
 #[cfg(test)]
+mod resolve_causeless_tests;
+#[cfg(test)]
 mod resolve_first_tests;
 #[cfg(test)]
 mod resolve_partial_tests;

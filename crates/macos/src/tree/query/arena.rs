@@ -52,8 +52,15 @@ impl TraversalArena {
     }
 
     pub(crate) fn leave(&mut self, element: &AXElement) {
-        if self.ancestors.remove(&(element.0 as usize)) {
-            self.ancestor_path.pop();
+        if !self.ancestors.remove(&(element.0 as usize)) {
+            return;
+        }
+        if let Some(position) = self
+            .ancestor_path
+            .iter()
+            .rposition(|ancestor| ancestor.0 == element.0)
+        {
+            self.ancestor_path.remove(position);
         }
     }
 

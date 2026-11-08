@@ -65,9 +65,10 @@ struct Attempt<'a> {
 /// it publishes are proven by one observation rather than by a second one.
 ///
 /// An incomplete attempt that names no cause, neither a deterministic limit
-/// nor a transient read failure, gets one more walk before it fails closed:
-/// a cause the platform did not record is not evidence that the next walk
-/// cannot finish.
+/// nor a transient read failure, gets one more walk while its observation
+/// budget lasts: a cause the platform did not record is not evidence that the
+/// next walk cannot finish. When no walk completes, the first such attempt is
+/// what fails closed, so its evidence is never replaced by a timeout.
 ///
 /// A transiently incomplete attempt is retried only while it ended inside its
 /// own observation budget. An attempt that spent that budget was cut by time,
@@ -123,13 +124,16 @@ fn resolve_attempts(
     let mut last_incomplete = None;
     let mut last_partial = None;
     let mut selection_retry_used = false;
-    let mut causeless_retry_used = false;
+    let mut causeless = None;
     let mut rows = first_pass_rows(request);
     loop {
         let remaining = deadline.remaining();
         if remaining.is_zero() {
             if let Some(partial) = last_partial.take() {
                 return finish_partial(partial, aggregate, started);
+            }
+            if let Some(resolution) = causeless.take() {
+                return finish_causeless(attempt.allow_partial, resolution, aggregate, started);
             }
             return Err(transient_incomplete_timeout(
                 deadline,
@@ -186,18 +190,12 @@ fn resolve_attempts(
                     continue;
                 }
                 if !resolution.meta.selection_complete && requires_authoritative_result(request) {
-                    if !causeless_retry_used && !deadline.is_expired() {
-                        causeless_retry_used = true;
-                        aggregate.merge_attempt(&resolution.stats);
+                    aggregate.merge_attempt(&resolution.stats);
+                    if causeless.is_none() && !attempt_deadline.is_expired() {
+                        causeless = Some(resolution);
                         continue;
                     }
-                    aggregate.merge_attempt(&resolution.stats);
-                    if attempt.allow_partial {
-                        return finish_partial(resolution, aggregate, started);
-                    }
-                    aggregate.elapsed_us = elapsed_us_since(started);
-                    resolution.stats = aggregate;
-                    return Err(unknown_incomplete_error(&resolution).into());
+                    return finish_causeless(attempt.allow_partial, resolution, aggregate, started);
                 }
                 aggregate.merge_attempt(&resolution.stats);
                 aggregate.elapsed_us = elapsed_us_since(started);
@@ -243,6 +241,23 @@ fn finish_partial(
     aggregate.elapsed_us = elapsed_us_since(started);
     resolution.stats = aggregate;
     Ok(resolution)
+}
+
+/// Ends a resolution whose walk stayed incomplete with no recorded cause: the
+/// observed matches when partial answers are allowed, `locator_incomplete`
+/// otherwise, both with the stats of every walk.
+fn finish_causeless(
+    allow_partial: bool,
+    mut resolution: LocatorResolution,
+    mut aggregate: LocatorStats,
+    started: Instant,
+) -> Result<LocatorResolution, AppError> {
+    if allow_partial {
+        return finish_partial(resolution, aggregate, started);
+    }
+    aggregate.elapsed_us = elapsed_us_since(started);
+    resolution.stats = aggregate;
+    Err(unknown_incomplete_error(&resolution).into())
 }
 
 fn requires_authoritative_result(request: &LocatorResolveRequest) -> bool {
