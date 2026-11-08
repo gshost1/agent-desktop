@@ -13,6 +13,11 @@
 //   macctl text <app>                    value of the first text area in <app>'s front window
 //   macctl close-discard <app> <prefix>...  close <app>'s windows whose title starts with any
 //                                        <prefix>, answering a save prompt with its discard button
+//   macctl focused <app>                 JSON {role, subrole, value, actions, window} of <app>'s focused element
+//   macctl set-focused <app> <value>     set AXValue of <app>'s focused element
+//   macctl perform-focused <app> <action>  perform an AX action (AXConfirm, ...) on the focused element
+//   macctl unfocus-focused <app>         set AXFocused false on the focused element
+//   macctl key <app> <keycode> [cmd,shift,...]  post one key press to <app>'s process only
 import AppKit
 import ApplicationServices
 import Foundation
@@ -136,6 +141,39 @@ case "raise":
     AXUIElementPerformAction(window, kAXRaiseAction as CFString)
     AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
     Thread.sleep(forTimeInterval: 0.3)
+case "focused":
+    guard args.count == 2 else { fail("focused <app>") }
+    guard let focused = attr(axApp(args[1]), "AXFocusedUIElement") else { printJSON([:]); break }
+    let el = focused as! AXUIElement
+    var names: CFArray?
+    AXUIElementCopyActionNames(el, &names)
+    var window = ""
+    if let w = attr(el, "AXWindow") { window = string(w as! AXUIElement, "AXTitle") ?? "" }
+    printJSON(["role": string(el, "AXRole") ?? "", "subrole": string(el, "AXSubrole") ?? "",
+               "value": string(el, "AXValue") ?? "", "actions": (names as? [String]) ?? [], "window": window])
+case "set-focused", "perform-focused", "unfocus-focused":
+    guard args.count >= 2, let focused = attr(axApp(args[1]), "AXFocusedUIElement") else { fail("no focused element") }
+    let el = focused as! AXUIElement
+    let result: AXError
+    switch command {
+    case "set-focused": result = AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, args[2] as CFString)
+    case "perform-focused": result = AXUIElementPerformAction(el, args[2] as CFString)
+    default: result = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanFalse)
+    }
+    print(result.rawValue)
+case "key":
+    guard args.count >= 3, let running = app(args[1]), let code = UInt16(args[2]) else { fail("key <app> <keycode> [mods]") }
+    var flags = CGEventFlags()
+    for m in (args.count > 3 ? args[3] : "").split(separator: ",") {
+        switch m { case "cmd": flags.insert(.maskCommand); case "shift": flags.insert(.maskShift)
+        case "alt": flags.insert(.maskAlternate); case "ctrl": flags.insert(.maskControl); default: break }
+    }
+    for down in [true, false] {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { fail("no event") }
+        event.flags = flags
+        event.postToPid(running.processIdentifier)
+        Thread.sleep(forTimeInterval: 0.03)
+    }
 default:
     fail("unknown command \(command)")
 }

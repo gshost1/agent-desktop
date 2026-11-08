@@ -2,6 +2,21 @@
 
 Interim report, 2026-11-07. The fix A/B rounds are still running; sections marked *pending* fill in from them.
 
+## Scoreboard against Aside
+
+Torben's 5 tasks, Opus 5.5, Bash-only `claude -p`, medians of 3 runs per task (`python3 bench/headline.py`). Updated after each merge.
+
+| Task | Aside | fork main | Pass | Wall s | Tokens |
+|---|---|---|---|---|---|
+| Weather | | | | | |
+| System Settings | | | | | |
+| Finder folder | | | | | |
+| TextEdit Save | | | | | |
+| Calculator | | | | | |
+| **Total** | 5/5, 106 s, ~1M | | | | |
+
+Filled from the headline A/B once it lands.
+
 ## Conclusion so far
 
 - Three of the five tasks are already fast: Weather, System Settings and Calculator take 14–23 s each with 27K–123K input tokens and pass every run. Two tasks hold almost all the cost:
