@@ -19,8 +19,8 @@ pub struct InteractionLease {
 #[cfg(unix)]
 pub const INTERACTION_LEASE_FD_ENV: &str = "AGENT_DESKTOP_INTERACTION_LEASE_FD";
 
-/// Names the inherited interaction-lease handle on Windows, read by the Windows adapter to adopt it.
-#[cfg(windows)]
+/// Names the inherited interaction-lease handle on Windows, read by the Windows adapter to adopt it. A plain
+/// string, so it carries no platform conditional in core.
 pub const INTERACTION_LEASE_HANDLE_ENV: &str = "AGENT_DESKTOP_INTERACTION_LEASE_HANDLE";
 
 #[cfg(unix)]
