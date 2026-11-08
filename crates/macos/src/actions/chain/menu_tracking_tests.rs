@@ -47,6 +47,7 @@ fn a_responsive_application_without_a_menu_is_not_reported_as_delivered_or_hung(
     let details = error.details.expect("details name the timed-out action");
     assert_eq!(details["operation"], "AXShowMenu");
     assert_eq!(details["menu_observed"], false);
+    assert_eq!(details["perform_budget_ms"], super::MENU_ACTION_BUDGET_MS);
     assert_eq!(details["ax_error"], kAXErrorCannotComplete);
     assert!(error.platform_detail.is_some());
 }
@@ -104,4 +105,22 @@ fn only_a_cannot_complete_perform_is_settled_by_a_menu_read() {
     assert!(!is_tracking_timeout(
         &agent_desktop_core::AdapterError::new(ErrorCode::AppUnresponsive, "a read timed out",)
     ));
+}
+
+#[test]
+fn a_menu_opening_perform_never_waits_out_the_callers_whole_deadline() {
+    let long = agent_desktop_core::Deadline::after(10_000).expect("deadline");
+    let call = super::menu_action_deadline(long);
+    assert!(call.remaining() <= std::time::Duration::from_millis(500));
+    assert!(!call.is_expired());
+
+    let short = agent_desktop_core::Deadline::after(100).expect("deadline");
+    assert!(
+        super::menu_action_deadline(short).remaining() <= std::time::Duration::from_millis(100)
+    );
+}
+
+#[test]
+fn the_menu_read_after_a_timeout_outlasts_the_perform_it_settles() {
+    const { assert!(super::TRACKING_SETTLE_MS > super::MENU_ACTION_BUDGET_MS) };
 }

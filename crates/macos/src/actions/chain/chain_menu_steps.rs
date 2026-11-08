@@ -129,8 +129,9 @@ fn perform_menu_action(
     target: MenuTarget,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    prepare(element, deadline)?;
-    match crate::actions::ax_helpers::try_ax_action_or_err(element, action, deadline) {
+    let call_deadline = menu_tracking::menu_action_deadline(deadline);
+    prepare(element, call_deadline)?;
+    match crate::actions::ax_helpers::try_ax_action_or_err(element, action, call_deadline) {
         Ok(false) => Ok(DeliveryOutcome::NotDelivered),
         Ok(true) => Ok(DeliveryOutcome::from_delivery(
             true,

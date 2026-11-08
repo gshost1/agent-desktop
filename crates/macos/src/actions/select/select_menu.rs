@@ -102,8 +102,9 @@ pub(crate) fn select_collection_item(
 
 fn open_menu(element: &AXElement, pid: i32, deadline: Deadline) -> Result<bool, AdapterError> {
     for action in ["AXShowMenu", "AXPress"] {
-        prepare(element, deadline)?;
-        match crate::actions::ax_helpers::try_ax_action_or_err(element, action, deadline) {
+        let call_deadline = menu_tracking::menu_action_deadline(deadline);
+        prepare(element, call_deadline)?;
+        match crate::actions::ax_helpers::try_ax_action_or_err(element, action, call_deadline) {
             Ok(true) => return Ok(true),
             Ok(false) => {}
             Err(failure) if menu_tracking::is_tracking_timeout(&failure) => {

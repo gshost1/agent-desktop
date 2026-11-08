@@ -4,15 +4,27 @@
 //! a context menu that opened correctly still reports `kAXErrorCannotComplete`
 //! once the messaging timeout runs out. The return code cannot tell that
 //! apart from a hung application; reading the application's menu surface can.
+//! Because that read is the proof, the call itself gets only a short messaging
+//! timeout instead of waiting out the menu's whole tracking session.
 
 use accessibility_sys::kAXErrorCannotComplete;
-use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
 use crate::actions::chain::menu_observation::MenuObservation;
 
 pub(crate) const MENU_SETTLE_MS: u64 = 600;
+const MENU_ACTION_BUDGET_MS: u64 = 500;
+const TRACKING_SETTLE_MS: u64 = 1_500;
 const MENU_POLL_MS: u64 = 25;
+
+/// The budget for one menu-opening perform. A mutation gets half its budget as
+/// the messaging timeout, so the call waits about 250 ms for a reply that a
+/// tracking menu never sends, and the menu read decides what happened. The
+/// caller's deadline still bounds the read that follows.
+pub(crate) fn menu_action_deadline(deadline: Deadline) -> Deadline {
+    deadline.capped(std::time::Duration::from_millis(MENU_ACTION_BUDGET_MS))
+}
 
 pub(crate) fn is_tracking_timeout(error: &AdapterError) -> bool {
     error.code == ErrorCode::AppUnresponsive
@@ -69,6 +81,7 @@ fn responsive_without_menu(failure: AdapterError) -> AdapterError {
         "ax_error": kAXErrorCannotComplete,
         "operation": operation,
         "menu_observed": false,
+        "perform_budget_ms": MENU_ACTION_BUDGET_MS,
     }))
     .with_disposition(DeliverySemantics::uncertain())
     .with_suggestion(
@@ -84,7 +97,7 @@ fn responsive_without_menu(failure: AdapterError) -> AdapterError {
 mod imp {
     use agent_desktop_core::Deadline;
 
-    use super::{MENU_POLL_MS, MENU_SETTLE_MS};
+    use super::{MENU_POLL_MS, TRACKING_SETTLE_MS};
     use crate::actions::chain::menu_observation::MenuObservation;
 
     pub(crate) fn observe_menu(pid: i32, deadline: Deadline) -> MenuObservation {
@@ -99,12 +112,15 @@ mod imp {
 
     /// Reads the menu surface until the bounded settle window or the
     /// operation deadline ends, pausing between reads but not before the first.
+    /// The window outlasts the short perform timeout so a slow application
+    /// that is still opening its menu is not reported as failed; it ends at
+    /// the first read that sees the menu.
     pub(crate) fn poll_menu(
         pid: i32,
         deadline: Deadline,
     ) -> impl FnMut() -> Option<MenuObservation> {
         let settle_end =
-            std::time::Instant::now() + std::time::Duration::from_millis(MENU_SETTLE_MS);
+            std::time::Instant::now() + std::time::Duration::from_millis(TRACKING_SETTLE_MS);
         let mut first = true;
         move || {
             if !first {
