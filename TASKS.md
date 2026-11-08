@@ -61,7 +61,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 23 | LIFECYCLE-1 | Windows launch: launcher exited / handed off (#552) | windows `system/` launch | stub pid exits, window poll runs to the deadline, reports ok with the dead pid | full `--timeout` | B | C | #552, #555, PR #483 | planned (win draft) |
 | 24 | LIFECYCLE-2 | macOS launch exit watch | macos `system/` launch | an app that quits after startup "Finished" returns ok with its dead pid | – | B | C | none | planned (mac draft) |
 | 25 | LIFECYCLE-5 | close-app outcome (#581) | core `commands/close_app.rs`, mac/win close | a quit prompt ends as generic TIMEOUT "app busy" on mac/win; outcome is a bool | 5 s | B | C | #581, PR #582 (open, mac, probe at deadline) | build on #582 |
-| 26 | LIFECYCLE-6 | close-app single 5 s budget | core `commands/close_app.rs` | lease wait spends the exit-check time → TIMEOUT/unsafe; macOS app exiting mid-close → APP_UNRESPONSIVE | – | B | C | none | planned |
+| 26 | LIFECYCLE-6 | close-app single 5 s budget | core `commands/close_app.rs` | lease wait spends the exit-check time → TIMEOUT/unsafe; macOS app exiting mid-close → APP_UNRESPONSIVE | – | B | C | none | [#38](https://github.com/gshost1/agent-desktop/pull/38) draft |
 | 27 | LIFECYCLE-3 | launch lease scope | core `commands/launch.rs`, adapters | launch holds the machine-wide lease through the window wait and CDP probe; other agents TIMEOUT for up to 30 s | up to 30 s blocked for others | B/C | C | PR #436 (open) leaves it | planned |
 | 28 | LIFECYCLE-7 | Chromium/Electron AX activation | core + mac/win activation | win read-only snapshot needs the lease for a no-op 50 ms sleep; mac sleeps 2 s holding the lease; activation can overrun the command timeout | 50 ms (win), 2 s (mac) under lease | B/C | C (7b-d), S (7a) | #465, #254, #238 | planned |
 | 29 | LIFECYCLE-8 | Linux window settle | linux `system/window/` | fixed 250 ms limit vs 120 ms confirm pause: a placement landing after ~130 ms always reports `readback_mismatch` | 250 ms | B | C logic, S frequency | none | planned |
@@ -69,7 +69,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 31 | REFS-3 | Snapshot id is mutable (drill rewrite) | core `refs/refs_store.rs:70-87`, `snapshot/snapshot_ref.rs` | a drill removes refs another agent holds → plain STALE_REF on a live element; two drills of one root erase each other | – | B | C | none | planned (M/L) |
 | 32 | REFS-1 | latest pointer vs snapshot dir (#537) | core `refs/refs_store.rs`, `commands/status.rs` | `status` fails SNAPSHOT_NOT_FOUND when the pointer names a deleted snapshot; legacy migration unreachable | – | B | C | #537; PRs #538, #576, #588, #500 open | skip: open upstream PRs |
 | 33 | REFS-7 | Snapshot retention 128→96 | core `refs/refs_store_prune.rs` | heavy `find` evicts a snapshot another agent acts on; error blames session scoping | – | B (low) | C | PR #389 (open, TTL) | planned (S) |
-| 34 | STATE-1 | FFI last-error (#9) | ffi `error.rs:84-91,176-185` | failure during thread teardown returns AD_RESULT_OK | – | B | C | none | planned |
+| 34 | STATE-1 | FFI last-error (#9) | ffi `error.rs:84-91,176-185` | failure during thread teardown returns AD_RESULT_OK | – | B | C | none | [#37](https://github.com/gshost1/agent-desktop/pull/37) |
 | 35 | STATE-4 / BINARY-9 | `mcp --debug --screenshot`, `mcp --wait-for` (#11) | `src/mcp/`, `src/visual_debug/mod.rs:56-65` | per-command globals go to every tool call; non-snapshot tools fail from the first call, snapshot/click after the first | – | B | C | none | planned |
 | 36 | STATE-5 / BINARY-10 | `session start --cursor` two-step write (#12) | `src/dispatch/session.rs:159-221` | second write fails → error has no session id; session stays active | – | B | C | none | [#35](https://github.com/gshost1/agent-desktop/pull/35) |
 | 37 | STATE-6 | Manifest-less session dirs (#15) | core `session/gc.rs` | invisible to GC; one failed delete aborts the GC loop | disk | B | C | #601, PR #498 (open) | build on #498 |
@@ -134,12 +134,14 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 15 | `fix/notification-identity-key` | SURFACE-3 | [#34](https://github.com/gshost1/agent-desktop/pull/34) (draft) | head `82709a44` (main `89a3723e`), tests 4654/0, review applied; draft: contract change + device checks | needs-issue-first (new list field and --key flag) |
 | 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | [#23](https://github.com/gshost1/agent-desktop/pull/23) | **merged** 2026-11-08 as `6ec6e174` (rules 1+2); CI 13/13 on head `44a4cc48`, gates green (4639), 2 review rounds | ready (upstream register items 17 and 18) |
 | 17 | `fix/session-start-atomic` | STATE-5 / BINARY-10 | [#35](https://github.com/gshost1/agent-desktop/pull/35) | open; head `1519ad1c` (main `89a3723e`), gates green (4635), review applied; CI on pull_request | ready (when merged; upstream register item 12) |
-| 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | – | pushed `6a3a71c1`, tests green (4639); review round 1 being applied (uncertain close + gone = delivered_unverified, refusals surface, confirm slice waits); macOS edit -> draft | – |
-| 19 | `fix/ffi-last-error-code` | STATE-1 / STATE-2 / STATE-3 (docs) | – | pushed `9c4138e7`, gates green (4633); review round 1 being applied (every site returns set_last_error, must_use) | – |
+| 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | [#38](https://github.com/gshost1/agent-desktop/pull/38) (draft) | head `64b1c704`, tests 4645/0 (--no-fail-fast), review applied; draft: macOS edit | ready after Mac check |
+| 19 | `fix/ffi-last-error-code` | STATE-1 / STATE-2 / STATE-3 (docs) | [#37](https://github.com/gshost1/agent-desktop/pull/37) | open; head `fd2634e1`, hook green, gates re-run pending (two unrelated timing tests flaked); review applied | ready (upstream register items 9, 14, 20) |
 | 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | **merged** 2026-11-08 as `a7d301d7` (rules 1+2); CI 13/13 on head `17f6ece2`, gates green (4630) | fork-only (test budgets) |
 | 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | **merged** 2026-11-08 as `89a3723e` (rules 1+2); CI 13/13 on head `a690a037` | fork-only (test isolation) |
 
 ## Needs Mac verification
+
+- PR #38 (LIFECYCLE-6, draft): `crates/macos/src/system/app/app_ops.rs:51`, `process/process_identity.rs:129-135`. On the Mac, on the branch: `cargo test` on the host set; then `agent-desktop close-app <app>` while another command holds the lease (e.g. a long `wait`) -> `delivered_verified`, not `TIMEOUT`; and an app that quits on its own during the close -> no `APP_UNRESPONSIVE`.
 
 - PR #34 (SURFACE-3, draft): `crates/macos/src/notifications/actions.rs`, `system/adapter.rs`. On the Mac, on the branch: `cargo test` on the host set; then post two identical notifications, `agent-desktop list-notifications`, post a third identical one, and confirm `dismiss-notification --key <first key>` closes the original (newest-first order is assumed).
 
@@ -330,7 +332,7 @@ exists and also runs CI's core Win32-leakage check.
   each time; work survived in the worktrees (uncommitted) and writers were resumed. Writers now commit and push early. Restarts traced to memory pressure (4-5 parallel Rust builds on 14 GB, swap full); limit is now two builds at a time.
 - CI flake queue (each gets a small test PR): `wait_selector` gone-wait 250 ms (PR #29, also hit the Mac session's
   `feat/press-menu-shortcut`); npm bundled fixture race (PR #31); Windows `context::scope_tests::a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease`
-  failed once on `main` run 42450666424 (not yet fixed); `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` and `dispatch::session::tests::session_gc_ended_reclaims_an_ended_session_that_recorded_trace_events` (same time-dependent GC liveness rule, see below).
+  failed once on `main` run 42450666424 (not yet fixed); `application_surface_tests::a_missing_document_window_does_not_satisfy_a_menu_disappearance_wait` (30 ms, under local load), `failed_inventory_poll_never_reports_app_termination` (under local load), `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` and `dispatch::session::tests::session_gc_ended_reclaims_an_ended_session_that_recorded_trace_events` (same time-dependent GC liveness rule, see below).
 
 - Flaky `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` (failed on Linux CI for PR #14's head
   `075586f6` and once locally on plain `main`): `session/gc.rs:59-82` keeps an ended session that shows recent
