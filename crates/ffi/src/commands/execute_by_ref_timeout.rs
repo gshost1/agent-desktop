@@ -37,41 +37,36 @@ pub unsafe extern "C" fn ad_execute_by_ref_timeout(
         let timeout_ms = match decode_ref_action_timeout(timeout_ms) {
             Ok(timeout_ms) => timeout_ms,
             Err(err) => {
-                set_last_error(&err);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&err);
             }
         };
 
         let ref_str = match required_adapter_string(ref_id, "ref_id") {
             Ok(s) => s,
             Err(e) => {
-                set_last_error(&e);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&e);
             }
         };
 
         if let Err(app_err) = validate_ref_id(&ref_str) {
             let ae = app_error_to_adapter(app_err);
-            set_last_error(&ae);
-            return crate::error::last_error_code();
+            return set_last_error(&ae);
         }
 
         let caller_policy = match AdPolicyKind::from_c(policy) {
             Some(p) => p,
             None => {
-                set_last_error(&AdapterError::new(
+                return set_last_error(&AdapterError::new(
                     ErrorCode::InvalidArgs,
                     "invalid policy kind discriminant",
                 ));
-                return AdResult::ErrInvalidArgs;
             }
         };
 
         let core_action = match unsafe { action_from_c(&*action) } {
             Ok(a) => a,
             Err(msg) => {
-                set_last_error(&AdapterError::new(ErrorCode::InvalidArgs, msg));
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&AdapterError::new(ErrorCode::InvalidArgs, msg));
             }
         };
 
@@ -82,8 +77,7 @@ pub unsafe extern "C" fn ad_execute_by_ref_timeout(
             Ok(ctx) => ctx,
             Err(e) => {
                 let ae = app_error_to_adapter(e);
-                set_last_error(&ae);
-                return crate::error::last_error_code();
+                return set_last_error(&ae);
             }
         };
 

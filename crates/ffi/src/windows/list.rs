@@ -38,12 +38,10 @@ pub unsafe extern "C" fn ad_list_windows_exact(
                 if let Err(error) =
                     crate::resource::validate_list_len(windows.len(), "Exact window list")
                 {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 if let Err(error) = windows.iter().try_for_each(validate_exact_window_info) {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 let items: Vec<AdExactWindowInfo> =
                     windows.iter().map(exact_window_info_to_c).collect();
@@ -52,10 +50,7 @@ pub unsafe extern "C" fn ad_list_windows_exact(
                 }));
                 AdResult::Ok
             }
-            Err(error) => {
-                set_last_error(&error);
-                crate::error::last_error_code()
-            }
+            Err(error) => set_last_error(&error),
         }
     })
 }
