@@ -126,7 +126,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 8 | `fix/notification-wait-baseline` | SURFACE-2 / ACTION-4 | [#16](https://github.com/gshost1/agent-desktop/pull/16) | **merged** 2026-11-07 as `a3a1aedd` (rule 3: `main` moved by non-overlapping Linux files); CI 26/26 green on head `85b9c7c2`, gates green (4564) | ready (upstream register item 19, no issue) |
 | 9 | `fix/menu-close-wait-phase` | SURFACE-1 | [#18](https://github.com/gshost1/agent-desktop/pull/18) (draft) | head `5b6d3a07` (main `a3a1aedd`), gates green (4591), review applied; CI dispatched; draft until the Mac check | ready after Mac check (supersedes upstream `#291`'s Linux-only guard) |
 | 10 | `fix/resolve-error-classification` | REFS-4 | [#17](https://github.com/gshost1/agent-desktop/pull/17) | open; head `ebe44ae0`; CI red on two wall-clock tests on the macOS runner (unrelated, fixed by #19) and one rustup download failure; will merge `main` after #19 and re-run CI | ready (when merged; no fork-only dependency) |
-| 11 | `test/wait-timing-budgets` | CI flakes | [#19](https://github.com/gshost1/agent-desktop/pull/19) | open; head `686ad47b`, gates green (4570); CI dispatched | fork-only (test budgets) |
+| 11 | `test/wait-timing-budgets` | CI flakes | [#19](https://github.com/gshost1/agent-desktop/pull/19) | **merged** 2026-11-07 as `f969adc8` (rules 1+2); CI 26/26 on head `686ad47b` | fork-only (test budgets) |
 
 ## Needs Mac verification
 
