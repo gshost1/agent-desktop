@@ -1,4 +1,5 @@
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
+use crate::system::launch_notes::LaunchNotes;
 use crate::system::launch_options::LaunchOptions;
 use crate::{AdapterError, AppError, AppInfo, InteractionLease, ProcessId, RendererKind};
 use std::io::{Read, Write};
@@ -57,8 +58,10 @@ impl SystemOps for CdpAdapter {
             window: None,
             cdp: None,
             renderer: self.renderer,
-            suggestion: None,
-            launch_path: None,
+            notes: LaunchNotes {
+                suggestion: None,
+                launch_path: None,
+            },
         })
     }
 

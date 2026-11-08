@@ -5,7 +5,7 @@ use agent_desktop_core::system::launch_options::LaunchOptions;
 use agent_desktop_core::system::launch_result::LaunchResult;
 use agent_desktop_core::{
     AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionLease, ProcessId,
-    RendererKind, WindowInfo,
+    RendererKind, WindowInfo, system::launch_notes::LaunchNotes,
 };
 
 use self::launch_attach::{Decision, decide};
@@ -100,8 +100,10 @@ fn conclude(
         window,
         cdp: None,
         renderer: None,
-        suggestion: (!notes.is_empty()).then(|| notes.join(" ")),
-        launch_path: None,
+        notes: LaunchNotes {
+            suggestion: (!notes.is_empty()).then(|| notes.join(" ")),
+            launch_path: None,
+        },
     }
 }
 
@@ -292,10 +294,12 @@ impl Launch<'_> {
             window: None,
             cdp: None,
             renderer: None,
-            suggestion: Some(
+            notes: LaunchNotes {
+                suggestion: Some(
                 "The process started but is not on the accessibility bus yet. Its pid is the spawned process's and may be a wrapper of the application. Run 'list-apps' to see whether it appears.".to_owned(),
             ),
-            launch_path: None,
+                launch_path: None,
+            },
         }
     }
 

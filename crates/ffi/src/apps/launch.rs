@@ -102,6 +102,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+    use agent_desktop_core::system::launch_notes::LaunchNotes;
     use agent_desktop_core::system::launch_options::LaunchOptions;
     use agent_desktop_core::{ActionOps, InputOps, ObservationOps, SystemOps};
     use agent_desktop_core::{
@@ -156,8 +157,10 @@ mod tests {
                 }),
                 cdp: None,
                 renderer: None,
-                suggestion: None,
-                launch_path: None,
+                notes: LaunchNotes {
+                    suggestion: None,
+                    launch_path: None,
+                },
             })
         }
     }

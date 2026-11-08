@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ProcessId, WindowInfo, system::cdp_endpoint::CdpEndpoint, system::launch_path::LaunchPath,
+    ProcessId, WindowInfo, system::cdp_endpoint::CdpEndpoint, system::launch_notes::LaunchNotes,
     tree::renderer_kind::RendererKind,
 };
 
@@ -28,12 +28,6 @@ pub struct LaunchResult {
     /// "not Chromium" — detection failure never fails the launch itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renderer: Option<RendererKind>,
-    /// Guidance for the calling agent on how to drive this application,
-    /// set by core from `renderer` and whether `cdp` is present. Absent
-    /// when there is nothing more useful to say than the fields already do.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suggestion: Option<String>,
-    /// The route the launch took, absent on a platform that has one route.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub launch_path: Option<LaunchPath>,
+    #[serde(flatten)]
+    pub notes: LaunchNotes,
 }

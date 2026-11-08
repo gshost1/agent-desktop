@@ -7,6 +7,7 @@ pub(crate) mod devtools_websocket_url;
 pub mod display_info;
 pub(crate) mod image_buffer;
 pub(crate) mod image_format;
+pub mod launch_notes;
 pub mod launch_options;
 pub mod launch_path;
 pub mod launch_result;

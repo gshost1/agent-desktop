@@ -1,3 +1,4 @@
+use agent_desktop_core::system::launch_notes::LaunchNotes;
 use agent_desktop_core::{
     AdapterError, Deadline, DeliverySemantics, ErrorCode, ProcessId, RendererKind, WindowFilter,
     WindowInfo, system::launch_options::LaunchOptions, system::launch_result::LaunchResult,
@@ -84,8 +85,10 @@ fn launch_result(
         window,
         cdp: None,
         renderer,
-        suggestion: None,
-        launch_path: None,
+        notes: LaunchNotes {
+            suggestion: None,
+            launch_path: None,
+        },
     }
 }
 

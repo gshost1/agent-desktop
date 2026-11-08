@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
+use crate::system::launch_notes::LaunchNotes;
 use crate::system::launch_options::LaunchOptions;
 use crate::system::launch_path::LaunchPath;
 use crate::{AdapterError, InteractionLease, ProcessId};
@@ -36,8 +37,10 @@ impl SystemOps for PathAdapter {
             window: None,
             cdp: None,
             renderer: None,
-            suggestion: None,
-            launch_path: self.path,
+            notes: LaunchNotes {
+                suggestion: None,
+                launch_path: self.path,
+            },
         })
     }
 }

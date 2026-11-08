@@ -1,3 +1,4 @@
+use agent_desktop_core::system::launch_notes::LaunchNotes;
 use agent_desktop_core::{
     AdapterError, AppInfo, Deadline, DeliverySemantics, ErrorCode, WindowInfo,
     system::launch_options::LaunchOptions, system::launch_path::LaunchPath,
@@ -75,7 +76,7 @@ fn use_running_app(
         LaunchPath::AttachedRunning
     };
     let mut result = result_from_app(app, window, path);
-    result.suggestion = ignored_inputs_hint(options);
+    result.notes.suggestion = ignored_inputs_hint(options);
     Ok(result)
 }
 
@@ -211,8 +212,10 @@ fn result_from_app(app: &AppInfo, window: Option<WindowInfo>, path: LaunchPath) 
         window,
         cdp: None,
         renderer,
-        suggestion: None,
-        launch_path: Some(path),
+        notes: LaunchNotes {
+            suggestion: None,
+            launch_path: Some(path),
+        },
     }
 }
 
@@ -232,8 +235,10 @@ fn result_from_launched(
         window,
         cdp: None,
         renderer,
-        suggestion: None,
-        launch_path: Some(path),
+        notes: LaunchNotes {
+            suggestion: None,
+            launch_path: Some(path),
+        },
     })
 }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
+use crate::system::launch_notes::LaunchNotes;
 use crate::system::launch_options::LaunchOptions;
 use crate::{AdapterError, AppInfo, InteractionLease, ProcessId, WindowInfo, WindowState};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -49,8 +50,10 @@ impl SystemOps for LaunchAdapter {
             }),
             cdp: None,
             renderer: None,
-            suggestion: None,
-            launch_path: None,
+            notes: LaunchNotes {
+                suggestion: None,
+                launch_path: None,
+            },
         })
     }
 }
