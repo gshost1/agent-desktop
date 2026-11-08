@@ -66,6 +66,8 @@ def stale_verdict(envelope, display_before: str, display_after: str) -> list[str
     details = error.get("details") or {}
     if details.get("kind") != STALE_KIND:
         problems.append(f"stale envelope kind is not {STALE_KIND!r}")
+    if details.get("complete") is not True:
+        problems.append("a closed menu must be complete absence evidence")
     if details.get("retryable") is not False:
         problems.append("a ref of a closed menu must not be retryable")
     if error.get("recovery") is not None:

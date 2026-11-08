@@ -13,7 +13,10 @@ LEG = "observation.stale_ref_after_ui_change"
 NOT_DELIVERED = {"delivery": "not_delivered", "retry": "safe"}
 FAITHFUL = {
     "code": "STALE_REF",
-    "suggestion": "Reopen the menu through its opener, take a fresh menu snapshot, and use the new ref.",
+    "suggestion": (
+        "Reopen the menu through its opener, take a fresh menu snapshot, and use the new ref. "
+        "Refreshing a closed menu cannot restore this ref."
+    ),
     "disposition": NOT_DELIVERED,
     "details": {"kind": observation.STALE_KIND, "complete": True, "retryable": False},
 }
@@ -35,7 +38,8 @@ class StaleVerdictTests(unittest.TestCase):
             ("no disposition", refusal({"disposition": None}), "", "not_delivered"),
             ("no kind", refusal({"details": None}), "", "kind is not"),
             ("wrong kind", refusal({"details": {"kind": "saved_ref_absent", "retryable": False}}), "", "kind is not"),
-            ("retryable", refusal({"details": {"kind": "menu_closed", "retryable": True}}), "", "must not be retryable"),
+            ("incomplete", refusal({"details": {"kind": "menu_closed", "retryable": False}}), "", "complete absence"),
+            ("retryable", refusal({"details": {"kind": "menu_closed", "complete": True, "retryable": True}}), "", "must not be retryable"),
             ("refresh offered", refusal({"recovery": {"strategy": "refresh_snapshot_then_retry_original"}}), "", "no refresh recovery"),
             ("wrong exit", refusal(exit_code=2), "", "must exit 1"),
             ("display changed", refusal(), "7", "changed the display"),

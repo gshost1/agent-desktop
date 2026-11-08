@@ -37,7 +37,7 @@ impl AdapterError {
     /// be observed: a complete lookup that found its menu closed means no
     /// live element can match, so the ref is stale; any other failure is
     /// returned as it is.
-    pub fn for_saved_ref_surface(self, surface: SnapshotSurface) -> Self {
+    pub(crate) fn for_saved_ref_surface(self, surface: SnapshotSurface) -> Self {
         if surface == SnapshotSurface::Menu && self.is_confirmed_surface_absence(surface) {
             Self::menu_closed()
         } else {

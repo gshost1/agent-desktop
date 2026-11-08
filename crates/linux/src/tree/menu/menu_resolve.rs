@@ -32,10 +32,6 @@ fn unanswered() -> AdapterError {
     AdapterError::timeout("The accessible object did not answer in time")
 }
 
-pub(crate) fn menu_closed() -> AdapterError {
-    AdapterError::menu_closed()
-}
-
 struct MenuSource<'a> {
     bus: &'a SharedBus,
     connection: Connection,
@@ -185,7 +181,7 @@ fn open_handle(
 ) -> Result<NativeHandle, AdapterError> {
     match position(&element)? {
         PopupPosition::Placed | PopupPosition::Unplaceable => Ok(element.into_native_handle()),
-        PopupPosition::Unmapped => Err(menu_closed()),
+        PopupPosition::Unmapped => Err(AdapterError::menu_closed()),
     }
 }
 
@@ -196,7 +192,7 @@ fn resolve_contextual(
     mut resolve: impl FnMut(AtspiElement, &RefEntry) -> Result<AtspiElement, AdapterError>,
 ) -> Result<AtspiElement, AdapterError> {
     if candidates.is_empty() {
-        return Err(menu_closed());
+        return Err(AdapterError::menu_closed());
     }
     let mut landed = Vec::new();
     let mut refusal: Option<AdapterError> = None;
