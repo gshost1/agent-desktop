@@ -5,8 +5,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use agent_desktop_core::{
-    ActionOps, AdapterError, Deadline, DisplayInfo, INTERACTION_LEASE_FD_ENV, InputOps,
-    InteractionLease, MouseEvent, ObservationOps, OperationReport, ProcessLeaseGuard, SystemOps,
+    ActionOps, AdapterError, Deadline, DisplayInfo, InputOps, InteractionLease, MouseEvent,
+    ObservationOps, OperationReport, ProcessLeaseGuard, SystemOps,
 };
 
 use super::ad_set_log_callback;
@@ -88,10 +88,9 @@ struct LoggingSession {
 
 impl LoggingSession {
     fn start() -> Option<Self> {
-        if std::env::var_os(INTERACTION_LEASE_FD_ENV).is_some() {
-            eprintln!(
-                "skipped: {INTERACTION_LEASE_FD_ENV} routes FFI leases past the test adapter"
-            );
+        #[cfg(unix)]
+        if std::env::var_os(agent_desktop_core::INTERACTION_LEASE_FD_ENV).is_some() {
+            eprintln!("skipped: an inherited lease fd routes FFI leases past the test adapter");
             return None;
         }
         let session = Self {
