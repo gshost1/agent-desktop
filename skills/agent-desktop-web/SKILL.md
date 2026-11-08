@@ -21,6 +21,7 @@ agent-desktop launch "Google Chrome" --cdp --arg=--user-data-dir="$PWD/chrome-pr
 ```
 
 - `--cdp` needs a fresh browser process. If Chrome is already running, `launch` returns `ACTION_FAILED` with `details.kind` `cdp_requires_fresh_launch`. Closing the user's Chrome loses their tabs, so ask first.
+- A browser started this way brings its own first window to the front once. `open-url`, snapshots and web ref actions after that leave the front app and the pointer where they are.
 - `--user-data-dir` keeps the session out of the user's profile. While the DevTools port is open, any local process of the same user can drive the browser; `close-app "Google Chrome"` closes it.
 
 ## The loop
