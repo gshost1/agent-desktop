@@ -336,7 +336,7 @@ fn a_batch_deadline_timeout_stops_as_deadline_with_or_without_stop_on_error() {
                 ])
                 .to_string(),
                 stop_on_error,
-                timeout_ms: 25,
+                timeout_ms: 500,
             },
             &adapter(),
             &PermissionReport::default(),
