@@ -15,7 +15,7 @@ step bash scripts/check-rust-file-size.sh
 step bash scripts/check-no-phase-references.sh
 step bash scripts/check-stale-ref-constructor-misuse.sh
 step bash scripts/check-architecture.sh
-step cargo check -p agent-desktop-core --all-targets --target x86_64-pc-windows-msvc
+step cargo check -p agent-desktop-core -p agent-desktop-ffi --all-targets --target x86_64-pc-windows-msvc
 if grep -rnE 'extern "system|std::os::windows|\bwinapi\b|\bwindows_sys\b' crates/core/src; then echo "FAIL: core declares a raw Win32 surface"; fail=1; fi
 if grep -rnE 'cfg\(windows\)|cfg\(target_os = "windows"\)' crates/core/src | grep -v 'crates/core/src/storage/private_file.rs'; then echo "FAIL: windows cfg in core outside private_file.rs"; fail=1; else echo "== core win32 leakage check clean"; fi
 if cargo tree -p agent-desktop-core 2>/dev/null | grep -E 'agent-desktop-(linux|macos|windows)'; then echo "FAIL: core tree names a platform crate"; fail=1; else echo "== cargo tree clean"; fi
