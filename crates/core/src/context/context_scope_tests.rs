@@ -279,3 +279,39 @@ fn a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease(
 
     assert!(!command.join().unwrap().unwrap().trace_enabled());
 }
+
+#[test]
+fn overlapping_scopes_name_their_own_start_in_command_end() {
+    let path = std::env::temp_dir().join(format!(
+        "agent-desktop-scope-seq-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
+    let first = context.command_scope("snapshot").unwrap();
+    let second = context.command_scope("snapshot").unwrap();
+    second.complete(&Ok(json!({ "ok": true }))).unwrap();
+    drop(first);
+
+    let events: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let seqs_of = |name: &str, field: &str| -> Vec<u64> {
+        events
+            .iter()
+            .filter(|event| event["event"] == name)
+            .map(|event| event[field].as_u64().unwrap())
+            .collect()
+    };
+    let starts = seqs_of("command.start", "seq");
+    assert_eq!(starts.len(), 2);
+    assert_eq!(
+        seqs_of("command.end", "command_seq"),
+        vec![starts[1], starts[0]]
+    );
+    let _ = std::fs::remove_file(path);
+}

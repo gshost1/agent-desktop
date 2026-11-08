@@ -36,6 +36,13 @@
     return JSON.stringify(value);
   }
 
+  function closesFrame(frame, end) {
+    var start = frame.start;
+    if ((start.segment || "") !== (end.segment || "") || start.writer_pid !== end.writer_pid) return false;
+    if (typeof end.command_seq === "number") return start.seq === end.command_seq;
+    return frame.command === (end.command || "command");
+  }
+
   function groupEvents(events) {
     var groups = [];
     var stack = [];
@@ -48,10 +55,12 @@
         return;
       }
       if (name === "command.end") {
-        if (stack.length) {
-          var top = stack.pop();
-          top.end = event;
-          top.open = false;
+        var at = stack.length - 1;
+        while (at >= 0 && !closesFrame(stack[at], event)) at -= 1;
+        if (at >= 0) {
+          var closed = stack.splice(at, 1)[0];
+          closed.end = event;
+          closed.open = false;
         } else {
           groups.push({ type: "event", event: event, index: index });
         }

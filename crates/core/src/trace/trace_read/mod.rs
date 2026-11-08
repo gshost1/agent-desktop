@@ -1,6 +1,8 @@
 pub(crate) mod budget;
+mod command_pairing;
 mod html;
 mod merge;
+mod open_commands;
 pub(crate) mod segment;
 
 pub(crate) use html::export_html_for_command;
