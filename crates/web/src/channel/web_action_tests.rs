@@ -6,7 +6,8 @@ use serde_json::{Value, json};
 
 use crate::ElementToken;
 use crate::channel::test_support::{
-    PORT, ScriptedConnector, StubPlatform, adapter, attach, element_read, lease, process,
+    PORT, ScriptedConnector, StubPlatform, TOKEN, adapter, attach, element_read, lease, process,
+    proven,
 };
 use crate::channel::web_handle::WebHandle;
 use crate::transport::scripted_transport::ScriptedTransport;
@@ -14,27 +15,23 @@ use crate::transport::scripted_transport::ScriptedTransport;
 fn web_handle() -> NativeHandle {
     NativeHandle::new(WebHandle {
         process: process(),
-        token: ElementToken::parse("cdp:T:7").unwrap(),
+        token: ElementToken::parse(TOKEN).unwrap(),
     })
 }
 
-fn live(transport: ScriptedTransport) -> ScriptedTransport {
-    transport
-        .expect("DOM.resolveNode", json!({ "object": { "objectId": "l" } }))
-        .expect("Runtime.releaseObject", json!({}))
-}
-
-fn focused(transport: ScriptedTransport) -> ScriptedTransport {
-    live(transport).expect("DOM.focus", json!({}))
-}
-
 fn fill_script(value_after: Value) -> ScriptedTransport {
-    let transport = focused(attach(ScriptedTransport::new(), "T"))
+    proven(attach(ScriptedTransport::new(), "T"))
         .expect("DOM.resolveNode", json!({ "object": { "objectId": "s" } }))
-        .expect("Runtime.callFunctionOn", json!({ "result": {} }))
+        .expect(
+            "Runtime.callFunctionOn",
+            json!({ "result": { "value": { "editable": true } } }),
+        )
+        .expect("Input.insertText", json!({}))
+        .expect(
+            "Runtime.callFunctionOn",
+            json!({ "result": { "value": value_after } }),
+        )
         .expect("Runtime.releaseObject", json!({}))
-        .expect("Input.insertText", json!({}));
-    element_read(transport, value_after, Value::Null)
 }
 
 fn run(
@@ -54,7 +51,7 @@ fn run(
 }
 
 #[test]
-fn set_value_fills_the_field_and_is_verified_by_a_reread() {
+fn set_value_fills_the_field_and_is_verified_by_its_read_back() {
     let result = run(
         fill_script(json!("hello")),
         Action::SetValue("hello".into()),
@@ -68,22 +65,24 @@ fn set_value_fills_the_field_and_is_verified_by_a_reread() {
 }
 
 #[test]
-fn set_value_the_reread_disagrees_with_stays_unverified() {
+fn set_value_the_read_back_disagrees_with_stays_unverified_and_reports_it() {
     let result = run(fill_script(json!("hel")), Action::SetValue("hello".into())).unwrap();
     assert_eq!(
         result.disposition(),
         DeliverySemantics::delivered_unverified()
     );
+    assert_eq!(result.details.unwrap()["observed"], "hel");
 }
 
 #[test]
 fn click_dispatches_page_input_and_stays_unverified() {
-    let transport = live(attach(ScriptedTransport::new(), "T"))
+    let transport = proven(attach(ScriptedTransport::new(), "T"))
         .expect("DOM.scrollIntoViewIfNeeded", json!({}))
         .expect(
             "DOM.getBoxModel",
             json!({ "model": { "border": [0, 0, 10, 0, 10, 10, 0, 10] } }),
         )
+        .expect("DOM.getNodeForLocation", json!({ "backendNodeId": 7 }))
         .expect("Input.dispatchMouseEvent", json!({}))
         .expect("Input.dispatchMouseEvent", json!({}));
     let sent = transport.sent_log();
@@ -96,9 +95,9 @@ fn click_dispatches_page_input_and_stays_unverified() {
     let page_input_only = [
         "Target.attachToTarget",
         "Runtime.runIfWaitingForDebugger",
-        "DOM.resolveNode",
-        "Runtime.releaseObject",
+        "Page.getFrameTree",
         "DOM.scrollIntoViewIfNeeded",
+        "DOM.getNodeForLocation",
         "DOM.getBoxModel",
         "Input.dispatchMouseEvent",
     ];
@@ -133,7 +132,7 @@ fn checking_an_element_without_checked_state_is_not_supported() {
 
 #[test]
 fn scrolling_reports_whether_the_page_moved() {
-    let transport = attach(ScriptedTransport::new(), "T")
+    let transport = proven(attach(ScriptedTransport::new(), "T"))
         .expect("DOM.resolveNode", json!({ "object": { "objectId": "o" } }))
         .expect(
             "Runtime.callFunctionOn",

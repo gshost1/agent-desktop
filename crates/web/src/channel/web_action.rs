@@ -8,8 +8,8 @@ use super::browser_link::BrowserLink;
 use super::web_channel_adapter::WebChannelAdapter;
 use super::web_handle::WebHandle;
 use crate::{
-    PageSession, append_text, click_times, fill, focus, press_key, read_element, scroll_by,
-    scroll_into_view, select_option, set_checked,
+    ElementToken, PageSession, append_text, click_times, fill, focus, press_key, read_element,
+    scroll_by, scroll_into_view, select_option, set_checked,
 };
 
 const SCROLL_STEP_PX: f64 = 40.0;
@@ -18,7 +18,7 @@ const SCROLL_STEP_PX: f64 = 40.0;
 struct WebTarget<'a> {
     link: &'a mut BrowserLink,
     session: PageSession,
-    backend_node_id: i64,
+    token: &'a ElementToken,
     deadline: Deadline,
 }
 
@@ -48,7 +48,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             let mut target = WebTarget {
                 link,
                 session,
-                backend_node_id: token.backend_node_id,
+                token,
                 deadline,
             };
             run(&mut target, &request.action)
@@ -77,7 +77,7 @@ fn run(target: &mut WebTarget<'_>, action: &Action) -> Result<ActionResult, Adap
             focus(
                 &mut target.link.connection,
                 &target.session,
-                target.backend_node_id,
+                target.token,
                 target.deadline,
             )?;
             Ok(ActionResult::delivered_unverified(name))
@@ -86,7 +86,7 @@ fn run(target: &mut WebTarget<'_>, action: &Action) -> Result<ActionResult, Adap
             scroll_into_view(
                 &mut target.link.connection,
                 &target.session,
-                target.backend_node_id,
+                target.token,
                 target.deadline,
             )?;
             Ok(ActionResult::delivered_unverified(name))
@@ -102,7 +102,7 @@ impl WebTarget<'_> {
         click_times(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             count,
             self.deadline,
         )
@@ -110,22 +110,26 @@ impl WebTarget<'_> {
     }
 
     fn fill(&mut self, name: &str, text: &str) -> Result<ActionResult, AdapterError> {
-        fill(
+        let outcome = fill(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             text,
             self.deadline,
         )?;
-        let value = self.read()?.value;
-        Ok(verdict(name, value.as_deref() == Some(text)))
+        let result = verdict(name, outcome.verified);
+        Ok(if outcome.verified {
+            result
+        } else {
+            result.with_details(json!({ "observed": outcome.observed }))
+        })
     }
 
     fn append(&mut self, name: &str, text: &str) -> Result<ActionResult, AdapterError> {
         append_text(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             text,
             self.deadline,
         )?;
@@ -140,7 +144,7 @@ impl WebTarget<'_> {
         let selected = select_option(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             choice,
             self.deadline,
         )?;
@@ -158,7 +162,7 @@ impl WebTarget<'_> {
         set_checked(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             checked,
             self.deadline,
         )?;
@@ -172,7 +176,7 @@ impl WebTarget<'_> {
         set_checked(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             !current,
             self.deadline,
         )?;
@@ -195,7 +199,7 @@ impl WebTarget<'_> {
         let moved = scroll_by(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             delta,
             self.deadline,
         )?;
@@ -216,7 +220,7 @@ impl WebTarget<'_> {
         focus(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             self.deadline,
         )?;
         press_key(
@@ -232,7 +236,7 @@ impl WebTarget<'_> {
         read_element(
             &mut self.link.connection,
             &self.session,
-            self.backend_node_id,
+            self.token,
             self.deadline,
         )
     }

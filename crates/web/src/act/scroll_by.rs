@@ -3,7 +3,7 @@ use serde_json::json;
 
 use super::element_call::ElementCall;
 use super::remote_element::call_on_element;
-use crate::{CdpConnection, PageSession};
+use crate::{CdpConnection, ElementToken, PageSession};
 
 const SCROLL_BY: &str = r"function(dx, dy) {
   const doc = this.ownerDocument;
@@ -27,14 +27,14 @@ const SCROLL_BY: &str = r"function(dx, dy) {
 pub fn scroll_by(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     delta: (f64, f64),
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
     let moved = call_on_element(
         connection,
         session,
-        backend_node_id,
+        token,
         ElementCall {
             function: SCROLL_BY,
             arguments: vec![json!(delta.0), json!(delta.1)],

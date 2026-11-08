@@ -15,17 +15,17 @@ fn app() -> AppInfo {
 
 #[test]
 fn evidence_carries_the_token_and_no_bounds() {
-    let evidence = node_evidence(&node("button", "Go", Some("cdp:T:9")));
-    assert_eq!(evidence.identifiers.retained_object(), Some("cdp:T:9"));
+    let evidence = node_evidence(&node("button", "Go", Some("cdp:T:F:L:9")));
+    assert_eq!(evidence.identifiers.retained_object(), Some("cdp:T:F:L:9"));
     assert_eq!(evidence.name, LocatorField::Known("Go".into()));
     assert!(matches!(evidence.ref_evidence.bounds, LocatorField::Absent));
 }
 
 #[test]
 fn a_node_at_the_depth_limit_keeps_its_child_count_only() {
-    let mut root = node("RootWebArea", "Docs", Some("cdp:T:1"));
-    let mut group = node("group", "Box", Some("cdp:T:2"));
-    group.children = vec![node("button", "Go", Some("cdp:T:3"))];
+    let mut root = node("RootWebArea", "Docs", Some("cdp:T:F:L:1"));
+    let mut group = node("group", "Box", Some("cdp:T:F:L:2"));
+    group.children = vec![node("button", "Go", Some("cdp:T:F:L:3"))];
     root.children = vec![group];
     let app = app();
     let observation = ObservationRoot::Application {

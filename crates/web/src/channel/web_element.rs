@@ -25,12 +25,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         })?;
         let node = self.with_required_link(&process, deadline, |link| {
             let session = link.session(&token.target_id, deadline)?;
-            read_node(
-                &mut link.connection,
-                &session,
-                token.backend_node_id,
-                deadline,
-            )
+            read_node(&mut link.connection, &session, &token, deadline)
         })?;
         if node.role != entry.identity.role || node.identity.name != entry.identity.name {
             return Err(AdapterError::stale_ref_because(
@@ -56,18 +51,8 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         let token = &handle.token;
         let (node, reading) = self.with_required_link(&handle.process, deadline, |link| {
             let session = link.session(&token.target_id, deadline)?;
-            let node = read_node(
-                &mut link.connection,
-                &session,
-                token.backend_node_id,
-                deadline,
-            )?;
-            let reading = read_element(
-                &mut link.connection,
-                &session,
-                token.backend_node_id,
-                deadline,
-            )?;
+            let node = read_node(&mut link.connection, &session, token, deadline)?;
+            let reading = read_element(&mut link.connection, &session, token, deadline)?;
             Ok((node, reading))
         })?;
         Ok(live_element(node, reading, token))

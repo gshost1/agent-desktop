@@ -300,6 +300,15 @@ pub(crate) fn attach(transport: ScriptedTransport, target: &str) -> ScriptedTran
         .expect("Runtime.runIfWaitingForDebugger", json!({}))
 }
 
+/// Node 7 of loader `L` in frame `F` of target `T`.
+pub(crate) const TOKEN: &str = "cdp:T:F:L:7";
+
+/// Expects the document proof that frame `F` still shows loader `L`.
+pub(crate) fn proven(transport: ScriptedTransport) -> ScriptedTransport {
+    let frame = json!({ "frameTree": { "frame": { "id": "F", "loaderId": "L" } } });
+    transport.expect("Page.getFrameTree", frame)
+}
+
 /// Expects one `read_node` of a live node.
 pub(crate) fn node_read(
     transport: ScriptedTransport,
@@ -307,10 +316,7 @@ pub(crate) fn node_read(
     node_role: &str,
     name: &str,
 ) -> ScriptedTransport {
-    transport
-        .expect("DOM.resolveNode", json!({ "object": { "objectId": "n" } }))
-        .expect("Runtime.releaseObject", json!({}))
-        .expect(
+    proven(transport).expect(
             "Accessibility.getPartialAXTree",
             json!({ "nodes": [{
                 "nodeId": "1", "backendDOMNodeId": backend, "ignored": false,
@@ -326,7 +332,7 @@ pub(crate) fn element_read(
     value: Value,
     checked: Value,
 ) -> ScriptedTransport {
-    transport
+    proven(transport)
         .expect("DOM.resolveNode", json!({ "object": { "objectId": "r" } }))
         .expect(
             "Runtime.callFunctionOn",
@@ -375,8 +381,11 @@ pub(crate) fn visibility(transport: ScriptedTransport, state: &str) -> ScriptedT
 /// Expects a one-frame page snapshot holding a button and a textbox.
 pub(crate) fn page_snapshot(transport: ScriptedTransport) -> ScriptedTransport {
     transport
-        .expect("Page.getFrameTree", json!({ "frameTree": { "frame": { "id": "MAIN" } } }))
-        .expect("DOM.getDocument", json!({ "root": {} }))
+        .expect(
+            "Page.getFrameTree",
+            json!({ "frameTree": { "frame": { "id": "MAIN", "loaderId": "LOAD" } } }),
+        )
+        .expect("DOMSnapshot.captureSnapshot", json!({}))
         .expect(
             "Accessibility.getFullAXTree",
             json!({ "nodes": [
@@ -385,4 +394,6 @@ pub(crate) fn page_snapshot(transport: ScriptedTransport) -> ScriptedTransport {
                 { "nodeId": "3", "role": role("textbox"), "name": text("Query"), "backendDOMNodeId": 30 },
             ] }),
         )
+        .expect("Target.setAutoAttach", json!({}))
+        .expect("Target.setAutoAttach", json!({}))
 }

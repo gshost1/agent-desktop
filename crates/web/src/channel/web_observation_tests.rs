@@ -58,7 +58,7 @@ fn the_web_surface_reads_the_shown_page_over_cdp() {
     assert_eq!(tree.children.len(), 2);
     assert_eq!(
         tree.children[0].identity.retained_object.as_deref(),
-        Some("cdp:A:20")
+        Some("cdp:A:MAIN:LOAD:20")
     );
     assert!(web.inner().recorded().is_empty());
 }

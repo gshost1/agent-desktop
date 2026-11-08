@@ -7,8 +7,8 @@ use crate::channel::test_support::web_entry;
 
 #[test]
 fn only_devtools_tokens_route_to_the_web_channel() {
-    let web = web_entry("cdp:T:4", "button", "Go");
-    assert_eq!(web_token(&web), Some("cdp:T:4"));
+    let web = web_entry("cdp:T:F:L:4", "button", "Go");
+    assert_eq!(web_token(&web), Some("cdp:T:F:L:4"));
     let native = web_entry("axtok1:abc", "button", "Go");
     assert_eq!(web_token(&native), None);
 }

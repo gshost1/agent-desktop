@@ -4,7 +4,7 @@ use serde_json::json;
 use super::element_call::ElementCall;
 use super::focus::focus;
 use super::remote_element::call_on_element;
-use crate::{CdpConnection, PageSession};
+use crate::{CdpConnection, ElementToken, PageSession};
 
 const CARET_TO_END: &str = r"function() {
   if ('value' in this && typeof this.setSelectionRange === 'function') {
@@ -31,15 +31,15 @@ const CARET_TO_END: &str = r"function() {
 pub fn append_text(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     text: &str,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    focus(connection, session, backend_node_id, deadline)?;
+    focus(connection, session, token, deadline)?;
     call_on_element(
         connection,
         session,
-        backend_node_id,
+        token,
         ElementCall {
             function: CARET_TO_END,
             arguments: Vec::new(),

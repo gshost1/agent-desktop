@@ -83,12 +83,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
     ) -> Result<(), AdapterError> {
         self.with_required_link(&web.process, deadline, |link| {
             let session = link.session(&web.token.target_id, deadline)?;
-            crate::scroll_into_view(
-                &mut link.connection,
-                &session,
-                web.token.backend_node_id,
-                deadline,
-            )
+            crate::scroll_into_view(&mut link.connection, &session, &web.token, deadline)
         })
     }
 }

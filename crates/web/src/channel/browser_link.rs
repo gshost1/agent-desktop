@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use agent_desktop_core::{AdapterError, Deadline, ProcessIdentity};
 
-use crate::cdp::protocol_error::is_protocol_error;
+use crate::cdp::protocol_error::{is_protocol_error, target_gone};
 use crate::{CdpConnection, PageSession, attach_to_target};
 
 /// One open browser-level DevTools connection for one browser process, and
@@ -24,7 +24,9 @@ impl BrowserLink {
     }
 
     /// The flattened session for `target_id`, attaching once. A target the
-    /// browser no longer has is `STALE_REF`.
+    /// browser no longer has is `WINDOW_NOT_FOUND` with kind
+    /// `cdp_target_gone`: the tab or frame is closed, so a new snapshot of it
+    /// cannot help.
     pub fn session(
         &mut self,
         target_id: &str,
@@ -37,14 +39,7 @@ impl BrowserLink {
             attach_to_target(&mut self.connection, target_id, deadline).map_err(|error| {
                 if is_protocol_error(&error) {
                     let detail = error.platform_detail.clone().unwrap_or_default();
-                    AdapterError::stale_ref_because(format!(
-                        "Page target {target_id} is no longer open"
-                    ))
-                    .with_platform_detail(detail)
-                    .with_details(serde_json::json!({
-                        "kind": "cdp_target_gone",
-                        "target_id": target_id,
-                    }))
+                    target_gone("Target.attachToTarget", detail)
                 } else {
                     error
                 }

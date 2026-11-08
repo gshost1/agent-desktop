@@ -7,28 +7,33 @@ use serde_json::{Value, json};
 use super::cdp_ax_node::CdpAxNode;
 use super::frame_build::convert;
 use super::frame_context::FrameContext;
-use crate::act::remote_element::ensure_live;
+use crate::act::element_errors::node_error;
+use crate::act::remote_element::prove_document;
 use crate::transport::transport_error::transport_failed;
-use crate::{CdpConnection, PageSession};
+use crate::{CdpConnection, ElementToken, PageSession};
 
 /// Re-reads one DOM node's accessibility node: its mapped role, name, value,
 /// states and the capabilities this crate can deliver to it, in the form a
-/// snapshot gave it. A node the page dropped is `STALE_REF`. A node the
+/// snapshot gave it. A node of a replaced document, or one the page dropped,
+/// is `STALE_REF`. A node the
 /// browser leaves out of its accessibility tree, such as one hidden by CSS,
 /// reads as hidden.
 pub fn read_node(
     connection: &mut CdpConnection,
     session: &PageSession,
-    backend_node_id: i64,
+    token: &ElementToken,
     deadline: Deadline,
 ) -> Result<AccessibilityNode, AdapterError> {
-    ensure_live(connection, session, backend_node_id, deadline)?;
-    let mut reply = connection.call(
-        "Accessibility.getPartialAXTree",
-        json!({ "backendNodeId": backend_node_id, "fetchRelatives": false }),
-        Some(&session.session_id),
-        deadline,
-    )?;
+    prove_document(connection, session, token, deadline)?;
+    let backend_node_id = token.backend_node_id;
+    let mut reply = connection
+        .call(
+            "Accessibility.getPartialAXTree",
+            json!({ "backendNodeId": backend_node_id, "fetchRelatives": false }),
+            Some(&session.session_id),
+            deadline,
+        )
+        .map_err(|error| node_error(error, token))?;
     let nodes: Vec<CdpAxNode> = serde_json::from_value(
         reply.get_mut("nodes").map_or(Value::Null, Value::take),
     )
@@ -40,8 +45,9 @@ pub fn read_node(
         .ok_or_else(|| transport_failed("Accessibility.getPartialAXTree", "reply holds no node"))?;
     let dom_ids = HashMap::new();
     let context = FrameContext {
-        target_id: &session.target_id,
-        frame_id: "",
+        target_id: &token.target_id,
+        frame_id: &token.frame_id,
+        loader_id: &token.loader_id,
         dom_ids: &dom_ids,
     };
     let mut built = convert(node, &node.raw_role(), &context).node;
