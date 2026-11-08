@@ -103,11 +103,28 @@ pub(crate) fn finish_press(
     ))
 }
 
-fn with_target(result: ActionResult, target: Option<serde_json::Value>) -> ActionResult {
-    match target {
-        Some(target) => result.with_details(serde_json::json!({ "keyboard_target": target })),
-        None => result,
+fn with_target(mut result: ActionResult, target: Option<serde_json::Value>) -> ActionResult {
+    if let Some(target) = target {
+        result.details = Some(merge_detail(result.details, "keyboard_target", target));
     }
+    result
+}
+
+/// Sets `key` in a details object and keeps every other entry, so a report
+/// added late, such as `keyboard_target`, never erases `menu_shortcut` or
+/// `modal_key`. A details value that is not an object is kept under `report`.
+pub(crate) fn merge_detail(
+    details: Option<serde_json::Value>,
+    key: &str,
+    value: serde_json::Value,
+) -> serde_json::Value {
+    let mut merged = match details {
+        Some(serde_json::Value::Object(map)) => map,
+        Some(other) => [("report".to_string(), other)].into_iter().collect(),
+        None => serde_json::Map::new(),
+    };
+    merged.insert(key.to_string(), value);
+    serde_json::Value::Object(merged)
 }
 
 fn wait_for_change(
