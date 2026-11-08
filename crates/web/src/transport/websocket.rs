@@ -130,10 +130,11 @@ fn map_ws_error(operation: &str, error: WsError) -> AdapterError {
     }
 }
 
+/// Every endpoint is loopback, so a TCP connect that does not complete means
+/// nothing accepted it. Windows retries a refused loopback SYN for about two
+/// seconds before it reports the refusal, so a deadline shorter than that ends
+/// as a timeout there; both outcomes are the same unavailable endpoint.
 fn connect_failed(url: &WebSocketUrl, error: &std::io::Error) -> AdapterError {
-    if is_retry(error.kind()) {
-        return transport_timeout("connect");
-    }
     crate::discovery::connect_error::endpoint_unreachable(url.port(), &error.to_string())
 }
 

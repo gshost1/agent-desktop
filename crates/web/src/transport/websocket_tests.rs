@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use agent_desktop_core::{Deadline, ErrorCode};
 use tungstenite::Message;
 
-use super::WebSocketTransport;
+use super::{WebSocketTransport, connect_failed};
 use crate::{CdpTransport, WebSocketUrl};
 
 fn local_server() -> (TcpListener, WebSocketUrl) {
@@ -84,6 +84,18 @@ fn nothing_listening_is_an_unavailable_endpoint() {
     let (listener, url) = local_server();
     drop(listener);
     let error = WebSocketTransport::connect(&url, Deadline::after(1_000).unwrap()).unwrap_err();
+    assert_eq!(
+        error.details.as_ref().unwrap()["kind"],
+        "cdp_endpoint_unavailable"
+    );
+}
+
+#[test]
+fn a_loopback_connect_that_times_out_is_an_unavailable_endpoint() {
+    let (_listener, url) = local_server();
+    let timed_out = std::io::Error::from(std::io::ErrorKind::TimedOut);
+    let error = connect_failed(&url, &timed_out);
+    assert_eq!(error.code, ErrorCode::ActionFailed);
     assert_eq!(
         error.details.as_ref().unwrap()["kind"],
         "cdp_endpoint_unavailable"
