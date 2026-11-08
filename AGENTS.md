@@ -53,8 +53,8 @@ check. Bypass it only in an emergency: `git commit --no-verify` or `SKIP_PRECOMM
 ## Where the truth lives
 
 - **Shipped behavior** is the code and its tests. A doc that contradicts the code is a defect; fix it in the same change.
-- **Agent usage** is the skills under `skills/`. They compile into the binary: `agent-desktop skills get desktop` and
-  `agent-desktop skills get platform`.
+- **Agent usage** is the skills under `skills/`. They compile into the binary: `agent-desktop skills get desktop`,
+  `agent-desktop skills get platform` and, for web pages, `agent-desktop skills get web`.
 - **Vocabulary** is `CONCEPTS.md`. **The JSON contract** is `docs/json-output.md`. **Past lessons** are in
   `docs/solutions/`, with YAML frontmatter (`module`, `tags`, `problem_type`); search it before you work in a
   documented area.
@@ -144,8 +144,8 @@ from the MCP tool list with no MCP change. `mcp` itself is attached to the root 
 6. A new `Action` variant goes in `crates/core/src/actions/action.rs`. A new adapter method goes in the matching
    `PlatformAdapter` fragment with a `not_supported` default.
 7. Update the matching skill in the same change: `skills/agent-desktop/` for cross-platform behavior, the platform
-   skill for what differs, `skills/agent-desktop-ffi/` for the C ABI. The skills compile into the binary and are what
-   agents read.
+   skill for what differs, `skills/agent-desktop-web/` for the web surface, `skills/agent-desktop-ffi/` for the C ABI.
+   The skills compile into the binary and are what agents read.
 
 **Crate layout.** Core's root holds only `lib.rs` and domain folders named after `CONCEPTS.md` words: `actionability`,
 `actions`, `adapter`, `commands`, `context`, `cursor_overlay`, `input`, `locator`, `notifications`, `ref_action`,
