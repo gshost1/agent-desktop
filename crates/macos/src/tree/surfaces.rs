@@ -2,13 +2,43 @@ use super::{AXElement, properties::element::element_for_pid, surface_read};
 use agent_desktop_core::{AdapterError, SnapshotSurface};
 use std::time::Instant;
 
+/// Where keyboard focus is: the windowless editor of an in-place edit when
+/// one floats over the focused window or no window reports focus, otherwise
+/// the focused window.
 #[cfg(target_os = "macos")]
 pub(crate) fn focused_surface_for_pid(
     pid: i32,
     deadline: Instant,
 ) -> Result<Option<AXElement>, AdapterError> {
     let app = element_for_pid(pid);
-    surface_read::element(&app, "AXFocusedWindow", deadline)
+    let window = surface_read::element(&app, "AXFocusedWindow", deadline)?.map(|window| {
+        let bounds = super::element_bounds::read_bounds_with_deadline(&window, deadline)
+            .ok()
+            .flatten();
+        (window, bounds)
+    });
+    choose_focused_root(window, || {
+        super::inline_editor::focused_editor_for_pid(pid, deadline)
+    })
+}
+
+type FocusedCandidate<T> = (T, Option<agent_desktop_core::Rect>);
+
+pub(crate) fn choose_focused_root<T>(
+    window: Option<FocusedCandidate<T>>,
+    focused_editor: impl FnOnce() -> Result<Option<FocusedCandidate<T>>, AdapterError>,
+) -> Result<Option<T>, AdapterError> {
+    let Some((window, window_bounds)) = window else {
+        return Ok(focused_editor()?.map(|(editor, _)| editor));
+    };
+    Ok(match focused_editor() {
+        Ok(Some((editor, editor_bounds)))
+            if super::inline_editor::editor_floats_in(window_bounds, editor_bounds) =>
+        {
+            Some(editor)
+        }
+        _ => Some(window),
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -163,6 +193,10 @@ unsupported_surface!(sheet_for_pid);
 unsupported_surface!(popover_for_pid);
 #[cfg(not(target_os = "macos"))]
 unsupported_surface!(alert_for_pid);
+
+#[cfg(test)]
+#[path = "surfaces_tests.rs"]
+mod tests;
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn is_menu_open(_pid: i32, _deadline: Instant) -> Result<bool, AdapterError> {

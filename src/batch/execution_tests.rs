@@ -13,7 +13,20 @@ struct CountingAdapter {
 }
 
 impl agent_desktop_core::ObservationOps for CountingAdapter {}
-impl agent_desktop_core::ActionOps for CountingAdapter {}
+impl agent_desktop_core::ActionOps for CountingAdapter {
+    fn execute_action(
+        &self,
+        _handle: &agent_desktop_core::NativeHandle,
+        request: agent_desktop_core::ActionRequest,
+        _lease: &agent_desktop_core::InteractionLease,
+    ) -> Result<agent_desktop_core::ActionResult, agent_desktop_core::AdapterError> {
+        self.clears.fetch_add(1, Ordering::SeqCst);
+        Ok(agent_desktop_core::ActionResult::from_execution(
+            &request.action,
+            Vec::new(),
+        ))
+    }
+}
 
 impl agent_desktop_core::InputOps for CountingAdapter {
     fn clear_clipboard(
@@ -149,7 +162,7 @@ fn baseline_failure_prevents_the_producer_action() {
     let output = execute(
         args(
             json!([
-                {"command": "clipboard-clear", "args": {}},
+                {"command": "press", "args": {"combo": "a"}},
                 {"command": "wait", "args": {"event": "window-opened", "timeout": 100}}
             ]),
             60_000,
