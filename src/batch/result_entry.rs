@@ -116,6 +116,7 @@ pub(crate) fn trace_failure_details(body: Value) -> Value {
     for key in [
         "total_entries",
         "completed_entries",
+        "failed_entries",
         "not_started_entries",
         "stopped",
     ] {
