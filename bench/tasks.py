@@ -165,13 +165,34 @@ def close_bench_finder_windows():
     macctl("close-discard", "Finder", *BENCH_FINDER_PREFIXES)
 
 
-def close_personal_finder_windows():
-    """Close Finder windows on George's own folders (a run's cmd+n or a Finder reopen lands on
-    Home or Recents) by title only, never reading their contents."""
+PERSONAL_CLOSE_LOG = MACCTL.parent / "personal-window-closes.log"
+
+
+def close_personal_finder_windows(context):
+    """Close Finder windows on George's own folders (a Finder reopen lands on Home or Recents) by
+    title only, never reading their contents. Logs the count with its context, never a title."""
     titles = json.loads(macctl("windows", "Finder") or "[]")
+    closed = 0
     for title in titles:
         if title in PERSONAL_FINDER_TITLES:
             macctl("close-discard", "Finder", title)
+            closed += 1
+    if closed:
+        with open(PERSONAL_CLOSE_LOG, "a") as log:
+            log.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {context} closed={closed}\n")
+    return closed
+
+
+def require_bench_finder_window(folder):
+    """The run starts only with its bench window open in Finder, so an agent's plain
+    `launch Finder` activates that window instead of reopening Finder's default location."""
+    name = Path(folder).name
+    for _ in range(2):
+        if name in json.loads(macctl("windows", "Finder") or "[]"):
+            return
+        subprocess.run(["open", str(folder)], check=True, timeout=10)
+        time.sleep(1.5)
+    raise RuntimeError(f"no Finder window on the bench folder {name} after setup")
 
 
 def reset_desktop():
@@ -179,7 +200,7 @@ def reset_desktop():
         quit_app(app)
     clear_finder_alert()
     close_bench_finder_windows()
-    close_personal_finder_windows()
+    close_personal_finder_windows("reset")
 
 
 def walk(node):
@@ -271,6 +292,7 @@ class FinderFolder(Task):
         self.parent.mkdir(parents=True)
         self.name = f"bench-{self.run_id}"
         open_bench_finder_window(self.parent)
+        require_bench_finder_window(self.parent)
 
     def prompt(self):
         return (f"Using Finder, create a new folder named `{self.name}` inside the folder "
@@ -282,6 +304,7 @@ class FinderFolder(Task):
         return ok, f"folder contents {entries}"
 
     def cleanup(self):
+        close_personal_finder_windows(f"after-run {self.run_id}")
         close_bench_finder_windows()
         shutil.rmtree(self.parent, ignore_errors=True)
 
