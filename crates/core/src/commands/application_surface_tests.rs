@@ -184,6 +184,7 @@ fn find_materializes_refs_from_the_application_surface() {
                 last: false,
                 nth: None,
                 limit: None,
+                allow_partial: false,
             },
             states: vec![],
             timeout_ms: Some(1_000),

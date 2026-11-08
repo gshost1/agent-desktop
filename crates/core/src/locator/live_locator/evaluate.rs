@@ -137,7 +137,11 @@ pub(super) fn evaluate_locator_tree_in(
     };
     let total_matches = u32::try_from(matched_indices.len())
         .map_err(|_| AdapterError::internal("locator match count exceeds u32"))?;
-    let selection_complete = complete || {
+    let first_outside_unread_rows = matches!(request.selection, super::LocatorSelection::First)
+        && tree.rows_unread()
+        && !unknown
+        && !selected_matches.is_empty();
+    let selection_complete = complete || first_outside_unread_rows || {
         matches!(request.selection, super::LocatorSelection::First)
             && selected_matches.first().is_some_and(|selected| {
                 let root_verdicts = (0..tree.nodes.len())

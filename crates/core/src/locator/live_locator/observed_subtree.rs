@@ -47,4 +47,35 @@ impl ObservedSubtree {
     pub fn is_complete(&self) -> bool {
         self.completeness.subtree_complete
     }
+
+    /// Fills in the children of a descendant whose children a walk read after
+    /// the rest of the tree. `path` holds the position of each node in its
+    /// parent's retained children, from this node down. The descendant takes
+    /// the children, their completeness and the unread count; the walk that
+    /// built the ancestors counted the descendant as complete, and flattening
+    /// into an [`super::ObservedTree`] carries any incompleteness back up to
+    /// them. Returns false, changing nothing, when the path names no node.
+    pub fn attach_deferred_children(
+        &mut self,
+        path: &[usize],
+        children: Vec<Self>,
+        complete: bool,
+        children_count: Option<u32>,
+    ) -> bool {
+        let mut target = self;
+        for position in path {
+            match target.children.get_mut(*position) {
+                Some(child) => target = child,
+                None => return false,
+            }
+        }
+        target.children = children;
+        target.completeness.subtree_complete = complete;
+        target.children_count = children_count;
+        true
+    }
 }
+
+#[cfg(test)]
+#[path = "observed_subtree_tests.rs"]
+mod tests;

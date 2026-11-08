@@ -307,6 +307,10 @@ fn an_attempt_that_spent_its_observation_budget_is_not_walked_again() {
     let details = error.details.unwrap();
     assert_eq!(details["kind"], "locator_transient_incomplete");
     assert_eq!(details["last_incomplete"]["deadline_exhausted"], 1);
+    assert_eq!(
+        details["query_stats"]["elapsed_us"], 4_000_000,
+        "a timeout must say how long the resolution ran"
+    );
     assert_eq!(adapter.builds.load(Ordering::SeqCst), 1);
     assert_eq!(
         clock.elapsed(),

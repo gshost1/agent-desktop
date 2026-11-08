@@ -186,6 +186,12 @@ pub(crate) struct FindSelectionArgs {
         conflicts_with_all = ["count", "first", "last", "nth"]
     )]
     pub limit: Option<usize>,
+    #[arg(
+        long,
+        help = "When the budget runs out, return the matches seen so far with complete: false instead of a TIMEOUT"
+    )]
+    #[serde(default)]
+    pub allow_partial: bool,
 }
 
 #[derive(Parser, Debug, Deserialize)]
