@@ -54,3 +54,41 @@ for variant in warmup set-value type set-value-headed-return press-keys; do
     printf "%-24s ok=%s delivery=%s on_disk=[%s]\n" "$variant" \
         "$(echo "$out" | grep -o '"ok":[a-z]*' | head -1)" "$(echo "$out" | grep -o '"delivery":"[a-z_]*"' | head -1)" "$on_disk"
 done 2>&1 | tee bench/out/probe_rename.txt
+# v4: rename through the item's Info window, the route a passing model run used.
+# The inline field stays a negative control above; here the Name field of the
+# Info window gets set-value, then Return goes to that window.
+{
+for attempt in 1 2; do
+    name="renamed-info-$attempt"
+    bench/out/macctl raise Finder probe-rename
+    $B press cmd+shift+n --app Finder >/dev/null; sleep 1.5
+    $B press escape --app Finder >/dev/null; sleep 0.5
+    before=$(ls "$D" | tr '\n' ',')
+    item=$(ls -t "$D" | head -1)
+    menu=$($B find --app Finder --surface menubar --role menuitem --name "Get Info" --exact | python3 -c "
+import json,sys
+m=json.load(sys.stdin).get('data',{}).get('matches',[])
+print(m[0]['ref_id'] if m else '')")
+    [ -n "$menu" ] || { echo "get-info-$attempt: no Get Info menu item"; continue; }
+    $B click "$menu" > "bench/out/probe_rename/get-info-$attempt.menu.json"; sleep 1.5
+    info=$($B list-windows --app Finder | python3 -c "
+import json,sys
+for w in json.load(sys.stdin).get('data',[]):
+    if (w.get('title') or '').endswith(' Info'): print(w['id'], w['title']); break")
+    wid=${info%% *}
+    [ -n "$wid" ] || { echo "get-info-$attempt: no Info window (selected item $item)"; continue; }
+    field=$($B find --window-id "$wid" --role textfield --value "$item" --exact | python3 -c "
+import json,sys
+m=json.load(sys.stdin).get('data',{}).get('matches',[])
+print(m[0]['ref_id'] if m else '')")
+    [ -n "$field" ] || { echo "get-info-$attempt: no Name field holding '$item' in ${info#* }"; continue; }
+    out=$($B set-value "$field" "$name")
+    $B press return --window-id "$wid" >/dev/null; sleep 1.5
+    echo "$out" > "bench/out/probe_rename/get-info-$attempt.json"
+    on_disk=$(ls "$D" | tr '\n' ',')
+    printf "%-24s ok=%s delivery=%s renamed=%s on_disk=[%s]\n" "get-info-$attempt" \
+        "$(echo "$out" | grep -o '"ok":[a-z]*' | head -1)" "$(echo "$out" | grep -o '"delivery":"[a-z_]*"' | head -1)" \
+        "$([ -d "$D/$name" ] && echo yes || echo no)" "$on_disk"
+    bench/out/macctl close-discard Finder "${info#* }"
+done
+} 2>&1 | tee -a bench/out/probe_rename.txt
