@@ -96,7 +96,7 @@ fn an_early_read_failure_for_a_wait_in_an_ended_session_reports_nothing_but_the_
 }
 
 #[test]
-fn a_wait_in_an_ended_session_takes_no_read_that_could_block_a_live_action() {
+fn an_action_skipped_for_its_ended_session_takes_no_read_for_the_live_wait() {
     let _home = HomeGuard::new();
     let started = session::execute(SessionAction::Start {
         name: None,
@@ -111,12 +111,8 @@ fn a_wait_in_an_ended_session_takes_no_read_that_could_block_a_live_action() {
         BatchArgs {
             commands_json: json!([
                 {"command": "session", "session": session_id, "args": {"action": "end"}},
-                {"command": "clipboard-clear", "args": {}},
-                {
-                    "command": "wait",
-                    "session": session_id,
-                    "args": {"event": "window-opened", "timeout": 100}
-                }
+                {"command": "clipboard-clear", "session": session_id, "args": {}},
+                {"command": "wait", "args": {"event": "window-opened", "timeout": 100}}
             ])
             .to_string(),
             stop_on_error: false,
@@ -129,10 +125,10 @@ fn a_wait_in_an_ended_session_takes_no_read_that_could_block_a_live_action() {
     .expect("batch runs");
 
     let results = &output["results"];
-    assert_eq!(results[1]["execution"], "completed", "{output}");
     assert_eq!(
-        results[2]["not_started_reason"], "session_ended",
+        results[1]["not_started_reason"], "session_ended",
         "{output}"
     );
+    assert_eq!(results[2]["execution"], "completed", "{output}");
     assert!(output.get("stopped").is_none(), "{output}");
 }

@@ -14,7 +14,6 @@ use super::{
     entry_outcome::EntryOutcome,
     pending_seed::{PendingSeed, read_seed, seed_context},
     preparation::{MAX_BATCH_ENTRIES, MAX_BATCH_JSON_BYTES, prepare},
-    read_point::ReadPoint,
     result_entry::MAX_BATCH_OUTPUT_BYTES,
     seed_plan::SeedPlan,
 };
@@ -37,57 +36,59 @@ pub(super) fn execute(
     entry_effects.extend(commands.iter().map(|prepared| prepared.command.effect()));
     let seed_plan = SeedPlan::new(&commands);
     let mut results = BatchResults::with_capacity(total);
-    let mut pending_seed: Option<PendingSeed> = None;
+    let mut seeds: Vec<Option<PendingSeed>> = (0..total).map(|_| None).collect();
+    let mut first_entry_seed = Some((
+        context.event_baseline().cloned(),
+        context.notification_seed().cloned(),
+    ));
     let mut stopped: Option<BatchStop> = None;
 
-    for index in 0..total {
+    'entries: for index in 0..total {
         if deadline.is_expired() {
             stopped = Some(results.deadline(index, &commands[index].name, args.timeout_ms));
             break;
         }
 
-        let owed = seed_plan.read_at(index);
-        let held = pending_seed
-            .take_if(|seed| seed.is_for(index))
-            .map(PendingSeed::into_read);
-        let mut seed_values = None;
-        let refusal = match (commands[index].ended_session(), held) {
-            (Some(ended), _) => Some((
-                "session_ended",
-                batch_session_ended(index, &commands[index].name, &ended),
-            )),
-            (None, Some((read_at, Err(error)))) => Some((
-                "pre_action_baseline_failed",
-                baseline_error(&commands, index, read_at, index, error),
-            )),
-            (None, Some((_, Ok(values)))) => {
-                seed_values = Some(values);
-                None
-            }
-            (None, None) => None,
-        };
-        if let Some((reason, error)) = refusal {
-            results.not_started(index, &commands[index].name, reason, error);
+        let inherited_seed = first_entry_seed.take();
+        let held = seeds[index].take().map(PendingSeed::into_read);
+
+        if let Some(ended_session) = commands[index].ended_session() {
+            let error = batch_session_ended(index, &commands[index].name, &ended_session);
+            results.not_started(index, &commands[index].name, "session_ended", error);
             if args.stop_on_error {
                 stopped = Some(BatchStop::StopOnError { index });
                 break;
             }
-            if let Some(point) = owed {
-                let wait_index = point.wait_index();
-                let read = read_seed(&commands[wait_index], adapter, deadline);
-                pending_seed = PendingSeed::held(wait_index, index, read);
-            }
             continue;
         }
 
-        if let Some(ReadPoint::Before { wait_index }) = owed {
+        let seed = match held {
+            Some((read_at, Err(error))) => {
+                let error = baseline_error(&commands, index, read_at, index, error);
+                results.not_started(
+                    index,
+                    &commands[index].name,
+                    "pre_action_baseline_failed",
+                    error,
+                );
+                if args.stop_on_error {
+                    stopped = Some(BatchStop::StopOnError { index });
+                    break;
+                }
+                continue;
+            }
+            Some((_, Ok((event, notification)))) => Some((event.map(Ok), notification)),
+            None => inherited_seed,
+        };
+
+        for &wait_index in seed_plan.waits_read_before(index) {
             let read = read_seed(&commands[wait_index], adapter, deadline);
             if deadline.is_expired() {
                 stopped = Some(results.deadline(index, &commands[index].name, args.timeout_ms));
-                break;
+                break 'entries;
             }
             match read {
-                Err(error) if wait_index == index + 1 && entry_effects[index].sends_input() => {
+                Err(error) if wait_index == index + 1 => {
                     let error = baseline_error(&commands, index, index, wait_index, error);
                     results.not_started(
                         index,
@@ -101,27 +102,26 @@ pub(super) fn execute(
                         wait_index,
                         wait_command: commands[wait_index].name.clone(),
                     });
-                    break;
+                    break 'entries;
                 }
-                read => pending_seed = PendingSeed::held(wait_index, index, read),
+                read => seeds[wait_index] = PendingSeed::held(index, read),
             }
         }
 
         let item_context = seed_context(
-            seed_values,
+            seed,
             commands[index]
                 .context
                 .clone()
                 .with_inherited_deadline(deadline),
         );
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
-        Deadline::take_inherited_expiry();
         let entry = super::result_entry::completed_entry(
             index,
             &commands[index].name,
             crate::dispatch::dispatch(command, adapter, permission_report, &item_context),
         );
-        let outcome = EntryOutcome::of(index, &entry, Deadline::take_inherited_expiry());
+        let outcome = EntryOutcome::of(index, &entry, deadline.is_expired());
         let (entry, oversized) = super::result_entry::bounded_completed_entry(
             index,
             &commands[index].name,
@@ -138,10 +138,6 @@ pub(super) fn execute(
         );
         if stopped.is_some() {
             break;
-        }
-        if let Some(ReadPoint::After { wait_index }) = owed {
-            let read = read_seed(&commands[wait_index], adapter, deadline);
-            pending_seed = PendingSeed::held(wait_index, index, read);
         }
     }
 

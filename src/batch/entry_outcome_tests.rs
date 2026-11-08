@@ -7,7 +7,7 @@ fn timeout_entry() -> serde_json::Value {
 }
 
 #[test]
-fn a_timeout_after_the_batch_capped_deadline_expired_is_the_batch_deadline() {
+fn a_timeout_once_the_batch_deadline_expired_is_the_batch_deadline() {
     let outcome = EntryOutcome::of(2, &timeout_entry(), true);
 
     assert!(outcome.failed);
@@ -15,7 +15,7 @@ fn a_timeout_after_the_batch_capped_deadline_expired_is_the_batch_deadline() {
 }
 
 #[test]
-fn a_timeout_without_that_record_is_the_entry_own() {
+fn a_timeout_while_the_batch_deadline_has_time_left_is_the_entry_own() {
     let outcome = EntryOutcome::of(1, &timeout_entry(), false);
 
     assert!(outcome.failed);

@@ -13,18 +13,17 @@ pub(super) struct EntryOutcome {
 }
 
 impl EntryOutcome {
-    /// Reads the outcome of the entry at `index`. `batch_deadline_expired` is
-    /// whether, while the entry ran, its code found a deadline expired that
-    /// the batch deadline had capped (`Deadline::take_inherited_expiry`). A
-    /// `TIMEOUT` with that record is the batch deadline's, whichever step of
-    /// the entry ran out.
-    pub(super) fn of(index: usize, entry: &Value, batch_deadline_expired: bool) -> Self {
+    /// Reads the outcome of the entry at `index`. `batch_expired` is whether
+    /// the batch deadline had expired when the entry returned. A `TIMEOUT`
+    /// then is the batch deadline's: every entry runs under it, so nothing
+    /// after the entry could have run either.
+    pub(super) fn of(index: usize, entry: &Value, batch_expired: bool) -> Self {
         let failed = entry["ok"] != true;
         Self {
             index,
             failed,
             deadline_timeout: failed
-                && batch_deadline_expired
+                && batch_expired
                 && entry["error"]["code"] == ErrorCode::Timeout.as_str(),
             oversized: false,
         }

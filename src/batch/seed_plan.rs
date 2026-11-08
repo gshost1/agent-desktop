@@ -1,50 +1,39 @@
 //! Where each seeded wait entry's read is taken, decided once before the
 //! first entry runs.
 
-use super::{preparation::PreparedCommand, read_point::ReadPoint, seed_kind::SeedKind};
+use super::{preparation::PreparedCommand, seed_kind::SeedKind};
 
-/// For every entry, the read it owes a later seeded wait. A seeded wait is
-/// read at the nearest earlier entry that can change the desktop: one that
-/// sends input, or another seeded wait. Read-only and local-write entries
-/// between them do not move the read after the action. With no such entry,
-/// the read is taken at the entry right before the wait. The read is taken
-/// before that entry runs, except when the entry is a seeded wait with the
-/// same filter: then it is taken once that wait finishes, so the later wait
-/// does not report what the earlier one already reported. Each seeded wait
-/// after the first entry gets exactly one read.
+/// For every entry that sends input, the seeded wait entries whose reads are
+/// taken right before it runs. A seeded wait is read before the nearest
+/// earlier entry that sends input, the action it observes, so every wait
+/// after one action measures from before that action, whatever sits between
+/// them. A wait with no earlier input entry is not read for: it takes its own
+/// first read.
 pub(super) struct SeedPlan {
-    reads: Vec<Option<ReadPoint>>,
+    waits_read_before: Vec<Vec<usize>>,
 }
 
 impl SeedPlan {
     pub(super) fn new(commands: &[PreparedCommand]) -> Self {
-        let kinds: Vec<Option<SeedKind>> = commands
-            .iter()
-            .map(|prepared| SeedKind::of(&prepared.command))
-            .collect();
-        let mut reads = vec![None; commands.len()];
-        let mut last_change = None;
+        let mut waits_read_before = vec![Vec::new(); commands.len()];
+        let mut last_input: Option<usize> = None;
         for (index, prepared) in commands.iter().enumerate() {
-            if let Some(kind) = &kinds[index]
-                && index > 0
+            if SeedKind::of(&prepared.command).is_some()
+                && let Some(action) = last_input
             {
-                let read_at = last_change.unwrap_or(index - 1);
-                reads[read_at] = Some(if kinds[read_at].as_ref() == Some(kind) {
-                    ReadPoint::After { wait_index: index }
-                } else {
-                    ReadPoint::Before { wait_index: index }
-                });
+                waits_read_before[action].push(index);
             }
-            if kinds[index].is_some() || prepared.command.effect().sends_input() {
-                last_change = Some(index);
+            if prepared.command.effect().sends_input() {
+                last_input = Some(index);
             }
         }
-        Self { reads }
+        Self { waits_read_before }
     }
 
-    /// The read entry `index` owes a later seeded wait.
-    pub(super) fn read_at(&self, index: usize) -> Option<ReadPoint> {
-        self.reads.get(index).copied().flatten()
+    /// The seeded wait entries whose reads are taken before entry `index`
+    /// runs, in entry order.
+    pub(super) fn waits_read_before(&self, index: usize) -> &[usize] {
+        self.waits_read_before.get(index).map_or(&[], Vec::as_slice)
     }
 }
 

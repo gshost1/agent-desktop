@@ -25,7 +25,6 @@ mod entry_outcome;
 mod execution;
 mod pending_seed;
 mod preparation;
-mod read_point;
 mod result_entry;
 mod seed_kind;
 mod seed_plan;
