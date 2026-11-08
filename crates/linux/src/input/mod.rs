@@ -13,5 +13,7 @@ pub(crate) mod release_guard;
 pub(crate) mod release_state;
 pub(crate) mod standalone;
 pub(crate) mod step;
+#[cfg(test)]
+pub(crate) mod test_scratch;
 pub(crate) mod wayland;
 pub(crate) mod x11;
