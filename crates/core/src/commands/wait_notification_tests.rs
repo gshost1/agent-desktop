@@ -55,11 +55,23 @@ fn mail(index: usize, title: &str, actions: &[&str]) -> NotificationInfo {
     }
 }
 
+/// A budget a match returns well inside, so a slow CI runner cannot turn a match into a timeout.
+const MATCH_BUDGET_MS: u64 = 5_000;
+/// The budget for waits that must time out; each of them reads the whole script first.
+const TIMEOUT_BUDGET_MS: u64 = 600;
+
 fn wait(
     adapter: &ScriptedNotifications,
     context: &CommandContext,
 ) -> Result<serde_json::Value, crate::AppError> {
-    super::wait_for_notification(None, None, 600, adapter, context)
+    super::wait_for_notification(None, None, MATCH_BUDGET_MS, adapter, context)
+}
+
+fn wait_for_timeout(
+    adapter: &ScriptedNotifications,
+    context: &CommandContext,
+) -> Result<serde_json::Value, crate::AppError> {
+    super::wait_for_notification(None, None, TIMEOUT_BUDGET_MS, adapter, context)
 }
 
 #[test]
@@ -84,7 +96,7 @@ fn a_changed_actions_list_alone_is_not_a_new_notification() {
         vec![mail(1, "Invite", &["Accept", "Decline"])],
     ]);
 
-    assert_timeout(wait(&adapter, &CommandContext::default()));
+    assert_timeout(wait_for_timeout(&adapter, &CommandContext::default()));
 }
 
 #[test]
@@ -128,7 +140,7 @@ fn one_empty_read_between_full_reads_is_not_a_new_notification() {
         vec![mail(1, "Build failed", &[])],
     ]);
 
-    assert_timeout(wait(&adapter, &CommandContext::default()));
+    assert_timeout(wait_for_timeout(&adapter, &CommandContext::default()));
 }
 
 #[test]
@@ -166,7 +178,7 @@ fn a_skipped_seed_is_named_on_a_timeout() {
     let context = CommandContext::default()
         .with_notification_seed(Some(crate::NotificationSeed::SkippedHeaded));
 
-    let err = assert_timeout(wait(&adapter, &context));
+    let err = assert_timeout(wait_for_timeout(&adapter, &context));
 
     assert_eq!(err.details.unwrap()["pre_action_seed"], "skipped_headed");
 }
