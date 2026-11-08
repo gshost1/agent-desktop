@@ -110,17 +110,15 @@ fn execute_with_deadline<'a>(
                     artifacts.finish_with_post(error.disposition);
                     return Err(error);
                 }
-                let waits_again = polls && resolves_again(&error, deadline);
-                if shot.focused {
-                    artifacts.finish_with_post(error.disposition);
-                    return Err(if waits_again {
-                        stopped_after_focus(error, &state, refusal.as_ref())
-                    } else {
-                        error
-                    });
+                if shot.focused || scrolled_view(&error) {
+                    std::mem::replace(&mut artifacts, ActionArtifacts::new(context, deadline))
+                        .finish_with_post(error.disposition);
                 }
-                if !waits_again {
+                if !(polls && resolves_again(&error, deadline)) {
                     return Err(error);
+                }
+                if shot.focused {
+                    return Err(stopped_after_focus(error, &state, refusal.as_ref()));
                 }
                 let verdict = crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(&error);
                 if let Some(absent) = moved.exhausted(verdict, context.entry) {
@@ -169,6 +167,15 @@ fn stopped_after_focus(
         error
     };
     with_refusal(error, refusal)
+}
+
+/// Whether a refusal records a preparatory scroll, which may have moved the
+/// view although nothing of the action was sent.
+fn scrolled_view(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .is_some_and(|details| details.get("preparatory_scroll").is_some())
 }
 
 /// Whether a dispatch-time refusal that sent nothing goes back to the wait:

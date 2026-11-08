@@ -20,7 +20,8 @@ const OUT_OF_TIME: [&str; 3] = ["dispatch_budget", "deadline", "adapter: TIMEOUT
 /// auto-wait refusals; one skipped only because it ran out of time is tried
 /// again on the next attempt. The guard then ends exactly once. When the screen
 /// may have changed (a dispatch of any disposition but `not_delivered`, or a
-/// focus call that ran before a refusal), [`ActionArtifacts::finish_with_post`]
+/// focus call or preparatory scroll that ran before a refusal),
+/// [`ActionArtifacts::finish_with_post`]
 /// takes the post screenshot within what the action's deadline has left, at
 /// most one second, and records the disposition. Dropping the guard without it
 /// records the pre screenshot with `skipped_post: "not_dispatched"`. A written
