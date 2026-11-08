@@ -17,7 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from run import (allowed_tools, channel_prompt, http_json, launch_chrome, stop_chrome, summarize_stream)  # noqa: E402
+from run import (allowed_tools, channel_prompt, chrome_session, http_json, summarize_stream)  # noqa: E402
 from lock import release_lock, take_lock  # noqa: E402
 
 DATA = Path("/private/tmp/claude-501/-Users-Shost2--t3-worktrees-agent-desktop-feat-unified-browser/"
@@ -207,23 +207,22 @@ def run_one(args, task, channel, run_idx, out):
     downloads.mkdir(parents=True, exist_ok=True)
     cdp_port = args.cdp_port if channel in ("cdp", "hybrid") else None
     extra = ["--headless=new"] if args.headless else []
-    chrome = launch_chrome(work / "profile", cdp_port, downloads, extra)
-    env = dict(os.environ)
-    env["PATH"] = f"{args.bin_dir}:{env['PATH']}"
-    env["AGENT_DESKTOP_HOME"] = str(work / "ad-home")
-    if args.ab_skills:
-        env["AGENT_BROWSER_SKILLS_DIR"] = args.ab_skills
-    env["AGENT_BROWSER_SOCKET_DIR"] = tempfile.mkdtemp(prefix="abs.")
-    t0 = time.time()
-    try:
-        p = subprocess.run(agent_cmd(args, task, channel, cdp_port), capture_output=True, text=True,
-                           timeout=args.timeout, cwd=str(work), env=env)
-        stdout, timed_out = p.stdout, False
-    except subprocess.TimeoutExpired as e:
-        stdout = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-        timed_out = True
-    wall = time.time() - t0
-    stop_chrome(chrome)
+    with chrome_session(work / "profile", cdp_port, downloads, extra):
+        env = dict(os.environ)
+        env["PATH"] = f"{args.bin_dir}:{env['PATH']}"
+        env["AGENT_DESKTOP_HOME"] = str(work / "ad-home")
+        if args.ab_skills:
+            env["AGENT_BROWSER_SKILLS_DIR"] = args.ab_skills
+        env["AGENT_BROWSER_SOCKET_DIR"] = tempfile.mkdtemp(prefix="abs.")
+        t0 = time.time()
+        try:
+            p = subprocess.run(agent_cmd(args, task, channel, cdp_port), capture_output=True, text=True,
+                               timeout=args.timeout, cwd=str(work), env=env)
+            stdout, timed_out = p.stdout, False
+        except subprocess.TimeoutExpired as e:
+            stdout = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+            timed_out = True
+        wall = time.time() - t0
     if cdp_port:
         subprocess.run([f"{args.bin_dir}/agent-browser", "close", "--all"], env=env, capture_output=True, timeout=30)
     raw = out / "raw" / f"{run_id}.jsonl"

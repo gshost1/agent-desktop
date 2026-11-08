@@ -13,6 +13,7 @@ disk, Calculator's display read after the run), never by the agent's claim.
 Raw transcripts go to results/raw/ (gitignored).
 """
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -73,6 +74,24 @@ def stop_chrome(proc):
             os.killpg(proc.pid, signal.SIGKILL)
         except Exception:
             pass
+
+
+def discard_profile(profile):
+    """A run's Chrome profile is 100-300 MB of cache and holds nothing a result reads."""
+    shutil.rmtree(profile, ignore_errors=True)
+
+
+@contextlib.contextmanager
+def chrome_session(profile, port, downloads, extra):
+    """Launch Chrome on a fresh profile; stop it and delete the profile however the run ends."""
+    proc = None
+    try:
+        proc = launch_chrome(profile, port, downloads, extra)
+        yield proc
+    finally:
+        if proc is not None:
+            stop_chrome(proc)
+        discard_profile(profile)
 
 
 def kill_apps(names):
@@ -149,53 +168,53 @@ def run_one(args, task, channel, run_idx, out):
     downloads.mkdir(parents=True)
     kill_apps(task.get("kill", []))
     cdp_port = args.cdp_port if channel in ("cdp", "hybrid") else None
-    chrome = launch_chrome(work / "profile", cdp_port, downloads, args.chrome_arg)
-    ctx = {"base": args.base, "work": str(work), "downloads": str(downloads), "exp": exp, "ad": args.ad}
-    prompt = task["prompt"].format(**ctx)
-    env = dict(os.environ)
-    env["PATH"] = f"{args.bin_dir}:{env['PATH']}"
-    env["AGENT_DESKTOP_HOME"] = str(work / "ad-home")
-    if args.ab_skills:
-        env["AGENT_BROWSER_SKILLS_DIR"] = args.ab_skills
-    env["AGENT_BROWSER_SOCKET_DIR"] = tempfile.mkdtemp(prefix="abs.")
-    cmd = ["claude", "-p", prompt, "--safe-mode", "--tools", "Bash", "--allowedTools", *allowed_tools(channel),
-           "--append-system-prompt", channel_prompt(channel, cdp_port), "--model", args.model,
-           "--output-format", "stream-json", "--verbose", "--no-session-persistence"]
-    front_before = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True).stdout.strip()
-    t0 = time.time()
-    since = t0 - 1
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout, cwd=str(work), env=env)
-        stdout, timed_out = p.stdout, False
-    except subprocess.TimeoutExpired as e:
-        stdout, timed_out = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or ""), True
-    wall = time.time() - t0
-    raw = out / "raw" / f"{run_id}.jsonl"
-    raw.parent.mkdir(parents=True, exist_ok=True)
-    raw.write_text(stdout)
-    s = summarize_stream(stdout.splitlines())
-    final = s.pop("final")
-    answer = final.get("result", "") or ""
-    state = http_json(f"{args.base}/__state")
-    ok, why = verify(task, ctx, answer, state)
-    strays = collect_strays(since, work, out / "strays" / run_id)
-    if strays:
-        ok, why = False, f"stray saves moved: {strays}; " + why
-    stop_chrome(chrome)
-    kill_apps(task.get("kill", []))
-    if channel in ("cdp", "hybrid"):
-        subprocess.run([f"{args.bin_dir}/agent-browser", "close", "--all"], env=env, capture_output=True, timeout=30)
-    u = final.get("usage", {})
-    row = {"task": task["id"], "channel": channel, "run": run_idx, "model": args.model, "ok": ok, "why": why,
-           "wall_s": round(wall, 1), "timed_out": timed_out, "num_turns": final.get("num_turns"),
-           "input_tokens": u.get("input_tokens"), "output_tokens": u.get("output_tokens"),
-           "cache_read": u.get("cache_read_input_tokens"), "cache_creation": u.get("cache_creation_input_tokens"),
-           "total_input": sum(u.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")),
-           "cost_usd_list": final.get("total_cost_usd"), "front_before": front_before, "strays": strays, **s}
-    with open(out / "runs.jsonl", "a") as f:
-        f.write(json.dumps(row) + "\n")
-    print(json.dumps({k: row[k] for k in ("task", "channel", "run", "ok", "why", "wall_s", "num_turns", "total_input", "output_tokens", "snapshot_tokens_est")}), flush=True)
-    return row
+    with chrome_session(work / "profile", cdp_port, downloads, args.chrome_arg) as chrome:
+        ctx = {"base": args.base, "work": str(work), "downloads": str(downloads), "exp": exp, "ad": args.ad}
+        prompt = task["prompt"].format(**ctx)
+        env = dict(os.environ)
+        env["PATH"] = f"{args.bin_dir}:{env['PATH']}"
+        env["AGENT_DESKTOP_HOME"] = str(work / "ad-home")
+        if args.ab_skills:
+            env["AGENT_BROWSER_SKILLS_DIR"] = args.ab_skills
+        env["AGENT_BROWSER_SOCKET_DIR"] = tempfile.mkdtemp(prefix="abs.")
+        cmd = ["claude", "-p", prompt, "--safe-mode", "--tools", "Bash", "--allowedTools", *allowed_tools(channel),
+               "--append-system-prompt", channel_prompt(channel, cdp_port), "--model", args.model,
+               "--output-format", "stream-json", "--verbose", "--no-session-persistence"]
+        front_before = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True).stdout.strip()
+        t0 = time.time()
+        since = t0 - 1
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout, cwd=str(work), env=env)
+            stdout, timed_out = p.stdout, False
+        except subprocess.TimeoutExpired as e:
+            stdout, timed_out = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or ""), True
+        wall = time.time() - t0
+        raw = out / "raw" / f"{run_id}.jsonl"
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_text(stdout)
+        s = summarize_stream(stdout.splitlines())
+        final = s.pop("final")
+        answer = final.get("result", "") or ""
+        state = http_json(f"{args.base}/__state")
+        ok, why = verify(task, ctx, answer, state)
+        strays = collect_strays(since, work, out / "strays" / run_id)
+        if strays:
+            ok, why = False, f"stray saves moved: {strays}; " + why
+        stop_chrome(chrome)
+        kill_apps(task.get("kill", []))
+        if channel in ("cdp", "hybrid"):
+            subprocess.run([f"{args.bin_dir}/agent-browser", "close", "--all"], env=env, capture_output=True, timeout=30)
+        u = final.get("usage", {})
+        row = {"task": task["id"], "channel": channel, "run": run_idx, "model": args.model, "ok": ok, "why": why,
+               "wall_s": round(wall, 1), "timed_out": timed_out, "num_turns": final.get("num_turns"),
+               "input_tokens": u.get("input_tokens"), "output_tokens": u.get("output_tokens"),
+               "cache_read": u.get("cache_read_input_tokens"), "cache_creation": u.get("cache_creation_input_tokens"),
+               "total_input": sum(u.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")),
+               "cost_usd_list": final.get("total_cost_usd"), "front_before": front_before, "strays": strays, **s}
+        with open(out / "runs.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+        print(json.dumps({k: row[k] for k in ("task", "channel", "run", "ok", "why", "wall_s", "num_turns", "total_input", "output_tokens", "snapshot_tokens_est")}), flush=True)
+        return row
 
 
 def main():
