@@ -115,6 +115,22 @@ Upstream status. Nothing goes to upstream yet. Each fix stays upstream-ready: it
 
 The bench itself (`perf/speed-cost`) is `fork-only`.
 
+## Final run on fork main d2e406cb (2026-11-08)
+
+All of tonight's merges, Opus 5.5, config `a`, n=3, task order rotated per round (`bench/plan-final-textedit-seeded.txt`). TextEdit seeded, not Aside-comparable: the stock `textedit` task stays blocked because TextEdit's Save panel does not open in the bench folder.
+
+| task | ok | wall median (runs) | calls median (runs) | tokens median |
+|---|---|---|---|---|
+| weather | 3/3 | 21.9 s (21.9, 25.4, 19.2) | 4 (4, 5, 4) | 59k |
+| settings | 3/3 | 26.8 s (26.8, 17.5, 29.0) | 6 (8, 6, 6) | 85k |
+| finder | 3/3 | 42.5 s (38.1, 42.5, 65.8) | 17 (11, 17, 17) | 295k |
+| textedit-seeded (TextEdit seeded, not Aside-comparable) | 2/3 | 75.5 s (75.5, 52.0, 150.0) | 17 (17, 13, 22) | 430k |
+| calculator | 3/3 | 17.4 s (18.4, 17.4, 17.2) | 3 (4, 3, 3) | 40k |
+
+- Finder's median is under 60 s; one run in three took 65.8 s.
+- textedit-seeded fin3 timed out at the 150 s cap after 22 calls (553k input tokens, 41 s of CLI time). The model expanded the Save panel and walked its file browser, with 3 s snapshots of about 65 KB each.
+- Tokens per round: fin1 837k, fin2 729k. fin3 was over 1M because of the timeout.
+
 ## Background and cold start
 
 *Pending:* the extras round (`bench/run_extras.sh`) measures a task with another app in front, the focus changes it causes (`bench/background.py`, read through `bench/focus_probe.swift`), and cold-start cost per app (`bench/cold_start.sh`).

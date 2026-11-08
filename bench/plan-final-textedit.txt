@@ -1,0 +1,4 @@
+# n=3 final 5-task run on fork main d2e406cb (all tonight's merges), stock textedit, Aside-comparable.
+fin1 weather:a:claude-opus-5-5:bench/out/wt-final settings:a:claude-opus-5-5:bench/out/wt-final finder:a:claude-opus-5-5:bench/out/wt-final textedit:a:claude-opus-5-5:bench/out/wt-final calculator:a:claude-opus-5-5:bench/out/wt-final
+fin2 finder:a:claude-opus-5-5:bench/out/wt-final textedit:a:claude-opus-5-5:bench/out/wt-final calculator:a:claude-opus-5-5:bench/out/wt-final weather:a:claude-opus-5-5:bench/out/wt-final settings:a:claude-opus-5-5:bench/out/wt-final
+fin3 calculator:a:claude-opus-5-5:bench/out/wt-final weather:a:claude-opus-5-5:bench/out/wt-final settings:a:claude-opus-5-5:bench/out/wt-final finder:a:claude-opus-5-5:bench/out/wt-final textedit:a:claude-opus-5-5:bench/out/wt-final

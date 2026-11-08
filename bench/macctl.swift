@@ -67,7 +67,7 @@ func press(_ el: AXUIElement) -> Bool { AXUIElementPerformAction(el, kAXPressAct
 func closeDiscarding(_ target: AXUIElement, _ window: AXUIElement) {
     if let close = attr(window, "AXCloseButton") { _ = press(close as! AXUIElement) }
     Thread.sleep(forTimeInterval: 0.5)
-    let discard = ["Delete", "Don't Save", "Don\u{2019}t Save", "Revert Changes"]
+    let discard = ["Delete", "Don't Save", "Don\u{2019}t Save", "Revert Changes", "Discard"]
     let sheets = elements(target, "AXWindows").flatMap { w in children(w).filter { string($0, "AXRole") == "AXSheet" } }
     for sheet in sheets {
         if let button = findAll(sheet, { string($0, "AXRole") == "AXButton" && discard.contains(string($0, "AXTitle") ?? "") }).first {
