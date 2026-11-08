@@ -9,6 +9,7 @@ publish = false
 agent-desktop-core.workspace = true
 serde.workspace      = true
 serde_json.workspace = true
+tracing.workspace    = true
 tungstenite          = { version = "0.30", default-features = false, features = ["handshake"] }
 
 [lints]

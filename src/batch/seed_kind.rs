@@ -18,7 +18,7 @@ impl SeedKind {
         let Commands::Wait(args) = command else {
             return None;
         };
-        if args.mode.notification {
+        if args.surface.notification {
             Some((Self::Notification, args))
         } else if args.event.event.is_some() {
             Some((Self::Event, args))

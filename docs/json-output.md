@@ -231,7 +231,40 @@ Without such an endpoint, the same command reads the browser window through the 
 { "url": "https://example.com/", "title": "Example Domain", "channel": "cdp", "target_id": "4C1E...F0", "opened": "current_tab" }
 ```
 
+A URL the browser saves as a file instead of showing returns `"opened": "download"` with the requested URL and an empty `title`; `wait --download` returns the file.
+
 Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
+
+### Downloads
+
+`launch --cdp --download-dir <dir>` adds `download_dir`, the folder's absolute path, and `download_scope` to `data.cdp`. `download_scope` is `profile` when launch wrote the folder into the download preference of the profile an absolute `--user-data-dir` named, so the browser saves every download there under its real name. It is `connection` when only each DevTools connection points downloads at the folder; the profile was left as it was because the arguments named no user-data directory, a relative one, a browser's default one, or a `Preferences` file that is not JSON. With `connection`, each web `click`, `double-click` and `press` waits up to 100 ms for a navigation or download to start and returns at once when none does; when one starts, it waits until the download begins or the page stops loading, at most 3 s, so the download begins while the command's connection still points it at the folder.
+
+`wait --download --app <browser>` returns the browser's oldest download no earlier download wait returned:
+
+```json
+{ "path": "/Users/me/work/downloads/report.csv", "suggested_filename": "report.csv", "url": "https://example.com/report.csv", "state": "completed", "bytes": 2048, "elapsed_ms": 412 }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `path` | The saved file, under `suggested_filename` with ` (n)` added before the extension when that name is taken. |
+| `suggested_filename` | The name the server suggested, made safe as a file name. For a file found only in the download folder, the saved name. |
+| `url` | The URL the file came from. Absent for a file the browser saved after the command that started it had exited, which no DevTools connection saw begin. |
+| `state` | Always `"completed"`; any other ending is an error. |
+| `bytes` | The size received. |
+| `elapsed_ms` | How long the wait took. |
+
+Errors carry `details.kind`:
+
+| Code | `details.kind` | Meaning |
+| --- | --- | --- |
+| `ACTION_FAILED` | `cdp_download_canceled` | The browser or its user canceled the download. |
+| `ACTION_FAILED` | `cdp_download_interrupted` | The partial file vanished without a finished file. |
+| `ACTION_NOT_SUPPORTED` | `cdp_download_untracked` | The download began in an earlier command of a browser launched without `--download-dir`. |
+| `ACTION_NOT_SUPPORTED` | `cdp_endpoint_missing` | No DevTools endpoint reaches the browser. |
+| `TIMEOUT` | `wait_timeout`, with `cause` `cdp_download_not_started` or `cdp_download_in_progress` | The timeout passed first. |
+
+Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
 
 ## Find result shape
 
@@ -321,4 +354,4 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 
 ## Exit codes
 
-`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`).
+`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`). `mcp` also exits `2` when it refuses its startup flags, and writes that envelope to stderr, since its stdout carries only JSON-RPC.

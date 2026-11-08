@@ -32,7 +32,7 @@ These are three real events from the session above:
 
 ```json
 [
-  { "command": "snapshot", "duration_ms": 109, "event": "command.end", "ok": true, "segment": "23161-1793353372418", "seq": 3, "session_id": "run-1793353372413-23159-0", "ts_ms": 1793353372528, "writer_pid": 23161, "writer_proc_start_ms": 1793353372418 },
+  { "command": "snapshot", "command_seq": 1, "duration_ms": 109, "event": "command.end", "ok": true, "segment": "23161-1793353372418", "seq": 3, "session_id": "run-1793353372413-23159-0", "ts_ms": 1793353372528, "writer_pid": 23161, "writer_proc_start_ms": 1793353372418 },
   { "event": "trace.meta", "os": "linux", "pid": 23176, "proc_start_ms": 1793353372533, "schema": 1, "segment": "23176-1793353372531", "seq": 0, "session_id": "run-1793353372413-23159-0", "ts_ms": 1793353372533, "version": "1.0.1", "writer_pid": 23176, "writer_proc_start_ms": 1793353372533 },
   { "command": "trace", "event": "command.start", "segment": "23176-1793353372531", "seq": 1, "session_id": "run-1793353372413-23159-0", "ts_ms": 1793353372534, "writer_pid": 23176, "writer_proc_start_ms": 1793353372533 }
 ]
@@ -54,7 +54,7 @@ Both need an active session and read session segments only, not a `--trace PATH`
   </thead>
   <tbody>
     <tr><td><code>trace.meta</code></td><td>A segment opens. Carries <code>schema</code>, the version, <code>os</code>, and the writer pid.</td></tr>
-    <tr><td><code>command.start</code>, <code>command.end</code></td><td>A command begins and ends. <code>command.end</code> has <code>ok</code>, <code>duration_ms</code>, and <code>code</code> on failure.</td></tr>
+    <tr><td><code>command.start</code>, <code>command.end</code></td><td>A command begins and ends. <code>command.end</code> has <code>ok</code>, <code>duration_ms</code>, <code>command_seq</code> (the <code>seq</code> of its <code>command.start</code>), and <code>code</code> on failure.</td></tr>
     <tr><td><code>snapshot.saved</code>, <code>snapshot.root.saved</code></td><td>A snapshot or a drill-down is saved.</td></tr>
     <tr><td><code>locator.resolve</code></td><td>A <code>find</code> finished its search.</td></tr>
     <tr><td><code>ref.resolve.ok</code>, <code>ref.resolve.error</code></td><td>A ref action re-identified its target, or failed to.</td></tr>

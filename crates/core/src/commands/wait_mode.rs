@@ -27,6 +27,9 @@ pub(crate) enum WaitMode {
         app: Option<String>,
         text: Option<String>,
     },
+    Download {
+        app: String,
+    },
     Event {
         event: String,
         app: Option<String>,
@@ -59,6 +62,10 @@ impl WaitMode {
                     app: args.app,
                     text: args.mode.text,
                 });
+            }
+            Some(SurfaceWait::Download) => {
+                let app = args.app.ok_or_else(download_needs_app)?;
+                return Ok(Self::Download { app });
             }
             None => {}
         }
@@ -144,7 +151,14 @@ pub(crate) fn validate_wait_mode(args: &WaitArgs) -> Result<(), AppError> {
 pub(crate) fn ambiguous_wait_mode() -> AppError {
     AppError::invalid_input_with_suggestion(
         "wait accepts exactly one mode",
-        "Use one of: ms, --element, --window, --text, --menu, --menu-closed, --notification, or --event.",
+        "Use one of: ms, --element, --window, --text, --menu, --menu-closed, --notification, --download, or --event.",
+    )
+}
+
+fn download_needs_app() -> AppError {
+    AppError::invalid_input_with_suggestion(
+        "--download requires --app",
+        "Add --app <browser> so the wait reads that browser's downloads.",
     )
 }
 
@@ -181,7 +195,7 @@ fn validate_event_filters(args: &WaitArgs) -> Result<(), AppError> {
 
 fn missing_wait_mode() -> AppError {
     AppError::invalid_input(
-        "Provide a duration (ms), --menu, --notification, --event, --element <ref>, --window <title>, or --text <text>",
+        "Provide a duration (ms), --menu, --notification, --download, --event, --element <ref>, --window <title>, or --text <text>",
     )
 }
 

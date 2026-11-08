@@ -3,6 +3,27 @@ use crate::AppError;
 use crate::session::{SessionTraceMode, StartSessionOptions, start_session};
 use serde_json::json;
 
+struct TempTrace(std::path::PathBuf);
+
+impl TempTrace {
+    fn new(label: &str) -> Self {
+        Self(std::env::temp_dir().join(format!(
+            "agent-desktop-scope-{label}-{}.jsonl",
+            crate::refs::new_snapshot_id()
+        )))
+    }
+
+    fn path(&self) -> std::path::PathBuf {
+        self.0.clone()
+    }
+}
+
+impl Drop for TempTrace {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 #[test]
 fn ended_session_refuses_command_scopes_before_dispatch() {
     let _guard = crate::refs::refs_test_support::HomeGuard::new();
@@ -33,13 +54,8 @@ fn ended_session_refuses_command_scopes_before_dispatch() {
 
 #[test]
 fn command_scope_emits_start_and_success_end() {
-    let path = std::env::temp_dir().join(format!(
-        "agent-desktop-scope-ok-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let trace = TempTrace::new("ok");
+    let path = trace.path();
     let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
     let scope = context.command_scope("snapshot").unwrap();
     scope.complete(&Ok(json!({ "ok": true }))).unwrap();
@@ -54,18 +70,12 @@ fn command_scope_emits_start_and_success_end() {
         .expect("command.end line");
     let end_event: serde_json::Value = serde_json::from_str(end_line).unwrap();
     assert!(end_event["duration_ms"].as_u64().is_some());
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn command_scope_emits_error_end_with_code_and_no_message() {
-    let path = std::env::temp_dir().join(format!(
-        "agent-desktop-scope-err-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let trace = TempTrace::new("err");
+    let path = trace.path();
     let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
     let scope = context.command_scope("wait").unwrap();
     let err = AppError::invalid_input("bad args");
@@ -75,18 +85,12 @@ fn command_scope_emits_error_end_with_code_and_no_message() {
     assert!(body.contains(r#""ok":false"#));
     assert!(body.contains(r#""code":"INVALID_ARGS""#));
     assert!(!body.contains("bad args"));
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn command_scope_drop_emits_internal_end_once() {
-    let path = std::env::temp_dir().join(format!(
-        "agent-desktop-scope-drop-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let trace = TempTrace::new("drop");
+    let path = trace.path();
     let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
     {
         let _scope = context.command_scope("click").unwrap();
@@ -95,7 +99,6 @@ fn command_scope_drop_emits_internal_end_once() {
     let body = std::fs::read_to_string(&path).unwrap();
     assert_eq!(body.matches(r#""event":"command.end""#).count(), 1);
     assert!(body.contains(r#""code":"INTERNAL""#));
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
@@ -160,10 +163,8 @@ fn batch_item_with_failed_parent_trace_writes_to_its_own_session_segment() {
 
 #[test]
 fn strict_command_start_failure_is_returned() {
-    let path = std::env::temp_dir().join(format!(
-        "agent-desktop-scope-start-failure-{}.jsonl",
-        crate::refs::new_snapshot_id()
-    ));
+    let trace = TempTrace::new("start-failure");
+    let path = trace.path();
     let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
     std::fs::OpenOptions::new()
         .write(true)
@@ -178,15 +179,12 @@ fn strict_command_start_failure_is_returned() {
     };
 
     assert_eq!(error.code(), "INVALID_ARGS");
-    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
 fn strict_read_only_command_end_failure_is_safe_to_retry() {
-    let path = std::env::temp_dir().join(format!(
-        "agent-desktop-scope-end-failure-{}.jsonl",
-        crate::refs::new_snapshot_id()
-    ));
+    let trace = TempTrace::new("end-failure");
+    let path = trace.path();
     let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
     let scope = context.command_scope("snapshot").unwrap();
     std::fs::OpenOptions::new()
@@ -203,15 +201,12 @@ fn strict_read_only_command_end_failure_is_safe_to_retry() {
         panic!("trace failure must be an adapter error");
     };
     assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
-    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
 fn strict_mutating_command_end_failure_is_unsafe_to_retry() {
-    let path = std::env::temp_dir().join(format!(
-        "agent-desktop-scope-mutating-end-failure-{}.jsonl",
-        crate::refs::new_snapshot_id()
-    ));
+    let trace = TempTrace::new("mutating-end-failure");
+    let path = trace.path();
     let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
     let scope = context.mutating_command_scope("click").unwrap();
     std::fs::OpenOptions::new()
@@ -230,15 +225,12 @@ fn strict_mutating_command_end_failure_is_unsafe_to_retry() {
         error.disposition,
         crate::DeliverySemantics::delivered_unverified()
     );
-    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
 fn command_end_omits_secret_and_huge_error_messages() {
-    let path = std::env::temp_dir().join(format!(
-        "agent-desktop-scope-secret-error-{}.jsonl",
-        crate::refs::new_snapshot_id()
-    ));
+    let trace = TempTrace::new("secret-error");
+    let path = trace.path();
     let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
     let scope = context.command_scope("click").unwrap();
     let secret = format!("secret-marker-{}", "x".repeat(2 * 1024 * 1024));
@@ -250,7 +242,6 @@ fn command_end_omits_secret_and_huge_error_messages() {
     let body = std::fs::read_to_string(&path).unwrap();
     assert!(!body.contains("secret-marker"));
     assert!(body.len() < 4096);
-    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -278,4 +269,34 @@ fn a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease(
     drop(lock);
 
     assert!(!command.join().unwrap().unwrap().trace_enabled());
+}
+
+#[test]
+fn overlapping_scopes_name_their_own_start_in_command_end() {
+    let trace = TempTrace::new("seq");
+    let path = trace.path();
+    let context = CommandContext::new(None, Some(path.clone()), true).unwrap();
+    let first = context.command_scope("snapshot").unwrap();
+    let second = context.command_scope("snapshot").unwrap();
+    second.complete(&Ok(json!({ "ok": true }))).unwrap();
+    drop(first);
+
+    let events: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let seqs_of = |name: &str, field: &str| -> Vec<u64> {
+        events
+            .iter()
+            .filter(|event| event["event"] == name)
+            .map(|event| event[field].as_u64().unwrap())
+            .collect()
+    };
+    let starts = seqs_of("command.start", "seq");
+    assert_eq!(starts.len(), 2);
+    assert_eq!(
+        seqs_of("command.end", "command_seq"),
+        vec![starts[1], starts[0]]
+    );
 }

@@ -4,13 +4,15 @@ use agent_desktop_core::system::launch_result::LaunchResult;
 use agent_desktop_core::system::process_state::ProcessState;
 use agent_desktop_core::{
     ActionResult, AdapterError, AdapterSession, AppInfo, CursorOverlayControl, Deadline,
-    DismissAllNotificationsRequest, DismissNotificationRequest, DisplayInfo, ImageBuffer,
-    InteractionLease, InteractionPolicy, KeyCombo, NotificationActionRequest, NotificationFilter,
-    NotificationInfo, OpenUrlRequest, OpenedPage, OperationReport, PermissionReport,
-    PlatformAdapter, ProcessIdentity, RefEntry, ScreenshotTarget, SessionAffinity, SignalBaseline,
-    SignalFilter, SnapshotSurface, SystemOps, WaitWakeup, WindowInfo, WindowOp,
+    DismissAllNotificationsRequest, DismissNotificationRequest, DisplayInfo, DownloadInfo,
+    DownloadScope, ImageBuffer, InteractionLease, InteractionPolicy, KeyCombo,
+    NotificationActionRequest, NotificationFilter, NotificationInfo, OpenUrlRequest, OpenedPage,
+    OperationReport, PermissionReport, PlatformAdapter, ProcessIdentity, RefEntry,
+    ScreenshotTarget, SessionAffinity, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps,
+    WaitWakeup, WindowInfo, WindowOp,
 };
 
+use super::download::download_profile::save_in_profile;
 use super::ref_routing::platform_entry;
 use super::web_channel_adapter::WebChannelAdapter;
 
@@ -107,7 +109,23 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
         self.inner
             .remember_cdp_endpoint(process.clone(), endpoint)?;
         let deadline = Deadline::after(REMEMBER_TIMEOUT_MS)?;
-        self.connector.remember(&process, endpoint, deadline)
+        self.connector.remember(&process, endpoint, deadline)?;
+        if endpoint.download_scope == Some(DownloadScope::Profile)
+            && let Some(dir) = endpoint.download_dir.as_deref()
+        {
+            self.claim_existing_downloads(&process, std::path::Path::new(dir));
+        }
+        Ok(())
+    }
+
+    /// Writes the download folder into the browser profile the launch
+    /// arguments name, when it is one this may change.
+    fn prepare_cdp_downloads(
+        &self,
+        options: &LaunchOptions,
+        download_dir: &str,
+    ) -> Result<DownloadScope, AdapterError> {
+        save_in_profile(&options.args, std::path::Path::new(download_dir))
     }
 
     /// Loads the URL over CDP when an endpoint reaches the browser, and asks
@@ -116,6 +134,29 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
         match self.open_web_url(request)? {
             Some(page) => Ok(page),
             None => self.inner.open_url(request),
+        }
+    }
+
+    /// Reads the browser's downloads over CDP. A process no endpoint
+    /// reaches is asked of the platform adapter, and keeps the web channel's
+    /// refusal when the platform has no download support either.
+    fn wait_for_download(
+        &self,
+        process: ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<DownloadInfo, AdapterError> {
+        match self.wait_web_download(&process, deadline) {
+            Err(error) if is_endpoint_missing(&error) => self
+                .inner
+                .wait_for_download(process, deadline)
+                .map_err(|platform| {
+                    if is_unsupported(&platform) {
+                        error
+                    } else {
+                        platform
+                    }
+                }),
+            outcome => outcome,
         }
     }
 
@@ -301,4 +342,21 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
     ) -> Result<ActionResult, AdapterError> {
         self.inner.notification_action(request, lease)
     }
+}
+
+fn is_endpoint_missing(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        == Some("cdp_endpoint_missing")
+}
+
+fn is_unsupported(error: &AdapterError) -> bool {
+    matches!(
+        error.code,
+        agent_desktop_core::ErrorCode::PlatformNotSupported
+            | agent_desktop_core::ErrorCode::ActionNotSupported
+    )
 }
