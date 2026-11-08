@@ -8,6 +8,7 @@ use crate::refs::{RefEntry, resolve_saved_ref::resolve_saved_ref};
 use crate::{AdapterError, AppError, actionability};
 use serde_json::json;
 
+pub(crate) mod action_artifacts;
 pub(crate) mod presentation;
 pub(crate) mod ref_action_actionability;
 pub(crate) mod ref_action_context;
@@ -21,9 +22,6 @@ pub(crate) mod ref_action_wait_context;
 pub(crate) mod ref_action_wait_evidence;
 pub(crate) mod ref_action_wait_support;
 pub(crate) mod settled_surface;
-
-const TRACE_CAPTURE_BUDGET_MS: u64 = 1_000;
-const PRE_CAPTURE_DISPATCH_RESERVE_MS: u64 = 100;
 
 /// A strictly resolved ref-action target plus the tracing identity for it.
 pub(crate) struct ResolvedRefAction<'a> {
@@ -181,66 +179,11 @@ pub(crate) fn dispatch_resolved_landing(
     Ok((result, handle))
 }
 
-pub(crate) fn capture_pre_artifact(
-    context: &CommandContext,
-    adapter: &dyn PlatformAdapter,
-    entry: &RefEntry,
-    deadline: crate::Deadline,
-) -> crate::trace::trace_artifacts::ArtifactOutcome {
-    let Some(capture_deadline) = pre_trace_capture_deadline(deadline) else {
-        return crate::trace::trace_artifacts::ArtifactOutcome::Skipped("dispatch_budget".into());
-    };
-    crate::trace::trace_artifacts::capture_action_screenshot(
-        context,
-        adapter,
-        entry,
-        "pre",
-        capture_deadline,
-    )
-}
-
-pub(crate) fn finish_artifacts(
-    target: RefActionContext<'_>,
-    pre: &crate::trace::trace_artifacts::ArtifactOutcome,
-) {
-    let post = crate::trace::trace_artifacts::capture_action_screenshot(
-        target.context,
-        target.adapter,
-        target.entry,
-        "post",
-        trace_capture_deadline(target.deadline),
-    );
-    if let Err(error) = crate::trace::trace_artifacts::emit_action_artifacts(
-        target.context,
-        target.ref_id,
-        pre,
-        &post,
-    ) {
-        tracing::warn!(error = %error, ref_id = target.ref_id, "action artifact emission failed");
-    }
-}
-
 fn trace_error_after_delivery(error: AppError) -> AppError {
     crate::context::trace_error_with_disposition(
         error,
         crate::DeliverySemantics::delivered_unverified(),
     )
-}
-
-fn trace_capture_deadline(parent: crate::Deadline) -> crate::Deadline {
-    parent.capped(std::time::Duration::from_millis(TRACE_CAPTURE_BUDGET_MS))
-}
-
-fn pre_trace_capture_deadline(parent: crate::Deadline) -> Option<crate::Deadline> {
-    let remaining = parent.remaining();
-    let reserve = std::time::Duration::from_millis(PRE_CAPTURE_DISPATCH_RESERVE_MS);
-    if remaining <= reserve {
-        return None;
-    }
-    let capture_budget = remaining
-        .saturating_sub(reserve)
-        .min(std::time::Duration::from_millis(TRACE_CAPTURE_BUDGET_MS));
-    Some(parent.capped(capture_budget))
 }
 
 /// Samples stability and eligible application-pointer geometry gaps within the action deadline.
@@ -294,17 +237,13 @@ pub(crate) fn execute_resolved(
     request: ActionRequest,
     lease: &crate::InteractionLease,
 ) -> Result<ActionResult, AppError> {
-    let pre = capture_pre_artifact(
-        target.context,
-        target.adapter,
-        target.entry,
-        target.deadline,
-    );
+    let mut artifacts = action_artifacts::ActionArtifacts::new(*target.target);
+    artifacts.capture_pre_once(target.deadline);
     let stability =
         actionability::StabilityExpectation::permissive(target.entry.geometry.bounds_hash);
     preflight_resolved(&target, &request, stability)?;
     let result = ref_action_single::dispatch_resolved(target.target, request, lease);
-    finish_artifacts(target.target, &pre);
+    artifacts.finish_delivered();
     result
 }
 

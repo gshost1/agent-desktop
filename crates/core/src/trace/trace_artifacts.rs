@@ -251,3 +251,7 @@ mod toctou_tests;
 #[cfg(test)]
 #[path = "trace_artifacts_dispatch_budget_tests.rs"]
 mod dispatch_budget_tests;
+
+#[cfg(test)]
+#[path = "trace_artifacts_pairing_tests.rs"]
+mod pairing_tests;

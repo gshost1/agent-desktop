@@ -128,7 +128,7 @@ pub(crate) fn execute_ref_action_dispatching(
         request,
         dispatch,
     );
-    let (result, lease, pre, deadline, lease_started) = match action_result {
+    let (result, lease, artifacts, lease_started) = match action_result {
         Ok(result) => result,
         Err(mut error) => {
             if error.disposition.delivery() == crate::DeliveryDisposition::DeliveryUncertain
@@ -140,25 +140,14 @@ pub(crate) fn execute_ref_action_dispatching(
             return Err(AppError::Adapter(error));
         }
     };
+    let lease_hold_ms = u64::try_from(lease_started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    drop(lease);
+    artifacts.finish_delivered();
     let value = serde_json::to_value(result).map_err(|error| {
         post_delivery_error(AppError::Json(error), json!({ "action": "delivered" }))
     })?;
-    let lease_hold_ms = u64::try_from(lease_started.elapsed().as_millis()).unwrap_or(u64::MAX);
-    drop(lease);
     let mut outcome = apply_post_action_wait(value, Some(&entry), adapter, context);
     update_lease_hold_ms(&mut outcome, lease_hold_ms);
-    crate::ref_action::finish_artifacts(
-        crate::ref_action::ref_action_context::RefActionContext::new(
-            RefActionWaitContext {
-                adapter,
-                entry: &entry,
-                ref_id: &args.ref_id,
-                context,
-            },
-            deadline,
-        ),
-        &pre,
-    );
     outcome
 }
 
@@ -393,3 +382,7 @@ mod ref_action_dispatch_tests;
 #[cfg(test)]
 #[path = "helpers_ref_action_wait_tests.rs"]
 mod ref_action_wait_tests;
+
+#[cfg(test)]
+#[path = "helpers_artifacts_tests.rs"]
+mod artifacts_tests;
