@@ -1,5 +1,18 @@
 # TASKS: perf/speed-cost
 
+## Session 2 (2026-11-08 from 11:40 PST, release night)
+
+- [~] 1. E2E `AGENT_DESKTOP_E2E_SKIP_PRIVATE=1`: Sonnet writer started 11:50 PST (T3 delegate, worktree, branch test/e2e-skip-private, owns tests/e2e/** only).
+- [ ] 2. #59: CI still running on 44faf629 at 12:15 PST.
+- [x] 3. Privacy gate, model-free (`bench/privacy_gate.py`, through probe_slot, counts only, throwaway AGENT_DESKTOP_HOME). Result: **GATE FAIL**. Finder and TextEdit stay blocked from model runs.
+  - TextEdit Save As on the seeded doc opens **expanded**: its sidebar outline holds 26 tree items (6 equal a personal folder title) and 23+ cells (5 personal titles, 1 iCloud). Collapsed: 0 rows.
+  - Finder Go to Folder on open: 0 rows. After a full bench path is set in the field: 1 non-bench row (`-i`), 4 in the full tree, 2 of them static texts equal to a personal folder title.
+  - Not gating but found: every Finder window `-i` snapshot holds the sidebar (13 personal-title texts, 1 iCloud, about 44 other sidebar texts). Every Finder model run has sent those names.
+  - Options for George: (a) retire finder and textedit model runs (the release claims don't use them); (b) bench sets the Save panel collapsed and restores the pref after, plus hides the bench Finder window's sidebar; neither stops a model from expanding it. Recommendation: (a) for tonight.
+- [x] 4. F9 vs #32: probe `~/agent-desktop-bench/probe-wintitle-main-95fea935/probe_wintitle.py` on main (d2e406cb binary; window code is the same in 95fea935), Screen Recording denied, Finder: 15/15 pass, covering every F9 path (scoped and global list-windows, snapshot by window id, snapshot --app with no id, snapshot with no --app through the focused-only listing, focus-window --title and --window-id strict resolve). #32 misses no case F9 covered; nothing to port. Branch kept.
+- Found: TextEdit's cmd+shift+s is Duplicate, not Save As (cmd+shift+alt+s). Closing the duplicate shows Delete Copy/Cancel/Save; macctl's discard list lacked "Delete Copy", so the hygiene clean failed 3 times. Fixed in bench/macctl.swift.
+- Found: macOS has no `setsid`; long runs go through a Python `os.setsid()` wrapper with nohup.
+
 ## Handoff (2026-11-08 ~19:45Z, speed session → fresh session)
 
 Machine: the Mac. Bench worktree: `/Users/Shost2/.t3/worktrees/agent-desktop/perf-speed-cost`, branch `perf/speed-cost`. Control thread: `mcp:1f6d7f49-e90f-4bb7-8055-7282273fec73` (env `14d05056-c993-4b71-9ef4-75b0e02fc276`); send CHECKPOINTs there.
