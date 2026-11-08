@@ -29,8 +29,10 @@ fn press_for_app(
     let identity = crate::system::process::process_identity::require_core(&process)?;
     let pid = identity.pid();
     let app = crate::tree::element_for_pid(pid);
+    let hosted = crate::system::window::hosted_focus_read::resolve(&app, pid, deadline)?;
+    let host_owns_keys = !hosted.as_ref().is_some_and(|focus| focus.is_hosted_view());
 
-    let menu = if uses_menu_shortcut(combo, policy) {
+    let menu = if host_owns_keys && uses_menu_shortcut(combo, policy) {
         press_menu_shortcut(&process, &app, combo, deadline)?
     } else {
         MenuShortcutOutcome::NotApplicable
@@ -38,7 +40,8 @@ fn press_for_app(
     if matches!(menu, MenuShortcutOutcome::Pressed(_)) {
         return post_delivery_process_result(&process, menu_shortcut_report(&menu));
     }
-    if let Some(action) = simple_key_action(combo)
+    if host_owns_keys
+        && let Some(action) = simple_key_action(combo)
         && try_simple_key_action(&app, action, deadline)?
     {
         return post_delivery_process_result(&process, semantic_step(action).into());
@@ -52,14 +55,27 @@ fn press_for_app(
     crate::system::process::process_identity::require_core(&process)?;
     require_focused_element(&app, policy, deadline)?;
     crate::system::process::process_identity::require_core(&process)?;
-    crate::input::keyboard::synthesize_key(combo, Some(pid), deadline)?;
+    let (delivery_pid, watch) = match &hosted {
+        Some(focus) => (
+            focus.delivery_pid(&app, deadline)?,
+            crate::system::window::hosted_focus_effect::watch(focus, &app, deadline)?,
+        ),
+        None => (pid, None),
+    };
+    crate::input::keyboard::synthesize_key(combo, Some(delivery_pid), deadline)?;
     let mut report = menu_shortcut_report(&menu);
     report.steps.push(
         ActionStep::succeeded("CGEventPostToPid")
             .with_mechanism(StepMechanism::PhysicalSynthetic)
             .with_verified(false),
     );
-    post_delivery_process_result(&process, report)
+    let result = post_delivery_process_result(&process, report)?;
+    match &hosted {
+        Some(focus) => crate::system::window::hosted_focus_effect::finish_press(
+            focus, &app, watch, result, deadline,
+        ),
+        None => Ok(result),
+    }
 }
 
 /// What the press response says about the menu-bar lookup: the menu item it
