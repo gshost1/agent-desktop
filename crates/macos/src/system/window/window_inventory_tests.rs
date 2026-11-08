@@ -37,6 +37,7 @@ fn ax_state(
         focused,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: rustc_hash::FxHashSet::default(),
+        titles: Default::default(),
     }
 }
 
@@ -213,17 +214,18 @@ fn window_inventory_rejects_owner_generation_change_around_focus_read() {
 fn matches_focused_window_uses_window_number_when_available() {
     let identity = Some((Some("Other".to_string()), Some(7)));
 
-    assert!(matches_focused_window("Inbox", 7, &identity, 3));
-    assert!(!matches_focused_window("Inbox", 8, &identity, 1));
+    assert!(matches_focused_window(Some("Inbox"), 7, &identity, 3));
+    assert!(!matches_focused_window(Some("Inbox"), 8, &identity, 1));
 }
 
 #[test]
 fn matches_focused_window_uses_unique_title_without_window_number() {
     let identity = Some((Some("Inbox".to_string()), None));
 
-    assert!(matches_focused_window("Inbox", 0, &identity, 1));
-    assert!(!matches_focused_window("Inbox", 0, &identity, 2));
-    assert!(!matches_focused_window("Sent", 0, &identity, 1));
+    assert!(matches_focused_window(Some("Inbox"), 0, &identity, 1));
+    assert!(!matches_focused_window(Some("Inbox"), 0, &identity, 2));
+    assert!(!matches_focused_window(Some("Sent"), 0, &identity, 1));
+    assert!(!matches_focused_window(None, 0, &Some((None, None)), 1));
 }
 
 #[test]
