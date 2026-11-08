@@ -1,3 +1,5 @@
+use agent_desktop_core::{AdapterError, DeliverySemantics};
+
 use super::ReleaseGuard;
 use crate::input::keyboard::keymap_edit::KeymapEdit;
 use crate::input::x11::fake_sink::{FakeSink, Recorded, start_keymap};
@@ -40,10 +42,12 @@ fn failed_restores_remain_recoverable_until_acknowledged() {
         .edit_keymap(&restore())
         .expect_err("planned restore fails");
     fake.world().fail_on_event = Some(3);
-    guard.finish().expect_err("cleanup restore also fails");
+    guard
+        .release_everything()
+        .expect_err("cleanup restore also fails");
     assert_eq!(observer.stale_entries(&|_, _| false)[0].remaps, [restore()]);
     assert_ne!(fake.world().keymap, start_keymap());
-    guard.finish().expect("recovery is retried");
+    guard.release_everything().expect("recovery is retried");
     assert_eq!(fake.world().keymap, start_keymap());
     assert!(observer.stale_entries(&|_, _| false).is_empty());
     std::fs::remove_dir_all(dir).unwrap();
@@ -90,7 +94,7 @@ fn a_restoring_edit_inside_the_plan_is_not_applied_twice() {
     let mut guard = ReleaseGuard::new(&mut sink);
     guard.edit_keymap(&remap()).expect("remap");
     guard.edit_keymap(&restore()).expect("restore");
-    guard.finish().expect("finish");
+    guard.release_everything().expect("finish");
 
     let edits = without_round_trips(&fake)
         .into_iter()
@@ -146,6 +150,83 @@ fn a_remap_is_journaled_with_the_original_keysyms_before_it_is_sent() {
     let pending = observer.stale_entries(&|_, _| false);
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].remaps, [restore()]);
-    guard.finish().expect("finish");
+    guard.release_everything().expect("finish");
     assert!(observer.stale_entries(&|_, _| false).is_empty());
+}
+
+#[test]
+fn an_abort_after_every_key_came_back_up_posts_nothing_and_claims_no_emergency_release() {
+    let fake = FakeSink::new();
+    let mut sink = fake.clone();
+    let mut guard = ReleaseGuard::new(&mut sink);
+    guard.key(38, true).expect("press");
+    guard.key(38, false).expect("release");
+    let before = without_round_trips(&fake);
+
+    let error = guard.abort(AdapterError::timeout("between characters"), "inspect");
+
+    assert_eq!(without_round_trips(&fake), before);
+    let details = error.details.expect("delivered input reports evidence");
+    assert_eq!(details["delivered_events"], 2);
+    assert!(details.get("emergency_release_posted").is_none());
+    assert!(details.get("emergency_release_acknowledged").is_none());
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+}
+
+#[test]
+fn an_abort_while_a_key_is_held_releases_exactly_that_key_and_reports_the_round_trip() {
+    let fake = FakeSink::new();
+    let mut sink = fake.clone();
+    let mut guard = ReleaseGuard::new(&mut sink);
+    guard.key(37, true).expect("ctrl");
+    guard.key(38, true).expect("a down");
+    guard.key(38, false).expect("a up");
+    let before = without_round_trips(&fake).len();
+
+    let error = guard.abort(AdapterError::timeout("mid chord"), "inspect");
+
+    assert_eq!(
+        without_round_trips(&fake)[before..],
+        [Recorded::Key(37, false)]
+    );
+    let details = error.details.expect("evidence");
+    assert_eq!(details["delivered_events"], 3);
+    assert_eq!(details["emergency_release_posted"], true);
+    assert_eq!(details["emergency_release_acknowledged"], true);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+}
+
+#[test]
+fn an_abort_whose_release_fails_reports_it_unacknowledged() {
+    let fake = FakeSink::new();
+    let mut sink = fake.clone();
+    let mut guard = ReleaseGuard::new(&mut sink);
+    guard.key(37, true).expect("ctrl");
+    fake.world().fail_on_event = Some(2);
+
+    let error = guard.abort(AdapterError::timeout("mid chord"), "inspect");
+
+    let details = error.details.expect("evidence");
+    assert_eq!(details["emergency_release_posted"], true);
+    assert_eq!(details["emergency_release_acknowledged"], false);
+}
+
+#[test]
+fn an_edit_to_a_keycode_whose_symbols_cannot_be_read_is_refused_unsent() {
+    let fake = FakeSink::new();
+    let mut sink = fake.clone();
+    let mut guard = ReleaseGuard::new(&mut sink);
+    let unrestorable = KeymapEdit {
+        keycode: 200,
+        keysyms: vec![0x1234, 0x1234],
+    };
+
+    let refused = guard
+        .edit_keymap(&unrestorable)
+        .expect_err("an edit that cannot be restored is not sent");
+    let error = guard.abort(refused.into_adapter(), "inspect");
+
+    assert!(without_round_trips(&fake).is_empty());
+    assert_eq!(fake.world().keymap, start_keymap());
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
 }

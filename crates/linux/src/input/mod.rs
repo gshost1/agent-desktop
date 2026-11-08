@@ -3,6 +3,7 @@ pub(crate) mod blocked_combo;
 pub(crate) mod clipboard;
 pub(crate) mod deliver;
 pub(crate) mod delivery;
+pub(crate) mod emergency_release;
 pub(crate) mod held_input;
 pub(crate) mod keyboard;
 pub(crate) mod mouse;

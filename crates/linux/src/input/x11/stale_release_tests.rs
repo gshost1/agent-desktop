@@ -4,11 +4,35 @@ use std::time::Duration;
 
 use super::start_sweep;
 use crate::input::x11::worker_slot::WorkerSlot;
-use crate::system::interaction::interaction_lease;
-use agent_desktop_core::Deadline;
+use crate::system::interaction::{acquired_lease::AcquiredLease, interaction_lease};
+use agent_desktop_core::{Deadline, InteractionLease};
 
 fn deadline(ms: u64) -> Deadline {
     Deadline::detached_after(ms).expect("deadline")
+}
+
+fn owned_lease() -> AcquiredLease {
+    interaction_lease::acquire_with_origin(deadline(5_000)).expect("the lease")
+}
+
+#[test]
+fn a_sweep_under_an_adopted_lease_sends_nothing() {
+    let adopted = AcquiredLease::Adopted(
+        InteractionLease::guarded(deadline(5_000), ()).expect("an adopted stand-in"),
+    );
+    let (sent, released) = channel();
+    let pending = start_sweep(adopted, deadline(5_000), Arc::default(), move || {
+        let _ = sent.send(());
+    })
+    .expect("no error");
+    assert!(
+        pending.is_none(),
+        "a sweep must not start under a lease a sibling may share"
+    );
+    assert!(
+        released.recv_timeout(Duration::from_millis(200)).is_err(),
+        "a sweep under an adopted lease must send no release"
+    );
 }
 
 #[test]
@@ -16,11 +40,17 @@ fn a_timed_out_sweep_keeps_its_slot_until_cleanup_finishes() {
     let slot = Arc::new(WorkerSlot::default());
     let (started, ready) = channel();
     let (finish, wait) = channel();
-    let pending = start_sweep(deadline(5_000), Arc::clone(&slot), move || {
-        started.send(()).unwrap();
-        wait.recv().unwrap();
-    })
-    .unwrap();
+    let pending = start_sweep(
+        owned_lease(),
+        deadline(5_000),
+        Arc::clone(&slot),
+        move || {
+            started.send(()).unwrap();
+            wait.recv().unwrap();
+        },
+    )
+    .unwrap()
+    .expect("an owned lease starts the sweep");
     ready.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(pending.finish(deadline(0)).is_none());
     let blocked = slot.claim(deadline(0)).is_err();
@@ -56,11 +86,12 @@ fn contender(blocked: bool) -> bool {
 fn a_timed_out_sweep_orders_other_processes_after_cleanup() {
     let (started, ready) = channel();
     let (finish, wait) = channel();
-    let pending = start_sweep(deadline(5_000), Arc::default(), move || {
+    let pending = start_sweep(owned_lease(), deadline(5_000), Arc::default(), move || {
         started.send(()).unwrap();
         wait.recv().unwrap();
     })
-    .unwrap();
+    .unwrap()
+    .expect("an owned lease starts the sweep");
     ready.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(pending.finish(deadline(0)).is_none());
     let blocked = contender(true);
