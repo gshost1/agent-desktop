@@ -87,7 +87,7 @@ agent-desktop set-value @s2:e1 "q3-report"                                     #
 agent-desktop press return --app "TextEdit"                                   # Save
 ```
 
-Replace `@s1:e1` and `@s2:e1` with the `ref_id` each `find` returns. While a panel control has focus, `press` reports `data.details.keyboard_target` with `"route": "hosted_view"` and the pid that received the keys. `"route": "host"` with an `unproven` reason means agent-desktop could not prove which process owns the panel's focus and sent the keys to the app, where the panel does not see them. Then click the panel's controls instead: the sidebar or the column browser. Check the result yourself: the sheet is gone from `list-surfaces --app "TextEdit"` and the file is in the folder.
+Replace `@s1:e1` and `@s2:e1` with the `ref_id` each `find` returns. While a panel control has focus, `press` reports `data.details.keyboard_target` with `"route": "hosted_view"` and the pid that received the keys. `"route": "host"` with an `unproven` reason means agent-desktop could not prove which process owns the panel's focus and sent the keys to the app, where the panel does not see them. A key that changed nothing in the panel fails with `ACTION_FAILED` and `"effect": "none_observed"`; do not repeat it. In both cases use the panel's controls by ref instead: `select @where "<folder>"` on the `Where:` pop-up (role `combobox`) for a folder it lists, `click` on a folder row in the file list to open it, `set-value` on the name field, then `click` on the `Save` button. Check the result yourself: the sheet is gone from `list-surfaces --app "TextEdit"` and the file is in the folder.
 
 ## select does not find the menu
 

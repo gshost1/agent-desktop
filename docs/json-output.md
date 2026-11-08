@@ -136,6 +136,16 @@ and `focus_frame_matches` (its own focused element has the app's focus frame;
 `null` when not read). The field is omitted when no other process is tied to
 the app's focus.
 
+When the key went to a proven owner, or to the app while an unproven owner's
+focused element is the app's focused control, `press` reads the app's focused
+element and the windows of both processes before and after delivery, for up to
+750 ms. A change makes the result `delivered_verified` with
+`keyboard_target.effect: "observed"`. No change is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
+`details.keyboard_target.effect: "none_observed"`: the key may have been lost,
+or may have acted without a visible change, so read the panel and use its
+controls by ref instead of repeating the key.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.

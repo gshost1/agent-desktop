@@ -29,6 +29,24 @@ impl HostedFocus {
         self.route.details(self.host, &self.candidates)
     }
 
+    /// The app and the focus owner whose state shows a key's effect: set for
+    /// a proven owner, and for an unproven one whose own focused element is
+    /// the app's focused control, where a key sent to the app may be lost.
+    pub(crate) fn watched_pids(&self) -> Option<rustc_hash::FxHashSet<i32>> {
+        let owner = match self.route {
+            KeyboardRoute::HostedView { pid } => pid,
+            KeyboardRoute::Unproven { pid, .. }
+                if self.candidates.iter().any(|candidate| {
+                    candidate.pid == pid && candidate.focus_frame_matches == Some(true)
+                }) =>
+            {
+                pid
+            }
+            KeyboardRoute::Host | KeyboardRoute::Unproven { .. } => return None,
+        };
+        Some([self.host, owner].into_iter().collect())
+    }
+
     /// The pid that receives the key event: the focus owner while the host
     /// still reports the same focused element and the owner is the same
     /// process instance, otherwise the host.

@@ -1,6 +1,7 @@
 pub(crate) mod cg_window;
 pub(crate) mod cg_window_exact;
 pub(crate) mod hosted_focus;
+pub(crate) mod hosted_focus_effect;
 pub(crate) mod hosted_focus_process;
 pub(crate) mod hosted_focus_read;
 pub(crate) mod keyboard_route;

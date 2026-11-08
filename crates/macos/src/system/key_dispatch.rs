@@ -59,9 +59,12 @@ fn press_for_app(
     crate::system::process::process_identity::require_core(&process)?;
     require_focused_element(&app, policy, deadline)?;
     crate::system::process::process_identity::require_core(&process)?;
-    let delivery_pid = match &hosted {
-        Some(focus) => focus.delivery_pid(&app, deadline)?,
-        None => pid,
+    let (delivery_pid, watch) = match &hosted {
+        Some(focus) => (
+            focus.delivery_pid(&app, deadline)?,
+            crate::system::window::hosted_focus_effect::watch(focus, &app, deadline)?,
+        ),
+        None => (pid, None),
     };
     crate::input::keyboard::synthesize_key(combo, Some(delivery_pid), deadline)?;
     let result = post_delivery_process_result(
@@ -70,10 +73,12 @@ fn press_for_app(
             .with_mechanism(StepMechanism::PhysicalSynthetic)
             .with_verified(false),
     )?;
-    Ok(match hosted.and_then(|focus| focus.details()) {
-        Some(target) => result.with_details(serde_json::json!({ "keyboard_target": target })),
-        None => result,
-    })
+    match &hosted {
+        Some(focus) => crate::system::window::hosted_focus_effect::finish_press(
+            focus, &app, watch, result, deadline,
+        ),
+        None => Ok(result),
+    }
 }
 
 fn semantic_step(label: &'static str) -> ActionStep {
