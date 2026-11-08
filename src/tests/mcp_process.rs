@@ -72,39 +72,81 @@ fn mcp_tool_calls_run_the_cli_command_and_return_its_envelope() {
     );
 }
 
+struct ScratchDir(std::path::PathBuf);
+
+impl ScratchDir {
+    fn new(label: &str) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "agent-desktop-mcp-{label}-{}-{id}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        Self(dir)
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[test]
 fn mcp_server_global_flags_reach_every_call() {
+    let dir = ScratchDir::new("forward");
+    let trace = dir.0.join("trace.jsonl");
+    let trace_arg = trace.to_str().expect("utf-8 path");
     let responses = serve(
         &[call(1, "desktop_session_list", json!({}))],
-        &["--agent-id", "not a valid id"],
+        &["--trace", trace_arg, "--session", "mcp-forward-s1"],
     );
     let result = &responses[0]["result"];
-    assert_eq!(result["isError"], true, "{result}");
-    assert_eq!(
-        result["structuredContent"]["error"]["message"],
-        "Agent id must be 1-64 chars using letters, numbers, '-' or '_'"
+    assert_eq!(result["isError"], false, "{result}");
+    let written = std::fs::read_to_string(&trace).expect("the call wrote the server's trace");
+    assert!(
+        written.contains("\"command\":\"session\"")
+            && written.contains("\"session_id\":\"mcp-forward-s1\""),
+        "{written}"
     );
 }
 
 #[test]
-fn mcp_refuses_per_command_global_flags_before_serving() {
-    let dir = std::env::temp_dir().join(format!("agent-desktop-mcp-refuse-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
-    let html = dir.join("debug.html");
-    let html_arg = html.to_str().expect("utf-8 path");
-    for args in [
-        &["--debug", "--screenshot", html_arg][..],
-        &["--wait-for", "button:OK"],
-        &["--wait-timeout", "5"],
+fn mcp_refuses_per_command_globals_and_invalid_identity_before_reading_stdin() {
+    for (args, named) in [
+        (&["--debug", "--screenshot", "debug.html"][..], "--debug"),
+        (&["--wait-for", "button:OK"], "--wait-for"),
+        (&["--wait-timeout", "5"], "--wait-timeout"),
+        (&["--agent-id", "not a valid id"], "Agent id"),
     ] {
-        let output = binary()
+        let mut child = binary()
             .arg("mcp")
             .args(args)
-            .stdin(Stdio::null())
-            .output()
-            .expect("binary runs");
-        assert_eq!(output.status.code(), Some(1), "{args:?}");
-        let envelope: Value = serde_json::from_slice(&output.stdout).expect("one JSON envelope");
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("binary starts");
+        let stdin = child.stdin.take().expect("stdin");
+        let started = std::time::Instant::now();
+        while child.try_wait().expect("child status").is_none() {
+            if started.elapsed() > std::time::Duration::from_secs(20) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{args:?}: mcp kept serving with stdin open instead of refusing");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        drop(stdin);
+        let output = child.wait_with_output().expect("refusal output");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(
+            output.stdout.is_empty(),
+            "{args:?}: stdout is JSON-RPC only"
+        );
+        let envelope: Value =
+            serde_json::from_slice(&output.stderr).expect("one JSON envelope on stderr");
         assert_eq!(envelope["ok"], false, "{envelope}");
         assert_eq!(envelope["command"], "mcp", "{envelope}");
         assert_eq!(envelope["error"]["code"], "INVALID_ARGS", "{envelope}");
@@ -112,12 +154,10 @@ fn mcp_refuses_per_command_global_flags_before_serving() {
         assert!(
             envelope["error"]["message"]
                 .as_str()
-                .is_some_and(|message| message.contains(args[0])),
+                .is_some_and(|message| message.contains(named)),
             "{envelope}"
         );
     }
-    assert!(!html.exists());
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

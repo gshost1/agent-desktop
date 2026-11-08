@@ -4,8 +4,8 @@ mod call;
 mod calls;
 mod catalog;
 mod child_lease;
+mod global_forward;
 mod global_scope;
-mod globals;
 mod inherited_lease;
 mod lease_inheritance;
 mod lease_refusal;
@@ -51,12 +51,14 @@ pub(crate) fn command() -> Command {
 /// At most `MAX_CONCURRENT_CALLS` calls run at once, and a message longer than `MAX_MESSAGE_BYTES` is refused unread.
 /// Under an interaction lease inherited from the parent, calls that can inject input or steal focus run one
 /// at a time, in arrival order, each waiting for its turn at most `inherited_lease::QUEUE_WAIT_BOUND`.
-/// Global flags that apply to a single command, such as `--debug` or `--wait-for`, refuse to start it.
+/// Global flags that apply to a single command, such as `--debug` or `--wait-for`, refuse to start it, and so
+/// does an invalid `--session` or `--agent-id`.
 pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
-    let globals = match globals::forwarded_globals(matches) {
+    let globals = match global_forward::collect_forwarded_globals(matches) {
         Ok(globals) => globals,
-        Err(error) => return globals::refuse_start(&error),
+        Err(error) => return global_forward::refuse_start(&error),
     };
+    global_forward::init_server_logging(matches);
     let server = Arc::new(Server {
         tools: catalog::tools(),
         globals,

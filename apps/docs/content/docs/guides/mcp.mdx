@@ -37,13 +37,15 @@ The tool list is read from the CLI's own command definitions, so it always match
 
 ## Apply global flags once
 
-Server-wide global flags given to `mcp` apply to every call: `--session`, `--agent-id`, `--headed`, `--trace`, `--trace-strict` and `--verbose`.
+Server-wide global flags given to `mcp` apply to every call: `--session`, `--agent-id`, `--headed`, `--trace` and `--trace-strict`. `--verbose` turns on the server's own debug log on stderr and is not passed to calls.
 
 ```bash
 agent-desktop mcp --session s1 --headed
 ```
 
-Flags that describe a single command, `--debug`, `--screenshot`, `--wait-for`, `--wait-for-gone` and `--wait-timeout`, cannot apply to every call. `mcp` refuses them: it prints an `INVALID_ARGS` envelope, exits with code `1` and serves nothing. Run visual debug from the CLI, and call `desktop_wait` to wait for an element.
+Flags that describe a single command, `--debug`, `--screenshot`, `--wait-for`, `--wait-for-gone` and `--wait-timeout`, cannot apply to every call. Run visual debug from the CLI, and call `desktop_wait` to wait for an element.
+
+`mcp` refuses to start with one of those flags, with an invalid `--session` or `--agent-id`, or with a flag value that is not UTF-8. It writes an `INVALID_ARGS` envelope to stderr, because stdout carries only JSON-RPC, exits with code `2` and serves nothing.
 
 `AGENT_DESKTOP_SESSION`, `AGENT_DESKTOP_AGENT_ID` and `AGENT_DESKTOP_HOME` in the server's environment apply the same way.
 
