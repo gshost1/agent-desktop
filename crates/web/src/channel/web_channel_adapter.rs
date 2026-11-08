@@ -1,11 +1,12 @@
 use std::sync::{Mutex, MutexGuard};
 
 use agent_desktop_core::{
-    AdapterError, Deadline, ErrorCode, PlatformAdapter, ProcessIdentity, SnapshotSurface,
+    AdapterError, Deadline, ErrorCode, PlatformAdapter, ProcessIdentity, SnapshotSurface, StateFile,
 };
 
 use super::browser_link::BrowserLink;
 use super::cdp_connector::CdpConnector;
+use super::download::download_ledger::ledger_file;
 use super::link_access::LinkAccess;
 use super::system_connector::SystemConnector;
 use crate::CdpConnection;
@@ -14,12 +15,13 @@ use crate::CdpConnection;
 /// over the browser's DevTools endpoint. It intercepts only the web snapshot
 /// surface, refs that carry a `cdp:` element token, handles that carry a
 /// [`super::web_handle::WebHandle`], `open-url`, the web entries of
-/// `list-surfaces`, and launch's endpoint record. Everything else goes to the
-/// platform adapter unchanged.
+/// `list-surfaces`, `wait --download`, and launch's endpoint record.
+/// Everything else goes to the platform adapter unchanged.
 pub struct WebChannelAdapter<P> {
     pub(crate) inner: P,
     pub(crate) connector: Box<dyn CdpConnector>,
     link: Mutex<Option<BrowserLink>>,
+    downloads: Option<StateFile>,
 }
 
 impl<P: PlatformAdapter> WebChannelAdapter<P> {
@@ -32,11 +34,25 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             inner,
             connector,
             link: Mutex::new(None),
+            downloads: ledger_file().ok(),
         }
+    }
+
+    /// Keeps the download ledger in `file` instead of the state root; `None`
+    /// leaves downloads unrecorded.
+    pub fn with_download_ledger(mut self, file: Option<StateFile>) -> Self {
+        self.downloads = file;
+        self
     }
 
     pub fn inner(&self) -> &P {
         &self.inner
+    }
+
+    pub(crate) fn download_ledger(&self) -> Result<&StateFile, AdapterError> {
+        self.downloads.as_ref().ok_or_else(|| {
+            AdapterError::internal("The state root holds no download ledger for this invocation")
+        })
     }
 
     /// Runs `op` over the open link to `process`, discovering and opening it
@@ -53,10 +69,10 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             *guard = None;
         }
         if guard.is_none() {
-            let Some(connection) = self.discover(process, access)? else {
+            let Some((connection, download_dir)) = self.discover(process, access)? else {
                 return Ok(None);
             };
-            *guard = Some(BrowserLink::new(process.clone(), connection));
+            *guard = Some(BrowserLink::new(process.clone(), connection, download_dir));
         }
         let Some(link) = guard.as_mut() else {
             return Ok(None);
@@ -102,7 +118,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         &self,
         process: &ProcessIdentity,
         access: LinkAccess,
-    ) -> Result<Option<CdpConnection>, AdapterError> {
+    ) -> Result<Option<(CdpConnection, Option<std::path::PathBuf>)>, AdapterError> {
         let mut first_error = None;
         for candidate in self.connector.candidates(process) {
             let owned = self.inner.process_owns_tcp_listener(
@@ -117,7 +133,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
                 .connector
                 .open(&candidate, access.deadline, access.may_prompt)
             {
-                Ok(connection) => return Ok(Some(connection)),
+                Ok(connection) => return Ok(Some((connection, candidate.download_dir()))),
                 Err(error) if error.code == ErrorCode::PermDenied => return Err(error),
                 Err(error) => {
                     first_error.get_or_insert(error);

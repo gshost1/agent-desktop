@@ -25,10 +25,13 @@ pub(super) fn wait(
                 element: args.mode.element,
                 window: args.mode.window,
                 text: args.mode.text,
-                surface: SurfaceWait::from_flags(
-                    args.mode.menu,
-                    args.mode.menu_closed,
-                    args.mode.notification,
+                surface: SurfaceWait::with_download(
+                    SurfaceWait::from_flags(
+                        args.surface.menu,
+                        args.surface.menu_closed,
+                        args.surface.notification,
+                    )?,
+                    args.surface.download,
                 )?,
                 event: args.event.event,
                 window_id: args.event.window_id,

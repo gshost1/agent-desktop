@@ -130,6 +130,7 @@ pub use system::cdp_endpoint::{
 };
 pub use system::devtools_websocket_url::DevtoolsWebSocketUrl;
 pub use system::display_info::DisplayInfo;
+pub use system::download_info::DownloadInfo;
 pub use system::image_buffer::{ImageBuffer, MAX_PNG_INPUT_BYTES, parse_png_dimensions};
 pub use system::image_format::ImageFormat;
 pub use system::open_url_request::OpenUrlRequest;

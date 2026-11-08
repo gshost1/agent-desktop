@@ -7,3 +7,15 @@ pub struct EndpointCandidate {
     pub port: u16,
     pub origin: CandidateOrigin,
 }
+
+impl EndpointCandidate {
+    /// The folder downloads go to when this endpoint is used: only a browser
+    /// that `launch --cdp --download-dir` started has one. A browser found
+    /// through its profile keeps its own download folder.
+    pub fn download_dir(&self) -> Option<std::path::PathBuf> {
+        match &self.origin {
+            CandidateOrigin::Registry { download_dir, .. } => download_dir.clone(),
+            CandidateOrigin::ActivePort { .. } => None,
+        }
+    }
+}

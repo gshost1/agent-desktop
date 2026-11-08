@@ -6,6 +6,7 @@ use agent_desktop_core::{AdapterError, Deadline, ProcessIdentity, StateFile};
 
 use super::candidate_origin::CandidateOrigin;
 use super::cdp_connector::CdpConnector;
+use super::download::download_behavior::enable_downloads;
 use super::endpoint_candidate::EndpointCandidate;
 use super::endpoint_registry::{read_entries, record_entry, registry_file};
 use super::prompt_refusal::approval_needed;
@@ -67,6 +68,7 @@ impl CdpConnector for SystemConnector {
                 port: entry.port,
                 origin: CandidateOrigin::Registry {
                     websocket_url: entry.websocket_url,
+                    download_dir: entry.download_dir.map(PathBuf::from),
                 },
             })
             .collect();
@@ -90,7 +92,7 @@ impl CdpConnector for SystemConnector {
         may_prompt: bool,
     ) -> Result<CdpConnection, AdapterError> {
         let endpoint = match &candidate.origin {
-            CandidateOrigin::Registry { websocket_url } => BrowserEndpoint {
+            CandidateOrigin::Registry { websocket_url, .. } => BrowserEndpoint {
                 websocket_url: WebSocketUrl::parse(websocket_url)?,
                 source: EndpointSource::JsonVersion,
                 product: None,
@@ -103,7 +105,12 @@ impl CdpConnector for SystemConnector {
                 }
             }
         };
-        connect(&endpoint, deadline)
+        let mut connection = connect(&endpoint, deadline)?;
+        let download_dir = candidate.download_dir();
+        if let Err(error) = enable_downloads(&mut connection, download_dir.as_deref(), deadline) {
+            tracing::warn!(error = %error, "web downloads: the browser refused download events");
+        }
+        Ok(connection)
     }
 
     fn remember(
@@ -122,6 +129,7 @@ impl CdpConnector for SystemConnector {
                 process_instance: process.instance.clone(),
                 port: endpoint.port,
                 websocket_url: endpoint.websocket_url.clone(),
+                download_dir: endpoint.download_dir.clone(),
             },
             deadline,
         )

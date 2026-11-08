@@ -14,6 +14,7 @@ fn endpoint(port: u16) -> CdpEndpoint {
         http_endpoint: format!("http://127.0.0.1:{port}"),
         websocket_url: format!("ws://127.0.0.1:{port}/devtools/browser/abc"),
         product: None,
+        download_dir: None,
     }
 }
 
@@ -40,7 +41,8 @@ fn registry_candidates_match_the_exact_process_instance_newest_first() {
     assert_eq!(
         candidates[0].origin,
         CandidateOrigin::Registry {
-            websocket_url: "ws://127.0.0.1:9222/devtools/browser/abc".into()
+            websocket_url: "ws://127.0.0.1:9222/devtools/browser/abc".into(),
+            download_dir: None,
         }
     );
 }

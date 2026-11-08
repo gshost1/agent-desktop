@@ -22,6 +22,10 @@ pub struct CdpEndpoint {
     pub websocket_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub product: Option<String>,
+    /// The absolute folder `launch --download-dir` named for this browser's
+    /// downloads; absent when the browser keeps its own download folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_dir: Option<String>,
 }
 
 /// Binds an ephemeral port to learn one the OS considers free, then releases
@@ -173,6 +177,7 @@ pub fn parse_devtools_version_body(port: u16, body: &str) -> Option<CdpEndpoint>
         http_endpoint: format!("http://127.0.0.1:{port}"),
         websocket_url,
         product,
+        download_dir: None,
     })
 }
 

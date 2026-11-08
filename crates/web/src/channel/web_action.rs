@@ -51,7 +51,11 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
                 token,
                 deadline,
             };
-            run(&mut target, &request.action)
+            let result = run(&mut target, &request.action);
+            if result.is_ok() {
+                let _ = self.note_downloads(link, may_start_download(&request.action), deadline);
+            }
+            result
         })?;
         Ok(with_channel(result))
     }
@@ -240,6 +244,14 @@ impl WebTarget<'_> {
             self.deadline,
         )
     }
+}
+
+/// Actions that can follow a link or submit a form, and so start a download.
+fn may_start_download(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Click | Action::DoubleClick | Action::PressKey(_)
+    )
 }
 
 fn verdict(name: &str, verified: bool) -> ActionResult {

@@ -14,11 +14,21 @@ const MAX_PROBE_RESERVE: Duration = Duration::from_millis(5_000);
 pub struct LaunchArgs {
     pub app: String,
     pub options: LaunchOptions,
+    /// Where the launched browser saves downloads. Needs `--cdp`; every
+    /// later DevTools connection to this browser points downloads here.
+    pub download_dir: Option<std::path::PathBuf>,
 }
 
 pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value, AppError> {
-    let LaunchArgs { app, mut options } = args;
+    let LaunchArgs {
+        app,
+        mut options,
+        download_dir,
+    } = args;
     crate::wait_timeout_duration(options.timeout_ms)?;
+    let download_dir = download_dir
+        .map(|dir| crate::system::download_dir::prepare_download_dir(&dir, options.cdp_port))
+        .transpose()?;
     let deadline = if options.timeout_ms == 0 {
         crate::Deadline::standard()?
     } else {
@@ -45,7 +55,8 @@ pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value,
     let mut launched = adapter.launch_app(&app, &options, &lease)?;
     if let Some(port) = options.cdp_port {
         let granted = deadline.remaining();
-        let endpoint = verify_cdp_endpoint(port, deadline, granted, &launched, adapter)?;
+        let mut endpoint = verify_cdp_endpoint(port, deadline, granted, &launched, adapter)?;
+        endpoint.download_dir = download_dir;
         remember_endpoint(adapter, &launched, &endpoint);
         launched.cdp = Some(endpoint);
     }

@@ -77,6 +77,7 @@ mod type_text_interval_verify;
 pub mod uncheck;
 pub mod version;
 pub mod wait;
+pub(crate) mod wait_download;
 pub(crate) mod wait_element;
 pub(crate) mod wait_event;
 pub(crate) mod wait_event_filter;

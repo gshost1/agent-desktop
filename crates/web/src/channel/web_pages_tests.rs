@@ -128,3 +128,46 @@ fn an_unreachable_browser_has_only_its_platform_surfaces() {
     let web = adapter(StubPlatform::default(), ScriptedConnector::default());
     assert_eq!(web.list_surfaces(process(), deadline()).unwrap().len(), 1);
 }
+
+#[test]
+fn a_url_the_browser_saves_as_a_download_is_reported_as_one() {
+    let mut transport = targets(ScriptedTransport::new(), &[("A", "about:blank", "")]);
+    transport = attach(window_of(transport, 1, 0.0), "A")
+        .expect("Page.enable", json!({}))
+        .expect("Page.setLifecycleEventsEnabled", json!({}))
+        .expect_with_events(
+            "Page.navigate",
+            vec![json!({
+                "method": "Browser.downloadWillBegin",
+                "params": { "guid": "g1", "url": "https://example.test/", "suggestedFilename": "report.csv" }
+            })],
+            json!({ "result": { "frameId": "F", "errorText": "net::ERR_ABORTED" } }),
+        );
+    let web = adapter(
+        StubPlatform::owning(PORT),
+        ScriptedConnector::with(transport),
+    );
+    let window = window();
+    let page = web.open_url(&request(Some(&window), false)).unwrap();
+    assert_eq!(page.opened, "download");
+    assert_eq!(page.target_id, "A");
+}
+
+#[test]
+fn a_failed_navigation_without_a_download_stays_an_error() {
+    let mut transport = targets(ScriptedTransport::new(), &[("A", "about:blank", "")]);
+    transport = attach(window_of(transport, 1, 0.0), "A")
+        .expect("Page.enable", json!({}))
+        .expect("Page.setLifecycleEventsEnabled", json!({}))
+        .expect(
+            "Page.navigate",
+            json!({ "frameId": "F", "errorText": "net::ERR_NAME_NOT_RESOLVED" }),
+        );
+    let web = adapter(
+        StubPlatform::owning(PORT),
+        ScriptedConnector::with(transport),
+    );
+    let window = window();
+    let error = web.open_url(&request(Some(&window), false)).err().unwrap();
+    assert_eq!(error.details.unwrap()["kind"], "cdp_navigation_failed");
+}

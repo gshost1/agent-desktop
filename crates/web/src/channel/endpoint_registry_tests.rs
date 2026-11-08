@@ -10,6 +10,7 @@ fn entry(pid: u32, instance: &str, port: u16) -> RegistryEntry {
         process_instance: instance.into(),
         port,
         websocket_url: format!("ws://127.0.0.1:{port}/devtools/browser/x"),
+        download_dir: None,
     }
 }
 

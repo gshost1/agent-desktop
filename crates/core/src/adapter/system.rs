@@ -128,6 +128,17 @@ pub trait SystemOps: Send + Sync {
         Err(AdapterError::not_supported("open_url"))
     }
 
+    /// Waits for the browser process's next download that no earlier wait
+    /// returned, including one that finished before the wait began, and
+    /// returns the saved file. A canceled or interrupted download is an error.
+    fn wait_for_download(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<crate::DownloadInfo, AdapterError> {
+        Err(AdapterError::not_supported("wait_for_download"))
+    }
+
     fn process_state(
         &self,
         _process: ProcessIdentity,

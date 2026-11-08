@@ -110,6 +110,7 @@ dependencies = [
  "agent-desktop-core",
  "serde",
  "serde_json",
+ "tracing",
  "tungstenite",
 ]
 

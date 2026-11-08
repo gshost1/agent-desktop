@@ -36,8 +36,7 @@ pub(crate) fn lease() -> InteractionLease {
     InteractionLease::guarded(deadline(), ()).unwrap()
 }
 
-/// A connector that offers scripted endpoints and opens each with the next
-/// scripted transport.
+/// Offers scripted endpoints and opens each with the next scripted transport.
 #[derive(Default)]
 pub(crate) struct ScriptedConnector {
     pub ports: Vec<u16>,
@@ -45,6 +44,7 @@ pub(crate) struct ScriptedConnector {
     pub opens: Arc<Mutex<Vec<(u16, bool)>>>,
     pub open_error: Option<fn() -> AdapterError>,
     pub remembered: Arc<Mutex<Vec<(ProcessIdentity, u16)>>>,
+    pub download_dir: Option<std::path::PathBuf>,
 }
 
 impl ScriptedConnector {
@@ -65,6 +65,7 @@ impl CdpConnector for ScriptedConnector {
                 port: *port,
                 origin: CandidateOrigin::Registry {
                     websocket_url: format!("ws://127.0.0.1:{port}/devtools/browser/x"),
+                    download_dir: self.download_dir.clone(),
                 },
             })
             .collect()
@@ -244,7 +245,7 @@ pub(crate) fn adapter(
     platform: StubPlatform,
     connector: ScriptedConnector,
 ) -> WebChannelAdapter<StubPlatform> {
-    WebChannelAdapter::with_connector(platform, Box::new(connector))
+    WebChannelAdapter::with_connector(platform, Box::new(connector)).with_download_ledger(None)
 }
 
 /// A ref captured from a page over CDP.
