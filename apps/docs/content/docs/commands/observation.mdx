@@ -102,7 +102,7 @@ agent-desktop find --app gnome-calculator --role button --name 7 --exact --first
 }
 ```
 
-When a `--role` filter matches nothing, `roles_present` lists the roles in the searched tree, which tells a wrong role name from an empty screen. Errors specific to `find`: `INVALID_ARGS` for conflicting shaping flags, `--root` with `--surface`, or an unknown `--state` token; `TIMEOUT` with `details.kind: "locator_incomplete"` when the traversal ran out of budget, which does not mean the app hangs. Raise `--timeout-ms` or narrow the search.
+When a `--role` filter matches nothing, `roles_present` lists the roles in the searched tree, which tells a wrong role name from an empty screen. Menu items belong to the menu bar, not to a window: a `--role menuitem` find with no `--surface` or `--root` that finds nothing in the window, or finds no window, runs once more over the app's menu bar and then reports `surface: "menubar"`. Errors specific to `find`: `INVALID_ARGS` for conflicting shaping flags, `--root` with `--surface`, or an unknown `--state` token; `TIMEOUT` with `details.kind: "locator_incomplete"` when the traversal ran out of budget, which does not mean the app hangs. Raise `--timeout-ms` or narrow the search.
 
 ## get
 

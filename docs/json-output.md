@@ -188,6 +188,11 @@ Earlier output synthesized a display name, falling back to `value` or
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
 
+A `--role menuitem` find with no `--surface` or `--root` that finds nothing in
+the window, or finds no window, searches the application's menu bar once. A
+response answered that way carries `"surface": "menubar"`; its refs belong to
+the menu bar surface.
+
 ## Ref re-identification details
 
 Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these four kinds:

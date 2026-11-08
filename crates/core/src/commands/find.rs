@@ -54,7 +54,9 @@ pub fn execute(
     let query = locator_query_from_args(&args)?;
     query.validate_states().map_err(AppError::Adapter)?;
 
-    live::execute(&args, &query, adapter, context).map_err(name_the_traversal_remedy)
+    let window_result = live::execute(&args, &query, adapter, context);
+    menu_bar::retry_in_menu_bar(args, &query, window_result, adapter, context)
+        .map_err(name_the_traversal_remedy)
 }
 
 /// A traversal that ran out of budget on a large tree is not evidence the
@@ -190,6 +192,9 @@ fn collect_snapshot_matches(
 
 #[path = "find_live.rs"]
 mod live;
+
+#[path = "find_menu_bar.rs"]
+mod menu_bar;
 
 #[cfg(test)]
 #[path = "find_tests.rs"]
