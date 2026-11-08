@@ -15,6 +15,7 @@ mod transport;
 mod tree;
 
 pub use act::append_text::append_text;
+pub use act::assigned_input::AssignedInput;
 pub use act::checked::set_checked;
 pub use act::click::{click, click_times};
 pub use act::element_reading::ElementReading;

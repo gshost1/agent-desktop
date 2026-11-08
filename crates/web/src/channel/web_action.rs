@@ -148,6 +148,17 @@ impl WebTarget<'_> {
             text,
             self.deadline,
         )?;
+        if let Some(input) = &outcome.assigned {
+            let result = if input.unchanged {
+                ActionResult::satisfied_without_delivery(name)
+            } else {
+                verdict(name, outcome.verified)
+            };
+            return Ok(result.with_details(json!({
+                "input_type": input.input_type,
+                "observed": outcome.observed,
+            })));
+        }
         let result = verdict(name, outcome.verified);
         Ok(if outcome.verified {
             result

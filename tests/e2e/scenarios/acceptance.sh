@@ -137,6 +137,8 @@ permission_json="$("$bin" permissions 2>/dev/null)"
 automation_state="$(json_field "$permission_json" data.automation.state)"
 if [ "$(json_field "$permission_json" ok)" != "True" ] || [ -z "$automation_state" ]; then
     badmsg "AE5 native permission state could not be read"
+elif private_skip_enabled && [ "$automation_state" = "denied" ]; then
+    private_skip "AE5 native denied-Automation path (lists and focuses Notification Center)"
 elif [ "$automation_state" = "denied" ]; then
     nc_probe="$("$bin" list-notifications 2>/dev/null)"
     if [ "$(json_field "$nc_probe" ok)" = "True" ]; then

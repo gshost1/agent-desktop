@@ -52,6 +52,29 @@ a `TIMEOUT` error no longer signals an oversized tree. A `--root` drill-down is
 unaffected: it replaces refs inside an existing snapshot, so an incomplete
 observation still returns `TIMEOUT` rather than a partial tree.
 
+A full snapshot is also partial when its refs would not fit the 1 MB refmap
+the store keeps per snapshot. Refs are kept in allocation order (depth first,
+a node before its children) up to the first one that does not fit; that node
+and every node after it are left out of the tree, every kept ancestor of the
+cut carries `"subtree_truncated": true`, and `data` carries `"complete": false`,
+`"truncated": true`, `nodes_observed` and `"refmap_capped": true`. Every ref
+left in the tree is saved with the snapshot, so it resolves like any other ref,
+and no ref is handed out for a node that was left out. `refmap_capped` is omitted otherwise, and a larger `--timeout-ms`
+does not change this cut. A `--root` drill-down is all or nothing here too:
+a drill whose refs would push the stored refmap past 1 MB fails with `INTERNAL`
+and replaces nothing.
+
+`wait --text` and `--wait-for` match against the tree they observed, then save
+it, so the cut can drop the match from the saved snapshot. A `wait --text`
+result over a cut snapshot adds `"complete": false` and `"refmap_capped": true`.
+With `"match_cut": true` the first match lies past the cut and `ref` is `null`
+because the snapshot does not hold it. With `--count`, `count` stays the number
+the complete read found and `stored_count` is how many of those the saved
+snapshot holds. A `--wait-for` result already carries the snapshot fields,
+including `refmap_capped`, and adds `"match_cut": true` when no node in the
+returned tree matches the selector. `match_cut` and `stored_count` are omitted
+otherwise.
+
 Version 2.1 replaces the 2.0 `error.retry_command` string with the structured
 `error.recovery` object and adds `error.disposition`. Consumers must select a
 recovery strategy from `recovery.strategy` only when `disposition.retry` is
@@ -82,6 +105,10 @@ keeps `unknown`. Treat `unknown` as not safe to retry automatically: read
 `error.code` and the message, and choose a recovery strategy only when
 `disposition.retry` is `safe`.
 
+A `batch` body counts `total_entries`, `completed_entries` (every entry that ran,
+failed or not), `failed_entries` (completed entries that returned an error) and
+`not_started_entries`. The batch itself is `ok: true` while entries fail.
+
 A `batch` entry whose result does not fit the batch output limit is replaced by
 an `INVALID_ARGS` error with `details.result_omitted: true`. It keeps the
 entry's own disposition: the result's `data.disposition` or
@@ -95,7 +122,8 @@ entry has already run, so `details.batch` holds the batch body with each
 per-entry result, and `details.cause_details` keeps the trace error's own
 details. A body that would push the response past the batch output limit is
 left out: `details.result_omitted` is `true` and only `total_entries`,
-`completed_entries`, `not_started_entries` and `stopped` are kept. The
+`completed_entries`, `failed_entries`, `not_started_entries` and `stopped` are
+kept. The
 disposition is `not_delivered` when no entry can have delivered (each entry's
 disposition is `not_delivered`, or it is a successful command that sends no
 input), and `delivery_uncertain` otherwise. Any other command whose closing
@@ -283,6 +311,8 @@ The envelope version stays `2.6`. The web channel adds fields and one command; n
 | `suggestion` | Present only when cross-origin frames could not be read and are left out. |
 
 Without such an endpoint, the same command reads the browser window through the accessibility tree and `data` carries `"channel": "ax"` and a `suggestion` naming the `launch --cdp` command that enables the web channel. Snapshots of every other surface carry no `channel`. Refs from a CDP read carry an element token of the form `cdp:<targetId>:<frameId>:<loaderId>:<backendNodeId>`, are accepted by every ref command, and act through the page without focusing the window or moving the pointer. A web ref whose frame now shows another document (`details.kind: "cdp_document_replaced"`), whose node left the page, or whose role or name changed returns `STALE_REF`; a ref whose tab or frame closed returns `WINDOW_NOT_FOUND` with `details.kind: "cdp_target_gone"`. A click lands on the visible part of the element, on its first line that is not covered when it wraps; an element another element covers at every such point returns `ACTION_FAILED` with `details.kind: "cdp_click_intercepted"` and nothing delivered. Ref action results on web refs carry `details.channel: "cdp"`.
+
+A web `date`, `time`, `datetime-local`, `month`, `week` or `color` input is one ref (`datefield`, `timefield` or `colorwell`) that advertises `SetValue`. `set-value` assigns its value whole, fires bubbling `input` and `change` events and reads the value back; the result carries `details.input_type` and `details.observed`. `clear` empties a date or time input the same way. A color input always holds a color, so `clear` on it returns `INVALID_ARGS` with `cdp_value_malformed`. The value must be in the input's own format (`YYYY-MM-DD`, `HH:MM`, `YYYY-MM-DDTHH:MM`, `YYYY-MM`, `YYYY-Www`, `#rrggbb`); anything else returns `INVALID_ARGS` with `not_delivered` before the page is touched, `details.kind` `cdp_value_not_canonical` (the suggestion names the value to pass, such as `19:30` for `7:30 PM`) or `cdp_value_malformed`. A value the input sanitizes away, such as `2026-02-30`, returns `ACTION_FAILED` with `cdp_value_rejected` and `not_delivered`, and the old value is put back with no event fired and no focus moved. A read-back that differs from the value returns `ACTION_FAILED` with `cdp_value_adjusted`, `details.observed` and `delivered_unverified`. An input that already holds the value returns `not_delivered` and fires nothing. The `incrementor` parts of a date or time input have no value of their own, so `set-value` on them returns `ACTION_NOT_SUPPORTED` with `not_delivered`.
 
 `list-surfaces` adds one entry per open page when an endpoint reaches the browser: `{"id": "<targetId>", "type": "web", "title": "<page title, or its URL>"}`.
 

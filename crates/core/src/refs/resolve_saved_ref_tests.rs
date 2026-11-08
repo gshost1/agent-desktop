@@ -284,65 +284,117 @@ fn a_landing_with_no_count_behind_it_that_does_not_match_is_absent() {
     assert_eq!(error.details.unwrap()["kind"], "saved_ref_absent");
 }
 
-struct ClosedMenu(super::test_support::RuleAdapter);
+struct GoneOwner {
+    inner: super::test_support::RuleAdapter,
+    state: Option<crate::system::process_state::ProcessState>,
+}
 
-impl crate::adapter::ObservationOps for ClosedMenu {
+impl GoneOwner {
+    fn new(state: Option<crate::system::process_state::ProcessState>) -> Self {
+        Self {
+            inner: RuleAdapter::new(tree_with(vec![node("button", "Run")])),
+            state,
+        }
+    }
+}
+
+impl crate::adapter::ObservationOps for GoneOwner {
     fn list_apps_scoped(
         &self,
-        name: &str,
-        bundle_id: Option<&str>,
-        deadline: crate::Deadline,
+        _name: &str,
+        _bundle_id: Option<&str>,
+        _deadline: crate::Deadline,
     ) -> Result<Vec<crate::AppInfo>, crate::AdapterError> {
-        self.0.list_apps_scoped(name, bundle_id, deadline)
+        Ok(Vec::new())
     }
 
     fn list_windows(
         &self,
         filter: &crate::adapter::WindowFilter,
-        deadline: crate::Deadline,
+        _deadline: crate::Deadline,
     ) -> Result<Vec<crate::WindowInfo>, crate::AdapterError> {
-        self.0.list_windows(filter, deadline)
+        match &filter.app {
+            Some(app) => Err(crate::AdapterError::new(
+                ErrorCode::AppNotFound,
+                format!("No running application matches '{app}'"),
+            )),
+            None => Ok(Vec::new()),
+        }
     }
 
     fn observe_tree(
         &self,
-        _root: crate::locator::live_locator::ObservationRoot<'_>,
-        _request: &crate::locator::live_locator::ObservationRequest,
+        root: crate::locator::live_locator::ObservationRoot<'_>,
+        request: &crate::locator::live_locator::ObservationRequest,
     ) -> Result<crate::locator::live_locator::ObservedTree, crate::AdapterError> {
-        Err(crate::AdapterError::surface_absent(
-            crate::SnapshotSurface::Menu,
-            "The window does not present an open menu",
-        ))
+        self.inner.observe_tree(root, request)
     }
 }
 
-impl crate::adapter::ActionOps for ClosedMenu {}
-impl crate::adapter::InputOps for ClosedMenu {}
-impl crate::adapter::SystemOps for ClosedMenu {
-    fn supported_surfaces(&self) -> Vec<crate::SnapshotSurface> {
-        vec![crate::SnapshotSurface::Window, crate::SnapshotSurface::Menu]
+impl crate::adapter::ActionOps for GoneOwner {}
+impl crate::adapter::InputOps for GoneOwner {}
+impl crate::adapter::SystemOps for GoneOwner {
+    fn process_state(
+        &self,
+        _process: crate::ProcessIdentity,
+        _deadline: crate::Deadline,
+    ) -> Result<crate::system::process_state::ProcessState, crate::AdapterError> {
+        self.state
+            .ok_or_else(|| crate::AdapterError::not_supported("process_state"))
+    }
+}
+
+fn resolve_gone(adapter: &GoneOwner, window_id: Option<&str>) -> crate::AdapterError {
+    let mut entry = entry();
+    entry.source.source_window_id = window_id.map(str::to_owned);
+    entry.process.process_instance = Some("test-instance".into());
+    match crate::refs::resolve_saved_ref::resolve_saved_ref(
+        adapter,
+        &entry,
+        crate::Deadline::standard().unwrap(),
+        None,
+    ) {
+        Ok(_) => panic!("a ref of an application that is not found cannot resolve"),
+        Err(error) => error,
     }
 }
 
 #[test]
-fn a_menu_ref_whose_menu_a_complete_lookup_finds_closed_is_stale() {
+fn a_ref_whose_application_exited_is_stale_and_names_the_exit() {
     let _guard = HomeGuard::new();
-    let adapter = ClosedMenu(RuleAdapter::new(tree_with(vec![node("button", "Run")])));
-    let mut entry = entry();
-    entry.source.source_surface = crate::SnapshotSurface::Menu;
+    let exited = GoneOwner::new(Some(crate::system::process_state::ProcessState::Exited {
+        code: None,
+    }));
 
-    let Err(error) = crate::refs::resolve_saved_ref::resolve_saved_ref(
-        &adapter,
-        &entry,
-        crate::Deadline::standard().unwrap(),
+    for window_id in [Some("w-1"), None] {
+        let error = resolve_gone(&exited, window_id);
+
+        assert_eq!(error.code, ErrorCode::StaleRef, "window id {window_id:?}");
+        assert!(!error.permits_retry_by_default());
+        let details = error.details.unwrap();
+        assert_eq!(details["kind"], "saved_ref_absent");
+        assert_eq!(details["process_state"], "exited");
+        assert_eq!(details["complete"], true);
+        assert_eq!(details["retryable"], false);
+    }
+}
+
+#[test]
+fn an_application_not_found_while_its_process_runs_or_is_unknown_stays_app_not_found() {
+    let _guard = HomeGuard::new();
+    for state in [
+        Some(crate::system::process_state::ProcessState::Running),
+        Some(crate::system::process_state::ProcessState::Unresponsive),
         None,
-    ) else {
-        panic!("a ref taken in a closed menu cannot resolve");
-    };
+    ] {
+        let adapter = GoneOwner::new(state);
 
-    assert_eq!(error.code, ErrorCode::StaleRef);
-    let details = error.details.unwrap();
-    assert_eq!(details["kind"], "menu_closed");
-    assert_eq!(details["complete"], true);
-    assert_eq!(details["retryable"], false);
+        let error = resolve_gone(&adapter, Some("w-1"));
+
+        assert_eq!(
+            error.code,
+            ErrorCode::AppNotFound,
+            "process state {state:?}"
+        );
+    }
 }
