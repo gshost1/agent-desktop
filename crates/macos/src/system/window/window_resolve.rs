@@ -51,10 +51,7 @@ pub(crate) fn resolve_window_strict(
 ) -> Result<WindowInfo, AdapterError> {
     let (window_number, mut record) = locate_verified_record_until(win, deadline)?;
     let ax_state = crate::system::window::window_ax_state::read_until(record.pid, deadline)?;
-    crate::system::window::window_title::fill_missing_titles(
-        std::slice::from_mut(&mut record),
-        |_, number| ax_state.title_by_id.get(&number).map(String::as_str),
-    );
+    crate::system::window::window_title::join_ax_title(&mut record, Some(&ax_state));
     verify_window_record(win, &record)?;
     let mut resolved = window_info_from_record(win, &record)?;
     resolved.state.minimized = ax_state.minimized_by_id.get(&window_number).copied();
@@ -124,13 +121,20 @@ fn window_record_matches_source(
             "window moved or resized while immutable source identity remained valid"
         );
     }
-    let title_changed = evidence
-        .title
-        .is_some_and(|title| !title.is_empty() && record.display_title() != title);
-    if title_changed {
+    if title_changed(record, evidence.title) {
         tracing::debug!("window title changed while immutable source identity remained valid");
     }
     true
+}
+
+/// An untitled record shows the application name, which the window never
+/// reported, so it has nothing to compare. Strict resolution joins `AXTitle`
+/// first, so a window listed under its `AXTitle` compares against that title.
+fn title_changed(record: &WindowRecord, evidence_title: Option<&str>) -> bool {
+    let (Some(expected), Some(actual)) = (evidence_title, record.title.as_deref()) else {
+        return false;
+    };
+    !expected.is_empty() && actual != expected
 }
 
 fn resolve_window_element_strict(

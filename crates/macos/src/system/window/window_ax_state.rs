@@ -1,4 +1,4 @@
-use agent_desktop_core::{AdapterError, ErrorCode, WindowInfo};
+use agent_desktop_core::{AdapterError, ErrorCode};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::time::Instant;
 
@@ -15,26 +15,9 @@ pub(crate) struct WindowAxState {
 pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, AdapterError> {
     let app = crate::tree::element_for_pid(pid);
     let focused = focused_identity(&app, pid, deadline)?;
-    let mut minimized_by_id = FxHashMap::default();
-    let mut accessible_window_ids = FxHashSet::default();
-    let mut title_by_id = FxHashMap::default();
-    for_each_window(pid, deadline, |window, window_id| {
-        accessible_window_ids.insert(window_id);
-        let fields = crate::system::window::window_ax_fields::read_window_fields(window, deadline)?;
-        if let Some(minimized) = fields.minimized {
-            minimized_by_id.insert(window_id, minimized);
-        }
-        if let Some(title) = fields.title {
-            title_by_id.insert(window_id, title);
-        }
-        Ok(())
-    })?;
-    Ok(WindowAxState {
-        focused,
-        minimized_by_id,
-        accessible_window_ids,
-        title_by_id,
-    })
+    let mut state = read_windows_until(pid, deadline, |_| true)?;
+    state.focused = focused;
+    Ok(state)
 }
 
 pub(crate) fn read_frontmost_until(
@@ -50,34 +33,37 @@ pub(crate) fn read_frontmost_until(
     })
 }
 
-/// Lists the accessible window ids of `pid` and reads `AXTitle` only for the
-/// windows in `untitled`. Titles are read after the id walk, so they spend only
-/// the budget the walk leaves and a failed title read is no title.
-pub(crate) fn title_probe_until(
+/// One pass over the accessibility windows of `pid`. Every window whose id is
+/// read and that `read_fields` selects has `AXMinimized` and `AXTitle` read in
+/// the same visit, so ids and titles come from one walk. A walk that fails or
+/// runs out of budget returns an error rather than a partial state, so a caller
+/// that tolerates the failure keeps every window of that owner on its
+/// CoreGraphics title or the application name.
+pub(crate) fn read_windows_until(
     pid: i32,
-    untitled: &FxHashSet<i64>,
     deadline: Instant,
-) -> Result<crate::system::window::window_title::WindowTitleProbe, AdapterError> {
+    read_fields: impl Fn(i64) -> bool,
+) -> Result<WindowAxState, AdapterError> {
+    let mut minimized_by_id = FxHashMap::default();
     let mut accessible_window_ids = FxHashSet::default();
-    let mut needs_title = Vec::new();
-    for_each_window(pid, deadline, |window, id| {
-        accessible_window_ids.insert(id);
-        if untitled.contains(&id) {
-            needs_title.push((window.clone(), id));
+    let mut title_by_id = FxHashMap::default();
+    for_each_window(pid, deadline, |window, window_id| {
+        accessible_window_ids.insert(window_id);
+        if !read_fields(window_id) {
+            return Ok(());
+        }
+        let fields = crate::system::window::window_ax_fields::read_window_fields(window, deadline)?;
+        if let Some(minimized) = fields.minimized {
+            minimized_by_id.insert(window_id, minimized);
+        }
+        if let Some(title) = fields.title {
+            title_by_id.insert(window_id, title);
         }
         Ok(())
     })?;
-    let title_by_id = needs_title
-        .into_iter()
-        .filter_map(|(window, id)| {
-            crate::tree::surface_read::string(&window, "AXTitle", deadline)
-                .ok()
-                .flatten()
-                .filter(|title| !title.is_empty())
-                .map(|title| (id, title))
-        })
-        .collect();
-    Ok(crate::system::window::window_title::WindowTitleProbe {
+    Ok(WindowAxState {
+        focused: None,
+        minimized_by_id,
         accessible_window_ids,
         title_by_id,
     })
@@ -98,28 +84,6 @@ fn for_each_window(
         }
     }
     Ok(())
-}
-
-pub(crate) fn label_accessibility(
-    windows: &mut [WindowInfo],
-    mut read: impl FnMut(i32) -> Option<FxHashSet<i64>>,
-) {
-    let mut pids = windows.iter().map(|window| window.pid).collect::<Vec<_>>();
-    pids.sort_unstable();
-    pids.dedup();
-    for pid in pids {
-        let Some(accessible_ids) = crate::system::process::process_identity::to_pid_t(pid)
-            .ok()
-            .and_then(&mut read)
-        else {
-            continue;
-        };
-        for window in windows.iter_mut().filter(|window| window.pid == pid) {
-            window.state.accessible =
-                crate::system::window::window_resolve::parse_window_number(&window.id)
-                    .is_some_and(|id| accessible_ids.contains(&id));
-        }
-    }
 }
 
 /// Frontmost-ness only selects whether a focused window is reported, and a busy
@@ -198,11 +162,7 @@ fn focused_role_kind(role: Option<&str>) -> FocusedRoleKind {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        FocusedRoleKind, focused_role_kind, is_transient_surface_role, label_accessibility,
-    };
-    use agent_desktop_core::{ProcessId, WindowInfo, WindowState};
-    use rustc_hash::FxHashSet;
+    use super::{FocusedRoleKind, focused_role_kind, is_transient_surface_role};
 
     #[test]
     fn modal_surfaces_can_temporarily_own_focused_window() {
@@ -224,26 +184,5 @@ mod tests {
             FocusedRoleKind::NotAWindow
         );
         assert_eq!(focused_role_kind(None), FocusedRoleKind::NotAWindow);
-    }
-
-    #[test]
-    fn failed_pid_probe_keeps_unknown_window_selectable() {
-        let mut windows = vec![window(10, "w-1"), window(20, "w-2")];
-        label_accessibility(&mut windows, |pid| (pid == 10).then(FxHashSet::default));
-
-        assert!(!windows[0].state.accessible);
-        assert!(windows[1].state.accessible);
-    }
-
-    fn window(pid: u32, id: &str) -> WindowInfo {
-        WindowInfo {
-            id: id.into(),
-            title: "Main".into(),
-            app: "Fixture".into(),
-            pid: ProcessId::new(pid),
-            process_instance: Some(format!("{pid}:100")),
-            bounds: None,
-            state: WindowState::default(),
-        }
     }
 }

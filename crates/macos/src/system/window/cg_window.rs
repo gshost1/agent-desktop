@@ -17,10 +17,7 @@ pub(crate) struct WindowRecord {
 
 impl WindowRecord {
     pub(crate) fn display_title(&self) -> &str {
-        self.title
-            .as_deref()
-            .filter(|title| !title.is_empty())
-            .unwrap_or(&self.app_name)
+        self.title.as_deref().unwrap_or(&self.app_name)
     }
 
     pub(crate) fn into_window_info(
@@ -29,10 +26,7 @@ impl WindowRecord {
         minimized: Option<bool>,
         accessible: bool,
     ) -> Result<WindowInfo, AdapterError> {
-        let title = self
-            .title
-            .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| self.app_name.clone());
+        let title = self.title.unwrap_or_else(|| self.app_name.clone());
         Ok(WindowInfo {
             id: format!("w-{}", self.window_number),
             title,

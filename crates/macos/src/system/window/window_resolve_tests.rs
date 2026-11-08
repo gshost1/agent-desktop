@@ -214,3 +214,28 @@ fn a_window_without_an_accessibility_element_is_not_reported_as_missing() {
     assert!(error.message.contains("exists"));
     assert_ne!(error.code, agent_desktop_core::ErrorCode::WindowNotFound);
 }
+
+#[test]
+fn untitled_core_graphics_record_reports_no_title_change() {
+    let mut live = record("Mail", 10, "", 100);
+    live.title = None;
+
+    assert!(!title_changed(&live, Some("Inbox")));
+}
+
+#[test]
+fn strict_resolution_compares_the_joined_accessibility_title() {
+    let mut live = record("Mail", 10, "", 100);
+    live.title = None;
+    let state = crate::system::window::window_ax_state::WindowAxState {
+        focused: None,
+        minimized_by_id: rustc_hash::FxHashMap::default(),
+        accessible_window_ids: rustc_hash::FxHashSet::from_iter([100]),
+        title_by_id: rustc_hash::FxHashMap::from_iter([(100, "Inbox".to_owned())]),
+    };
+
+    crate::system::window::window_title::join_ax_title(&mut live, Some(&state));
+
+    assert!(!title_changed(&live, Some("Inbox")));
+    assert!(title_changed(&live, Some("Sent")));
+}

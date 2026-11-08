@@ -20,15 +20,13 @@ pub(crate) struct WindowAxFields {
     pub(crate) title: Option<String>,
 }
 
-/// `AXMinimized` keeps the strict semantics of a single read: a transport
-/// failure fails the window. `AXTitle` is best effort, so any failure on its
-/// slot reads as no title.
+/// `AXMinimized` keeps the strict semantics and error labels of a single
+/// read: a transport failure fails the window. `AXTitle` is best effort, so any
+/// failure on its slot reads as no title.
 pub(crate) fn read_window_fields(
     window: &crate::tree::AXElement,
     deadline: Instant,
 ) -> Result<WindowAxFields, AdapterError> {
-    use accessibility_sys::{kAXErrorAPIDisabled, kAXErrorSuccess};
-
     crate::tree::surface_read::ensure_before_deadline(deadline)?;
     let names = [CFString::new(MINIMIZED), CFString::new(TITLE)];
     let refs = names
@@ -42,6 +40,22 @@ pub(crate) fn read_window_fields(
         deadline,
     );
     let items = crate::tree::properties::cf_type::created_cf_array(value);
+    fields_from_batch(error, items, deadline, || {
+        read_window_fields_separately(window, deadline)
+    })
+}
+
+/// A whole-call failure says nothing about which attribute caused it, so any
+/// failure other than a disabled API reads each attribute on its own. That
+/// keeps a title-caused failure from failing the strict `AXMinimized` read.
+fn fields_from_batch(
+    error: i32,
+    items: Option<CFArray<CFType>>,
+    deadline: Instant,
+    read_separately: impl FnOnce() -> Result<WindowAxFields, AdapterError>,
+) -> Result<WindowAxFields, AdapterError> {
+    use accessibility_sys::{kAXErrorAPIDisabled, kAXErrorSuccess};
+
     if error == kAXErrorAPIDisabled {
         return Err(crate::tree::surface_read::map_error(MINIMIZED, error));
     }
@@ -49,12 +63,7 @@ pub(crate) fn read_window_fields(
     match items {
         Some(items) if error == kAXErrorSuccess => decode_window_fields(&items)
             .map_err(|error| crate::tree::surface_read::map_error(MINIMIZED, error)),
-        _ if error == kAXErrorSuccess
-            || crate::tree::properties::ax_absence::is_absent_attribute_error(error) =>
-        {
-            read_window_fields_separately(window, deadline)
-        }
-        _ => Err(crate::tree::surface_read::map_error(MINIMIZED, error)),
+        _ => read_separately(),
     }
 }
 
@@ -66,7 +75,7 @@ fn read_window_fields_separately(
     let title = crate::tree::surface_read::string(window, TITLE, deadline)
         .ok()
         .flatten()
-        .filter(|title| !title.is_empty());
+        .and_then(non_empty_title);
     Ok(WindowAxFields { minimized, title })
 }
 
@@ -102,7 +111,13 @@ fn decode_minimized(item: &CFType) -> Result<Option<bool>, i32> {
 fn decode_title(item: &CFType) -> Option<String> {
     item.downcast::<CFString>()
         .map(|title| title.to_string())
-        .filter(|title| !title.is_empty())
+        .and_then(non_empty_title)
+}
+
+/// An empty `AXTitle` is no title, decided here once so every later join can
+/// treat `Some` as a real title.
+fn non_empty_title(title: String) -> Option<String> {
+    (!title.is_empty()).then_some(title)
 }
 
 #[cfg(test)]

@@ -54,7 +54,6 @@ fn focus_matching_uses_the_accessibility_filled_title() {
         |_| {
             let mut state = ax_state(Some((Some("AgentDesk Fixture".to_string()), None)));
             state.title_by_id.insert(1, "AgentDesk Fixture".to_string());
-            state.title_by_id.insert(2, String::new());
             Ok(state)
         },
         |_, _| Ok(true),

@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 
 #[path = "window_inventory_global_focus_tests.rs"]
 mod focus;
+use focus::assemble_global_windows;
 
 #[derive(Clone)]
 struct Owners {
@@ -283,61 +284,6 @@ fn persistent_owner_churn_times_out_with_exact_attempt_metrics() {
 }
 
 #[test]
-fn global_capture_orders_appkit_cg_ax_appkit_and_filters_before_cg() {
-    let owners = owners(&[(10, 100.0), (20, 200.0)], Some(10));
-    let events = std::cell::RefCell::new(Vec::new());
-    let snapshot_count = std::cell::Cell::new(0);
-
-    let windows = capture_global_with(
-        false,
-        || {
-            let ordinal = snapshot_count.get();
-            events
-                .borrow_mut()
-                .push(if ordinal == 0 { "a" } else { "b" });
-            snapshot_count.set(ordinal + 1);
-            Ok(owners.clone())
-        },
-        |eligible| {
-            events.borrow_mut().push("cg");
-            assert_eq!(eligible, &FxHashSet::from_iter([10, 20]));
-            Ok(vec![record(10, 1, "Front")])
-        },
-        |_| {
-            events.borrow_mut().push("ax");
-            Ok(ax_state(Some((Some("Front".into()), Some(1)))))
-        },
-    )
-    .unwrap();
-
-    assert_eq!(&*events.borrow(), &["a", "cg", "ax", "b"]);
-    assert_eq!(windows.len(), 1);
-}
-
-#[test]
-fn post_ax_snapshot_is_captured_and_churn_wins_over_stale_ax_failure() {
-    let snapshots = std::cell::RefCell::new(std::collections::VecDeque::from([
-        owners(&[(10, 100.0)], Some(10)),
-        owners(&[(10, 106.0)], Some(10)),
-    ]));
-    let snapshot_count = std::cell::Cell::new(0);
-
-    let error = capture_global_with(
-        false,
-        || {
-            snapshot_count.set(snapshot_count.get() + 1);
-            Ok(snapshots.borrow_mut().pop_front().unwrap())
-        },
-        |_| Ok(vec![record(10, 1, "Front")]),
-        |_| Err(AdapterError::permission_denied()),
-    )
-    .unwrap_err();
-
-    assert_eq!(snapshot_count.get(), 2);
-    assert_eq!(error.details.unwrap()["phase"], "appkit_snapshot_changed");
-}
-
-#[test]
 fn scoped_pid_selection_is_still_bound_to_the_owner_generation() {
     let snapshots = std::cell::RefCell::new(std::collections::VecDeque::from([
         owners(&[(10, 100.0), (20, 200.0)], Some(10)),
@@ -351,7 +297,7 @@ fn scoped_pid_selection_is_still_bound_to_the_owner_generation() {
             assert_eq!(selected, &FxHashSet::from_iter([10]));
             Ok(vec![record(10, 1, "Target")])
         },
-        |_, _| Ok(Vec::new()),
+        |_, _| Ok(Vec::<WindowInfo>::new()),
     )
     .unwrap_err();
 

@@ -48,44 +48,48 @@ fn capture_global_once(
     focused_only: bool,
     deadline: Instant,
 ) -> Result<Vec<WindowInfo>, AdapterError> {
-    use crate::system::window::window_title;
-    let mut probes = FxHashMap::default();
-    let mut windows = capture_global_with(
+    capture_global_with(
         focused_only,
         || crate::system::app::workspace_apps::window_owner_snapshot_until(deadline),
         |eligible_pids| {
-            window_title::titled_records_until(eligible_pids, focused_only, deadline, &mut probes)
+            crate::system::window::cg_window::window_records_until(
+                deadline,
+                crate::system::window::cg_window::WindowRecordScope::Pids(eligible_pids),
+            )
         },
         |pid| crate::system::window::window_ax_state::read_frontmost_until(pid, deadline),
-    )?;
-    crate::system::window::window_ax_state::label_accessibility(&mut windows, |pid| {
-        window_title::accessible_ids(&probes, pid, focused_only, deadline)
-    });
-    Ok(windows)
+        |records, pids| {
+            crate::system::window::window_title::probe_owners_until(records, pids, deadline)
+        },
+    )
 }
 
+/// The owner probe runs once, after the owner snapshots agree, so the churn
+/// window between them holds only the CoreGraphics read and the frontmost
+/// focus read, and a churn retry never repeats the probe.
 fn capture_global_with<S: OwnerSnapshotView>(
     focused_only: bool,
     capture_owners: impl FnMut() -> Result<S, AdapterError>,
     capture_records: impl FnMut(&FxHashSet<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
     mut read_frontmost: impl FnMut(i32) -> Result<WindowAxState, AdapterError>,
+    probe_owners: impl FnOnce(&[WindowRecord], &[i32]) -> FxHashMap<i32, WindowAxState>,
 ) -> Result<Vec<WindowInfo>, AdapterError> {
-    capture_stable_with(
+    let capture = capture_stable_with(
         capture_owners,
         OwnerSnapshotView::eligible_pids,
         capture_records,
-        |records, owners| {
-            assemble_global_windows(records, owners, focused_only, &mut read_frontmost)
-        },
-    )
+        |records, owners| capture_frontmost_focus(records, owners, &mut read_frontmost),
+    )?;
+    let states = probe_owners(&capture.records, &capture.probe_pids(focused_only));
+    finish_global_windows(capture, &states, focused_only)
 }
 
-pub(in crate::system) fn capture_stable_with<S: OwnerSnapshotView>(
+pub(in crate::system) fn capture_stable_with<S: OwnerSnapshotView, T>(
     capture_owners: impl FnMut() -> Result<S, AdapterError>,
     select_pids: impl FnMut(&S) -> FxHashSet<i32>,
     capture_records: impl FnMut(&FxHashSet<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
-    assemble: impl FnMut(Vec<WindowRecord>, &S) -> Result<Vec<WindowInfo>, AdapterError>,
-) -> Result<Vec<WindowInfo>, AdapterError> {
+    assemble: impl FnMut(Vec<WindowRecord>, &S) -> Result<T, AdapterError>,
+) -> Result<T, AdapterError> {
     capture_validated_with(
         capture_owners,
         select_pids,
@@ -95,13 +99,13 @@ pub(in crate::system) fn capture_stable_with<S: OwnerSnapshotView>(
     )
 }
 
-pub(in crate::system) fn capture_validated_with<S: OwnerSnapshotView>(
+pub(in crate::system) fn capture_validated_with<S: OwnerSnapshotView, T>(
     mut capture_owners: impl FnMut() -> Result<S, AdapterError>,
     mut select_pids: impl FnMut(&S) -> FxHashSet<i32>,
     mut capture_records: impl FnMut(&FxHashSet<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
-    mut assemble: impl FnMut(Vec<WindowRecord>, &S) -> Result<Vec<WindowInfo>, AdapterError>,
+    mut assemble: impl FnMut(Vec<WindowRecord>, &S) -> Result<T, AdapterError>,
     mut validate: impl FnMut(&S, &S, &FxHashSet<i32>, &[WindowRecord]) -> Result<(), AdapterError>,
-) -> Result<Vec<WindowInfo>, AdapterError> {
+) -> Result<T, AdapterError> {
     let before = capture_owners()?;
     let eligible_pids = select_pids(&before);
     let records = capture_records(&eligible_pids)?;
@@ -109,67 +113,6 @@ pub(in crate::system) fn capture_validated_with<S: OwnerSnapshotView>(
     let after = capture_owners()?;
     validate(&before, &after, &eligible_pids, &records)?;
     assembled
-}
-
-pub(in crate::system) fn assemble_global_windows<S: OwnerSnapshotView>(
-    records: Vec<WindowRecord>,
-    owners: &S,
-    focused_only: bool,
-    mut read_frontmost: impl FnMut(i32) -> Result<WindowAxState, AdapterError>,
-) -> Result<Vec<WindowInfo>, AdapterError> {
-    let records = records
-        .into_iter()
-        .filter(|record| record.window_number > 0)
-        .collect::<Vec<_>>();
-    validate_record_generations(&records, owners)?;
-    let frontmost_pid = owners.frontmost_pid();
-    let frontmost_window_owner =
-        frontmost_pid.filter(|pid| records.iter().any(|record| record.pid == *pid));
-    let focus_state = match frontmost_window_owner {
-        Some(pid) => Some(read_frontmost(pid).map_err(frontmost_read_error)?),
-        None => None,
-    };
-    let focus_reported = focus_state
-        .as_ref()
-        .is_some_and(|state| state.focused.is_some());
-    let focused_window = match matching_focus_windows(&records, frontmost_pid, focus_state.as_ref())
-    {
-        FocusJoin::TitleAmbiguous => None,
-        FocusJoin::Windows(windows) => {
-            if frontmost_window_owner.is_some() && focus_reported && windows.len() != 1 {
-                return Err(focus_join_error(frontmost_pid, windows.len()));
-            }
-            windows.first().copied()
-        }
-    };
-    let focused_title = focus_state
-        .as_ref()
-        .and_then(|state| state.focused.as_ref())
-        .and_then(|(title, _)| title.as_deref());
-    records
-        .into_iter()
-        .filter_map(|record| {
-            let mut record = record;
-            let is_focused = Some((record.pid, record.window_number)) == focused_window;
-            if focused_only && !is_focused {
-                return None;
-            }
-            if is_focused {
-                crate::system::window::window_title::fill_missing_titles(
-                    std::slice::from_mut(&mut record),
-                    |_, _| focused_title,
-                );
-            }
-            let minimized = if Some(record.pid) == frontmost_pid {
-                focus_state
-                    .as_ref()
-                    .and_then(|state| state.minimized_by_id.get(&record.window_number).copied())
-            } else {
-                None
-            };
-            Some(record.into_window_info(is_focused, minimized, true))
-        })
-        .collect::<Result<Vec<_>, _>>()
 }
 
 pub(in crate::system) fn validate_snapshot_pair<S: OwnerSnapshotView>(
@@ -282,84 +225,6 @@ fn unique_process_instances(records: &[WindowRecord]) -> Result<Vec<(i32, &str)>
     Ok(instances)
 }
 
-enum FocusJoin {
-    Windows(Vec<(i32, i64)>),
-    TitleAmbiguous,
-}
-
-fn matching_focus_windows(
-    records: &[WindowRecord],
-    frontmost_pid: Option<i32>,
-    state: Option<&WindowAxState>,
-) -> FocusJoin {
-    let Some(frontmost_pid) = frontmost_pid else {
-        return FocusJoin::Windows(Vec::new());
-    };
-    let Some((focused_title, focused_number)) = state.and_then(|state| state.focused.as_ref())
-    else {
-        return FocusJoin::Windows(Vec::new());
-    };
-    if let Some(number) = focused_number {
-        return FocusJoin::Windows(
-            records
-                .iter()
-                .filter(|record| record.pid == frontmost_pid && record.window_number == *number)
-                .map(|record| (record.pid, record.window_number))
-                .collect(),
-        );
-    }
-    let title_matches = records
-        .iter()
-        .filter(|record| {
-            record.pid == frontmost_pid && focused_title.as_deref() == Some(record.display_title())
-        })
-        .map(|record| (record.pid, record.window_number))
-        .collect::<Vec<_>>();
-    if title_matches.len() > 1 {
-        return FocusJoin::TitleAmbiguous;
-    }
-    FocusJoin::Windows(title_matches)
-}
-
-fn frontmost_read_error(error: AdapterError) -> AdapterError {
-    if !matches!(
-        error.code,
-        ErrorCode::Timeout | ErrorCode::AppUnresponsive | ErrorCode::ElementNotFound
-    ) {
-        return error;
-    }
-    let source_kind = error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .cloned();
-    AdapterError::new(
-        ErrorCode::AppUnresponsive,
-        "Authoritative frontmost window accessibility read was incomplete",
-    )
-    .with_details(serde_json::json!({
-        "kind": "frontmost_window_ax_incomplete",
-        "source_code": error.code.as_str(),
-        "source_kind": source_kind,
-        "complete": false,
-        "retryable": true,
-    }))
-}
-
-fn focus_join_error(pid: Option<i32>, match_count: usize) -> AdapterError {
-    AdapterError::new(
-        ErrorCode::AppUnresponsive,
-        "Authoritative frontmost app did not join to one exact window",
-    )
-    .with_details(serde_json::json!({
-        "kind": "frontmost_window_join",
-        "pid": pid,
-        "match_count": match_count,
-        "complete": false,
-        "retryable": true,
-    }))
-}
-
 fn owner_churn_error(pid: Option<i32>, phase: &str) -> AdapterError {
     AdapterError::new(
         ErrorCode::AppUnresponsive,
@@ -377,6 +242,10 @@ fn owner_churn_error(pid: Option<i32>, phase: &str) -> AdapterError {
 fn retryable_global_error(error: &AdapterError) -> bool {
     error.code == ErrorCode::AppUnresponsive && error.is_explicitly_retryable()
 }
+
+#[path = "window_inventory_global_assemble.rs"]
+mod assemble;
+use assemble::{capture_frontmost_focus, finish_global_windows};
 
 #[path = "window_inventory_global_timeout.rs"]
 mod timeout;
