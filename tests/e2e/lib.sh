@@ -289,7 +289,7 @@ cleanup() {
     if [ "$fixture_owned" -eq 1 ] && [ -x "$bin" ]; then
         "$bin" close-app "$app" --force >/dev/null 2>&1 || true
     fi
-    for file in "${cleanup_files[@]}"; do
+    for file in ${cleanup_files[@]+"${cleanup_files[@]}"}; do
         remove_artifact "$file" || true
     done
     if [ -n "$raw_bin" ] && ! verify_immutable_binary "$raw_bin" "$raw_bin_sha"; then
@@ -323,7 +323,7 @@ finish() {
     if [ "$fail" -gt 0 ] || [ "$contaminated" -ne 0 ]; then
         printf '\n  failures:\n'
         local failure
-        for failure in "${failures[@]}"; do
+        for failure in ${failures[@]+"${failures[@]}"}; do
             printf '   - %s\n' "$failure"
         done
         if [ "$contaminated" -ne 0 ]; then
@@ -334,7 +334,7 @@ finish() {
     if [ "$skip" -gt 0 ]; then
         printf '\n  capability skips:\n'
         local skipped
-        for skipped in "${skips[@]}"; do
+        for skipped in ${skips[@]+"${skips[@]}"}; do
             printf '   - %s\n' "$skipped"
         done
     fi

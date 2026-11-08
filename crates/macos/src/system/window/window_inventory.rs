@@ -143,6 +143,7 @@ fn focus_state(
                 focused: None,
                 minimized_by_id: rustc_hash::FxHashMap::default(),
                 accessible_window_ids: rustc_hash::FxHashSet::default(),
+                titles: Default::default(),
             })
         }
         Err(error) => Err(error),
@@ -218,34 +219,21 @@ fn windows_from_records_with_focus(
         .filter(|record| record.window_number > 0)
         .collect::<Vec<_>>();
     let visible_pids = visible_window_pids(&candidates);
-    let mut title_counts = std::collections::HashMap::new();
-    for record in &candidates {
-        *title_counts
-            .entry((record.pid, record.display_title().to_owned()))
-            .or_insert(0) += 1;
-    }
-
     let mut state_cache = std::collections::HashMap::new();
-    let mut windows = Vec::new();
-    let mut focused_seen = false;
-
-    for record in candidates {
-        let process_instance = record.process_instance.as_deref().ok_or_else(|| {
+    let mut joined = Vec::with_capacity(candidates.len());
+    for mut record in candidates {
+        let process_instance = record.process_instance.clone().ok_or_else(|| {
             identity_race_error(
                 record.pid,
                 "CoreGraphics record omitted its process instance",
             )
         })?;
-        if !verify_instance(record.pid, process_instance)? {
+        if !verify_instance(record.pid, &process_instance)? {
             return Err(identity_race_error(
                 record.pid,
                 "window owner changed before accessibility focus read",
             ));
         }
-        let title_count = title_counts
-            .get(&(record.pid, record.display_title().to_owned()))
-            .copied()
-            .unwrap_or(0);
         let state = match state_cache.entry(record.pid) {
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::hash_map::Entry::Vacant(entry) => entry.insert(focus_state(
@@ -255,15 +243,43 @@ fn windows_from_records_with_focus(
                 visible_pids.contains(&record.pid),
             )?),
         };
-        if !verify_instance(record.pid, process_instance)? {
+        if !verify_instance(record.pid, &process_instance)? {
             return Err(identity_race_error(
                 record.pid,
                 "window owner changed after accessibility focus read",
             ));
         }
+        state.titles.fill_missing(&mut record);
+        joined.push(record);
+    }
+    windows_from_joined_records(joined, &state_cache, focused_only)
+}
+
+fn windows_from_joined_records(
+    records: Vec<cg_window::WindowRecord>,
+    states: &std::collections::HashMap<i32, crate::system::window::window_ax_state::WindowAxState>,
+    focused_only: bool,
+) -> Result<Vec<WindowInfo>, AdapterError> {
+    let mut title_counts = std::collections::HashMap::new();
+    for record in &records {
+        if let Some(title) = record.title.clone() {
+            *title_counts.entry((record.pid, title)).or_insert(0) += 1;
+        }
+    }
+    let mut windows = Vec::new();
+    let mut focused_seen = false;
+    for record in records {
+        let state = states.get(&record.pid).ok_or_else(|| {
+            identity_race_error(record.pid, "accessibility state missing for joined window")
+        })?;
+        let title_count = record
+            .title
+            .clone()
+            .and_then(|title| title_counts.get(&(record.pid, title)).copied())
+            .unwrap_or(0);
         let is_focused = !focused_seen
             && matches_focused_window(
-                record.display_title(),
+                record.title.as_deref(),
                 record.window_number,
                 &state.focused,
                 title_count,
@@ -276,7 +292,6 @@ fn windows_from_records_with_focus(
         let accessible = state.accessible_window_ids.contains(&record.window_number);
         windows.push(record.into_window_info(is_focused, minimized, accessible)?);
     }
-
     Ok(windows)
 }
 
@@ -302,7 +317,7 @@ fn identity_race_error(pid: i32, phase: &str) -> AdapterError {
 type FocusedWindowIdentity = Option<(Option<String>, Option<i64>)>;
 
 fn matches_focused_window(
-    title: &str,
+    title: Option<&str>,
     window_number: i64,
     identity: &FocusedWindowIdentity,
     same_title_count: usize,
@@ -313,9 +328,13 @@ fn matches_focused_window(
     if let Some(number) = focused_number {
         return *number == window_number;
     }
-    focused_title.as_deref() == Some(title) && same_title_count == 1
+    focused_title.is_some() && focused_title.as_deref() == title && same_title_count == 1
 }
 
 #[cfg(test)]
 #[path = "window_inventory_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "window_inventory_title_tests.rs"]
+mod title_tests;
