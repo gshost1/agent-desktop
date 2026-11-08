@@ -7,6 +7,7 @@ export AGENT_DESKTOP_HOME="$PWD/bench/out/home-probe"; mkdir -p "$AGENT_DESKTOP_
 base=bench/out/wt-main/target/release/agent-desktop
 head=bench/out/wt-findmenu/target/release/agent-desktop
 out=bench/out/check_find_menu.txt; : > "$out"
+(cd bench/out/wt-findmenu && git pull -q --ff-only 2>/dev/null; nice cargo build --release -q -p agent-desktop)
 call() {
     local label="$1"; shift
     local t0 t1 body
