@@ -144,9 +144,10 @@ def main():
                      "title": f"upstream main at the fork point (`{record['upstream']['head']}`)"},
         "fork": {"tree": record["fork"]["tree"], "config": "a",
                  "title": f"fork main with the fixes (`{record['fork']['head']}`)"},
-        "fork_outline": {"tree": record["fork_outline"]["tree"], "config": "c",
-                         "title": f"fork + `--outline`, batch-first prompt (`{record['fork_outline']['head']}`)"},
     }
+    if "fork_outline" in record:
+        builds["fork_outline"] = {"tree": record["fork_outline"]["tree"], "config": "c",
+                                  "title": f"fork + `--outline`, batch-first prompt (`{record['fork_outline']['head']}`)"}
     print(render(builds, load_runs(Path(a.results), record.get("since", ""))))
 
 
