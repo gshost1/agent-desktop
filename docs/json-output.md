@@ -122,27 +122,27 @@ waiting, even when the error is retryable.
 
 On macOS, `press --app` and `press --window-id` with `return`, `enter` or
 `escape` and no modifiers check the effect when the focused window is a sheet
-or dialog, or carries a sheet. The key first runs as the focused control's
-`AXConfirm` or `AXCancel` action. A succeeded action is not taken as proof: a
-text field can end editing while the sheet that acts on Return never sees a
-key. The surface counts as having reacted only when the same signal holds on
-two consecutive reads within 750 ms: `surface_closed` (its element is gone,
-or its window or the app no longer lists it) or `surface_replaced` (another
-sheet or dialog took the keyboard). Window size and title changes never count.
-With no reaction, focus goes back to the control that held it before the
-action, because the action can move focus elsewhere in the sheet, and a real
-key is sent and judged the same way. There, `text_edited` also counts, but
-only for a multi-line text area. A reaction makes the result
-`delivered_verified` with `details.modal_key: { "surface": "sheet" | "dialog",
-"effect": "observed", "signal": "<signal>", "observed_after": "<step label>" }`.
-No reaction after either route is an `ACTION_FAILED` error with
+or dialog, or carries a sheet. A real key goes first, before any semantic
+action, because `AXConfirm` on a text field ends editing and moves focus off
+it, after which the sheet ignores Return. The press is verified only by a
+postcondition the window server shows, held on two consecutive reads within
+750 ms: `surface_window_closed`, the sheet's or dialog's own window has left
+the screen. `text_edited` also counts, but only for a multi-line text area.
+Accessibility listings, window size and title changes never count. When the
+real key cannot be sent or the surface's window stays on screen, the focused
+control's `AXConfirm` or `AXCancel` runs and is judged the same way. A
+verified press is `delivered_verified` with `details.modal_key: { "surface":
+"sheet" | "dialog", "effect": "observed", "signal": "<signal>",
+"observed_after": "<step label>" }`. When the surface's own window cannot be
+told apart from the window it is attached to, only the real key is sent and
+the result is `delivered_unverified` with `modal_key.effect: "unobservable"`.
+A surface still on screen after both routes is an `ACTION_FAILED` error with
 `delivered_unverified` delivery, `retry: unsafe` and
 `details.modal_key.effect: "none_observed"`, plus `routes` (the step labels
-tried, `AXFocused` when focus was restored) and `default_button` (for Return)
-or `cancel_button` (for Escape), which says whether the surface names such a
-button. Read the surface again and use its controls by ref instead of
-repeating the key. Presses with modifiers, other keys, and presses with no
-sheet or dialog in the focused window are unchanged.
+tried) and `default_button` (for Return) or `cancel_button` (for Escape), which
+says whether the surface names such a button. Read the surface again and use
+its controls by ref instead of repeating the key. Presses with modifiers, other
+keys, and presses with no sheet or dialog in the focused window are unchanged.
 
 ## Version 2.4 migration
 

@@ -1,9 +1,9 @@
 //! Confirm and cancel keys aimed at a sheet or dialog. A semantic `AXConfirm`
 //! or `AXCancel` can succeed on the focused control while the surface ignores
-//! it: a text field ends editing, but the controller that acts on Return never
-//! sees a key. Such a press is judged by what happened to the surface itself,
-//! never by the action's own success, and never by window geometry: a sheet
-//! that resizes while it stays open has not reacted to the key.
+//! it, and accessibility can report a sheet as gone while it is still on
+//! screen. A press is verified only by a postcondition the window server
+//! shows: the surface's own window has left the screen. Window geometry and
+//! accessibility listings never count.
 
 use agent_desktop_core::{
     ActionResult, ActionStep, AdapterError, Deadline, DeliverySemantics, ErrorCode,
@@ -15,20 +15,17 @@ use crate::tree::AXElement;
 const SETTLE_LIMIT: Duration = Duration::from_millis(750);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const DIALOG_SUBROLES: [&str; 2] = ["AXDialog", "AXSystemDialog"];
-const SURFACE_CLOSED: &str = "surface_closed";
-const SURFACE_REPLACED: &str = "surface_replaced";
+const SURFACE_WINDOW_CLOSED: &str = "surface_window_closed";
 const TEXT_EDITED: &str = "text_edited";
 
 /// The sheet or dialog that holds the keyboard when a confirm or cancel key is
-/// pressed, and the element that lists it: the window for a sheet, the
-/// application for a dialog.
+/// pressed, with its own window-server window when that can be told apart
+/// from the window it is attached to.
 pub(super) struct ModalWatch {
-    app: AXElement,
-    surface: AXElement,
-    container: (AXElement, &'static str),
     kind: &'static str,
     action: &'static str,
     button: (&'static str, bool),
+    window: Option<i64>,
 }
 
 impl ModalWatch {
@@ -55,35 +52,46 @@ impl ModalWatch {
         self.action
     }
 
+    /// Whether a reaction can be observed at all. Without the surface's own
+    /// window there is no postcondition to show, and a press reports an
+    /// unverified delivery instead of trying a second route.
+    pub(super) fn observable(&self) -> bool {
+        self.window.is_some()
+    }
+
     fn read(
         app: &AXElement,
         action: &'static str,
         deadline: Deadline,
     ) -> Result<Option<Self>, AdapterError> {
+        use crate::system::window::window_bridge::window_id;
+
         let instant = crate::tree::locator_deadline::from_operation(deadline)?;
         let Some((surface, kind, window)) = modal_surface(app, instant)? else {
             return Ok(None);
         };
         let (attribute, key) = button_attribute(action);
         let present = crate::tree::surface_read::element(&surface, attribute, instant)?.is_some();
-        let container = if kind == "sheet" {
-            (window, "AXChildren")
+        let host = if crate::tree::same_element(&surface, &window) {
+            crate::tree::surface_read::element(&surface, "AXParent", instant)
+                .ok()
+                .flatten()
         } else {
-            (app.clone(), "AXWindows")
+            Some(window)
         };
+        let own = window_id(&surface, instant).ok().flatten();
+        let host = host.and_then(|host| window_id(&host, instant).ok().flatten());
         Ok(Some(Self {
-            app: app.clone(),
-            surface,
-            container,
             kind,
             action,
             button: (key, present),
+            window: distinct_window(own, host),
         }))
     }
 
-    /// Waits a bounded time for a signal that the surface reacted, and returns
-    /// its name. `edited` adds the text of a multi-line field that held focus
-    /// when a real key was sent, where Return inserts a line.
+    /// Waits a bounded time for a postcondition and returns its name. `edited`
+    /// adds the text of a multi-line field that held focus when a real key was
+    /// sent, where Return inserts a line.
     pub(super) fn settle(
         &self,
         edited: Option<&FocusedValue>,
@@ -107,6 +115,14 @@ impl ModalWatch {
             }))
     }
 
+    pub(super) fn unobservable(&self, steps: Vec<ActionStep>) -> ActionResult {
+        ActionResult::delivered_unverified("press_key")
+            .with_steps(steps)
+            .with_details(serde_json::json!({
+                "modal_key": { "surface": self.kind, "effect": "unobservable" }
+            }))
+    }
+
     pub(super) fn ignored(&self, steps: &[ActionStep]) -> AdapterError {
         let routes: Vec<&str> = steps.iter().map(ActionStep::label).collect();
         let (button, present) = self.button;
@@ -119,7 +135,7 @@ impl ModalWatch {
         AdapterError::new(
             ErrorCode::ActionFailed,
             format!(
-                "The {kind} stayed open: the key was delivered, but the {kind} neither closed nor gave way to another",
+                "The {kind} stayed open: the key was delivered, but the {kind}'s window is still on screen",
                 kind = self.kind
             ),
         )
@@ -133,55 +149,19 @@ impl ModalWatch {
         edited: Option<&FocusedValue>,
         deadline: Deadline,
     ) -> Result<Option<&'static str>, AdapterError> {
-        let instant = crate::tree::locator_deadline::from_operation(deadline)?;
-        if self.surface_closed(instant)? {
-            return Ok(Some(SURFACE_CLOSED));
-        }
-        if self.surface_replaced(instant)? {
-            return Ok(Some(SURFACE_REPLACED));
+        if let Some(window) = self.window
+            && !window_on_screen(window)?
+        {
+            return Ok(Some(SURFACE_WINDOW_CLOSED));
         }
         Ok(edited
             .is_some_and(|value| value.changed(deadline))
             .then_some(TEXT_EDITED))
     }
-
-    fn surface_closed(&self, deadline: Instant) -> Result<bool, AdapterError> {
-        let role = crate::tree::properties::attributes::copy_string_attr_result(
-            &self.surface,
-            "AXRole",
-            deadline,
-        );
-        crate::tree::surface_read::ensure_before_deadline(deadline)?;
-        let (container, attribute) = &self.container;
-        let listed = crate::tree::surface_read::elements(container, attribute, deadline)
-            .ok()
-            .map(|elements| {
-                elements
-                    .iter()
-                    .any(|element| crate::tree::same_element(element, &self.surface))
-            });
-        Ok(surface_shows_closed(role, listed))
-    }
-
-    fn surface_replaced(&self, deadline: Instant) -> Result<bool, AdapterError> {
-        use crate::tree::surface_read;
-
-        if let Some((current, _, _)) = modal_surface(&self.app, deadline)?
-            && !crate::tree::same_element(&current, &self.surface)
-        {
-            return Ok(true);
-        }
-        for child in surface_read::elements(&self.surface, "AXChildren", deadline)? {
-            if surface_read::string(&child, "AXRole", deadline)?.as_deref() == Some("AXSheet") {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
 }
 
 /// A multi-line text field that held focus just before a real key was sent,
-/// with its text. Single-line fields are never read: a confirm that only
+/// with its text. Single-line fields are never read: a key that only
 /// completed or rewrote their text left the surface open.
 pub(super) struct FocusedValue {
     element: AXElement,
@@ -207,8 +187,8 @@ impl FocusedValue {
 }
 
 /// Polls `read` until the same signal is seen on two consecutive reads, or
-/// `limit` passes. A signal that one re-read does not confirm, such as a sheet
-/// that is listed again, is not an effect.
+/// `limit` passes. A signal that one re-read does not confirm is not an
+/// effect.
 fn settle_with(
     mut read: impl FnMut() -> Result<Option<&'static str>, AdapterError>,
     limit: Duration,
@@ -230,6 +210,25 @@ fn settle_with(
         let pause = deadline.remaining_slice(POLL_INTERVAL)?;
         std::thread::sleep(pause.min(POLL_INTERVAL));
     }
+}
+
+/// The surface's own window, only when it differs from the window it is
+/// attached to; a bridge that answers with the host's window would make the
+/// surface look open forever or closed with the host.
+fn distinct_window(own: Option<i64>, host: Option<i64>) -> Option<i64> {
+    own.filter(|own| host != Some(*own))
+}
+
+fn window_on_screen(window: i64) -> Result<bool, AdapterError> {
+    use crate::system::window::cg_window::{
+        WindowRecordScope, records_from_dictionaries, window_dictionaries,
+    };
+
+    Ok(
+        records_from_dictionaries(window_dictionaries()?, WindowRecordScope::Window(window))?
+            .iter()
+            .any(|record| record.visible),
+    )
 }
 
 type FoundSurface = (AXElement, &'static str, AXElement);
@@ -268,16 +267,6 @@ fn button_attribute(action: &str) -> (&'static str, &'static str) {
     } else {
         ("AXDefaultButton", "default_button")
     }
-}
-
-/// A surface is closed when its element is invalid or roleless, or when the
-/// element that listed it no longer does. An unreadable listing proves nothing.
-fn surface_shows_closed(role: Result<Option<String>, i32>, listed: Option<bool>) -> bool {
-    let element_gone = match role {
-        Ok(role) => role.is_none(),
-        Err(error) => error == accessibility_sys::kAXErrorInvalidUIElement,
-    };
-    element_gone || listed == Some(false)
 }
 
 fn ignored_suggestion(kind: &str, (button, present): (&str, bool)) -> String {
