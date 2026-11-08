@@ -1,6 +1,7 @@
 use crate::{
     AdapterError, AppError,
     context::validate_session_id,
+    refs::ref_persist_budget::PersistBudget,
     refs::refs_lock::RefStoreLock,
     refs::{RefMap, new_snapshot_id, validate_snapshot_id, write_private_file},
 };
@@ -47,12 +48,14 @@ impl RefStore {
         self.with_write_lock(|| self.save_new_snapshot_unlocked_with_id(refmap))
     }
 
-    /// Recovery-path variant of [`save_new_snapshot`]: the ref-store write
-    /// lock is acquired with a deadline detached from any inherited command
-    /// deadline. Use it to persist an already-built partial snapshot or a
-    /// post-timeout wait result after its command deadline expires.
-    pub(crate) fn save_new_snapshot_detached(&self, refmap: &RefMap) -> Result<String, AppError> {
-        self.with_write_lock_detached(|| self.save_new_snapshot_unlocked_with_id(refmap))
+    /// Saves an already-observed result as a new snapshot. The write lock is
+    /// taken under [`PersistBudget::DetachedAfterObservation`], so a result
+    /// built inside its command deadline, complete or partial, is not thrown
+    /// away because the deadline ran out before the save.
+    pub(crate) fn persist_observed(&self, refmap: &RefMap) -> Result<String, AppError> {
+        self.with_write_lock_for(PersistBudget::DetachedAfterObservation, || {
+            self.save_new_snapshot_unlocked_with_id(refmap)
+        })
     }
 
     fn save_new_snapshot_unlocked_with_id(&self, refmap: &RefMap) -> Result<String, AppError> {
@@ -67,6 +70,10 @@ impl RefStore {
         self.with_write_lock(|| self.save_snapshot_unlocked(snapshot_id, refmap))
     }
 
+    /// Writes a drill-down's observed subtree back into `snapshot_id` if the
+    /// stored root still matches `expected_entry`. The drill has already been
+    /// observed, so the lock is taken under
+    /// [`PersistBudget::DetachedAfterObservation`].
     pub(crate) fn update_existing_snapshot<T>(
         &self,
         snapshot_id: &str,
@@ -75,7 +82,7 @@ impl RefStore {
         update: impl FnOnce(&mut RefMap) -> Result<T, AppError>,
     ) -> Result<(T, RefMap), AppError> {
         validate_snapshot_id(snapshot_id)?;
-        self.with_write_lock(|| {
+        self.with_write_lock_for(PersistBudget::DetachedAfterObservation, || {
             let mut current = self.load_snapshot_from_base(&self.base_dir, snapshot_id)?;
             if current.get(expected_ref_id) != Some(expected_entry) {
                 return Err(AppError::Adapter(AdapterError::stale_ref(expected_ref_id)));
@@ -245,18 +252,15 @@ impl RefStore {
     }
 
     fn with_write_lock<T>(&self, f: impl FnOnce() -> Result<T, AppError>) -> Result<T, AppError> {
-        let _lock = RefStoreLock::acquire(&self.lock_path())?;
-        f()
+        self.with_write_lock_for(PersistBudget::Inherited, f)
     }
 
-    /// Recovery-path write lock: uses [`RefStoreLock::acquire_detached`] so the
-    /// lock budget survives an inherited command deadline that has already
-    /// expired by the time post-deadline diagnostic work runs.
-    fn with_write_lock_detached<T>(
+    fn with_write_lock_for<T>(
         &self,
+        budget: PersistBudget,
         f: impl FnOnce() -> Result<T, AppError>,
     ) -> Result<T, AppError> {
-        let _lock = RefStoreLock::acquire_detached(&self.lock_path())?;
+        let _lock = RefStoreLock::acquire_for(&self.lock_path(), budget)?;
         f()
     }
 

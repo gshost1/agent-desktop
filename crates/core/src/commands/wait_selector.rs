@@ -204,7 +204,7 @@ fn persist_last_built(
         return Ok(None);
     };
     let store = RefStore::for_session(context.session_id())?;
-    let snapshot_id = store.save_new_snapshot_detached(&result.refmap)?;
+    let snapshot_id = store.persist_observed(&result.refmap)?;
     trace_artifacts::copy_refmap_if_full(context, &store, &snapshot_id, &result.refmap)?;
     Ok(Some(snapshot_id))
 }
