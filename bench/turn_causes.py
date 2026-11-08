@@ -30,7 +30,7 @@ def label(task, prev, cur):
     if 'snapshot' in p and '--root' not in p: return 'refilter_same_tree'
     if 'click' in p: return 'post_click_reread'
     return 'other'
-runs = [json.loads(l) for l in open('runs/results.jsonl')]
+runs = [json.loads(l) for l in open(__import__('pathlib').Path(__file__).resolve().parent / 'runs' / 'results.jsonl')]
 runs = [d for d in runs if d['run_id'].startswith('1108') and d['tree'] in ('wt-final','wt-main67') and d['task'] in ('weather','settings','calculator')]
 out = collections.defaultdict(collections.Counter); stat = {}
 for task in ('weather','settings','calculator'):
