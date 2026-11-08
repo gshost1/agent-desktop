@@ -127,7 +127,9 @@ fn the_windows_lane_stages_the_live_wpf_host() {
         "the library-test step no longer stages the ScratchWpf host, so the zero-bounds body would skip on every run"
     );
     assert!(
-        step.contains("cargo test --locked -p agent-desktop-core -p agent-desktop-windows --lib"),
+        step.contains(
+            "cargo test --locked -p agent-desktop-core -p agent-desktop-windows -p agent-desktop-web --lib"
+        ),
         "the staged step is no longer the one that runs the library tests"
     );
 }

@@ -373,3 +373,7 @@ mod tests {
         assert_eq!(response["truncated"], true);
     }
 }
+
+#[cfg(test)]
+#[path = "find_live_persist_tests.rs"]
+mod persist_tests;
