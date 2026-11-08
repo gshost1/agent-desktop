@@ -83,7 +83,7 @@ agent-desktop find --app "App" --role button --count
 - `--text` also matches ancestors whose subtree text contains the text. Use `--name` to match the node itself.
 - `--role` is case-insensitive; `textarea`, `textbox` and `searchfield` fold to `textfield`. When a role filter matches nothing, `data.roles_present` lists the roles in the searched tree. Use it to tell a wrong role name from an empty screen.
 - Unnamed elements omit `name`. Their content is in `value`, so search it with `--value`.
-- A large tree, such as a file dialog, can pass the 5000 ms default `--timeout-ms`. Raise it or narrow the search. A timeout here does not mean the app hangs.
+- A large tree, such as a file dialog, can pass the 5000 ms default `--timeout-ms`. Raise it or narrow the search. A timeout here does not mean the app hangs. The walk gets the budget less up to one second kept for checking matches. When the walk runs out, find returns `TIMEOUT` at once with `details.kind: "locator_transient_incomplete"` and `details.last_incomplete.deadline_exhausted` above zero. A retry with the same budget fails the same way.
 
 Every non-count response returns the `snapshot_id` that owns its refs:
 

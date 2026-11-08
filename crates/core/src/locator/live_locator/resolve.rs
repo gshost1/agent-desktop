@@ -23,6 +23,11 @@ pub fn resolve_query(
 /// Resolves a query over trees the caller observes. A caller that already holds
 /// the read its root resolution took hands that same tree back here, so the refs
 /// it publishes are proven by one observation rather than by a second one.
+///
+/// A transiently incomplete attempt is retried only while it ended inside its
+/// own observation budget. An attempt that spent that budget was cut by time,
+/// and every retry gets less of it, so the timeout is returned at once with the
+/// partial evidence instead of spending the hydration reserve on another walk.
 pub(crate) fn resolve_query_from(
     adapter: &dyn PlatformAdapter,
     query: &LocatorQuery,
@@ -41,7 +46,8 @@ pub(crate) fn resolve_query_from(
         if remaining.is_zero() {
             return Err(transient_incomplete_timeout(deadline, &aggregate, last_incomplete).into());
         }
-        match observe(observation_deadline(request)).and_then(|observed| {
+        let attempt_deadline = observation_deadline(request);
+        match observe(attempt_deadline).and_then(|observed| {
             resolve_observed_attempt(adapter, query, observed, request, &mut aggregate)
         }) {
             Ok(mut resolution) => {
@@ -56,7 +62,7 @@ pub(crate) fn resolve_query_from(
                 {
                     last_incomplete = Some(incomplete_evidence(&resolution));
                     aggregate.merge_attempt(&resolution.stats);
-                    if deadline.is_expired() {
+                    if deadline.is_expired() || attempt_deadline.is_expired() {
                         return Err(transient_incomplete_timeout(
                             deadline,
                             &aggregate,
