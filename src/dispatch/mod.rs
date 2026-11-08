@@ -8,6 +8,7 @@ mod notifications;
 mod observation;
 mod overlay_skipped;
 mod parse;
+mod scope_end;
 mod session;
 pub(crate) mod system;
 mod trace;
@@ -28,6 +29,9 @@ use agent_desktop_core::{
 use serde_json::Value;
 
 use crate::cli::Commands;
+use crate::command_policy::CommandEffect;
+
+pub(crate) use disposition::pre_dispatch_error;
 
 pub(crate) fn dispatch(
     mut cmd: Commands,
@@ -35,31 +39,35 @@ pub(crate) fn dispatch(
     permission_report: &PermissionReport,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    let read_only = !cmd.is_mutating();
+    let effect = CommandEffect::of(&cmd);
     let stdin = crate::cli_args::stdin::input(&mut cmd).is_some();
-    let result = dispatch_command(cmd, adapter, permission_report, context)
-        .map_err(|error| disposition::settle_unknown_delivery(error, read_only));
+    let result = dispatch_command(cmd, effect, adapter, permission_report, context)
+        .map_err(|error| disposition::settle_unknown_delivery(error, effect));
     crate::cli_args::stdin::redact_result(result, stdin)
 }
 
 fn dispatch_command(
     cmd: Commands,
+    effect: CommandEffect,
     adapter: &dyn PlatformAdapter,
     permission_report: &PermissionReport,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     tracing::debug!("dispatch: {}", cmd.name());
-    let overlay_session =
-        if cmd.is_mutating() && context.is_headed() && context.cursor_overlay().is_enabled() {
-            context.session_id().map(str::to_owned)
-        } else {
-            None
-        };
+    let overlay_session = if effect != CommandEffect::ReadOnly
+        && context.is_headed()
+        && context.cursor_overlay().is_enabled()
+    {
+        context.session_id().map(str::to_owned)
+    } else {
+        None
+    };
+    let batch = matches!(&cmd, Commands::Batch(_));
     let scope = if matches!(&cmd, Commands::Session(args)
         if matches!(&args.action, crate::cli_args::session::SessionAction::End(_)))
     {
         context.session_end_scope()?
-    } else if cmd.is_mutating() {
+    } else if effect.sends_input() {
         context.mutating_command_scope(cmd.name())?
     } else {
         context.command_scope(cmd.name())?
@@ -138,6 +146,5 @@ fn dispatch_command(
     if let Some(session_id) = overlay_session {
         let _ = adapter.update_cursor_overlay(&CursorOverlayControl::show(session_id));
     }
-    scope.complete(&result)?;
-    result
+    scope_end::complete(scope, result, batch)
 }

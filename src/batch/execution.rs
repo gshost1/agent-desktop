@@ -5,7 +5,7 @@ use agent_desktop_core::{
 };
 use serde_json::{Value, json};
 
-use crate::{cli::Commands, cli_args::batch::BatchArgs};
+use crate::{cli::Commands, cli_args::batch::BatchArgs, command_policy::CommandEffect};
 
 use super::{
     bounded_json::serialized_size,
@@ -104,6 +104,7 @@ pub(super) fn execute(
             .with_event_baseline(current_baseline)
             .with_notification_seed(current_notification);
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
+        let effect = CommandEffect::of(&command);
         let entry = super::result_entry::completed_entry(
             index,
             &commands[index].name,
@@ -113,6 +114,7 @@ pub(super) fn execute(
         let (entry, oversized) = super::result_entry::bounded_completed_entry(
             index,
             &commands[index].name,
+            effect,
             entry,
             results_bytes,
         );

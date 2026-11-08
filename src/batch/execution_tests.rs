@@ -207,12 +207,42 @@ fn entry_count_and_output_are_bounded() {
             "retry": "unsafe"
         }
     }));
-    let (entry, oversized) = bounded_entry(0, "snapshot", huge, 0);
+    let (entry, oversized) = bounded_entry(0, "click", CommandEffect::AppInput, huge, 0);
     assert!(oversized);
     assert!(serialized_size(&entry) < super::super::result_entry::OUTPUT_METADATA_RESERVE);
     assert_eq!(
         entry["error"]["disposition"]["delivery"],
         "delivered_verified"
+    );
+    assert_eq!(entry["error"]["disposition"]["retry"], "unsafe");
+}
+
+#[test]
+fn an_oversized_entry_that_sends_no_input_is_not_delivered() {
+    for (command, effect) in [
+        ("snapshot", CommandEffect::ReadOnly),
+        ("screenshot", CommandEffect::LocalWrite),
+    ] {
+        let huge = Ok(json!({ "payload": "x".repeat(MAX_BATCH_OUTPUT_BYTES) }));
+
+        let (entry, oversized) = bounded_entry(0, command, effect, huge, 0);
+
+        assert!(oversized);
+        assert_eq!(entry["error"]["disposition"]["delivery"], "not_delivered");
+        assert_eq!(entry["error"]["disposition"]["retry"], "safe");
+    }
+}
+
+#[test]
+fn an_oversized_successful_action_without_a_report_is_delivered_unverified() {
+    let huge = Ok(json!({ "payload": "x".repeat(MAX_BATCH_OUTPUT_BYTES) }));
+
+    let (entry, oversized) = bounded_entry(0, "launch", CommandEffect::AppInput, huge, 0);
+
+    assert!(oversized);
+    assert_eq!(
+        entry["error"]["disposition"]["delivery"],
+        "delivered_unverified"
     );
     assert_eq!(entry["error"]["disposition"]["retry"], "unsafe");
 }
