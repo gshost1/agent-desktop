@@ -86,7 +86,7 @@ mod forced_reads {
     use std::collections::VecDeque;
 
     thread_local! {
-        static READS: RefCell<(VecDeque<bool>, usize)> = RefCell::new((VecDeque::new(), 0));
+        static READS: RefCell<(VecDeque<bool>, usize)> = const { RefCell::new((VecDeque::new(), 0)) };
     }
 
     pub(super) fn script(reads: &[bool]) {
