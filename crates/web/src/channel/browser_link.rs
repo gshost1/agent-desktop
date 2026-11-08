@@ -43,9 +43,9 @@ impl BrowserLink {
             .map(|folder| folder.path.as_path())
     }
 
-    /// Whether an action that may start a download must wait for it to
-    /// begin before the connection closes: only when the folder lasts only as
-    /// long as the connection.
+    /// Whether an action that may start a download must let it settle before
+    /// the connection closes: only when the folder lasts only as long as the
+    /// connection.
     pub(crate) fn holds_downloads_open(&self) -> bool {
         self.guid_folder().is_some()
     }

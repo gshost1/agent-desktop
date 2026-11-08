@@ -156,6 +156,17 @@ impl Bench {
         adapter: &WebChannelAdapter<HeadlessPlatform>,
         port: u16,
     ) -> Duration {
+        self.click_named(adapter, port, "Download report")
+    }
+
+    /// Opens the page, snapshots it and clicks the element named `name`.
+    /// Returns how long the click itself took.
+    pub fn click_named(
+        &self,
+        adapter: &WebChannelAdapter<HeadlessPlatform>,
+        port: u16,
+        name: &str,
+    ) -> Duration {
         let window = self.window();
         adapter
             .open_url(&OpenUrlRequest {
@@ -178,7 +189,7 @@ impl Bench {
             .unwrap()
             .into_accessibility_tree()
             .unwrap();
-        let link = find(&tree, "Download report").expect("the page shows its download link");
+        let link = find(&tree, name).expect("the page shows the element");
         let entry = RefEntry {
             process: RefProcess {
                 pid: ProcessId::new(PID),
@@ -254,9 +265,16 @@ pub fn deadline() -> Deadline {
     Deadline::after(10_000).unwrap()
 }
 
-/// Serves a page linking to `/report.csv`, which arrives as an attachment;
-/// the body comes `body_delay` after the headers.
+/// Serves a page linking to `/report.csv`, which arrives as an attachment,
+/// next to a button that does nothing; the body comes `body_delay` after the
+/// headers.
 pub fn serve(body_delay: Duration) -> u16 {
+    serve_with(Duration::ZERO, body_delay)
+}
+
+/// [`serve`] with the attachment's headers sent `header_delay` after the
+/// request, like a server that builds the file before it answers.
+pub fn serve_with(header_delay: Duration, body_delay: Duration) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
@@ -272,6 +290,7 @@ pub fn serve(body_delay: Duration) -> u16 {
                     }
                 }
                 if request.starts_with(b"GET /report.csv") {
+                    std::thread::sleep(header_delay);
                     let head = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/csv\r\nContent-Disposition: attachment; filename=\"report.csv\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                         CSV.len()
@@ -280,7 +299,7 @@ pub fn serve(body_delay: Duration) -> u16 {
                     std::thread::sleep(body_delay);
                     let _ = stream.write_all(CSV.as_bytes());
                 } else {
-                    let page = r#"<!doctype html><title>Reports</title><a href="/report.csv">Download report</a>"#;
+                    let page = r#"<!doctype html><title>Reports</title><a href="/report.csv">Download report</a><button>Nothing</button>"#;
                     let head = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                         page.len()

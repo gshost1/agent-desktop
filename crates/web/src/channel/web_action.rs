@@ -5,6 +5,7 @@ use agent_desktop_core::{
 use serde_json::json;
 
 use super::browser_link::BrowserLink;
+use super::download::action_settle::watch_navigation;
 use super::web_channel_adapter::WebChannelAdapter;
 use super::web_handle::WebHandle;
 use crate::{
@@ -45,6 +46,11 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         let token = &handle.token;
         let result = self.with_required_link(&handle.process, deadline, |link| {
             let session = link.session(&token.target_id, deadline)?;
+            let settle = may_start_download(&request.action) && link.holds_downloads_open();
+            if settle && let Err(error) = watch_navigation(&mut link.connection, &session, deadline)
+            {
+                tracing::debug!(error = %error, "web action: page navigation events stay off");
+            }
             let mut target = WebTarget {
                 link,
                 session,
@@ -53,8 +59,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             };
             let result = run(&mut target, &request.action);
             if result.is_ok() {
-                let linger = may_start_download(&request.action) && link.holds_downloads_open();
-                let _ = self.note_downloads(link, linger, deadline);
+                let _ = self.note_downloads(link, settle, deadline);
             }
             result
         })?;

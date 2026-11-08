@@ -10,7 +10,7 @@ mod download_bench;
 use std::time::Duration;
 
 use agent_desktop_core::{DownloadScope, OpenUrlRequest, SystemOps};
-use download_bench::{Bench, CSV, assert_saved, deadline, serve};
+use download_bench::{Bench, CSV, assert_saved, deadline, serve, serve_with};
 
 #[test]
 #[ignore = "launches headless Chrome"]
@@ -90,4 +90,35 @@ fn open_url_on_a_file_url_records_the_download_for_a_later_wait() {
         .unwrap();
 
     assert_saved(&bench, &info.path, "report.csv", &["report.csv"]);
+}
+
+#[test]
+#[ignore = "launches headless Chrome"]
+fn a_download_whose_server_answers_late_still_lands_in_the_folder() {
+    let bench = Bench::new("dl-late", DownloadScope::Connection, &[]);
+    let port = serve_with(Duration::from_millis(1_000), Duration::ZERO);
+    let click = bench.click_download(&bench.adapter(), port);
+    std::thread::sleep(Duration::from_millis(1_500));
+
+    let info = bench
+        .adapter()
+        .wait_for_download(bench.process(), deadline())
+        .unwrap();
+
+    eprintln!("connection-scope click on a late download took {click:?}");
+    assert_saved(&bench, &info.path, "report.csv", &["report.csv"]);
+}
+
+#[test]
+#[ignore = "launches headless Chrome"]
+fn a_click_that_starts_nothing_settles_within_the_start_window() {
+    let bench = Bench::new("dl-nothing", DownloadScope::Connection, &[]);
+    let port = serve(Duration::ZERO);
+    let fastest = (0..3)
+        .map(|_| bench.click_named(&bench.adapter(), port, "Nothing"))
+        .min()
+        .unwrap();
+
+    eprintln!("connection-scope click that starts nothing took {fastest:?}");
+    assert!(fastest < Duration::from_millis(190), "{fastest:?}");
 }

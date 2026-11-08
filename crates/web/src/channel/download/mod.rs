@@ -1,3 +1,4 @@
+pub(crate) mod action_settle;
 pub(crate) mod download_behavior;
 pub(crate) mod download_event;
 pub(crate) mod download_failure;

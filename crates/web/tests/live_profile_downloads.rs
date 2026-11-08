@@ -93,3 +93,17 @@ fn a_click_and_a_wait_in_one_invocation_report_where_the_file_came_from() {
     );
     assert_saved(&bench, &info.path, "report.csv", &["report.csv"]);
 }
+
+#[test]
+#[ignore = "launches headless Chrome"]
+fn a_click_that_starts_nothing_does_not_wait() {
+    let bench = Bench::new("profile-nothing", DownloadScope::Profile, &[]);
+    let port = serve(Duration::ZERO);
+    let fastest = (0..3)
+        .map(|_| bench.click_named(&bench.adapter(), port, "Nothing"))
+        .min()
+        .unwrap();
+
+    eprintln!("profile-scope click that starts nothing took {fastest:?}");
+    assert!(fastest < Duration::from_millis(90), "{fastest:?}");
+}
