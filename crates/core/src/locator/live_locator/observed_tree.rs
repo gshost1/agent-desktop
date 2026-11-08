@@ -59,6 +59,28 @@ impl ObservedTree {
         self.channel.as_ref()
     }
 
+    /// Records that this observation read every node except the rows of list
+    /// and table containers, which it left unread on request. The tree stays
+    /// incomplete and never exhaustive; only a `--first` selection may answer
+    /// from it, with the first match outside those rows. The mark lives on the
+    /// roots, which an observation reaches only once its walk is over.
+    pub fn mark_rows_unread(&mut self) {
+        for root in &self.roots {
+            if let Some(node) = self.nodes.get_mut(*root as usize) {
+                node.completeness.rows_unread = true;
+            }
+        }
+    }
+
+    pub(crate) fn rows_unread(&self) -> bool {
+        !self.roots.is_empty()
+            && self.roots.iter().all(|root| {
+                self.nodes
+                    .get(*root as usize)
+                    .is_some_and(|node| node.completeness.rows_unread)
+            })
+    }
+
     /// Whether this observation read the whole window: complete, and with no
     /// container whose descendants it left unread. A capture proof and a
     /// tokenless resolution both rest on it, because both count evidence over

@@ -65,6 +65,7 @@ fn find_sheet(scene: &Scene, window: &str) -> RefEntry {
             count: false,
             nth: None,
             limit: None,
+            allow_partial: false,
         },
         timeout_ms: Some(10_000),
     };

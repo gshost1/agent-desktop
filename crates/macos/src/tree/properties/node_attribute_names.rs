@@ -85,11 +85,13 @@ mod imp {
     ) -> (i32, CFTypeRef) {
         ATTRIBUTE_NAMES.with(|names| {
             names.with_array(mask, |array| {
-                crate::tree::properties::ax_ipc::copy_multiple_attribute_values(
-                    element,
-                    array.as_concrete_TypeRef(),
-                    deadline,
-                )
+                crate::tree::read_recovery::read_owned(deadline, || {
+                    crate::tree::properties::ax_ipc::copy_multiple_attribute_values(
+                        element,
+                        array.as_concrete_TypeRef(),
+                        deadline,
+                    )
+                })
             })
         })
     }
