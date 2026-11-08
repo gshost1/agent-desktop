@@ -76,6 +76,7 @@ pub(crate) fn tree(
         stats: LocatorStats::default(),
         structurally_complete,
         logical_depths,
+        channel: None,
     }
 }
 
