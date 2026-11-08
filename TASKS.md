@@ -48,7 +48,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 10 | ACTION-1 | Pre-dispatch phase of a ref action | core `ref_action/ref_action_wait.rs:97-106`, `ref_action_single.rs:29-52`, `actions/headed_focus.rs:14` | lease timeout, post-lease deadline, headed focus failure and strict-trace failure before dispatch report `delivery: unknown`, `retry: unknown`, no recovery, and auto-wait stops early | – | B | C | #598 / PR #602 (preflight only) | [#10](https://github.com/gshost1/agent-desktop/pull/10) merged |
 | 11 | REFS-2 | Capture verdict (`unique_at_capture: bool`) | core `refs/`, `tree/` capture proof | a capture that ran out of time or left a field unread fails later as AMBIGUOUS_TARGET `identity_not_unique`, retryable false; right advice is "retake" | – | B | C | none (#442 introduced) | [#14](https://github.com/gshost1/agent-desktop/pull/14) draft |
 | 12 | SURFACE-1 | Closed-menu wait phase | core `commands/wait*`, linux surface wait, mac/win menu wait | mac/win accept the first "closed" read, so `wait --menu-closed` right after the opener returns before the menu appears; Linux guard (bool + 2 s file stamp) misses raw `mouse-click`/`drag` and holds 2 s after an item click | up to 2 s per wait on Linux | B | C code, S mac/win timing | PR #291 (Linux-only fix) | [#18](https://github.com/gshost1/agent-desktop/pull/18) draft |
-| 13 | REFS-4 | Resolve error triple (code, complete, retryable) | core `ref_action/ref_action_poll.rs`, `refs/` | pre-lease poll stops on STALE_REF complete=true and ignores retryable=true; a reordering list yields final `saved_ref_absent` for a live element | – | B | C path, S rate | none | [#17](https://github.com/gshost1/agent-desktop/pull/17) |
+| 13 | REFS-4 | Resolve error triple (code, complete, retryable) | core `ref_action/ref_action_poll.rs`, `refs/` | pre-lease poll stops on STALE_REF complete=true and ignores retryable=true; a reordering list yields final `saved_ref_absent` for a live element | – | B | C path, S rate | none | [#17](https://github.com/gshost1/agent-desktop/pull/17) merged |
 | 14 | REFS-5 / ACTION-8 | Persist policy under an inherited deadline (#10) | core `snapshot/mod.rs` save, `commands/wait_selector.rs:301` | in batch, a complete snapshot/find/drill or a satisfied `--wait-for` fails TIMEOUT before the lock while a partial one is saved | – | B | C | register #10; #154, PRs #164, #372 related | [#11](https://github.com/gshost1/agent-desktop/pull/11) merged |
 | 15 | ACTION-3 / STATE-8 | Pre/post action artifacts (#17, #18) | core `ref_action/ref_action_wait.rs:91-106`, `commands/helpers.rs:148-161` | pre screenshot orphaned on lease failure; post screenshot taken after `--wait-for` on the spent deadline; a pair per auto-wait refusal | up to ~1.9 s of action budget per refusal | B | C | none (#91 introduced) | planned |
 | 16 | SURFACE-2 / ACTION-4 | Notification wait baseline (#19) | core `commands/wait_notification.rs` | counts never go down (dismissed-then-identical missed); baseline taken after the trigger; batch seeds only `--event` | mac: ~1 s per headed poll (opens NC) | B | C | register #19; #433 same class | [#16](https://github.com/gshost1/agent-desktop/pull/16) merged |
@@ -125,14 +125,14 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 7 | `fix/x11-release-guard-armed-state` | ADAPTERS-5 | [#15](https://github.com/gshost1/agent-desktop/pull/15) | **merged** 2026-11-07 as `4acf87bc` (rules 1+2); CI 26/26 green on head `a52c0589`, gates green (4552), review applied | ready (Linux only, no fork-only dependency) |
 | 8 | `fix/notification-wait-baseline` | SURFACE-2 / ACTION-4 | [#16](https://github.com/gshost1/agent-desktop/pull/16) | **merged** 2026-11-07 as `a3a1aedd` (rule 3: `main` moved by non-overlapping Linux files); CI 26/26 green on head `85b9c7c2`, gates green (4564) | ready (upstream register item 19, no issue) |
 | 9 | `fix/menu-close-wait-phase` | SURFACE-1 | [#18](https://github.com/gshost1/agent-desktop/pull/18) (draft) | head `5b6d3a07` (main `a3a1aedd`), gates green (4591), review applied; CI dispatched; draft until the Mac check | ready after Mac check (supersedes upstream `#291`'s Linux-only guard) |
-| 10 | `fix/resolve-error-classification` | REFS-4 | [#17](https://github.com/gshost1/agent-desktop/pull/17) | open; head `ebe44ae0`; CI red on two wall-clock tests on the macOS runner (unrelated, fixed by #19) and one rustup download failure; will merge `main` after #19 and re-run CI | ready (when merged; no fork-only dependency) |
+| 10 | `fix/resolve-error-classification` | REFS-4 | [#17](https://github.com/gshost1/agent-desktop/pull/17) | **merged** 2026-11-08 as `704722ca` (rules 1+2); CI 26/26 on head `8f3b3215`, gates green (4585), 3 review rounds | ready (no fork-only dependency) |
 | 11 | `test/wait-timing-budgets` | CI flakes | [#19](https://github.com/gshost1/agent-desktop/pull/19) | **merged** 2026-11-07 as `f969adc8` (rules 1+2); CI 26/26 on head `686ad47b` | fork-only (test budgets) |
 
 ## Needs Mac verification
 
-- PR #18 (SURFACE-1): `crates/macos/src/system/{adapter,wait}.rs`. On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then right-click a control, run `agent-desktop wait --menu-closed --app <app>` while the menu is open (returns only after it closes), and with no menu open (returns closed after about 1.5 s).
+- PR #18 (SURFACE-1, draft): `crates/macos/src/system/{adapter,wait}.rs`. CI on `5b6d3a07` failed macOS clippy (`missing_const_for_thread_local` in the test seam, fixed in `832c091c`) and one Windows ARM64 live Start-menu test outside this PR; re-run pending. On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then right-click a control, run `agent-desktop wait --menu-closed --app <app>` while the menu is open (returns only after it closes), and with no menu open (returns closed after about 1.5 s).
 
-- PR #14 (REFS-2): `crates/macos/src/tree/query/mod.rs` and two macOS test files changed. CI's macOS `Test` job compiles and runs them; a Mac dogfood is optional. On the Mac: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi` on the branch.
+- PR #14 (REFS-2, draft, needs-issue-first): `crates/macos/src/tree/query/mod.rs` and two macOS test files. CI 30/30 green on `99f7bea6`, which compiled and ran them; the branch is being merged with `main` (conflicts with #10, #11, #17). On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then `agent-desktop snapshot --app <a large app> --timeout-ms 200` until it reports `identity_unproven`, act on one of its refs and confirm `STALE_REF` `identity_unproven` / `capture_incomplete` with `retryable: false` (not `AMBIGUOUS_TARGET`); and confirm a ref with an identical twin still returns `AMBIGUOUS_TARGET` `identity_not_unique`.
 
 ## Needs Windows verification
 
@@ -226,6 +226,34 @@ PR #1's first body (2026-11-07) mentioned the upstream author with a bare @-hand
 Both were removed within a minute, but GitHub had already notified the author and recorded a cross-reference on
 upstream `#602`'s timeline; that event cannot be removed from the fork side. Upstream policy now: nothing goes to
 vercel-labs, references as inline code only.
+
+## Remaining work plan (2026-11-08)
+
+Every open row above code clarity has one disposition:
+
+- **Wave 1 (writers running):** trace-test `/tmp` leak (own PR); BINARY-5/1/4/6/7 (dispatch delivery settle, one
+  machine); LIFECYCLE-9 (Linux stale restore, A).
+- **Next waves, fixable on this laptop (core, binary, Linux, FFI):** SURFACE-3 (A, contract change: draft,
+  needs-issue-first); ACTION-3/STATE-8; BINARY-2; BINARY-3; LIFECYCLE-6; LIFECYCLE-3; LIFECYCLE-7 (core part);
+  LIFECYCLE-8; LIFECYCLE-10; REFS-3; REFS-7; STATE-1; STATE-4/BINARY-9; STATE-5/BINARY-10; STATE-7;
+  STATE-12/BINARY-11 + STATE-13 + STATE-16 (overlay show/hide, one machine); STATE-15; STATE-10; STATE-17;
+  SURFACE-5; SURFACE-9; ACTION-12; ACTION-13; LIFECYCLE-4; ACTION-7; ACTION-10; ADAPTERS-7; ADAPTERS-8;
+  ADAPTERS-10; LIFECYCLE-11; ACTION-9.
+- **Mac/Windows drafts (written here, compiled and unit-tested by CI, verified on the device):** SURFACE-4 (win),
+  SURFACE-10 (mac), ADAPTERS-4 (mac), ADAPTERS-1 (mac), LIFECYCLE-1 (win), LIFECYCLE-2 (mac), STATE-14 (mac),
+  SURFACE-6 (mac), SURFACE-7 (mac), ADAPTERS-9 (win), SURFACE-12 (mac).
+- **Carry an open upstream PR instead of rewriting:** REFS-1 (`#588`), SURFACE-8 (`#549`), ACTION-5 (`#606`),
+  LIFECYCLE-5 (`#582`, mac), STATE-6 (`#498`).
+- **Open, blocked on a live probe (evidence first, no blind fix):** ADAPTERS-2 and BINARY-12 (Mac), ADAPTERS-3
+  (Java ATK app on Linux), ADAPTERS-6 (Mutter closed-session error name), LIFECYCLE-12 (Mac), BINARY-8 (silent bus),
+  REFS-6 (measurement).
+- **Owned elsewhere:** MAC-SAVE-1 (Mac speed session).
+- **Accepted as D / docs only:** STATE-18 (address-keyed FFI registry, misuse only: document), STATE-11 and ACTION-6
+  (refactors with no reachable illegal transition left after #1/#10).
+
+Pace so far: about 9 merged PRs in one long day with 3 writers in parallel (each PR 1 to 3 review rounds plus CI).
+The fixable-here list (about 32 rows, roughly 22 PRs after grouping) plus 11 drafts and 5 carries is about 2 more
+working days at that pace; the probe-blocked rows need the Mac or a Java app on Linux and will stay open until then.
 
 ## Upstream policy (George, 2026-11-07)
 
