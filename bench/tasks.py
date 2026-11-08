@@ -19,7 +19,7 @@ def sh(*args, timeout=30):
 
 
 MACCTL = Path(__file__).resolve().parent / "out" / "macctl"
-BENCH_DOC_PREFIXES = ["Untitled", "note-", "sp-"]
+BENCH_DOC_PREFIXES = ["Untitled", "note-", "sp-", str(BENCH_DIR)]
 BENCH_FINDER_PREFIXES = ["t3-", "bench-", "agent-desktop-bench", "probe-", "savepath-"]
 
 
@@ -38,7 +38,7 @@ def macctl(*args, timeout=20):
 
 def quit_app(name):
     if name == "TextEdit":
-        macctl("close-discard", "TextEdit", *BENCH_DOC_PREFIXES)
+        macctl("close-discard", "TextEdit", *BENCH_DOC_PREFIXES, timeout=60)
     macctl("quit", name)
 
 

@@ -204,7 +204,6 @@ def run_measured(run_id, task_key, config, model, effort):
         ok, why = False, f"forbidden command {forbidden[0]}; {why}"
     if timed_out:
         ok, why = False, f"timed out; {why}"
-    task.cleanup()
     summary.update({"run_id": run_id, "task": task_key, "config": config, "model": model, "tree": TREE,
                     "effort": effort or "default", "success": ok, "verify": why})
     summary.update(validity(stderr, rdir))
@@ -216,6 +215,10 @@ def run_measured(run_id, task_key, config, model, effort):
           f"calls={summary['api_calls']:3} in={summary['input_total']:8} out={summary['output_tokens']:6} "
           f"cli={summary['cli_s']:5.1f}s free={summary['disk_free_gb']:.0f}G"
           f"{'' if summary['valid'] else ' INVALID ' + summary['invalid_reason']} | {why}", flush=True)
+    try:
+        task.cleanup()
+    except Exception as exc:
+        print(f"{run_id} cleanup failed after the row was written: {exc}", flush=True)
     return summary
 
 
