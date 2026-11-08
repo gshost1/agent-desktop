@@ -10,6 +10,10 @@
 #   NT4  dismiss-all-notifications (scoped by app) clears remaining rows, verified by re-list
 
 note "Notifications: real Notification Center lifecycle"
+if private_skip_enabled; then
+    private_skip "NT1-NT4 notifications lifecycle (osascript posts, reads Notification Center)"
+    return 0
+fi
 
 nc_prefix="AgentDesktopE2E-$$"
 nc_title_a="$nc_prefix-alpha"
