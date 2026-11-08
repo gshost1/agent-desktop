@@ -298,6 +298,7 @@ fn retryable_seed_inventory_failure_is_preserved_in_timeout_evidence() {
 
 #[test]
 fn failed_inventory_poll_never_diffs_against_an_empty_baseline() {
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let adapter = FailingInventoryAdapter {
         calls: std::sync::Mutex::new(0),
     };
