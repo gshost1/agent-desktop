@@ -41,7 +41,7 @@ Global flags work before or after the command name, so `agent-desktop --headed c
 
 **Results.**
 
-- `--wait-for` succeeds with snapshot data (`snapshot_id`, `ref_count`, `tree`, and so on) plus `elapsed_ms` and `matched_selector`. For an action, the action's own report moves under `data.after_action`.
+- `--wait-for` succeeds with snapshot data (`snapshot_id`, `ref_count`, `tree`, and so on) plus `elapsed_ms` and `matched_selector`. When the saved snapshot was cut to fit the 1 MB refmap (`refmap_capped: true`), `"match_cut": true` means no node in the returned tree matches the selector, because the match lay past the cut. For an action, the action's own report moves under `data.after_action`.
 - `--wait-for-gone` succeeds with `matched_selector`, `gone: true`, `target_absent: true`, and `elapsed_ms`, with the action's report under `after_action`.
 - On expiry the command fails with `TIMEOUT`, `details.kind: "wait_timeout"`, `details.selector`, and `details.timeout_ms`. After an action, `details.after_action` holds its report, and the error keeps the action's own delivery disposition, so a timeout does not make the action safe to repeat.
 - If a ref action returns `delivery_uncertain`, `error.details.post_action_observation` records read-only evidence from the original process and its application-owned source surface or pinned window. Its [fields and outcomes](/desktop/json-output#post-action-observation) do not change the original error or unsafe retry disposition. The wait uses `--wait-timeout` separately from the action timeout.

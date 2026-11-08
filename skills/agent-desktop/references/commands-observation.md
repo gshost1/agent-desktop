@@ -43,6 +43,8 @@ Choose the scope:
 
 `data.complete` is on every snapshot. When the observation budget runs out, the command still succeeds with `"complete": false`, `"truncated": true`, `"nodes_observed"`, and the tree it saw. Each node with cut descendants carries `"subtree_truncated": true`. Read `complete`; do not wait for a `TIMEOUT`. Raise `--timeout-ms` (default 3000) or drill with `--root` to finish the tree. A `--root` drill is all or nothing: an incomplete read returns `TIMEOUT`.
 
+A snapshot also comes back partial when its refs would not fit the 1 MB refmap a snapshot stores. It then carries `"refmap_capped": true` beside `"complete": false`. The tree keeps every node, in document order, up to the first ref that did not fit, and ends there; each node above that point carries `"subtree_truncated": true`. Every ref left in the tree is saved with the snapshot and resolves like any other ref. A larger `--timeout-ms` does not change this cut. Shrink the tree instead: add `-i`, lower `--max-depth`, or reach the rest with `find` or `--skeleton` and then `--root`. A `--root` drill whose refs would push the stored refmap past 1 MB changes nothing and fails with `INTERNAL`.
+
 `"identity_unproven": true` means the snapshot could not read the whole window in time to prove its refs. On Windows and Linux, and on macOS for an element with no address, those refs fail with `identity_not_unique`, so retake the snapshot with a larger `--timeout-ms` before acting.
 
 A cold Chromium or Electron app can take 10 to 25 seconds to expose its web tree. If a fresh snapshot comes back thin, raise `--timeout-ms` and snapshot again.

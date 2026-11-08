@@ -101,7 +101,7 @@ agent-desktop wait --text Calculator --app gnome-calculator --timeout 3000
 }
 ```
 
-`ref` and `role` describe the first match, and `ref` is `null` when that node has no ref. The wait saves its snapshot, so `snapshot_id` is fresh and acts like any snapshot. When an app has several eligible windows, such as a document and its save dialog, the wait returns `AMBIGUOUS_TARGET` before it checks any text: wait for the dialog with `--window` instead.
+`ref` and `role` describe the first match, and `ref` is `null` when that node has no ref. When the saved snapshot's refs would not fit in 1 MB, the snapshot is cut and the result adds `"complete": false` and `"refmap_capped": true`. `"match_cut": true` then means the first match lies past the cut, so `ref` is `null` even if the node had a ref. With `--count`, `count` is what the complete read found and `stored_count` is how many of those matches the saved snapshot holds. The wait saves its snapshot, so `snapshot_id` is fresh and acts like any snapshot. When an app has several eligible windows, such as a document and its save dialog, the wait returns `AMBIGUOUS_TARGET` before it checks any text: wait for the dialog with `--window` instead.
 
 ### Menu
 
