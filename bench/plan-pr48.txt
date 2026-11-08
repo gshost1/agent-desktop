@@ -1,0 +1,4 @@
+# n=3 Finder for the skill recipes #48 (4fbb4e43, on #24 v2 df5d379e) against #24 v2 alone and fork main ec3add89, rotated.
+s48a finder:a:claude-opus-5-5:bench/out/wt-pr48 finder:a:claude-opus-5-5:bench/out/wt-pr24v2 finder:a:claude-opus-5-5:bench/out/wt-main
+s48b finder:a:claude-opus-5-5:bench/out/wt-pr24v2 finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr48
+s48c finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr48 finder:a:claude-opus-5-5:bench/out/wt-pr24v2
