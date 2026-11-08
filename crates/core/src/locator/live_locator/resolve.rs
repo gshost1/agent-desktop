@@ -196,7 +196,7 @@ fn resolve_observed_attempt(
         },
         ..*request
     };
-    let (mut resolution, tree) = super::evaluate::evaluate_locator_tree_in(
+    let mut resolution = super::evaluate::evaluate_locator_tree_in(
         tree,
         scope.as_ref(),
         query,
@@ -204,7 +204,7 @@ fn resolve_observed_attempt(
     )?;
     if request.materialization == super::LocatorMaterialization::SelectedMatches {
         if let Err(error) =
-            super::hydrate::selected_matches(adapter, query, request, &mut resolution, &tree)
+            super::hydrate::selected_matches(adapter, query, request, &mut resolution)
         {
             aggregate.merge_attempt(&resolution.stats);
             return Err(error);

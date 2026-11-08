@@ -9,7 +9,8 @@ pub(crate) fn enrich_with_process_state(
     err: AdapterError,
     deadline: crate::Deadline,
 ) -> AdapterError {
-    if !matches!(err.code, ErrorCode::StaleRef | ErrorCode::AppNotFound) {
+    if !matches!(err.code, ErrorCode::StaleRef | ErrorCode::AppNotFound) || refused_at_capture(&err)
+    {
         return err;
     }
     let Some(process) = entry.process.identity() else {
@@ -40,6 +41,17 @@ pub(crate) fn enrich_with_process_state(
             .with_disposition(err.disposition);
     }
     attach_process_state_detail(err, state)
+}
+
+/// A refusal the capture verdict made before anything was read from the
+/// application. The process state says nothing about it, so it keeps its own
+/// kind, reason and recovery.
+fn refused_at_capture(err: &AdapterError) -> bool {
+    err.details
+        .as_ref()
+        .and_then(|details| details.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        == Some("identity_unproven")
 }
 
 fn process_identity_matches(

@@ -61,3 +61,33 @@ fn a_verdict_this_build_does_not_know_is_rejected() {
     let parsed: Result<CaptureVerdict, _> = serde_json::from_str("1");
     assert!(parsed.is_err());
 }
+
+/// The verdict names live under `capture` and the boolean only under the key
+/// older refmaps wrote it with, so neither format is read as the other.
+#[test]
+fn each_key_accepts_only_its_own_format() {
+    let (ref_id, json) = refmap_json(CaptureVerdict::Unique);
+
+    let flag_as_verdict = json.replace("\"capture\":\"unique\"", "\"capture\":true");
+    assert!(serde_json::from_str::<RefMap>(&flag_as_verdict).is_err());
+
+    let verdict_as_flag =
+        json.replace("\"capture\":\"unique\"", "\"unique_at_capture\":\"unique\"");
+    assert!(serde_json::from_str::<RefMap>(&verdict_as_flag).is_err());
+
+    let both = json.replace(
+        "\"capture\":\"unique\"",
+        "\"capture\":\"incomplete\",\"unique_at_capture\":true",
+    );
+    assert_eq!(load(&both, &ref_id), CaptureVerdict::Incomplete);
+}
+
+/// An entry built without any capture judging it claims no twin: it is
+/// `Unknown`, which refuses without promising a new snapshot will help.
+#[test]
+fn an_entry_no_capture_judged_is_unknown() {
+    assert_eq!(
+        crate::RefEntryIdentity::default().capture,
+        CaptureVerdict::Unknown
+    );
+}

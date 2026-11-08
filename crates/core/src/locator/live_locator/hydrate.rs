@@ -30,10 +30,8 @@ pub(super) fn selected_matches(
     query: &LocatorQuery,
     request: &super::LocatorResolveRequest,
     resolution: &mut LocatorResolution,
-    observed: &ObservedTree,
 ) -> Result<(), AppError> {
     let deadline = request.deadline;
-    let proof = crate::refs::ref_capture_proof::CaptureProof::new(observed);
     let mut refmap = RefMap::new();
     for matched in &mut resolution.matches {
         ensure_remaining(deadline)?;
@@ -41,8 +39,7 @@ pub(super) fn selected_matches(
         let bounds_space = preliminary.geometry.bounds_space.unwrap_or_default();
         let has_identity = crate::refs::ref_identity::has_meaningful_identity(&preliminary);
         let has_bounds = preliminary.geometry.bounds_hash.is_some();
-        let index = matched.document_order as usize;
-        let proven = proof.verdict(&preliminary, index).is_unique();
+        let proven = preliminary.identity.capture.is_unique();
         tracing::debug!(
             role = preliminary.identity.role,
             path_len = preliminary.scope.path.len(),

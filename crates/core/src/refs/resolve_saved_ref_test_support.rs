@@ -209,6 +209,17 @@ pub(super) fn capture_observed(
         .expect("the captured element has a ref")
 }
 
+/// Allocates `root` with no capture proof at all, the way an entry no capture
+/// judged is built.
+pub(super) fn capture_unjudged(root: AccessibilityNode, name: &str) -> RefEntry {
+    let mut refmap = RefMap::new();
+    allocate_refs(root, &mut refmap, &config_without_uniqueness()).unwrap();
+    (1..=refmap.len())
+        .filter_map(|index| refmap.get(&format!("@e{index}")).cloned())
+        .find(|entry| entry.identity.name.as_deref() == Some(name))
+        .expect("the element has a ref")
+}
+
 fn config_without_uniqueness() -> RefAllocConfig<'static> {
     RefAllocConfig {
         options: RefAllocOptions {

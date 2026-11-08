@@ -248,7 +248,7 @@ fn blank_secure_entry(fixture: &HostedFixture) -> RefEntry {
             value: None,
             description: None,
             native_id: None,
-            capture: agent_desktop_core::CaptureVerdict::Ambiguous,
+            capture: agent_desktop_core::CaptureVerdict::Unknown,
         },
         geometry: agent_desktop_core::RefGeometry {
             bounds_space: None,

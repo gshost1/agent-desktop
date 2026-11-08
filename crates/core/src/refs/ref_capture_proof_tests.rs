@@ -12,11 +12,11 @@ use crate::{
     AccessibilityNode, CaptureVerdict, ElementIdentifier, IdentifierKind, RefMap, WindowInfo,
 };
 
-fn named(role: &str, name: &str) -> AccessibilityNode {
+pub(super) fn named(role: &str, name: &str) -> AccessibilityNode {
     crate::adapter::minimal_accessibility_node(role, name)
 }
 
-fn window(children: Vec<AccessibilityNode>) -> AccessibilityNode {
+pub(super) fn window(children: Vec<AccessibilityNode>) -> AccessibilityNode {
     let mut root = named("window", "Fixture");
     root.children = children;
     root
@@ -59,7 +59,7 @@ fn config<'a>(capture: &'a CaptureProof<'a>) -> RefAllocConfig<'a> {
     }
 }
 
-fn verdicts(root: AccessibilityNode, observed: &ObservedTree) -> Vec<CaptureVerdict> {
+pub(super) fn verdicts(root: AccessibilityNode, observed: &ObservedTree) -> Vec<CaptureVerdict> {
     let proof = CaptureProof::new(observed);
     let mut refmap = RefMap::new();
     allocate_refs(root, &mut refmap, &config(&proof)).unwrap();
@@ -76,7 +76,7 @@ fn flags(root: AccessibilityNode, observed: &ObservedTree) -> Vec<bool> {
         .collect()
 }
 
-fn observed_from(root: AccessibilityNode) -> ObservedTree {
+pub(super) fn observed_from(root: AccessibilityNode) -> ObservedTree {
     let window = fixture_window();
     crate::adapter::observed_tree(&ObservationRoot::Window(&window), root)
         .expect("the fixture observes")
@@ -173,37 +173,6 @@ fn a_complete_observation_marks_the_entry_it_found_once() {
     let observed = observed_from(root.clone());
 
     assert_eq!(flags(root, &observed), [false, false, true]);
-}
-
-/// Each way a capture fails to prove a ref is recorded as itself: a twin it
-/// counted, a read that did not cover the whole window, and a field another
-/// element left unread, so resolution can refuse each with its own recovery.
-#[test]
-fn a_capture_records_why_it_could_not_prove_a_ref() {
-    use CaptureVerdict::{Ambiguous, Incomplete, Unique, Unknown};
-    let twinned = window(vec![
-        named("button", "Send"),
-        named("button", "Send"),
-        named("button", "Cancel"),
-    ]);
-    assert_eq!(
-        verdicts(twinned.clone(), &observed_from(twinned)),
-        [Ambiguous, Ambiguous, Unique]
-    );
-
-    let mut hidden = named("scrollarea", "Feed");
-    hidden.children_count = Some(2);
-    let cut = window(vec![named("button", "Cancel"), hidden]);
-    assert_eq!(verdicts(cut.clone(), &observed_from(cut)), [Incomplete]);
-
-    let unread = window(vec![
-        named("button", "Cancel"),
-        named("button", "Other"),
-        named("link", "Help"),
-    ]);
-    let mut observed = observed_from(unread.clone());
-    observed.nodes[2].evidence.name = LocatorField::Unknown;
-    assert_eq!(verdicts(unread, &observed), [Unknown, Unknown, Unique]);
 }
 
 #[test]

@@ -35,7 +35,7 @@ pub(crate) fn ref_entry_from_node(
                 .native_id
                 .clone()
                 .filter(|id| !id.value.trim().is_empty()),
-            capture: crate::CaptureVerdict::Ambiguous,
+            capture: crate::CaptureVerdict::Unknown,
         },
         geometry: crate::RefGeometry {
             bounds,
@@ -266,7 +266,7 @@ impl<'a> AllocationPlan<'a> {
 
     fn verdict(&self, entry: &RefEntry, path: &[usize]) -> crate::CaptureVerdict {
         self.capture
-            .map_or(crate::CaptureVerdict::Ambiguous, |capture| {
+            .map_or(crate::CaptureVerdict::Unknown, |capture| {
                 capture.verdict_at(entry, path)
             })
     }

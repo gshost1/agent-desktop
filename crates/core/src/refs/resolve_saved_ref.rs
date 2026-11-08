@@ -355,7 +355,7 @@ fn positional_anchor(
     );
     anchor.identity = crate::RefEntryIdentity {
         retained_object: entry.identity.retained_object.clone(),
-        capture: crate::CaptureVerdict::Ambiguous,
+        capture: crate::CaptureVerdict::Unknown,
         ..entry.identity.clone()
     };
     Ok(anchor)

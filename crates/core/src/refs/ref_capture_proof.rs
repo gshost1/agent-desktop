@@ -67,13 +67,10 @@ impl<'a> CaptureProof<'a> {
     /// allocation wrote it: the start node's own path, then child positions in
     /// the projection, which skips no child the observation kept even when the
     /// native indices have gaps. A path the observation does not hold cannot tie
-    /// the entry to a node, so its verdict is `Unknown`.
+    /// the entry to a node, so it is judged by what the observation could say.
     pub(crate) fn verdict_at(&self, entry: &RefEntry, path: &[usize]) -> CaptureVerdict {
-        if !self.whole_window {
-            return CaptureVerdict::Incomplete;
-        }
         let Some(mut index) = self.start else {
-            return CaptureVerdict::Unknown;
+            return self.untied();
         };
         let Some(prefix) = self
             .observed
@@ -81,10 +78,10 @@ impl<'a> CaptureProof<'a> {
             .get(index)
             .map(|node| node.path.as_slice())
         else {
-            return CaptureVerdict::Unknown;
+            return self.untied();
         };
         let Some(steps) = path.strip_prefix(prefix) else {
-            return CaptureVerdict::Unknown;
+            return self.untied();
         };
         for step in steps {
             match self
@@ -94,39 +91,46 @@ impl<'a> CaptureProof<'a> {
                 .and_then(|node| node.children.get(*step))
             {
                 Some(child) => index = *child as usize,
-                None => return CaptureVerdict::Unknown,
+                None => return self.untied(),
             }
         }
         self.verdict(entry, index)
     }
 
-    /// The verdict on `entry` at the node it was built from. It is `Unique`
-    /// only when the observation is a complete whole-window read, exactly one
-    /// of its nodes matches the entry's full predicate, that node is this one,
-    /// and no node leaves a recorded field unread. Two or more matches are
-    /// `Ambiguous` whatever else went unread, because that twin is certain.
+    /// The verdict on `entry` at the node it was built from. Matches are
+    /// counted first: another element matching the entry's full predicate is a
+    /// twin, `Ambiguous`, even in a partial read, because more reading cannot
+    /// remove it. Without one, a read that is not a complete whole-window read
+    /// is `Incomplete`. It is `Unique` only when this node is the one match and
+    /// no node leaves a recorded field unread, and `Unknown` otherwise.
     pub(crate) fn verdict(&self, entry: &RefEntry, index: usize) -> CaptureVerdict {
-        if !self.whole_window {
-            return CaptureVerdict::Incomplete;
-        }
         let predicate = FullPredicate::of_entry(entry);
         let fields = predicate.mask();
-        match self.buckets[fields as usize]
+        let matched = self.buckets[fields as usize]
             .get_or_init(|| count_nodes(self.observed, fields))
             .get(&key_of(&predicate))
-        {
+            .copied();
+        match matched {
             Some(None) => CaptureVerdict::Ambiguous,
-            Some(Some(found)) if *found == index => {
-                let unread = self.unread.iter().any(|(bits, live)| {
-                    bits & (fields | ROLE) != 0 && predicate.compare(live) == IdentityMatch::Unknown
-                });
-                if unread {
-                    CaptureVerdict::Unknown
-                } else {
-                    CaptureVerdict::Unique
-                }
-            }
+            Some(Some(found)) if found != index => CaptureVerdict::Ambiguous,
+            _ if !self.whole_window => CaptureVerdict::Incomplete,
+            Some(Some(_)) if !self.leaves_unread(&predicate, fields) => CaptureVerdict::Unique,
             _ => CaptureVerdict::Unknown,
+        }
+    }
+
+    fn leaves_unread(&self, predicate: &FullPredicate<'_>, fields: u8) -> bool {
+        self.unread.iter().any(|(bits, live)| {
+            bits & (fields | ROLE) != 0 && predicate.compare(live) == IdentityMatch::Unknown
+        })
+    }
+
+    /// The verdict on an entry the observation holds no node for.
+    fn untied(&self) -> CaptureVerdict {
+        if self.whole_window {
+            CaptureVerdict::Unknown
+        } else {
+            CaptureVerdict::Incomplete
         }
     }
 }
@@ -230,3 +234,7 @@ struct LiveKey<'a> {
 #[cfg(test)]
 #[path = "ref_capture_proof_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ref_capture_proof_verdict_tests.rs"]
+mod verdict_tests;

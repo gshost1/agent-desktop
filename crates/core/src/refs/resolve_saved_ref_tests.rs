@@ -1,7 +1,8 @@
 use std::sync::atomic::Ordering;
 
 use super::test_support::{
-    RuleAdapter, capture, capture_observed, entry, node, resolve, tree_with, window,
+    RuleAdapter, capture, capture_observed, capture_unjudged, entry, node, resolve, tree_with,
+    window,
 };
 use crate::locator::live_locator::LocatorField;
 use crate::response::output::ErrorPayload;
@@ -259,9 +260,10 @@ fn an_unproven_entry_is_never_landed_provisionally() {
     assert_eq!(adapter.counts(), (0, 0, 0, 0));
 }
 
-/// A capture that could not prove a ref is a stale ref a fresh snapshot can
-/// replace, not a twin: it names its reason, sends nothing, and its recovery
-/// asks for that fresh snapshot.
+/// A capture that could not prove a ref is a stale ref, not a twin: it names
+/// its reason and sends nothing. Only an incomplete read promises that a fresh
+/// snapshot can prove the ref, so only it carries the fresh-snapshot recovery;
+/// an unknown identity is stamped not retryable.
 fn assert_unproven(error: &AdapterError, reason: &str) {
     assert_eq!(error.code, ErrorCode::StaleRef, "{error:?}");
     let details = error.details.as_ref().expect("the refusal names its kind");
@@ -269,11 +271,17 @@ fn assert_unproven(error: &AdapterError, reason: &str) {
     assert_eq!(details["reason"], reason);
     assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
     let payload = ErrorPayload::from_app_error(&AppError::Adapter(error.clone()));
-    let recovery = payload
-        .recovery
-        .expect("retaking the snapshot is the recovery");
-    assert_eq!(recovery.strategy, "refresh_snapshot_then_retry_original");
-    assert!(recovery.requires_fresh_snapshot);
+    if reason == "capture_incomplete" {
+        assert!(details.get("retryable").is_none(), "{details}");
+        let recovery = payload
+            .recovery
+            .expect("retaking the snapshot is the recovery");
+        assert_eq!(recovery.strategy, "refresh_snapshot_then_retry_original");
+        assert!(recovery.requires_fresh_snapshot);
+    } else {
+        assert_eq!(details["retryable"], false);
+        assert!(payload.recovery.is_none(), "{:?}", payload.recovery);
+    }
 }
 
 #[test]
@@ -310,6 +318,20 @@ fn a_ref_whose_capture_left_a_recorded_field_unread_is_stale_not_a_twin() {
 
     let Err(error) = resolve(&adapter, &captured) else {
         panic!("a ref a sibling's unread name could twin is refused");
+    };
+
+    assert_unproven(&error, "capture_unknown");
+    assert_eq!(adapter.counts(), (0, 0, 0, 0));
+}
+
+#[test]
+fn a_ref_no_capture_judged_is_refused_without_promising_a_new_snapshot() {
+    let _guard = HomeGuard::new();
+    let unjudged = capture_unjudged(tree_with(vec![node("button", "Run")]), "Run");
+    let adapter = RuleAdapter::new(tree_with(vec![node("button", "Run")]));
+
+    let Err(error) = resolve(&adapter, &unjudged) else {
+        panic!("a ref no capture judged is refused");
     };
 
     assert_unproven(&error, "capture_unknown");

@@ -294,3 +294,28 @@ fn terminal_stale_ref_preserves_exited_and_crashed_process_details() {
         );
     }
 }
+
+/// A capture refusal read nothing from the application, so a hung process
+/// does not explain it: it keeps its kind, reason and recovery instead of
+/// becoming `APP_UNRESPONSIVE`, and the process is not probed for it.
+#[test]
+fn a_refusal_made_at_capture_is_not_rewritten_by_the_process_state() {
+    let adapter = UnresponsiveProcessAdapter {
+        probe_calls: AtomicU32::new(0),
+        inventory_calls: AtomicU32::new(0),
+    };
+    let mut unproven = entry();
+    unproven.identity.capture = crate::CaptureVerdict::Incomplete;
+    let refusal = crate::refs::resolve_errors::capture_refusal(&unproven)
+        .expect("an incomplete capture refuses the ref");
+
+    let error =
+        enrich_with_process_state(&adapter, &unproven, refusal, Deadline::standard().unwrap());
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    let details = error.details.expect("the refusal keeps its details");
+    assert_eq!(details["kind"], "identity_unproven");
+    assert_eq!(details["reason"], "capture_incomplete");
+    assert!(details.get("process_state").is_none(), "{details}");
+    assert_eq!(adapter.probe_calls.load(Ordering::SeqCst), 0);
+}

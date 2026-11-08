@@ -116,7 +116,7 @@ pub(crate) fn ref_entry(
             value: node.evidence.value.meaningful_string(),
             description: node.evidence.description.meaningful_string(),
             native_id: identifier,
-            capture: crate::CaptureVerdict::Ambiguous,
+            capture: crate::CaptureVerdict::Unknown,
         },
         geometry: crate::RefGeometry {
             bounds,
