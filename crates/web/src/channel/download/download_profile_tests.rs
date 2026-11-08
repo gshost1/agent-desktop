@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use agent_desktop_core::DownloadScope;
 use serde_json::{Value, json};
 
