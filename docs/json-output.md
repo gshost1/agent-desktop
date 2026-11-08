@@ -82,6 +82,10 @@ keeps `unknown`. Treat `unknown` as not safe to retry automatically: read
 `error.code` and the message, and choose a recovery strategy only when
 `disposition.retry` is `safe`.
 
+A `batch` body counts `total_entries`, `completed_entries` (every entry that ran,
+failed or not), `failed_entries` (completed entries that returned an error) and
+`not_started_entries`. The batch itself is `ok: true` while entries fail.
+
 A `batch` entry whose result does not fit the batch output limit is replaced by
 an `INVALID_ARGS` error with `details.result_omitted: true`. It keeps the
 entry's own disposition: the result's `data.disposition` or
@@ -95,7 +99,8 @@ entry has already run, so `details.batch` holds the batch body with each
 per-entry result, and `details.cause_details` keeps the trace error's own
 details. A body that would push the response past the batch output limit is
 left out: `details.result_omitted` is `true` and only `total_entries`,
-`completed_entries`, `not_started_entries` and `stopped` are kept. The
+`completed_entries`, `failed_entries`, `not_started_entries` and `stopped` are
+kept. The
 disposition is `not_delivered` when no entry can have delivered (each entry's
 disposition is `not_delivered`, or it is a successful command that sends no
 input), and `delivery_uncertain` otherwise. Any other command whose closing
