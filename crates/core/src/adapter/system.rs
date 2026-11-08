@@ -1,10 +1,11 @@
 use crate::{
     AdapterError, AdapterSession, AppInfo, CursorOverlayControl, Deadline,
     DismissAllNotificationsRequest, DismissNotificationRequest, ImageBuffer, InteractionLease,
-    InteractionPolicy, KeyCombo, NotificationActionRequest, NotificationFilter, NotificationInfo,
-    OperationReport, PermissionReport, PermissionState, ProcessIdentity, SessionAffinity,
-    SignalBaseline, SignalFilter, WindowInfo, WindowOp, actions::action_result::ActionResult,
-    system::display_info::DisplayInfo, system::screenshot_target::ScreenshotTarget,
+    InteractionPolicy, KeyCombo, MenuWait, NotificationActionRequest, NotificationFilter,
+    NotificationInfo, OperationReport, PermissionReport, PermissionState, ProcessIdentity,
+    SessionAffinity, SignalBaseline, SignalFilter, WindowInfo, WindowOp,
+    actions::action_result::ActionResult, system::display_info::DisplayInfo,
+    system::screenshot_target::ScreenshotTarget,
 };
 
 pub trait SystemOps: Send + Sync {
@@ -301,13 +302,25 @@ pub trait SystemOps: Send + Sync {
         )
     }
 
+    /// Polls the menu state of `process` and feeds each whole read to `wait`
+    /// until it is satisfied. The adapter reports reads; `wait` decides.
     fn wait_for_menu(
         &self,
         _process: ProcessIdentity,
-        _open: bool,
+        _wait: MenuWait,
         _deadline: Deadline,
     ) -> Result<(), AdapterError> {
         Err(AdapterError::not_supported("wait_for_menu"))
+    }
+
+    /// One whole read of whether `process` shows an open menu, with the same
+    /// detector `wait_for_menu` polls.
+    fn menu_open(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        Err(AdapterError::not_supported("menu_open"))
     }
 
     fn window_op(

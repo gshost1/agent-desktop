@@ -1,7 +1,7 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, ErrorCode, ProcessId, ProcessIdentity,
+    AdapterError, Deadline, DeliverySemantics, ErrorCode, MenuWait, ProcessId, ProcessIdentity,
 };
 
 use super::menu::menu_state::menu_is_open;
@@ -16,8 +16,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// teardown from a target that is merely unresponsive; the handle wait can.
 const EXIT_CONFIRMATION_SLICE: Duration = Duration::from_millis(1_000);
 
-/// Polls the [`menu_is_open`] predicate until the target process's
-/// menu-open state equals `open`, then returns `Ok(())`.
+/// Polls the [`menu_is_open`] predicate and feeds each whole read to core's
+/// [`MenuWait`] until it is satisfied, then returns `Ok(())`. Core's phase
+/// owns the decision: a closed-direction wait is not satisfied by a closed
+/// read while it still awaits a menu its opener may not have shown yet.
 ///
 /// A deliberate structural port of `crates/macos/src/system/wait.rs`: the
 /// process identity is re-verified before the first predicate read on every
@@ -25,7 +27,7 @@ const EXIT_CONFIRMATION_SLICE: Duration = Duration::from_millis(1_000);
 /// macOS double-check that closes the window where the target dies between
 /// the read and the return. The deadline is consulted only after a mismatch,
 /// so the predicate is evaluated at least once **once this loop is reached**,
-/// and an already-closed menu satisfies a wait-for-closed on that first read.
+/// and a first read the [`MenuWait`] accepts ends the wait on that read.
 ///
 /// That guarantee is this function's, not the command's, and the difference
 /// is observable: the caller resolves the target application before calling
@@ -36,7 +38,7 @@ const EXIT_CONFIRMATION_SLICE: Duration = Duration::from_millis(1_000);
 /// when it is handed one.
 ///
 /// Core makes exactly one call here and owns no retry of its own
-/// (`crates/core/src/commands/wait.rs:118-123`), so every condition this
+/// (`crates/core/src/commands/wait_menu.rs`), so every condition this
 /// loop can absorb - the 50ms poll interval, the identity re-checks, and a
 /// predicate read that itself times out mid-poll - is absorbed here rather
 /// than propagated raw: a `Timeout` from the predicate falls through to this
@@ -59,14 +61,16 @@ const EXIT_CONFIRMATION_SLICE: Duration = Duration::from_millis(1_000);
 /// window passes.
 pub(crate) fn wait_for_menu(
     process: ProcessIdentity,
-    open: bool,
+    mut wait: MenuWait,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
+    let open = wait.wants_open();
     let mut state_never_read = true;
     loop {
         verify_process_alive(&process)?;
+        let read_started = Instant::now();
         match evaluate_menu_state(process.pid, deadline) {
-            Ok(state) if state == open => {
+            Ok(state) if wait.observe(state, read_started) => {
                 verify_process_alive(&process)?;
                 return Ok(());
             }
@@ -84,6 +88,16 @@ pub(crate) fn wait_for_menu(
             .map_err(|error| error.with_platform_detail(direction_message(open)))?;
         std::thread::sleep(pause);
     }
+}
+
+/// One read of the [`menu_is_open`] predicate for core's pre-action menu
+/// reading, after the same liveness check the poll loop makes.
+pub(crate) fn menu_open(
+    process: &ProcessIdentity,
+    deadline: Deadline,
+) -> Result<bool, AdapterError> {
+    verify_process_alive(process)?;
+    menu_is_open(process.pid, deadline)
 }
 
 fn direction_message(open: bool) -> &'static str {

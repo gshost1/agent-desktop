@@ -1,4 +1,4 @@
-use crate::{AdapterError, CursorOverlayConfig, InteractionPolicy, SignalBaseline};
+use crate::{AdapterError, CursorOverlayConfig, InteractionPolicy, MenuSeed, SignalBaseline};
 
 use super::WaitSelector;
 
@@ -7,6 +7,7 @@ pub(super) struct CommandOptions {
     pub interaction_policy: InteractionPolicy,
     pub wait_selector: Option<WaitSelector>,
     pub event_baseline: Option<Result<SignalBaseline, AdapterError>>,
+    pub menu_seed: Option<MenuSeed>,
     pub cursor_overlay: CursorOverlayConfig,
     pub agent_id: Option<String>,
 }
@@ -17,6 +18,7 @@ impl CommandOptions {
             interaction_policy: self.interaction_policy,
             wait_selector: None,
             event_baseline: None,
+            menu_seed: None,
             cursor_overlay,
             agent_id: self.agent_id.clone(),
         }

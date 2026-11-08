@@ -169,6 +169,17 @@ impl CommandContext {
         self.options.event_baseline.as_ref()
     }
 
+    /// Seeds a closed-direction menu wait with a reading taken before the
+    /// action it follows; `batch` sets it the way it sets the event baseline.
+    pub fn with_menu_seed(mut self, seed: Option<crate::MenuSeed>) -> Self {
+        self.options.menu_seed = seed;
+        self
+    }
+
+    pub fn menu_seed(&self) -> Option<&crate::MenuSeed> {
+        self.options.menu_seed.as_ref()
+    }
+
     pub fn command_scope(&self, command: &'static str) -> Result<CommandScope<'_>, AppError> {
         self.command_scope_with_disposition(
             command,

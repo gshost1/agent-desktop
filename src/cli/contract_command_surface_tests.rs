@@ -27,6 +27,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "stale_retry_test_support",
     "wait_element",
     "wait_latest_ref_cache",
+    "wait_menu",
     "wait_mode",
     "wait_notification",
     "wait_predicate",

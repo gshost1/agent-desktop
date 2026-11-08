@@ -26,6 +26,10 @@ mod result_entry;
 mod baseline_tests;
 
 #[cfg(test)]
+#[path = "menu_seed_tests.rs"]
+mod menu_seed_tests;
+
+#[cfg(test)]
 #[path = "open_system_surface_parity_tests.rs"]
 mod open_system_surface_parity_tests;
 

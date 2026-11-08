@@ -103,7 +103,7 @@ agent-desktop wait --text Calculator --app gnome-calculator --timeout 3000
 
 ### Menu
 
-`--menu` waits until a menu surface is open, and `--menu-closed` until it is gone. Both return `{ "elapsed_ms", "found": true }`. On Linux, `--menu-closed` on a menu that never opened is true at once, so wait for `--menu` first.
+`--menu` waits until a menu surface is open, and `--menu-closed` until it is gone. Both return `{ "elapsed_ms", "found": true }`. A menu can appear after the action that opens it returns, so `--menu-closed` is satisfied only when the menu closes after it was seen open, or when it stays closed for a 1 s opener grace (half the timeout when that is shorter). In a `batch`, an action followed by `--menu-closed` reads the menu before the action: when the menu was open then, the wait returns on its first closed read with no grace.
 
 ### Notification
 

@@ -2,8 +2,8 @@ use crate::{
     AppError, ErrorCode,
     adapter::{PlatformAdapter, WindowFilter},
     commands::{
-        helpers::resolve_app,
         wait_element::{ElementWaitInput, wait_for_element},
+        wait_menu,
         wait_mode::WaitMode,
         wait_notification,
         wait_surface::SurfaceWait,
@@ -63,7 +63,9 @@ pub fn execute(
             }
             Ok(json!({ "waited_ms": ms }))
         }
-        WaitMode::Menu { app, open } => wait_for_menu(app, open, timeout_ms, adapter),
+        WaitMode::Menu { app, open } => {
+            wait_menu::wait_for_menu(app, open, timeout_ms, adapter, context)
+        }
         WaitMode::Notification { app, text } => {
             wait_notification::wait_for_notification(app, text, timeout_ms, adapter, context)
         }
@@ -104,33 +106,6 @@ pub fn execute(
             context.event_baseline().cloned(),
         ),
     }
-}
-
-fn wait_for_menu(
-    app: Option<String>,
-    open: bool,
-    timeout_ms: u64,
-    adapter: &dyn PlatformAdapter,
-) -> Result<Value, AppError> {
-    let start = Instant::now();
-    let deadline = crate::Deadline::at(start, timeout_ms)?;
-    let target = resolve_app(app.as_deref(), adapter, deadline).map_err(|error| match error {
-        AppError::Adapter(error) => wait_timeout::menu(error, timeout_ms),
-        other => other,
-    })?;
-    let process = crate::commands::helpers::process_identity(&target)?;
-    adapter
-        .wait_for_menu(process.clone(), open, deadline)
-        .map_err(|error| {
-            wait_timeout::menu(
-                crate::ref_action::ref_action_wait_support::with_exited_process_state(
-                    adapter, process, error, deadline,
-                ),
-                timeout_ms,
-            )
-        })?;
-    let elapsed = start.elapsed().as_millis();
-    Ok(json!({ "found": true, "elapsed_ms": elapsed }))
 }
 
 fn wait_for_window(

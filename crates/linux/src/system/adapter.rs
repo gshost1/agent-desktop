@@ -4,9 +4,9 @@ use agent_desktop_core::system::process_state::ProcessState;
 use agent_desktop_core::{
     ActionResult, AdapterError, AdapterSession, AppInfo, Deadline, DismissAllNotificationsRequest,
     DismissNotificationRequest, DisplayInfo, ImageBuffer, InteractionLease, InteractionPolicy,
-    KeyCombo, NotificationActionRequest, NotificationFilter, NotificationInfo, OperationReport,
-    PermissionReport, ProcessIdentity, ScreenshotTarget, SessionAffinity, SignalBaseline,
-    SignalFilter, SnapshotSurface, SystemOps, WindowInfo, WindowOp,
+    KeyCombo, MenuWait, NotificationActionRequest, NotificationFilter, NotificationInfo,
+    OperationReport, PermissionReport, ProcessIdentity, ScreenshotTarget, SessionAffinity,
+    SignalBaseline, SignalFilter, SnapshotSurface, SystemOps, WindowInfo, WindowOp,
 };
 
 use crate::adapter::LinuxAdapter;
@@ -14,7 +14,7 @@ use crate::notifications;
 use crate::system::{
     close,
     focus::key_dispatch,
-    interaction::{action_clock, interaction_lease, session},
+    interaction::{interaction_lease, session},
     launch,
     menu::{menu_surface, menu_wait},
     permissions,
@@ -126,10 +126,7 @@ impl SystemOps for LinuxAdapter {
         policy: InteractionPolicy,
         lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
-        let pid = process.pid.get();
-        let result = key_dispatch::press_key_for_app(self.bus(), process, combo, policy, lease);
-        action_clock::mark_outcome(Some(pid), &result);
-        result
+        key_dispatch::press_key_for_app(self.bus(), process, combo, policy, lease)
     }
 
     fn press_key_for_window(
@@ -139,9 +136,7 @@ impl SystemOps for LinuxAdapter {
         policy: InteractionPolicy,
         lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
-        let result = key_dispatch::press_key_for_window(self.bus(), window, combo, policy, lease);
-        action_clock::mark_outcome(Some(window.pid.get()), &result);
-        result
+        key_dispatch::press_key_for_window(self.bus(), window, combo, policy, lease)
     }
 
     fn is_blocked_combo(&self, combo: &KeyCombo) -> bool {
@@ -175,10 +170,18 @@ impl SystemOps for LinuxAdapter {
     fn wait_for_menu(
         &self,
         process: ProcessIdentity,
-        open: bool,
+        wait: MenuWait,
         deadline: Deadline,
     ) -> Result<(), AdapterError> {
-        menu_wait::wait_for_menu(self.bus(), process, open, deadline)
+        menu_wait::wait_for_menu(self.bus(), process, wait, deadline)
+    }
+
+    fn menu_open(
+        &self,
+        process: ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        crate::system::menu::menu_anchor::menu_open(self.bus(), &process, deadline)
     }
 
     fn supported_surfaces(&self) -> Vec<SnapshotSurface> {

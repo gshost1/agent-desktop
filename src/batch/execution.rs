@@ -1,6 +1,6 @@
 use agent_desktop_core::{
     AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, PermissionReport,
-    PlatformAdapter, SignalBaseline, SignalFilter, context::CommandContext,
+    PlatformAdapter, SignalBaseline, SignalFilter, commands::wait_menu, context::CommandContext,
 };
 use serde_json::{Value, json};
 
@@ -28,6 +28,7 @@ pub(super) fn execute(
     let mut completed = 0;
     let mut pending_baseline: Option<Result<SignalBaseline, AdapterError>> =
         context.event_baseline().cloned();
+    let mut pending_menu_seed = context.menu_seed().cloned();
     let mut stopped = None;
 
     for index in 0..total {
@@ -43,6 +44,7 @@ pub(super) fn execute(
         }
 
         let current_baseline = pending_baseline.take();
+        let current_menu_seed = pending_menu_seed.take();
 
         if let Some(ended_session) = session_ended_for(&commands[index]) {
             let error = batch_session_ended(index, &commands[index].name, &ended_session);
@@ -93,12 +95,17 @@ pub(super) fn execute(
             },
             None => None,
         };
+        pending_menu_seed = commands
+            .get(index + 1)
+            .and_then(menu_closed_wait_app)
+            .and_then(|app| wait_menu::menu_seed(app.as_deref(), adapter, deadline));
 
         let item_context = commands[index]
             .context
             .clone()
             .with_inherited_deadline(deadline)
-            .with_event_baseline(current_baseline);
+            .with_event_baseline(current_baseline)
+            .with_menu_seed(current_menu_seed);
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
         let entry = super::result_entry::completed_entry(
             index,
@@ -180,6 +187,19 @@ fn event_filter(command: &PreparedCommand) -> Option<SignalFilter> {
             app: args.app.clone(),
             process: None,
         }),
+        _ => None,
+    }
+}
+
+/// The `--app` of a following `wait --menu-closed`, whose menu is read before
+/// this entry's action. A menu open before the action tells the wait that the
+/// action closes it, so its first closed read satisfies it at once; without the
+/// reading the wait cannot tell a menu the action closed from one it is about
+/// to open, and holds for the opener grace. Every action kind gets the same
+/// reading, so a raw `mouse-click` and a ref `click` seed the wait alike.
+fn menu_closed_wait_app(command: &PreparedCommand) -> Option<&Option<String>> {
+    match &command.command {
+        Commands::Wait(args) if args.mode.menu_closed => Some(&args.app),
         _ => None,
     }
 }
