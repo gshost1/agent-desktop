@@ -74,16 +74,16 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 ## Save into a given folder
 
-An Open or Save panel can be served by a separate process and drawn inside the app's sheet. `press --app` sends its keys to the process that owns the focused panel control, so the panel's own shortcuts work. Set the name, open Go to Folder, set the path, then press Return twice:
+An Open or Save panel can be served by a separate process and drawn inside the app's sheet. `press --app` sends its keys to the process that owns the focused panel control, so the panel's own shortcuts work. Go to the folder first, then set the name and save:
 
 ```bash
 agent-desktop press cmd+s --app "TextEdit"                                    # open the Save sheet
-agent-desktop find --app "TextEdit" --surface sheet --role textfield --name "Save As:" --first
-agent-desktop set-value @s1:e1 "q3-report"                                     # file name only, no slashes
 agent-desktop press cmd+shift+g --app "TextEdit"                              # Go to Folder
 agent-desktop find --app "TextEdit" --surface sheet --role textfield --state focused --first
-agent-desktop set-value @s2:e1 "~/Reports"                                     # the folder
+agent-desktop set-value @s1:e1 "~/Reports"                                     # the folder
 agent-desktop press return --app "TextEdit"                                   # go there
+agent-desktop find --app "TextEdit" --surface sheet --role textfield --name "Save As:" --first
+agent-desktop set-value @s2:e1 "q3-report"                                     # file name only, no slashes
 agent-desktop press return --app "TextEdit"                                   # Save
 ```
 
