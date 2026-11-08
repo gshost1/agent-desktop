@@ -11,12 +11,22 @@ dir="$HOME/.agent-desktop"; pause="$dir/bench.pause"; lock="$dir/bench.lock"
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 waiters() { pgrep -f 'desktop_holder' 2>/dev/null; }
 oldest_wait_s() {
-    local best=0 p e s
-    for p in $(waiters); do
-        e=$(ps -o etimes= -p "$p" 2>/dev/null | tr -d ' ')
-        [ -n "$e" ] && [ "$e" -gt "$best" ] && best=$e
-    done
-    echo "$best"
+    local pids
+    pids=$(waiters | tr '\n' ' ')
+    [ -n "$pids" ] || { echo 0; return; }
+    ps -o etime= -p ${pids// /,} 2>/dev/null | python3 -c '
+import sys
+best = 0
+for line in sys.stdin:
+    t = line.strip()
+    if not t:
+        continue
+    days, _, rest = t.rpartition("-")
+    parts = [int(x) for x in rest.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    best = max(best, int(days or 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2])
+print(best)'
 }
 building() { pgrep -f 'cargo (build|test|clippy|check)|rustc ' >/dev/null; }
 trap 'rm -f "$pause"' EXIT
