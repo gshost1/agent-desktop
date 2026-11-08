@@ -18,7 +18,14 @@
 # and checks again every 2 minutes, without holding the desktop lock. A full
 # disk once ran rounds for two hours that wrote no results.
 #
-# Usage: bash bench/orchestrate.sh bench/plan.txt [pid to wait for first]
+# A round takes the desktop lock only when every binary it measures is built and
+# passes check_binary_tree, and only when no serial_cargo build holds the build
+# lock. It never waits on the build lock while it holds the desktop lock: a hung
+# test once held the build lock while a round held the desktop (2026-11-08). A
+# round with a missing binary is requeued after the rest of the plan, up to 3
+# more passes 5 minutes apart, then skipped.
+#
+# Usage: bash bench/orchestrate.sh bench/plan.txt bench/plan.txt [pid to wait for first]
 set -u
 cd "$(dirname "$0")/.."
 plan="$1"
@@ -63,28 +70,46 @@ release_lock() {
     log "lock released"
 }
 
-wait_for_browser_round() {
-    log "waiting for feat/unified-browser bench to hold and release the lock (no time limit)"
-    until holder | grep -q "feat/unified-browser"; do sleep 2; done
-    log "browser round started"
-    while holder | grep -q "feat/unified-browser"; do sleep 2; done
-    log "browser round released"
+builds_idle_now() {
+    python3 -I -c '
+import fcntl, os, sys
+with open(os.path.expanduser("~/.agent-desktop-bench-build.lock"), "w") as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit(1)
+'
 }
 
-if [ -n "$previous" ]; then
-    log "waiting for the previous orchestrator ($previous) to finish its round"
-    while kill -0 "$previous" 2>/dev/null; do sleep 5; done
-fi
+missing_binary() {
+    local entry task cfg model tree
+    for entry in $1; do
+        case "$entry" in extras|sh:*) continue ;; esac
+        IFS=: read -r task cfg model tree <<< "$entry"
+        [ -n "$tree" ] || continue
+        if [ ! -x "$tree/target/release/agent-desktop" ] || ! bash bench/check_binary_tree.sh "$tree" >/dev/null 2>&1; then
+            echo "$tree"
+            return 0
+        fi
+    done
+    return 1
+}
 
-while IFS= read -r line <&3; do
-    [ -n "$line" ] || continue
-    case "$line" in \#*) continue ;; esac
-    if [ "$line" = "wait-browser" ]; then wait_for_browser_round; continue; fi
-    label="${line%% *}"
-    entries="${line#* }"
+take_lock_with_builds_idle() {
+    while :; do
+        bash bench/wait_builds_idle.sh
+        take_lock
+        builds_idle_now && return 0
+        log "a build started before the desktop lock was taken; releasing the desktop until it ends"
+        release_lock
+        sleep 5
+    done
+}
+
+run_round() {
+    local label="$1" entries="$2" entry task cfg model tree
     wait_for_disk "$label"
-    take_lock
-    bash bench/wait_builds_idle.sh
+    take_lock_with_builds_idle
     log "round $label start"
     for entry in $entries; do
         refresh_lock
@@ -103,5 +128,50 @@ while IFS= read -r line <&3; do
     done
     log "round $label done"
     release_lock
+}
+
+wait_for_browser_round() {
+    log "waiting for feat/unified-browser bench to hold and release the lock (no time limit)"
+    until holder | grep -q "feat/unified-browser"; do sleep 2; done
+    log "browser round started"
+    while holder | grep -q "feat/unified-browser"; do sleep 2; done
+    log "browser round released"
+}
+
+if [ -n "$previous" ]; then
+    log "waiting for the previous orchestrator ($previous) to finish its round"
+    while kill -0 "$previous" 2>/dev/null; do sleep 5; done
+fi
+
+deferred=()
+while IFS= read -r line <&3; do
+    [ -n "$line" ] || continue
+    case "$line" in \#*) continue ;; esac
+    if [ "$line" = "wait-browser" ]; then wait_for_browser_round; continue; fi
+    label="${line%% *}"
+    entries="${line#* }"
+    if missing=$(missing_binary "$entries"); then
+        log "round $label: binary in $missing is missing or not from its own tree; requeued after the plan"
+        deferred+=("$line")
+        continue
+    fi
+    run_round "$label" "$entries"
 done 3< "$plan"
+for pass in 1 2 3; do
+    [ "${#deferred[@]}" -gt 0 ] || break
+    log "requeue pass $pass: ${#deferred[@]} round(s), checking again in 300 s"
+    sleep 300
+    still=()
+    for line in "${deferred[@]}"; do
+        label="${line%% *}"
+        entries="${line#* }"
+        if missing=$(missing_binary "$entries"); then
+            still+=("$line")
+            continue
+        fi
+        run_round "$label" "$entries"
+    done
+    deferred=("${still[@]+"${still[@]}"}")
+done
+for line in "${deferred[@]+"${deferred[@]}"}"; do log "round ${line%% *}: SKIPPED, binary still missing after 3 requeue passes"; done
 log "plan complete"

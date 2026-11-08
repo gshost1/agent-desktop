@@ -10,7 +10,8 @@
 # path crates by paths relative to the workspace root, so worktree B reused
 # worktree A's agent-desktop-core (2026-11-08).
 #
-# Every command is stopped after BENCH_CARGO_TIMEOUT_S (default 3600 s): a hung
+# Every command is stopped after BENCH_CARGO_TIMEOUT_S (default 1200 s for tests,
+# 3600 s for builds): a hung
 # test held the build lock, which the measured rounds wait on (2026-11-08).
 #
 # Usage, from any checkout:
@@ -72,7 +73,8 @@ with open(os.path.expanduser("~/.agent-desktop-bench-build.lock"), "w") as lock:
         os.makedirs(target, exist_ok=True)
         with open(os.path.join(target, ".source-tree"), "w") as fh:
             fh.write(os.environ["BENCH_SOURCE_TREE"] + "\n")
-    limit = os.environ.get("BENCH_CARGO_TIMEOUT_S", "3600")
+    testing = any(arg == "test" or "cargo test" in arg for arg in sys.argv[1:])
+    limit = os.environ.get("BENCH_CARGO_TIMEOUT_S", "1200" if testing else "3600")
     code = subprocess.call(["/opt/homebrew/bin/timeout", "--kill-after=30", limit, "nice", "-n", "20", *sys.argv[1:]])
     if code == 124:
         print(f"serial_cargo: command passed {limit} s and was stopped; a hung command would hold the build lock and stall the desktop", file=sys.stderr, flush=True)

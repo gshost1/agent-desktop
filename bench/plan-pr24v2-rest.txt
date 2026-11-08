@@ -1,0 +1,3 @@
+# #24 v2 rounds f24b and f24c, requeued after the f24 orchestrator hit its 2 h limit mid f24b (03:27).
+f24b finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24v2
+f24c finder:a:claude-opus-5-5:bench/out/wt-pr24v2 finder:a:claude-opus-5-5:bench/out/wt-main
