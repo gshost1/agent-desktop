@@ -35,13 +35,30 @@ Other open fork PRs not owned by this session: #59, #48, #41, #36, #30, #9, #7, 
 
 ## Release check (fork release Mon 2026-11-09 09:00 PST; freeze 00:00 PST)
 
-- [ ] Rehearsal on `main` `95fea935` (before freeze): Linux E2E tiers on this laptop; prerequisites now all installed (checked 2026-11-08).
+- [x] Rehearsal on `main` `7921e3f6` (2026-11-08 afternoon): Linux E2E all tiers, release dry run, size and glibc.
 - [ ] After 00:00 PST: fetch `origin/main`, `cargo build --release -p agent-desktop`.
-- [ ] Release CLI ≤ 15 MiB.
-- [ ] `scripts/check-elf-glibc-floor.sh` ≤ 2.35.
-- [ ] Silent display, silent bus, stopped app: documented code within timeout + 1 s.
+- [ ] Release CLI ≤ 15 MiB. Rehearsal: 7,844,712 bytes (7.5 MiB) local; dry run x86_64 7,844,720, aarch64 6,357,712.
+- [ ] `scripts/check-elf-glibc-floor.sh` ≤ 2.35. Rehearsal: the shipped build (22.04 container, release-dry-run run 42517486692) needs at most GLIBC_2.35 (CLI) and 2.34 (helper). A laptop host build needs GLIBC_2.39 (`pidfd_spawnp`, `pidfd_getpid` from glibc 2.43 here), so judge the floor on the dry run, not a local build.
+- [ ] Silent display, silent bus, stopped app: documented code within timeout + 1 s (probe: scratchpad `budget_probe.py`).
 - [ ] Linux E2E (`tests/e2e-linux`, all tiers) on the frozen head.
 - [ ] A real bug gets one fix PR; the same failure twice: write it down and stop.
+
+### Rehearsal E2E (laptop: Ubuntu 26.04.1, GNOME Shell 50.1)
+
+First Linux E2E run on this laptop. x11-openbox: 101 pass, 59 fail/error; wayland: 9 pass, 3 fail; x11-mutter: 122 tier-unavailable.
+
+- **x11-mutter tier cannot run here**: GNOME Shell 50 has no `--x11` (`scripts/private-mutter-shell.sh` starts `gnome-shell --x11`). Blocked by the platform; needs an older GNOME host for that tier.
+- **Product bugs (fixed, PRs open):**
+  - C1+C2 → [#68](https://github.com/gshost1/agent-desktop/pull/68): Linux closed menu lacked `surface_absent`, so `--wait-for` on `--surface menu` gave up at once, and a closed menu's ref answered `ELEMENT_NOT_FOUND` instead of the documented `STALE_REF menu_closed`. Includes a decision for George: the E2E leg wanted a refresh recovery, which contradicts the documented `menu_closed` (`retryable: false`).
+  - C3 → [#69](https://github.com/gshost1/agent-desktop/pull/69): a ref of an exited app answered `APP_NOT_FOUND` instead of `STALE_REF` (`process_state: exited`). Not covered: process-owned refs (`live_process_owner`).
+- **Harness defects (not fixed):**
+  - `runner/stage.py` stages `bin/` under umask 002, and the product (correctly) refuses a group-writable helper directory: 4 clipboard legs.
+  - `session.py:261` prints the absolute monotonic deadline ("518011s") instead of the timeout.
+  - Text Editor `restore-session` brings back a killed draft, which poisons the later Text Editor legs (`state.text_editor_semantic_type`, headed double/triple-click and drag with `sibling_overlap`).
+  - Qt legs pass the accessibility name `qt_window.py` where the product names apps by executable.
+  - `ref_contract` tables treat documented headless refusals as must-succeed.
+- **GNOME 50 app drift (harness needs new fixtures):** GTK 4.22 menu buttons (outer `button`, inner `switch` with `has-popup`, no `menubutton` role); Calculator's About is an in-window sheet; Text Editor and Files content sits below `--max-depth 10`; Settings Hot Corner is a `switch`, Screen Blank combo is gone; Ptyxis is the "Terminal" entry; Calculator's minimum height is 616; 32-bit Calculator window reads black through `xwd -root`.
+- **Follow-up for the owner:** GTK 4.22 menu-button structure means the product cannot find a plain popover on such a button (`roles.rs:43`, `menu_popup.rs:146`). That is a product gap on new GTK, not app-specific; needs a design.
 
 ## Setup (2026-11-07, laptop)
 
