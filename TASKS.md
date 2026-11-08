@@ -3,6 +3,36 @@
 Branch `docs/state-machine-ledger`. Pushed at checkpoints, never opened as a PR. Per-finding detail (every
 `file:line`, the states and transitions, test sketches, the exact prior-art searches) is in `audit/<AREA>.md`.
 
+## Handoff (laptop session → fresh session), 2026-11-08
+
+Nothing is running: no cargo, gate, CI-wait or Xvfb processes. Every worktree is clean and matches its origin
+branch. `main` = `d2e406cb`. 28 fork PRs merged from this audit; the ledger counts are in "Unattended run summary".
+
+**In flight (all pushed, nothing local-only):**
+
+| PR | Row | Branch | Head | State |
+|---|---|---|---|---|
+| #58 | ACTION-12 | `fix/pointer-focus-once` (w33) | `b60bc170` | draft, CLEAN, CI 13/13 green; third approach (stop only after a raise that changed the front window). Waiting on the speed session's Mac check (steps in the PR body). |
+| #38 | LIFECYCLE-6 | `fix/close-app-phase-budgets` (w18) | `64b1c704` | draft, CLEAN; needs the Mac check. |
+| #34 | SURFACE-3 | `fix/notification-identity-key` (w15) | `82709a44` | draft, DIRTY (conflicts with `main`); needs a main merge, then the Mac and Windows checks; needs-issue-first. |
+| #18 | SURFACE-1 | `fix/menu-close-wait-phase` (w9) | `42373866` | draft, DIRTY (conflicts with `main`); needs a main merge, then the Mac check. |
+| #14 | REFS-2 | `fix/capture-verdict-not-ambiguous` (w5) | `075586f6` | draft, DIRTY (conflicts with `main`, earlier with #10, #11, #17); needs a main merge, then the Mac check; needs-issue-first. |
+
+Other open fork PRs not owned by this session: #59, #48, #41, #36, #30, #9, #7, #5.
+
+**Next:** the 21 rows fixable on the laptop under "Remaining work plan", then the 11 Mac/Windows drafts.
+
+**Traps:**
+- Gates: `audit/tools/gates.sh <worktree>` (flock-serialized; at most two builds at once). `export PATH=$HOME/.cargo/bin:$PATH` first, or the pre-commit hook skips itself.
+- Commits need `DISPLAY` pointed at a throwaway Xvfb (displays 150-199), because the hook runs `the_lifecycle_overrides_are_wired_to_the_adapter`. Run long commands under `setsid -w`.
+- `w15/target-win/` is an untracked Windows cross-build dir, not work in progress. Old `target` dirs total about 41 GB; delete only with George's yes.
+- The laptop `gh` token has no `workflow` scope, so pushes that touch `.github/workflows/` are rejected (see Blocked on George).
+- Run the posting-rule grep before every PR body, comment or commit push. Nothing ever goes to vercel-labs.
+- Merge rule (below): latest main merged in, CI green on that head, CLEAN, no overlap with always-overlap files. Watch main CI after each merge. Never merge while GitHub shows UNKNOWN (see Incidents).
+- The `INTERACTION_LEASE_FD_ENV` const is unix-only: cfg-gate any use, and cross-check with `cargo check --target x86_64-pc-windows-msvc`.
+- A timing flake gets a small test PR on the virtual clock (`VirtualClock::freeze()`), never a re-run.
+- The "Handoff (laptop → VPS)" section further down is REVERSED; ignore it.
+
 ## Setup (2026-11-07, laptop)
 
 - [x] Clone `gshost1/agent-desktop`, `upstream` remote added, `main` = `upstream/main` = `b43ac4f6`.
