@@ -20,6 +20,7 @@ fn click(transport: ScriptedTransport) -> ScriptedTransport {
             "DOM.getBoxModel",
             json!({ "model": { "border": [0, 0, 10, 0, 10, 10, 0, 10] } }),
         )
+        .expect("DOM.getNodeForLocation", json!({ "backendNodeId": 3 }))
         .expect("Input.dispatchMouseEvent", json!({}))
         .expect("Input.dispatchMouseEvent", json!({}))
 }
@@ -47,7 +48,7 @@ fn a_differing_box_is_clicked_and_verified_with_one_resolve() {
     assert!(set_checked(&mut connection, &session(), &token(3), true, deadline()).unwrap());
 
     let sent = sent.lock().unwrap();
-    assert_eq!(sent.len(), 9);
+    assert_eq!(sent.len(), 10);
     let resolves = sent
         .iter()
         .filter(|request| request["method"] == "DOM.resolveNode")

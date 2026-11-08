@@ -18,6 +18,8 @@ const CONTAINS_HIT: &str = r"function(hit) {
 /// the node `DOM.getNodeForLocation` reports there must be the node itself
 /// or one of its descendants, across shadow roots. A point an overlay, a
 /// banner or another element covers is `ACTION_FAILED` and nothing is sent.
+/// A hit the page cannot relate to the node, such as one in another frame's
+/// script world, counts as covered.
 pub(crate) fn confirm_hit(
     connection: &mut CdpConnection,
     session: &PageSession,
@@ -75,7 +77,11 @@ fn hit_is_inside(
         reply
     });
     release(connection, session, &target, deadline);
-    let reply = inside?;
+    let reply = match inside {
+        Ok(reply) => reply,
+        Err(error) if is_protocol_error(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    };
     if let Some(exception) = reply.get("exceptionDetails") {
         return Err(script_failed(exception));
     }
@@ -101,7 +107,12 @@ fn resolve(
         .ok_or_else(|| AdapterError::internal("DOM.resolveNode returned no object"))
 }
 
-fn release(connection: &mut CdpConnection, session: &PageSession, object_id: &str, deadline: Deadline) {
+fn release(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    object_id: &str,
+    deadline: Deadline,
+) {
     let _ = connection.call(
         "Runtime.releaseObject",
         json!({ "objectId": object_id }),
