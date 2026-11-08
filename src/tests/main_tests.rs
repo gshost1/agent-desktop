@@ -56,3 +56,19 @@ fn pre_dispatch_failures_are_always_safe_to_retry() {
         );
     }
 }
+
+#[test]
+fn a_top_level_batch_runs_its_preflight_under_its_own_budget() {
+    let batch =
+        crate::Cli::try_parse_from(["agent-desktop", "batch", "[]", "--timeout-ms", "60000"])
+            .expect("batch parses");
+    let deadline = crate::command_deadline(&batch.command.expect("a command"), None)
+        .expect("the budget builds")
+        .expect("a top-level batch has a deadline");
+    assert!(deadline.remaining() > std::time::Duration::from_secs(30));
+
+    let version = crate::Cli::try_parse_from(["agent-desktop", "version"]).expect("version parses");
+    let none = crate::command_deadline(&version.command.expect("a command"), None)
+        .expect("no deadline to build");
+    assert!(none.is_none());
+}

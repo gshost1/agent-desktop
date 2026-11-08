@@ -18,6 +18,14 @@ use super::{
     seed_plan::SeedPlan,
 };
 
+/// The batch's whole budget, from `--timeout-ms`. A top-level batch takes it
+/// before the permission preflight, so the preflight spends from the same
+/// budget instead of the five-second default.
+pub(crate) fn budget(args: &BatchArgs) -> Result<Deadline, AppError> {
+    Deadline::after(args.timeout_ms)
+        .map_err(|error| AppError::from(error.with_disposition(DeliverySemantics::not_delivered())))
+}
+
 /// Runs the batch and records, in `entry_effects`, the effect of every
 /// prepared entry by its index, so a caller that settles the batch later can
 /// read each entry's disposition with its effect.
@@ -28,8 +36,10 @@ pub(super) fn execute(
     context: &CommandContext,
     entry_effects: &mut Vec<CommandEffect>,
 ) -> Result<Value, AppError> {
-    let deadline = Deadline::after(args.timeout_ms)
-        .map_err(|error| error.with_disposition(DeliverySemantics::not_delivered()))?;
+    let deadline = match context.inherited_deadline() {
+        Some(deadline) => deadline,
+        None => budget(&args)?,
+    };
     let batch_context = context.clone().with_inherited_deadline(deadline);
     let mut commands = prepare(&args.commands_json, permission_report, &batch_context)?;
     let total = commands.len();

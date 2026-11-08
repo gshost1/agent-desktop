@@ -20,7 +20,7 @@ agent-desktop batch '[{"command":"version"},{"command":"wait","args":{"ms":100}}
   <tbody>
     <tr><td><code>JSON</code></td><td>required</td><td>A JSON array of entries.</td></tr>
     <tr><td><code>--stop-on-error</code></td><td>off</td><td>Halt after the first entry that fails. Without it, later entries still run.</td></tr>
-    <tr><td><code>--timeout-ms MS</code></td><td><code>60000</code></td><td>Wall-clock budget for the whole batch, at most 86400000. Each entry's own deadlines are capped by what remains.</td></tr>
+    <tr><td><code>--timeout-ms MS</code></td><td><code>60000</code></td><td>Wall-clock budget for the whole batch, at most 86400000, starting before the permission check that runs ahead of the first entry. Each entry's own deadlines are capped by what remains.</td></tr>
   </tbody>
 </table>
 

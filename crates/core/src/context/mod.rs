@@ -111,6 +111,11 @@ impl CommandContext {
         self
     }
 
+    /// The deadline a caller handed this command, if any.
+    pub fn inherited_deadline(&self) -> Option<crate::Deadline> {
+        self.inherited_deadline
+    }
+
     pub fn event_baseline(&self) -> Option<&Result<SignalBaseline, AdapterError>> {
         self.options.event_baseline.as_ref()
     }

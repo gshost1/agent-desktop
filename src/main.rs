@@ -148,12 +148,25 @@ fn execute(cli: Cli, cmd: Commands) -> Result<serde_json::Value, AppError> {
     execute_with_deadline(cli, cmd, None, None)
 }
 
+/// The deadline a command runs under: the caller's, or for a top-level batch
+/// its own `--timeout-ms` budget, taken before the permission preflight.
+fn command_deadline(
+    cmd: &Commands,
+    deadline: Option<agent_desktop_core::Deadline>,
+) -> Result<Option<agent_desktop_core::Deadline>, AppError> {
+    match (cmd, deadline) {
+        (Commands::Batch(args), None) => batch::budget(args).map(Some).map_err(pre_dispatch_error),
+        (_, deadline) => Ok(deadline),
+    }
+}
+
 fn execute_with_deadline(
     cli: Cli,
     cmd: Commands,
     deadline: Option<agent_desktop_core::Deadline>,
     baseline: Option<agent_desktop_core::SignalBaseline>,
 ) -> Result<serde_json::Value, AppError> {
+    let deadline = command_deadline(&cmd, deadline)?;
     if let Some(deadline) = deadline.filter(|deadline| deadline.is_expired()) {
         return Err(pre_dispatch_error(deadline.timeout_error().into()));
     }
