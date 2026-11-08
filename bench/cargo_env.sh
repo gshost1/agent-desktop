@@ -1,14 +1,16 @@
-# Sourced by bench scripts. Every bench build shares one cargo target dir so the
-# bench worktrees do not each grow a multi-GB target/ (they filled the disk on
-# 2026-11-07). Each tree still gets its own release binary, copied to
-# <tree>/target/release/agent-desktop, where driver.py and the probes look.
-export CARGO_TARGET_DIR="${BENCH_CARGO_TARGET_DIR:-$HOME/.agent-desktop-bench-target}"
+# Sourced by bench scripts. Builds go through serial_cargo.sh, which gives each
+# checkout its own target dir under ~/.agent-desktop-bench-target/trees (one dir
+# shared across worktrees reused another tree's crates, 2026-11-08). Each tree's
+# release binary is copied to <tree>/target/release/agent-desktop, where
+# driver.py and the probes look, with its source commit in agent-desktop.commit.
 BENCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bench_build() {
-    local dir="$1"
+    local dir="$1" target
+    target="$(cd "$dir" && bash "$BENCH_ROOT/serial_cargo.sh" --target-dir)" || return 1
     (cd "$dir" && bash "$BENCH_ROOT/serial_cargo.sh" cargo build --release -q -p agent-desktop) || return 1
     mkdir -p "$dir/target/release"
-    cp "$CARGO_TARGET_DIR/release/agent-desktop" "$dir/target/release/agent-desktop"
+    cp "$target/release/agent-desktop" "$dir/target/release/agent-desktop"
+    (cd "$dir" && git rev-parse HEAD) > "$dir/target/release/agent-desktop.commit"
 }
 
 bench_prune_tree() {
