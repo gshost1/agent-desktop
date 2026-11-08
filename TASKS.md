@@ -12,7 +12,7 @@ branch. `main` = `d2e406cb`. 28 fork PRs merged from this audit; the ledger coun
 
 | PR | Row | Branch | Head | State |
 |---|---|---|---|---|
-| #58 | ACTION-12 | `fix/pointer-focus-once` (w33) | `b60bc170` | draft, CLEAN, CI 13/13 green; third approach (stop only after a raise that changed the front window). Waiting on the speed session's Mac check (steps in the PR body). |
+| #58 | ACTION-12 | `fix/pointer-focus-once` (w33) | `11271cdd` | draft; main `95fea935` merged in 2026-11-08, gates green (4936), invert-verified (stop rule off: 5/9 fail; already-front as changed: 2/9 fail); CI re-running; third approach (stop only after a raise that changed the front window). Waiting on the speed session's Mac check (steps in the PR body). |
 | #38 | LIFECYCLE-6 | `fix/close-app-phase-budgets` (w18) | `64b1c704` | draft, CLEAN; needs the Mac check. |
 | #34 | SURFACE-3 | `fix/notification-identity-key` (w15) | `82709a44` | draft, DIRTY (conflicts with `main`); needs a main merge, then the Mac and Windows checks; needs-issue-first. |
 | #18 | SURFACE-1 | `fix/menu-close-wait-phase` (w9) | `42373866` | draft, DIRTY (conflicts with `main`); needs a main merge, then the Mac check. |
@@ -32,6 +32,16 @@ Other open fork PRs not owned by this session: #59, #48, #41, #36, #30, #9, #7, 
 - The `INTERACTION_LEASE_FD_ENV` const is unix-only: cfg-gate any use, and cross-check with `cargo check --target x86_64-pc-windows-msvc`.
 - A timing flake gets a small test PR on the virtual clock (`VirtualClock::freeze()`), never a re-run.
 - The "Handoff (laptop → VPS)" section further down is REVERSED; ignore it.
+
+## Release check (fork release Mon 2026-11-09 09:00 PST; freeze 00:00 PST)
+
+- [ ] Rehearsal on `main` `95fea935` (before freeze): Linux E2E tiers on this laptop; prerequisites now all installed (checked 2026-11-08).
+- [ ] After 00:00 PST: fetch `origin/main`, `cargo build --release -p agent-desktop`.
+- [ ] Release CLI ≤ 15 MiB.
+- [ ] `scripts/check-elf-glibc-floor.sh` ≤ 2.35.
+- [ ] Silent display, silent bus, stopped app: documented code within timeout + 1 s.
+- [ ] Linux E2E (`tests/e2e-linux`, all tiers) on the frozen head.
+- [ ] A real bug gets one fix PR; the same failure twice: write it down and stop.
 
 ## Setup (2026-11-07, laptop)
 
@@ -191,7 +201,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 - PR #18 (SURFACE-1, draft): `crates/macos/src/system/{adapter,wait}.rs`. CI on `5b6d3a07` failed macOS clippy (`missing_const_for_thread_local` in the test seam, fixed in `832c091c`) and one Windows ARM64 live Start-menu test outside this PR; CI on `0747511e` then failed two timing-sensitive core tests and exposed a real macOS bug (the loop timed out before checking a satisfied wait); fixed in `42373866`: CI 26/26 green there, so the macOS code compiles and its unit tests pass. On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then right-click a control, run `agent-desktop wait --menu-closed --app <app>` while the menu is open (returns only after it closes), and with no menu open (returns closed after about 1.5 s).
 
 - PR #14 (REFS-2, draft, needs-issue-first): `crates/macos/src/tree/query/mod.rs` and two macOS test files. CI 30/30 green on `99f7bea6`, which compiled and ran them; the branch is being merged with `main` (conflicts with #10, #11, #17). On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then `agent-desktop snapshot --app <a large app> --timeout-ms 200` until it reports `identity_unproven`, act on one of its refs and confirm `STALE_REF` `identity_unproven` / `capture_incomplete` with `retryable: false` (not `AMBIGUOUS_TARGET`); and confirm a ref with an identical twin still returns `AMBIGUOUS_TARGET` `identity_not_unique`.
-- **#58 ACTION-12 (third approach, head `b60bc170`)**: steps in the PR body under "Needs Mac verification": `cargo test -p agent-desktop-core pointer_action_focus_phase`, `cargo test -p agent-desktop-macos`, then live headed `hover` 10x with the target already front (expect all ok), 10x with Finder in front (count `ACTION_FAILED` + `receives_events` + `preparatory_focus` = raise landed after the hit test), and 5x `drag --to-xy`. The speed session runs it (control, 2026-11-08).
+- **#58 ACTION-12 (third approach, head `11271cdd`)**: steps in the PR body under "Needs Mac verification": `cargo test -p agent-desktop-core --lib focus_phase` (9 tests; the old filter `pointer_action_focus_phase` matched none), `cargo test -p agent-desktop-macos`, then live headed `hover` 10x with the target already front (expect all ok), 10x with Finder in front (count `ACTION_FAILED` + `receives_events` + `preparatory_focus` = raise landed after the hit test), and 5x `drag --to-xy`. The speed session runs it (control, 2026-11-08).
 
 ## Needs Windows verification
 
