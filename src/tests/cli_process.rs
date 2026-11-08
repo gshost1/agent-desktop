@@ -269,21 +269,6 @@ fn start_session_in_dir(dir: &std::path::Path) -> String {
     env["data"]["session_id"].as_str().unwrap().to_owned()
 }
 
-fn run_batch(dir: &std::path::Path, cmds: serde_json::Value, extra: &[&str]) -> serde_json::Value {
-    let mut c = binary();
-    c.arg("batch")
-        .arg(cmds.to_string())
-        .args(extra)
-        .env("AGENT_DESKTOP_HOME", dir);
-    let o = c.output().expect("batch runs");
-    serde_json::from_slice(&o.stdout).unwrap_or_else(|error| {
-        panic!(
-            "batch stdout is not JSON: {error}; stderr: {}",
-            String::from_utf8_lossy(&o.stderr)
-        )
-    })
-}
-
 #[test]
 fn batch_entry_after_mid_batch_session_end_is_skipped_without_aborting_batch() {
     if support::run_in_private_session() {
@@ -291,7 +276,7 @@ fn batch_entry_after_mid_batch_session_end_is_skipped_without_aborting_batch() {
     }
     let dir = unique_temp_dir("cli-batch-session-end");
     let session_id = start_session_in_dir(&dir);
-    let data = run_batch(
+    let data = support::run_batch(
         &dir,
         serde_json::json!([
             {"command": "session", "session": session_id, "args": {"action": "end"}},
@@ -320,7 +305,7 @@ fn batch_entry_after_mid_batch_session_end_is_skipped_without_aborting_batch() {
     assert_eq!(data["not_started_entries"], 1);
     assert!(data.get("stopped").is_none());
     let next_id = start_session_in_dir(&dir);
-    let stopped = run_batch(
+    let stopped = support::run_batch(
         &dir,
         serde_json::json!([
             {"command": "session", "session": next_id, "args": {"action": "end"}},
@@ -349,7 +334,7 @@ fn batch_session_ended_skip_leaves_a_following_entry_of_another_session_running(
     let dir = unique_temp_dir("cli-batch-session-end-wait-cross");
     let sid_a = start_session_in_dir(&dir);
     let sid_b = start_session_in_dir(&dir);
-    let env = run_batch(
+    let env = support::run_batch(
         &dir,
         serde_json::json!([
             {"command": "session", "session": sid_a, "args": {"action": "end"}},
@@ -377,7 +362,7 @@ fn batch_session_ended_skip_covers_a_following_entry_of_the_same_session() {
     }
     let dir = unique_temp_dir("cli-batch-session-end-wait-same");
     let sid_a = start_session_in_dir(&dir);
-    let env = run_batch(
+    let env = support::run_batch(
         &dir,
         serde_json::json!([
             {"command": "session", "session": sid_a, "args": {"action": "end"}},
