@@ -53,6 +53,7 @@ impl Drop for HomeGuard {
             Some(previous) => unsafe { std::env::set_var("AGENT_DESKTOP_HOME", previous) },
             None => unsafe { std::env::remove_var("AGENT_DESKTOP_HOME") },
         }
+        let _ = std::fs::remove_dir_all(&self.path);
         self.lock.take();
     }
 }

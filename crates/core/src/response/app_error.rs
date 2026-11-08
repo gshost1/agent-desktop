@@ -32,7 +32,7 @@ impl AppError {
     /// The adapter form of this error. A permission denial keeps
     /// `PERM_DENIED`, as [`Self::code`] reports it; every other error that is
     /// not already an adapter error becomes `INTERNAL`.
-    pub(crate) fn into_adapter_error(self) -> AdapterError {
+    pub fn into_adapter_error(self) -> AdapterError {
         match self {
             Self::Adapter(error) => error,
             other if other.is_permission_denied() => {

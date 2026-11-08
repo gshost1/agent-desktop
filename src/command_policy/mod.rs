@@ -4,6 +4,10 @@ use agent_desktop_core::{
 
 use crate::cli::Commands;
 
+mod command_effect;
+
+pub(crate) use command_effect::CommandEffect;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PermissionNeed {
     None,

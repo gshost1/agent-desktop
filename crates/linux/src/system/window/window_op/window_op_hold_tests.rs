@@ -183,14 +183,17 @@ fn clamps_the_vertical_axis_of_a_restored_place(written: &[WindowWrite]) -> Wind
 
 #[test]
 fn a_manager_that_clamps_one_axis_of_the_place_still_gets_the_other_given_back() {
-    let mut world = World::showing(state(0, 21, 520, 380));
-    world.reaction = Some(clamps_the_vertical_axis_of_a_restored_place);
-    *world.remembered.borrow_mut() = Some(Extents {
-        x: 300,
-        y: 200,
-        width: 520,
-        height: 380,
+    let left = state(0, 21, 520, 380);
+    let mut world = World::showing(left).keeping(RememberedPlace::Unmaximized {
+        before: Extents {
+            x: 300,
+            y: 200,
+            width: 520,
+            height: 380,
+        },
+        left: left.client,
     });
+    world.reaction = Some(clamps_the_vertical_axis_of_a_restored_place);
     let deadline = Deadline::after(3_000).expect("a deadline builds");
     let error = run(&world, &window(), &WindowOp::Restore, deadline).expect_err("y is clamped");
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
