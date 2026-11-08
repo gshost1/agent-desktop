@@ -18,6 +18,7 @@ use super::endpoint_candidate::EndpointCandidate;
 use super::observed_page::node_evidence;
 use super::web_channel_adapter::WebChannelAdapter;
 use crate::CdpConnection;
+use crate::channel::download::download_folder::DownloadFolder;
 use crate::transport::scripted_transport::ScriptedTransport;
 
 pub(crate) const PID: u32 = 41;
@@ -36,8 +37,7 @@ pub(crate) fn lease() -> InteractionLease {
     InteractionLease::guarded(deadline(), ()).unwrap()
 }
 
-/// A connector that offers scripted endpoints and opens each with the next
-/// scripted transport.
+/// Offers scripted endpoints and opens each with the next scripted transport.
 #[derive(Default)]
 pub(crate) struct ScriptedConnector {
     pub ports: Vec<u16>,
@@ -45,6 +45,7 @@ pub(crate) struct ScriptedConnector {
     pub opens: Arc<Mutex<Vec<(u16, bool)>>>,
     pub open_error: Option<fn() -> AdapterError>,
     pub remembered: Arc<Mutex<Vec<(ProcessIdentity, u16)>>>,
+    pub download_folder: Option<DownloadFolder>,
 }
 
 impl ScriptedConnector {
@@ -65,6 +66,7 @@ impl CdpConnector for ScriptedConnector {
                 port: *port,
                 origin: CandidateOrigin::Registry {
                     websocket_url: format!("ws://127.0.0.1:{port}/devtools/browser/x"),
+                    download_folder: self.download_folder.clone(),
                 },
             })
             .collect()
@@ -101,9 +103,8 @@ impl CdpConnector for ScriptedConnector {
     }
 }
 
-/// A platform adapter that records what reaches it. It owns the listener on
-/// `owned_ports`, reads one native button for any window, and answers every
-/// handle it is given as a native one.
+/// A platform adapter that records what reaches it: it owns `owned_ports`,
+/// reads one native button per window and treats every handle as native.
 #[derive(Default)]
 pub(crate) struct StubPlatform {
     pub owned_ports: Vec<u16>,
@@ -244,7 +245,7 @@ pub(crate) fn adapter(
     platform: StubPlatform,
     connector: ScriptedConnector,
 ) -> WebChannelAdapter<StubPlatform> {
-    WebChannelAdapter::with_connector(platform, Box::new(connector))
+    WebChannelAdapter::with_connector(platform, Box::new(connector)).with_download_ledger(None)
 }
 
 /// A ref captured from a page over CDP.
