@@ -5,6 +5,7 @@
 # harness needs Python 3.10+ as python3; macOS ships 3.9 at /usr/bin/python3.
 cd "$(dirname "$0")/.."
 root="$PWD"
+source bench/cargo_env.sh; unset CARGO_TARGET_DIR
 python_dir="$root/bench/out/e2e-python"
 mkdir -p "$python_dir"; ln -sf "$(command -v python3.11 || command -v python3.12 || command -v python3.13)" "$python_dir/python3"
 "$python_dir/python3" -c 'import sys; sys.exit(sys.version_info < (3, 10))' || { echo "E2E needs Python 3.10 or newer as python3"; exit 1; }
@@ -14,5 +15,6 @@ for wt in wt-surface wt-cold wt-popup wt-aeprobe wt-click; do
     d="$root/bench/out/$wt"
     [ -d "$d" ] || continue
     (cd "$d" && AGENT_DESKTOP_E2E_EXCLUSIVE=1 bash tests/e2e/run.sh > "$root/bench/out/e2e-$wt.log" 2>&1)
-    echo "$wt e2e exit $? $(tail -3 "$root/bench/out/e2e-$wt.log" | tr '\n' ' ')"
+    status=$?; bench_prune_tree "$d"
+    echo "$wt e2e exit $status $(tail -3 "$root/bench/out/e2e-$wt.log" | tr '\n' ' ')"
 done | tee "$root/bench/out/e2e-branches.txt"

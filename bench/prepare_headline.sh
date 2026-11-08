@@ -7,6 +7,7 @@
 # Writes bench/out/headline-builds.json.
 set -u
 cd "$(dirname "$0")/.."
+source bench/cargo_env.sh
 root="$PWD"
 FIXES="perf/settled-surface-budget perf/cold-settle-chromium fix/popup-window-viewport fix/automation-probe-deadline fix/open-closed-sheet"
 git fetch -q origin
@@ -33,7 +34,7 @@ fork_local=$(merge_missing bench/out/wt-fork $FIXES)
 checkout bench/out/wt-fork-outline "$(git -C bench/out/wt-fork rev-parse HEAD)"
 outline_local=$(merge_missing bench/out/wt-fork-outline perf/outline)
 for dir in wt-upstream wt-fork wt-fork-outline; do
-    (cd "bench/out/$dir" && nice -n 10 cargo build --release -q -p agent-desktop) || { echo "build failed in $dir" >&2; exit 1; }
+    bench_build "bench/out/$dir" || { echo "build failed in $dir" >&2; exit 1; }
 done
 python3 - "$fork_local" "$outline_local" <<'PY'
 import json, subprocess, sys, time
