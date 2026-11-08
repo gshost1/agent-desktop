@@ -1,0 +1,4 @@
+# n=3 Finder for #24's second head df5d379e (focused-surface rename editor) against fork main ec3add89, rotated.
+f24a finder:a:claude-opus-5-5:bench/out/wt-pr24v2 finder:a:claude-opus-5-5:bench/out/wt-main
+f24b finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24v2
+f24c finder:a:claude-opus-5-5:bench/out/wt-pr24v2 finder:a:claude-opus-5-5:bench/out/wt-main
