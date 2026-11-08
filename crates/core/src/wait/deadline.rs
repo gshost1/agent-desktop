@@ -30,8 +30,11 @@ impl Deadline {
     }
 
     /// Creates a bounded deadline that is intentionally independent of the
-    /// current command scope. Use only for recovery work that must run after
-    /// an operation deadline expires.
+    /// current command scope. Use it only for work that must be allowed to
+    /// outlast the command deadline: recovery after an operation deadline
+    /// expires, and saving a result that has already been observed, whose
+    /// ref-store lock wait gets its own budget instead of what the command has
+    /// left.
     pub fn detached_after(timeout_ms: u64) -> Result<Self, AdapterError> {
         let started_at = now();
         let duration = wait_timeout_duration(timeout_ms)?;

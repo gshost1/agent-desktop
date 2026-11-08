@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use super::devtools_websocket_url::DevtoolsWebSocketUrl;
 use crate::{AdapterError, AppError, Deadline, ErrorCode};
 
 const MAX_ATTEMPT_TIMEOUT: Duration = Duration::from_millis(500);
@@ -80,10 +81,10 @@ fn attempt(port: u16, timeout: Duration) -> Attempt {
     if stream.write_all(request.as_bytes()).is_err() {
         return Attempt::NotYetListening;
     }
-    let Some(raw) = read_http_response(&mut stream, timeout) else {
+    let Some(raw) = read_devtools_http_response(&mut stream, timeout) else {
         return Attempt::NotYetListening;
     };
-    match parse_response(port, &raw) {
+    match devtools_http_ok_body(&raw).and_then(|body| parse_devtools_version_body(port, &body)) {
         Some(endpoint) => Attempt::Verified(endpoint),
         None => Attempt::RespondedWithoutDevtoolsBody,
     }
@@ -97,7 +98,7 @@ fn attempt(port: u16, timeout: Duration) -> Attempt {
 /// The read timeout shrinks to the attempt's own remaining time on every
 /// iteration, so a server that trickles a byte at a time can only ever cost
 /// this attempt its allotted `timeout`, not one full read-timeout per byte.
-fn read_http_response(stream: &mut TcpStream, timeout: Duration) -> Option<Vec<u8>> {
+pub fn read_devtools_http_response(stream: &mut TcpStream, timeout: Duration) -> Option<Vec<u8>> {
     let started = Instant::now();
     let mut raw = Vec::new();
     let mut chunk = [0_u8; 4096];
@@ -120,7 +121,7 @@ fn read_http_response(stream: &mut TcpStream, timeout: Duration) -> Option<Vec<u
     if raw.is_empty() { None } else { Some(raw) }
 }
 
-fn response_complete(raw: &[u8]) -> bool {
+pub(crate) fn response_complete(raw: &[u8]) -> bool {
     let Some(header_end) = raw.windows(4).position(|window| window == b"\r\n\r\n") else {
         return false;
     };
@@ -138,12 +139,23 @@ fn content_length(headers: &[u8]) -> Option<usize> {
     })
 }
 
-fn parse_response(port: u16, raw: &[u8]) -> Option<CdpEndpoint> {
+/// The body of a `200` HTTP response, trimmed. Any other status, or bytes
+/// that hold no header terminator, yield `None`.
+pub fn devtools_http_ok_body(raw: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(raw);
-    let body = text
-        .split_once("\r\n\r\n")
-        .map_or("", |(_, body)| body)
-        .trim();
+    let (head, body) = text.split_once("\r\n\r\n")?;
+    let status_ok = head
+        .lines()
+        .next()
+        .is_some_and(|status| status.split_whitespace().nth(1) == Some("200"));
+    status_ok.then(|| body.trim().to_owned())
+}
+
+/// Parses a `/json/version` body. The advertised `webSocketDebuggerUrl` must
+/// pass [`DevtoolsWebSocketUrl::parse`] and name `port`; anything else is
+/// `None`, so a responder that is not this port's DevTools server is never
+/// mistaken for one.
+pub fn parse_devtools_version_body(port: u16, body: &str) -> Option<CdpEndpoint> {
     let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
     let websocket_url = parsed
         .get("webSocketDebuggerUrl")
@@ -165,25 +177,7 @@ fn parse_response(port: u16, raw: &[u8]) -> Option<CdpEndpoint> {
 }
 
 fn valid_websocket_url(value: &str, expected_port: u16) -> bool {
-    let Some((scheme, rest)) = value.split_once("://") else {
-        return false;
-    };
-    if !matches!(scheme, "ws" | "wss") {
-        return false;
-    }
-    let Some((authority, path)) = rest.split_once('/') else {
-        return false;
-    };
-    if path.is_empty() || authority.contains(['@', '?', '#']) {
-        return false;
-    }
-    let Some((host, port)) = authority.rsplit_once(':') else {
-        return false;
-    };
-    if host != "127.0.0.1" {
-        return false;
-    }
-    port.parse::<u16>() == Ok(expected_port)
+    DevtoolsWebSocketUrl::parse(value).is_ok_and(|url| url.port() == expected_port)
 }
 
 pub(crate) fn unattributed(port: u16) -> AppError {
