@@ -3,7 +3,7 @@
 //! then, so its body, with every per-entry result and disposition, travels in
 //! the error's `details.batch` instead of being dropped.
 
-use agent_desktop_core::{AppError, DeliveryDisposition, DeliverySemantics, context::CommandScope};
+use agent_desktop_core::{AppError, CommandScope, DeliveryDisposition, DeliverySemantics};
 use serde_json::Value;
 
 use crate::command_policy::CommandEffect;
