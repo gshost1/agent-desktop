@@ -49,10 +49,10 @@ pub fn launch(name: &str) -> HeadlessChrome {
         .unwrap();
     let chrome = HeadlessChrome { child, profile };
     let started = Instant::now();
-    while !chrome.profile.join("DevToolsActivePort").exists() {
+    while endpoint_from_user_data_dir(&chrome.profile).is_err() {
         assert!(
             started.elapsed() < Duration::from_secs(20),
-            "Chrome never wrote DevToolsActivePort"
+            "Chrome never wrote a complete DevToolsActivePort"
         );
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -87,30 +87,37 @@ pub fn data_url(html: &str) -> String {
     url
 }
 
-/// Serves `html` for every request on a loopback port from a detached
-/// thread and returns the port.
+/// Serves `html` for every request on a loopback port and returns the port.
+/// Each connection gets its own thread, so a preconnected socket that never
+/// sends a request cannot hold up the page load behind it.
 pub fn serve(html: String) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
+    let html = std::sync::Arc::new(html);
     std::thread::spawn(move || {
         for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            let mut request = Vec::new();
-            let mut chunk = [0_u8; 1024];
-            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-                match stream.read(&mut chunk) {
-                    Ok(0) | Err(_) => break,
-                    Ok(read) => request.extend_from_slice(&chunk[..read]),
-                }
-            }
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
-                html.len()
-            );
-            let _ = stream.write_all(response.as_bytes());
+            let Ok(stream) = stream else { continue };
+            let html = std::sync::Arc::clone(&html);
+            std::thread::spawn(move || answer(stream, &html));
         }
     });
     port
+}
+
+fn answer(mut stream: std::net::TcpStream, html: &str) {
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return,
+            Ok(read) => request.extend_from_slice(&chunk[..read]),
+        }
+    }
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
+        html.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
 }
 
 pub fn find<'a>(
