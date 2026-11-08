@@ -144,6 +144,7 @@ pub(super) fn execute(
     }
 
     let completed = results.completed();
+    let failed = results.failed();
     let mut body = json!({
         "results": results.into_entries(),
         "semantics": {
@@ -156,6 +157,7 @@ pub(super) fn execute(
         },
         "total_entries": total,
         "completed_entries": completed,
+        "failed_entries": failed,
         "not_started_entries": total.saturating_sub(completed),
         "timeout_ms": args.timeout_ms,
         "elapsed_ms": deadline.elapsed().as_millis(),

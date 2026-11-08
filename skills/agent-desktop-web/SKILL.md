@@ -46,6 +46,7 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 |---|---|
 | Click a link or button, or submit a form | `click @ref` |
 | Fill a text field, replacing its text | `set-value @ref "text"` |
+| Set a date, time, month, week or color input | `set-value @ref "19:30"`, in the input's own format |
 | Choose an option in a select, by label or value | `select @ref "Norway"` |
 | Tick or untick a checkbox | `check @ref`, `uncheck @ref` |
 | Choose a radio button | `check @ref` |
@@ -54,6 +55,24 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 A row, menu entry or card that the page makes clickable with a script, such as a `<div>` or `<span>` with a click listener and no ARIA role, is a `group` with a ref and `Click` in its `available_actions`. When the page gives it no accessible name, its text becomes its `name`, marked `"name_source": "contained_text"`, so `find --name` finds it and `click @ref` clicks it. A clickable element that holds a link, a button or an iframe keeps no ref of its own: click the control inside it. Neither does one holding more than 200 characters of text, such as a whole page section. An element whose click handler sits only on a parent element has no ref. Reach it through the page's keyboard path where one exists, such as `press down --ref @field` and then `press return --ref @field` in a field that opened a suggestion list.
 
 `type`, `clear`, `toggle`, `focus`, `scroll`, `scroll-to` and `double-click` also work on web refs. Other actions return `ACTION_NOT_SUPPORTED`, and `--headed` is refused. To press a key in a page field, name the field: `press return --ref @ref` sends the key through the page, in the background. Web refs take single keys; a combo with a modifier returns `ACTION_NOT_SUPPORTED`. `press` without `--ref` is an OS key event that goes wherever the browser's keyboard focus is, often the address bar, so it can miss the field that `focus` chose.
+
+### Date, time and color inputs
+
+A date, time, datetime-local, month, week or color input is one ref with role `datefield`, `timefield` or `colorwell`. Its value is set whole with `set-value`, in the format the page itself reads:
+
+| Input type | Role | Format | Example |
+|---|---|---|---|
+| `date` | `datefield` | `YYYY-MM-DD` | `2026-11-08` |
+| `time` | `timefield` | `HH:MM`, 24-hour, optional `:SS` | `19:30` |
+| `datetime-local` | `datefield` | `YYYY-MM-DDTHH:MM` | `2026-11-08T19:30` |
+| `month` | `datefield` | `YYYY-MM` | `2026-11` |
+| `week` | `datefield` | `YYYY-Www` | `2026-W45` |
+| `color` | `colorwell` | `#rrggbb`, lowercase | `#ff8800` |
+
+- `set-value` fires the page's `input` and `change` events and reads the value back. `delivered_verified` means the input holds exactly that value. `clear @ref` empties a date or time input.
+- A value in another form (`7:30 PM`, `#FF8800`) returns `INVALID_ARGS`, and the suggestion starts with the exact value to pass: `Pass '19:30'.` A value that is not a value of the type (`11/08/2026`) returns `INVALID_ARGS` with the format.
+- The `incrementor` refs under the field (Hours, Minutes, AM/PM, Day) are parts of it with no value of their own. `set-value` and `type` on them return `ACTION_NOT_SUPPORTED`. Set the field's own ref instead; do not step the parts with keys.
+- `min`, `max` and `step` do not stop `set-value`: the browser keeps a value outside them, and the form flags it on submit.
 
 Several steps on one page cost one turn as a `batch`:
 
@@ -66,6 +85,8 @@ agent-desktop batch '[
 ]' --stop-on-error
 ```
 
+A batch that ran every entry has `ok: true` even when an entry failed. Read `data.failed_entries`, and each entry's `ok` in `data.results`.
+
 ## Errors
 
 | `error.code` and `details.kind` | Meaning | Do |
@@ -77,6 +98,10 @@ agent-desktop batch '[
 | `WINDOW_NOT_FOUND`, `cdp_browser_has_no_page` or `cdp_page_not_found` | No page to read (a fresh profile, a minimized window) | `open-url`, or restore the window |
 | `AMBIGUOUS_TARGET`, `cdp_window_indistinct` | Two browser windows have the same title and frame, so the named window's page can't be told apart | Bring the window to the front or move one of them, then snapshot again |
 | `ACTION_NOT_SUPPORTED`, `cdp_not_a_browser` | `open-url` on an app that embeds web content for its own interface (an Electron app) | Read and act with `snapshot --surface web`; open URLs in a web browser |
+| `INVALID_ARGS`, `cdp_value_not_canonical` or `cdp_value_malformed` | The value is not in the input's own format | Pass the value the suggestion names, or the format it gives |
+| `ACTION_FAILED`, `cdp_value_rejected` | The input refused the value, such as `2026-02-30`, and kept its old one | Pass a value that exists |
+| `ACTION_FAILED`, `cdp_value_adjusted` | The input or the page changed the value after it was set; `details.observed` holds it | Read it with `get @ref --property value` before you set it again |
+| `ACTION_NOT_SUPPORTED`, message `role incrementor is not editable` | The ref is one part of a date or time input, or a stepper | `set-value` on the field that contains it |
 | `PERM_DENIED`, `cdp_approval_required` | Chrome asked its user to allow the connection | Ask the user; do not retry in a loop |
 
 Retry an action only when `error.disposition.retry` is `safe`. Otherwise read the page again and decide from what it shows.
