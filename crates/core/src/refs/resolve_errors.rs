@@ -1,6 +1,9 @@
 use serde_json::json;
 
-use crate::{AdapterError, ErrorCode, RefEntry};
+use crate::{
+    AdapterError, Deadline, ErrorCode, PlatformAdapter, RefEntry,
+    system::process_state::ProcessState,
+};
 
 /// The incomplete-and-retryable answer shared by both resolvers: a candidate
 /// that could not be read is not a non-match. `RefEntry` evidence is
@@ -88,15 +91,45 @@ pub(crate) fn absent(entry: &RefEntry) -> AdapterError {
         }))
 }
 
-/// A lookup that found no running application for a ref's recorded owner is
-/// complete evidence that no live element can match the ref, so it answers as
-/// a stale ref. Any other failure is returned as it is, including a closed
-/// window of a running application, which stays `WINDOW_NOT_FOUND`.
-pub(crate) fn owner_gone(error: AdapterError, entry: &RefEntry) -> AdapterError {
-    match error.code {
-        ErrorCode::AppNotFound => absent(entry),
+/// What a ref of an exited application should do next: the application may
+/// run again under a new process, and only a new snapshot of it can mint refs.
+pub(crate) const EXITED_PROCESS_SUGGESTION: &str = "The target process exited. Run 'list-apps' to see \
+     whether the application runs again, launch it if it does not, then take a new snapshot";
+
+/// A lookup that found no running application for a ref's recorded owner
+/// answers as a stale ref only when the recorded process is gone, because no
+/// live element can match the ref then. An application that still runs but
+/// was not found by name, and every other failure, are returned as they are.
+pub(crate) fn owner_gone(
+    adapter: &dyn PlatformAdapter,
+    entry: &RefEntry,
+    error: AdapterError,
+    deadline: Deadline,
+) -> AdapterError {
+    if error.code != ErrorCode::AppNotFound {
+        return error;
+    }
+    let Some(process) = entry.process.identity() else {
+        return error;
+    };
+    match adapter.process_state(process, deadline) {
+        Ok(state @ (ProcessState::Exited { .. } | ProcessState::Crashed { .. })) => {
+            owner_exited(entry, &state)
+        }
         _ => error,
     }
+}
+
+fn owner_exited(entry: &RefEntry, state: &ProcessState) -> AdapterError {
+    AdapterError::stale_ref_because("The application the ref was taken in is no longer running")
+        .with_suggestion(EXITED_PROCESS_SUGGESTION)
+        .with_details(json!({
+            "kind": "saved_ref_absent",
+            "process_state": state.label(),
+            "retryable": false,
+            "complete": true,
+            "role": entry.identity.role,
+        }))
 }
 
 /// The refusal for a landed element that does not match the ref. After a

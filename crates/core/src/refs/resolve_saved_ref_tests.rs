@@ -284,7 +284,19 @@ fn a_landing_with_no_count_behind_it_that_does_not_match_is_absent() {
     assert_eq!(error.details.unwrap()["kind"], "saved_ref_absent");
 }
 
-struct GoneOwner(super::test_support::RuleAdapter);
+struct GoneOwner {
+    inner: super::test_support::RuleAdapter,
+    state: Option<crate::system::process_state::ProcessState>,
+}
+
+impl GoneOwner {
+    fn new(state: Option<crate::system::process_state::ProcessState>) -> Self {
+        Self {
+            inner: RuleAdapter::new(tree_with(vec![node("button", "Run")])),
+            state,
+        }
+    }
+}
 
 impl crate::adapter::ObservationOps for GoneOwner {
     fn list_apps_scoped(
@@ -298,13 +310,16 @@ impl crate::adapter::ObservationOps for GoneOwner {
 
     fn list_windows(
         &self,
-        _filter: &crate::adapter::WindowFilter,
+        filter: &crate::adapter::WindowFilter,
         _deadline: crate::Deadline,
     ) -> Result<Vec<crate::WindowInfo>, crate::AdapterError> {
-        Err(crate::AdapterError::new(
-            ErrorCode::AppNotFound,
-            "No running application matches 'Fixture'",
-        ))
+        match &filter.app {
+            Some(app) => Err(crate::AdapterError::new(
+                ErrorCode::AppNotFound,
+                format!("No running application matches '{app}'"),
+            )),
+            None => Ok(Vec::new()),
+        }
     }
 
     fn observe_tree(
@@ -312,30 +327,74 @@ impl crate::adapter::ObservationOps for GoneOwner {
         root: crate::locator::live_locator::ObservationRoot<'_>,
         request: &crate::locator::live_locator::ObservationRequest,
     ) -> Result<crate::locator::live_locator::ObservedTree, crate::AdapterError> {
-        self.0.observe_tree(root, request)
+        self.inner.observe_tree(root, request)
     }
 }
 
 impl crate::adapter::ActionOps for GoneOwner {}
 impl crate::adapter::InputOps for GoneOwner {}
-impl crate::adapter::SystemOps for GoneOwner {}
+impl crate::adapter::SystemOps for GoneOwner {
+    fn process_state(
+        &self,
+        _process: crate::ProcessIdentity,
+        _deadline: crate::Deadline,
+    ) -> Result<crate::system::process_state::ProcessState, crate::AdapterError> {
+        self.state
+            .ok_or_else(|| crate::AdapterError::not_supported("process_state"))
+    }
+}
 
-#[test]
-fn a_ref_whose_application_exited_is_stale_and_not_app_not_found() {
-    let _guard = HomeGuard::new();
-    let adapter = GoneOwner(RuleAdapter::new(tree_with(vec![node("button", "Run")])));
-
-    let Err(error) = crate::refs::resolve_saved_ref::resolve_saved_ref(
-        &adapter,
-        &entry(),
+fn resolve_gone(adapter: &GoneOwner, window_id: Option<&str>) -> crate::AdapterError {
+    let mut entry = entry();
+    entry.source.source_window_id = window_id.map(str::to_owned);
+    entry.process.process_instance = Some("test-instance".into());
+    match crate::refs::resolve_saved_ref::resolve_saved_ref(
+        adapter,
+        &entry,
         crate::Deadline::standard().unwrap(),
         None,
-    ) else {
-        panic!("a ref of an exited application cannot resolve");
-    };
+    ) {
+        Ok(_) => panic!("a ref of an application that is not found cannot resolve"),
+        Err(error) => error,
+    }
+}
 
-    assert_eq!(error.code, ErrorCode::StaleRef);
-    let details = error.details.unwrap();
-    assert_eq!(details["kind"], "saved_ref_absent");
-    assert_eq!(details["retryable"], false);
+#[test]
+fn a_ref_whose_application_exited_is_stale_and_names_the_exit() {
+    let _guard = HomeGuard::new();
+    let exited = GoneOwner::new(Some(crate::system::process_state::ProcessState::Exited {
+        code: None,
+    }));
+
+    for window_id in [Some("w-1"), None] {
+        let error = resolve_gone(&exited, window_id);
+
+        assert_eq!(error.code, ErrorCode::StaleRef, "window id {window_id:?}");
+        assert!(!error.permits_retry_by_default());
+        let details = error.details.unwrap();
+        assert_eq!(details["kind"], "saved_ref_absent");
+        assert_eq!(details["process_state"], "exited");
+        assert_eq!(details["complete"], true);
+        assert_eq!(details["retryable"], false);
+    }
+}
+
+#[test]
+fn an_application_not_found_while_its_process_runs_or_is_unknown_stays_app_not_found() {
+    let _guard = HomeGuard::new();
+    for state in [
+        Some(crate::system::process_state::ProcessState::Running),
+        Some(crate::system::process_state::ProcessState::Unresponsive),
+        None,
+    ] {
+        let adapter = GoneOwner::new(state);
+
+        let error = resolve_gone(&adapter, Some("w-1"));
+
+        assert_eq!(
+            error.code,
+            ErrorCode::AppNotFound,
+            "process state {state:?}"
+        );
+    }
 }

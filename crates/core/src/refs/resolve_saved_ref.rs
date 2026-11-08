@@ -9,7 +9,7 @@ use crate::{
     refs::ref_identity::element_token,
     refs::ref_live_predicate::LivePredicate,
     refs::resolve_errors::{
-        absent, ambiguous_live_match, identity_not_unique, identity_unknown_error,
+        absent, ambiguous_live_match, identity_not_unique, identity_unknown_error, owner_gone,
     },
 };
 
@@ -195,23 +195,20 @@ pub(crate) fn recorded_window(
     match resolved {
         Ok(window) if belongs_to_entry(&window, entry) => return Ok(window),
         Ok(_) => {}
-        Err(error) => {
-            failure = Some(crate::refs::resolve_errors::owner_gone(
-                adapter_error(error),
-                entry,
-            ))
-        }
+        Err(error) => failure = Some(owner_gone(adapter, entry, adapter_error(error), deadline)),
     }
     if entry.source.source_window_id.is_some() {
         return Err(failure.unwrap_or_else(gone));
     }
-    let listed = adapter.list_windows(
-        &crate::adapter::WindowFilter {
-            focused_only: false,
-            app: entry.source.source_app.clone(),
-        },
-        deadline,
-    )?;
+    let listed = adapter
+        .list_windows(
+            &crate::adapter::WindowFilter {
+                focused_only: false,
+                app: entry.source.source_app.clone(),
+            },
+            deadline,
+        )
+        .map_err(|error| owner_gone(adapter, entry, error, deadline))?;
     listed
         .into_iter()
         .find(|window| belongs_to_entry(window, entry))
