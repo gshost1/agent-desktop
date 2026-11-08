@@ -115,6 +115,10 @@ Upstream status. Nothing goes to upstream yet. Each fix stays upstream-ready: it
 
 The bench itself (`perf/speed-cost`) is `fork-only`.
 
+## Finder and TextEdit tasks retired (2026-11-08)
+
+The Finder window, TextEdit's Save panel and Finder's Go to Folder sheet show the sidebar and suggestions of George's own folders. A model-free gate (`bench/privacy_gate.py`, counts only) found non-bench names in every one: the expanded Save panel sidebar, the Go to Folder suggestions once a path is typed, and the Finder window sidebar. George approved retiring the `finder`, `textedit` and `textedit-seeded` model runs until he says otherwise. Only Weather, System Settings and Calculator run with a model, so the 5-task comparison with Aside is on hold.
+
 ## Final run on fork main d2e406cb (2026-11-08)
 
 All of tonight's merges, Opus 5.5, config `a`, n=3, task order rotated per round (`bench/plan-final-textedit-seeded.txt`). TextEdit seeded, not Aside-comparable: the stock `textedit` task stays blocked because TextEdit's Save panel does not open in the bench folder.
