@@ -2,6 +2,7 @@
 
 ## Session 2 (2026-11-08 from 11:40 PST, release night)
 
+- Rule (control, 2026-11-08): a tool call waiting on George's approval, or a decision of his that blocks work, goes to control at once as `[speed] APPROVAL WAITING: <what, why, recommendation>`. Never put George's email or any personal identifier in a User-Agent, URL, header or payload.
 - [~] 1. E2E `AGENT_DESKTOP_E2E_SKIP_PRIVATE=1`: Sonnet writer started 11:42 PST (T3 delegate, worktree, branch test/e2e-skip-private, owns tests/e2e/** only).
 - [ ] 2. #59: CI still running on 44faf629 at 11:49 PST; watched.
 - [x] 3. Privacy gate, model-free (`bench/privacy_gate.py`, through probe_slot, counts only, throwaway AGENT_DESKTOP_HOME). Result: **GATE FAIL**. Finder and TextEdit stay blocked from model runs.
