@@ -65,8 +65,8 @@ pub fn execute(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<Value,
         remember_endpoint(adapter, &launched, &endpoint);
         launched.cdp = Some(endpoint);
     }
-    if launched.suggestion.is_none() {
-        launched.suggestion = launch_suggestion(requested_cdp_port.is_some(), &launched);
+    if launched.notes.suggestion.is_none() {
+        launched.notes.suggestion = launch_suggestion(requested_cdp_port.is_some(), &launched);
     }
     Ok(serde_json::to_value(launched)?)
 }
@@ -297,6 +297,10 @@ fn augment_probe_error(
          launched process. Drive it with accessibility commands, or close-app it if it is unwanted.",
     ))
 }
+
+#[cfg(test)]
+#[path = "launch_reopen_tests.rs"]
+mod reopen_tests;
 
 #[cfg(test)]
 #[path = "launch_tests.rs"]

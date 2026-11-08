@@ -1,5 +1,6 @@
 use super::cdp_test_support::{CdpAdapter, adapter_error, empty_cdp_adapter};
 use super::*;
+use crate::system::launch_notes::LaunchNotes;
 use crate::system::launch_options::LaunchOptions;
 use crate::{AppInfo, AppPresentation, ErrorCode, ProcessId, RendererKind};
 use std::sync::atomic::Ordering;
@@ -374,7 +375,10 @@ impl crate::adapter::SystemOps for SuggestingAdapter {
             window: None,
             cdp: None,
             renderer: Some(RendererKind::Chromium),
-            suggestion: Some("adapter guidance".into()),
+            notes: LaunchNotes {
+                suggestion: Some("adapter guidance".into()),
+                launch_path: None,
+            },
         })
     }
 }
