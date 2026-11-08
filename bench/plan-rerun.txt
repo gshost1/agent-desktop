@@ -1,0 +1,7 @@
+# Re-run after the shared-target fix (c6b95637): fx main/#24/#25 and seeded TextEdit main/#26/#27, n=3 each, rotated. Every binary passes check_binary_tree.sh.
+fxr1 finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24 finder:a:claude-opus-5-5:bench/out/wt-pr25
+fxr2 finder:a:claude-opus-5-5:bench/out/wt-pr24 finder:a:claude-opus-5-5:bench/out/wt-pr25 finder:a:claude-opus-5-5:bench/out/wt-main
+fxr3 finder:a:claude-opus-5-5:bench/out/wt-pr25 finder:a:claude-opus-5-5:bench/out/wt-main finder:a:claude-opus-5-5:bench/out/wt-pr24
+tsr1 textedit-seeded:a:claude-opus-5-5:bench/out/wt-main textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26 textedit-seeded:a:claude-opus-5-5:bench/out/wt-sheet
+tsr2 textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26 textedit-seeded:a:claude-opus-5-5:bench/out/wt-sheet textedit-seeded:a:claude-opus-5-5:bench/out/wt-main
+tsr3 textedit-seeded:a:claude-opus-5-5:bench/out/wt-sheet textedit-seeded:a:claude-opus-5-5:bench/out/wt-main textedit-seeded:a:claude-opus-5-5:bench/out/wt-pr26
