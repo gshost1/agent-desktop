@@ -2,7 +2,22 @@ use super::*;
 use crate::refs::refs_test_support::HomeGuard;
 use crate::session::SessionTraceMode;
 use std::fs;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+fn gc_until_removed(options: GcOptions, session_ids: &[&str]) -> GcReport {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut removed = Vec::new();
+    loop {
+        removed.extend(gc(options).unwrap().removed);
+        let all_removed = session_ids
+            .iter()
+            .all(|session_id| removed.iter().any(|id| id == session_id));
+        if all_removed || Instant::now() >= deadline {
+            return GcReport { removed };
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
 
 #[test]
 fn multiple_liveness_owners_do_not_serialize_each_other() {
@@ -24,11 +39,13 @@ fn multiple_liveness_owners_do_not_serialize_each_other() {
     assert!(session_dir(&manifest.id).unwrap().is_dir());
 
     drop(second);
-    let report = gc(GcOptions {
-        ended_only: false,
-        older_than: Some(Duration::ZERO),
-    })
-    .unwrap();
+    let report = gc_until_removed(
+        GcOptions {
+            ended_only: false,
+            older_than: Some(Duration::ZERO),
+        },
+        &[manifest.id.as_str()],
+    );
     assert!(report.removed.contains(&manifest.id));
 }
 
@@ -82,11 +99,13 @@ fn gc_retains_idle_cross_process_owner_and_reaps_after_crash() {
 
     child.kill().unwrap();
     child.wait().unwrap();
-    let removed = gc(GcOptions {
-        ended_only: false,
-        older_than: Some(Duration::ZERO),
-    })
-    .unwrap();
+    let removed = gc_until_removed(
+        GcOptions {
+            ended_only: false,
+            older_than: Some(Duration::ZERO),
+        },
+        &[manifest.id.as_str()],
+    );
     assert!(removed.removed.contains(&manifest.id));
 }
 
@@ -106,11 +125,13 @@ fn gc_removes_ended_sessions_but_not_pointer_or_live() {
     })
     .unwrap();
     end_session(&ended.id).unwrap();
-    let report = gc(GcOptions {
-        ended_only: false,
-        older_than: None,
-    })
-    .unwrap();
+    let report = gc_until_removed(
+        GcOptions {
+            ended_only: false,
+            older_than: None,
+        },
+        &[ended.id.as_str()],
+    );
     assert!(report.removed.contains(&ended.id));
     assert!(!report.removed.contains(&live.id));
     assert!(session_dir(&live.id).unwrap().is_dir());
@@ -141,11 +162,13 @@ fn gc_ended_reclaims_an_ended_session_whose_trace_was_just_written() {
     write_trace_segment(&traced.id);
     end_session(&traced.id).unwrap();
 
-    let report = gc(GcOptions {
-        ended_only: true,
-        older_than: None,
-    })
-    .unwrap();
+    let report = gc_until_removed(
+        GcOptions {
+            ended_only: true,
+            older_than: None,
+        },
+        &[traced.id.as_str()],
+    );
 
     assert!(report.removed.contains(&traced.id));
     assert!(!session_dir(&traced.id).unwrap().exists());
@@ -165,11 +188,13 @@ fn gc_ended_with_a_zero_limit_leaves_no_ended_session() {
     .unwrap();
     end_session(&untraced.id).unwrap();
 
-    let report = gc(GcOptions {
-        ended_only: true,
-        older_than: Some(Duration::ZERO),
-    })
-    .unwrap();
+    let report = gc_until_removed(
+        GcOptions {
+            ended_only: true,
+            older_than: Some(Duration::ZERO),
+        },
+        &[traced.id.as_str(), untraced.id.as_str()],
+    );
 
     assert!(report.removed.contains(&traced.id));
     assert!(report.removed.contains(&untraced.id));
@@ -208,7 +233,11 @@ fn gc_ended_keeps_an_ended_session_while_a_command_still_holds_its_lease() {
     assert!(session_dir(&traced.id).unwrap().is_dir());
 
     drop(lease);
-    assert!(gc(options()).unwrap().removed.contains(&traced.id));
+    assert!(
+        gc_until_removed(options(), &[traced.id.as_str()])
+            .removed
+            .contains(&traced.id)
+    );
 }
 
 #[test]
