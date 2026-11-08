@@ -7,6 +7,7 @@ Usage: python3 bench/post_probe_check.py <probe name> [--clean]
   still counts as failed, because it left it behind).
 """
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tasks import (BENCH_FINDER_PREFIXES, PERSONAL_CLOSE_LOG, PERSONAL_FINDER_TITLES,  # noqa: E402
                    close_finder_windows, macctl)
 
-TEXTEDIT_BENCH_MARKERS = ("bench", "probe", "seed.", "note-")
+SHEETCTL = Path(__file__).resolve().parent / "out" / "sheetctl"
+TEXTEDIT_BENCH_MARKERS = ("bench", "probe", "seed", "note-")
 
 
 def finder_counts():
@@ -45,6 +47,7 @@ def main():
         closed_bench, left_bench = close_finder_windows(lambda t: t.startswith(tuple(BENCH_FINDER_PREFIXES)))
         closed_personal, left_personal = close_finder_windows(lambda t: t in PERSONAL_FINDER_TITLES)
         for title in textedit:
+            subprocess.run([str(SHEETCTL), "cancel", "TextEdit", title], capture_output=True, timeout=20)
             macctl("close-discard", "TextEdit", title)
         row.update({"closed_bench": closed_bench, "closed_personal": closed_personal,
                     "left_after_clean": left_bench + left_personal + len(textedit_bench_windows())})
