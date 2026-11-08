@@ -21,7 +21,7 @@ agent-desktop is a CLI that reads and operates desktop apps through the OS acces
 
 ## Shell syntax
 
-Examples use a POSIX shell. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), because a bare `@token` is the splatting operator. Use `$env:NAME = 'value'` instead of `export`, and `| ConvertFrom-Json` instead of `$(...)` and `jq`. The Windows skill has the PowerShell forms.
+Examples use a POSIX shell. When a ref is built from a variable, brace it: `"${S}:e1"`. In zsh, `$S:e1` applies the `:e` modifier and passes `1`, even inside double quotes. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), because a bare `@token` is the splatting operator. Use `$env:NAME = 'value'` instead of `export`, and `| ConvertFrom-Json` instead of `$(...)` and `jq`. The Windows skill has the PowerShell forms.
 
 ## First run
 
