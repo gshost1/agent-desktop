@@ -17,10 +17,17 @@ use crate::{
     command_policy::CommandEffect,
 };
 
+mod batch_results;
+mod batch_stop;
 mod bounded_json;
+mod entry_errors;
+mod entry_outcome;
 mod execution;
+mod pending_seed;
 mod preparation;
 mod result_entry;
+mod seed_kind;
+mod seed_plan;
 
 #[cfg(test)]
 #[path = "baseline_tests.rs"]
