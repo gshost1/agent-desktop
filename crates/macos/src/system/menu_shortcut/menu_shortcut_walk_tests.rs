@@ -1,0 +1,72 @@
+use super::*;
+
+fn pending(depth: u8, menu: Option<&str>) -> Pending {
+    Pending {
+        element: crate::tree::element_for_pid(i32::MAX),
+        depth,
+        menu: menu.map(str::to_string),
+    }
+}
+
+fn busy() -> AdapterError {
+    child_error("child_read")
+}
+
+#[test]
+fn an_unreadable_submenu_is_recorded_and_stepped_over() {
+    let mut walk = MenuWalk::default();
+    step_over(
+        busy(),
+        &pending(3, Some("Edit")),
+        Some("AutoFill"),
+        &mut walk,
+    )
+    .unwrap();
+    step_over(
+        busy(),
+        &pending(5, Some("Format")),
+        Some("Writing Direction"),
+        &mut walk,
+    )
+    .unwrap();
+    assert_eq!(
+        walk.unread_menus,
+        ["Edit > AutoFill", "Format > Writing Direction"]
+    );
+}
+
+#[test]
+fn an_unreadable_menu_bar_or_top_level_menu_ends_the_walk_and_says_where() {
+    for depth in [0, 1, 2] {
+        let mut walk = MenuWalk {
+            visited: 7,
+            ..MenuWalk::default()
+        };
+        let error = step_over(busy(), &pending(depth, Some("File")), None, &mut walk).unwrap_err();
+        let details = error.details.unwrap();
+        assert_eq!(details["kind"], "child_read", "{depth}");
+        assert_eq!(details["depth"], depth);
+        assert_eq!(details["menu"], "File");
+        assert_eq!(details["visited"], 7);
+        assert!(walk.unread_menus.is_empty());
+    }
+}
+
+#[test]
+fn a_permission_failure_inside_a_submenu_is_never_stepped_over() {
+    let mut walk = MenuWalk::default();
+    let denied = AdapterError::new(ErrorCode::PermDenied, "no accessibility");
+    let error = step_over(denied, &pending(4, Some("Edit")), None, &mut walk).unwrap_err();
+    assert_eq!(error.code, ErrorCode::PermDenied);
+}
+
+#[test]
+fn only_menu_roles_are_descended() {
+    for role in ["AXMenuBar", "AXMenuBarItem", "AXMenu", "AXMenuItem"] {
+        assert!(holds_menu_items(Some(role)), "{role}");
+    }
+    for role in ["AXTextField", "AXGroup", "AXStaticText"] {
+        assert!(!holds_menu_items(Some(role)), "{role}");
+    }
+    assert!(!holds_menu_items(None));
+}

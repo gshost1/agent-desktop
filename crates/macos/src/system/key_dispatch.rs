@@ -35,7 +35,7 @@ fn press_for_app(
     } else {
         MenuShortcutOutcome::NotApplicable
     };
-    if matches!(menu, MenuShortcutOutcome::Pressed { .. }) {
+    if matches!(menu, MenuShortcutOutcome::Pressed(_)) {
         return post_delivery_process_result(&process, menu_shortcut_report(&menu));
     }
     if let Some(action) = simple_key_action(combo)
@@ -79,23 +79,22 @@ impl From<ActionStep> for DeliveryReport {
 }
 
 fn menu_shortcut_report(outcome: &MenuShortcutOutcome) -> DeliveryReport {
-    match outcome {
-        MenuShortcutOutcome::Pressed { menu, item } => DeliveryReport {
-            steps: vec![semantic_step(MENU_SHORTCUT_STEP)],
-            details: Some(serde_json::json!({
-                "menu_shortcut": { "menu": menu, "item": item }
-            })),
-        },
-        MenuShortcutOutcome::Skipped(reason) => DeliveryReport {
-            steps: vec![
-                ActionStep::skipped(MENU_SHORTCUT_STEP).with_mechanism(StepMechanism::SemanticApi),
-            ],
-            details: Some(serde_json::json!({ "menu_shortcut": { "skipped": reason } })),
-        },
-        MenuShortcutOutcome::NotApplicable => DeliveryReport {
-            steps: Vec::new(),
-            details: None,
-        },
+    let (step, details) = match outcome {
+        MenuShortcutOutcome::Pressed(details) => (semantic_step(MENU_SHORTCUT_STEP), details),
+        MenuShortcutOutcome::Skipped(details) => (
+            ActionStep::skipped(MENU_SHORTCUT_STEP).with_mechanism(StepMechanism::SemanticApi),
+            details,
+        ),
+        MenuShortcutOutcome::NotApplicable => {
+            return DeliveryReport {
+                steps: Vec::new(),
+                details: None,
+            };
+        }
+    };
+    DeliveryReport {
+        steps: vec![step],
+        details: Some(serde_json::json!({ "menu_shortcut": details })),
     }
 }
 

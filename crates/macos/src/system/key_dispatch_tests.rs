@@ -86,10 +86,9 @@ fn chords_without_command_stay_on_the_keyboard_path() {
 
 #[test]
 fn a_pressed_menu_item_is_reported_as_its_own_semantic_step() {
-    let report = menu_shortcut_report(&MenuShortcutOutcome::Pressed {
-        menu: Some("File".into()),
-        item: Some("New Folder".into()),
-    });
+    let report = menu_shortcut_report(&MenuShortcutOutcome::Pressed(serde_json::json!({
+        "menu": "File", "item": "New Folder"
+    })));
     assert_eq!(report.steps.len(), 1);
     assert_eq!(report.steps[0].label(), MENU_SHORTCUT_STEP);
     assert_eq!(
@@ -107,7 +106,7 @@ fn a_pressed_menu_item_is_reported_as_its_own_semantic_step() {
 
 #[test]
 fn a_skipped_lookup_names_its_reason_before_the_keystroke() {
-    let report = menu_shortcut_report(&MenuShortcutOutcome::Skipped("ambiguous"));
+    let report = menu_shortcut_report(&MenuShortcutOutcome::skipped("ambiguous"));
     assert_eq!(report.steps.len(), 1);
     assert_eq!(report.steps[0].label(), MENU_SHORTCUT_STEP);
     assert!(matches!(
