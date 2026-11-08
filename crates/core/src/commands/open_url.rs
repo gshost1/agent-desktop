@@ -17,7 +17,9 @@ pub struct OpenUrlArgs {
 
 /// Loads `url` in the browser named by `--app`: in the tab its window shows,
 /// or in a new background tab with `--new-tab`. The adapter does the loading
-/// and reports which channel did it; nothing is focused or raised.
+/// and reports which channel did it; nothing is focused or raised. It holds
+/// the interaction lease while it loads, as every command that changes an
+/// application does, so it never navigates a page another session is driving.
 pub fn execute(args: OpenUrlArgs, adapter: &dyn PlatformAdapter) -> Result<Value, AppError> {
     validate_url(&args.url)?;
     let timeout_ms = args.timeout_ms.unwrap_or(DEFAULT_OPEN_URL_TIMEOUT_MS);
@@ -31,12 +33,15 @@ pub fn execute(args: OpenUrlArgs, adapter: &dyn PlatformAdapter) -> Result<Value
             crate::system::app_lookup::process_identity(&app)?
         }
     };
+    let lease = adapter
+        .acquire_interaction_lease(deadline)
+        .map_err(AdapterError::unsent)?;
     let opened = adapter.open_url(&OpenUrlRequest {
         process,
         window: window.as_ref(),
         url: &args.url,
         new_tab: args.new_tab,
-        deadline,
+        deadline: lease.deadline(),
     })?;
     Ok(serde_json::to_value(opened)?)
 }

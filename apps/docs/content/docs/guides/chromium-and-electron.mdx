@@ -42,7 +42,7 @@ This is the result, with the window object trimmed:
       "product": "Chrome/156.0.8078.80",
       "websocket_url": "ws://127.0.0.1:62332/devtools/browser/7bd6bb05-38fc-480f-9e04-a4acd8aa10f3"
     },
-    "suggestion": "Next: load a page with `open-url <url> --app \"Google Chrome\"`, read it with `snapshot --app \"Google Chrome\" --surface web -i`, and act on its refs with the usual commands; `data.channel` is `cdp` when the page was read over this endpoint. Do not hand-roll raw CDP or call app-internal APIs. Native menus, dialogs, windows, and screenshots stay on the accessibility surfaces."
+    "suggestion": "Next: read the web content with `snapshot --app \"Google Chrome\" --surface web -i` and act on its refs with the usual commands; `data.channel` is `cdp` when it was read over this endpoint. In a web browser, `open-url <url> --app \"Google Chrome\"` loads a page; an app that embeds web content for its own interface refuses it. Do not hand-roll raw CDP or call app-internal APIs. Native menus, dialogs, windows, and screenshots stay on the accessibility surfaces."
   }
 }
 ```

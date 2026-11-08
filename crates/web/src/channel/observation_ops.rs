@@ -181,6 +181,14 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         Ok(surfaces)
     }
 
+    fn list_raised_surfaces(
+        &self,
+        process: ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        self.inner.list_raised_surfaces(process, deadline)
+    }
+
     fn resolve_shell_surface(
         &self,
         surface: SnapshotSurface,

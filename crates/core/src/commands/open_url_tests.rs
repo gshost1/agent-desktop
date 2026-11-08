@@ -2,8 +2,8 @@ use std::sync::Mutex;
 
 use super::{OpenUrlArgs, execute};
 use crate::{
-    AdapterError, AppInfo, Deadline, ErrorCode, OpenUrlRequest, OpenedPage, ProcessIdentity,
-    WindowInfo, adapter::WindowFilter,
+    AdapterError, AppError, AppInfo, Deadline, ErrorCode, OpenUrlRequest, OpenedPage,
+    ProcessIdentity, WindowInfo, adapter::WindowFilter,
 };
 
 type SeenRequest = (ProcessIdentity, Option<String>, String, bool);
@@ -13,6 +13,7 @@ struct BrowserStub {
     windows: Vec<WindowInfo>,
     seen: Mutex<Vec<SeenRequest>>,
     opens: bool,
+    lease_held_elsewhere: bool,
 }
 
 fn browser_window(id: &str) -> WindowInfo {
@@ -58,6 +59,19 @@ impl crate::ObservationOps for BrowserStub {
 impl crate::ActionOps for BrowserStub {}
 impl crate::InputOps for BrowserStub {}
 impl crate::SystemOps for BrowserStub {
+    fn acquire_interaction_lease(
+        &self,
+        deadline: Deadline,
+    ) -> Result<crate::InteractionLease, AdapterError> {
+        if self.lease_held_elsewhere {
+            return Err(AdapterError::new(
+                ErrorCode::Timeout,
+                "another session holds the interaction lease",
+            ));
+        }
+        crate::InteractionLease::guarded(deadline, ())
+    }
+
     fn open_url(&self, request: &OpenUrlRequest<'_>) -> Result<OpenedPage, AdapterError> {
         if !self.opens {
             return Err(AdapterError::not_supported("open_url"));
@@ -162,4 +176,21 @@ fn an_adapter_without_a_web_channel_reports_not_supported() {
     };
     let error = execute(args("https://example.com/", false), &stub).unwrap_err();
     assert_eq!(error.code(), ErrorCode::PlatformNotSupported.as_str());
+}
+
+#[test]
+fn a_page_another_session_is_driving_is_never_navigated() {
+    let stub = BrowserStub {
+        windows: vec![browser_window("w1")],
+        opens: true,
+        lease_held_elsewhere: true,
+        ..Default::default()
+    };
+    let error = execute(args("https://example.com/", false), &stub).unwrap_err();
+    assert!(stub.seen.lock().unwrap().is_empty());
+    let AppError::Adapter(error) = error else {
+        panic!("expected an adapter error, got {error:?}");
+    };
+    assert_eq!(error.code, ErrorCode::Timeout);
+    assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
 }

@@ -14,25 +14,23 @@ pub(crate) const SETTLED_SURFACE_BUDGET: Duration = Duration::from_millis(1_000)
 /// An action that opens a sheet, menu, or alert leaves the caller staring at a
 /// success envelope with no hint that the application is now waiting on a
 /// dialog. Reporting the overlays saves a round of window archaeology. Purely
-/// informational, so a failed or late read never disturbs delivered work. A
-/// listed web page is a tab the browser already had, not an overlay the action
-/// raised, so it is left out.
+/// informational, so a failed or late read never disturbs delivered work. It
+/// lists only surfaces an action can raise, so content pages such as a
+/// browser's tabs are never read here.
 pub(crate) fn read(
     adapter: &dyn PlatformAdapter,
     process: ProcessIdentity,
     deadline: Deadline,
 ) -> Vec<SurfaceInfo> {
-    let mut surfaces = adapter
-        .list_surfaces(process, deadline.capped(SETTLED_SURFACE_BUDGET))
+    adapter
+        .list_raised_surfaces(process, deadline.capped(SETTLED_SURFACE_BUDGET))
         .unwrap_or_else(|error| {
             tracing::debug!(
                 code = error.code.as_str(),
                 "surface report after the action was dropped"
             );
             Vec::new()
-        });
-    surfaces.retain(|surface| surface.kind != crate::SnapshotSurface::Web.as_str());
-    surfaces
+        })
 }
 
 #[cfg(test)]

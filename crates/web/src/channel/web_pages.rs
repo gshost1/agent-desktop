@@ -4,6 +4,7 @@ use agent_desktop_core::{
 };
 
 use super::browser_link::BrowserLink;
+use super::embedded_runtime::refuse_embedded_runtime;
 use super::link_access::LinkAccess;
 use super::page_choice::{NO_PAGE_TARGET, choose_page};
 use super::web_channel_adapter::WebChannelAdapter;
@@ -28,6 +29,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
     ) -> Result<Option<OpenedPage>, AdapterError> {
         let deadline = request.deadline;
         self.with_link(&request.process, LinkAccess::prompting(deadline), |link| {
+            refuse_embedded_runtime(link, deadline)?;
             let (target_id, opened) = if request.new_tab {
                 (background_tab(link, deadline)?, NEW_TAB)
             } else {
