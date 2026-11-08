@@ -65,6 +65,13 @@ pub(crate) fn clips_descendants(role: &str) -> bool {
     )
 }
 
+/// A sheet or popover is a window of its own. The window it hangs from does not
+/// clip it, so its frame replaces the inherited viewport instead of narrowing it:
+/// a save sheet wider than its document window keeps its buttons visible.
+pub(crate) fn draws_own_surface(role: &str) -> bool {
+    matches!(role, "AXSheet" | "AXPopover")
+}
+
 pub(crate) fn intersect_rects(left: Rect, right: Rect) -> Option<Rect> {
     let x = left.x.max(right.x);
     let y = left.y.max(right.y);
@@ -85,6 +92,9 @@ pub(crate) fn clipped_viewport(
 ) -> Option<Rect> {
     if !clips_descendants(role) {
         return parent;
+    }
+    if draws_own_surface(role) {
+        return bounds;
     }
     let parent = parent?;
     let bounds = bounds?;
@@ -115,27 +125,23 @@ fn clip_by_ancestors(
     window: Rect,
     instant: std::time::Instant,
 ) -> Result<Option<Rect>, AdapterError> {
-    let mut viewport = Some(window);
+    let mut clips = Vec::new();
     let mut current = super::surface_read::element(element, "AXParent", instant)?;
     for _ in 0..super::properties::element::ABSOLUTE_MAX_DEPTH {
         let Some(parent) = current else {
-            return Ok(viewport);
+            return Ok(viewport_from_clips(window, &clips));
         };
         let Some(role) = super::surface_read::string(&parent, "AXRole", instant)? else {
             return Ok(None);
         };
         if role == "AXApplication" {
-            return Ok(viewport);
+            return Ok(viewport_from_clips(window, &clips));
         }
         if clips_descendants(&role) {
-            viewport = clipped_viewport(
-                viewport,
-                &role,
-                read_bounds_with_deadline(&parent, instant)?,
-            );
+            clips.push((role.clone(), read_bounds_with_deadline(&parent, instant)?));
         }
-        if role == "AXWindow" {
-            return Ok(viewport);
+        if role == "AXWindow" || draws_own_surface(&role) {
+            return Ok(viewport_from_clips(window, &clips));
         }
         current = super::surface_read::element(&parent, "AXParent", instant)?;
     }
@@ -143,6 +149,22 @@ fn clip_by_ancestors(
         ErrorCode::AppUnresponsive,
         "Clipping ancestry exceeded its bounded depth",
     ))
+}
+
+/// Folds the clipping ancestors met walking up from an element, nearest first,
+/// into its viewport. The walk stops at the first window, sheet or popover; a
+/// sheet or popover ends the list and its frame replaces the window's.
+pub(crate) fn viewport_from_clips(window: Rect, clips: &[(String, Option<Rect>)]) -> Option<Rect> {
+    let own_surface = clips.iter().position(|(role, _)| draws_own_surface(role));
+    let mut viewport = match own_surface {
+        Some(index) => clips[index].1,
+        None => Some(window),
+    };
+    let below = own_surface.map_or(clips, |index| &clips[..index]);
+    for (role, bounds) in below {
+        viewport = clipped_viewport(viewport, role, *bounds);
+    }
+    viewport
 }
 
 fn window_ancestor_bounds(

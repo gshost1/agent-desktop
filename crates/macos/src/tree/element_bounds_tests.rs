@@ -218,3 +218,73 @@ fn a_control_inside_a_popover_has_no_window_ancestor() {
 
     assert_eq!(window, None);
 }
+
+fn clip(role: &str, bounds: Option<Rect>) -> (String, Option<Rect>) {
+    (role.to_owned(), bounds)
+}
+
+#[test]
+fn a_sheet_wider_than_its_window_keeps_its_far_controls_visible() {
+    let window = rect(0.0, 586.0);
+    let sheet = rect(-147.0, 880.0);
+    let save_button = rect(650.0, 70.0);
+
+    let viewport = viewport_from_clips(window, &[clip("AXSheet", Some(sheet))]);
+
+    assert_eq!(viewport, Some(sheet));
+    assert_eq!(
+        crate::tree::state_reader::offscreen(Some(save_button), viewport),
+        Some(false)
+    );
+    assert_eq!(
+        crate::tree::state_reader::offscreen(Some(rect(740.0, 20.0)), viewport),
+        Some(true)
+    );
+}
+
+#[test]
+fn clips_inside_a_sheet_still_narrow_its_viewport() {
+    let viewport = viewport_from_clips(
+        rect(0.0, 586.0),
+        &[
+            clip("AXScrollArea", Some(rect(600.0, 100.0))),
+            clip("AXSheet", Some(rect(-147.0, 880.0))),
+        ],
+    );
+
+    assert_eq!(viewport, Some(rect(600.0, 100.0)));
+}
+
+#[test]
+fn a_sheet_with_unknown_geometry_leaves_the_viewport_unknown() {
+    assert_eq!(
+        viewport_from_clips(rect(0.0, 586.0), &[clip("AXSheet", None)]),
+        None
+    );
+}
+
+#[test]
+fn window_clips_still_intersect_without_a_sheet() {
+    let viewport = viewport_from_clips(
+        rect(0.0, 500.0),
+        &[
+            clip("AXScrollArea", Some(rect(400.0, 300.0))),
+            clip("AXWindow", Some(rect(0.0, 500.0))),
+        ],
+    );
+
+    assert_eq!(viewport, Some(rect(400.0, 100.0)));
+}
+
+#[test]
+fn snapshot_traversal_entering_a_sheet_takes_the_sheet_frame() {
+    let sheet = rect(-147.0, 880.0);
+    assert_eq!(
+        clipped_viewport(Some(rect(0.0, 586.0)), "AXSheet", Some(sheet)),
+        Some(sheet)
+    );
+    assert_eq!(
+        clipped_viewport(Some(rect(0.0, 586.0)), "AXPopover", Some(sheet)),
+        Some(sheet)
+    );
+}
