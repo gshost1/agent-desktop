@@ -266,7 +266,7 @@ fn changed_during_hydration() -> AdapterError {
 }
 
 fn query_incomplete(validation: &LocatorResolution) -> AdapterError {
-    let deterministic = super::resolve::has_deterministic_limit(&validation.stats);
+    let deterministic = super::resolve_errors::has_deterministic_limit(&validation.stats);
     AdapterError::timeout("Selected locator query could not be revalidated")
         .with_suggestion("Retry against a stable subtree or use a narrower locator")
         .with_details(json!({

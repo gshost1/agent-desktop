@@ -44,6 +44,7 @@ mod partial;
 mod predicate;
 mod ref_evidence_requirements;
 mod resolve;
+mod resolve_errors;
 mod row_reading;
 mod select;
 mod selection_completeness;
@@ -103,6 +104,8 @@ mod materialize_tests;
 mod observed_tree_tests;
 #[cfg(test)]
 mod ownership_tests;
+#[cfg(test)]
+mod resolve_causeless_tests;
 #[cfg(test)]
 mod resolve_first_tests;
 #[cfg(test)]
