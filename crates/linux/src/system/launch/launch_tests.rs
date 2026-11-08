@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use super::*;
 use crate::system::launch::launch_target::Plan;
+use agent_desktop_core::system::launch_presentation::LaunchPresentation;
 
 fn options() -> LaunchOptions {
     LaunchOptions::default()
@@ -217,7 +218,10 @@ fn a_directory_of_the_entry_that_does_not_exist_is_not_used() {
 #[test]
 fn a_refused_focus_still_reports_the_launch_and_says_why() {
     let asked = LaunchOptions {
-        activate: true,
+        presentation: LaunchPresentation {
+            activate: true,
+            ..Default::default()
+        },
         ..options()
     };
     let original = window();
@@ -227,13 +231,16 @@ fn a_refused_focus_still_reports_the_launch_and_says_why() {
     let reported = result.window.expect("window");
     assert_eq!(reported.id, original.id);
     assert!(!reported.state.is_focused);
-    assert!(result.suggestion.expect("note").contains("no focus"));
+    assert!(result.notes.suggestion.expect("note").contains("no focus"));
 }
 
 #[test]
 fn a_successful_activation_reports_the_window_read_after_the_request() {
     let asked = LaunchOptions {
-        activate: true,
+        presentation: LaunchPresentation {
+            activate: true,
+            ..Default::default()
+        },
         ..options()
     };
     let mut focused = window();
@@ -249,14 +256,17 @@ fn a_successful_activation_reports_the_window_read_after_the_request() {
 #[test]
 fn an_activation_with_no_window_read_after_it_keeps_the_window_it_had() {
     let asked = LaunchOptions {
-        activate: true,
+        presentation: LaunchPresentation {
+            activate: true,
+            ..Default::default()
+        },
         ..options()
     };
     let original = window();
     let result = conclude(&owner(), Some(original.clone()), &asked, true, |_| Ok(None));
     let reported = result.window.expect("window");
     assert_eq!(reported.id, original.id);
-    assert!(result.suggestion.is_none());
+    assert!(result.notes.suggestion.is_none());
 }
 
 #[test]
@@ -266,11 +276,17 @@ fn a_reused_instance_says_the_environment_and_directory_were_dropped() {
         ..options()
     };
     let reused = conclude(&owner(), None, &with_env, false, |_| Ok(None));
-    assert!(reused.suggestion.expect("note").contains("not applied"));
+    assert!(
+        reused
+            .notes
+            .suggestion
+            .expect("note")
+            .contains("not applied")
+    );
     let created = conclude(&owner(), None, &with_env, true, |_| Ok(None));
-    assert!(created.suggestion.is_none());
+    assert!(created.notes.suggestion.is_none());
     let plain = conclude(&owner(), None, &options(), false, |_| Ok(None));
-    assert!(plain.suggestion.is_none());
+    assert!(plain.notes.suggestion.is_none());
 }
 
 fn listed(id: &str) -> WindowInfo {
@@ -341,7 +357,10 @@ fn successful_focus_keeps_its_window_without_a_failure_note_when_refresh_is_unav
             &owner(),
             Some(original.clone()),
             &LaunchOptions {
-                activate: true,
+                presentation: LaunchPresentation {
+                    activate: true,
+                    ..Default::default()
+                },
                 ..options()
             },
             true,
@@ -350,6 +369,20 @@ fn successful_focus_keeps_its_window_without_a_failure_note_when_refresh_is_unav
         let retained = result.window.unwrap();
         assert_eq!(retained.id, original.id);
         assert_eq!(retained.process_instance, original.process_instance);
-        assert!(result.suggestion.is_none());
+        assert!(result.notes.suggestion.is_none());
     }
+}
+
+#[test]
+fn reopen_is_refused_before_anything_is_spawned() {
+    let reopen = LaunchOptions {
+        presentation: LaunchPresentation {
+            reopen: true,
+            ..Default::default()
+        },
+        ..options()
+    };
+    let error = validate(&reopen).expect_err("linux has no reopen event");
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
 }

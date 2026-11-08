@@ -7,11 +7,14 @@ App lifecycle, windows, notifications, clipboard, wait, batch, sessions, health.
 ```bash
 agent-desktop launch "System Settings"       # macOS display name
 agent-desktop launch "TextEdit" --activate
+agent-desktop launch "TextEdit" --reopen
 agent-desktop launch "MyTool" --arg /tmp/notes.txt --env KEY=VALUE --no-attach
 agent-desktop launch "Obsidian" --cdp
 ```
 
 `launch` returns once the process runs. The identifier differs by OS: the examples use macOS display names, and the platform skill names the form for its OS. By default it attaches to a running instance. `--no-attach` starts a fresh instance instead of attaching: on Windows it returns `ACTION_FAILED` if a matching app is already running; on macOS it launches a second instance alongside the running one. For an `--arg` value that starts with `-`, use `--arg=<value>`.
+
+On macOS, `launch --activate` on an app that is already running only brings it forward and returns the windows it already has. It no longer opens a window, so an app with none (Finder with every window closed, a document app with no document) stays windowless and `data.window` is absent. To get the app's default or a new window, add `--reopen`: it sends the app a reopen, and a running app with no window opens its default one (a new untitled document, or Finder's default folder). Use `--reopen` only when you want that window; a bare `launch --activate` is the safe way to switch to an app. `--reopen` cannot be combined with `--no-attach`. `data.launch_path` is `attached_running` (no `--activate`), `activated_running`, `launched` (a new process) or `reopened`. `--arg` and `--env` apply only to a new process, so on a running app they are not delivered and `data.suggestion` says so; add `--no-attach` to start a new instance with them. Windows and Linux have no reopen event: `--reopen` returns `ACTION_NOT_SUPPORTED` and `launch_path` is absent.
 
 The process running and the app showing a window are separate facts:
 
@@ -20,7 +23,7 @@ The process running and the app showing a window are separate facts:
 ```
 
 - `window` is present when the app already has one, and omitted when it has none. Its absence is not a failure. `launch` still returns `ok: true`.
-- A document-based app may open its first window only when brought forward. Use `--activate`: it asks the app to present a window and waits for it up to `--timeout` (default 30000). This brings the app forward, so it is not headless. Or trigger the window yourself and use `wait --event window-opened`.
+- A document-based app may open its first window only when brought forward. Use `--activate` on an app that is starting up: it asks the app to present a window and waits for it up to `--timeout` (default 30000). On a macOS app that is already running with no window, `--activate` does not open one; add `--reopen`, or open one yourself with a menu or key command. This brings the app forward, so it is not headless. Or trigger the window yourself and use `wait --event window-opened`.
 - A process that exits before it shows a window returns `APP_UNRESPONSIVE`.
 - Windowless and menu-bar-only apps report no `window`. Use `list-apps` and read `presentation`.
 - An app built on Chromium may return `renderer: "chromium"` and a `suggestion`. These are hints. The accessibility path still works. A missing `renderer` never proves the app is native.
@@ -80,7 +83,7 @@ agent-desktop move-window --app "TextEdit" --x 0 --y 0
 agent-desktop minimize --app "TextEdit"   # maximize, restore likewise
 ```
 
-- `list-windows` returns `{ id, title, app_name, pid, bounds, is_focused, accessible }`. Use a `w-<id>` with `--window-id` when an app has several windows.
+- `list-windows` returns `{ id, title, app_name, pid, bounds, is_focused, accessible }`. Use a `w-<id>` with `--window-id` when an app has several windows. An empty `title` means the platform reported no title for that window; target it by `--window-id`.
 - `accessible: false` means semantic commands cannot reach that window. Targeting it returns `ACTION_NOT_SUPPORTED` with `kind: "window_without_accessibility_element"`. It still accepts screenshots and coordinate input. Choose another window. Wait polling treats this error as transient. In particular, `--wait-for-gone` does not count it as absence; it keeps polling until the window disappears from the inventory or the wait times out.
 - `focus-window` needs at least one identifier. It succeeds when the platform confirms the window focused; a platform failure comes back as its own error. `data.focused` is what one follow-up read sees when it names that window or another window of its process, such as a dialog, so check `data.focused.title`. `data.focus_observed: false` means the read saw nothing usable and `focused` is the named window as confirmed, with its other fields from before the focus. On Linux a window blocked by a modal dialog fails with cause `blocked_by_modal_dialog` instead.
 - `restore` undoes a minimize and returns the window to its earlier placement. It does not promise to un-maximize.

@@ -70,6 +70,7 @@ fn find_args(root: Option<String>, name: Option<&str>, role: Option<&str>) -> Fi
             last: false,
             nth: None,
             limit: None,
+            allow_partial: false,
         },
     }
 }

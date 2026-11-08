@@ -9,6 +9,7 @@ pub(crate) struct WindowAxState {
     pub(crate) focused: Option<AxWindowIdentity>,
     pub(crate) minimized_by_id: FxHashMap<i64, bool>,
     pub(crate) accessible_window_ids: FxHashSet<i64>,
+    pub(crate) titles: crate::system::window::window_ax_titles::WindowAxTitles,
 }
 
 pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, AdapterError> {
@@ -16,11 +17,15 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
     let focused = focused_identity(&app, pid, deadline)?;
     let mut minimized_by_id = FxHashMap::default();
     let mut accessible_window_ids = FxHashSet::default();
+    let mut titles = crate::system::window::window_ax_titles::WindowAxTitles::default();
     for_each_window(pid, deadline, |window, window_id| {
         accessible_window_ids.insert(window_id);
-        if let Some(minimized) =
-            crate::tree::surface_read::boolean(window, "AXMinimized", deadline)?
-        {
+        let (title, minimized) =
+            crate::system::window::window_ax_attributes::read_title_and_minimized(
+                window, deadline,
+            )?;
+        titles.record(window_id, title);
+        if let Some(minimized) = minimized {
             minimized_by_id.insert(window_id, minimized);
         }
         Ok(())
@@ -29,6 +34,7 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
         focused,
         minimized_by_id,
         accessible_window_ids,
+        titles,
     })
 }
 
@@ -41,19 +47,32 @@ pub(crate) fn read_frontmost_until(
         focused: focused_identity(&app, pid, deadline)?,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: FxHashSet::default(),
+        titles: Default::default(),
     })
 }
 
-pub(crate) fn accessible_window_ids_until(
+/// Lists the CoreGraphics windows `pid` publishes through accessibility. A
+/// title is read only for the window numbers in `wanted_titles`, the windows
+/// whose CoreGraphics record carried no name, so a caller holding Screen
+/// Recording permission pays for no title read.
+pub(crate) fn accessible_window_titles_until(
     pid: i32,
+    wanted_titles: &FxHashSet<i64>,
     deadline: Instant,
-) -> Result<FxHashSet<i64>, AdapterError> {
-    let mut ids = FxHashSet::default();
-    for_each_window(pid, deadline, |_, id| {
-        ids.insert(id);
+) -> Result<crate::system::window::window_ax_titles::WindowAxTitles, AdapterError> {
+    let mut titles = crate::system::window::window_ax_titles::WindowAxTitles::default();
+    for_each_window(pid, deadline, |window, id| {
+        let title = if wanted_titles.contains(&id) {
+            crate::tree::surface_read::string(window, "AXTitle", deadline)
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        titles.record(id, title);
         Ok(())
     })?;
-    Ok(ids)
+    Ok(titles)
 }
 
 fn for_each_window(
@@ -73,24 +92,44 @@ fn for_each_window(
     Ok(())
 }
 
+/// Labels each window's accessibility and gives a window with an unknown title
+/// the title of the AX window that bridged to it. A process whose windows
+/// cannot be read keeps its windows selectable and their titles unknown.
 pub(crate) fn label_accessibility(
     windows: &mut [WindowInfo],
-    mut read: impl FnMut(i32) -> Result<FxHashSet<i64>, AdapterError>,
+    mut read: impl FnMut(
+        i32,
+        &FxHashSet<i64>,
+    ) -> Result<
+        crate::system::window::window_ax_titles::WindowAxTitles,
+        AdapterError,
+    >,
 ) {
     let mut pids = windows.iter().map(|window| window.pid).collect::<Vec<_>>();
     pids.sort_unstable();
     pids.dedup();
     for pid in pids {
-        let Some(accessible_ids) = crate::system::process::process_identity::to_pid_t(pid)
+        let wanted_titles = windows
+            .iter()
+            .filter(|window| window.pid == pid && window.title.is_empty())
+            .filter_map(|window| {
+                crate::system::window::window_resolve::parse_window_number(&window.id)
+            })
+            .collect::<FxHashSet<_>>();
+        let Some(titles) = crate::system::process::process_identity::to_pid_t(pid)
             .ok()
-            .and_then(|pid| read(pid).ok())
+            .and_then(|pid| read(pid, &wanted_titles).ok())
         else {
             continue;
         };
         for window in windows.iter_mut().filter(|window| window.pid == pid) {
-            window.state.accessible =
-                crate::system::window::window_resolve::parse_window_number(&window.id)
-                    .is_some_and(|id| accessible_ids.contains(&id));
+            let number = crate::system::window::window_resolve::parse_window_number(&window.id);
+            window.state.accessible = number.is_some_and(|id| titles.contains(id));
+            if window.title.is_empty()
+                && let Some(title) = number.and_then(|id| titles.title_for(id))
+            {
+                window.title = title.to_owned();
+            }
         }
     }
 }
@@ -174,6 +213,7 @@ mod tests {
     use super::{
         FocusedRoleKind, focused_role_kind, is_transient_surface_role, label_accessibility,
     };
+    use crate::system::window::window_ax_titles::WindowAxTitles;
     use agent_desktop_core::{ProcessId, WindowInfo, WindowState};
     use rustc_hash::FxHashSet;
 
@@ -203,9 +243,9 @@ mod tests {
     fn failed_pid_probe_keeps_unknown_window_selectable() {
         let mut windows = vec![window(10, "w-1"), window(20, "w-2")];
 
-        label_accessibility(&mut windows, |pid| {
+        label_accessibility(&mut windows, |pid, _| {
             if pid == 10 {
-                Ok(FxHashSet::default())
+                Ok(WindowAxTitles::default())
             } else {
                 Err(agent_desktop_core::AdapterError::timeout("busy"))
             }
@@ -215,10 +255,55 @@ mod tests {
         assert!(windows[1].state.accessible);
     }
 
+    #[test]
+    fn an_untitled_window_takes_its_bridged_ax_title_and_requests_only_its_own() {
+        let mut windows = vec![window(10, "w-1"), titled(window(10, "w-2"), "Kept")];
+        let mut requested = FxHashSet::default();
+
+        label_accessibility(&mut windows, |_, wanted| {
+            requested = wanted.clone();
+            let mut titles = WindowAxTitles::default();
+            titles.record(1, Some("Quarterly".into()));
+            titles.record(2, Some("Accessibility title".into()));
+            Ok(titles)
+        });
+
+        assert_eq!(requested, FxHashSet::from_iter([1]));
+        assert_eq!(windows[0].title, "Quarterly");
+        assert_eq!(windows[1].title, "Kept");
+        assert!(windows[0].state.accessible);
+    }
+
+    #[test]
+    fn an_unprovable_title_stays_unknown_and_never_becomes_the_app_name() {
+        let mut windows = vec![window(10, "w-1"), window(10, "w-2"), window(20, "w-3")];
+
+        label_accessibility(&mut windows, |pid, _| {
+            let mut titles = WindowAxTitles::default();
+            if pid == 10 {
+                titles.record(1, Some("First".into()));
+                titles.record(1, Some("Second".into()));
+                return Ok(titles);
+            }
+            Err(agent_desktop_core::AdapterError::timeout("busy"))
+        });
+
+        assert_eq!(windows[0].title, "");
+        assert!(windows[0].state.accessible);
+        assert_eq!(windows[1].title, "");
+        assert!(!windows[1].state.accessible);
+        assert_eq!(windows[2].title, "");
+    }
+
+    fn titled(mut window: WindowInfo, title: &str) -> WindowInfo {
+        window.title = title.into();
+        window
+    }
+
     fn window(pid: u32, id: &str) -> WindowInfo {
         WindowInfo {
             id: id.into(),
-            title: "Main".into(),
+            title: String::new(),
             app: "Fixture".into(),
             pid: ProcessId::new(pid),
             process_instance: Some(format!("{pid}:100")),

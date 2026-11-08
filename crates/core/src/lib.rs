@@ -161,6 +161,7 @@ pub use tree::element_state::ElementState;
 pub use tree::identifier_kind::IdentifierKind;
 pub use tree::name_evidence::NameEvidence;
 pub use tree::name_slot_status::{NameSlotStatus, SlotStatus};
+pub use tree::name_source::NameSource;
 pub use tree::node::AccessibilityNode;
 pub use tree::node_descriptor::NodeDescriptor;
 pub use tree::node_identity::NodeIdentity;

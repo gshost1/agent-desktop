@@ -6,7 +6,7 @@ Commands that change UI state. Run `agent-desktop <command> --help` for flags.
 
 `--headed` is global (`agent-desktop --headed click @s8f3k2p9:e5`) and applies to every `batch` entry. A headed action may focus the exact source window first, and a pointer action needs a verified target point.
 
-`press` is always physical keyboard input. `hover`, `drag`, `mouse-move`, `mouse-click` and `mouse-wheel` are physical cursor input and need `--headed`. Raw coordinates carry no window identity, so they never focus an app. `key-down`, `key-up`, `mouse-down` and `mouse-up` are reserved and never deliver input. They return `ACTION_NOT_SUPPORTED`, except that a headless `mouse-down` or `mouse-up` returns `POLICY_DENIED` first. Use `press`, `mouse-click` or `drag`.
+`press` sends physical keyboard input, except that on macOS a `cmd` chord sent to one app can run the menu item that owns it (see Keyboard). `hover`, `drag`, `mouse-move`, `mouse-click` and `mouse-wheel` are physical cursor input and need `--headed`. Raw coordinates carry no window identity, so they never focus an app. `key-down`, `key-up`, `mouse-down` and `mouse-up` are reserved and never deliver input. They return `ACTION_NOT_SUPPORTED`, except that a headless `mouse-down` or `mouse-up` returns `POLICY_DENIED` first. Use `press`, `mouse-click` or `drag`.
 
 Which gestures have a headless path:
 
@@ -155,6 +155,7 @@ agent-desktop press return --ref @s8f3k2p9:e3
 - Key names: `return`, `escape`, `tab`, `space`, `delete`, `up`, `down`, `left`, `right`, `f1` to `f12`. Modifiers: `cmd`/`meta`, `ctrl`, `alt`, `shift`, joined with `+`. Modifier names and blocked combos differ by OS. Read the platform skill.
 - A bare uppercase letter adds Shift: `press H` sends `shift+h`.
 - `--app` or `--window-id` targets one app. Use `--window-id` when several instances share a name and `--app` alone is `AMBIGUOUS_TARGET`. Unscoped `press` goes to the foreground app.
+- On macOS, a chord that holds `cmd`, sent with `--app` or `--window-id`, first looks for the one enabled menu-bar item whose shortcut is that chord and presses it, which works while the app is in the background for commands the app keeps enabled there. The step label is then `AXPress menu shortcut`. Other chords, an unscoped `press`, and every chord on Windows and Linux send keys. The macOS skill lists the fallbacks.
 - `--ref` sends the keys to one element: it is focused first, without moving the pointer, so the key reaches that field and not whatever had focus. A web ref takes the key through the page. `--ref` cannot combine with `--app` or `--window-id`.
 - `press` reports `delivered_unverified`, because delivery does not prove the shortcut did its job. Wait for the expected effect once with `--wait-for` or `--wait-for-gone`. A timeout keeps the delivered result and is unsafe to retry blindly.
 - To open a window with a shortcut, keep the press and the wait in one `batch`, so the baseline is taken before delivery: `press`, then `wait --event window-opened`. A failed wait does not make the press safe to repeat.
