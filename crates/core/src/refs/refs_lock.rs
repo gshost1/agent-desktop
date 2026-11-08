@@ -41,14 +41,30 @@ mod tests {
 
     use super::*;
 
-    fn lock_path(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir()
-            .join(format!(
-                "agent-desktop-{name}-{}-{}",
-                std::process::id(),
-                crate::refs::new_snapshot_id()
-            ))
-            .join("store.lock")
+    use crate::refs::refs_test_support::TempDir;
+    use std::path::{Path, PathBuf};
+
+    struct LockFixture {
+        _dir: TempDir,
+        path: PathBuf,
+    }
+
+    impl std::ops::Deref for LockFixture {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    fn lock_path(name: &str) -> LockFixture {
+        let dir = TempDir::adopt(std::env::temp_dir().join(format!(
+            "agent-desktop-{name}-{}-{}",
+            std::process::id(),
+            crate::refs::new_snapshot_id()
+        )));
+        let path = dir.join("store.lock");
+        LockFixture { _dir: dir, path }
     }
 
     #[test]

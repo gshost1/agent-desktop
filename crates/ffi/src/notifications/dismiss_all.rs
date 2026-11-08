@@ -50,8 +50,7 @@ pub unsafe extern "C" fn ad_dismiss_all_notifications(
                     dismissed.len().max(failed_messages.len()),
                     "Notification mutation result",
                 ) {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 let dismissed_items: Vec<AdNotificationInfo> =
                     dismissed.iter().map(notification_info_to_c).collect();
@@ -80,10 +79,7 @@ pub unsafe extern "C" fn ad_dismiss_all_notifications(
                 *failed_out = Box::into_raw(failed_list);
                 AdResult::Ok
             }
-            Err(e) => {
-                set_last_error(&e);
-                crate::error::last_error_code()
-            }
+            Err(e) => set_last_error(&e),
         }
     })
 }

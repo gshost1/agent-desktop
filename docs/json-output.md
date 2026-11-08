@@ -67,12 +67,40 @@ is one of `unknown`, `safe` or `unsafe`, and it follows from `delivery`:
 `not_delivered` is `safe`, and every other non-`unknown` value is `unsafe`.
 
 `unknown` means the command established nothing about delivery. A failure of a
-mutating command that carries no delivery evidence, such as a `TIMEOUT` on an
-operation that may already have landed, keeps it. A read-only command sends
-nothing and invalid arguments never reach the application, so their errors, and
-a lookup failure such as `APP_NOT_FOUND`, carry `not_delivered`. Treat `unknown`
-as not safe to retry automatically: read `error.code` and the message, and
-choose a recovery strategy only when `disposition.retry` is `safe`.
+command that sends input to an application and carries no delivery evidence,
+such as a `TIMEOUT` on an operation that may already have landed, keeps it. A
+read-only command sends nothing, and neither does a command that only writes a
+local file or local state (`screenshot <PATH>`, `clipboard-get --out`,
+`trace export` and `session gc`), so their errors carry `not_delivered`.
+`session start` and `session end` change session state and drive the cursor
+overlay, so they are treated like commands that send input. Invalid arguments never reach the application, so
+their errors, and a lookup failure such as `APP_NOT_FOUND`, carry
+`not_delivered` too. The exception is an `INVALID_ARGS` error with no
+disposition of its own that carries `details.preparatory_focus` or
+`details.preparatory_scroll`: a focus or scroll ran before the refusal, so it
+keeps `unknown`. Treat `unknown` as not safe to retry automatically: read
+`error.code` and the message, and choose a recovery strategy only when
+`disposition.retry` is `safe`.
+
+A `batch` entry whose result does not fit the batch output limit is replaced by
+an `INVALID_ARGS` error with `details.result_omitted: true`. It keeps the
+entry's own disposition: the result's `data.disposition` or
+`error.disposition`, `not_delivered` for a command that sends no input, and
+`delivered_unverified` for a successful command that sends input and reports
+none.
+
+Under `--trace-strict`, a `batch` whose closing trace record cannot be written
+fails with the trace error and `details.kind: "batch_trace_end_failed"`. Every
+entry has already run, so `details.batch` holds the batch body with each
+per-entry result, and `details.cause_details` keeps the trace error's own
+details. A body that would push the response past the batch output limit is
+left out: `details.result_omitted` is `true` and only `total_entries`,
+`completed_entries`, `not_started_entries` and `stopped` are kept. The
+disposition is `not_delivered` when no entry can have delivered (each entry's
+disposition is `not_delivered`, or it is a successful command that sends no
+input), and `delivery_uncertain` otherwise. Any other command whose closing
+trace record fails after it succeeded reports `delivered_unverified` unless it
+is read-only.
 
 A ref action that fails after it starts waiting on the interaction lease and
 before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
@@ -80,7 +108,8 @@ waiting for the lease, a deadline spent while taking it, a failed headed focus
 step, a failed resolve or actionability check under the lease, and a failed
 trace write at dispatch start. The focus step of a headed pointer command, and
 the lease, a deadline spent while taking it, target revalidation and focus step
-of `press`, are `not_delivered` the same way. Once a focus call has run, a
+of `press`, are `not_delivered` the same way. A key refusal that `press`
+raises after its headed focus carries `details.preparatory_focus` too. Once a focus call has run, a
 failure raised later in the ref action's dispatch (the focus itself, the resolve
 and actionability check under the lease, the action and its verification)
 carries `details.preparatory_focus: "may_have_moved_focus"`, because that call
@@ -179,6 +208,64 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 | `timed_out` | The wait budget expired without observing the expected state, including when transient read errors persisted through the last poll. `last_observation_error` may hold the last error. |
 | `identity_unavailable` | The ref has no usable process generation, so observation was skipped. |
 
+## Web channel
+
+The envelope version stays `2.6`. The web channel adds fields and one command; nothing existing changes shape.
+
+`snapshot --surface web --app <browser>` reads the page the browser window shows. When the browser exposes a DevTools endpoint that its own process owns, the page is read over CDP and `data` carries:
+
+| Field | Meaning |
+| --- | --- |
+| `channel` | `"cdp"`: the tree came from the page over the DevTools endpoint. |
+| `url` | The page's URL. |
+| `title` | The page's title. |
+| `suggestion` | Present only when cross-origin frames could not be read and are left out. |
+
+Without such an endpoint, the same command reads the browser window through the accessibility tree and `data` carries `"channel": "ax"` and a `suggestion` naming the `launch --cdp` command that enables the web channel. Snapshots of every other surface carry no `channel`. Refs from a CDP read carry an element token of the form `cdp:<targetId>:<frameId>:<loaderId>:<backendNodeId>`, are accepted by every ref command, and act through the page without focusing the window or moving the pointer. A web ref whose frame now shows another document (`details.kind: "cdp_document_replaced"`), whose node left the page, or whose role or name changed returns `STALE_REF`; a ref whose tab or frame closed returns `WINDOW_NOT_FOUND` with `details.kind: "cdp_target_gone"`. A click lands on the visible part of the element, on its first line that is not covered when it wraps; an element another element covers at every such point returns `ACTION_FAILED` with `details.kind: "cdp_click_intercepted"` and nothing delivered. Ref action results on web refs carry `details.channel: "cdp"`.
+
+`list-surfaces` adds one entry per open page when an endpoint reaches the browser: `{"id": "<targetId>", "type": "web", "title": "<page title, or its URL>"}`.
+
+`open-url <url> --app <browser> [--new-tab] [--window-id <id>]` loads a URL and waits for the load event. `opened` is `current_tab` when the URL replaced the page the window shows, and `new_tab` for `--new-tab` or for a browser that had no page to replace. `data` is:
+
+```json
+{ "url": "https://example.com/", "title": "Example Domain", "channel": "cdp", "target_id": "4C1E...F0", "opened": "current_tab" }
+```
+
+A URL the browser saves as a file instead of showing returns `"opened": "download"` with the requested URL and an empty `title`; `wait --download` returns the file.
+
+Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
+
+### Downloads
+
+`launch --cdp --download-dir <dir>` adds `download_dir`, the folder's absolute path, and `download_scope` to `data.cdp`. `download_scope` is `profile` when launch wrote the folder into the download preference of the profile an absolute `--user-data-dir` named, so the browser saves every download there under its real name. It is `connection` when only each DevTools connection points downloads at the folder; the profile was left as it was because the arguments named no user-data directory, a relative one, a browser's default one, or a `Preferences` file that is not JSON. With `connection`, each web `click`, `double-click` and `press` waits up to 100 ms for a navigation or download to start and returns at once when none does; when one starts, it waits until the download begins or the page stops loading, at most 3 s, so the download begins while the command's connection still points it at the folder.
+
+`wait --download --app <browser>` returns the browser's oldest download no earlier download wait returned:
+
+```json
+{ "path": "/Users/me/work/downloads/report.csv", "suggested_filename": "report.csv", "url": "https://example.com/report.csv", "state": "completed", "bytes": 2048, "elapsed_ms": 412 }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `path` | The saved file, under `suggested_filename` with ` (n)` added before the extension when that name is taken. |
+| `suggested_filename` | The name the server suggested, made safe as a file name. For a file found only in the download folder, the saved name. |
+| `url` | The URL the file came from. Absent for a file the browser saved after the command that started it had exited, which no DevTools connection saw begin. |
+| `state` | Always `"completed"`; any other ending is an error. |
+| `bytes` | The size received. |
+| `elapsed_ms` | How long the wait took. |
+
+Errors carry `details.kind`:
+
+| Code | `details.kind` | Meaning |
+| --- | --- | --- |
+| `ACTION_FAILED` | `cdp_download_canceled` | The browser or its user canceled the download. |
+| `ACTION_FAILED` | `cdp_download_interrupted` | The partial file vanished without a finished file. |
+| `ACTION_NOT_SUPPORTED` | `cdp_download_untracked` | The download began in an earlier command of a browser launched without `--download-dir`. |
+| `ACTION_NOT_SUPPORTED` | `cdp_endpoint_missing` | No DevTools endpoint reaches the browser. |
+| `TIMEOUT` | `wait_timeout`, with `cause` `cdp_download_not_started` or `cdp_download_in_progress` | The timeout passed first. |
+
+Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
+
 ## Find result shape
 
 `find` match objects report the element's actual accessibility `name`. Elements
@@ -230,4 +317,4 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 
 ## Exit codes
 
-`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`).
+`0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`). `mcp` also exits `2` when it refuses its startup flags, and writes that envelope to stderr, since its stdout carries only JSON-RPC.

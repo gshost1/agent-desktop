@@ -12,6 +12,7 @@ pub struct ObservedTree {
     pub(crate) stats: LocatorStats,
     pub(crate) structurally_complete: bool,
     pub(crate) logical_depths: Vec<u8>,
+    pub(crate) channel: Option<crate::SnapshotChannel>,
 }
 
 impl ObservedTree {
@@ -31,6 +32,7 @@ impl ObservedTree {
             stats,
             structurally_complete,
             logical_depths: Vec::new(),
+            channel: None,
         };
         for root in roots {
             let index = tree.append(root, RefPath::new(), 0)?;
@@ -45,6 +47,16 @@ impl ObservedTree {
 
     pub fn is_complete(&self) -> bool {
         self.structurally_complete
+    }
+
+    /// Records which channel read this observation, for a snapshot to report.
+    pub fn with_channel(mut self, channel: crate::SnapshotChannel) -> Self {
+        self.channel = Some(channel);
+        self
+    }
+
+    pub fn channel(&self) -> Option<&crate::SnapshotChannel> {
+        self.channel.as_ref()
     }
 
     /// Whether this observation read the whole window: complete, and with no

@@ -4,6 +4,10 @@ use agent_desktop_core::{
 
 use crate::cli::Commands;
 
+mod command_effect;
+
+pub(crate) use command_effect::CommandEffect;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PermissionNeed {
     None,
@@ -68,6 +72,7 @@ pub(crate) fn policy_for(cmd: &Commands) -> PermissionNeed {
         | Commands::CloseApp(_)
         | Commands::FocusWindow(_)
         | Commands::OpenSystemSurface(_)
+        | Commands::OpenUrl(_)
         | Commands::ResizeWindow(_)
         | Commands::MoveWindow(_)
         | Commands::Minimize(_)
@@ -228,6 +233,7 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
         | Commands::ListApps(_)
         | Commands::FocusWindow(_)
         | Commands::OpenSystemSurface(_)
+        | Commands::OpenUrl(_)
         | Commands::ResizeWindow(_)
         | Commands::MoveWindow(_)
         | Commands::Minimize(_)

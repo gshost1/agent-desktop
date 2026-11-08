@@ -7,6 +7,7 @@ pub(crate) mod element_bounds;
 pub(crate) mod element_dedupe;
 pub(crate) mod element_name;
 pub(crate) mod hit_test;
+pub(crate) mod inline_editor;
 pub(crate) mod locator_deadline;
 pub(crate) mod native_menu;
 pub(crate) mod observation_usage;
