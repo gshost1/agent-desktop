@@ -16,6 +16,7 @@ agent-desktop wait --text TEXT [--count N] [--app NAME]
 agent-desktop wait --menu [--app NAME]
 agent-desktop wait --menu-closed [--app NAME]
 agent-desktop wait --notification [--text TEXT] [--app NAME]
+agent-desktop wait --download --app BROWSER
 agent-desktop wait --event KIND [--app NAME] [--window TITLE] [--window-id ID]
 ```
 
@@ -34,9 +35,10 @@ agent-desktop wait --event KIND [--app NAME] [--window TITLE] [--window-id ID]
     <tr><td><code>--count N</code></td><td>none</td><td>For <code>--text</code>: wait until exactly N nodes match.</td></tr>
     <tr><td><code>--menu</code>, <code>--menu-closed</code></td><td>off</td><td>Wait until a menu surface is open, or dismissed.</td></tr>
     <tr><td><code>--notification</code></td><td>off</td><td>Wait until a new notification arrives.</td></tr>
+    <tr><td><code>--download</code></td><td>off</td><td>Return the browser's next saved download, including one that finished before the wait started. Requires <code>--app</code> and a DevTools endpoint.</td></tr>
     <tr><td><code>--event KIND</code></td><td>none</td><td>Wait for a lifecycle signal: <code>window-opened</code>, <code>window-closed</code>, <code>app-launched</code>, <code>app-terminated</code>, <code>focus-changed</code>, <code>surface-appeared</code>, or <code>surface-dismissed</code>.</td></tr>
     <tr><td><code>--window-id ID</code></td><td>none</td><td>Narrow <code>window-opened</code>, <code>window-closed</code>, or <code>focus-changed</code> to one window.</td></tr>
-    <tr><td><code>--app NAME</code></td><td>none</td><td>Scope a window, text, menu, notification, or event wait to one application. Element and time waits ignore it.</td></tr>
+    <tr><td><code>--app NAME</code></td><td>none</td><td>Scope a window, text, menu, notification, download, or event wait to one application. Element and time waits ignore it.</td></tr>
     <tr><td><code>--timeout MS</code></td><td><code>30000</code></td><td>Timeout for every mode except <code>MS</code>, at most 86400000.</td></tr>
   </tbody>
 </table>
@@ -108,6 +110,10 @@ agent-desktop wait --text Calculator --app gnome-calculator --timeout 3000
 ### Notification
 
 `--notification` takes a baseline of the notification list when it starts and returns the first notification not in it. `--text` and `--app` filter which notifications count. The result is `{ "condition": "notification", "matched": true, "notification": {...}, "elapsed_ms" }`. Headless limits on macOS and Windows are on the [notification commands](/desktop/commands/notifications) page.
+
+### Download
+
+`--download --app BROWSER` returns the browser's oldest download that no earlier download wait returned, including one that finished before the wait started: `{ "path", "suggested_filename", "url", "state": "completed", "bytes", "elapsed_ms" }`. It needs a DevTools endpoint. Launch the browser with `launch --cdp --download-dir DIR --arg=--user-data-dir=PROFILE`, with both paths absolute, so the profile saves every download in that folder and a download started by an earlier command is found there. A file saved after the command that started it had exited carries no `url`. A canceled download fails with `details.kind` `cdp_download_canceled` and an interrupted one with `cdp_download_interrupted`; neither returns a path. A timeout carries `details.cause`: `cdp_download_not_started` or `cdp_download_in_progress`.
 
 ### Event
 
