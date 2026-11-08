@@ -37,7 +37,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | ACTION-2 | `type --interval-ms` burst: Landing → Burst → Typed | core `commands/type_text_interval.rs:93` | After every keystroke lands, `--wait-for` reloads the refmap; a pruned or drilled snapshot returns SNAPSHOT_NOT_FOUND/STALE_REF stamped `not_delivered` + `refresh_snapshot_then_retry_original`, so a caller types the text twice | 3 loads of one entry per command | A | C | none (#348 introduced, #362 closed) | [#2](https://github.com/gshost1/agent-desktop/pull/2) merged |
 | 2 | STATE-9 | Interaction lease adoption: Free / Held(OFD) | core `storage/file_lock.rs:54-89`, `src/mcp/call.rs:29-35` | `mcp` started by a lease-holding harness passes the lease fd+env to up to 8 concurrent children; each "adopts" the same open file description, so mutations interleave | – | A | C mech, S reach | #160 (closed, different), PR #590 (open, lock dir only) | [#13](https://github.com/gshost1/agent-desktop/pull/13) merged |
-| 3 | SURFACE-3 | Notification identity across CLI calls | core `notifications/`, all 3 adapters | dismiss/act address a list index; the list shifts between calls and the wrong same-app notification is dismissed or acted on | – | A | C | none | planned (M, JSON contract) |
+| 3 | SURFACE-3 | Notification identity across CLI calls | core `notifications/`, all 3 adapters | dismiss/act address a list index; the list shifts between calls and the wrong same-app notification is dismissed or acted on | – | A | C | none | [#34](https://github.com/gshost1/agent-desktop/pull/34) draft |
 | 4 | SURFACE-4 | Windows dismiss verification | windows `notifications/` | with an identical twin present, a real dismissal reports ACTION_FAILED + retry, and the retry removes the twin | – | A | C | none | planned (win draft) |
 | 5 | SURFACE-10 | macOS `--surface focused` ref re-rooting | macos `tree/` surface roots | focused/menu refs re-root at whatever window or menu is current, ignoring `source_window_id` | – | A | C path, S identity catch | PR #258 fixed sheet/popover/alert only | planned (mac draft) |
 | 6 | LIFECYCLE-9 | Linux remembered pre-maximize place | linux `system/window/` | after the user un-maximizes, `restore` (or minimize+restore) moves the window back to a stale saved place | – | A (low) | C | none | [#22](https://github.com/gshost1/agent-desktop/pull/22) merged |
@@ -130,7 +130,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 12 | `test/trace-temp-dir-cleanup` | /tmp leak | [#20](https://github.com/gshost1/agent-desktop/pull/20) | **merged** 2026-11-08 as `df4a9720` (rule 3); CI 30/30 on head `5430ae4e`; leftovers per core run 40 -> 0 | fork-only (test hygiene) |
 | 13 | `fix/dispatch-delivery-settle` | BINARY-5/1/4/6/7 | [#21](https://github.com/gshost1/agent-desktop/pull/21) | **merged** 2026-11-08 as `dddc6839` (rules 1+2); CI 26/26 on head `b25843b0`, gates green (4603), 2 review rounds | ready |
 | 14 | `fix/linux-restore-stale-place` | LIFECYCLE-9 | [#22](https://github.com/gshost1/agent-desktop/pull/22) | **merged** 2026-11-08 as `ec3add89` (rule 3); CI 26/26 on head `e65a688d`, gates green (4612), review applied | ready (Linux only) |
-| 15 | `fix/notification-identity-key` | SURFACE-3 | – | pushed `fb8ce39b`, gates green (4603); review round 1 being applied (oldest-first twin count, keys over the full read, one filter order); draft when opened | needs-issue-first (new list field and --key flag) |
+| 15 | `fix/notification-identity-key` | SURFACE-3 | [#34](https://github.com/gshost1/agent-desktop/pull/34) (draft) | head `82709a44` (main `89a3723e`), tests 4654/0, review applied; draft: contract change + device checks | needs-issue-first (new list field and --key flag) |
 | 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | [#23](https://github.com/gshost1/agent-desktop/pull/23) | open; head `43711bc2` (main `ec3add89`), gates green (4639), 2 review rounds; CI dispatched | ready (when merged) |
 | 17 | `fix/session-start-atomic` | STATE-5 / BINARY-10 | – | pushed `674ca6fa`, gates green (4593); review round 1 being applied (nothing fallible after the write, remove the dir on a failed write, cursor in SessionAction::Start) | – |
 | 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | – | writer started (w18) | – |
@@ -140,11 +140,15 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 ## Needs Mac verification
 
+- PR #34 (SURFACE-3, draft): `crates/macos/src/notifications/actions.rs`, `system/adapter.rs`. On the Mac, on the branch: `cargo test` on the host set; then post two identical notifications, `agent-desktop list-notifications`, post a third identical one, and confirm `dismiss-notification --key <first key>` closes the original (newest-first order is assumed).
+
 - PR #18 (SURFACE-1, draft): `crates/macos/src/system/{adapter,wait}.rs`. CI on `5b6d3a07` failed macOS clippy (`missing_const_for_thread_local` in the test seam, fixed in `832c091c`) and one Windows ARM64 live Start-menu test outside this PR; CI on `0747511e` then failed two timing-sensitive core tests and exposed a real macOS bug (the loop timed out before checking a satisfied wait); fixed in `42373866`: CI 26/26 green there, so the macOS code compiles and its unit tests pass. On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then right-click a control, run `agent-desktop wait --menu-closed --app <app>` while the menu is open (returns only after it closes), and with no menu open (returns closed after about 1.5 s).
 
 - PR #14 (REFS-2, draft, needs-issue-first): `crates/macos/src/tree/query/mod.rs` and two macOS test files. CI 30/30 green on `99f7bea6`, which compiled and ran them; the branch is being merged with `main` (conflicts with #10, #11, #17). On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then `agent-desktop snapshot --app <a large app> --timeout-ms 200` until it reports `identity_unproven`, act on one of its refs and confirm `STALE_REF` `identity_unproven` / `capture_incomplete` with `retryable: false` (not `AMBIGUOUS_TARGET`); and confirm a ref with an identical twin still returns `AMBIGUOUS_TARGET` `identity_not_unique`.
 
 ## Needs Windows verification
+
+- PR #34 (SURFACE-3, draft): `crates/windows/src/notifications/actions.rs`, `system/adapter.rs`. CI compiles and runs the Windows unit tests; on a Windows machine, repeat the identical-notification check from the Mac entry against the Action Center.
 
 ## Blocked on George
 

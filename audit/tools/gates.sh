@@ -18,7 +18,8 @@ step cargo check -p agent-desktop-core --all-targets --target x86_64-pc-windows-
 if grep -rnE 'extern "system|std::os::windows|\bwinapi\b|\bwindows_sys\b' crates/core/src; then echo "FAIL: core declares a raw Win32 surface"; fail=1; fi
 if grep -rnE 'cfg\(windows\)|cfg\(target_os = "windows"\)' crates/core/src | grep -v 'crates/core/src/storage/private_file.rs'; then echo "FAIL: windows cfg in core outside private_file.rs"; fail=1; else echo "== core win32 leakage check clean"; fi
 if cargo tree -p agent-desktop-core 2>/dev/null | grep -E 'agent-desktop-(linux|macos|windows)'; then echo "FAIL: core tree names a platform crate"; fail=1; else echo "== cargo tree clean"; fi
-D=$(( 90 + RANDOM % 9 )); Xvfb :$D -screen 0 1280x800x24 >/dev/null 2>&1 & XP=$!; sleep 1
+D=""; for n in $(shuf -i 100-199); do if [ ! -e /tmp/.X11-unix/X$n ] && [ ! -e /tmp/.X$n-lock ]; then D=$n; break; fi; done
+Xvfb :$D -screen 0 1280x800x24 >/dev/null 2>&1 & XP=$!; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e /tmp/.X11-unix/X$D ] && break; sleep 0.5; done
 echo "== tests (DISPLAY=:$D)"
 DISPLAY=:$D bash scripts/cargo-test-isolated-home.sh test "${H[@]}" >"/tmp/claude-1000/gate.$$.test.log" 2>&1 || { echo "FAIL: tests"; grep -E 'panicked|^    [a-z_:]+$|test result: FAILED' "/tmp/claude-1000/gate.$$.test.log" | head -30; fail=1; }
 grep -E '^test result' "/tmp/claude-1000/gate.$$.test.log" | awk '{p+=$4; f+=$6} END {print "tests passed="p" failed="f}'
