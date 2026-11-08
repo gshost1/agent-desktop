@@ -1,11 +1,14 @@
 use serde_json::{Value, json};
 
-use crate::{ActionResult, AdapterError, ErrorCode, actionability::StabilityExpectation};
+use crate::{
+    ActionResult, AdapterError, actionability::StabilityExpectation,
+    refs::resolve_verdict::ResolveVerdict,
+};
 
 #[derive(Default)]
 pub(crate) struct RefActionPollState {
     pub(crate) last_report: Option<Value>,
-    pub(crate) last_settled_identity_error: Option<AdapterError>,
+    pub(crate) last_unsettled_answer: Option<AdapterError>,
     pub(crate) saw_ambiguity: bool,
     pub(crate) expected_bounds_hash: Option<u64>,
     pub(crate) resolve_attempts: u64,
@@ -31,10 +34,13 @@ impl RefActionPollState {
         }
     }
 
-    pub(crate) fn record_resolve_error(&mut self, error: &AdapterError) {
+    /// Records a refusal the wait is about to retry. An unsettled one is a
+    /// complete answer, kept so a wait that runs out reports it instead of a
+    /// bare timeout; an incomplete one leaves the kept answer in place.
+    pub(crate) fn record_resolve_error(&mut self, error: &AdapterError, verdict: ResolveVerdict) {
         self.live_read_incomplete_only = Some(false);
-        if is_settled_identity(error) {
-            self.last_settled_identity_error = Some(error.clone());
+        if verdict == ResolveVerdict::Unsettled {
+            self.last_unsettled_answer = Some(error.clone());
         }
         self.last_report = Some(json!({
             "phase": "resolve",
@@ -45,11 +51,11 @@ impl RefActionPollState {
     }
 
     pub(crate) fn note_resolved(&mut self) {
-        self.last_settled_identity_error = None;
+        self.last_unsettled_answer = None;
     }
 
-    pub(crate) fn settled_identity_error(&self) -> Option<&AdapterError> {
-        self.last_settled_identity_error.as_ref()
+    pub(crate) fn unsettled_answer(&self) -> Option<&AdapterError> {
+        self.last_unsettled_answer.as_ref()
     }
 
     pub(crate) fn only_live_read_incomplete(&self) -> bool {
@@ -113,16 +119,6 @@ impl RefActionPollState {
         }
         error
     }
-}
-
-fn is_settled_identity(error: &AdapterError) -> bool {
-    matches!(error.code, ErrorCode::StaleRef | ErrorCode::AmbiguousTarget)
-        && error
-            .details
-            .as_ref()
-            .and_then(|details| details.get("complete"))
-            .and_then(Value::as_bool)
-            == Some(true)
 }
 
 fn is_live_read_incomplete(error: &AdapterError) -> bool {

@@ -5,6 +5,7 @@ use serde_json::json;
 use crate::{
     ActionRequest, AdapterError, Deadline, ErrorCode,
     ref_action::ref_action_context::RefActionContext,
+    ref_action::ref_action_moved_landings::MovedLandings,
     ref_action::ref_action_poll_state::RefActionPollState,
     ref_action::ref_action_wait_context::RefActionWaitContext,
     ref_action::ref_action_wait_evidence::{failed_check, should_scroll_after_preflight},
@@ -12,6 +13,7 @@ use crate::{
     ref_action::{ResolvedRefAction, preflight_resolved},
     refs::ref_resolve_deadline::{POLL_INTERVAL, land_within_deadline},
     refs::resolve_attempt_outcome::ResolveAttemptOutcome,
+    refs::resolve_verdict::ResolveVerdict,
 };
 
 const STABILITY_POLL_INTERVAL: Duration = Duration::from_millis(16);
@@ -29,6 +31,7 @@ pub(crate) fn execute_poll_loop(
     context: RefActionWaitContext<'_>,
     request: &ActionRequest,
     deadline: Deadline,
+    moved: &mut MovedLandings,
 ) -> Result<RefActionPollState, AdapterError> {
     let mut state = RefActionPollState {
         expected_bounds_hash: context
@@ -43,7 +46,7 @@ pub(crate) fn execute_poll_loop(
         match land_within_deadline(context.adapter, context.entry, deadline) {
             ResolveAttemptOutcome::DeadlinePassed => return Err(timeout(&state, deadline)),
             ResolveAttemptOutcome::Failed(error) => {
-                handle_resolve_failure(context, &mut state, error.unsent(), deadline)?;
+                handle_resolve_failure(context, &mut state, error.unsent(), deadline, moved)?;
             }
             ResolveAttemptOutcome::Resolved(handle) => {
                 trace_resolve_ok(context.context, context.ref_id);
@@ -95,29 +98,28 @@ fn handle_actionability_failure(
     Ok(())
 }
 
+/// Ends the wait on a refusal the ref-action verdict settles, a complete
+/// absence included, or on a moved landing past its retry limit, and polls
+/// again on any other. The dispatch-time retry under the lease applies the
+/// same verdict and the same count.
 fn handle_resolve_failure(
     context: RefActionWaitContext<'_>,
     state: &mut RefActionPollState,
     error: AdapterError,
     deadline: Deadline,
+    moved: &mut MovedLandings,
 ) -> Result<(), AdapterError> {
-    if error.code == ErrorCode::StaleRef
-        && error
-            .details
-            .as_ref()
-            .and_then(|details| details.get("complete"))
-            .and_then(serde_json::Value::as_bool)
-            == Some(true)
-    {
+    let verdict = ResolveVerdict::for_ref_action(&error);
+    if !verdict.retries() {
         trace_resolve_error(context.context, context.ref_id, &error);
         return Err(error);
     }
-    if !error.is_retryable_resolution_failure() {
-        trace_resolve_error(context.context, context.ref_id, &error);
-        return Err(error);
+    if let Some(refusal) = moved.exhausted(verdict, context.entry) {
+        trace_resolve_error(context.context, context.ref_id, &refusal);
+        return Err(refusal);
     }
     state.saw_ambiguity |= error.code == ErrorCode::AmbiguousTarget;
-    state.record_resolve_error(&error);
+    state.record_resolve_error(&error, verdict);
     sleep_until_next_poll(deadline, POLL_INTERVAL);
     Ok(())
 }
@@ -159,8 +161,8 @@ fn timeout(state: &RefActionPollState, deadline: Deadline) -> AdapterError {
     if state.only_live_read_incomplete() {
         return live_read_incomplete(state, deadline);
     }
-    if let Some(error) = state.settled_identity_error() {
-        return settled_identity(error, state, deadline);
+    if let Some(error) = state.unsettled_answer() {
+        return unsettled_answer(error, state, deadline);
     }
     let mut details = json!({
         "kind": "actionability_timeout",
@@ -182,7 +184,9 @@ fn timeout(state: &RefActionPollState, deadline: Deadline) -> AdapterError {
         .with_disposition(crate::DeliverySemantics::not_delivered())
 }
 
-fn settled_identity(
+/// The last complete answer the wait kept retrying, reported once the budget
+/// runs out, with the time it waited.
+fn unsettled_answer(
     error: &AdapterError,
     state: &RefActionPollState,
     deadline: Deadline,
