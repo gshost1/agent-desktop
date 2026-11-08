@@ -63,7 +63,9 @@ pub unsafe extern "C" fn ad_launch_app_exact(
                 return set_last_error(&error);
             }
         };
-        let lease = match adapter.inner.acquire_interaction_lease(deadline) {
+        let lease = match crate::ffi_lease::FfiLease::take(|| {
+            adapter.inner.acquire_interaction_lease(deadline)
+        }) {
             Ok(lease) => lease,
             Err(error) => {
                 return set_last_error(&error);
@@ -102,6 +104,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+    use agent_desktop_core::system::launch_notes::LaunchNotes;
     use agent_desktop_core::system::launch_options::LaunchOptions;
     use agent_desktop_core::{ActionOps, InputOps, ObservationOps, SystemOps};
     use agent_desktop_core::{
@@ -156,7 +159,10 @@ mod tests {
                 }),
                 cdp: None,
                 renderer: None,
-                suggestion: None,
+                notes: LaunchNotes {
+                    suggestion: None,
+                    launch_path: None,
+                },
             })
         }
     }

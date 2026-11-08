@@ -7,6 +7,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "combo",
     "execute_by_ref",
     "find_live",
+    "find_response",
     "helpers",
     "helpers_test_support",
     "input_hold_policy",

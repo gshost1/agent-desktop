@@ -336,6 +336,63 @@ Earlier output synthesized a display name, falling back to `value` or
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
 
+### Which match `--first` returns
+
+`--first` returns the first match in traversal order, not in document order.
+Where the platform reads list and table rows last (macOS: outlines, tables,
+browsers and lists), a match outside those rows comes before any match inside
+them, and `find --first` answers it without reading the rows. Only when nothing
+outside the rows matches does it read them, and then it returns the first match
+inside them. Platforms that read the tree in document order return the first
+match in document order. A ref from such an answer re-identifies by element
+token. A platform without one keeps its usual rule: an element it cannot prove
+unique gets the `identity_not_unique` refusal when you act on it.
+
+### Partial results
+
+By default a `find` that cannot finish its walk within `--timeout-ms` returns
+`TIMEOUT`. With `--allow-partial` it returns the matches it observed instead.
+The data then carries `complete`:
+
+```json
+{ "data": { "complete": false, "truncated": true, "total_matches": 3,
+  "matches": [ { "role": "button", "name": "Cancel", "bounds": { } } ] } }
+```
+
+- `complete: true` means the answer is the same one the default contract gives.
+  Matches, refs and `total_matches` are unchanged.
+- `complete: false` comes with `truncated: true`. The matches are the ones seen
+  before the budget ran out, and `total_matches` (or `count` with `--count`) is a
+  lower bound. With `--first`, `--last` or `--nth`, `match` is the one picked
+  from the observed matches, which an unread part of the tree could change.
+- In an incomplete answer, a match carries `ref_id` only when the platform
+  re-identifies it by element token (macOS). find re-reads each such match by its
+  token, the same check a complete answer makes, to fill the fields the walk
+  skipped. A match it cannot re-read before the deadline, and every match without
+  a token, has no ref and carries `bounds` when the platform reports them.
+- Without the flag the data has no `complete` field, and an incomplete walk is
+  still `TIMEOUT`.
+
+## Derived names
+
+A `row`, `treeitem` or `cell` that no accessible-name source names, but whose
+only text-field child holds its label, takes that field's value as its `name`
+and carries `"name_source": "child_field_value"`:
+
+```json
+{ "ref_id": "@s8f3k2p9:e7", "role": "treeitem", "name": "notes.txt", "name_source": "child_field_value" }
+```
+
+File lists and outlines whose rows rename inline report rows this way. The
+element has no secure field, no static-text label and exactly one text field
+among the children read; otherwise it stays unnamed. Snapshot nodes carry the
+marker; `find` match objects report the derived `name` without it. `find --name`
+matches a derived name. It is a control
+value, so it is never ref identity: the ref entry records no name for that
+element, the capture proof and re-identification leave it out, and
+`get <ref> --property title` returns `null`. A node whose name comes from an
+accessible-name source omits `name_source`.
+
 ## Ref re-identification details
 
 Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these four kinds:

@@ -2,6 +2,8 @@ mod adapter;
 pub(crate) mod app_menu;
 pub(crate) mod ax_element;
 pub(crate) mod build_context;
+pub(crate) mod child_field_name;
+pub(crate) mod child_label_read;
 pub(crate) mod child_labels;
 pub(crate) mod element_bounds;
 pub(crate) mod element_dedupe;

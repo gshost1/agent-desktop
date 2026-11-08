@@ -76,11 +76,9 @@ pub(crate) fn element(
     deadline: Instant,
 ) -> Result<Option<super::AXElement>, AdapterError> {
     prepare(source, deadline)?;
-    finish(
-        super::properties::attributes::copy_element_attr_result(source, attribute, deadline),
-        attribute,
-        deadline,
-    )
+    recovered(attribute, deadline, || {
+        super::properties::attributes::copy_element_attr_result(source, attribute, deadline)
+    })
 }
 
 pub(crate) fn string(
@@ -89,11 +87,9 @@ pub(crate) fn string(
     deadline: Instant,
 ) -> Result<Option<String>, AdapterError> {
     prepare(element, deadline)?;
-    finish(
-        super::properties::attributes::copy_string_attr_result(element, attribute, deadline),
-        attribute,
-        deadline,
-    )
+    recovered(attribute, deadline, || {
+        super::properties::attributes::copy_string_attr_result(element, attribute, deadline)
+    })
 }
 
 pub(crate) fn boolean(
@@ -102,11 +98,9 @@ pub(crate) fn boolean(
     deadline: Instant,
 ) -> Result<Option<bool>, AdapterError> {
     prepare(element, deadline)?;
-    finish(
-        super::properties::attributes::copy_bool_attr_result(element, attribute, deadline),
-        attribute,
-        deadline,
-    )
+    recovered(attribute, deadline, || {
+        super::properties::attributes::copy_bool_attr_result(element, attribute, deadline)
+    })
 }
 
 pub(crate) fn ensure_before_deadline(deadline: Instant) -> Result<(), AdapterError> {
@@ -122,6 +116,21 @@ fn prepare(element: &super::AXElement, deadline: Instant) -> Result<(), AdapterE
     }
     super::properties::attributes::set_messaging_timeout(element, deadline)?;
     Ok(())
+}
+
+/// A surface walk restarts from its root on a transient failure, so a read
+/// that overran one IPC slice is retried in place first: one busy element
+/// then costs another slice instead of another walk of the whole application.
+fn recovered<T>(
+    attribute: &str,
+    deadline: Instant,
+    read: impl FnMut() -> Result<Option<T>, i32>,
+) -> Result<Option<T>, AdapterError> {
+    finish(
+        super::read_recovery::read(deadline, read),
+        attribute,
+        deadline,
+    )
 }
 
 fn finish<T>(
@@ -232,6 +241,25 @@ mod tests {
         assert!(map_error("AXRole", kAXErrorCannotComplete).is_transient_incomplete_read());
         assert!(!map_error("AXRole", kAXErrorAPIDisabled).is_transient_incomplete_read());
         assert!(!map_error("AXRole", kAXErrorInvalidUIElement).is_transient_incomplete_read());
+    }
+
+    #[test]
+    fn a_busy_attribute_is_read_again_before_the_walk_is_failed() {
+        let mut calls = 0;
+        let role = recovered(
+            "AXRole",
+            Instant::now() + std::time::Duration::from_secs(60),
+            || {
+                calls += 1;
+                if calls == 1 {
+                    Err(kAXErrorCannotComplete)
+                } else {
+                    Ok(Some("AXSheet".to_string()))
+                }
+            },
+        );
+        assert_eq!(role.unwrap().as_deref(), Some("AXSheet"));
+        assert_eq!(calls, 2);
     }
 
     #[test]

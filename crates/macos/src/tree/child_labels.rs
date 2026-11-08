@@ -13,14 +13,21 @@ pub(crate) fn complete_name_evidence_with_deadline(
     children: &[AXElement],
     deadline: std::time::Instant,
     mut sinks: NameEvidenceSinks<'_>,
-) -> Result<(agent_desktop_core::NameEvidence, bool), agent_desktop_core::AdapterError> {
+) -> Result<
+    (agent_desktop_core::NameEvidence, Option<String>, bool),
+    agent_desktop_core::AdapterError,
+> {
     let mut evidence = attrs.name_evidence.clone();
     if !should_read_child_label(role, &evidence) {
-        return Ok((evidence, true));
+        return Ok((evidence, None, true));
     }
-    let (label, complete) = label_from_children(children, deadline, &mut sinks)?;
-    evidence.child_label = label;
-    Ok((evidence, complete))
+    let read = label_from_children(children, deadline, &mut sinks)?;
+    let derived = match crate::tree::child_field_name::sole_text_field(role, &read) {
+        Some(field) => crate::tree::child_field_name::read_field_name(field, deadline, &mut sinks)?,
+        None => None,
+    };
+    evidence.child_label = read.label;
+    Ok((evidence, derived, read.complete))
 }
 
 pub(crate) fn should_read_child_label(
@@ -51,8 +58,10 @@ fn label_from_children(
     children: &[AXElement],
     deadline: std::time::Instant,
     sinks: &mut NameEvidenceSinks<'_>,
-) -> Result<(Option<String>, bool), agent_desktop_core::AdapterError> {
+) -> Result<crate::tree::child_label_read::ChildLabelRead, agent_desktop_core::AdapterError> {
     let mut labels = Vec::new();
+    let mut text_fields = Vec::new();
+    let mut secure_fields = 0;
     note_label_limit(children.len(), sinks.stats);
     let capped = children.len() > MAX_LABEL_ELEMENTS;
     let mut reads_complete = true;
@@ -68,6 +77,8 @@ fn label_from_children(
                     reads_complete &= push_static_text(&mut labels, child, deadline, sinks)?;
                 }
             }
+            Some("AXTextField") => text_fields.push(child.clone()),
+            Some("AXSecureTextField") => secure_fields += 1,
             Some("AXCell") | Some("AXGroup") => {
                 let (title, title_complete) = timed_string(child, "AXTitle", deadline, sinks)?;
                 reads_complete &= title_complete;
@@ -90,6 +101,11 @@ fn label_from_children(
                     let (role, role_complete) =
                         timed_string(&grandchild, "AXRole", deadline, sinks)?;
                     reads_complete &= role_complete;
+                    match role.as_deref() {
+                        Some("AXTextField") => text_fields.push(grandchild.clone()),
+                        Some("AXSecureTextField") => secure_fields += 1,
+                        _ => {}
+                    }
                     if role.as_deref() == Some("AXStaticText") {
                         let (subrole, subrole_complete) =
                             timed_string(&grandchild, "AXSubrole", deadline, sinks)?;
@@ -107,7 +123,13 @@ fn label_from_children(
     let (label, join_complete) = join_unique_labels(labels, sinks.usage);
     let complete =
         label_read_completeness(reads_complete && join_complete, capped, label.is_some());
-    Ok((label, complete))
+    Ok(crate::tree::child_label_read::ChildLabelRead {
+        label,
+        complete,
+        capped,
+        text_fields,
+        secure_fields,
+    })
 }
 
 fn label_read_completeness(reads_complete: bool, capped: bool, label_found: bool) -> bool {
@@ -119,12 +141,18 @@ fn label_from_children(
     _children: &[AXElement],
     _deadline: std::time::Instant,
     _sinks: &mut NameEvidenceSinks<'_>,
-) -> Result<(Option<String>, bool), agent_desktop_core::AdapterError> {
-    Ok((None, true))
+) -> Result<crate::tree::child_label_read::ChildLabelRead, agent_desktop_core::AdapterError> {
+    Ok(crate::tree::child_label_read::ChildLabelRead {
+        label: None,
+        complete: true,
+        capped: false,
+        text_fields: Vec::new(),
+        secure_fields: 0,
+    })
 }
 
 #[cfg(target_os = "macos")]
-fn timed_string(
+pub(crate) fn timed_string(
     element: &AXElement,
     attribute: &str,
     deadline: std::time::Instant,
@@ -176,7 +204,7 @@ fn push_static_text(
 }
 
 #[cfg(target_os = "macos")]
-fn degrade_transient_read(
+pub(crate) fn degrade_transient_read(
     error: i32,
     phase: &str,
     stats: &mut agent_desktop_core::LocatorStats,
@@ -193,7 +221,7 @@ fn degrade_transient_read(
     Ok((None, false))
 }
 
-fn complete_text(
+pub(crate) fn complete_text(
     value: Option<crate::tree::properties::bounded_string::BoundedString>,
     stats: &mut agent_desktop_core::LocatorStats,
 ) -> (Option<String>, bool) {
@@ -232,7 +260,7 @@ fn note_label_limit(child_count: usize, stats: &mut agent_desktop_core::LocatorS
     stats.traversal.limits.child_label_hits += u64::from(child_count > MAX_LABEL_ELEMENTS);
 }
 
-fn join_unique_labels(
+pub(crate) fn join_unique_labels(
     labels: impl IntoIterator<Item = String>,
     usage: &mut crate::tree::observation_usage::ObservationUsage,
 ) -> (Option<String>, bool) {
