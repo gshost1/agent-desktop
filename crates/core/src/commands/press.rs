@@ -26,15 +26,19 @@ pub fn execute(
 
     let mut pressed_process = None;
     let result = if let Some((expected, window)) = target_app(&args, adapter, deadline)? {
-        let lease = adapter.acquire_interaction_lease(deadline)?;
+        let lease = crate::ref_action::ref_action_wait::acquire_lease(adapter, deadline)
+            .map_err(crate::AdapterError::unsent)?;
         let live = crate::commands::helpers::revalidate_app_for_mutation(
             adapter,
             &expected,
             lease.deadline(),
-        )?;
-        let process = crate::commands::helpers::process_identity(&live)?;
+        )
+        .map_err(|error| error.into_adapter_error().unsent())?;
+        let process = crate::commands::helpers::process_identity(&live)
+            .map_err(|error| error.into_adapter_error().unsent())?;
         pressed_process = Some(process.pid);
-        if context.physical_input_policy().is_headed() {
+        let headed = context.physical_input_policy().is_headed();
+        if headed {
             match &window {
                 Some(window) => crate::actions::headed_focus::focus_exact_window(
                     window, adapter, context, &lease,
@@ -47,15 +51,21 @@ pub fn execute(
                 )?,
             };
         }
-        if !context.physical_input_policy().is_headed()
-            && let Some(window) = &window
-        {
-            adapter.press_key_for_window(window, &combo, context.physical_input_policy(), &lease)?
+        let pressed = if !headed && let Some(window) = &window {
+            adapter.press_key_for_window(window, &combo, context.physical_input_policy(), &lease)
         } else {
-            adapter.press_key_for_app(process, &combo, context.physical_input_policy(), &lease)?
-        }
+            adapter.press_key_for_app(process, &combo, context.physical_input_policy(), &lease)
+        };
+        pressed.map_err(|error| {
+            if headed {
+                error.after_focus_ran()
+            } else {
+                error
+            }
+        })?
     } else {
-        let lease = adapter.acquire_interaction_lease(deadline)?;
+        let lease = crate::ref_action::ref_action_wait::acquire_lease(adapter, deadline)
+            .map_err(crate::AdapterError::unsent)?;
         let handle = crate::adapter::NativeHandle::null();
         adapter.execute_action(
             &handle,
@@ -102,3 +112,7 @@ mod tests;
 #[cfg(test)]
 #[path = "press_window_tests.rs"]
 mod window_tests;
+
+#[cfg(test)]
+#[path = "press_focus_tests.rs"]
+mod focus_tests;

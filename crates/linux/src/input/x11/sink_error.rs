@@ -5,6 +5,7 @@ pub(crate) enum SinkError {
     Closed,
     Request(String),
     Journal(String),
+    Unrestorable(u8),
 }
 
 impl SinkError {
@@ -24,6 +25,11 @@ impl SinkError {
                 "The record of held input could not be written, so no further input was sent",
             )
             .with_platform_detail(detail),
+            Self::Unrestorable(keycode) => AdapterError::new(
+                ErrorCode::ActionFailed,
+                "A key's symbols could not be read, so it was not remapped: the change could not be undone",
+            )
+            .with_platform_detail(format!("keycode {keycode}")),
         }
     }
 }

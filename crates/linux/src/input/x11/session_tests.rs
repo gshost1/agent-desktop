@@ -53,7 +53,7 @@ fn a_clean_gesture_delivers_every_step_and_reports_the_count() {
 }
 
 #[test]
-fn a_sink_failing_on_the_fourth_event_ends_with_a_release_at_the_origin() {
+fn a_sink_failing_on_the_fourth_event_ends_with_an_acknowledged_release_at_the_origin() {
     let fake = FakeSink::new().failing_on(4);
 
     let error = run(
@@ -73,7 +73,7 @@ fn a_sink_failing_on_the_fourth_event_ends_with_a_release_at_the_origin() {
     let details = error.details.expect("evidence");
     assert_eq!(details["delivered_events"], 3);
     assert_eq!(details["emergency_release_posted"], true);
-    assert_eq!(details["emergency_release_acknowledged"], false);
+    assert_eq!(details["emergency_release_acknowledged"], true);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }
 

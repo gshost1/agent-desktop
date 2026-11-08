@@ -7,7 +7,7 @@ use super::*;
 /// (`Deadline::after(LOCK_TIMEOUT_MS)`), whose budget collapsed to 0, so the
 /// uncontested lock returned `lock_timeout` and the `?` in `timeout_response`
 /// replaced the intended `wait_timeout` envelope. The fix routes the recovery
-/// write through [`RefStore::save_new_snapshot_detached`] (a detached lock
+/// write through [`RefStore::save_new_snapshot`] (a detached lock
 /// deadline) so the `wait_timeout` envelope — with its `snapshot_id` — is
 /// always built.
 #[test]
@@ -86,14 +86,15 @@ fn expired_inherited_deadline_without_a_snapshot_still_emits_wait_timeout() {
     assert_eq!(details["last_error"]["code"], "APP_NOT_FOUND");
 }
 
-#[test]
-fn matched_partial_snapshot_is_persisted_after_the_inherited_deadline() {
+/// Builds the matched snapshot inside a 30 ms inherited deadline, lets the
+/// deadline expire, then runs the satisfied-wait save path.
+fn materialize_after_the_inherited_deadline(truncated: bool) -> (Value, crate::RefMap) {
     let _guard = HomeGuard::new();
     let clock = crate::wait::deadline::VirtualClock::freeze();
     let inherited = crate::Deadline::detached_after(30).unwrap();
     let deadline_scope = crate::wait::deadline::enter_scope(Some(inherited));
     let mut tree = window_node(vec![button_node("saved")]);
-    tree.subtree_truncated = true;
+    tree.subtree_truncated = truncated;
     let input = base_input("button:saved", false);
     let result = snapshot::build(
         &StaticTreeAdapter { tree },
@@ -103,16 +104,33 @@ fn matched_partial_snapshot_is_persisted_after_the_inherited_deadline() {
         inherited,
     )
     .unwrap();
-    assert!(!result.complete);
+    assert_eq!(result.complete, !truncated);
     clock.advance(std::time::Duration::from_millis(31));
 
     let value = materialized_response(result, &CommandContext::default(), &input, 31)
-        .expect("a matched partial snapshot must survive the expired inherited deadline");
+        .expect("a satisfied wait's snapshot must survive the expired inherited deadline");
+    let snapshot_id = value["snapshot_id"].as_str().unwrap().to_owned();
+    drop(deadline_scope);
+    let refmap = RefStore::new().unwrap().load(Some(&snapshot_id)).unwrap();
+    (value, refmap)
+}
+
+#[test]
+fn matched_partial_snapshot_is_persisted_after_the_inherited_deadline() {
+    let (value, refmap) = materialize_after_the_inherited_deadline(true);
     assert_eq!(value["matched_selector"], "button:saved");
     assert_eq!(value["complete"], false);
-    let snapshot_id = value["snapshot_id"].as_str().unwrap();
-    drop(deadline_scope);
-    let refmap = RefStore::new().unwrap().load(Some(snapshot_id)).unwrap();
+    assert_eq!(
+        refmap.get("@e1").unwrap().identity.name.as_deref(),
+        Some("saved")
+    );
+}
+
+#[test]
+fn matched_complete_snapshot_is_persisted_after_the_inherited_deadline() {
+    let (value, refmap) = materialize_after_the_inherited_deadline(false);
+    assert_eq!(value["matched_selector"], "button:saved");
+    assert_eq!(value["complete"], true);
     assert_eq!(
         refmap.get("@e1").unwrap().identity.name.as_deref(),
         Some("saved")

@@ -11,6 +11,7 @@ use super::sink::X11Sink;
 use super::sink_error::SinkError;
 use super::verify;
 use crate::input::delivery::Delivery;
+use crate::input::emergency_release::EmergencyRelease;
 use crate::input::plan::Plan;
 use crate::input::release_guard::ReleaseGuard;
 use crate::input::release_state::ReleaseState;
@@ -73,13 +74,17 @@ fn execute(
             return Err(guard.abort(error, ABORT_SUGGESTION));
         }
     }
-    if let Err(error) = guard.finish().map_err(SinkError::into_adapter) {
+    if let Err(error) = guard.release_everything().map_err(SinkError::into_adapter) {
         return Err(guard.abort(error, ABORT_SUGGESTION));
     }
     let touched = guard.touched().clone();
     let delivered = guard.delivered();
     verify::check(guard.sink(), &touched, deadline).map_err(|error| {
-        ReleaseState::resumed(delivered, false).enrich_error(error, ABORT_SUGGESTION)
+        ReleaseState::resumed(delivered).enrich_error(
+            error,
+            EmergencyRelease::NotNeeded,
+            ABORT_SUGGESTION,
+        )
     })?;
     Ok(Delivery {
         delivered_events: guard.delivered(),

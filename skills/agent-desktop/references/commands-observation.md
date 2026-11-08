@@ -127,7 +127,7 @@ Lists displays as `{ id, bounds, is_primary, scale }`, primary first. Use the ar
 agent-desktop list-surfaces --app "Finder"
 ```
 
-Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent.
+Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent. On macOS menus belong to the application, and proving none is open walks the whole app tree; when that walk cannot finish, the sheets and alerts already read are kept and an `app/menubar` entry carries `"unclassified": ["menu"]`.
 
 ## open-system-surface
 

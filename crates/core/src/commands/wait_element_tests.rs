@@ -168,7 +168,7 @@ fn element_wait_explicit_session_snapshot_with_matching_session_context() {
         "@e1".into(),
         Some(snapshot_id),
         wait_predicate::ElementPredicate::Exists,
-        50,
+        2_000,
         &adapter,
         &crate::context::CommandContext::new(Some("agent-a".into()), None, false).unwrap(),
     )

@@ -254,3 +254,7 @@ mod tests;
 #[cfg(test)]
 #[path = "snapshot_ref_alloc_tests.rs"]
 mod alloc_tests;
+
+#[cfg(test)]
+#[path = "snapshot_ref_deadline_tests.rs"]
+mod deadline_tests;

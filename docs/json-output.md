@@ -67,12 +67,58 @@ is one of `unknown`, `safe` or `unsafe`, and it follows from `delivery`:
 `not_delivered` is `safe`, and every other non-`unknown` value is `unsafe`.
 
 `unknown` means the command established nothing about delivery. A failure of a
-mutating command that carries no delivery evidence, such as a `TIMEOUT` on an
-operation that may already have landed, keeps it. A read-only command sends
-nothing and invalid arguments never reach the application, so their errors, and
-a lookup failure such as `APP_NOT_FOUND`, carry `not_delivered`. Treat `unknown`
-as not safe to retry automatically: read `error.code` and the message, and
-choose a recovery strategy only when `disposition.retry` is `safe`.
+command that sends input to an application and carries no delivery evidence,
+such as a `TIMEOUT` on an operation that may already have landed, keeps it. A
+read-only command sends nothing, and neither does a command that only writes a
+local file or local state (`screenshot <PATH>`, `clipboard-get --out`,
+`trace export` and `session gc`), so their errors carry `not_delivered`.
+`session start` and `session end` change session state and drive the cursor
+overlay, so they are treated like commands that send input. Invalid arguments never reach the application, so
+their errors, and a lookup failure such as `APP_NOT_FOUND`, carry
+`not_delivered` too. The exception is an `INVALID_ARGS` error with no
+disposition of its own that carries `details.preparatory_focus` or
+`details.preparatory_scroll`: a focus or scroll ran before the refusal, so it
+keeps `unknown`. Treat `unknown` as not safe to retry automatically: read
+`error.code` and the message, and choose a recovery strategy only when
+`disposition.retry` is `safe`.
+
+A `batch` entry whose result does not fit the batch output limit is replaced by
+an `INVALID_ARGS` error with `details.result_omitted: true`. It keeps the
+entry's own disposition: the result's `data.disposition` or
+`error.disposition`, `not_delivered` for a command that sends no input, and
+`delivered_unverified` for a successful command that sends input and reports
+none.
+
+Under `--trace-strict`, a `batch` whose closing trace record cannot be written
+fails with the trace error and `details.kind: "batch_trace_end_failed"`. Every
+entry has already run, so `details.batch` holds the batch body with each
+per-entry result, and `details.cause_details` keeps the trace error's own
+details. A body that would push the response past the batch output limit is
+left out: `details.result_omitted` is `true` and only `total_entries`,
+`completed_entries`, `not_started_entries` and `stopped` are kept. The
+disposition is `not_delivered` when no entry can have delivered (each entry's
+disposition is `not_delivered`, or it is a successful command that sends no
+input), and `delivery_uncertain` otherwise. Any other command whose closing
+trace record fails after it succeeded reports `delivered_unverified` unless it
+is read-only.
+
+A ref action that fails after it starts waiting on the interaction lease and
+before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
+waiting for the lease, a deadline spent while taking it, a failed headed focus
+step, a failed resolve or actionability check under the lease, and a failed
+trace write at dispatch start. The focus step of a headed pointer command, and
+the lease, a deadline spent while taking it, target revalidation and focus step
+of `press`, are `not_delivered` the same way. A key refusal that `press`
+raises after its headed focus carries `details.preparatory_focus` too. Once a focus call has run, a
+failure raised later in the ref action's dispatch (the focus itself, the resolve
+and actionability check under the lease, the action and its verification)
+carries `details.preparatory_focus: "may_have_moved_focus"`, because that call
+may have raised a window; its disposition still says whether the action was
+sent. A failure before the focus call, such as a window that no longer matches,
+carries no such detail, and neither does a failure in a step after the action,
+such as a `--wait-for` condition or writing the result. A ref action makes at
+most one focus attempt: once a focus call has run it does not go back to
+waiting, even when the error is retryable.
 
 ## Version 2.4 migration
 
@@ -207,9 +253,13 @@ Every ref is re-identified from its stored entry or refused, and `details.kind` 
 | `saved_ref_ambiguous` | `AMBIGUOUS_TARGET` | An element identical to the captured one appeared, so two or more live elements match the stored role and stable fields. A fresh snapshot refuses both as twins; act on a control that is unique in the window. |
 | `identity_not_unique` | `AMBIGUOUS_TARGET` | The ref was not proven the only element matching its role and stable fields when it was captured, so nothing is searched. Either an identical twin existed, or the window could not be read whole within the snapshot timeout (retake the snapshot with a larger `--timeout-ms`). It is reached on Windows, on Linux, and on macOS when the element yields no address. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
 
-The fifth outcome is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
+Two outcomes are retryable. `saved_ref_landing_moved` carries `STALE_REF` with `details.complete: false` and `details.retryable: true`: the whole-window count found the element exactly once, but a different element sat at its path when the resolver reached it, as when a list re-sorts during the read. The element was there and only the descent disagreed, so this is not `saved_ref_absent`; the next attempt counts again. A ref action retries it at most twice in a row and answers the third with `saved_ref_absent`. A landing with no count just before it, such as the C find entry point's first-match landing, reports `saved_ref_absent` instead.
+
+The other is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
 
 After the core resolver chooses the element, the platform adapter lands it, and a landing failure keeps the adapter's own `details.kind` (for example `resolve_no_candidate` on Linux and Windows, or `resolution_complete_absence` on macOS). The platform skills list those kinds. `saved_ref_absent`, `saved_ref_ambiguous` and `identity_not_unique` carry `details.retryable: false`, because waiting cannot change the answer. Every one of these is `not_delivered`.
+
+A refusal without `details.retryable: true` ends every wait at once. With it, what happens next depends on the caller. A ref action (its auto-wait, its retry under the interaction lease, and the pointer actions' waits) treats a known complete absence, a `STALE_REF` with `details.complete: true` and kind `resolve_no_candidate`, `resolution_complete_absence` or `saved_ref_absent`, as final and answers at once, whatever its `retryable` stamp, because the recovery is a new snapshot. That includes a list rebuilt under the lease while the action resolved it. It polls any other retryable resolution refusal within its budget; when the budget runs out on a retryable `STALE_REF` or `AMBIGUOUS_TARGET` read over complete evidence, it reports that refusal with `details.elapsed_ms` instead of the actionability `TIMEOUT`. `wait --element` waits for an element to appear, so it keeps polling every retryable refusal, a complete absence included, until its deadline.
 
 ## Error codes
 

@@ -47,8 +47,8 @@ pub(super) struct World {
     pub(super) wayland: bool,
     pub(super) stopped: bool,
     pub(super) reaction: Option<fn(&[WindowWrite]) -> WindowFacts>,
-    pub(super) remembered: RefCell<Option<Extents>>,
-    pub(super) remember_calls: RefCell<Vec<Option<Extents>>>,
+    pub(super) remembered: RefCell<Option<(String, RememberedPlace)>>,
+    pub(super) remember_calls: RefCell<Vec<Option<RememberedPlace>>>,
     pub(super) twins: Option<Twins>,
     pub(super) active: Option<u32>,
 }
@@ -115,6 +115,15 @@ impl World {
     pub(super) fn then_showing(self, facts: WindowFacts) -> Self {
         self.facts.borrow_mut().push_back(ControlRead::Ready(facts));
         self
+    }
+
+    pub(super) fn keeping(self, place: RememberedPlace) -> Self {
+        *self.remembered.borrow_mut() = Some((INSTANCE.to_owned(), place));
+        self
+    }
+
+    pub(super) fn kept(&self) -> Option<RememberedPlace> {
+        self.remembered.borrow().as_ref().map(|(_, place)| *place)
     }
 
     pub(super) fn writes(&self) -> usize {
@@ -186,13 +195,18 @@ impl OpWorld for World {
         self.overview
     }
 
-    fn remember(&self, _win: &WindowInfo, _client: u32, rectangle: Option<Extents>) {
-        self.remember_calls.borrow_mut().push(rectangle);
-        *self.remembered.borrow_mut() = rectangle;
+    fn remember(&self, win: &WindowInfo, _client: u32, place: Option<RememberedPlace>) {
+        self.remember_calls.borrow_mut().push(place);
+        *self.remembered.borrow_mut() =
+            place.and_then(|place| Some((win.process_instance.clone()?, place)));
     }
 
-    fn remembered(&self, _win: &WindowInfo, _client: u32) -> Option<Extents> {
-        *self.remembered.borrow()
+    fn remembered(&self, win: &WindowInfo, _client: u32) -> Option<RememberedPlace> {
+        self.remembered
+            .borrow()
+            .as_ref()
+            .filter(|(instance, _)| win.process_instance.as_deref() == Some(instance))
+            .map(|(_, place)| *place)
     }
 
     fn on_wayland(&self) -> bool {
