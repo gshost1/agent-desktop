@@ -90,7 +90,9 @@ pub(crate) fn focus_for_physical_input(
     if !context.physical_input_policy().allow_focus_steal {
         return Ok(false);
     }
-    crate::actions::headed_focus::focus_entry_window(entry, adapter, context, lease)
+    Ok(crate::actions::headed_focus::focus_entry_window(
+        entry, adapter, context, lease,
+    )?)
 }
 
 #[cfg(test)]
