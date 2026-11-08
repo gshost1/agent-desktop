@@ -24,6 +24,9 @@ use agent_desktop_web::{SystemConnector, WebChannelAdapter, endpoint_from_user_d
 /// the 200 ms a connection-scope click holds its connection open.
 static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// How long `/slow` takes to answer.
+pub const SLOW_PAGE: Duration = Duration::from_millis(600);
+
 pub const INSTANCE: &str = "live-downloads";
 pub const PID: u32 = 4_242;
 pub const CSV: &str = "id,name\n1,Ada\n2,Grace\n";
@@ -137,6 +140,26 @@ impl Bench {
             .with_download_ledger(Some(StateFile::at(self.root.join("downloads.json"))))
     }
 
+    /// The web snapshot of the bench window's page.
+    pub fn snapshot(
+        &self,
+        adapter: &WebChannelAdapter<HeadlessPlatform>,
+    ) -> agent_desktop_core::AccessibilityNode {
+        let window = self.window();
+        let options = TreeOptions {
+            surface: SnapshotSurface::Web,
+            ..TreeOptions::default()
+        };
+        adapter
+            .observe_tree(
+                ObservationRoot::Window(&window),
+                &ObservationRequest::snapshot(&options, deadline()),
+            )
+            .unwrap()
+            .into_accessibility_tree()
+            .unwrap()
+    }
+
     pub fn window(&self) -> WindowInfo {
         WindowInfo {
             id: "headless".into(),
@@ -177,18 +200,7 @@ impl Bench {
                 deadline: deadline(),
             })
             .unwrap();
-        let options = TreeOptions {
-            surface: SnapshotSurface::Web,
-            ..TreeOptions::default()
-        };
-        let tree = adapter
-            .observe_tree(
-                ObservationRoot::Window(&window),
-                &ObservationRequest::snapshot(&options, deadline()),
-            )
-            .unwrap()
-            .into_accessibility_tree()
-            .unwrap();
+        let tree = self.snapshot(adapter);
         let link = find(&tree, name).expect("the page shows the element");
         let entry = RefEntry {
             process: RefProcess {
@@ -272,7 +284,8 @@ pub fn deadline() -> Deadline {
 }
 
 /// Serves a page linking to `/report.csv`, which arrives as an attachment,
-/// next to a button that does nothing; the body comes `body_delay` after the
+/// and to `/slow`, a page that answers after [`SLOW_PAGE`], next to a button
+/// that does nothing; the attachment's body comes `body_delay` after its
 /// headers.
 pub fn serve(body_delay: Duration) -> u16 {
     serve_with(Duration::ZERO, body_delay)
@@ -304,8 +317,17 @@ pub fn serve_with(header_delay: Duration, body_delay: Duration) -> u16 {
                     let _ = stream.write_all(head.as_bytes());
                     std::thread::sleep(body_delay);
                     let _ = stream.write_all(CSV.as_bytes());
+                } else if request.starts_with(b"GET /slow") {
+                    std::thread::sleep(SLOW_PAGE);
+                    let page = "<!doctype html><title>Landed</title><h1>Landed here</h1>";
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        page.len()
+                    );
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(page.as_bytes());
                 } else {
-                    let page = r#"<!doctype html><title>Reports</title><a href="/report.csv">Download report</a><button>Nothing</button>"#;
+                    let page = r#"<!doctype html><title>Reports</title><a href="/report.csv">Download report</a><a href="/slow">Next page</a><button onclick="location.href='/slow'">Go by script</button><button>Nothing</button>"#;
                     let head = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                         page.len()

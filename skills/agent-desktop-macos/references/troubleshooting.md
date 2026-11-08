@@ -97,6 +97,14 @@ Replace `@s1:e1` and `@s2:e1` with the `ref_id` each `find` returns. While a pan
 
 **Fix.** Write to the editor. Run `snapshot --app <App> --surface focused -i`: while the edit is open, the root is the editor, a `textfield` holding the current name. `set-value` its ref with the new name; the result says `application_commit: "pending"`. Then `press return --app <App>` and confirm the new name with an independent read, such as a listing of the folder. A `set-value` on the row's own field also reaches the editor when it can prove the editor belongs to that field.
 
+## Return on a sheet reports none_observed
+
+**Symptom.** `press return --app <App>` on a sheet, such as Finder's Go to Folder after `set-value` on its path field, fails with `ACTION_FAILED` and `details.modal_key.effect: "none_observed"`, and the sheet is still open.
+
+**Cause.** `press` sent a real key and then the field's confirm action, and the sheet's window stayed on screen. A sheet in an app that is not in front can ignore keys sent to it, and the confirm action only ends editing in the field.
+
+**Fix.** Do not repeat the same press; the disposition is `retry: unsafe`. Run `snapshot --app <App> --surface sheet -i`. Click the default button by ref when `default_button` is `true`. Otherwise send the key once more with `--headed`, which brings the window forward before the real key. To dismiss the sheet, click its Close or Cancel button.
+
 ## select does not find the menu
 
 **Symptom.** `select` fails to confirm the choice.

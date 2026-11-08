@@ -146,6 +146,41 @@ element and the windows of both processes before and after delivery, for up to
 or may have acted without a visible change, so read the panel and use its
 controls by ref instead of repeating the key.
 
+On macOS, `press --app` and `press --window-id` with `return`, `enter` or
+`escape` and no modifiers check the effect when the focused window is a sheet
+or dialog, or carries a sheet. A real key goes first, before any semantic
+action, because `AXConfirm` on a text field ends editing and moves focus off
+it, after which the sheet ignores Return. The press is verified only by a
+postcondition the window server shows, held on two consecutive reads within
+750 ms: `surface_window_closed`, the sheet's or dialog's own window has left
+the screen. `text_edited` also counts, but only for a multi-line text area.
+Accessibility listings, window size and title changes never count. When the
+real key cannot be sent or the surface's window stays on screen, the focused
+control's `AXConfirm` or `AXCancel` runs and is judged the same way. A
+verified press is `delivered_verified` with `details.modal_key: { "surface":
+"sheet" | "dialog", "effect": "observed", "signal": "<signal>",
+"observed_after": "<step label>" }`. When the surface's own window cannot be
+told apart from the window it is attached to, only the real key is sent and
+the result is `delivered_unverified` with `modal_key.effect: "unobservable"`.
+A surface still on screen after both routes is an `ACTION_FAILED` error with
+`delivered_unverified` delivery, `retry: unsafe` and
+`details.modal_key.effect: "none_observed"`, plus `routes` (the step labels
+tried) and `default_button` (for Return) or `cancel_button` (for Escape), which
+says whether the surface names such a button. Read the surface again and use
+its controls by ref instead of repeating the key. Presses with modifiers, other
+keys, and presses with no sheet or dialog in the focused window are unchanged.
+
+The two reports meet only through `keyboard_target`. While a proven hosted
+view owns the keys (`route: "hosted_view"`), the sheet and dialog check does not
+run: the key goes to the hosted view's process, no `AXConfirm` or `AXCancel` is
+tried, and the hosted focus effect alone verifies it, so the result carries
+`keyboard_target` and no `modal_key`. Otherwise the app owns its keys, and on a
+sheet or dialog the real key goes to the app and `modal_key` alone verifies the
+press; `keyboard_target` is added beside it, without `effect`, when an unproven
+owner was reported. A late report never replaces an earlier one:
+`keyboard_target`, `modal_key` and `menu_shortcut` sit side by side in
+`details`.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.
@@ -337,6 +372,26 @@ The data then carries `complete`:
   a token, has no ref and carries `bounds` when the platform reports them.
 - Without the flag the data has no `complete` field, and an incomplete walk is
   still `TIMEOUT`.
+
+## Derived names
+
+A `row`, `treeitem` or `cell` that no accessible-name source names, but whose
+only text-field child holds its label, takes that field's value as its `name`
+and carries `"name_source": "child_field_value"`:
+
+```json
+{ "ref_id": "@s8f3k2p9:e7", "role": "treeitem", "name": "notes.txt", "name_source": "child_field_value" }
+```
+
+File lists and outlines whose rows rename inline report rows this way. The
+element has no secure field, no static-text label and exactly one text field
+among the children read; otherwise it stays unnamed. Snapshot nodes carry the
+marker; `find` match objects report the derived `name` without it. `find --name`
+matches a derived name. It is a control
+value, so it is never ref identity: the ref entry records no name for that
+element, the capture proof and re-identification leave it out, and
+`get <ref> --property title` returns `null`. A node whose name comes from an
+accessible-name source omits `name_source`.
 
 ## Ref re-identification details
 
