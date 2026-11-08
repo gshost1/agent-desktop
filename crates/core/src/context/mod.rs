@@ -1,7 +1,7 @@
 use crate::{
-    AdapterError, AppError, CursorOverlayConfig, SignalBaseline, actions::action::Action,
-    actions::action_request::ActionRequest, actions::interaction_policy::InteractionPolicy,
-    session, trace::TraceConfig,
+    AdapterError, AppError, CursorOverlayConfig, NotificationSeed, SignalBaseline,
+    actions::action::Action, actions::action_request::ActionRequest,
+    actions::interaction_policy::InteractionPolicy, session, trace::TraceConfig,
 };
 use serde_json::{Value, json};
 use std::cell::Cell;
@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 mod cursor;
+mod menu_seeding;
 mod options;
 mod session_scope;
 mod wait_selector;
@@ -169,15 +170,15 @@ impl CommandContext {
         self.options.event_baseline.as_ref()
     }
 
-    /// Seeds a closed-direction menu wait with a reading taken before the
-    /// action it follows; `batch` sets it the way it sets the event baseline.
-    pub fn with_menu_seed(mut self, seed: Option<crate::MenuSeed>) -> Self {
-        self.options.menu_seed = seed;
+    /// Seeds a `wait --notification` with notifications listed before the
+    /// action that precedes it, instead of the wait's own first list.
+    pub fn with_notification_seed(mut self, seed: Option<NotificationSeed>) -> Self {
+        self.options.notification_seed = seed;
         self
     }
 
-    pub fn menu_seed(&self) -> Option<&crate::MenuSeed> {
-        self.options.menu_seed.as_ref()
+    pub fn notification_seed(&self) -> Option<&NotificationSeed> {
+        self.options.notification_seed.as_ref()
     }
 
     pub fn command_scope(&self, command: &'static str) -> Result<CommandScope<'_>, AppError> {

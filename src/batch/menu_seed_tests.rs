@@ -142,14 +142,14 @@ fn actions() -> [serde_json::Value; 2] {
 }
 
 #[test]
-fn a_menu_open_before_the_action_ends_the_closed_wait_on_its_first_read() {
+fn a_menu_open_before_the_action_ends_the_closed_wait_without_the_grace() {
     for action in actions() {
         let adapter = ActedMenu::new(true, &[false]);
         let started = Instant::now();
         let value = run(action.clone(), &adapter);
         assert_eq!(value["results"][0]["ok"], true, "{value}");
         assert_eq!(value["results"][1]["ok"], true, "{value}");
-        assert_eq!(*adapter.wait_reads.lock().unwrap(), 1, "{action}");
+        assert_eq!(*adapter.wait_reads.lock().unwrap(), 2, "{action}");
         assert!(
             started.elapsed() < Duration::from_millis(800),
             "{action}: {:?}",
@@ -164,6 +164,6 @@ fn an_opener_of_any_kind_holds_the_closed_wait_until_its_late_menu_closes() {
         let adapter = ActedMenu::new(false, &[false, false, true, false]);
         let value = run(action.clone(), &adapter);
         assert_eq!(value["results"][1]["ok"], true, "{value}");
-        assert_eq!(*adapter.wait_reads.lock().unwrap(), 4, "{action}");
+        assert_eq!(*adapter.wait_reads.lock().unwrap(), 5, "{action}");
     }
 }

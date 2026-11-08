@@ -181,7 +181,7 @@ impl SystemOps for LinuxAdapter {
         process: ProcessIdentity,
         deadline: Deadline,
     ) -> Result<bool, AdapterError> {
-        crate::system::menu::menu_anchor::menu_open(self.bus(), &process, deadline)
+        menu_wait::menu_open(self.bus(), process, deadline)
     }
 
     fn supported_surfaces(&self) -> Vec<SnapshotSurface> {

@@ -80,7 +80,7 @@ agent-desktop wait --menu --app gtk3-widget-factory --timeout 5000
 agent-desktop snapshot --app gtk3-widget-factory --surface menu -i --compact
 ```
 
-After you choose an item or dismiss the menu, `wait --menu-closed --app gtk3-widget-factory` confirms it is gone. A `--menu-closed` that never sees the menu open returns after a 1 s opener grace, because a menu can appear after its opener returns. Run the item click and `--menu-closed` in one `batch` to skip the grace: the batch reads the menu before the click and, finding it open, ends the wait on the first closed read. See [Surfaces](/desktop/surfaces).
+After you choose an item or dismiss the menu, `wait --menu-closed --app gtk3-widget-factory` confirms it is gone. A `--menu-closed` that never sees the menu open returns after a 1.5 s opener grace, because a menu can appear after its opener returns. Run the item click and `--menu-closed` in one `batch` to skip the grace: the batch reads the menu before the click and, finding it open, ends the wait after two closed reads. See [Surfaces](/desktop/surfaces).
 
 ## Set timeouts
 

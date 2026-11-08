@@ -335,12 +335,13 @@ diffs a baseline taken at the start against fresh reads. On Linux:
   diff and no event is invented from them.
 - A `batch` is `ok: true`, exit 0, even when an entry fails: each entry carries
   its own `ok: false` and `error`. Read every entry.
-- `--menu-closed` is satisfied when the menu closes after it was seen open, or
-  when it stays closed for the 1 s opener grace (half the timeout when that is
-  shorter). The grace covers a menu that appears late after its opener. A
-  `batch` that runs an action and then `--menu-closed` reads the menu before
-  the action; when the menu was open then, the closed wait returns on its first
-  closed read with no grace.
+- `--menu-closed` is satisfied when the menu reads closed twice in a row after
+  it was seen open, or when it stays closed for the 1.5 s opener grace, or when
+  the timeout ends inside the grace with every completed read closed. The grace
+  covers a menu that appears late after its opener. A `batch` that runs an
+  action and then `--menu-closed` reads the menu before the action; when the
+  menu was open then, the closed wait returns after two closed reads with no
+  grace.
 - A hidden menu bar opens nothing, so `--menu` times out with "No menu opened
   before the deadline".
 - For an already-focused menu or Save As dialog, `agent-desktop press escape`

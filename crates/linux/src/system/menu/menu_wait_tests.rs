@@ -2,11 +2,12 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use super::{MenuWorld, app_label, run};
+use super::{MenuWorld, app_label, read_once, run};
 use crate::system::process::liveness::Liveness;
 use crate::system::process::process_facts::ProcessFacts;
 use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, ErrorCode, MenuWait, ProcessIdentity,
+    AdapterError, Deadline, DeliverySemantics, ErrorCode, MENU_OPENER_GRACE, MenuWait,
+    ProcessIdentity,
 };
 
 struct Fake {
@@ -73,11 +74,20 @@ impl MenuWorld for Fake {
 }
 
 fn closed_after_opener() -> MenuWait {
-    MenuWait::closed(Instant::now(), Duration::from_secs(30))
+    MenuWait::closed(Instant::now())
+}
+
+fn closed_with_grace_left(left: Duration) -> MenuWait {
+    let started = Instant::now() + left;
+    MenuWait::closed(
+        started
+            .checked_sub(MENU_OPENER_GRACE)
+            .expect("monotonic clock"),
+    )
 }
 
 fn closed_with_no_grace() -> MenuWait {
-    MenuWait::closed_awaiting_open(Instant::now())
+    closed_with_grace_left(Duration::ZERO)
 }
 
 fn deadline(ms: u64) -> Deadline {
@@ -215,22 +225,22 @@ fn the_name_of_a_stopped_app_is_its_executable_then_its_comm_then_its_pid() {
 fn a_closed_read_right_after_an_opener_does_not_end_the_closed_wait() {
     let world = Fake::new(vec![Ok(false), Ok(false), Ok(true), Ok(false)]);
     assert!(run(&world, closed_after_opener(), deadline(5000)).is_ok());
-    assert_eq!(world.read_count.get(), 4);
+    assert_eq!(world.read_count.get(), 5);
 }
 
 #[test]
 fn a_raw_mouse_click_opener_holds_the_closed_wait_like_a_ref_click() {
     let world = Fake::new(vec![Ok(false), Ok(true), Ok(false)]);
     assert!(run(&world, closed_after_opener(), deadline(5000)).is_ok());
-    assert_eq!(world.read_count.get(), 3);
+    assert_eq!(world.read_count.get(), 4);
 }
 
 #[test]
-fn a_closed_wait_after_a_menu_item_click_returns_on_the_first_read_without_a_hold() {
+fn a_closed_wait_after_a_menu_item_click_returns_after_one_more_poll_without_a_hold() {
     let world = Fake::new(vec![Ok(false)]);
     let started = Instant::now();
     assert!(run(&world, MenuWait::closed_after_open(), deadline(5000)).is_ok());
-    assert_eq!(world.read_count.get(), 1);
+    assert_eq!(world.read_count.get(), 2);
     assert!(started.elapsed() < Duration::from_millis(500));
 }
 
@@ -238,16 +248,39 @@ fn a_closed_wait_after_a_menu_item_click_returns_on_the_first_read_without_a_hol
 fn a_closed_wait_with_no_sign_of_a_menu_ends_when_the_grace_has_passed() {
     let world = Fake::new(vec![Ok(false)]);
     let grace = Instant::now() + Duration::from_millis(120);
-    assert!(
-        run(
-            &world,
-            MenuWait::closed_awaiting_open(grace),
-            deadline(5000)
-        )
-        .is_ok()
-    );
+    let wait = closed_with_grace_left(Duration::from_millis(120));
+    assert!(run(&world, wait, deadline(5000)).is_ok());
     assert!(world.read_count.get() >= 3, "{}", world.read_count.get());
     assert!(Instant::now() >= grace);
+}
+
+#[test]
+fn a_menu_swapped_for_another_across_one_poll_does_not_end_the_closed_wait() {
+    let world = Fake::new(vec![Ok(false), Ok(true), Ok(false), Ok(false)]);
+    assert!(run(&world, MenuWait::closed_after_open(), deadline(5000)).is_ok());
+    assert_eq!(world.read_count.get(), 4);
+}
+
+#[test]
+fn a_deadline_inside_the_grace_after_closed_reads_is_closed_not_a_timeout() {
+    let world = Fake::new(vec![Ok(false)]);
+    assert!(run(&world, closed_after_opener(), deadline(200)).is_ok());
+    let unread = Fake::new(vec![Err(AdapterError::timeout("slow"))]);
+    let error = run(&unread, closed_after_opener(), deadline(200)).expect_err("never read");
+    assert_eq!(error.code, ErrorCode::Timeout);
+}
+
+#[test]
+fn the_pre_action_reading_of_a_reused_or_exited_pid_is_never_open() {
+    let gone = Fake::new(vec![Ok(true)]).with_lives(vec![Liveness::Gone]);
+    let error = read_once(&gone, deadline(1000)).expect_err("gone before the read");
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(gone.read_count.get(), 0);
+    let reused = Fake::new(vec![Ok(true)]).with_lives(vec![Liveness::Alive, Liveness::Gone]);
+    let error = read_once(&reused, deadline(1000)).expect_err("gone after the read");
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    let alive = Fake::new(vec![Ok(true)]);
+    assert!(read_once(&alive, deadline(1000)).expect("alive"));
 }
 
 #[test]

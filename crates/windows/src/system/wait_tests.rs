@@ -63,7 +63,8 @@ fn opened() -> MenuWait {
 
 /// A closed wait whose opener grace is over: a plain closed-state poll.
 fn closed() -> MenuWait {
-    MenuWait::closed_awaiting_open(Instant::now())
+    let started = Instant::now().checked_sub(agent_desktop_core::MENU_OPENER_GRACE);
+    MenuWait::closed(started.expect("monotonic clock"))
 }
 
 fn identity_for(pid: ProcessId) -> ProcessIdentity {
@@ -137,33 +138,6 @@ fn open_false_waits_and_returns_ok_once_the_already_open_menu_is_dismissed() {
         "expected Ok once the fixture dismissed its menu, got {result:?}"
     );
     assert!(fixture.wait_for_menu_state(false, STATE_TIMEOUT));
-}
-
-/// Uses a poll-count assertion rather than an elapsed-time one so the
-/// property holds regardless of host speed: the predicate is read exactly
-/// once when the requested state already holds, proving the deadline is
-/// consulted only after that first read rather than gating it.
-#[test]
-fn already_in_the_requested_state_returns_immediately_reading_the_predicate_once() {
-    bootstrap();
-    let _app_name_scope = FIXTURE_APP_NAME_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let fixture = MenuFixture::spawn().expect("the menu fixture starts");
-    let identity = identity_for(ProcessId::from(fixture.process_id()));
-    poll_calls::take();
-
-    let result = wait_for_menu(identity, closed(), deadline(5_000));
-
-    assert!(
-        result.is_ok(),
-        "the menu is already closed, so the wait must succeed without polling twice"
-    );
-    assert_eq!(
-        poll_calls::take(),
-        1,
-        "the predicate must be read exactly once when the state already matches"
-    );
 }
 
 #[test]
@@ -398,3 +372,6 @@ mod expiry_detail_tests;
 
 #[path = "wait_exit_confirmation_tests.rs"]
 mod exit_confirmation_tests;
+
+#[path = "wait_grace_tests.rs"]
+mod grace_tests;

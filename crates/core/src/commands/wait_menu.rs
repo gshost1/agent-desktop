@@ -14,7 +14,7 @@ use crate::{
 /// The most a pre-action menu reading may spend before `batch` starts the
 /// action without it. A seed only shortens the wait, so a slow read is
 /// dropped rather than allowed to delay the action.
-const SEED_READ_CAP: Duration = Duration::from_millis(1_000);
+const SEED_READ_CAP: Duration = Duration::from_millis(500);
 
 pub(crate) fn wait_for_menu(
     app: Option<String>,
@@ -25,13 +25,12 @@ pub(crate) fn wait_for_menu(
 ) -> Result<Value, AppError> {
     let start = Instant::now();
     let deadline = Deadline::at(start, timeout_ms)?;
-    let budget = deadline.remaining();
     let target = resolve_app(app.as_deref(), adapter, deadline).map_err(|error| match error {
         AppError::Adapter(error) => wait_timeout::menu(error, timeout_ms),
         other => other,
     })?;
     let process = process_identity(&target)?;
-    let wait = menu_wait(open, &process, context.menu_seed(), start, budget);
+    let wait = menu_wait(open, &process, context.menu_seed(), start);
     adapter
         .wait_for_menu(process.clone(), wait, deadline)
         .map_err(|error| {
@@ -56,14 +55,13 @@ pub(crate) fn menu_wait(
     process: &ProcessIdentity,
     seed: Option<&MenuSeed>,
     started: Instant,
-    budget: Duration,
 ) -> MenuWait {
     if open {
         return MenuWait::opened();
     }
     match seed {
         Some(seed) if seed.open && seed.process == *process => MenuWait::closed_after_open(),
-        _ => MenuWait::closed(started, budget),
+        _ => MenuWait::closed(started),
     }
 }
 

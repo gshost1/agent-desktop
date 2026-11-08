@@ -1,6 +1,8 @@
 use agent_desktop_core::{
-    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, PermissionReport,
-    PlatformAdapter, SignalBaseline, SignalFilter, commands::wait_menu, context::CommandContext,
+    AdapterError, AppError, Deadline, DeliverySemantics, ErrorCode, MenuSeed, NotificationSeed,
+    PermissionReport, PlatformAdapter, SignalBaseline, SignalFilter,
+    commands::{wait_menu, wait_notification as notification_wait},
+    context::CommandContext,
 };
 use serde_json::{Value, json};
 
@@ -28,7 +30,8 @@ pub(super) fn execute(
     let mut completed = 0;
     let mut pending_baseline: Option<Result<SignalBaseline, AdapterError>> =
         context.event_baseline().cloned();
-    let mut pending_menu_seed = context.menu_seed().cloned();
+    let mut pending_notification = context.notification_seed().cloned();
+    let mut pending_menu = context.menu_seed().cloned();
     let mut stopped = None;
 
     for index in 0..total {
@@ -44,7 +47,8 @@ pub(super) fn execute(
         }
 
         let current_baseline = pending_baseline.take();
-        let current_menu_seed = pending_menu_seed.take();
+        let current_notification = pending_notification.take();
+        let current_menu = pending_menu.take();
 
         if let Some(ended_session) = session_ended_for(&commands[index]) {
             let error = batch_session_ended(index, &commands[index].name, &ended_session);
@@ -60,52 +64,50 @@ pub(super) fn execute(
             continue;
         }
 
-        pending_baseline = match commands.get(index + 1).and_then(event_filter) {
-            Some(filter) => match adapter.capture_signal_baseline(&filter, deadline) {
-                Ok(baseline) => Some(Ok(baseline)),
-                Err(error) => {
-                    let wait_index = index + 1;
-                    let wait_command = &commands[wait_index].name;
-                    let error = baseline_error(
+        match pre_action_seed(commands.get(index + 1), adapter, deadline) {
+            Ok((event, notification, menu)) => {
+                pending_baseline = event.map(Ok);
+                pending_notification = notification;
+                pending_menu = menu;
+            }
+            Err(error) => {
+                let wait_index = index + 1;
+                let wait_command = &commands[wait_index].name;
+                let error = baseline_error(
+                    index,
+                    &commands[index].name,
+                    wait_index,
+                    wait_command,
+                    error,
+                );
+                push_small_entry(
+                    &mut results,
+                    &mut results_bytes,
+                    not_started_entry(
                         index,
                         &commands[index].name,
-                        wait_index,
-                        wait_command,
+                        "pre_action_baseline_failed",
                         error,
-                    );
-                    push_small_entry(
-                        &mut results,
-                        &mut results_bytes,
-                        not_started_entry(
-                            index,
-                            &commands[index].name,
-                            "pre_action_baseline_failed",
-                            error,
-                        ),
-                    );
-                    stopped = Some(json!({
-                        "reason": "pre_action_baseline_failed",
-                        "blocked_index": index,
-                        "blocked_command": commands[index].name,
-                        "wait_index": wait_index,
-                        "wait_command": wait_command,
-                    }));
-                    break;
-                }
-            },
-            None => None,
-        };
-        pending_menu_seed = commands
-            .get(index + 1)
-            .and_then(menu_closed_wait_app)
-            .and_then(|app| wait_menu::menu_seed(app.as_deref(), adapter, deadline));
+                    ),
+                );
+                stopped = Some(json!({
+                    "reason": "pre_action_baseline_failed",
+                    "blocked_index": index,
+                    "blocked_command": commands[index].name,
+                    "wait_index": wait_index,
+                    "wait_command": wait_command,
+                }));
+                break;
+            }
+        }
 
         let item_context = commands[index]
             .context
             .clone()
             .with_inherited_deadline(deadline)
             .with_event_baseline(current_baseline)
-            .with_menu_seed(current_menu_seed);
+            .with_notification_seed(current_notification)
+            .with_menu_seed(current_menu);
         let command = std::mem::replace(&mut commands[index].command, Commands::Version);
         let entry = super::result_entry::completed_entry(
             index,
@@ -181,27 +183,63 @@ pub(super) fn execute(
     Ok(body)
 }
 
-fn event_filter(command: &PreparedCommand) -> Option<SignalFilter> {
-    match &command.command {
-        Commands::Wait(args) if args.event.event.is_some() => Some(SignalFilter {
+type PreActionSeed = (
+    Option<SignalBaseline>,
+    Option<NotificationSeed>,
+    Option<MenuSeed>,
+);
+
+/// Reads what the following wait entry diffs against before the current entry
+/// runs, so a window, surface or notification the current entry produces is
+/// reported as new instead of being absorbed into the wait's own first read.
+/// Only an event baseline failure is an error: a notification seed that cannot
+/// be read falls back to the wait's own first list and never blocks the entry.
+///
+/// A following `wait --menu-closed` gets one menu reading of its app. A menu
+/// open before the action tells the wait that the action closes it; without
+/// the reading the wait cannot tell a menu the action closed from one it is
+/// about to open, and holds for the opener grace. Every action kind gets the
+/// same reading, so a raw `mouse-click` and a ref `click` seed the wait alike.
+/// A reading that fails or is slow leaves no seed and never blocks the entry.
+fn pre_action_seed(
+    next: Option<&PreparedCommand>,
+    adapter: &dyn PlatformAdapter,
+    deadline: Deadline,
+) -> Result<PreActionSeed, AdapterError> {
+    let Some(next) = next else {
+        return Ok((None, None, None));
+    };
+    let Commands::Wait(args) = &next.command else {
+        return Ok((None, None, None));
+    };
+    if let Some(app) = menu_closed_wait_app(args) {
+        return Ok((None, None, wait_menu::menu_seed(app, adapter, deadline)));
+    }
+    if args.mode.notification {
+        let Ok(core_args) = crate::dispatch::system::core_wait_args(args) else {
+            return Ok((None, None, None));
+        };
+        let context = next.context.clone().with_inherited_deadline(deadline);
+        let seed = notification_wait::pre_action_seed(&core_args, deadline, adapter, &context);
+        return Ok((None, seed, None));
+    }
+    if args.event.event.is_some() {
+        let filter = SignalFilter {
             app: args.app.clone(),
             process: None,
-        }),
-        _ => None,
+        };
+        return Ok((
+            Some(adapter.capture_signal_baseline(&filter, deadline)?),
+            None,
+            None,
+        ));
     }
+    Ok((None, None, None))
 }
 
-/// The `--app` of a following `wait --menu-closed`, whose menu is read before
-/// this entry's action. A menu open before the action tells the wait that the
-/// action closes it, so its first closed read satisfies it at once; without the
-/// reading the wait cannot tell a menu the action closed from one it is about
-/// to open, and holds for the opener grace. Every action kind gets the same
-/// reading, so a raw `mouse-click` and a ref `click` seed the wait alike.
-fn menu_closed_wait_app(command: &PreparedCommand) -> Option<&Option<String>> {
-    match &command.command {
-        Commands::Wait(args) if args.mode.menu_closed => Some(&args.app),
-        _ => None,
-    }
+/// The `--app` of a `wait --menu-closed`, `Some(None)` when it names none.
+fn menu_closed_wait_app(args: &crate::cli_args::system::WaitArgs) -> Option<Option<&str>> {
+    args.mode.menu_closed.then_some(args.app.as_deref())
 }
 
 fn baseline_error(

@@ -19,7 +19,8 @@ const EXIT_CONFIRMATION_SLICE: Duration = Duration::from_millis(1_000);
 /// Polls the [`menu_is_open`] predicate and feeds each whole read to core's
 /// [`MenuWait`] until it is satisfied, then returns `Ok(())`. Core's phase
 /// owns the decision: a closed-direction wait is not satisfied by a closed
-/// read while it still awaits a menu its opener may not have shown yet.
+/// read while it still awaits a menu its opener may not have shown yet, and
+/// at the deadline it says whether the menu stayed closed for the whole wait.
 ///
 /// A deliberate structural port of `crates/macos/src/system/wait.rs`: the
 /// process identity is re-verified before the first predicate read on every
@@ -79,13 +80,18 @@ pub(crate) fn wait_for_menu(
             Err(error) => return Err(settle_predicate_error(&process, error, deadline)),
         }
         if deadline.is_expired() {
+            if wait.satisfied_at_deadline() {
+                return verify_process_alive(&process);
+            }
             return Err(deadline
                 .timeout_error()
                 .with_platform_detail(expiry_detail(open, state_never_read)));
         }
-        let pause = deadline
-            .remaining_slice(POLL_INTERVAL)
-            .map_err(|error| error.with_platform_detail(direction_message(open)))?;
+        let pause = match deadline.remaining_slice(POLL_INTERVAL) {
+            Ok(pause) => pause,
+            Err(_) if wait.satisfied_at_deadline() => return verify_process_alive(&process),
+            Err(error) => return Err(error.with_platform_detail(direction_message(open))),
+        };
         std::thread::sleep(pause);
     }
 }

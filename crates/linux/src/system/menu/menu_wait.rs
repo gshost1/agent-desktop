@@ -5,7 +5,7 @@ use agent_desktop_core::{
     AdapterError, Deadline, DeliverySemantics, ErrorCode, MenuWait, ProcessIdentity,
 };
 
-use super::menu_anchor::menu_open;
+use super::menu_anchor;
 use crate::system::SharedBus;
 use crate::system::process::liveness::{Liveness, liveness};
 use crate::system::process::process_facts::{self, ProcessFacts};
@@ -47,7 +47,7 @@ impl MenuWorld for BusWorld<'_> {
     }
 
     fn menu_open(&self, deadline: Deadline) -> Result<bool, AdapterError> {
-        menu_open(self.bus, &self.process, deadline)
+        menu_anchor::menu_open(self.bus, &self.process, deadline)
     }
 
     fn pause(&self, gap: Duration) {
@@ -144,18 +144,47 @@ pub(in crate::system) fn run(
                 return Err(error);
             }
         }
-        if deadline.is_expired() {
-            return Err(menu_timeout(
-                open,
-                deadline,
-                expiry_detail(open, state_never_read),
-            ));
-        }
-        let gap = deadline
-            .remaining_slice(POLL_INTERVAL)
-            .map_err(|_| menu_timeout(open, deadline, direction_message(open).to_owned()))?;
+        let gap = match deadline.remaining_slice(POLL_INTERVAL) {
+            Ok(gap) if !deadline.is_expired() => gap,
+            _ if wait.satisfied_at_deadline() => return verify_process(world),
+            _ => {
+                return Err(menu_timeout(
+                    open,
+                    deadline,
+                    expiry_detail(open, state_never_read),
+                ));
+            }
+        };
         world.pause(gap);
     }
+}
+
+/// One whole read for core's pre-action menu reading, between the same
+/// liveness checks the poll loop makes, so a process that exited, or a pid
+/// reused by another process, never yields an open reading.
+pub(in crate::system) fn read_once(
+    world: &impl MenuWorld,
+    deadline: Deadline,
+) -> Result<bool, AdapterError> {
+    verify_process(world)?;
+    let open = world.menu_open(deadline)?;
+    verify_process(world)?;
+    Ok(open)
+}
+
+pub(crate) fn menu_open(
+    bus: &SharedBus,
+    process: ProcessIdentity,
+    deadline: Deadline,
+) -> Result<bool, AdapterError> {
+    read_once(
+        &BusWorld {
+            bus,
+            process,
+            wake: RefCell::new(None),
+        },
+        deadline,
+    )
 }
 
 pub(crate) fn wait_for_menu(
