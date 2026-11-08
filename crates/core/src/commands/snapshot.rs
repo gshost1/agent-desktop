@@ -146,6 +146,9 @@ pub(crate) fn format_snapshot_fields(
         body["truncated"] = json!(true);
         body["nodes_observed"] = json!(result.nodes_observed);
     }
+    if result.notes.refmap_capped {
+        body["refmap_capped"] = json!(true);
+    }
     if result.notes.identity_unproven.is_some() {
         body["identity_unproven"] = json!(true);
     }
@@ -164,3 +167,7 @@ pub(crate) fn format_snapshot_fields(
 #[cfg(test)]
 #[path = "snapshot_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "snapshot_payload_tests.rs"]
+mod payload_tests;

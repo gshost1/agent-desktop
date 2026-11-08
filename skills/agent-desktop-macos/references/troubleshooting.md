@@ -32,7 +32,7 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Symptom.** A snapshot is slow, or returns `"complete": false` with `"truncated": true`.
 
-**Cause.** Large apps (Xcode, Safari with many tabs) have deep trees. A truncated snapshot ran out of its observation budget.
+**Cause.** Large apps (Xcode, Safari with many tabs) have deep trees. A truncated snapshot ran out of its observation budget, or, when it also carries `"refmap_capped": true`, its refs did not fit the 1 MB refmap a snapshot stores.
 
 **Fix.** Use `find` when you know the target. Otherwise use `snapshot --skeleton -i --compact`, then `snapshot --root @<snapshot_id>:eN` to drill down. Add `--window-id` to limit the window.
 

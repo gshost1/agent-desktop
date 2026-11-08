@@ -224,7 +224,9 @@ Every command prints one envelope. `docs/json-output.md` holds the full contract
 - Snapshot `data.window` is present for window-owned surfaces. macOS `menu` and `menubar` snapshots are application-owned and omit it.
 - Every snapshot carries `data.complete`. A snapshot that runs out of observation budget succeeds with
   `"complete": false`, `"truncated": true`, `"nodes_observed"` and the tree it saw; each cut node carries
-  `"subtree_truncated": true`. A `--root` drill-down returns `TIMEOUT` instead of a partial tree.
+  `"subtree_truncated": true`. A full snapshot whose refs would pass the 1 MB refmap cap is cut the same way after
+  the last ref that fits, in allocation order, and also carries `"refmap_capped": true`. A `--root` drill-down
+  returns `TIMEOUT` instead of a partial tree.
 - Pointer, drag, clipboard, close-app and window commands return the adapter's `OperationReport` as `data`.
   `delivered_verified` needs a postcondition read, `delivered_unverified` means a completed dispatch without one, and
   `not_delivered` is only for an operation already observed as satisfied. Core never adds an unconditional success
