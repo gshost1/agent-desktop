@@ -136,7 +136,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | – | writer started (w18) | – |
 | 19 | `fix/ffi-last-error-code` | STATE-1 (+2/3) | – | writer started (w19) | – |
 | 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | open; test-only (250 ms -> 5 s for the success cases); turned #23's CI red | fork-only (test budgets) |
-| 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | open; test-only: bundled npm fixture copied npm/bin while wrapper.test.js wrote into it (parallel node --test); turned #29's macOS CI red | fork-only (test isolation) |
+| 21 | `test/npm-fixture-race` | CI flake | [#31](https://github.com/gshost1/agent-desktop/pull/31) | **merged** 2026-11-08 as `89a3723e` (rules 1+2); CI 13/13 on head `a690a037` | fork-only (test isolation) |
 
 ## Needs Mac verification
 
@@ -322,7 +322,7 @@ exists and also runs CI's core Win32-leakage check.
 ## Found (outside scope)
 
 - Unattended night run 2026-11-08: the Claude Code process restarted several times and stopped every background writer
-  each time; work survived in the worktrees (uncommitted) and writers were resumed. Writers now commit and push early.
+  each time; work survived in the worktrees (uncommitted) and writers were resumed. Writers now commit and push early. Restarts traced to memory pressure (4-5 parallel Rust builds on 14 GB, swap full); limit is now two builds at a time.
 - CI flake queue (each gets a small test PR): `wait_selector` gone-wait 250 ms (PR #29, also hit the Mac session's
   `feat/press-menu-shortcut`); npm bundled fixture race (PR #31); Windows `context::scope_tests::a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease`
   failed once on `main` run 42450666424 (not yet fixed); `session::gc_tests::gc_removes_ended_sessions_but_not_pointer_or_live` (see below).
