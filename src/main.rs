@@ -331,8 +331,12 @@ fn report_output_failure(write_err: std::io::Error) -> ExitCode {
 }
 
 fn emit_response(response: &impl serde::Serialize) -> std::io::Result<()> {
-    let stdout = std::io::stdout();
-    let mut writer = BufWriter::new(stdout.lock());
+    write_response(std::io::stdout().lock(), response)
+}
+
+/// Writes `response` to `out` as one JSON line and flushes it.
+fn write_response(out: impl Write, response: &impl serde::Serialize) -> std::io::Result<()> {
+    let mut writer = BufWriter::new(out);
     serde_json::to_writer(&mut writer, response).map_err(std::io::Error::other)?;
     writer.write_all(b"\n")?;
     writer.flush()
