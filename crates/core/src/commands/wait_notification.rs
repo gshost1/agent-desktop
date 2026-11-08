@@ -3,9 +3,13 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use crate::{
-    AppError, NotificationFilter, NotificationInfo,
+    AppError, Deadline, NotificationBaseline, NotificationFilter, NotificationSeed,
     adapter::PlatformAdapter,
-    commands::{wait::is_retryable_wait_poll_error, wait_timeout},
+    commands::{
+        wait::{WaitArgs, is_retryable_wait_poll_error},
+        wait_mode::WaitMode,
+        wait_timeout,
+    },
     context::CommandContext,
 };
 
@@ -16,12 +20,29 @@ pub(crate) fn wait_for_notification(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    adapter.check_notification_support(crate::Deadline::standard()?)?;
     let filter = NotificationFilter {
-        app: app.clone(),
-        text: text.clone(),
+        app,
+        text,
         ..Default::default()
     };
+    let seed = context.notification_seed();
+    let baseline = seed.and_then(NotificationSeed::baseline).cloned();
+    let result = poll(&filter, timeout_ms, baseline, adapter, context);
+    with_fallback(result, seed.and_then(NotificationSeed::fallback))
+}
+
+fn poll(
+    filter: &NotificationFilter,
+    timeout_ms: u64,
+    mut baseline: Option<NotificationBaseline>,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Result<Value, AppError> {
+    if baseline.is_none() {
+        adapter.check_notification_support(Deadline::standard()?)?;
+    }
+    let app = filter.app.clone();
+    let text = filter.text.clone();
     let start = Instant::now();
     let deadline = crate::Deadline::at(start, timeout_ms)?;
     let mut scheduler = super::wait_scheduler::WaitScheduler::new(
@@ -32,7 +53,6 @@ pub(crate) fn wait_for_notification(
         },
         deadline,
     );
-    let mut baseline: Option<std::collections::HashMap<NotificationFingerprint, usize>> = None;
     let mut last_error = None;
 
     loop {
@@ -40,14 +60,14 @@ pub(crate) fn wait_for_notification(
             return wait_timeout::notification(app.as_ref(), text.as_ref(), timeout_ms, last_error);
         }
         match super::notification_policy::list_with_foreground_lease(
-            &filter, deadline, adapter, context,
+            filter, deadline, adapter, context,
         ) {
-            Ok(current) => match &baseline {
+            Ok(current) => match baseline.as_mut() {
                 None => {
-                    baseline = Some(notification_counts(&current));
+                    baseline = Some(NotificationBaseline::from_list(&current));
                 }
                 Some(baseline) => {
-                    if let Some(notif) = first_new_notification(&current, baseline) {
+                    if let Some(notif) = baseline.observe(&current) {
                         let elapsed = start.elapsed().as_millis();
                         return Ok(json!({
                             "condition": "notification",
@@ -83,49 +103,66 @@ pub(crate) fn wait_for_notification(
     }
 }
 
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub(crate) struct NotificationFingerprint {
-    app_name: String,
-    title: String,
-    body: Option<String>,
-    actions: Vec<String>,
+/// Reads what a batch hands the following `wait --notification` before it
+/// runs the entry in between. Returns `None` unless `args` validates as a
+/// notification wait. A headed wait is not seeded, so no notification surface
+/// opens right before the action, and a failed read never blocks the action:
+/// both fall back to the wait's own first list.
+pub fn pre_action_seed(
+    args: &WaitArgs,
+    deadline: Deadline,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Option<NotificationSeed> {
+    let Ok(WaitMode::Notification { app, text }) = WaitMode::from_args(args.clone()) else {
+        return None;
+    };
+    if context.physical_input_policy().allow_focus_steal {
+        return Some(NotificationSeed::SkippedHeaded);
+    }
+    let filter = NotificationFilter {
+        app,
+        text,
+        ..Default::default()
+    };
+    let captured = adapter
+        .check_notification_support(deadline)
+        .map_err(AppError::from)
+        .and_then(|()| {
+            super::notification_policy::list_with_foreground_lease(
+                &filter, deadline, adapter, context,
+            )
+        });
+    Some(match captured {
+        Ok(current) => NotificationSeed::Captured(NotificationBaseline::from_list(&current)),
+        Err(_) => NotificationSeed::Unavailable,
+    })
 }
 
-impl From<&NotificationInfo> for NotificationFingerprint {
-    fn from(info: &NotificationInfo) -> Self {
-        Self {
-            app_name: info.app_name.clone(),
-            title: info.title.clone(),
-            body: info.body.clone(),
-            actions: info.actions.clone(),
+fn with_fallback(
+    result: Result<Value, AppError>,
+    fallback: Option<&'static str>,
+) -> Result<Value, AppError> {
+    let Some(fallback) = fallback else {
+        return result;
+    };
+    match result {
+        Ok(mut value) => {
+            value["pre_action_seed"] = json!(fallback);
+            Ok(value)
         }
-    }
-}
-
-pub(crate) fn notification_counts(
-    notifications: &[NotificationInfo],
-) -> std::collections::HashMap<NotificationFingerprint, usize> {
-    let mut counts = std::collections::HashMap::new();
-    for notification in notifications {
-        *counts
-            .entry(NotificationFingerprint::from(notification))
-            .or_insert(0) += 1;
-    }
-    counts
-}
-
-pub(crate) fn first_new_notification<'a>(
-    current: &'a [NotificationInfo],
-    baseline: &std::collections::HashMap<NotificationFingerprint, usize>,
-) -> Option<&'a NotificationInfo> {
-    let mut seen = std::collections::HashMap::new();
-    for notification in current {
-        let fingerprint = NotificationFingerprint::from(notification);
-        let current_count = seen.entry(fingerprint.clone()).or_insert(0);
-        *current_count += 1;
-        if *current_count > baseline.get(&fingerprint).copied().unwrap_or(0) {
-            return Some(notification);
+        Err(AppError::Adapter(mut error)) => {
+            let mut details = error.details.take().unwrap_or_else(|| json!({}));
+            if let Value::Object(map) = &mut details {
+                map.insert("pre_action_seed".into(), json!(fallback));
+            }
+            error.details = Some(details);
+            Err(error.into())
         }
+        Err(other) => Err(other),
     }
-    None
 }
+
+#[cfg(test)]
+#[path = "wait_notification_tests.rs"]
+mod tests;
