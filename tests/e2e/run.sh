@@ -9,7 +9,22 @@ if [ -z "${AGENT_DESKTOP_INTERACTION_LEASE_FD:-}" ]; then
         exit 2
     fi
     if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
-        echo "python3 3.10 or newer is required; found $(python3 --version 2>&1). Put a newer python3 first on PATH" >&2
+        found_python="$(command -v python3 2>/dev/null)"
+        if [ -n "$found_python" ]; then
+            echo "python3 3.10 or newer is required; found $found_python ($(python3 --version 2>&1))." >&2
+        else
+            echo "python3 3.10 or newer is required; no python3 is on PATH." >&2
+        fi
+        newer_python=""
+        for minor in 14 13 12 11 10; do
+            newer_python="$(command -v "python3.$minor" 2>/dev/null)" && break
+        done
+        if [ -n "$newer_python" ]; then
+            echo "$newer_python is installed but not named python3. Put it first on PATH as python3, for example:" >&2
+            echo "  mkdir -p \"\$HOME/.local/bin\" && ln -sf \"$newer_python\" \"\$HOME/.local/bin/python3\" && export PATH=\"\$HOME/.local/bin:\$PATH\"" >&2
+        else
+            echo "Install Python 3.10 or newer (for example 'brew install python') and put its python3 first on PATH." >&2
+        fi
         exit 2
     fi
     if [ "${AGENT_DESKTOP_E2E_EXCLUSIVE:-}" != "1" ]; then
