@@ -275,6 +275,7 @@ fn seeded_baseline_failure_is_not_disguised_as_timeout() {
 
 #[test]
 fn retryable_seed_inventory_failure_is_preserved_in_timeout_evidence() {
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let adapter = SequenceAdapter::new(vec![empty_baseline()]);
     let seed_error = AdapterError::app_unresponsive("macOS inventory").with_details(json!({
         "kind": "inventory_sources",
@@ -298,6 +299,7 @@ fn retryable_seed_inventory_failure_is_preserved_in_timeout_evidence() {
 
 #[test]
 fn failed_inventory_poll_never_diffs_against_an_empty_baseline() {
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let adapter = FailingInventoryAdapter {
         calls: std::sync::Mutex::new(0),
     };
