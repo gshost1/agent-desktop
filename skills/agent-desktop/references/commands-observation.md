@@ -63,7 +63,7 @@ Off macOS, identical twins have no ref path: only `--headed mouse-click --xy X,Y
 
 ### Surfaces
 
-Surfaces include `menu`, `menubar`, `sheet`, `popover`, `alert`, `focused`, `web`, and OS shell kinds supported on each platform. `web` reads the page a browser window shows and reports `data.channel` (`cdp` or `ax`); see `workflows.md`. On macOS, `menu` and `menubar` are application-owned. A kind this OS does not have returns `INVALID_ARGS` with the supported list in `details`; an adapter with no supported surfaces returns `PLATFORM_NOT_SUPPORTED`. A shell surface needs no `--app`, except that macOS `menu-bar-extras` with `--app` reads that app's own status item. A closed shell surface returns `WINDOW_NOT_FOUND`; a complete lookup of an absent macOS menu returns `ELEMENT_NOT_FOUND` with `details.kind: "surface_absent"`. Raise a shell surface with `open-system-surface`.
+Surfaces include `menu`, `menubar`, `sheet`, `popover`, `alert`, `focused`, `web`, and OS shell kinds supported on each platform. On macOS, `menu` and `menubar` are application-owned. A kind this OS does not have returns `INVALID_ARGS` with the supported list in `details`; an adapter with no supported surfaces returns `PLATFORM_NOT_SUPPORTED`. A shell surface needs no `--app`, except that macOS `menu-bar-extras` with `--app` reads that app's own status item. A closed shell surface returns `WINDOW_NOT_FOUND`; a complete lookup of an absent macOS menu returns `ELEMENT_NOT_FOUND` with `details.kind: "surface_absent"`. Raise a shell surface with `open-system-surface`.
 
 Use a surface snapshot for dialogs and menus, not a window snapshot. To reach one item inside an overlay, use `find --surface` instead of a full dump.
 
@@ -127,7 +127,7 @@ Lists displays as `{ id, bounds, is_primary, scale }`, primary first. Use the ar
 agent-desktop list-surfaces --app "Finder"
 ```
 
-Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. A browser reached over its DevTools endpoint also lists each open page as `{"id": "<target id>", "type": "web", "title": ...}`. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent.
+Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent.
 
 ## open-system-surface
 
@@ -139,4 +139,4 @@ Raises an OS shell surface. On Windows and Linux it returns the window it presen
 
 ## Chromium and Electron apps
 
-The accessibility path is the default. It is the only path for an app that is already running and for native menus, dialogs and windows. For a web page in a browser you can launch fresh, `launch --cdp` and `snapshot --surface web` read the page over its DevTools endpoint, which is faster than a skeleton walk. See `workflows.md`, "Web pages: one loop".
+The accessibility path is the default. It is the only path for an app that is already running and for native menus, dialogs and windows. For the web contents of an app you can launch fresh, `launch --cdp` plus a CDP client is faster than a skeleton walk. See `commands-system.md`.

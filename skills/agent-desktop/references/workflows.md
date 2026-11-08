@@ -145,22 +145,9 @@ agent-desktop close-app "Calculator"
 
 Read `data.window` in the launch result. If it is absent and you need a window, use `launch --activate` or `wait --event window-opened`. The launch identifier rules differ by OS (platform skill).
 
-## Web pages: one loop
+## Web pages
 
-A web page in a Chromium browser takes the same snapshot, ref and action loop as a native app. Launch the browser with a DevTools endpoint and its own profile, load the page, and snapshot the web surface:
-
-```bash
-agent-desktop launch "Google Chrome" --cdp --arg=--user-data-dir="$PWD/chrome-profile" --arg=--no-first-run --arg=--no-default-browser-check
-agent-desktop open-url "https://example.com/" --app "Google Chrome"
-agent-desktop snapshot --app "Google Chrome" --surface web -i
-agent-desktop click @s8f3k2p9:e2
-agent-desktop snapshot --app "Google Chrome" --surface web -i
-```
-
-- Read `data.channel`. `cdp` means the refs act through the page: `click`, `double-click`, `set-value`, `type`, `clear`, `select`, `check`, `uncheck`, `toggle`, `focus`, `scroll`, `scroll-to` and `press` (one key, no modifiers) run in the background without focusing the window or moving the pointer. Other actions return `ACTION_NOT_SUPPORTED`; `--headed` is refused on web refs because a page element read over CDP has no screen position.
-- `ax` means no endpoint reached the browser, so the window was read through the accessibility tree. It still works; `data.suggestion` says how to switch to `cdp`.
-- `launch --cdp` needs a fresh browser process: while the browser is already running it returns `cdp_requires_fresh_launch`. Closing the user's browser loses their tabs, so ask first. `--arg=--user-data-dir=<dir>` keeps the automated session out of the user's profile; `--no-first-run` and `--no-default-browser-check` skip the dialogs a fresh profile opens.
-- `list-surfaces --app "Google Chrome"` lists each open page as a `web` surface with its target id.
+Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
 ## Notifications
 
