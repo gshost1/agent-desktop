@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
+
+This fork release publishes GitHub release archives and checksums only. It does not publish to npm.
+
+### Features
+
+* Drive web pages in Chrome through the snapshot and ref loop over the Chrome DevTools Protocol (`--cdp`). A tab is read and acted on in the background, without raising the window or moving the cursor. ([#28](https://github.com/gshost1/agent-desktop/pull/28))
+* Add `wait --download`, which returns the saved path of a browser download. Launch the browser with `--cdp --download-dir <dir>` to follow a download an earlier command started. ([#47](https://github.com/gshost1/agent-desktop/pull/47))
+* On macOS, run a `cmd` chord given to `press --app` through the app's menu item when one owns the chord, so it works while the app is in the background. ([#25](https://github.com/gshost1/agent-desktop/pull/25))
+* Add `launch --reopen` to opt in to the Launch Services reopen that `launch --activate` no longer sends to a running app. ([#54](https://github.com/gshost1/agent-desktop/pull/54))
+
+### Bug Fixes
+
+* On macOS, `launch --activate` on a running app brings it forward without opening a window nobody asked for. `data.launch_path` reports how the app was reached. ([#54](https://github.com/gshost1/agent-desktop/pull/54))
+* On macOS, send `press` keys to the process that serves an Open or Save panel, so Go to Folder, Return and typed keys reach the panel. ([#26](https://github.com/gshost1/agent-desktop/pull/26))
+* On macOS, judge Return and Escape on a sheet or dialog by the effect on the surface, and let a sheet or popover frame replace its window's viewport. ([#50](https://github.com/gshost1/agent-desktop/pull/50)) ([#27](https://github.com/gshost1/agent-desktop/pull/27))
+* On macOS, write text into the in-place editor of a renamed list row and leave the commit pending, instead of reporting a write that Return then discards. ([#24](https://github.com/gshost1/agent-desktop/pull/24))
+* On macOS, name file-list rows from their single text field so `find --name` matches them in a Save panel. ([#56](https://github.com/gshost1/agent-desktop/pull/56))
+* On macOS, find the window of a control that omits `AXWindow`, so `select`, `click` and `expand` on System Settings popups no longer time out. ([#6](https://github.com/gshost1/agent-desktop/pull/6))
+* On macOS, read window titles through accessibility without Screen Recording permission, so `list-windows`, `snapshot` and `wait --window` can tell windows apart. ([#32](https://github.com/gshost1/agent-desktop/pull/32))
+* Stop `find` and surface walks from repeating reads that cannot finish within the budget. ([#33](https://github.com/gshost1/agent-desktop/pull/33))
+* Bound the surface report after an action to one second, so a slow report no longer adds its full timeout to the action. ([#4](https://github.com/gshost1/agent-desktop/pull/4))
+* Give a batch's permission preflight its own budget, capped at 15 seconds, so a slow check no longer fails the batch with `TIMEOUT` before its first entry. ([#57](https://github.com/gshost1/agent-desktop/pull/57))
+* Keep a paced `type` burst from reporting delivered text as unsent when the refmap changes mid-burst. ([#2](https://github.com/gshost1/agent-desktop/pull/2))
+* Mark every pre-dispatch ref-action refusal `not_delivered`, and settle a failed command's delivery by what the command can change. ([#10](https://github.com/gshost1/agent-desktop/pull/10)) ([#21](https://github.com/gshost1/agent-desktop/pull/21))
+* Report the follow-up read after `focus-window` as data, and trust the adapter's focus confirmation instead of failing a confirmed focus. ([#46](https://github.com/gshost1/agent-desktop/pull/46))
+* Write `session start --cursor` in one manifest write, so a failed start leaves no hidden session. ([#35](https://github.com/gshost1/agent-desktop/pull/35))
+* Pair each trace `command.end` with its own `command.start`, so overlapping commands on one session no longer report false unpaired events. ([#51](https://github.com/gshost1/agent-desktop/pull/51))
+* Make the MCP server forward only server-wide global flags and refuse per-command flags at startup, and lend an inherited interaction lease to one input-capable call at a time. ([#52](https://github.com/gshost1/agent-desktop/pull/52)) ([#13](https://github.com/gshost1/agent-desktop/pull/13))
+* Hold the session lock across manifest updates, write the trace usage ledger atomically, and keep a cancelled MCP call id occupied until its call finishes. ([#1](https://github.com/gshost1/agent-desktop/pull/1))
+* In the C library, return each failing call's own result code, and let a log callback call back into the library. ([#37](https://github.com/gshost1/agent-desktop/pull/37)) ([#55](https://github.com/gshost1/agent-desktop/pull/55))
+* On Linux, confirm a window placement that the window manager applies late, report an X11 emergency release only when a key or button was held, and give back a pre-maximize place only while the window is as the agent left it. ([#43](https://github.com/gshost1/agent-desktop/pull/43)) ([#15](https://github.com/gshost1/agent-desktop/pull/15)) ([#22](https://github.com/gshost1/agent-desktop/pull/22))
+
+### Performance
+
+* On four local test pages, four web tasks through `--cdp` took 32.8 s and 138.4K input tokens. The benchmark ran on the `ad-web` browser channel (Sonnet, headed, 3 runs per task, sum of the medians, 15 of 15 runs passed). The same tasks through the accessibility tree alone, on an earlier build, took 166 s and 952K tokens, and through agent-browser, on an earlier build, 47 s and 171K tokens. A task from a local test page to Calculator took 17.7 s and 90.5K tokens. These figures say nothing about real sites. With 3 runs per task, model latency adds noise, and the accessibility-only and agent-browser figures were not rerun on this build.
+
+### Documentation
+
+* Tell agents that a save panel's name field takes a file name, not a path. ([#3](https://github.com/gshost1/agent-desktop/pull/3))
+* Tell agents to take the snapshot right after a web click instead of sleeping. ([#60](https://github.com/gshost1/agent-desktop/pull/60))
+
+### Testing
+
+* The macOS E2E suite ran with private steps skipped on the release Mac (`AGENT_DESKTOP_E2E_SKIP_PRIVATE=1`).
+
+### Known issues
+
+* Once in 15 benchmark runs, a cold Chrome start was not exposed to the accessibility tree until `launch "Google Chrome" --activate`.
+* Snapshotting a very large web page can fail with `INTERNAL` "RefMap exceeds 1MB size".
+* Clickable rows that a web page exposes only as plain text get no ref.
+
 ## [1.2.0](https://github.com/vercel-labs/agent-desktop/compare/v1.1.0...v1.2.0) (2026-11-05)
 
 ### Features
