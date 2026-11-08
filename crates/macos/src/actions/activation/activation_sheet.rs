@@ -2,6 +2,9 @@ use crate::tree::{AXElement, surface_read};
 use agent_desktop_core::Deadline;
 
 const SHEET_ANCESTOR_WALK: usize = 12;
+/// A sheet sits below its window, so a walk that reaches a window or the
+/// application without passing one has no sheet to find.
+const WALK_STOPS: [&str; 2] = ["AXWindow", "AXApplication"];
 
 /// A sheet that encloses an `AXOpen` target, kept with the window that owns it.
 /// The sheet's own attributes become unreadable once it closes, so its absence
@@ -37,7 +40,11 @@ impl OwnedSheet {
     ) -> Option<Self> {
         let mut current = element.clone();
         for _ in 0..SHEET_ANCESTOR_WALK {
-            if role(&current)? == "AXSheet" {
+            let current_role = role(&current)?;
+            if WALK_STOPS.contains(&current_role.as_str()) {
+                return None;
+            }
+            if current_role == "AXSheet" {
                 let owner = parent(&current)?;
                 if role(&owner)? != "AXWindow" {
                     return None;

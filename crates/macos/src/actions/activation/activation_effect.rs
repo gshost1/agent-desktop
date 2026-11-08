@@ -155,7 +155,7 @@ mod imp {
     }
 
     pub(crate) fn settled_change(
-        before: &crate::actions::activation_state::ActivationState,
+        before: &crate::actions::activation::activation_state::ActivationState,
         element: &AXElement,
         deadline: Deadline,
     ) -> bool {

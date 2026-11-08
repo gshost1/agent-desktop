@@ -138,3 +138,28 @@ fn actions_other_than_axopen_capture_no_sheet() {
         assert!(OwnedSheet::capture(&element, action, deadline).is_none());
     }
 }
+
+#[test]
+fn a_target_in_a_plain_window_stops_the_walk_at_that_window() {
+    let row = crate::tree::element_for_pid(501);
+    let window = crate::tree::element_for_pid(502);
+    let reads = std::cell::Cell::new(0);
+    let captured = OwnedSheet::capture_with(
+        &row,
+        |element| {
+            reads.set(reads.get() + 1);
+            Some(
+                if crate::tree::same_element(element, &window) {
+                    "AXWindow"
+                } else {
+                    "AXRow"
+                }
+                .to_string(),
+            )
+        },
+        |element| (!crate::tree::same_element(element, &window)).then(|| window.clone()),
+        |_| panic!("children are read only for a sheet"),
+    );
+    assert!(captured.is_none());
+    assert_eq!(reads.get(), 2);
+}
