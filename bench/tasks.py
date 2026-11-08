@@ -134,9 +134,27 @@ def open_bench_finder_window(folder):
     starts on Finder's default window (Recents, Home or a personal folder)."""
     if BENCH_DIR not in Path(folder).resolve().parents:
         raise ValueError(f"refusing to open a Finder window outside {BENCH_DIR}: {folder}")
+    clear_finder_alert()
     subprocess.run(["open", str(folder)], check=True, timeout=10)
     time.sleep(1.5)
     macctl("raise", "Finder", Path(folder).name)
+
+
+FINDER_ALERT = MACCTL.parent / "finder_alert"
+
+
+def clear_finder_alert():
+    """A Finder alert (one was left by a failed rename on 2026-11-08) blocks every new
+    window, so `open <bench dir>` silently opens nothing. Dismiss an OK-only alert;
+    stop on any other dialog."""
+    source = MACCTL.parent.parent / "finder_alert.swift"
+    if not FINDER_ALERT.exists() or FINDER_ALERT.stat().st_mtime < source.stat().st_mtime:
+        subprocess.run(["swiftc", "-O", str(source), "-o", str(FINDER_ALERT)], check=True, capture_output=True)
+    done = subprocess.run([str(FINDER_ALERT)], capture_output=True, text=True, timeout=20)
+    if done.stdout.strip():
+        print(done.stdout.strip(), flush=True)
+    if done.returncode == 2:
+        raise RuntimeError("a Finder dialog other than an OK alert is open; not touching it")
 
 
 def close_bench_finder_windows():
@@ -146,6 +164,7 @@ def close_bench_finder_windows():
 def reset_desktop():
     for app in APPS:
         quit_app(app)
+    clear_finder_alert()
     close_bench_finder_windows()
 
 
