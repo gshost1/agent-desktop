@@ -372,6 +372,7 @@ pub(crate) mod ref_geometry;
 pub mod ref_identity;
 pub(crate) mod ref_identity_match;
 pub(crate) mod ref_live_predicate;
+pub(crate) mod ref_persist_budget;
 pub(crate) mod ref_process;
 pub(crate) mod ref_resolve_deadline;
 pub(crate) mod ref_root_read;
