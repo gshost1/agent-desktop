@@ -72,6 +72,29 @@ fn the_web_skill_is_served_by_its_alias_on_every_platform() {
 }
 
 #[test]
+fn the_web_quickstart_names_its_reference_and_the_reference_is_served() {
+    let quickstart = get(GetArgs {
+        name: "web".into(),
+        full: false,
+        reference: None,
+    })
+    .expect("get web");
+    let quickstart = quickstart["content"].as_str().expect("string");
+    assert!(quickstart.contains("agent-desktop skills get web reference"));
+    assert!(quickstart.contains("--surface web -i --lines"));
+    let reference = get(GetArgs {
+        name: "web".into(),
+        full: false,
+        reference: Some("reference".into()),
+    })
+    .expect("get web reference");
+    let reference = reference["content"].as_str().expect("string");
+    assert!(reference.contains("cdp_value_not_canonical"));
+    assert!(reference.contains("## Start the browser"));
+    assert!(quickstart.len() * 2 < reference.len());
+}
+
+#[test]
 fn the_platform_alias_serves_this_build_s_platform_skill() {
     let result = get(GetArgs {
         name: "platform".into(),
