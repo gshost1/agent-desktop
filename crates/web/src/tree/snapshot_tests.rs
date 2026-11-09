@@ -116,7 +116,7 @@ fn frames_are_grafted_under_their_owner_and_origins_follow_preorder() {
     );
     let sent = sent.lock().unwrap();
     assert_eq!(sent[2]["params"]["frameId"], "MAIN");
-    assert_eq!(sent[1]["params"], json!({ "computedStyles": [] }));
+    assert_eq!(sent[1]["params"], json!({ "computedStyles": ["display"] }));
     assert_eq!(sent[6]["params"]["autoAttach"], true);
     assert_eq!(sent[7]["params"]["autoAttach"], false);
 }
