@@ -68,62 +68,61 @@ impl<'a> CaptureProof<'a> {
     /// the projection, which skips no child the observation kept even when the
     /// native indices have gaps. A path the observation does not hold is a
     /// stale cut of the window, such as a drill root that moved, which a fresh
-    /// snapshot re-reads, so it is `Incomplete`.
+    /// snapshot re-reads, so it is `Incomplete`, unless the read already holds
+    /// a twin of the entry, which no fresh snapshot removes.
     pub(crate) fn verdict_at(&self, entry: &RefEntry, path: &[usize]) -> CaptureVerdict {
-        let Some(mut index) = self.start else {
-            return CaptureVerdict::Incomplete;
-        };
-        let Some(prefix) = self
-            .observed
-            .nodes
-            .get(index)
-            .map(|node| node.path.as_slice())
-        else {
-            return CaptureVerdict::Incomplete;
-        };
-        let Some(steps) = path.strip_prefix(prefix) else {
-            return CaptureVerdict::Incomplete;
-        };
-        for step in steps {
-            match self
-                .observed
-                .nodes
-                .get(index)
-                .and_then(|node| node.children.get(*step))
-            {
-                Some(child) => index = *child as usize,
-                None => return CaptureVerdict::Incomplete,
-            }
+        match self.node_at(path) {
+            Some(index) => self.verdict(entry, index),
+            None => match self.matched(&FullPredicate::of_entry(entry)) {
+                Some(None) => CaptureVerdict::Ambiguous,
+                _ => CaptureVerdict::Incomplete,
+            },
         }
-        self.verdict(entry, index)
+    }
+
+    fn node_at(&self, path: &[usize]) -> Option<usize> {
+        let mut index = self.start?;
+        let prefix = self.observed.nodes.get(index)?.path.as_slice();
+        for step in path.strip_prefix(prefix)? {
+            index = *self.observed.nodes.get(index)?.children.get(*step)? as usize;
+        }
+        Some(index)
     }
 
     /// The verdict on `entry` at the node it was built from. Matches are
     /// counted first: two or more elements matching the entry's full predicate
     /// are a twin, `Ambiguous`, even in a partial read, because more reading
-    /// cannot remove them. Without a twin, a read that is not a complete
-    /// whole-window read is `Incomplete`. It is `Unique` only when this node is
-    /// the one match and no node leaves a recorded field unread, and `Unknown`
-    /// otherwise, including when the one match is another node: the entry does
-    /// not describe the node it was built from, which is no twin.
+    /// cannot remove them. When this node is the one match, a read that is not
+    /// a complete whole-window read is `Incomplete`, and a complete one is
+    /// `Unique` unless a node leaves a recorded field unread. Every other
+    /// outcome is `Unknown`, in a partial read too, because it rests on this
+    /// node's own evidence, which a longer read does not change: the predicate
+    /// matches no node, because this node left a recorded field unread, or one
+    /// other node, so the entry does not describe the node it was built from.
     pub(crate) fn verdict(&self, entry: &RefEntry, index: usize) -> CaptureVerdict {
         let predicate = FullPredicate::of_entry(entry);
-        let fields = predicate.mask();
-        let matched = self.buckets[fields as usize]
-            .get_or_init(|| count_nodes(self.observed, fields))
-            .get(&key_of(&predicate))
-            .copied();
-        match matched {
+        match self.matched(&predicate) {
             Some(None) => CaptureVerdict::Ambiguous,
-            _ if !self.whole_window => CaptureVerdict::Incomplete,
-            Some(Some(found)) if found == index && !self.leaves_unread(&predicate, fields) => {
+            Some(Some(found)) if found == index && !self.whole_window => CaptureVerdict::Incomplete,
+            Some(Some(found)) if found == index && !self.leaves_unread(&predicate) => {
                 CaptureVerdict::Unique
             }
             _ => CaptureVerdict::Unknown,
         }
     }
 
-    fn leaves_unread(&self, predicate: &FullPredicate<'_>, fields: u8) -> bool {
+    /// The node `predicate` matched: its index when exactly one node did,
+    /// `None` inside when two or more did, and `None` when none did.
+    fn matched(&self, predicate: &FullPredicate<'_>) -> Option<Option<usize>> {
+        let fields = predicate.mask();
+        self.buckets[fields as usize]
+            .get_or_init(|| count_nodes(self.observed, fields))
+            .get(&key_of(predicate))
+            .copied()
+    }
+
+    fn leaves_unread(&self, predicate: &FullPredicate<'_>) -> bool {
+        let fields = predicate.mask();
         self.unread.iter().any(|(bits, live)| {
             bits & (fields | ROLE) != 0 && predicate.compare(live) == IdentityMatch::Unknown
         })

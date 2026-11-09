@@ -73,3 +73,48 @@ fn a_drill_root_the_read_does_not_hold_is_incomplete() {
         CaptureVerdict::Incomplete
     );
 }
+
+/// A drill path the read does not hold still counts the entry first, so a
+/// twin the read saw is `Ambiguous` rather than a promise that a longer read
+/// can prove it.
+#[test]
+fn a_drill_root_the_read_does_not_hold_keeps_a_twin_ambiguous() {
+    let root = window(vec![named("button", "Save"), named("button", "Save")]);
+    let observed = observed_from(root);
+    let entry = crate::adapter::minimal_ref_entry("button", Some("Save"));
+    let proof = super::CaptureProof::new(&observed).rooted_at(&[7]);
+    assert_eq!(proof.verdict_at(&entry, &[7, 0]), CaptureVerdict::Ambiguous);
+}
+
+/// In a partial read, only an entry this node alone matched waits on a longer
+/// read. One whose own element left a recorded field unread, or whose fields
+/// match another element and not its own, is `Unknown` however much was read,
+/// because the cause is that element's own evidence.
+#[test]
+fn a_partial_read_promises_a_longer_read_only_for_a_node_it_matched() {
+    use CaptureVerdict::{Incomplete, Unknown};
+    let cut = |first: &str, second: &str| {
+        let mut hidden = named("scrollarea", "Feed");
+        hidden.children_count = Some(2);
+        window(vec![
+            named("button", first),
+            named("button", second),
+            hidden,
+        ])
+    };
+
+    let mut observed = observed_from(cut("Send", "Cancel"));
+    observed.nodes[1].evidence.name = LocatorField::Unknown;
+    assert_eq!(
+        verdicts(cut("Send", "Cancel"), &observed),
+        [Unknown, Incomplete]
+    );
+
+    let mut observed = observed_from(cut("Send", "Cancel"));
+    observed.nodes[1].evidence.name = LocatorField::Known("Other".into());
+    observed.nodes[2].evidence.name = LocatorField::Known("Send".into());
+    assert_eq!(
+        verdicts(cut("Send", "Cancel"), &observed),
+        [Unknown, Unknown]
+    );
+}

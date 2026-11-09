@@ -5,7 +5,8 @@
 //! resolving the refs it proved. Reading takes the verdict from `capture`; the
 //! boolean is consulted only when `capture` is missing, which marks a refmap
 //! written before the verdict existed, and a boolean that contradicts
-//! `capture` reads as `Unknown`. No value of an entry is buffered.
+//! `capture` reads as `Unknown`. A duplicate key is rejected, as the derived
+//! reader did.
 
 use std::fmt;
 

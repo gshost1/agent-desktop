@@ -79,8 +79,8 @@ fn capture_incomplete(entry: &RefEntry) -> AdapterError {
          read the whole window",
     )
     .with_suggestion(
-        "Retake the snapshot with a larger --timeout-ms, so it can read the whole window, \
-         then retry with the new ref.",
+        "Take a new snapshot, or rerun the find, with a larger --timeout-ms so it can read \
+         the whole window, then retry with the new ref.",
     )
     .with_details(json!({
         "kind": "identity_unproven",
