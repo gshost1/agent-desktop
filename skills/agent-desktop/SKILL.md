@@ -63,7 +63,7 @@ agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
 - `find` the element you will act on, by its own name. The pane that holds it is often open already, so finding the parent first costs a turn.
 - Never cut a snapshot with `head -c`: the cut drops refs and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, or `jq` over the whole output.
 - After an action, `-w "role:text"` (or `-w ":text"`) polls until the effect shows and returns the snapshot, so the read is not a separate call. A separate `wait` takes `--timeout` in ms.
-- Pick refs from `--lines` output: take the ref at the start of the line that names the control, never from a neighbouring line. A wrong ref costs a corrected rerun, and a rerun is safe only when `disposition.retry` is `safe`.
+- Pick refs from `--lines` output: take the ref at the start of the line that names the control, never from a neighbouring line. Without `--lines`, check each ref against its node's `name`. A wrong ref costs a corrected rerun, and a rerun is safe only when `disposition.retry` is `safe`.
 
 ## Refs
 

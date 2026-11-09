@@ -87,8 +87,9 @@ fn push_bounds(line: &mut String, bounds: Rect) {
     );
 }
 
-/// Quotes `text` on one line: `"` and `\` are escaped, line breaks, tabs and
-/// other control characters become escapes, and the bidirectional controls
+/// Quotes `text` on one line: `"` and `\` are escaped, line breaks, tabs,
+/// other control characters and the Unicode line and paragraph separators
+/// become escapes, and the bidirectional controls
 /// that text matching already ignores are dropped.
 pub(crate) fn quote_text(text: &str) -> String {
     let mut quoted = String::with_capacity(text.len() + 2);
@@ -100,7 +101,7 @@ pub(crate) fn quote_text(text: &str) -> String {
             '\n' => quoted.push_str("\\n"),
             '\r' => quoted.push_str("\\r"),
             '\t' => quoted.push_str("\\t"),
-            c if c.is_control() => {
+            c if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') => {
                 let _ = write!(quoted, "\\u{:04x}", u32::from(c));
             }
             c => quoted.push(c),

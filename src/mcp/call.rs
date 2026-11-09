@@ -107,7 +107,7 @@ pub(crate) fn envelope_result(mut envelope: Value) -> Value {
     let image = take_inline_image(&mut envelope);
     let lines = joined_lines(&envelope);
     let text = match lines {
-        Some(_) => without_lines(&envelope).to_string(),
+        Some(_) => text_without_lines(&mut envelope),
         None => envelope.to_string(),
     };
     let mut content = vec![json!({ "type": "text", "text": text })];
@@ -122,10 +122,17 @@ fn joined_lines(envelope: &Value) -> Option<String> {
     Some(lines?.join("\n"))
 }
 
-fn without_lines(envelope: &Value) -> Value {
-    let mut text = envelope.clone();
-    if let Some(data) = text.get_mut("data").and_then(Value::as_object_mut) {
-        data.remove("lines");
+fn text_without_lines(envelope: &mut Value) -> String {
+    let Some(data) = envelope.get_mut("data").and_then(Value::as_object_mut) else {
+        return envelope.to_string();
+    };
+    let lines = data.remove("lines");
+    let text = envelope.to_string();
+    if let (Some(lines), Some(data)) = (
+        lines,
+        envelope.get_mut("data").and_then(Value::as_object_mut),
+    ) {
+        data.insert("lines".into(), lines);
     }
     text
 }

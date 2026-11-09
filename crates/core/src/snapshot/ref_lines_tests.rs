@@ -36,6 +36,10 @@ fn names_with_quotes_backslashes_and_breaks_stay_on_one_line() {
         "\"Say \\\"hi\\\"\\\\now\\nnext\\tcol\""
     );
     assert_eq!(quote_text("bell\u{7}"), "\"bell\\u0007\"");
+    assert_eq!(
+        quote_text("one\u{2028}two\u{2029}"),
+        "\"one\\u2028two\\u2029\""
+    );
 }
 
 #[test]
