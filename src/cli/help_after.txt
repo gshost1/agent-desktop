@@ -1,5 +1,5 @@
 THE LOOP
-  agent-desktop snapshot --app Finder --skeleton -i --compact
+  agent-desktop snapshot --app Finder --skeleton -i --compact --lines
   agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact
   agent-desktop click @s8f3k2p9:e5
   agent-desktop wait --element @s8f3k2p9:e9 --predicate actionable --timeout 5000

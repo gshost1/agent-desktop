@@ -39,7 +39,7 @@ pub(crate) fn init_server_logging(matches: &ArgMatches) {
 /// exit code 2 for an argument error, 1 otherwise.
 pub(crate) fn refuse_start(error: &AppError) -> ExitCode {
     let response = Response::err("mcp", ErrorPayload::from_app_error(error));
-    let _ = crate::write_response(std::io::stderr().lock(), &response);
+    let _ = crate::cli::emit::write_response(std::io::stderr().lock(), &response, false);
     if error.code() == ErrorCode::InvalidArgs.as_str() {
         ExitCode::from(crate::EXIT_INVALID_ARGS)
     } else {

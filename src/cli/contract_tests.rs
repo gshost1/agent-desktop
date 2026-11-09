@@ -318,3 +318,31 @@ fn negative_coordinate_flags_state_the_equals_form_in_help() {
         assert!(help.contains(example), "{command} --{arg}: {help}");
     }
 }
+
+#[test]
+fn lines_is_global_for_snapshot_wait_for_actions_and_batch() {
+    for words in [
+        &["agent-desktop", "snapshot", "--app", "Font Book", "--lines"][..],
+        &[
+            "agent-desktop",
+            "--lines",
+            "snapshot",
+            "--root",
+            "@s8f3k2p9:e3",
+        ],
+        &[
+            "agent-desktop",
+            "click",
+            "@s8f3k2p9:e5",
+            "-w",
+            ":Done",
+            "--lines",
+        ],
+        &["agent-desktop", "batch", "[]", "--lines"],
+    ] {
+        let cli = Cli::try_parse_from(words).unwrap_or_else(|error| panic!("{words:?}: {error}"));
+        assert!(cli.output.lines, "{words:?}");
+    }
+    let plain = Cli::try_parse_from(["agent-desktop", "snapshot"]).unwrap();
+    assert!(!plain.output.lines);
+}

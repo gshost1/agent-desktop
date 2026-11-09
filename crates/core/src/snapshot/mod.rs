@@ -219,6 +219,7 @@ pub(crate) fn emit_snapshot_saved(
 }
 
 pub mod hints;
+pub mod ref_lines;
 pub(crate) mod ref_owner_observation;
 pub(crate) mod refmap_fit;
 pub mod snapshot_channel;
