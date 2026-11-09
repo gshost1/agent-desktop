@@ -31,9 +31,9 @@ The fix reuses the existing renderer activation signal, deadline, and observatio
 
 - Check enhanced mode even when web content is already readable. A readable tree is not proof that its actions work.
 - Read the flag back after a write. For enhanced mode, a matching readback can establish activation despite the unsupported return code. A contradictory readback cannot.
-- Wait out the two-second debounce within the existing deadline. Reject a budget that is too small before writing. Already-enabled modes do not pay this delay.
+- Wait out the two-second debounce within the existing deadline, for a Chromium process only. Reject a budget that is too small before writing. Already-enabled modes do not pay this delay, and neither does a native Cocoa app: it also exposes `AXEnhancedUserInterface`, but its tree does not depend on it. A process is Chromium when a framework in its bundle ships the V8 startup snapshot (`Resources/v8_context_snapshot*.bin`) or is named `Electron Framework` or `Chromium Embedded Framework`. The snapshot covers browsers and renamed Electron builds whose framework carries the product name.
 - Keep older manual-mode renderers working when their tree is readable but their manual flag has no readable value.
 
 The fix adds no browser-name checks, DOM automation, or physical click fallback. A click can still return `delivered_unverified`, so callers must check the requested effect.
 
-Evidence: the test `observed_activation_overrides_a_setters_not_implemented_response` in `crates/macos/src/system/renderer_activation.rs`.
+Evidence: the tests `observed_activation_overrides_a_setters_not_implemented_response` and `only_a_chromium_renderer_pays_the_enhanced_settle_delay` in `crates/macos/src/system/renderer_activation.rs`, and `a_browser_framework_with_any_name_is_recognized_by_its_v8_snapshot` in `crates/macos/src/system/renderer_kind_tests.rs`.
