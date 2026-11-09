@@ -18,7 +18,7 @@ mod visual_debug;
 mod test_noop_ops;
 
 use agent_desktop_core::{
-    AdapterError, AppError, Deadline, ErrorCode, SystemOps,
+    AdapterError, AppError, ErrorCode, SystemOps,
     context::{CommandContext, WaitSelector},
     response::output::{ErrorPayload, Response},
     session::resolve_active_session,
@@ -29,6 +29,7 @@ use cli::{
     emit::{emit_response, finish, report_output_failure},
 };
 use cli_args::skills::SkillsAction;
+use command_policy::preflight_deadline;
 use dispatch::pre_dispatch_error;
 #[cfg(target_os = "macos")]
 use std::io::{BufWriter, Write};
@@ -152,21 +153,6 @@ fn report_parse_failure(e: clap::Error) -> ExitCode {
 
 fn execute(cli: Cli, cmd: Commands) -> Result<serde_json::Value, AppError> {
     execute_with_deadline(cli, cmd, None, None)
-}
-
-/// Cap on a top-level batch's permission preflight, which may outlast five seconds.
-const BATCH_PREFLIGHT_CAP_MS: u64 = 15_000;
-
-/// The preflight deadline: the caller's, a batch's capped budget, else the standard one.
-fn preflight_deadline(
-    cmd: &Commands,
-    deadline: Option<Deadline>,
-) -> Result<Deadline, AdapterError> {
-    match (cmd, deadline) {
-        (_, Some(deadline)) => Ok(deadline),
-        (Commands::Batch(a), None) => Deadline::after(a.timeout_ms.min(BATCH_PREFLIGHT_CAP_MS)),
-        (_, None) => Deadline::standard(),
-    }
 }
 
 fn execute_with_deadline(

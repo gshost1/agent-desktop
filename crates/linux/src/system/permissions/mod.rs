@@ -7,24 +7,28 @@ use crate::system::bus::probe_registry;
 use crate::system::display::route::{Route, current};
 use crate::system::x11::capture::grab::{DisplayGrabber, Grabber};
 
-const CAPTURE_PROBE_SLICE: Duration = Duration::from_millis(1_000);
+/// The most the preflight's display probe may take. It runs before the
+/// command's own deadline starts, so it must fit well inside the one second a
+/// command may overrun its timeout by, even when the display never answers.
+const CAPTURE_PROBE_SLICE: Duration = Duration::from_millis(500);
 
 pub(crate) fn report(
     bus: &SharedBus,
     deadline: Deadline,
 ) -> Result<PermissionReport, AdapterError> {
     crate::input::x11::stale_release::sweep();
-    let capture = capture_availability(
-        current(),
-        &DisplayGrabber,
-        deadline.capped(CAPTURE_PROBE_SLICE),
-    );
+    let capture =
+        capture_availability(current(), &DisplayGrabber, capture_probe_deadline(deadline));
     let probed = bus
         .get(deadline)
         .and_then(|connection| probe_registry(bus, &connection, deadline));
     let report = report_from_probe(probed, capture)?;
     deadline.ensure_remaining()?;
     Ok(report)
+}
+
+fn capture_probe_deadline(deadline: Deadline) -> Deadline {
+    deadline.capped(CAPTURE_PROBE_SLICE)
 }
 
 /// Whether the accessibility registry answers on the session bus, which is
