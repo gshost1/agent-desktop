@@ -7,12 +7,14 @@
 #   4. runs scripts/perf-baseline-compare.sh against upstream b43ac4f6, same locks.
 # Every step logs to bench/out/overnight/ and appends one line to status.txt. Counts and exit
 # codes only; the E2E and perf logs stay local.
-#   bash bench/overnight.sh <release-worktree> [not-before YYYYmmddHHMM]
+#   bash bench/overnight.sh <release-worktree> [not-before YYYYmmddHHMM] [desktop-not-before YYYYmmddHHMM]
+# Steps 3 and 4 drive the desktop, so they also wait for desktop-not-before (default: not-before).
 set -u
 cd "$(dirname "$0")/.."
 root="$PWD"
 release_wt=$1
 not_before=${2:-202611090002}
+desktop_not_before=${3:-$not_before}
 out="$root/bench/out/overnight"
 mkdir -p "$out"
 status="$out/status.txt"
@@ -52,6 +54,9 @@ note "step 2 exit $? tree $(git -C "$tree" rev-parse --short HEAD) binary $(cat 
 python_dir="$root/bench/out/e2e-python"
 mkdir -p "$python_dir"
 ln -sf "$(command -v python3.11 || command -v python3.12 || command -v python3.13)" "$python_dir/python3"
+
+note "waiting for desktop time $desktop_not_before"
+while [ "$(date +%Y%m%d%H%M)" -lt "$desktop_not_before" ]; do sleep 60; done
 
 note "step 3: E2E (SKIP_PRIVATE, EXCLUSIVE)"
 BENCH_CARGO_TIMEOUT_S=7200 bash bench/serial_cargo.sh bash -c "
