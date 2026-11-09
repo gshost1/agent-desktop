@@ -36,17 +36,17 @@ Other open fork PRs not owned by this session: #59, #48, #41, #36, #30, #9, #7, 
 ## Release check (fork release Mon 2026-11-09 09:00 PST; freeze 00:00 PST)
 
 - [x] Rehearsal on `main` `7921e3f6` (2026-11-08 afternoon): Linux E2E all tiers, release dry run, size and glibc.
-- [ ] After 00:00 PST: fetch `origin/main`, `cargo build --release -p agent-desktop`.
-- [ ] Release CLI ≤ 15 MiB. Rehearsal: 7,844,712 bytes (7.5 MiB) local; dry run x86_64 7,844,720, aarch64 6,357,712.
-- [ ] `scripts/check-elf-glibc-floor.sh` ≤ 2.35. Rehearsal: the shipped build (22.04 container, release-dry-run run 42517486692) needs at most GLIBC_2.35 (CLI) and 2.34 (helper). A laptop host build needs GLIBC_2.39 (`pidfd_spawnp`, `pidfd_getpid` from glibc 2.43 here), so judge the floor on the dry run, not a local build.
-- [ ] Silent display, silent bus, stopped app: documented code within timeout + 1 s (probe: scratchpad `budget_probe.py`). Rehearsal on `main` found three violations, all fixed in open PRs:
+- [x] After 00:00 PST: frozen head `15aa75cb` (#79, 2026-11-08 20:50 PST); release build OK.
+- [x] Release CLI ≤ 15 MiB: frozen head 7,963,496 bytes (7.59 MiB) local; dry run x86_64 7,959,408, aarch64 6,456,016. Rehearsal: 7,844,712 bytes (7.5 MiB) local; dry run x86_64 7,844,720, aarch64 6,357,712.
+- [x] `scripts/check-elf-glibc-floor.sh` ≤ 2.35: release-dry-run 42583058376 on `15aa75cb` green; CLI ≤ GLIBC_2.35, helper ≤ 2.34 on x86_64 and aarch64. Rehearsal: the shipped build (22.04 container, release-dry-run run 42517486692) needs at most GLIBC_2.35 (CLI) and 2.34 (helper). A laptop host build needs GLIBC_2.39 (`pidfd_spawnp`, `pidfd_getpid` from glibc 2.43 here), so judge the floor on the dry run, not a local build.
+- [x] Silent display, silent bus, stopped app: frozen head 98/98 rows inside timeout + 1 s; stopped-app ref actions `APP_UNRESPONSIVE` in 10-31 ms. documented code within timeout + 1 s (probe: scratchpad `budget_probe.py`). Rehearsal on `main` found three violations, all fixed in open PRs:
   - silent session bus: the permission preflight waits a fixed 5 s whatever `--timeout-ms` (`snapshot --timeout-ms 1000` 5.0 s) → [#72](https://github.com/gshost1/agent-desktop/pull/72) (this is ledger row BINARY-8, now confirmed);
   - silent X11: the preflight's 1 s capture probe runs before the command clock, 12 ms over → [#72](https://github.com/gshost1/agent-desktop/pull/72) (slice 500 ms);
   - stopped app: `click`/`focus`/`type` with auto-wait answer `TIMEOUT` after 5 s instead of the documented `APP_UNRESPONSIVE` in ms (the path landing `resolve_anchor` had no `/proc` check; pre-existing at fork base `b43ac4f6`) → [#73](https://github.com/gshost1/agent-desktop/pull/73).
   - Not a violation: the probe's `AT_SPI_BUS_ADDRESS` case tested nothing (the product finds the accessibility bus through the session bus); covered by the silent session bus case.
   - Follow-ups (not fixed): menu refs of a stopped app (`resolve_menu` reads popups before the stopped check); `list-surfaces`/`close-app` on a just-stopped app answered `APP_NOT_FOUND` `no_accessibility_connection` once and `APP_UNRESPONSIVE` once (not confirmed twice).
-- [ ] Linux E2E (`tests/e2e-linux`, all tiers) on the frozen head.
-- [ ] A real bug gets one fix PR; the same failure twice: write it down and stop.
+- [x] Linux E2E on the frozen head: x11-openbox + wayland 106 pass, 54 fail, 1 error; x11-mutter unavailable (GNOME 50). Versus the rehearsal: 6 legs newly pass (3 from #68/#69), 1 newly fails (`ref_actions.right_click` headed, `sibling_overlap` from the Text Editor restored-draft harness leak; passes standalone 2/2). No new product bug. All remaining failures are the GNOME 50 drift and harness defects listed below.
+- [x] Real bugs: 4, one PR each, all merged before the freeze (#68, #69, #72, #73). #72 needed a second design after review (first one could fail healthy commands with tiny timeouts); that was its last attempt.
 
 ### Rehearsal E2E (laptop: Ubuntu 26.04.1, GNOME Shell 50.1)
 
