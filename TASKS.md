@@ -13,7 +13,7 @@ branch. `main` = `d2e406cb`. 28 fork PRs merged from this audit; the ledger coun
 | PR | Row | Branch | Head | State |
 |---|---|---|---|---|
 | #58 | ACTION-12 | `fix/pointer-focus-once` (w33) | `11271cdd` | draft; main `95fea935` merged in 2026-11-08, gates green (4936), invert-verified (stop rule off: 5/9 fail; already-front as changed: 2/9 fail); CI re-running; third approach (stop only after a raise that changed the front window). Waiting on the speed session's Mac check (steps in the PR body). |
-| #38 | LIFECYCLE-6 | `fix/close-app-phase-budgets` (w18) | `64b1c704` | draft, CLEAN; needs the Mac check. |
+| #38 | LIFECYCLE-6 | `fix/close-app-phase-budgets` (w18) | `64b1c704` | **merged** 2026-11-09 as `cf03b9d3`. |
 | #34 | SURFACE-3 | `fix/notification-identity-key` (w15) | `82709a44` | draft, DIRTY (conflicts with `main`); needs a main merge, then the Mac and Windows checks; needs-issue-first. |
 | #18 | SURFACE-1 | `fix/menu-close-wait-phase` (w9) | `42373866` | draft, DIRTY (conflicts with `main`); needs a main merge, then the Mac check. |
 | #14 | REFS-2 | `fix/capture-verdict-not-ambiguous` (w5) | `075586f6` | draft, DIRTY (conflicts with `main`, earlier with #10, #11, #17); needs a main merge, then the Mac check; needs-issue-first. |
@@ -123,7 +123,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 23 | LIFECYCLE-1 | Windows launch: launcher exited / handed off (#552) | windows `system/` launch | stub pid exits, window poll runs to the deadline, reports ok with the dead pid | full `--timeout` | B | C | #552, #555, PR #483 | planned (win draft) |
 | 24 | LIFECYCLE-2 | macOS launch exit watch | macos `system/` launch | an app that quits after startup "Finished" returns ok with its dead pid | – | B | C | none | planned (mac draft) |
 | 25 | LIFECYCLE-5 | close-app outcome (#581) | core `commands/close_app.rs`, mac/win close | a quit prompt ends as generic TIMEOUT "app busy" on mac/win; outcome is a bool | 5 s | B | C | #581, PR #582 (open, mac, probe at deadline) | build on #582 |
-| 26 | LIFECYCLE-6 | close-app single 5 s budget | core `commands/close_app.rs` | lease wait spends the exit-check time → TIMEOUT/unsafe; macOS app exiting mid-close → APP_UNRESPONSIVE | – | B | C | none | [#38](https://github.com/gshost1/agent-desktop/pull/38) draft |
+| 26 | LIFECYCLE-6 | close-app single 5 s budget | core `commands/close_app.rs` | lease wait spends the exit-check time → TIMEOUT/unsafe; macOS app exiting mid-close → APP_UNRESPONSIVE | – | B | C | none | **merged** [#38](https://github.com/gshost1/agent-desktop/pull/38) `cf03b9d3` |
 | 27 | LIFECYCLE-3 | launch lease scope | core `commands/launch.rs`, adapters | launch holds the machine-wide lease through the window wait and CDP probe; other agents TIMEOUT for up to 30 s | up to 30 s blocked for others | B/C | C | PR #436 (open) leaves it | planned |
 | 28 | LIFECYCLE-7 | Chromium/Electron AX activation | core + mac/win activation | win read-only snapshot needs the lease for a no-op 50 ms sleep; mac sleeps 2 s holding the lease; activation can overrun the command timeout | 50 ms (win), 2 s (mac) under lease | B/C | C (7b-d), S (7a) | #465, #254, #238 | planned |
 | 29 | LIFECYCLE-8 | Linux window settle | linux `system/window/` | fixed 250 ms limit vs 120 ms confirm pause: a placement landing after ~130 ms always reports `readback_mismatch` | 250 ms | B | C logic, S frequency | none | **merged** [#43](https://github.com/gshost1/agent-desktop/pull/43) `8806c6c2` |
@@ -157,7 +157,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 57 | LIFECYCLE-12 | macOS launch AMBIGUOUS after launch | macos launch | app restoring several windows with none focused → error after a successful launch | – | B | S | none | probe first |
 | 58 | STATE-17 | ProcessLeaseGuard not reentrant | core `session/process_lease_guard.rs` | same thread re-acquiring spins 5 s → TIMEOUT | 5 s | B | S | none | **merged** [#55](https://github.com/gshost1/agent-desktop/pull/55) `e50786e2` |
 | 59 | STATE-18 | FFI allocation registry by address | ffi `resource.rs` | freeing a stale struct copy after address reuse frees a live allocation | – | B (misuse) | S | none | docs or L |
-| 60 | BINARY-8 | Permission report fixed 5 s deadline | `src/` permissions path | ignores command/batch budget; can break the Linux "timeout + 1 s" budget | up to 5 s | C | S | none | probe first |
+| 60 | BINARY-8 | Permission report fixed 5 s deadline | `src/` permissions path | ignores command/batch budget; can break the Linux "timeout + 1 s" budget | up to 5 s | C | S | none | **merged** [#72](https://github.com/gshost1/agent-desktop/pull/72) `74bc0d2d` |
 | 61 | LIFECYCLE-4 | Linux launch, app never joins AT-SPI | linux `system/launch_observe.rs` | waits full 30 s, then ok "not on the bus yet" | 30 s | C | C | none | planned |
 | 62 | ACTION-7 | Stability evidence handoff poll → dispatch | core `ref_action/`, `actionability/stability_sampler.rs` | – | headed: 2 polls + 16 ms always; moved element 50-120 ms + 5-6 round trips | C | C | #155 | planned |
 | 63 | ACTION-10 | Post-action verification settle | core `actions/post_action.rs:55-74` | toggle race reports a verified toggle that toggled nothing (S) | normalized value: 400 ms (8 reads) then ACTION_FAILED | C | C cost, S race | PR #190 | planned |
@@ -197,7 +197,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 | 15 | `fix/notification-identity-key` | SURFACE-3 | [#34](https://github.com/gshost1/agent-desktop/pull/34) (draft) | head `82709a44` (main `89a3723e`), tests 4654/0, review applied; draft: contract change + device checks | needs-issue-first (new list field and --key flag) |
 | 16 | `fix/action-artifact-pairing` | ACTION-3 / STATE-8 | [#23](https://github.com/gshost1/agent-desktop/pull/23) | **merged** 2026-11-08 as `6ec6e174` (rules 1+2); CI 13/13 on head `44a4cc48`, gates green (4639), 2 review rounds | ready (upstream register items 17 and 18) |
 | 17 | `fix/session-start-atomic` | STATE-5 / BINARY-10 | [#35](https://github.com/gshost1/agent-desktop/pull/35) | **merged** 2026-11-08 as `17d95295` (rules 1+2); CI 13/13 on head `531de753`, gates green (4644), review applied | ready (upstream register item 12) |
-| 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | [#38](https://github.com/gshost1/agent-desktop/pull/38) (draft) | head `64b1c704`, tests 4645/0 (--no-fail-fast), review applied; draft: macOS edit | ready after Mac check |
+| 18 | `fix/close-app-phase-budgets` | LIFECYCLE-6 | [#38](https://github.com/gshost1/agent-desktop/pull/38) | **merged** 2026-11-09 as `cf03b9d3` | ready |
 | 19 | `fix/ffi-last-error-code` | STATE-1 / STATE-2 / STATE-3 (docs) | [#37](https://github.com/gshost1/agent-desktop/pull/37) | **merged** 2026-11-08 as `5f85dcfa` (rules 1+2); CI 27/27 on head `469eeb0a`, gates green (4647), review applied | ready (upstream register items 9, 14, 20) |
 | 20 | `test/wait-selector-gone-budget` | CI flake | [#29](https://github.com/gshost1/agent-desktop/pull/29) | **merged** 2026-11-08 as `a7d301d7` (rules 1+2); CI 13/13 on head `17f6ece2`, gates green (4630) | fork-only (test budgets) |
 | 22 | `test/load-sensitive-budgets` | CI flakes | [#39](https://github.com/gshost1/agent-desktop/pull/39) | **merged** 2026-11-08 as `921d6d22` (rule 3: `main` moved by PR #40, no overlapping files); CI 13/13 on head `25df1b15`, gates green (4647) | fork-only (test determinism) |
@@ -216,8 +216,6 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 ## Needs Mac verification
 
-- PR #38 (LIFECYCLE-6, draft): `crates/macos/src/system/app/app_ops.rs:51`, `process/process_identity.rs:129-135`. On the Mac, on the branch: `cargo test` on the host set; then `agent-desktop close-app <app>` while another command holds the lease (e.g. a long `wait`) -> `delivered_verified`, not `TIMEOUT`; and an app that quits on its own during the close -> no `APP_UNRESPONSIVE`.
-
 - PR #34 (SURFACE-3, draft): `crates/macos/src/notifications/actions.rs`, `system/adapter.rs`. On the Mac, on the branch: `cargo test` on the host set; then post two identical notifications, `agent-desktop list-notifications`, post a third identical one, and confirm `dismiss-notification --key <first key>` closes the original (newest-first order is assumed).
 
 - PR #18 (SURFACE-1, draft): `crates/macos/src/system/{adapter,wait}.rs`. CI on `5b6d3a07` failed macOS clippy (`missing_const_for_thread_local` in the test seam, fixed in `832c091c`) and one Windows ARM64 live Start-menu test outside this PR; CI on `0747511e` then failed two timing-sensitive core tests and exposed a real macOS bug (the loop timed out before checking a satisfied wait); fixed in `42373866`: CI 26/26 green there, so the macOS code compiles and its unit tests pass. On the Mac, on the branch: `cargo test -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web`; then right-click a control, run `agent-desktop wait --menu-closed --app <app>` while the menu is open (returns only after it closes), and with no menu open (returns closed after about 1.5 s).
@@ -231,7 +229,7 @@ Platform: where the fix lands; mac/win fixes are opened as drafts and listed und
 
 ## Blocked on George
 
-- Mac checks for drafts #14, #18, #34, #38 and the Windows check for #34 (commands under "Needs Mac verification" / "Needs Windows verification").
+- Mac checks for drafts #14, #18, #34 (#38 merged) and the Windows check for #34 (commands under "Needs Mac verification" / "Needs Windows verification").
 - Upstream issues for needs-issue-first PRs before anything goes upstream: #14 (envelope 2.7), #34 (new list field), #46 (`data.focus_observed`).
 - CI wiring for PR #51's viewer test: the laptop's `gh` token has no `workflow` scope, so `.github/workflows/ci.yml` cannot be pushed from here. Either run `gh auth refresh -h github.com -s workflow` on the laptop, or make the change from the Mac: in the "Embedded visual viewer tests" step, `run: node --test src/visual_debug/viewer_filter.test.js crates/core/src/trace/trace_read/viewer_group.test.js`.
 - Optional disk cleanup: old build dirs (`w5/target` 16G, `w9/target` 16G, main `target` 9.3G); nothing deleted without a yes.
@@ -341,7 +339,7 @@ Every open row above code clarity has one disposition:
 - **Wave 1 (writers running):** trace-test `/tmp` leak (own PR); BINARY-5/1/4/6/7 (dispatch delivery settle, one
   machine); LIFECYCLE-9 (Linux stale restore, A).
 - **Next waves, fixable on this laptop (core, binary, Linux, FFI):** SURFACE-3 (A, contract change: draft,
-  needs-issue-first); ACTION-3/STATE-8; BINARY-2; BINARY-3; LIFECYCLE-6; LIFECYCLE-3; LIFECYCLE-7 (core part);
+  needs-issue-first); ACTION-3/STATE-8; BINARY-2; BINARY-3; LIFECYCLE-6 (merged #38); LIFECYCLE-3; LIFECYCLE-7 (core part);
   LIFECYCLE-8; LIFECYCLE-10; REFS-3; REFS-7; STATE-1; STATE-4/BINARY-9; STATE-5/BINARY-10; STATE-7;
   STATE-12/BINARY-11 + STATE-13 + STATE-16 (overlay show/hide, one machine); STATE-15; STATE-10; STATE-17;
   SURFACE-5; SURFACE-9; ACTION-12; ACTION-13; LIFECYCLE-4; ACTION-7; ACTION-10; ADAPTERS-7; ADAPTERS-8;
@@ -352,7 +350,7 @@ Every open row above code clarity has one disposition:
 - **Carry an open upstream PR instead of rewriting:** REFS-1 (`#588`), SURFACE-8 (`#549`), ACTION-5 (`#606`),
   LIFECYCLE-5 (`#582`, mac), STATE-6 (`#498`).
 - **Open, blocked on a live probe (evidence first, no blind fix):** ADAPTERS-2 and BINARY-12 (Mac), ADAPTERS-3
-  (Java ATK app on Linux), ADAPTERS-6 (Mutter closed-session error name), LIFECYCLE-12 (Mac), BINARY-8 (silent bus),
+  (Java ATK app on Linux), ADAPTERS-6 (Mutter closed-session error name), LIFECYCLE-12 (Mac), BINARY-8 (silent bus; merged #72),
   REFS-6 (measurement).
 - **Owned elsewhere:** MAC-SAVE-1 (Mac speed session).
 - **Accepted as D / docs only:** STATE-18 (address-keyed FFI registry, misuse only: document), STATE-11 and ACTION-6
