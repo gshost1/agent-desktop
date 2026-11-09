@@ -274,8 +274,14 @@ fn execute_with_adapter(
     let report = if command_policy::requires_permission_report(&cmd) {
         match preflight_deadline(&cmd, deadline)
             .map_err(AppError::from)
-            .and_then(|deadline| adapter.permission_report(deadline).map_err(AppError::from))
-        {
+            .and_then(|deadline| {
+                if command_policy::requires_full_permission_report(&cmd) {
+                    adapter.permission_report(deadline)
+                } else {
+                    adapter.preflight_permission_report(deadline)
+                }
+                .map_err(AppError::from)
+            }) {
             Ok(report) => report,
             Err(err) => return Err(pre_dispatch_error(err)),
         }

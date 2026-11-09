@@ -134,10 +134,19 @@ pub(crate) fn report(deadline: Deadline) -> Result<PermissionReport, AdapterErro
     let report = PermissionReport {
         accessibility: accessibility_report_state(),
         screen_recording: screen_recording_report_state(),
-        automation: automation_report_state(),
+        automation: automation_report_state(deadline)?,
     };
     deadline.ensure_remaining()?;
     Ok(report)
+}
+
+pub(crate) fn preflight_report(deadline: Deadline) -> Result<PermissionReport, AdapterError> {
+    deadline.ensure_remaining()?;
+    Ok(PermissionReport {
+        accessibility: accessibility_report_state(),
+        screen_recording: screen_recording_report_state(),
+        automation: PermissionState::Unknown,
+    })
 }
 
 pub(crate) fn request_report(deadline: Deadline) -> Result<PermissionReport, AdapterError> {
@@ -213,17 +222,39 @@ fn screen_recording_report_state() -> PermissionState {
     permission_state(imp::screen_recording_granted(), SCREEN_RECORDING_SUGGESTION)
 }
 
-fn automation_report_state() -> PermissionState {
-    map_automation_probe(imp::probe_automation_permission())
+fn automation_report_state(deadline: Deadline) -> Result<PermissionState, AdapterError> {
+    automation_probe::probe_within(deadline, imp::probe_automation_permission)
+        .map(map_automation_probe)
 }
 
-pub(crate) fn require_automation_permission() -> Result<(), AdapterError> {
-    let status = imp::probe_automation_permission();
+pub(crate) fn require_automation_permission(deadline: Deadline) -> Result<(), AdapterError> {
+    automation_requirement(automation_probe::probe_within(
+        deadline,
+        imp::probe_automation_permission,
+    )?)
+}
+
+pub(crate) fn automation_requirement(status: i32) -> Result<(), AdapterError> {
     match status {
         NO_ERR => Ok(()),
         ERR_AE_EVENT_NOT_PERMITTED | ERR_AE_EVENT_WOULD_REQUIRE_USER_CONSENT => {
             Err(automation_permission_error(status))
         }
+        automation_probe::PROBE_UNANSWERED => Err(AdapterError::new(
+            agent_desktop_core::ErrorCode::AppUnresponsive,
+            "macOS did not answer the Automation permission check in time",
+        )
+        .with_details(serde_json::json!({
+            "kind": "automation_permission_probe",
+            "os_status": status,
+            "target": "System Events",
+            "prompted": false,
+            "answered": false,
+            "retryable": false,
+        }))
+        .with_suggestion(
+            "A permission prompt may be waiting on screen. Answer it, then retry the command",
+        )),
         _ => Err(AdapterError::new(
             agent_desktop_core::ErrorCode::AppUnresponsive,
             "Could not verify Automation permission without prompting",
@@ -296,6 +327,7 @@ fn bounded_platform_text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_BYTES)]).into_owned()
 }
 
+mod automation_probe;
 pub(crate) mod permission_guide;
 pub(crate) mod permission_helper;
 pub(crate) mod permission_operation;

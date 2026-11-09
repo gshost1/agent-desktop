@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+* On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
 * Stop a headed `hover` or `drag` whose target stays covered from raising its window again on every attempt until `--timeout`. When an attempt's focus brought the target in front of another window and the attempt still fails, the command ends with that attempt's error, which carries `details.preparatory_focus`; a target that was already in front, or whose front window cannot be read, keeps waiting as before. ([#58](https://github.com/gshost1/agent-desktop/pull/58))
 
 ### Performance
