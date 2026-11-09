@@ -80,6 +80,7 @@ int main(int argc, char** argv) {
             agent_desktop_core::commands::close_app::CloseAppArgs {
                 app: "ad-path-editor".into(),
                 force: false,
+                timeout_ms: None,
             },
             &crate::LinuxAdapter::new(),
         )

@@ -118,6 +118,7 @@ fn close_of_an_already_gone_app_reports_not_delivered_without_a_closed_claim() {
         CloseAppArgs {
             app: "Notes".into(),
             force: false,
+            timeout_ms: None,
         },
         &adapter,
     )

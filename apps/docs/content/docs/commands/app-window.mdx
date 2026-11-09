@@ -97,7 +97,7 @@ Platform limits: the accepted `APP` forms differ by OS. See [macOS](/desktop/pla
 Quits an app and all its windows, and succeeds only after the process is seen gone. No command closes a single window: click that window's Close button instead.
 
 ```bash
-agent-desktop close-app <APP> [--force]
+agent-desktop close-app <APP> [--force] [--timeout-ms MS]
 ```
 
 <table>
@@ -107,6 +107,7 @@ agent-desktop close-app <APP> [--force]
   <tbody>
     <tr><td><code>APP</code></td><td>required</td><td>Application name as <code>list-apps</code> prints it.</td></tr>
     <tr><td><code>--force</code></td><td>off</td><td>Terminate the process instead of quitting gracefully.</td></tr>
+    <tr><td><code>--timeout-ms MS</code></td><td><code>5000</code></td><td>Upper bound for the whole close. Finding the app and waiting for another command to finish get the first half. Revalidating the app, sending the close and waiting for the exit get the second half, less a small slice (50 to 250 ms) kept for confirming the exit.</td></tr>
   </tbody>
 </table>
 
@@ -134,9 +135,11 @@ agent-desktop close-app <APP> [--force]
 }
 ```
 
-`method` is `graceful` or `force`. If the app had already exited, the report is `not_delivered` with `details.evidence: "process_instance_not_running"`. Errors specific to `close-app`:
+`method` is `graceful` or `force`. If the app had already exited, the report is `not_delivered` with `details.evidence: "process_instance_not_running"`. If the close fails but the app exits within the confirm slice, the report is `delivered_verified` when the request is known to have been sent, otherwise `delivered_unverified`. Errors specific to `close-app`:
 
 - `APP_NOT_FOUND` when no running app matches, `AMBIGUOUS_TARGET` when several instances share the name.
+- `TIMEOUT` with `not_delivered`: nothing was sent, so retry. `details.phase` says why: `resolving` or `revalidating` is a slow app inventory, `awaiting_lease` is another command holding the desktop. `details.timeout_ms` is the slice that ran out, not the whole budget.
+- `TIMEOUT` with `delivered_unverified` and `details.phase: "closing"`: the close was sent but the app was still running at the deadline.
 - `INVALID_ARGS` for a protected system process, with or without `--force`.
 - A save prompt keeps the app open. Read it with `snapshot --surface sheet`, answer it, then close again.
 
