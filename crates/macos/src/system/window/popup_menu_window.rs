@@ -1,28 +1,34 @@
-//! Reads the window server for an application's on-screen windows above the
-//! normal window layer.
+//! Reads the window server for an application's on-screen pop-up menu windows.
 //!
 //! A context menu some toolkits open is absent from the application's
 //! accessibility tree, yet the window server still lists it as an on-screen
-//! window owned by the application's process at a raised layer. Only the
-//! process id and the layer are read, never a title or an owner name.
+//! window owned by the application's process at the pop-up menu level. Only
+//! the process id and the layer are read, never a title or an owner name.
+//! Tooltips, floating panels and other raised windows sit at other levels and
+//! are not menus.
 
 use agent_desktop_core::AdapterError;
 
 use super::cg_window::{WindowDictionary, int_field};
 
-/// Window numbers of the on-screen windows that `pid` owns above layer 0.
-pub(crate) fn raised_window_numbers(pid: i32) -> Result<Vec<i64>, AdapterError> {
-    Ok(raised_numbers_from(&on_screen_dictionaries()?, pid))
+/// `kCGPopUpMenuWindowLevel`, the window level the window server gives a menu.
+pub(crate) const POPUP_MENU_WINDOW_LEVEL: i64 = 101;
+
+/// Window numbers of the on-screen pop-up menu windows that `pid` owns.
+pub(crate) fn menu_window_numbers(pid: i32) -> Result<Vec<i64>, AdapterError> {
+    Ok(menu_numbers_from(&on_screen_dictionaries()?, pid))
 }
 
-pub(in crate::system) fn raised_numbers_from(
+pub(in crate::system) fn menu_numbers_from(
     dictionaries: &[WindowDictionary],
     pid: i32,
 ) -> Vec<i64> {
     dictionaries
         .iter()
         .filter(|dictionary| int_field(dictionary, "kCGWindowOwnerPID") == Some(i64::from(pid)))
-        .filter(|dictionary| int_field(dictionary, "kCGWindowLayer").is_some_and(|layer| layer > 0))
+        .filter(|dictionary| {
+            int_field(dictionary, "kCGWindowLayer") == Some(POPUP_MENU_WINDOW_LEVEL)
+        })
         .filter_map(|dictionary| int_field(dictionary, "kCGWindowNumber"))
         .collect()
 }
@@ -52,5 +58,5 @@ fn on_screen_dictionaries() -> Result<Vec<WindowDictionary>, AdapterError> {
 }
 
 #[cfg(test)]
-#[path = "raised_window_tests.rs"]
+#[path = "popup_menu_window_tests.rs"]
 mod tests;

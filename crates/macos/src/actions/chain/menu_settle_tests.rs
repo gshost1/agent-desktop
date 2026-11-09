@@ -1,9 +1,12 @@
-use super::{SETTLE_STEP_LABEL, is_new_raised_window, poll_within, settle_exhausted};
+use super::{
+    SETTLE_STEP_LABEL, baseline_from, is_new_menu_window, poll_within, read_from, settle_exhausted,
+};
 use crate::actions::chain::exhaustion_error;
 use crate::actions::chain::menu_baseline::MenuBaseline;
 use crate::actions::chain::menu_read::MenuRead;
 use agent_desktop_core::{ActionStep, AdapterError, DeliverySemantics};
 
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(600);
 const SUGGESTION: &str = "Try 'mouse-click --button right --xy X,Y'.";
 
 fn delivered_unverified_steps() -> Vec<ActionStep> {
@@ -16,7 +19,7 @@ fn delivered_unverified_steps() -> Vec<ActionStep> {
 
 fn closed_baseline() -> Option<MenuBaseline> {
     Some(MenuBaseline {
-        raised_windows: vec![7],
+        menu_windows: vec![7],
     })
 }
 
@@ -101,12 +104,12 @@ fn without_a_closed_baseline_a_menu_is_not_an_upgrade() {
 #[test]
 fn an_exhausted_read_budget_keeps_the_original_error() {
     let deadline = agent_desktop_core::Deadline::after(0).expect("zero-duration deadline is valid");
-    let (read, calls) = scripted(vec![MenuRead::Appeared]);
+    let (mut read, calls) = scripted(vec![MenuRead::Appeared]);
 
     let error = settle_exhausted(
         delivered_unverified_steps(),
         closed_baseline(),
-        poll_within(deadline, read),
+        poll_within(deadline, SETTLE, move |baseline, _| read(baseline)),
         SUGGESTION,
     )
     .expect_err("a spent operation deadline must not read or upgrade");
@@ -129,12 +132,117 @@ fn a_chain_that_delivered_nothing_is_never_settled() {
 }
 
 #[test]
-fn only_a_raised_window_absent_from_the_baseline_is_new() {
+fn only_a_menu_window_absent_from_the_baseline_is_new() {
     let baseline = MenuBaseline {
-        raised_windows: vec![7, 9],
+        menu_windows: vec![7, 9],
     };
 
-    assert!(!is_new_raised_window(&baseline, &[]));
-    assert!(!is_new_raised_window(&baseline, &[9, 7]));
-    assert!(is_new_raised_window(&baseline, &[7, 12]));
+    assert!(!is_new_menu_window(&baseline, &[]));
+    assert!(!is_new_menu_window(&baseline, &[9, 7]));
+    assert!(is_new_menu_window(&baseline, &[7, 12]));
+}
+
+fn unreadable() -> AdapterError {
+    AdapterError::new(agent_desktop_core::ErrorCode::AppUnresponsive, "no answer")
+}
+
+#[test]
+fn a_menu_already_open_at_baseline_leaves_no_baseline() {
+    let mut window_reads = 0;
+
+    let baseline = baseline_from(Ok(true), || {
+        window_reads += 1;
+        Ok(Vec::new())
+    });
+
+    assert_eq!(baseline, None);
+    assert_eq!(window_reads, 0);
+    assert_eq!(baseline_from(Err(unreadable()), || Ok(Vec::new())), None);
+    assert_eq!(baseline_from(Ok(false), || Err(unreadable())), None);
+    assert_eq!(
+        baseline_from(Ok(false), || Ok(vec![3])),
+        Some(MenuBaseline {
+            menu_windows: vec![3]
+        })
+    );
+}
+
+#[test]
+fn a_new_menu_window_counts_without_the_accessibility_read() {
+    let baseline = closed_baseline().unwrap_or_default();
+    let mut ax_reads = 0;
+
+    let read = read_from(&baseline, Ok(vec![7, 12]), || {
+        ax_reads += 1;
+        Ok(false)
+    });
+
+    assert_eq!(read, MenuRead::Appeared);
+    assert_eq!(ax_reads, 0);
+}
+
+#[test]
+fn an_accessibility_menu_counts_when_the_window_read_sees_none() {
+    let baseline = closed_baseline().unwrap_or_default();
+
+    assert_eq!(
+        read_from(&baseline, Ok(vec![7]), || Ok(true)),
+        MenuRead::Appeared
+    );
+    assert_eq!(
+        read_from(&baseline, Err(unreadable()), || Ok(true)),
+        MenuRead::Appeared
+    );
+    assert_eq!(
+        read_from(&baseline, Ok(vec![7]), || Ok(false)),
+        MenuRead::Absent
+    );
+    assert_eq!(
+        read_from(&baseline, Err(unreadable()), || Err(unreadable())),
+        MenuRead::Absent
+    );
+}
+
+#[test]
+fn polling_stops_at_the_settle_cutoff_with_a_live_deadline() {
+    let deadline = agent_desktop_core::Deadline::after(3_000).expect("deadline is valid");
+    let settle = std::time::Duration::from_millis(80);
+    let started = std::time::Instant::now();
+    let mut reads = 0;
+
+    let mut poll = poll_within(deadline, settle, |_, _| {
+        reads += 1;
+        MenuRead::Absent
+    });
+    let baseline = MenuBaseline::default();
+    let end = loop {
+        let read = poll(&baseline);
+        if read != MenuRead::Absent {
+            break read;
+        }
+    };
+
+    assert_eq!(end, MenuRead::Exhausted);
+    assert!(started.elapsed() < std::time::Duration::from_millis(1_000));
+    assert!(!deadline.is_expired());
+    drop(poll);
+    assert!(reads >= 1);
+}
+
+#[test]
+fn every_read_is_capped_to_the_settle_window() {
+    let deadline = agent_desktop_core::Deadline::after(3_000).expect("deadline is valid");
+    let settle = std::time::Duration::from_millis(80);
+    let mut longest = std::time::Duration::ZERO;
+
+    let mut poll = poll_within(deadline, settle, |_, read_deadline| {
+        longest = longest.max(read_deadline.remaining());
+        MenuRead::Absent
+    });
+    let baseline = MenuBaseline::default();
+    while poll(&baseline) == MenuRead::Absent {}
+    drop(poll);
+
+    assert!(longest > std::time::Duration::ZERO);
+    assert!(longest <= settle);
 }

@@ -20,7 +20,8 @@ mod imp {
         ctx: &ChainContext,
         policy: InteractionPolicy,
     ) -> Result<Vec<ActionStep>, AdapterError> {
-        match run_steps(el, def, ctx, policy)? {
+        let pid = crate::system::app::app_ops::pid_from_element(el, ctx.deadline);
+        match run_steps(el, def, ctx, policy, pid)? {
             (steps, true) => Ok(steps),
             (steps, false) => Err(exhaustion_error(&steps, def.suggestion)),
         }
@@ -28,16 +29,18 @@ mod imp {
 
     /// Runs the chain and returns its recorded steps with whether a step ended
     /// it. `false` means every step ran without one, the state
-    /// [`exhaustion_error`] reports.
+    /// [`exhaustion_error`] reports. `pid` is the target's process, read once
+    /// by the caller.
     pub(crate) fn run_steps(
         el: &AXElement,
         def: &ChainDef,
         ctx: &ChainContext,
         policy: InteractionPolicy,
+        pid: Option<i32>,
     ) -> Result<(Vec<ActionStep>, bool), AdapterError> {
         let total = def.steps.len();
         let mut steps = Vec::new();
-        if let Some(pid) = crate::system::app::app_ops::pid_from_element(el, ctx.deadline) {
+        if let Some(pid) = pid {
             crate::tree::properties::attributes::set_messaging_timeout(
                 &crate::tree::element_for_pid(pid),
                 ctx.deadline,
