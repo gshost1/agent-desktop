@@ -22,13 +22,15 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         request: &ObservationRequest,
     ) -> Result<ObservedTree, AdapterError> {
         let root = ObservationRoot::Window(window);
+        let shown_in = Some(window).filter(|window| !window.is_process_owner());
         let read = match window_process(window) {
-            Some(process) => self.read_shown_page(&process, Some(window), &root, request)?,
+            Some(process) => self.read_shown_page(&process, shown_in, &root, request)?,
             None => None,
         };
-        match read {
-            Some(observed) => Ok(observed),
-            None => self.observe_through_accessibility(root, request, &window.app),
+        match (read, shown_in) {
+            (Some(observed), _) => Ok(observed),
+            (None, Some(_)) => self.observe_through_accessibility(root, request, &window.app),
+            (None, None) => Err(endpoint_gone_without_window(&window.app)),
         }
     }
 
@@ -123,6 +125,20 @@ fn find_subtree(node: AccessibilityNode, token: &str) -> Option<AccessibilityNod
         .find_map(|child| find_subtree(child, token))
 }
 
+/// A browser owned through its process lists no window, so the accessibility
+/// tree has nothing to read once its DevTools endpoint stops answering.
+fn endpoint_gone_without_window(app: &str) -> AdapterError {
+    AdapterError::new(
+        ErrorCode::WindowNotFound,
+        format!("No DevTools endpoint reaches {app}, and it lists no window to read instead"),
+    )
+    .with_suggestion(format!(
+        "Run `agent-desktop launch \"{app}\" --activate` once to bring its window forward, \
+         or relaunch it with --cdp"
+    ))
+    .with_details(serde_json::json!({ "kind": "cdp_endpoint_gone" }))
+}
+
 /// The error for a web observation asked of a root the web channel cannot
 /// read: an application root has no single page.
 pub(crate) fn web_root_unsupported() -> AdapterError {
@@ -138,3 +154,7 @@ pub(crate) fn web_root_unsupported() -> AdapterError {
 #[cfg(test)]
 #[path = "web_observation_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "web_observation_process_owner_tests.rs"]
+mod process_owner_tests;

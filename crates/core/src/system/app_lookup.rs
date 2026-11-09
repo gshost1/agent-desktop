@@ -26,6 +26,24 @@ pub(crate) fn windowless_app_owner(
     }
 }
 
+/// Owner of the web surface for a named app that lists no window. The web
+/// surface is read through the process's DevTools endpoint and needs no window,
+/// so a window the inventory cannot see, such as one on another Space, does not
+/// block it. Only one running process with an endpoint `launch --cdp` recorded
+/// for its exact instance qualifies; anything else answers `None` and the
+/// caller keeps its window error.
+pub(crate) fn web_process_owner(
+    adapter: &dyn PlatformAdapter,
+    app: &str,
+    deadline: Deadline,
+) -> Option<WindowInfo> {
+    let info = resolve_app(Some(app), adapter, deadline).ok()?;
+    let process = process_identity(&info).ok()?;
+    adapter
+        .has_recorded_cdp_endpoint(process)
+        .then(|| WindowInfo::for_process(&info))
+}
+
 pub(crate) fn resolve_app(
     app: Option<&str>,
     adapter: &dyn PlatformAdapter,

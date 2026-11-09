@@ -12,6 +12,7 @@ use agent_desktop_core::{
     WaitWakeup, WindowInfo, WindowOp,
 };
 
+use super::candidate_origin::CandidateOrigin;
 use super::download::download_profile::save_in_profile;
 use super::ref_routing::platform_entry;
 use super::web_channel_adapter::WebChannelAdapter;
@@ -116,6 +117,13 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
             self.claim_existing_downloads(&process, std::path::Path::new(dir));
         }
         Ok(())
+    }
+
+    fn has_recorded_cdp_endpoint(&self, process: ProcessIdentity) -> bool {
+        self.connector
+            .candidates(&process)
+            .iter()
+            .any(|candidate| matches!(candidate.origin, CandidateOrigin::Registry { .. }))
     }
 
     /// Writes the download folder into the browser profile the launch

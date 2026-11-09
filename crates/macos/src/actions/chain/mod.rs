@@ -173,8 +173,10 @@ pub(crate) mod chain_step_exec;
 pub(crate) mod chain_value_write;
 pub(crate) mod chain_verify;
 pub(crate) mod menu_baseline;
+pub(crate) mod menu_observation;
 pub(crate) mod menu_read;
 pub(crate) mod menu_settle;
+pub(crate) mod menu_tracking;
 pub(crate) mod press_selection;
 #[cfg(test)]
 #[path = "chain_tests.rs"]
