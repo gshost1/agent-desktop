@@ -442,7 +442,7 @@ Next plan
 ## Release 1.3.0 wrap-up (2026-11-09 06:30 PST)
 
 **Blocked on me**
-- George: merge #62 (https://github.com/gshost1/agent-desktop/pull/62) Monday 9 am. Run `gh workflow enable Release --repo gshost1/agent-desktop` right before merging. Head e39ff5f3, 27/27 green, CLEAN, contains main 15aa75cb.
+- George: merge #62 (https://github.com/gshost1/agent-desktop/pull/62) Monday 9 am. #62 is still a draft: run `gh pr ready 62 --repo gshost1/agent-desktop` first, then `gh workflow enable Release --repo gshost1/agent-desktop` right before merging. Head e39ff5f3, 27/27 green, CLEAN, contains main 15aa75cb.
 
 **Changed**
 - #62: main 15aa75cb merged in (aedef6e9). The changelog Testing line now states the E2E counts (122 passed, 9 failed, 2 skipped, 3 private skips), and a Known issue was added for the removed row refused with APP_UNRESPONSIVE (e39ff5f3). The PR body's How tested and Measurements sections were rewritten.
