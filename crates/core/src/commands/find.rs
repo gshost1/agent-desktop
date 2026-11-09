@@ -30,6 +30,8 @@ pub struct FindSelectionArgs {
     pub last: bool,
     pub nth: Option<usize>,
     pub limit: Option<usize>,
+    /// Return the matches an incomplete walk observed instead of a timeout.
+    pub allow_partial: bool,
 }
 
 pub struct FindArgs {
@@ -190,6 +192,9 @@ fn collect_snapshot_matches(
 
 #[path = "find_live.rs"]
 mod live;
+
+#[path = "find_response.rs"]
+mod find_response;
 
 #[cfg(test)]
 #[path = "find_tests.rs"]

@@ -5,6 +5,7 @@ pub mod element_state;
 pub(crate) mod identifier_kind;
 pub(crate) mod name_evidence;
 pub(crate) mod name_slot_status;
+pub(crate) mod name_source;
 pub(crate) mod node;
 pub(crate) mod node_descriptor;
 pub(crate) mod node_identity;

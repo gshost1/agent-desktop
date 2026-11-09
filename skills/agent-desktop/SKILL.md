@@ -21,7 +21,7 @@ agent-desktop is a CLI that reads and operates desktop apps through the OS acces
 
 ## Shell syntax
 
-Examples use a POSIX shell. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), because a bare `@token` is the splatting operator. Use `$env:NAME = 'value'` instead of `export`, and `| ConvertFrom-Json` instead of `$(...)` and `jq`. The Windows skill has the PowerShell forms.
+Examples use a POSIX shell. When a ref is built from a variable, brace it and keep the `e` in each part you list: `for r in e7 e8; do agent-desktop click "${S}:${r}"; done`. In zsh, `$S:e1` applies the `:e` modifier and passes `1`, even inside double quotes. A list of bare numbers (`for n in 7 8` with `"${S}:e${n}"`) is easy to mix up with the digits or values you are typing. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), because a bare `@token` is the splatting operator. Use `$env:NAME = 'value'` instead of `export`, and `| ConvertFrom-Json` instead of `$(...)` and `jq`. The Windows skill has the PowerShell forms.
 
 ## First run
 
@@ -34,12 +34,13 @@ Examples use a POSIX shell. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), b
 Use `find` when you know the role or exact name. Otherwise map the app first and drill into one region.
 
 ```
-agent-desktop snapshot --skeleton --app "Notes" -i --compact   # shallow map, children_count on cut branches
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # drill into one region
-agent-desktop click @s8f3k2p9:e12                              # act on a qualified ref
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read the same region
+agent-desktop snapshot --skeleton --app "Notes" -i --compact --lines   # shallow map, children_count on cut branches
+agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact --lines        # drill into one region
+agent-desktop click @s8f3k2p9:e12                                      # act on a qualified ref
+agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact --lines        # verify: re-read the same region
 ```
 
+- Make the first look `agent-desktop snapshot --app "Font Book" -i --compact --lines`. Each line of `data.lines` is one node, indented by depth: its ref first, then role and quoted name. `--lines` also applies to the snapshot `-w` returns.
 - A small app needs no skeleton. Take a full `snapshot -i`.
 - `-i` keeps interactive nodes only, so a row's static-text label is dropped. To tell which row a repeated button belongs to, drill that row's container with `--root` and leave out `-i`. On Windows and Linux that reads the row but does not make its button actionable: a button repeated in other rows is a twin in the window and its ref is refused (see Refs).
 - A `--root` drill adds its refs to the same snapshot id. Refs outside the drilled subtree, and the drilled root itself, stay valid; refs that were already inside it are replaced, so an old ref there returns `STALE_REF`.
@@ -49,21 +50,35 @@ agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read
 
 ## Command synopsis
 
-Each line is a runnable example. The comment after it is the full form.
+Each line is a runnable example. The comment after it is the command's full form, without the global flags such as `--lines`, `-w` and `--headed`.
 
 ```
-agent-desktop press cmd+s --app "TextEdit"                   # COMBO [--app NAME | --window-id ID] [--force]
-agent-desktop find --app "Finder" --role textfield --first   # [--app NAME] [--window-id ID] [--role R] [--name N] [--value V] [--text T] [--exact] [--root REF | --surface S] [--first | --last | --nth N | --limit N | --count]
-agent-desktop type @s8f3k2p9:e2 "hello"                      # REF TEXT [--interval-ms N] [--timeout-ms N]
+agent-desktop press cmd+s --app "TextEdit"                   # COMBO [--ref REF | [--app NAME] [--window-id ID]] [--force]
+agent-desktop find --app "Finder" --role textfield --first   # [--app NAME] [--window-id ID] [--role R] [--name N] [--value V] [--text T] [--description D] [--native-id ID] [--state TOKEN[=BOOL]]... [--exact] [--root REF | --surface S] [--timeout-ms N] [--allow-partial] [--first | --last | --nth N | --limit N | --count]
+agent-desktop type @s8f3k2p9:e2 "hello"                      # REF (TEXT | --stdin) [--interval-ms N] [--timeout-ms N]
 agent-desktop select @s8f3k2p9:e4 "Option B"                 # REF VALUE [--timeout-ms N]
-agent-desktop set-value @s8f3k2p9:e2 "new value"             # REF VALUE [--timeout-ms N]
+agent-desktop set-value @s8f3k2p9:e2 "new value"             # REF (VALUE | --stdin) [--timeout-ms N]
 ```
 
-## Spend fewer calls
+## Fewer round trips
 
-- **Look before you navigate.** `list-windows --app "<App>"` is one cheap call. When a window's `title` already names the folder or document you need, act in it. Do not open a navigation dialog or a new window.
-- **Read an in-place editor in one call.** After a create or rename, run `snapshot --app "<App>" --surface focused -i`. Do not search the window or open a details panel. See the macOS skill.
-- **Chain steps that need no new ref.** `batch` runs several commands in one process. See Batch in `workflows`.
+Each call is a turn. These forms each save one:
+
+```
+agent-desktop launch "Font Book" && agent-desktop snapshot --app "Font Book" -i --compact
+R=$(agent-desktop find --app "Font Book" --role button --name "Hide Sidebar" | jq -r '.data.matches[0].ref_id')
+agent-desktop click "${R}" -w "button:Show Sidebar"
+agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
+```
+
+- Chain `launch` and the first snapshot in one call.
+- `find` the element you will act on, by its own name. The pane that holds it is often open already, so finding the parent first costs a turn.
+- Never cut a snapshot with `head -c`: the cut drops refs and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, or `jq` over the whole output.
+- After an action, `-w "role:text"` (or `-w ":text"`) polls until the effect shows and returns the snapshot, so the read is not a separate call. A separate `wait` takes `--timeout` in ms.
+- Pick refs from `--lines` output: take the ref at the start of the line that names the control, never from a neighbouring line. Without `--lines`, check each ref against its node's `name`. A wrong ref costs a corrected rerun, and a rerun is safe only when `disposition.retry` is `safe`.
+- Before you open a navigation dialog or a new window, run `list-windows --app "<App>"`. When a window's `title` already names the folder or document you need, snapshot that window with `--window-id` and act in it.
+- After a create or rename that edits the name in place, read the editor with `snapshot --app "<App>" --surface focused -i`. Do not search the window or open an info panel. The macOS skill has the details.
+- `&&` runs the next command only after the last one succeeded. To run several actions on refs you already hold, use one `batch` (see Batch in `workflows`).
 
 ## Refs
 

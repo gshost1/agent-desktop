@@ -57,6 +57,13 @@ impl SystemOps for MacOSAdapter {
         crate::system::permissions::report(deadline)
     }
 
+    fn preflight_permission_report(
+        &self,
+        deadline: Deadline,
+    ) -> Result<PermissionReport, AdapterError> {
+        crate::system::permissions::preflight_report(deadline)
+    }
+
     fn request_permissions(
         &self,
         lease: &InteractionLease,

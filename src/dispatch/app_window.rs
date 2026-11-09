@@ -25,6 +25,7 @@ pub(super) fn launch(args: LaunchArgs, adapter: &dyn PlatformAdapter) -> Result<
     launch_command::execute(
         launch_command::LaunchArgs {
             app: args.app.clone(),
+            download_dir: args.cdp.download_dir.clone(),
             options: build_launch_options(&args)?,
         },
         adapter,
@@ -39,6 +40,7 @@ pub(super) fn close_app(
         close_app_command::CloseAppArgs {
             app: args.app,
             force: args.force,
+            timeout_ms: args.timeout_ms,
         },
         adapter,
     )

@@ -132,7 +132,8 @@ fn dismiss_entry(
         return Ok(());
     }
 
-    if !crate::system::permissions::report(deadline)?.accessibility_granted() {
+    deadline.ensure_remaining()?;
+    if !crate::system::permissions::preflight_accessibility() {
         return Err(AdapterError::permission_denied());
     }
 

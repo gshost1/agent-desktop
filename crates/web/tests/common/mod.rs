@@ -50,6 +50,12 @@ fn helpers_running(flag: &str) -> bool {
 /// directory and every site in its own process, so a cross-site iframe is
 /// always an out-of-process frame.
 pub fn launch(name: &str) -> HeadlessChrome {
+    launch_prepared(name, |_| {})
+}
+
+/// [`launch`] with `prepare` run on the empty profile directory before the
+/// browser starts.
+pub fn launch_prepared(name: &str, prepare: impl FnOnce(&Path)) -> HeadlessChrome {
     let profile = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("web-live-{name}-{}", std::process::id()));
     assert!(
@@ -58,6 +64,7 @@ pub fn launch(name: &str) -> HeadlessChrome {
         profile.display()
     );
     std::fs::create_dir_all(&profile).unwrap();
+    prepare(&profile);
     let child = Command::new(CHROME)
         .arg("--headless=new")
         .arg(format!("--user-data-dir={}", profile.display()))

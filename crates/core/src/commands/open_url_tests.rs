@@ -14,6 +14,7 @@ struct BrowserStub {
     seen: Mutex<Vec<SeenRequest>>,
     opens: bool,
     lease_held_elsewhere: bool,
+    endpoint_recorded: bool,
 }
 
 fn browser_window(id: &str) -> WindowInfo {
@@ -59,6 +60,10 @@ impl crate::ObservationOps for BrowserStub {
 impl crate::ActionOps for BrowserStub {}
 impl crate::InputOps for BrowserStub {}
 impl crate::SystemOps for BrowserStub {
+    fn has_recorded_cdp_endpoint(&self, process: ProcessIdentity) -> bool {
+        self.endpoint_recorded && process == ProcessIdentity::new(7u32, "inst-7")
+    }
+
     fn acquire_interaction_lease(
         &self,
         deadline: Deadline,
@@ -144,8 +149,23 @@ fn replacing_a_tab_needs_a_window() {
         opens: true,
         ..Default::default()
     };
-    assert!(execute(args("https://example.com/", false), &stub).is_err());
+    let error = execute(args("https://example.com/", false), &stub).unwrap_err();
+    assert_eq!(error.code(), ErrorCode::WindowNotFound.as_str());
     assert!(stub.seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_browser_that_lists_no_window_takes_the_url_through_its_recorded_endpoint() {
+    let stub = BrowserStub {
+        opens: true,
+        endpoint_recorded: true,
+        ..Default::default()
+    };
+    execute(args("https://example.com/", false), &stub).unwrap();
+    let seen = stub.seen.lock().unwrap();
+    assert_eq!(seen[0].0, ProcessIdentity::new(7u32, "inst-7"));
+    assert_eq!(seen[0].1.as_deref(), Some(""));
+    assert!(!seen[0].3);
 }
 
 #[test]

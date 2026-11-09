@@ -182,3 +182,29 @@ fn every_flag_in_a_synopsis_form_exists_on_its_command() {
         }
     }
 }
+
+#[test]
+fn every_flag_of_a_synopsis_command_appears_in_its_form() {
+    let root = Cli::command();
+    for (example, form) in synopsis_lines() {
+        let name = example.split(' ').nth(1).unwrap();
+        let command = root
+            .find_subcommand(name)
+            .unwrap_or_else(|| panic!("no command named {name}"));
+        let named: Vec<&str> = form
+            .split(|c: char| !(c == '-' || c.is_ascii_alphanumeric()))
+            .filter_map(|word| word.strip_prefix("--"))
+            .collect();
+        for arg in command.get_arguments() {
+            if arg.is_global_set() || arg.is_hide_set() {
+                continue;
+            }
+            if let Some(long) = arg.get_long() {
+                assert!(
+                    named.contains(&long),
+                    "{name}: synopsis form leaves out --{long}"
+                );
+            }
+        }
+    }
+}

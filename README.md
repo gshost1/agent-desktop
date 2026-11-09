@@ -38,7 +38,7 @@ agent-desktop click @s8f3k2p9:e8            # act on a ref from that snapshot
 agent-desktop snapshot --app Finder -i      # observe again to verify
 ```
 
-Each command prints one JSON envelope. A trimmed snapshot:
+Each command prints one JSON envelope. Add `--lines` to get the tree as `data.lines`, one line per node with its ref first. A trimmed snapshot:
 
 ```json
 {
@@ -122,7 +122,7 @@ Retry a failed command only when `error.disposition.retry` is `safe`. See [JSON 
 { "mcpServers": { "agent-desktop": { "command": "agent-desktop", "args": ["mcp"] } } }
 ```
 
-Global flags given to `mcp`, such as `--session`, `--headed` or `--trace`, apply to every call.
+Server-wide global flags given to `mcp`, such as `--session`, `--headed` or `--trace`, apply to every call. `mcp` refuses flags that describe a single command, such as `--debug` or `--wait-for`.
 
 ## Commands
 

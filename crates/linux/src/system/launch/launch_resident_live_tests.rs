@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use agent_desktop_core::system::launch_options::LaunchOptions;
 
 use super::*;
+use agent_desktop_core::system::launch_presentation::LaunchPresentation;
 
 const RESIDENT_APP: &str = "#!/usr/bin/env python3
 import os, gi
@@ -58,7 +59,10 @@ fn live_a_running_app_with_no_window_is_started_again_and_a_window_is_reported()
     );
 
     let normal = LaunchOptions {
-        activate: true,
+        presentation: LaunchPresentation {
+            activate: true,
+            ..Default::default()
+        },
         env: BTreeMap::from([("ADL_MODE".to_owned(), "normal".to_owned())]),
         ..options(&[])
     };
@@ -114,7 +118,7 @@ fn live_a_forwarded_launch_without_matching_argv_reports_the_residents_new_windo
     )
     .expect("the resident's original windows");
     let mut forwarded = options(&["--new-window"]);
-    forwarded.activate = true;
+    forwarded.presentation.activate = true;
     let result = launch("nautilus", &forwarded).expect("a window proves the forwarded owner");
     assert_eq!(result.pid.get(), pid);
     let window = result.window.expect("the new window is reported");

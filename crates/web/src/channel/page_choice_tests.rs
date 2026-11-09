@@ -9,7 +9,7 @@ use crate::channel::test_support::{attach, deadline, process, targets, visibilit
 use crate::transport::scripted_transport::ScriptedTransport;
 
 fn link(transport: ScriptedTransport) -> BrowserLink {
-    BrowserLink::new(process(), CdpConnection::new(transport.boxed()))
+    BrowserLink::new(process(), CdpConnection::new(transport.boxed()), None)
 }
 
 fn window_at(left: f64) -> WindowInfo {

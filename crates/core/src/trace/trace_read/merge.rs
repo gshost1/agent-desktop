@@ -56,7 +56,8 @@ pub(crate) fn merge_segments(sources: Vec<(Vec<ParsedEvent>, u32, String)>) -> V
     merged
 }
 
-use serde_json::{Map, Value, json};
+use super::open_commands::{OpenCommands, command, event_name, segment, writer_pid};
+use serde_json::{Value, json};
 
 pub(crate) fn annotate_provenance(item: &MergeItem) -> Value {
     let mut value = item.event.value.clone();
@@ -96,60 +97,47 @@ pub(crate) fn detect_unpaired_commands(
     events: &[Value],
     current_command: Option<(u32, u64, &str)>,
 ) -> Vec<String> {
-    let mut open: Map<String, Value> = Map::new();
+    let mut open = OpenCommands::new(events);
     let mut warnings = Vec::new();
 
-    for event in events {
-        let Some(name) = event.get("event").and_then(Value::as_str) else {
-            continue;
-        };
-        let segment = event
-            .get("segment")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let writer_pid = event.get("writer_pid").and_then(Value::as_u64).unwrap_or(0);
-        let command = event
-            .get("command")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        let key = format!("{segment}:{writer_pid}:{command}");
-
-        if name == "command.start" {
-            open.insert(
-                key.clone(),
-                json!({
-                    "command": command,
-                    "segment": segment,
-                    "writer_pid": writer_pid,
-                    "writer_proc_start_ms": event.get("writer_proc_start_ms")
-                }),
-            );
-        } else if name == "command.end" {
-            if open.remove(&key).is_none() {
-                warnings.push(format!(
-                    "Unpaired command.end for '{command}' in segment {segment}"
-                ));
-            }
+    for (index, event) in events.iter().enumerate() {
+        match event_name(event) {
+            Some("command.start") => open.start(index, event),
+            Some("command.end") if !open.end(event) => warnings.push(format!(
+                "Unpaired command.end for '{}' in segment {}",
+                command(event),
+                segment(event)
+            )),
+            _ => {}
         }
     }
 
-    for (_, info) in open {
-        let command = info
-            .get("command")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
-        if current_command.is_some_and(|(pid, proc_start_ms, current)| {
-            command == current
-                && info.get("writer_pid").and_then(Value::as_u64) == Some(pid as u64)
-                && info.get("writer_proc_start_ms").and_then(Value::as_u64) == Some(proc_start_ms)
-        }) {
+    for (event, known) in open
+        .into_unpaired()
+        .into_iter()
+        .filter_map(|(index, known)| events.get(index).map(|event| (event, known)))
+    {
+        if is_current_command(event, current_command) {
             continue;
         }
+        let identity = match event.get("seq").and_then(Value::as_u64) {
+            _ if !known => " (its ends carry no command_seq; paired by count)".to_string(),
+            Some(seq) => format!(" (seq {seq})"),
+            None => String::new(),
+        };
         warnings.push(format!(
-            "Unpaired command.start for '{command}' in segment {}",
-            info.get("segment").and_then(Value::as_str).unwrap_or("")
+            "Unpaired command.start for '{}' in segment {}{identity}",
+            command(event),
+            segment(event)
         ));
     }
     warnings
+}
+
+fn is_current_command(event: &Value, current_command: Option<(u32, u64, &str)>) -> bool {
+    current_command.is_some_and(|(pid, proc_start_ms, current)| {
+        command(event) == current
+            && writer_pid(event) == u64::from(pid)
+            && event.get("writer_proc_start_ms").and_then(Value::as_u64) == Some(proc_start_ms)
+    })
 }

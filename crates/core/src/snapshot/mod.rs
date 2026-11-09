@@ -25,7 +25,19 @@ pub struct SnapshotResult {
 impl SnapshotResult {
     /// Saves the refmap of this already-built result. Whether the walk was
     /// complete does not change how the save is budgeted.
-    pub(crate) fn save_refmap(&self, store: &RefStore) -> Result<String, AppError> {
+    ///
+    /// A refmap above the store's size cap is first cut to fit, and the tree
+    /// with it (see `refmap_fit`), which makes the result partial. The cut
+    /// happens here rather than in `build`, so a wait that matches against the
+    /// built tree still sees every node it observed. Structural hints are
+    /// recomputed after a cut, so a splitter that lost columns no longer
+    /// states a total.
+    pub(crate) fn save_refmap(&mut self, store: &RefStore) -> Result<String, AppError> {
+        if refmap_fit::fit_refmap_cap(&mut self.tree, &mut self.refmap)? {
+            self.complete = false;
+            self.notes.refmap_capped = true;
+            crate::snapshot::hints::add_structural_hints(&mut self.tree);
+        }
         store.save_new_snapshot(&self.refmap)
     }
 
@@ -66,6 +78,7 @@ pub(crate) fn build_for_owners(
     let notes = crate::SnapshotNotes {
         identity_unproven,
         channel: observed.channel().cloned(),
+        ..crate::SnapshotNotes::default()
     };
     let capture_proof = crate::refs::ref_capture_proof::CaptureProof::new(&observed);
 
@@ -206,7 +219,9 @@ pub(crate) fn emit_snapshot_saved(
 }
 
 pub mod hints;
+pub mod ref_lines;
 pub(crate) mod ref_owner_observation;
+pub(crate) mod refmap_fit;
 pub mod snapshot_channel;
 pub mod snapshot_notes;
 pub(crate) mod snapshot_owner;

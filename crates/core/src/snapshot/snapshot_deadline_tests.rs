@@ -123,7 +123,7 @@ fn a_save_past_an_inherited_deadline_waits_at_most_the_lock_budget() {
     let inherited = crate::Deadline::detached_after(30).unwrap();
     let deadline_scope = crate::wait::deadline::enter_scope(Some(inherited));
     let options = TreeOptions::default();
-    let result = build(&COMPLETE, &options, Some("TestApp"), None, inherited).unwrap();
+    let mut result = build(&COMPLETE, &options, Some("TestApp"), None, inherited).unwrap();
     assert!(result.complete && inherited.is_expired());
 
     let save_started = clock.elapsed();

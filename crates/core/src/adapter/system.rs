@@ -35,6 +35,16 @@ pub trait SystemOps: Send + Sync {
         })
     }
 
+    /// The report a command preflight reads, which never includes Automation.
+    /// Probing Automation can wait on the OS permission daemon, so an adapter
+    /// may leave it unprobed here.
+    fn preflight_permission_report(
+        &self,
+        deadline: Deadline,
+    ) -> Result<PermissionReport, AdapterError> {
+        self.permission_report(deadline)
+    }
+
     fn unknown_accessibility_means_unsupported(&self) -> bool {
         true
     }
@@ -120,12 +130,42 @@ pub trait SystemOps: Send + Sync {
         Ok(())
     }
 
+    /// Whether `launch --cdp` recorded a DevTools endpoint for this exact
+    /// process instance. Only the record is read; nothing is contacted.
+    fn has_recorded_cdp_endpoint(&self, _process: ProcessIdentity) -> bool {
+        false
+    }
+
     /// Loads a URL in a browser's visible tab, or in a new background tab.
     fn open_url(
         &self,
         _request: &crate::OpenUrlRequest<'_>,
     ) -> Result<crate::OpenedPage, AdapterError> {
         Err(AdapterError::not_supported("open_url"))
+    }
+
+    /// Prepares a browser that is about to launch with `--cdp` to save its
+    /// downloads in `download_dir`, before it starts. An adapter that can
+    /// write the folder into the browser profile's own preference returns
+    /// `Profile`; the default leaves only the DevTools connection to point
+    /// downloads there.
+    fn prepare_cdp_downloads(
+        &self,
+        _options: &crate::system::launch_options::LaunchOptions,
+        _download_dir: &str,
+    ) -> Result<crate::DownloadScope, AdapterError> {
+        Ok(crate::DownloadScope::Connection)
+    }
+
+    /// Waits for the browser process's next download that no earlier wait
+    /// returned, including one that finished before the wait began, and
+    /// returns the saved file. A canceled or interrupted download is an error.
+    fn wait_for_download(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<crate::DownloadInfo, AdapterError> {
+        Err(AdapterError::not_supported("wait_for_download"))
     }
 
     fn process_state(

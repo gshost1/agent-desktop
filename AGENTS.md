@@ -131,7 +131,9 @@ JSON entries into the same `Commands` enum, runs the same `CommandPolicy` prefli
 each leaf command is one tool, its schema comes from the command's clap arguments and help, and a call rebuilds the
 argv and runs this binary as a child process. A command added to or removed from `Commands` appears in or disappears
 from the MCP tool list with no MCP change. `mcp` itself is attached to the root command in `main.rs`, outside
-`Commands`, so it is never a tool, a batch entry or a counted command.
+`Commands`, so it is never a tool, a batch entry or a counted command. A new global flag needs a scope in
+`src/mcp/global_scope.rs`: server-wide flags are forwarded to every call, server-only flags configure the server
+process, and per-command flags make `mcp` refuse to start with exit code 2.
 
 **Adding a command.**
 1. Create `crates/core/src/commands/<name>.rs` with an `execute()` function, its tests in `<name>_tests.rs`, and
@@ -219,10 +221,13 @@ Every command prints one envelope. `docs/json-output.md` holds the full contract
 ```
 
 - Omit `None` fields and empty arrays. Compact mode omits bounds. `ref_count` and `tree` live inside `data`.
+- The global `--lines` flag replaces `data.tree` with `data.lines`, one line per node with its ref first, and indents the envelope; nothing else changes.
 - Snapshot `data.window` is present for window-owned surfaces. macOS `menu` and `menubar` snapshots are application-owned and omit it.
 - Every snapshot carries `data.complete`. A snapshot that runs out of observation budget succeeds with
   `"complete": false`, `"truncated": true`, `"nodes_observed"` and the tree it saw; each cut node carries
-  `"subtree_truncated": true`. A `--root` drill-down returns `TIMEOUT` instead of a partial tree.
+  `"subtree_truncated": true`. A full snapshot whose refs would pass the 1 MB refmap cap is cut the same way after
+  the last ref that fits, in allocation order, and also carries `"refmap_capped": true`. A `--root` drill-down
+  returns `TIMEOUT` instead of a partial tree.
 - Pointer, drag, clipboard, close-app and window commands return the adapter's `OperationReport` as `data`.
   `delivered_verified` needs a postcondition read, `delivered_unverified` means a completed dispatch without one, and
   `not_delivered` is only for an operation already observed as satisfied. Core never adds an unconditional success

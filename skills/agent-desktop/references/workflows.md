@@ -57,7 +57,7 @@ agent-desktop snapshot --app "TextEdit" --surface sheet -i
 
 - `find --surface menubar` returns one ref instead of the whole menu bar.
 - To walk a menu by hand: click the menu bar item, `wait --menu`, `snapshot --surface menu -i`, click the item, `wait --menu-closed`.
-- A headless `press` never runs a menu item. Find the item and `click` it instead.
+- On macOS, when you know the item's shortcut, `press cmd+shift+n --app Finder --headed` runs it without the menu walk. Headless works too for commands the app keeps enabled in the background; a window command such as New Folder is disabled there, and `press` fails with `ACTION_FAILED` and `menu_item_disabled_in_background` instead of pretending. Check that `data.steps` holds `AXPress menu shortcut`. Any other step means keys were sent instead, which a background app may never receive; then find the item and `click` it.
 
 ## Dialogs, sheets and alerts
 
@@ -127,19 +127,6 @@ agent-desktop --headed drag --from-xy 100,200 --to-xy 500,400 --drop-delay 800
 
 Drag is physical and needs `--headed`. Confirm the drop by reading the destination state, not the command's `ok`.
 
-## Check list-windows before you navigate
-
-The window you need may already be open. Look first.
-
-```bash
-agent-desktop list-windows --app "Finder"
-agent-desktop snapshot --app "Finder" --window-id w-5678 -i
-```
-
-- `list-windows` returns one object per window with `id`, `title`, `app_name`, `pid`, `bounds` and `is_focused`. A `title` that names the folder or document you need means the work happens in that window. Snapshot it with its `--window-id` and act.
-- Open a navigation dialog, a new window or a menu path only when no listed `title` matches.
-- Several windows can share a title. Pick by `id`, and use `is_focused` to prefer the one the user is looking at.
-
 ## Edit a name in place
 
 A create or rename can open a text editor over the row instead of a dialog, as when a file manager makes a new folder or renames an item. Read the editor with one call. Do not search the whole window, and do not open a details or info panel to rename.
@@ -157,11 +144,17 @@ agent-desktop press return --app "Finder"
 
 ## Multiple windows
 
+The window you need may already be open. Look before you navigate.
+
 ```bash
 agent-desktop list-windows --app "Finder"
-agent-desktop focus-window --window-id w-5678
-agent-desktop snapshot --app "Finder" --window-id w-5678 -i
+agent-desktop snapshot --app "Finder" --window-id w-5678 -i --compact --lines
 ```
+
+- Each window in `data` carries its `id`, `title` and `is_focused`. A `title` that names the folder or document you need means the work happens in that window. Snapshot it with its `--window-id` and act.
+- Open a navigation dialog, a new window or a menu path only when no listed `title` matches.
+- Several windows can share a title. Pick by `id`, and prefer the one with `is_focused` when the user is looking at it.
+- Ref actions in a background window need no focus. Run `focus-window --window-id w-5678` only when the window must come forward.
 
 ## Launch, automate, close
 
@@ -177,6 +170,22 @@ Read `data.window` in the launch result. If it is absent and you need a window, 
 
 Web pages in Chrome: agent-desktop drives them itself over the DevTools endpoint. Run `agent-desktop skills get web`.
 
+### Downloads
+
+Launch with a download folder, click the download, and let `wait --download` return the file. Do not look for the file in Finder or the browser's downloads list:
+
+```bash
+agent-desktop launch "Google Chrome" --cdp --download-dir "$PWD/downloads" --arg=--user-data-dir="$PWD/chrome-profile" --arg=--no-first-run --arg=--no-default-browser-check
+agent-desktop open-url "https://example.com/reports" --app "Google Chrome"
+agent-desktop snapshot --app "Google Chrome" --surface web -i
+agent-desktop click @s8f3k2p9:e4
+agent-desktop wait --download --app "Google Chrome" --timeout 60000
+```
+
+- `data.path` is the saved file under its suggested name. Rename, move or open it there.
+- Keep `--arg=--user-data-dir` absolute, as above, so `data.cdp.download_scope` is `profile` and clicks return without waiting for a download. With `connection`, each web `click`, `double-click` and `press` waits up to 100 ms for a navigation or download to start and returns at once when none does; when one starts, it waits until the download begins or the page stops loading, at most 3 s; a download that begins later lands in the browser's own folder, so for a slower server run the click and `wait --download` in one `batch`.
+- A canceled or interrupted download is an error, never a path. Start it again.
+
 ## Notifications
 
 ```bash
@@ -189,26 +198,23 @@ macOS (Notification Center), Windows (Action Center) and Linux (GNOME Shell) sup
 
 ## Batch
 
-`batch` takes a JSON array of `{"command", "args"}` objects and runs them in order in one process. Use it when you already hold every ref the steps need.
+`batch` takes a JSON array of `{"command", "args"}` objects and runs them in order in one process. Use it when you already hold every ref the steps need. This one fills a TextEdit Save sheet and saves it:
 
 ```bash
 agent-desktop batch '[
   {"command":"set-value","args":{"ref_id":"@s8f3k2p9:e3","value":"Quarterly report"}},
   {"command":"set-value","args":{"ref_id":"@s8f3k2p9:e4","value":"Draft"}},
   {"command":"check","args":{"ref_id":"@s8f3k2p9:e6"}},
-  {"command":"click","args":{"ref_id":"@s8f3k2p9:e8"}},
-  {"command":"wait","args":{"ms":200}},
-  {"command":"press","args":{"combo":"return","app":"Notes"}}
+  {"command":"press","args":{"combo":"return","app":"TextEdit"}}
 ]' --stop-on-error
 ```
 
-- Each entry's `args` uses the command's own field names: `ref_id`, `value`, `text`, `combo`, `app`. A flag drops its leading `--` and writes `-` as `_`, so `--timeout-ms` is `timeout_ms`. Unknown fields fail the whole batch before any entry runs.
-- Every ref in the array must exist before the batch starts. The array is parsed and validated up front, and an entry cannot read the output of an earlier one. A `snapshot` or `find` entry does not feed a later `click`; its refs are new, and you only see them after the batch returns.
-- So the useful shape is one `snapshot` or `find` call, then one batch of actions on those refs. A fill-and-submit that takes six calls takes two.
-- A chain saves calls when its steps are independent of what the earlier steps show: field fills, checkboxes, key presses, waits, `launch`, `close-app`. It does not help when a step opens something you must read first, such as a dialog or a menu.
-- `--stop-on-error` halts at the first failed entry. Without it, later entries still run. An action that changes the tree can make later refs return `STALE_REF` for that entry alone.
-- Read `data.results` entry by entry. Each carries its own `ok` and `execution`. The envelope's `ok` is true whenever the batch ran, even if an entry failed.
-- A batch holds at most 64 entries. Batches cannot nest, and `type` and `set-value` need their text in the JSON, not from `--stdin`.
+- Take every ref from a `snapshot` or `find` call before the batch. An entry cannot use a ref that an earlier entry produces (`batch` in `commands-system`), so a `snapshot` entry does not feed a later `click`.
+- So the useful shape is one `snapshot` or `find` call, then one batch of actions on those refs. A fill-and-submit that takes five calls takes two.
+- A chain saves calls when its steps do not depend on what earlier steps show: field fills, checkboxes, key presses, `launch`, `close-app`, and an event `wait` after the action it waits for. It does not help when a step opens something you must read first, such as a dialog or a menu.
+- `--stop-on-error` halts at the first failed entry. Without it, later entries still run. An action that changes the tree can make a later ref fail with `STALE_REF` for that entry alone.
+- Read `data.failed_entries` and each entry's `ok` and `execution` in `data.results`. The envelope's `ok` is true whenever the batch ran, even if an entry failed.
+- Entry keys are the command's own field names (`batch` in `commands-system`). A batch holds at most 64 entries, and `type` and `set-value` take their text in the JSON; `--stdin` is CLI-only.
 
 ## Trace a multi-step run
 

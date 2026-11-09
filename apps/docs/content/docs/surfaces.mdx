@@ -117,15 +117,18 @@ How agent-desktop selects an owner depends on the kind and platform:
 - For window-owned surfaces, `--window-id` pins the read to that window.
 
 A missing `complete`, `complete: false`, a timeout, or an incomplete accessibility read leaves menu absence unknown. After a delivery with `retry: unsafe`, inspect the current UI before taking another action.
-A surface that is not open returns an error. On Linux, a closed menu returns `ELEMENT_NOT_FOUND`:
+A surface that is not open returns an error. On Linux, a closed menu returns `ELEMENT_NOT_FOUND` with the same complete absence evidence, so `snapshot --surface menu --wait-for` keeps waiting for a menu that opens later:
 
 ```json
 {
   "code": "ELEMENT_NOT_FOUND",
   "message": "The window does not present an open menu",
-  "suggestion": "Open the menu first, then snapshot the menu surface"
+  "suggestion": "Open the menu, then take a fresh snapshot with --surface menu",
+  "details": { "kind": "surface_absent", "complete": true, "surface": "menu" }
 }
 ```
+
+A ref taken in a menu that has since closed returns `STALE_REF` with `details.kind: "menu_closed"` and `retryable: false`. Reopen the menu and take new refs; a fresh window snapshot cannot bring the item back.
 
 A closed shell surface returns `WINDOW_NOT_FOUND`. `--surface` cannot combine with `--root`, because a ref already carries the surface it was captured from. Do not use `--skeleton` on a surface: it is already small and focused. See [Skeleton and drill-down](/desktop/skeleton-and-drill-down#when-to-skip-the-skeleton).
 

@@ -28,6 +28,16 @@ impl FixtureBundle {
         std::fs::create_dir_all(frameworks.join(name)).unwrap();
     }
 
+    fn add_framework_resource(&self, framework: &str, resource: &str) {
+        let resources = self
+            .root
+            .join("Contents/Frameworks")
+            .join(framework)
+            .join("Resources");
+        std::fs::create_dir_all(&resources).unwrap();
+        std::fs::write(resources.join(resource), b"").unwrap();
+    }
+
     fn add_empty_contents(&self) {
         std::fs::create_dir_all(self.root.join("Contents")).unwrap();
     }
@@ -45,6 +55,29 @@ fn chromium_marker_in_bundle_is_true_for_an_electron_framework_entry() {
     bundle.add_framework("Electron Framework.framework");
 
     assert!(chromium_marker_in_bundle(&bundle.root));
+}
+
+#[test]
+fn a_browser_framework_with_any_name_is_recognized_by_its_v8_snapshot() {
+    for snapshot in [
+        "v8_context_snapshot.bin",
+        "v8_context_snapshot.arm64.bin",
+        "v8_context_snapshot.x86_64.bin",
+    ] {
+        let bundle = FixtureBundle::new();
+        bundle.add_framework("Sparkle.framework");
+        bundle.add_framework_resource("Fixture Browser Framework.framework", snapshot);
+
+        assert!(chromium_marker_in_bundle(&bundle.root), "{snapshot}");
+    }
+}
+
+#[test]
+fn a_framework_without_a_v8_snapshot_is_not_recognized() {
+    let bundle = FixtureBundle::new();
+    bundle.add_framework_resource("Fixture Media.framework", "icudtl.dat");
+
+    assert!(!chromium_marker_in_bundle(&bundle.root));
 }
 
 #[test]
