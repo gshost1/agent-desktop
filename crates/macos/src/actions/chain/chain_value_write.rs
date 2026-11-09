@@ -169,10 +169,12 @@ mod imp {
         if attribute != accessibility_sys::kAXFocusedAttribute || !value {
             return false;
         }
-        crate::actions::activation_effect::focus_state(element, deadline)
+        crate::actions::activation::activation_effect::focus_state(element, deadline)
             .and_then(|state| state.focused_element())
             .is_some_and(|focused| {
-                crate::actions::activation_effect::focus_reached(&focused, element, deadline)
+                crate::actions::activation::activation_effect::focus_reached(
+                    &focused, element, deadline,
+                )
             })
     }
 
