@@ -61,9 +61,9 @@ agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
 
 - Chain `launch` and the first snapshot in one call.
 - `find` the element you will act on, by its own name. The pane that holds it is often open already, so finding the parent first costs a turn.
-- Never cut a snapshot with `head -c`: the cut drops refs and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, or `jq` over the whole output.
+- Never cut a snapshot or a `-w` result with `head` or `head -c`: the cut drops refs and the text you need, which is often near the end, and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, `grep`, or `jq` over the whole output.
 - After an action, `-w "role:text"` (or `-w ":text"`) polls until the effect shows and returns the snapshot, so the read is not a separate call. A separate `wait` takes `--timeout` in ms.
-- When the task names the path (English, then Arial), walk it in one call: `find` each step by its name, `click` it with `-w` naming the next step, and read only at the end. `jq -e` stops the `&&` chain at the first missing match or failed step:
+- When the task names the path (English, then Arial), take the whole path and the answer in one call: `find` each step by its name, `click` it with `-w` naming the next step, and end with a read filtered by `grep` for what the task asks. Do not stop between steps to read refs: each step's ref comes from its own `find`, and `jq -e` stops the `&&` chain at the first missing match or failed step:
 
 ```
 R=$(agent-desktop find --app "Font Book" --role cell --name "English" --exact | jq -er '.data.matches[0].ref_id') &&
