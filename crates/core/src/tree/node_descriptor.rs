@@ -19,4 +19,12 @@ pub struct NodeDescriptor {
     pub placeholder: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dom_classes: Vec<String>,
+    /// Set when the node's `name` is derived rather than an accessible name.
+    /// A derived name never enters a ref entry or its capture proof.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub name_source: Option<crate::NameSource>,
+    /// The derived name an adapter read, carried beside a name it left absent
+    /// so identity evidence never sees it. Projection moves it into `name`.
+    #[serde(skip)]
+    pub derived_name: Option<String>,
 }

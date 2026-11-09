@@ -57,6 +57,7 @@ When the target is already in the requested state, nothing is delivered and the 
 - A match returns `delivered_verified` with `post_state` and `details.verification_scope`: `element_state` for `check`, `uncheck`, `toggle`, `expand`, and `collapse`, or `element_value` with `application_commit: "not_verified"` for `set-value`, `clear`, and `type`. A verified value proves the element holds it, not that the app committed it.
 - A readable contradiction returns `ACTION_FAILED` with `details.kind: "post_action_verification"`, the observed `post_state`, and the report under `details.after_action`. The action landed, so read `post_state` instead of retrying.
 - An unreadable result still succeeds, as `delivered_unverified` with `details.verification_scope: "unavailable"` and a `verification_reason`: `insufficient_evidence`, `secure_field`, or `postcondition_mismatch`.
+- On macOS, a text field that is being edited in place, such as a list row during a rename, has a separate editor floating over it, with no window of its own. `snapshot --app <App> --surface focused` returns that editor as its root while the edit is open. `set-value` and `type` on the editor, or on a field the editor provably edits (same process, editor focused, over the field), write into the editor and return `delivered_unverified` with `details.verification_scope: "inline_editor"`, `application_commit: "pending"` and `commit_key`. The app keeps the old text until you press that key, for example `press return --app Finder`.
 
 ## Wait budget
 
@@ -146,7 +147,7 @@ Opens an element's context menu. Afterward, `data.surfaces` lists the open `menu
 agent-desktop right-click <REF> [--timeout-ms MS]
 ```
 
-Headless delivery needs a context-menu action on the element. On a GTK entry without one, it returns `POLICY_DENIED` with `supported_action` failing. On macOS, a right-click can return `APP_UNRESPONSIVE` with an unsafe disposition after a modal menu opened: look before you retry.
+Headless delivery needs a context-menu action on the element. On a GTK entry without one, it returns `POLICY_DENIED` with `supported_action` failing. On macOS, `AXShowMenu` times out while the menu it opened is tracking; agent-desktop reads the menu surface and reports a menu it sees as success. If none appears within 1.5 s it returns `ACTION_FAILED` (`menu_observed: false`) or `APP_UNRESPONSIVE` with an unsafe disposition: look before you retry.
 
 Platform limits: Windows always needs `--headed`. See [Windows](/desktop/platforms/windows).
 

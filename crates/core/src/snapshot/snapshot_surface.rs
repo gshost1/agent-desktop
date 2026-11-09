@@ -29,6 +29,9 @@ pub enum SnapshotSurface {
     StartMenu,
     #[serde(alias = "action-center")]
     ActionCenter,
+    /// The web page a browser window shows, read through the browser's
+    /// DevTools endpoint when one is reachable.
+    Web,
 }
 
 impl SnapshotSurface {
@@ -76,6 +79,7 @@ impl SnapshotSurface {
             Self::SystemTrayOverflow => "system-tray-overflow",
             Self::StartMenu => "start-menu",
             Self::ActionCenter => "action-center",
+            Self::Web => "web",
         }
     }
 }

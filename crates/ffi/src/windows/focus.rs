@@ -20,8 +20,7 @@ pub unsafe extern "C" fn ad_focus_window_exact(
         let window = match ad_exact_window_to_core(&*win) {
             Ok(window) => window,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         focus_core_window(adapter, &window)
@@ -35,16 +34,12 @@ fn focus_core_window(
     let adapter = match crate::adapter::lookup_adapter(adapter) {
         Ok(adapter) => adapter,
         Err(error) => {
-            set_last_error(&error);
-            return crate::error::last_error_code();
+            return set_last_error(&error);
         }
     };
     let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
     match adapter.inner.focus_window(window, &lease) {
         Ok(()) => AdResult::Ok,
-        Err(error) => {
-            set_last_error(&error);
-            crate::error::last_error_code()
-        }
+        Err(error) => set_last_error(&error),
     }
 }

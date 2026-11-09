@@ -19,6 +19,7 @@ fn a_closed_menu_is_not_found_and_never_an_empty_tree() {
     let error = outermost(Vec::new()).map(|_| ()).expect_err("no popup");
     assert_eq!(error.code, ErrorCode::ElementNotFound);
     assert!(error.suggestion.is_some());
+    assert!(error.is_confirmed_surface_absence(agent_desktop_core::SnapshotSurface::Menu));
 }
 
 #[test]
