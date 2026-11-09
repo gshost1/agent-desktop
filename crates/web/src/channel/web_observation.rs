@@ -125,8 +125,6 @@ fn find_subtree(node: AccessibilityNode, token: &str) -> Option<AccessibilityNod
         .find_map(|child| find_subtree(child, token))
 }
 
-/// The error for a web observation asked of a root the web channel cannot
-/// read: an application root has no single page.
 /// A browser owned through its process lists no window, so the accessibility
 /// tree has nothing to read once its DevTools endpoint stops answering.
 fn endpoint_gone_without_window(app: &str) -> AdapterError {
@@ -141,6 +139,8 @@ fn endpoint_gone_without_window(app: &str) -> AdapterError {
     .with_details(serde_json::json!({ "kind": "cdp_endpoint_gone" }))
 }
 
+/// The error for a web observation asked of a root the web channel cannot
+/// read: an application root has no single page.
 pub(crate) fn web_root_unsupported() -> AdapterError {
     AdapterError::new(
         ErrorCode::InvalidArgs,
