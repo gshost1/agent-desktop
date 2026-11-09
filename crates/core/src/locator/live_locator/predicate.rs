@@ -83,6 +83,9 @@ pub(crate) fn self_verdict(
     verdict
 }
 
+/// The `--text` verdict on one node. A derived name counts as the node's
+/// text where the accessible name was read and found absent, as a web block
+/// named by the text it contains reads.
 pub(crate) fn self_text_verdict(
     expected: Option<&str>,
     evidence: &LocatorEvidence,
@@ -91,6 +94,11 @@ pub(crate) fn self_text_verdict(
     let Some(expected) = expected else {
         return MatchVerdict::Match;
     };
+    if let Some(derived) = evidence.derived_name()
+        && text_matches(derived, expected, exact)
+    {
+        return MatchVerdict::Match;
+    }
     let mut verdict = MatchVerdict::NoMatch;
     for field in [&evidence.name, &evidence.description, &evidence.value] {
         verdict = verdict.or(text_verdict(Some(expected), field, exact));

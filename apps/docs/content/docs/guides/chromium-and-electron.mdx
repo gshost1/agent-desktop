@@ -58,6 +58,8 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 
 `open-url` returns after the page's load event, with `url`, `title`, `channel`, `target_id` and `opened` (`current_tab`, or `new_tab` with `--new-tab` or when the browser had no page). The snapshot reads the visible tab of the window you name and reports `data.channel`. `cdp` means the page was read over the port. `ax` means no endpoint reached the browser, so the window was read through the accessibility tree; `data.suggestion` names the `launch --cdp` command that enables the web channel.
 
+Page text reads one block at a time. A paragraph, list item, caption or `div` that holds only text, links and buttons carries its whole text, link text included, as its `name` with `"name_source": "contained_text"`, and keeps its links and buttons as children with their own refs. Text never merges across the edge of a block-level element, and `find --text` matches a block by any part of its text. A block that also holds a field, an image or another block keeps its text in `statictext` nodes beside them. An inline element with no role, name or action of its own, such as a `<span>` or `<sup>`, is read through even when it has a DOM `id`, so its `native_id` is not reported. `-i` leaves block text out.
+
 ## 3. Act on the page
 
 ```bash
@@ -66,6 +68,8 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 ```
 
 `click`, `double-click`, `set-value`, `type`, `clear`, `select`, `check`, `uncheck`, `toggle`, `focus`, `scroll` and `scroll-to` work on web refs. Other actions return `ACTION_NOT_SUPPORTED`, and `--headed` is refused. `click` returns once the click is delivered, not when the next page loads, so check `data.url` in the next snapshot. A ref from a page that has since navigated fails with `STALE_REF` and `details.kind: cdp_document_replaced`.
+
+An element the page makes clickable with a script, such as a `<div>` or `<span>` with a click listener and no ARIA role, gets a ref as a `group` that advertises `Click`. When it has no accessible name, its text becomes its `name` with `"name_source": "contained_text"`. An element that holds a link, a button, an iframe or more than 200 characters of text gets no ref of its own, and neither does one whose click handler sits only on a parent element.
 
 A click on an element that something else covers is refused before it is sent:
 
@@ -83,6 +87,14 @@ A click on an element that something else covers is refused before it is sent:
   }
 }
 ```
+
+A date, time, datetime-local, month, week or color input is one ref, with role `datefield`, `timefield` or `colorwell`. `set-value` assigns its value whole, in the format the page reads (`2026-11-08`, `19:30`, `2026-11-08T19:30`, `2026-11`, `2026-W45`, `#ff8800`), fires `input` and `change`, and reads the value back:
+
+```bash
+agent-desktop set-value @s8f3k2p9:e11 "19:30"
+```
+
+A value in another form, such as `7:30 PM`, returns `INVALID_ARGS` with `details.kind: cdp_value_not_canonical`, and the suggestion names the exact value to pass. A value the input refuses, such as `2026-02-30`, returns `ACTION_FAILED` with `details.kind: cdp_value_rejected` and leaves the old value. The `incrementor` refs inside the field (Hours, Minutes, AM/PM) have no value of their own: `set-value` on them returns `ACTION_NOT_SUPPORTED`.
 
 ## 4. Keep the native UI on the accessibility surfaces
 
@@ -111,6 +123,7 @@ agent-desktop close-app "Google Chrome"
   <tbody>
     <tr><td><code>ACTION_FAILED</code>, <code>details.kind: cdp_requires_fresh_launch</code></td><td>The app is already running. <code>details.pids</code> lists it, and nothing was launched (<code>not_delivered</code>).</td><td>Ask before you close it, because the user loses their tabs. Then run <code>close-app</code>, confirm the exit, and launch again with <code>--cdp</code>, or drive the running app through accessibility.</td></tr>
     <tr><td><code>ACTION_FAILED</code>, <code>details.kind: cdp_endpoint_unavailable</code></td><td>The app started, but no DevTools endpoint answered before the deadline. The app keeps running (<code>delivered_unverified</code>).</td><td>Use the accessibility path, or <code>close-app</code> and check the app name and arguments.</td></tr>
+    <tr><td><code>WINDOW_NOT_FOUND</code>, message <code>No window found to identify the application owning surface 'web'</code></td><td>The browser lists no window, and no endpoint was recorded for its process: it was started without <code>--cdp</code>, or under a different <code>AGENT_DESKTOP_HOME</code>. A browser that <code>launch --cdp</code> started is read through its process even when its window is on another Space or not on screen yet, and such a snapshot has no <code>data.window</code>.</td><td>Run <code>agent-desktop launch "Google Chrome" --activate</code> once to bring its window forward, then retry.</td></tr>
     <tr><td><code>INVALID_ARGS</code>, <code>details.kind: cdp_port_in_use</code></td><td>The port you named is bound.</td><td>Name another port, or omit it.</td></tr>
     <tr><td><code>INVALID_ARGS</code>, <code>details.kind: cdp_switch_conflict</code></td><td>An <code>--arg</code> sets <code>--remote-debugging-*</code> or <code>--remote-allow-origins</code>, which <code>--cdp</code> owns.</td><td>Drop that <code>--arg</code>.</td></tr>
   </tbody>

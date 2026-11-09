@@ -243,20 +243,25 @@ fn wait_for_text(
                     result.bind_snapshot_id(snapshot_id.clone());
                     emit_snapshot_saved(context, &result)?;
                     let elapsed = start.elapsed().as_millis();
-                    let found = matches.first();
+                    let stored =
+                        wait_text_match::find(&result.tree, &normalized_text, expected_count);
                     let mut body = json!({
                         "found": true,
                         "text": text,
-                        "ref": found
-                            .and_then(|found| found.ref_id.as_deref())
-                            .map(|ref_id| crate::refs::ref_token::qualify_ref_id(&snapshot_id, ref_id)),
-                        "role": found.map(|found| found.role.clone()),
+                        "ref": stored.first().and_then(|found| found.ref_id.clone()),
+                        "role": matches.first().map(|found| found.role.clone()),
                         "snapshot_id": snapshot_id,
                         "elapsed_ms": elapsed
                     });
                     if expected_count.is_some() {
                         body["count"] = json!(matches.len());
                     }
+                    wait_text_match::describe_refmap_cut(
+                        &mut body,
+                        result.notes.refmap_capped,
+                        &stored,
+                        expected_count.is_some(),
+                    );
                     return Ok(body);
                 }
             }
@@ -309,6 +314,14 @@ fn is_retryable_wait_app_error(err: &AppError) -> bool {
 #[cfg(test)]
 #[path = "wait_test_support.rs"]
 mod test_support;
+
+#[cfg(test)]
+#[path = "wait_refmap_cap_test_support.rs"]
+pub(crate) mod refmap_cap_support;
+
+#[cfg(test)]
+#[path = "wait_refmap_cap_tests.rs"]
+mod refmap_cap_tests;
 
 #[cfg(test)]
 #[path = "wait_tests.rs"]

@@ -1,0 +1,6 @@
+window "Test Window"
+  @e1 group "Sidebar" children_count=26
+  @e2 group desc="Channels and direct messages" children_count=12
+  group "Content"
+    @e3 button "Send"
+    @e4 textfield "Message"

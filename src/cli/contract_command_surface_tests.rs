@@ -36,6 +36,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "wait_scheduler",
     "wait_surface",
     "wait_test_support",
+    "wait_refmap_cap_test_support",
     "wait_text_match",
     "wait_timeout",
     "wait_event",

@@ -315,7 +315,7 @@ pub(crate) fn observe_tree(
         let element = atspi_element(handle)?;
         if element.is_menu_target() {
             let context = super::menu::menu_context::for_element(bus, element, request.deadline)?
-                .ok_or_else(super::menu::menu_resolve::menu_closed)?;
+                .ok_or_else(AdapterError::menu_closed)?;
             return observe_tree_with(
                 bus,
                 root,

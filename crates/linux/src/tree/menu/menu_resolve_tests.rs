@@ -1,6 +1,6 @@
-use agent_desktop_core::ErrorCode;
+use agent_desktop_core::{AdapterError, ErrorCode};
 
-use super::{choose, is_menu_entry, menu_closed, open_handle, resolve_contextual};
+use super::{choose, is_menu_entry, open_handle, resolve_contextual};
 use crate::tree::AtspiElement;
 use crate::tree::menu::menu_context::MenuContext;
 use crate::tree::placement::popup_position::PopupPosition;
@@ -28,7 +28,7 @@ fn a_ref_no_open_popup_answers_to_is_stale_because_the_menu_closed() {
     .expect_err("no popup");
     assert_eq!(error.code, ErrorCode::StaleRef);
     assert_eq!(kind_of(&error), Some("menu_closed"));
-    assert_eq!(menu_closed().code, ErrorCode::StaleRef);
+    assert_eq!(AdapterError::menu_closed().code, ErrorCode::StaleRef);
     let hint = error.suggestion.expect("closed-menu recovery");
     assert!(hint.contains("opener"), "{hint}");
     assert!(hint.contains("new ref"), "{hint}");

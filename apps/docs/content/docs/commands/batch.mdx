@@ -68,7 +68,7 @@ The rejection names the entry in `details.batch_index` and `details.batch_comman
 
 ### Execution and output
 
-Entries run one at a time through the same dispatch as the CLI, so each entry's `data` or `error` is what a direct call returns. Nothing is retried. The batch itself returns `ok: true` and exit code `0` even when entries fail, so read each entry's `ok`.
+Entries run one at a time through the same dispatch as the CLI, so each entry's `data` or `error` is what a direct call returns. Nothing is retried. The batch itself returns `ok: true` and exit code `0` even when entries fail, so read `failed_entries` and each entry's `ok`.
 
 ```json
 {
@@ -78,6 +78,7 @@ Entries run one at a time through the same dispatch as the CLI, so each entry's 
   "data": {
     "completed_entries": 2,
     "elapsed_ms": 100,
+    "failed_entries": 0,
     "limits": { "max_entries": 64, "max_input_bytes": 1048576, "max_output_bytes": 4194304 },
     "not_started_entries": 0,
     "results": [
@@ -104,7 +105,7 @@ Entries run one at a time through the same dispatch as the CLI, so each entry's 
   </thead>
   <tbody>
     <tr><td><code>results[]</code></td><td>One envelope per entry, with <code>index</code> and <code>execution</code> (<code>completed</code> or <code>not_started</code>). A <code>not_started</code> entry has <code>not_started_reason</code> and a <code>not_delivered</code> error.</td></tr>
-    <tr><td><code>total_entries</code>, <code>completed_entries</code>, <code>not_started_entries</code></td><td>Counts. Entries after a stop are counted in <code>not_started_entries</code> without a row.</td></tr>
+    <tr><td><code>total_entries</code>, <code>completed_entries</code>, <code>failed_entries</code>, <code>not_started_entries</code></td><td>Counts. <code>completed_entries</code> counts every entry that ran; <code>failed_entries</code> counts those that returned an error. Entries after a stop are counted in <code>not_started_entries</code> without a row.</td></tr>
     <tr><td><code>stopped</code></td><td>Present when the batch ended early, and also when its last entry failed under <code>--stop-on-error</code> or with <code>TIMEOUT</code> once <code>--timeout-ms</code> ran out. <code>reason</code> is <code>stop_on_error</code>, <code>deadline</code>, <code>output_limit</code>, or <code>pre_action_baseline_failed</code>. <code>index</code> names the entry that stopped the batch; a deadline that ran out while an entry ran reports <code>after_index</code> instead, including for the last entry.</td></tr>
   </tbody>
 </table>

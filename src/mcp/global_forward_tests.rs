@@ -155,3 +155,12 @@ fn an_unclassified_or_short_only_global_is_an_internal_error_not_a_silent_drop()
         assert!(message.contains(&flag), "{message}");
     }
 }
+
+#[test]
+fn lines_is_forwarded_to_every_call() {
+    assert_eq!(GlobalScope::of("lines"), Some(GlobalScope::ServerWide));
+    assert_eq!(
+        globals(&["agent-desktop", "mcp", "--lines"]).ok(),
+        Some(vec!["--lines".to_string()])
+    );
+}

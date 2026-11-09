@@ -777,7 +777,7 @@ jobs:
   publish-npm:
     name: Publish to npm
     needs: [check-release, build, build-ffi, ffi-release-gates, ffi-release-panic-guard, linux-archive-contents]
-    if: needs.check-release.outputs.should_release == 'true'
+    if: github.repository == 'vercel-labs/agent-desktop' && needs.check-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     environment: Release
     timeout-minutes: 15

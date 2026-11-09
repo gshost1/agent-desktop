@@ -44,7 +44,7 @@ Exit codes: `0` success, `1` structured error, `2` argument error. The `error` o
 |------|---------|----------|
 | `PERM_DENIED` | A required OS permission is missing | Read the platform skill |
 | `ELEMENT_NOT_FOUND` | Ref is absent, or the requested surface is absent | Read `details.kind` and `details.surface`; open an absent menu or refresh only after checking the UI |
-| `STALE_REF` | Ref no longer matches the live UI | Snapshot again, use the new ref |
+| `STALE_REF` | Ref no longer matches the live UI | Snapshot again, use the new ref. With `details.process_state: exited` the app is gone: `list-apps`, `launch` it if needed, then snapshot |
 | `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or it was not proven unique at capture | Act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
 | `SNAPSHOT_NOT_FOUND` | Snapshot id missing or expired | Snapshot again |
 | `APP_NOT_FOUND` | App not running | `launch` it |
@@ -93,7 +93,7 @@ agent-desktop right-click @s8f3k2p9:e5
 - `click` is the primary activation. Headless uses the activation the element publishes. `--headed` clicks physically first where that is possible and reports `physical_synthetic` in `data.steps`. The app is observed to judge delivery, not the accessibility return code.
 - `double-click` and `triple-click` are physical gestures and fail closed headless. For raw coordinates use `--headed mouse-click --xy X,Y --count 2` (or `3`).
 - `right-click` opens the context menu. Then take `snapshot --surface menu`. Use `select` for combo boxes and menu buttons instead.
-- A right-click can return `APP_UNRESPONSIVE` with uncertain delivery after a modal menu opened. Look at the effect first. Do not retry.
+- A right-click can return `APP_UNRESPONSIVE` or `ACTION_FAILED` with uncertain delivery when the menu takes longer to appear than the adapter's check. Look at the effect first (`wait --menu`). Do not retry.
 
 ## Text input
 

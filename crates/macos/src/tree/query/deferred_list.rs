@@ -1,4 +1,5 @@
 use super::{child_read::ChildRead, traversal::LocatorTraversal};
+use crate::tree::AXElement;
 use agent_desktop_core::{AdapterError, ObservedSubtree, Rect};
 
 /// A list container whose children a walk reads after the rest of the tree.
@@ -13,7 +14,7 @@ pub(crate) struct DeferredList {
     pub(crate) children: ChildRead,
     pub(crate) depths: (u8, u8),
     pub(crate) viewport: Option<Rect>,
-    pub(crate) ancestors: Vec<usize>,
+    pub(crate) ancestors: Vec<AXElement>,
 }
 
 const DEFERRED_ROLES: [&str; 4] = ["AXOutline", "AXTable", "AXBrowser", "AXList"];
@@ -66,14 +67,11 @@ impl LocatorTraversal {
                 .filter(|count| *count > 0);
             return Ok((Vec::new(), empty, total));
         }
-        let saved_ancestors = std::mem::replace(
-            &mut self.arena.ancestors,
-            list.ancestors.iter().copied().collect(),
-        );
+        let saved_ancestors = self.arena.replace_ancestor_path(list.ancestors);
         let saved_viewport = std::mem::replace(&mut self.context.window_bounds, list.viewport);
         let result = self.visit_children(list.children, list.depths, &list.path);
         self.context.window_bounds = saved_viewport;
-        self.arena.ancestors = saved_ancestors;
+        self.arena.replace_ancestor_path(saved_ancestors);
         let (children, complete) = result?;
         Ok((children, complete, None))
     }
