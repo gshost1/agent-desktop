@@ -55,6 +55,17 @@ fn waiting_ends_only_after_a_completed_startup_plus_its_grace() {
 }
 
 #[test]
+fn window_poll_backs_off_from_its_first_interval_to_a_short_cap() {
+    let mut interval = FIRST_WINDOW_POLL;
+    let mut schedule = Vec::new();
+    for _ in 0..8 {
+        interval = next_window_poll(interval);
+        schedule.push(interval.as_millis());
+    }
+    assert_eq!(schedule, [37, 50, 50, 50, 50, 50, 50, 50]);
+}
+
+#[test]
 fn app_unresponsive_and_timeout_window_reads_are_not_ready_yet() {
     assert!(window_read_is_not_ready_yet(
         &AdapterError::app_unresponsive("Numbers")

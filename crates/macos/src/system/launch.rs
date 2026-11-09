@@ -13,6 +13,8 @@ const MAX_ARGUMENT_COUNT: usize = 256;
 const MAX_ENVIRONMENT_COUNT: usize = 256;
 const MAX_LAUNCH_TEXT_BYTES: usize = 1024 * 1024;
 const STARTUP_GRACE: Duration = Duration::from_millis(1500);
+const FIRST_WINDOW_POLL: Duration = Duration::from_millis(25);
+const MAX_WINDOW_POLL: Duration = Duration::from_millis(50);
 
 #[cfg(target_os = "macos")]
 pub(crate) fn launch_app_impl(
@@ -119,7 +121,7 @@ fn settled_window(
     options: &LaunchOptions,
     deadline: Deadline,
 ) -> Result<Option<WindowInfo>, AdapterError> {
-    let mut poll_interval = Duration::from_millis(25);
+    let mut poll_interval = FIRST_WINDOW_POLL;
     let mut grace_ends_at = None;
     let mut last_read_failure: Option<AdapterError>;
     loop {
@@ -142,8 +144,15 @@ fn settled_window(
             return last_read_failure.map_or(Ok(None), Err);
         }
         std::thread::sleep(poll_interval.min(remaining));
-        poll_interval = (poll_interval * 3 / 2).min(Duration::from_millis(250));
+        poll_interval = next_window_poll(poll_interval);
     }
+}
+
+/// A window is reported at most one interval after it appears. Until the
+/// process lists a window, a read is one window-server list and no AX call.
+#[cfg(target_os = "macos")]
+fn next_window_poll(interval: Duration) -> Duration {
+    (interval * 3 / 2).min(MAX_WINDOW_POLL)
 }
 
 #[cfg(target_os = "macos")]
