@@ -431,3 +431,4 @@ Next plan
 - Found (19:40 PST): Release Dry Run has a concurrency group per branch; rerunning a stale head's dry-run cancelled the current head's. Rerun only the current head's run.
 - Right-click false failure is upstream too (b43ac4f6, 3/3), not a fork regression.
 - [ ] 1.3.1: trim the right-click baseline read (#79 adds ~115 ms per right-click: process identity + AX menu read + CGWindowList before step 1). Control 2026-11-08.
+- 1.3.0 merge scope (control 20:55): only #18 and #34 may still merge, if the laptop remerges them green before 23:00. #14 is breaking (fix(refs)!) and goes to a later release even if green.
