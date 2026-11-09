@@ -430,3 +430,4 @@ Next plan
 - [x] #76 merged 61579175 (perf flat, probe 0/36 vs a0d644b4 1/6). #38 merged cf03b9d3 (main merged in, perf flat). Final A/B triggered 19:29 on cf03b9d3.
 - Found (19:40 PST): Release Dry Run has a concurrency group per branch; rerunning a stale head's dry-run cancelled the current head's. Rerun only the current head's run.
 - Right-click false failure is upstream too (b43ac4f6, 3/3), not a fork regression.
+- [ ] 1.3.1: trim the right-click baseline read (#79 adds ~115 ms per right-click: process identity + AX menu read + CGWindowList before step 1). Control 2026-11-08.
