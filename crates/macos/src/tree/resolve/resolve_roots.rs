@@ -98,9 +98,11 @@ fn source_surface_scoped_roots(
                 None => None,
             }
         }
-        SnapshotSurface::Focused => {
-            super::resolve_focused::focused_source_root(pid, entry, deadline)?
-        }
+        SnapshotSurface::Focused => super::resolve_focused::focused_surface_for_source(
+            pid,
+            entry.source.source_window_id.as_deref(),
+            deadline,
+        )?,
         SnapshotSurface::Menu => {
             crate::tree::app_menu::root_for_pid(pid, SnapshotSurface::Menu, deadline)?
         }
@@ -353,13 +355,12 @@ pub(in crate::tree) fn source_window_scope_required(entry: &RefEntry) -> bool {
 }
 
 pub(in crate::tree) fn source_window_number(entry: &RefEntry) -> Option<i64> {
-    let number = entry
-        .source
-        .source_window_id
-        .as_deref()?
-        .strip_prefix("w-")?
-        .parse()
-        .ok()?;
+    window_number_from_id(entry.source.source_window_id.as_deref()?)
+}
+
+/// The CoreGraphics window number in a `w-<number>` window id.
+pub(in crate::tree) fn window_number_from_id(id: &str) -> Option<i64> {
+    let number = id.strip_prefix("w-")?.parse().ok()?;
     (number > 0).then_some(number)
 }
 

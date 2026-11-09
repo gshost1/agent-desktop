@@ -1,22 +1,8 @@
 use super::*;
-use agent_desktop_core::{ErrorCode, SnapshotSurface};
-
-fn focused_entry(source_window_id: Option<&str>) -> RefEntry {
-    let mut entry: RefEntry = serde_json::from_value(serde_json::json!({
-        "pid": 1,
-        "role": "button",
-        "path": [],
-        "states": [],
-        "available_actions": [],
-    }))
-    .unwrap();
-    entry.source.source_surface = SnapshotSurface::Focused;
-    entry.source.source_window_id = source_window_id.map(String::from);
-    entry
-}
+use agent_desktop_core::ErrorCode;
 
 fn never_called(_: Option<&'static str>) -> Result<Option<&'static str>, AdapterError> {
-    panic!("a focused ref must not re-root in a window it was not captured from")
+    panic!("a focused surface must not be read in a window it was not captured from")
 }
 
 fn window_root(window: Option<&'static str>) -> Result<Option<&'static str>, AdapterError> {
@@ -24,17 +10,15 @@ fn window_root(window: Option<&'static str>) -> Result<Option<&'static str>, Ada
 }
 
 #[test]
-fn focused_ref_resolves_in_its_recorded_window_while_it_stays_focused() {
-    let entry = focused_entry(Some("w-11"));
-    let root = focused_root_for_entry(&entry, Some(("window 11", Some(11))), window_root);
+fn focused_surface_resolves_in_its_source_window_while_it_stays_focused() {
+    let root = focused_root_in_source_window("w-11", Some(("window 11", Some(11))), window_root);
     assert_eq!(root.unwrap(), Some("focused root"));
 }
 
 #[test]
-fn focused_ref_refuses_when_focus_moved_to_another_window() {
-    let entry = focused_entry(Some("w-11"));
-    let error =
-        focused_root_for_entry(&entry, Some(("window 12", Some(12))), never_called).unwrap_err();
+fn focused_surface_is_refused_when_focus_moved_to_another_window() {
+    let error = focused_root_in_source_window("w-11", Some(("window 12", Some(12))), never_called)
+        .unwrap_err();
     assert_eq!(error.code, ErrorCode::StaleRef);
     let details = error.details.as_ref().unwrap();
     assert_eq!(details["kind"], "focused_window_changed");
@@ -49,10 +33,9 @@ fn focused_ref_refuses_when_focus_moved_to_another_window() {
 }
 
 #[test]
-fn focused_ref_refuses_when_the_focused_window_number_is_unreadable_or_absent() {
-    let entry = focused_entry(Some("w-11"));
+fn focused_surface_is_refused_when_the_focused_window_number_is_unreadable_or_absent() {
     for focused in [Some(("window", None)), None] {
-        let error = focused_root_for_entry(&entry, focused, never_called).unwrap_err();
+        let error = focused_root_in_source_window("w-11", focused, never_called).unwrap_err();
         assert_eq!(error.code, ErrorCode::StaleRef);
         let details = error.details.unwrap();
         assert_eq!(details["kind"], "focused_window_changed");
@@ -61,18 +44,12 @@ fn focused_ref_refuses_when_the_focused_window_number_is_unreadable_or_absent() 
 }
 
 #[test]
-fn focused_ref_with_a_malformed_recorded_window_is_refused() {
-    let entry = focused_entry(Some("w-abc"));
-    let error =
-        focused_root_for_entry(&entry, Some(("window", Some(11))), never_called).unwrap_err();
-    assert_eq!(error.code, ErrorCode::StaleRef);
-}
-
-#[test]
-fn focused_ref_without_a_recorded_window_keeps_the_live_focused_surface() {
-    let entry = focused_entry(None);
-    let root = focused_root_for_entry(&entry, Some(("window 12", Some(12))), window_root);
-    assert_eq!(root.unwrap(), Some("focused root"));
-    let root = focused_root_for_entry(&entry, None, window_root);
-    assert_eq!(root.unwrap(), None);
+fn a_malformed_source_window_id_is_refused_as_an_invalid_identity() {
+    for id in ["w-abc", "w-0", "11"] {
+        let error = focused_root_in_source_window(id, Some(("window", Some(11))), never_called)
+            .unwrap_err();
+        let details = error.details.unwrap();
+        assert_eq!(details["kind"], "source_window_identity_invalid");
+        assert_eq!(details["retryable"], false);
+    }
 }
