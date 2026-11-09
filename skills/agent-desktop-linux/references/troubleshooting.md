@@ -52,7 +52,8 @@ agent-desktop launch google-chrome --arg=--force-renderer-accessibility
 
 In a session with no desktop settings daemon (container, CI, bare Xvfb)
 `org.a11y.Status IsEnabled` is false, so pass `launch --env ACCESSIBILITY_ENABLED=1`
-as well, or the browser never joins the bus and `launch` waits its full timeout.
+as well, or the browser never joins the bus and `launch` returns after 5 s with
+no `window` and a suggestion that the process did not join the accessibility bus.
 
 Chrome lists as `chrome`: use `--app chrome` afterwards. The `launch` result
 carries `renderer: chromium`. Chromium and Electron read thin until they settle:

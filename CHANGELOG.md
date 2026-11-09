@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+* On Linux, a `launch` whose spawned process keeps running without joining the accessibility bus (a plain X11 program, an app started with `NO_AT_BRIDGE=1`, Chromium without its accessibility flags) now returns after 5 s, or 10 s with `--activate`, instead of waiting the whole `--timeout` (30 s by default). The result is still `ok` with the spawned pid and no `window`, and its suggestion says the process did not join the bus. ([#PRNUM](https://github.com/gshost1/agent-desktop/pull/PRNUM))
 * On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
 
 ### Performance
