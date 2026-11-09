@@ -98,7 +98,9 @@ fn source_surface_scoped_roots(
                 None => None,
             }
         }
-        SnapshotSurface::Focused => crate::tree::surfaces::focused_surface_for_pid(pid, deadline)?,
+        SnapshotSurface::Focused => {
+            super::resolve_focused::focused_source_root(pid, entry, deadline)?
+        }
         SnapshotSurface::Menu => {
             crate::tree::app_menu::root_for_pid(pid, SnapshotSurface::Menu, deadline)?
         }
