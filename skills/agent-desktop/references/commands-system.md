@@ -65,9 +65,10 @@ The Linux windows reference includes a Bash recipe that selects a fresh Close re
 ```bash
 agent-desktop close-app "TextEdit"
 agent-desktop close-app "TextEdit" --force
+agent-desktop close-app "TextEdit" --timeout-ms 15000
 ```
 
-Success is reported only after the process is seen gone: `{ "method": "graceful" | "force", "disposition": { "delivery": "delivered_unverified" | "delivered_verified" | "not_delivered" }, "target": { "kind": "app", ... } }`. `not_delivered` means the app had already exited. Read `disposition`, not `ok`, to learn what was proved. If a save dialog appears, snapshot it and answer it. `--force` ends the process. Protected system processes return `INVALID_ARGS` with `not_delivered`, not `PERM_DENIED`.
+Success is reported only after the process is seen gone: `{ "method": "graceful" | "force", "disposition": { "delivery": "delivered_unverified" | "delivered_verified" | "not_delivered" }, "target": { "kind": "app", ... } }`. `not_delivered` means the app had already exited before anything was sent. `--timeout-ms` (default 5000) bounds the whole close: finding the app and waiting for the desktop lease get the first half; revalidating, sending the close and waiting for the exit get the second half, less a small slice for confirming the exit. A failed close whose app then exits is reported `delivered_verified` (request known sent) or `delivered_unverified`. `TIMEOUT` with `not_delivered` means nothing was sent; `details.phase` is `resolving` or `revalidating` (slow inventory) or `awaiting_lease` (another command held the desktop), and `details.timeout_ms` is that slice. Retry it. `TIMEOUT` with `delivered_unverified` and `details.phase: "closing"` means the app was still running at the deadline; check `list-apps` before retrying. Read `disposition`, not `ok`, to learn what was proved. If a save dialog appears, snapshot it and answer it. `--force` ends the process. Protected system processes return `INVALID_ARGS` with `not_delivered`, not `PERM_DENIED`.
 
 ## list-apps
 
