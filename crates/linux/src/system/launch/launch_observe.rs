@@ -204,7 +204,8 @@ pub(super) fn find_owner(
 
 /// The owner search over a registry reader. `read` answers `None` when the
 /// registry could not be read in time, which is not evidence that the
-/// spawned process is off the bus. `handoff` looks for a resident that
+/// spawned process is off the bus. Only a read that began after the
+/// not-on-bus grace expired can settle the search on it. `handoff` looks for a resident that
 /// received the launch from a launcher that exited cleanly.
 fn poll_owner(
     spawned: &mut Spawned,
@@ -217,6 +218,7 @@ fn poll_owner(
     loop {
         let child = spawned.state();
         let expired = deadline.is_expired();
+        let grace_over = query.not_on_bus.is_expired();
         let listed = read().map_err(after_spawn)?;
         let registry_read = listed.is_some();
         let apps = listed.unwrap_or_default();
@@ -238,7 +240,7 @@ fn poll_owner(
                 next = Step::Failed(status);
             }
         }
-        let not_on_bus = child.is_none() && registry_read && query.not_on_bus.is_expired();
+        let not_on_bus = child.is_none() && registry_read && grace_over;
         match next {
             Step::Owner(owner) => return Ok(Some(owner)),
             Step::Ambiguous(pids) => return Err(ambiguous(&pids, &spawned.identifier)),
@@ -246,7 +248,12 @@ fn poll_owner(
             Step::Wait if expired || not_on_bus => return Ok(None),
             Step::Wait => {}
         }
-        std::thread::sleep(interval.min(deadline.remaining()));
+        let until = if grace_over {
+            deadline
+        } else {
+            query.not_on_bus
+        };
+        std::thread::sleep(interval.min(until.remaining()));
         interval = (interval * 3 / 2).min(POLL_LIMIT);
     }
 }

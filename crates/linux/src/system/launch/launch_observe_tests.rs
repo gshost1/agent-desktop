@@ -224,12 +224,7 @@ fn query_with_grace<'a>(
 ) -> OwnerQuery<'a> {
     let deadline =
         agent_desktop_core::Deadline::from_duration(std::time::Duration::from_secs(30)).unwrap();
-    OwnerQuery {
-        identity,
-        before,
-        deadline,
-        not_on_bus: deadline.capped(grace),
-    }
+    OwnerQuery::with_grace(identity, before, deadline, Some(grace))
 }
 
 fn stop_after_reads(
@@ -304,7 +299,7 @@ fn an_owner_found_inside_the_grace_is_the_launch_owner() {
 }
 
 #[test]
-fn an_activating_launch_waits_longer_for_the_bus_but_never_past_the_deadline() {
+fn an_activating_launch_waits_for_the_bus_until_its_deadline() {
     let identity = None;
     let before = empty_baseline();
     let deadline =
@@ -313,10 +308,32 @@ fn an_activating_launch_waits_longer_for_the_bus_but_never_past_the_deadline() {
     let activating = OwnerQuery::new(&identity, &before, deadline, true);
     assert!(plain.not_on_bus.remaining() <= std::time::Duration::from_secs(5));
     assert!(plain.not_on_bus.remaining() > std::time::Duration::from_secs(4));
-    assert!(activating.not_on_bus.remaining() <= std::time::Duration::from_secs(10));
-    assert!(activating.not_on_bus.remaining() > std::time::Duration::from_secs(9));
+    assert!(activating.not_on_bus.remaining() > std::time::Duration::from_secs(59));
     let short =
         agent_desktop_core::Deadline::from_duration(std::time::Duration::from_millis(500)).unwrap();
-    let bounded = OwnerQuery::new(&identity, &before, short, true);
+    let bounded = OwnerQuery::new(&identity, &before, short, false);
     assert!(bounded.not_on_bus.remaining() <= std::time::Duration::from_millis(500));
+}
+
+#[test]
+fn a_grace_that_expires_during_a_read_is_settled_only_by_the_next_read() {
+    let identity = keys(&["plain-x11-tool"]);
+    let before = empty_baseline();
+    let query = query_with_grace(&identity, &before, std::time::Duration::from_millis(1_000));
+    let reads = std::cell::Cell::new(0);
+    let mut spawned = running_child(4242);
+    let owner = poll_owner(
+        &mut spawned,
+        &query,
+        || {
+            reads.set(reads.get() + 1);
+            if reads.get() == 1 {
+                std::thread::sleep(std::time::Duration::from_millis(1_500));
+            }
+            Ok(Some(Vec::new()))
+        },
+        |_| Step::Wait,
+    );
+    assert_eq!(owner.unwrap(), None);
+    assert_eq!(reads.get(), 2);
 }
