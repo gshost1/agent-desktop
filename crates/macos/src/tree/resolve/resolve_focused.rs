@@ -41,9 +41,7 @@ pub(in crate::tree) fn focused_root_for_entry<W, R>(
     };
     let recorded = super::resolve_roots::source_window_number(entry);
     match (recorded, focused_window) {
-        (Some(recorded), Some((window, Some(focused)))) if focused == recorded => {
-            surface_in(Some(window))
-        }
+        (Some(_), Some((window, Some(_)))) => surface_in(Some(window)),
         (_, focused_window) => Err(focused_window_changed(
             recorded_id,
             focused_window.and_then(|(_, number)| number),
