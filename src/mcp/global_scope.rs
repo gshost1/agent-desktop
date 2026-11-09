@@ -16,7 +16,9 @@ impl GlobalScope {
     /// which `mcp` refuses rather than forwards.
     pub(crate) fn of(id: &str) -> Option<Self> {
         match id {
-            "session" | "agent_id" | "trace" | "trace_strict" | "headed" => Some(Self::ServerWide),
+            "session" | "agent_id" | "trace" | "trace_strict" | "headed" | "lines" => {
+                Some(Self::ServerWide)
+            }
             "verbose" => Some(Self::ServerOnly),
             "debug" | "screenshot" | "wait_for" | "wait_for_gone" | "wait_timeout" => {
                 Some(Self::PerCommand)

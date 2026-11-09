@@ -3,6 +3,8 @@ pub(crate) mod app_inventory;
 pub(crate) mod app_inventory_query;
 pub(crate) mod app_lookup;
 pub mod cdp_endpoint;
+pub(crate) mod close_budget;
+pub(crate) mod close_phase;
 pub(crate) mod devtools_websocket_url;
 pub mod display_info;
 pub(crate) mod download_dir;
