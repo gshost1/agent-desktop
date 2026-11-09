@@ -3,12 +3,13 @@ use std::collections::{HashMap, HashSet};
 use agent_desktop_core::{AdapterError, Deadline};
 use serde_json::{Value, json};
 
+use super::dom_display::{DISPLAY_STYLE, collect_inline};
 use super::dom_facts::DomFacts;
 use crate::{CdpConnection, PageSession};
 
 /// Reads the DOM `id` attribute of every element in the target's local
-/// frames and shadow trees, and the nodes that respond to mouse clicks, keyed
-/// by backend node id. One `DOMSnapshot.captureSnapshot` serves the whole
+/// frames and shadow trees, the nodes that respond to mouse clicks, and the
+/// nodes laid out inline, keyed by backend node id. One `DOMSnapshot.captureSnapshot` serves the whole
 /// target: its reply is flat arrays however deep the DOM nests, and unlike
 /// `DOM.getDocument` it does not switch on the DOM domain's mutation events.
 pub(crate) fn read_dom_facts(
@@ -18,13 +19,14 @@ pub(crate) fn read_dom_facts(
 ) -> Result<DomFacts, AdapterError> {
     let capture = connection.call(
         "DOMSnapshot.captureSnapshot",
-        json!({ "computedStyles": [] }),
+        json!({ "computedStyles": [DISPLAY_STYLE] }),
         Some(&session.session_id),
         deadline,
     )?;
     Ok(DomFacts {
         ids: collect_dom_ids(&capture),
         clickable: collect_clickable(&capture),
+        inline: collect_inline(&capture),
     })
 }
 

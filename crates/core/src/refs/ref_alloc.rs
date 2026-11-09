@@ -1,8 +1,8 @@
-use crate::AccessibilityNode;
 use crate::refs::ref_capture_proof::CaptureProof;
 use crate::refs::ref_identity::has_meaningful_identity;
 use crate::refs::ref_skeleton_anchors::{carries_element_token, plan_skeleton_anchors};
 use crate::refs::{RefEntry, RefMap};
+use crate::{AccessibilityNode, NameSource};
 use std::collections::HashSet;
 
 pub(crate) use crate::refs::ref_alloc_config::RefAllocConfig;
@@ -312,6 +312,10 @@ fn allocate_refs_at_path(
         node.ref_id = allocate_observed_ref(refmap, entry)?;
     }
 
+    if config.options.interactive_only && node.ref_id.is_none() {
+        drop_derived_name(&mut node);
+    }
+
     if !config.options.include_bounds {
         node.presentation.bounds = None;
     }
@@ -354,6 +358,17 @@ fn allocate_observed_ref(
     }
 }
 
+/// `-i` shows controls and the containers that hold them, not page text. A
+/// container without a ref keeps its accessible name but loses a name
+/// derived from the text it contains.
+fn drop_derived_name(node: &mut AccessibilityNode) {
+    let descriptors = &mut node.presentation.descriptors;
+    if descriptors.name_source == Some(NameSource::ContainedText) {
+        descriptors.name_source = None;
+        node.identity.name = None;
+    }
+}
+
 /// The name a ref may record as identity. A derived name, read from a control
 /// value, locates and displays the element but never identifies it.
 pub(crate) fn identity_name(node: &AccessibilityNode) -> Option<&str> {
@@ -370,3 +385,7 @@ fn meaningful_string(value: Option<String>) -> Option<String> {
 #[cfg(test)]
 #[path = "ref_alloc_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ref_alloc_interactive_tests.rs"]
+mod interactive_tests;

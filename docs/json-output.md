@@ -491,11 +491,44 @@ element itself), takes the text it contains as its `name` and carries
 { "ref_id": "@s8f3k2p9:e9", "role": "group", "name": "Springfield, IL", "name_source": "contained_text", "available_actions": ["Click"] }
 ```
 
-The text is the element's text runs joined with single spaces. An element
+The text is the element's text in reading order, with the spaces the page lays
+out between its runs. An element
 holding more than 200 characters of text, a link or control, or a child frame
 gets no ref, and neither does a document's `html` or `body` or a container of
 items or regions. Like a field value, the name locates and displays the
 element and is never ref identity: the ref re-identifies by its element token.
+
+On the `web` surface, page text reads one block at a time. A block-level
+element with no accessible name and no ref, such as a paragraph, a list item, a
+caption or a `div`, whose content is only text, links and buttons, takes its
+whole text in reading order, link and button text included, as its `name` with
+`"name_source": "contained_text"`. Its links and buttons stay its children, each
+with its own ref and name; its text runs leave the tree:
+
+```json
+{ "role": "paragraph", "name": "Python was conceived in the late 1980s[11] by Guido van Rossum.", "name_source": "contained_text",
+  "children": [
+    { "ref_id": "@s8f3k2p9:e14", "role": "link", "name": "[11]", "available_actions": ["Click", "SetFocus"] },
+    { "ref_id": "@s8f3k2p9:e15", "role": "link", "name": "Guido van Rossum", "available_actions": ["Click", "SetFocus"] }
+  ] }
+```
+
+- A heading, cell, link or clickable element whose name already holds its text
+  keeps that name and has no `statictext` children.
+- Elsewhere, adjacent text runs become one `statictext`, and a line break inside
+  them reads as a space. A list item or `div` whose content is text alone reads
+  as one `statictext`.
+- Text never merges across the edge of a block-level element, one whose
+  computed `display` is anything but `inline` (`display: contents` has no box and counts as a block). A block that also
+  holds a field, an image or another block keeps its text in `statictext` nodes
+  beside them.
+- An inline element with no role, name, state or action of its own, such as a
+  `<span>` or `<sup>`, is read through even when it has a DOM `id`, so its
+  `native_id` is not reported. Links, buttons and block-level elements keep
+  theirs.
+- `find --text` matches a block by any part of its text. `snapshot -i` leaves the
+  name out of a block that has no ref, because `-i` shows controls, not page
+  text.
 
 ## Ref re-identification details
 

@@ -2,6 +2,8 @@ use agent_desktop_core::actions::capability;
 use agent_desktop_core::refs::ref_alloc::{is_ref_able, is_ref_able_role_actions};
 use agent_desktop_core::{AccessibilityNode, NameSource};
 
+use super::inline_run::InlineRun;
+use super::inline_text::collapse_whitespace;
 use super::web_node::WebNode;
 use super::web_roles::is_frame_owner_role;
 
@@ -58,9 +60,9 @@ pub(crate) fn may_take_click(role: &str, raw_role: &str, available_actions: &[St
 /// container whose controls are the targets, so it stays as it is. So does a
 /// node holding more text than a derived name keeps, which is a region of the
 /// page rather than one control. A promoted node with no accessible
-/// name is named by the text it contains, marked as derived so that ref
-/// identity never reads it; a lone static-text child repeating that text is
-/// dropped.
+/// name is named by the text it contains in reading order, with the spacing
+/// the page lays out, marked as derived so that ref identity never reads
+/// it; a lone static-text child repeating that text is dropped.
 pub(crate) fn promote_clickable(
     built: &mut WebNode,
     children: &mut Vec<WebNode>,
@@ -124,25 +126,40 @@ fn holds_ref_able(node: &WebNode) -> bool {
 }
 
 fn contained_text(children: &[WebNode]) -> String {
-    let mut parts = Vec::new();
+    let mut text = String::new();
     for child in children {
-        collect_leaf_text(child, &mut parts);
+        collect_text(child, &mut text);
     }
-    collapse_whitespace(&parts.join(" "))
+    collapse_whitespace(&text)
 }
 
-fn collect_leaf_text<'a>(node: &'a WebNode, parts: &mut Vec<&'a str>) {
-    if node.children.is_empty() {
-        parts.extend(node.node.identity.name.as_deref());
+fn collect_text(node: &WebNode, text: &mut String) {
+    match &node.run {
+        Some(InlineRun::Text(run)) => {
+            text.push_str(run);
+            return;
+        }
+        Some(InlineRun::BlockEdge) => {
+            text.push(' ');
+            return;
+        }
+        None => {}
+    }
+    let descriptors = &node.node.presentation.descriptors;
+    let own = descriptors.derived_name.as_deref().or(node
+        .children
+        .is_empty()
+        .then_some(node.node.identity.name.as_deref())
+        .flatten());
+    if let Some(own) = own {
+        text.push(' ');
+        text.push_str(own);
+        text.push(' ');
         return;
     }
     for child in &node.children {
-        collect_leaf_text(child, parts);
+        collect_text(child, text);
     }
-}
-
-fn collapse_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

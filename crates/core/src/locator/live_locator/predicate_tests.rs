@@ -60,3 +60,23 @@ fn a_read_accessible_name_or_an_unread_one_outranks_the_derived_name() {
         MatchVerdict::Unknown
     );
 }
+
+#[test]
+fn a_text_query_matches_a_derived_name_only_beside_an_absent_accessible_name() {
+    let block = derived(LocatorField::Absent, "Conceived in the late 1980s by Ada");
+    let named = derived(LocatorField::Known("Row label".into()), "late 1980s");
+    let text = |value: &str| search_text::normalize(value);
+
+    assert_eq!(
+        self_text_verdict(Some(&text("1980s by Ada")), &block, false),
+        MatchVerdict::Match
+    );
+    assert_eq!(
+        self_text_verdict(Some(&text("other")), &block, false),
+        MatchVerdict::NoMatch
+    );
+    assert_eq!(
+        self_text_verdict(Some(&text("1980s")), &named, false),
+        MatchVerdict::NoMatch
+    );
+}

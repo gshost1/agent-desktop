@@ -10,10 +10,14 @@ use super::ax_value::AxValue;
 use super::cdp_ax_node::CdpAxNode;
 use super::click_promotion::promote_clickable;
 use super::frame_context::FrameContext;
+use super::inline_run::InlineRun;
+use super::inline_text::{BlockLayout, drop_markers, line_break, merge_inline_text, seal_block};
 use super::node_actions::actions_of;
 use super::node_states::states_of;
 use super::web_node::WebNode;
-use super::web_roles::{is_frame_owner_role, is_text_fragment_role, map_cdp_role};
+use super::web_roles::{
+    is_frame_owner_role, is_line_break_role, is_text_fragment_role, map_cdp_role,
+};
 use crate::NodeOrigin;
 
 /// Builds one frame's `Accessibility.getFullAXTree` result into nodes.
@@ -23,7 +27,9 @@ use crate::NodeOrigin;
 /// text fields are leaves, as the native AX path exposes them: their
 /// children are inline text boxes and the field's inner editor. A node the
 /// DOM snapshot reports as clickable, whose accessibility node exposes no
-/// control, takes a click (see [`promote_clickable`]).
+/// control, takes a click (see [`promote_clickable`]). The static text inside
+/// one block is read into as few nodes as carry it, never across the edge
+/// of a block-level element (see [`merge_inline_text`]).
 pub(crate) fn build_frame(nodes: Vec<CdpAxNode>, context: &FrameContext<'_>) -> Vec<WebNode> {
     let children: HashSet<&str> = nodes
         .iter()
@@ -41,7 +47,9 @@ pub(crate) fn build_frame(nodes: Vec<CdpAxNode>, context: &FrameContext<'_>) -> 
         .map(|node| (node.node_id.as_str(), node))
         .collect();
     let mut ancestors = HashSet::new();
-    build_node(&root_id, &by_id, context, &mut ancestors)
+    let mut roots = build_node(&root_id, &by_id, context, &mut ancestors);
+    drop_markers(&mut roots);
+    roots
 }
 
 type NodeIndex<'a> = HashMap<&'a str, &'a CdpAxNode>;
@@ -59,6 +67,9 @@ fn build_node(
         return Vec::new();
     }
     let raw_role = node.raw_role();
+    if is_line_break_role(&raw_role) {
+        return vec![line_break()];
+    }
     if is_text_fragment_role(&raw_role) {
         return Vec::new();
     }
@@ -70,7 +81,7 @@ fn build_node(
         .collect();
     ancestors.remove(node_id);
     if node.ignored {
-        return children;
+        return seal_block(children, lays_out_block(node.backend_dom_node_id, context));
     }
     let mut built = convert(node, &raw_role, context);
     if built
@@ -83,17 +94,33 @@ fn build_node(
     }
     if matches!(built.node.role.as_str(), "statictext" | "textfield") {
         children.clear();
-    } else if let Some(name) = built.node.identity.name.as_deref() {
-        children.retain(|child| {
-            !(child.node.role == "statictext"
-                && child.node.identity.name.as_deref() == Some(name)
-                && child.children.is_empty())
-        });
+    } else {
+        if let Some(name) = built.node.identity.name.as_deref() {
+            children.retain(|child| {
+                !(child.node.role == "statictext"
+                    && child.node.identity.name.as_deref() == Some(name)
+                    && child.children.is_empty())
+            });
+        }
+        let block_level = lays_out_block(node.backend_dom_node_id, context);
+        let layout = BlockLayout {
+            block_level,
+            transparent: is_transparent(&built, &raw_role, block_level),
+        };
+        merge_inline_text(&mut built, &mut children, layout);
+        if is_transparent(&built, &raw_role, block_level) {
+            return seal_block(children, layout.block_level);
+        }
     }
-    if is_transparent(&built, &raw_role) {
-        return children;
-    }
+    drop_markers(&mut children);
     vec![WebNode { children, ..built }]
+}
+
+/// Whether the DOM node starts its own box rather than sitting inside a line
+/// of text. A node the DOM capture did not lay out inline counts as a block,
+/// so text merges only where the capture shows it may.
+fn lays_out_block(backend_node_id: Option<i64>, context: &FrameContext<'_>) -> bool {
+    backend_node_id.is_none_or(|backend| !context.dom.inline.contains(&backend))
 }
 
 /// Whether a frame-owner element sits anywhere below `node` in the frame's
@@ -150,6 +177,15 @@ pub(crate) fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'
         available_actions,
         ..NodePresentation::default()
     };
+    let run = (role == "statictext").then(|| {
+        InlineRun::Text(
+            node.text
+                .name
+                .as_ref()
+                .and_then(AxValue::as_untrimmed_text)
+                .unwrap_or_default(),
+        )
+    });
     WebNode {
         node: AccessibilityNode {
             ref_id: None,
@@ -162,10 +198,11 @@ pub(crate) fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'
         },
         origin,
         children: Vec::new(),
+        run,
     }
 }
 
-fn is_transparent(built: &WebNode, raw_role: &str) -> bool {
+fn is_transparent(built: &WebNode, raw_role: &str, block_level: bool) -> bool {
     let identity = &built.node.identity;
     let presentation = &built.node.presentation;
     built.node.role == "group"
@@ -173,7 +210,8 @@ fn is_transparent(built: &WebNode, raw_role: &str) -> bool {
         && identity.name.is_none()
         && identity.value.is_none()
         && identity.description.is_none()
-        && identity.native_id.is_none()
+        && (identity.native_id.is_none() || !block_level)
+        && presentation.descriptors.derived_name.is_none()
         && presentation.states.is_empty()
         && presentation
             .available_actions

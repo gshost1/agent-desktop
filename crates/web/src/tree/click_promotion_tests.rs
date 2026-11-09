@@ -115,7 +115,7 @@ fn without_the_click_fact_the_same_rows_read_as_bare_text() {
 }
 
 #[test]
-fn a_row_of_several_text_runs_is_named_by_their_joined_text_and_keeps_them() {
+fn a_row_of_several_text_runs_is_named_by_their_text_in_reading_order_and_drops_them() {
     let raw = json!([
         { "nodeId": "1", "role": role("RootWebArea"), "childIds": ["2"], "backendDOMNodeId": 1 },
         { "nodeId": "2", "role": role("generic"), "childIds": ["3", "4", "5"], "backendDOMNodeId": 2 },
@@ -129,9 +129,9 @@ fn a_row_of_several_text_runs_is_named_by_their_joined_text_and_keeps_them() {
     let row = &root.children[0];
     assert_eq!(
         row.node.presentation.descriptors.derived_name.as_deref(),
-        Some("Honolulu, HI , USA (County)")
+        Some("Honolulu, HI, USA (County)")
     );
-    assert_eq!(row.children.len(), 3);
+    assert!(row.children.is_empty());
 }
 
 #[test]

@@ -58,6 +58,8 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i
 
 `open-url` returns after the page's load event, with `url`, `title`, `channel`, `target_id` and `opened` (`current_tab`, or `new_tab` with `--new-tab` or when the browser had no page). The snapshot reads the visible tab of the window you name and reports `data.channel`. `cdp` means the page was read over the port. `ax` means no endpoint reached the browser, so the window was read through the accessibility tree; `data.suggestion` names the `launch --cdp` command that enables the web channel.
 
+Page text reads one block at a time. A paragraph, list item, caption or `div` that holds only text, links and buttons carries its whole text, link text included, as its `name` with `"name_source": "contained_text"`, and keeps its links and buttons as children with their own refs. Text never merges across the edge of a block-level element, and `find --text` matches a block by any part of its text. A block that also holds a field, an image or another block keeps its text in `statictext` nodes beside them. An inline element with no role, name or action of its own, such as a `<span>` or `<sup>`, is read through even when it has a DOM `id`, so its `native_id` is not reported. `-i` leaves block text out.
+
 ## 3. Act on the page
 
 ```bash
