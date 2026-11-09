@@ -47,8 +47,6 @@ mod imp {
 
     const MAX_ANCESTOR_WALK: usize = 6;
     const MAX_SELECTION_READBACK: usize = 64;
-    pub(crate) const SELECTION_SETTLE_MS: u64 = 300;
-    pub(crate) const SELECTION_POLL_MS: u64 = 25;
 
     /// Reading the subrole would add nothing: no subrole moves an element into
     /// or out of this set, because the ones that redefine a native role keep a
@@ -133,8 +131,9 @@ mod imp {
         let delivered =
             crate::actions::ax_helpers::set_ax_bool_or_err(member, SELECTED, true, deadline)?;
         super::verify_selection(delivered, || {
-            crate::tree::properties::attributes::copy_bool_attr(member, SELECTED, deadline)
-                == Some(true)
+            crate::actions::select::selection_settle::direct_selection_holds(deadline, || {
+                crate::tree::properties::attributes::copy_bool_attr(member, SELECTED, deadline)
+            })
         })
     }
 
@@ -191,11 +190,8 @@ mod imp {
             .flatten()
     }
 
-    /// A selection write is applied asynchronously. The application answers the
-    /// write at once and updates the attribute a moment later, so a single read
-    /// reports failure for a selection the user can already see, and the chain
-    /// then goes on writing selections that have nothing left to fix. The wait
-    /// is bounded, and it only runs after a write the application accepted.
+    /// The readback waits for the application to apply the write; see
+    /// [`crate::actions::select::selection_settle::selection_settles`].
     fn holds_selection(
         container: &AXElement,
         member: &AXElement,
@@ -203,21 +199,9 @@ mod imp {
         deadline: Deadline,
     ) -> bool {
         let targets = selection_targets(container, member, deadline);
-        let settle_end =
-            std::time::Instant::now() + std::time::Duration::from_millis(SELECTION_SETTLE_MS);
-        loop {
-            if selection_contains(container, &targets, attribute, deadline) {
-                return true;
-            }
-            if deadline.is_expired() || std::time::Instant::now() >= settle_end {
-                return false;
-            }
-            std::thread::sleep(
-                deadline
-                    .remaining()
-                    .min(std::time::Duration::from_millis(SELECTION_POLL_MS)),
-            );
-        }
+        crate::actions::select::selection_settle::selection_settles(deadline, || {
+            selection_contains(container, &targets, attribute, deadline)
+        })
     }
 
     /// A container that selects rows reports the row around the cell that was
@@ -288,9 +272,7 @@ mod imp {
     }
 }
 
-pub(crate) use imp::{
-    SELECTION_POLL_MS, SELECTION_SETTLE_MS, element_activates_by_selection, select_within_container,
-};
+pub(crate) use imp::{element_activates_by_selection, select_within_container};
 
 #[cfg(test)]
 mod tests {
