@@ -102,6 +102,25 @@ fn inline_screenshots_become_image_content() {
 }
 
 #[test]
+fn snapshot_lines_become_their_own_raw_text_block() {
+    let envelope = json!({ "ok": true, "command": "snapshot", "data": {
+        "snapshot_id": "s9",
+        "lines": ["window \"Main\"", "  @s9:e1 button \"Send\""]
+    }});
+    let result = call::envelope_result(envelope.clone());
+    let text: Value = serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert!(text["data"].get("lines").is_none());
+    assert_eq!(text["data"]["snapshot_id"], "s9");
+    assert_eq!(
+        result["content"][1]["text"],
+        "window \"Main\"\n  @s9:e1 button \"Send\""
+    );
+    assert_eq!(result["structuredContent"], envelope);
+    let plain = call::envelope_result(json!({ "ok": true, "command": "click", "data": {} }));
+    assert_eq!(plain["content"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
 fn oversized_messages_are_refused_and_the_next_message_still_reads() {
     let mut input = Vec::new();
     input.extend(std::iter::repeat_n(b'x', MAX_MESSAGE_BYTES + 10));

@@ -100,13 +100,34 @@ fn read_all(pipe: Option<impl Read>) -> Vec<u8> {
     bytes
 }
 
-/// Maps an envelope to a result: the envelope as structured content and text, an image block for inline screenshots.
+/// Maps an envelope to a result: the envelope as structured content and text, an image block for inline
+/// screenshots, and the snapshot lines of `--lines` as their own raw text block, left out of the envelope text.
 pub(crate) fn envelope_result(mut envelope: Value) -> Value {
     let is_error = envelope["ok"] != Value::Bool(true);
     let image = take_inline_image(&mut envelope);
-    let mut content = vec![json!({ "type": "text", "text": envelope.to_string() })];
+    let lines = joined_lines(&envelope);
+    let text = match lines {
+        Some(_) => without_lines(&envelope).to_string(),
+        None => envelope.to_string(),
+    };
+    let mut content = vec![json!({ "type": "text", "text": text })];
+    content.extend(lines.map(|lines| json!({ "type": "text", "text": lines })));
     content.extend(image);
     json!({ "content": content, "structuredContent": envelope, "isError": is_error })
+}
+
+fn joined_lines(envelope: &Value) -> Option<String> {
+    let lines = envelope.get("data")?.get("lines")?.as_array()?;
+    let lines: Option<Vec<&str>> = lines.iter().map(Value::as_str).collect();
+    Some(lines?.join("\n"))
+}
+
+fn without_lines(envelope: &Value) -> Value {
+    let mut text = envelope.clone();
+    if let Some(data) = text.get_mut("data").and_then(Value::as_object_mut) {
+        data.remove("lines");
+    }
+    text
 }
 
 fn take_inline_image(envelope: &mut Value) -> Option<Value> {

@@ -113,3 +113,39 @@ fn documented_command_counts_match_the_cli() {
         "AGENTS.md must state {operational} of the {total} command names are operational"
     );
 }
+
+#[test]
+fn documented_snapshot_lines_match_the_renderer() {
+    let doc = include_str!("../../docs/json-output.md");
+    let section = &doc[doc
+        .find("## Snapshot lines (`--lines`)")
+        .expect("json-output.md documents --lines")..];
+    let example = section
+        .split("```json\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\n```").next())
+        .expect("the --lines section has a json example");
+    let envelope: serde_json::Value = serde_json::from_str(example).expect("valid json");
+    let tree: agent_desktop_core::AccessibilityNode = serde_json::from_value(serde_json::json!({
+        "role": "window", "name": "Font Book", "children": [
+            { "ref_id": "@s8f3k2p9:e1", "role": "button", "name": "Hide Sidebar",
+              "available_actions": ["press"] },
+            { "role": "group", "children": [
+                { "ref_id": "@s8f3k2p9:e2", "role": "textfield", "name": "Search", "value": "Mono",
+                  "placeholder": "Search", "states": ["focused"], "role_description": "search text field" },
+                { "role": "statictext", "name": "12 fonts" },
+                { "ref_id": "@s8f3k2p9:e3", "role": "outline", "name": "Collections",
+                  "children_count": 8 }
+            ]}
+        ]
+    }))
+    .expect("tree");
+
+    assert_eq!(
+        envelope["data"]["lines"],
+        serde_json::json!(agent_desktop_core::snapshot::ref_lines::render_ref_lines(
+            &tree
+        ))
+    );
+    assert!(envelope["data"].get("tree").is_none());
+}

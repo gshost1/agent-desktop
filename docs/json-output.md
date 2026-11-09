@@ -81,6 +81,60 @@ recovery strategy from `recovery.strategy` only when `disposition.retry` is
 `safe`; command strings from older envelopes must not be executed blindly.
 The removed `retry_command` field has no compatibility alias.
 
+## Snapshot lines (`--lines`)
+
+`--lines` is an opt-in global flag. It is an additive change: without it, every envelope is byte-for-byte what it was.
+
+With it, each snapshot tree a command returns is replaced by `data.lines`, an array of strings with one string per node, and the envelope is written indented, so each string prints on its own line. It applies to `snapshot`, its `--root` drills, the snapshot that `--wait-for` and `--wait-for-gone` return (after a ref action too), and each completed `batch` entry that holds one. A command that returns no tree ignores the flag and prints its usual single line. Errors never change.
+
+```json
+{
+  "version": "2.6",
+  "ok": true,
+  "command": "snapshot",
+  "data": {
+    "app": "Font Book",
+    "complete": true,
+    "lines": [
+      "window \"Font Book\"",
+      "  @s8f3k2p9:e1 button \"Hide Sidebar\"",
+      "  group",
+      "    @s8f3k2p9:e2 textfield \"Search\" value=\"Mono\" placeholder=\"Search\" [focused]",
+      "    statictext \"12 fonts\"",
+      "    @s8f3k2p9:e3 outline \"Collections\" children_count=8"
+    ],
+    "ref_count": 3,
+    "snapshot_id": "s8f3k2p9",
+    "window": {
+      "id": "w-4521",
+      "title": "Font Book"
+    }
+  }
+}
+```
+
+Each line, in order:
+
+| Part | When present |
+| --- | --- |
+| Two spaces per depth level below the printed root | Always; a `--root` drill starts at depth 0 |
+| The qualified ref (`@s8f3k2p9:e1`) and a space | The node has a ref |
+| The role | Always |
+| The quoted name | The node has a name; an empty name prints `""` |
+| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field |
+| `bounds=x,y,WxH` | The tree carries bounds (`--include-bounds`) |
+| `[state, state]` | The node has states |
+| `children_count=N` | A skeleton cut container |
+| `subtree_truncated` | A branch cut by the observation budget or the refmap cap |
+
+- Quoted text stays on one line. `"` and `\` are escaped with a backslash, a line feed, carriage return and tab become `\n`, `\r` and `\t`, and any other control character becomes `\uXXXX`.
+- Bidirectional marks (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069) are dropped. Text matching in `find`, `wait --text` and selectors already ignores them, so a value copied from a line still matches.
+- Every node of the presented tree has a line, in the depth-first order refs are allocated in, including nodes without a ref. `-i`, `--compact`, `--skeleton`, `--max-depth` and `--root` shape the tree as before; `--lines` only changes how it prints.
+- `available_actions`, `native_id`, `subrole`, `role_description`, `dom_classes` and `name_source` are not printed. Run without `--lines` to read them.
+- Every other `data` field keeps its meaning and value, including `snapshot_id`, `ref_count`, `complete`, `truncated`, `nodes_observed`, `refmap_capped`, `identity_unproven`, `matched_selector` and `after_action`. Refs are allocated and saved exactly as without the flag, and a trace records the tree.
+- `jq -r '.data.lines[]'` prints the bare lines.
+- `agent-desktop mcp --lines` applies the flag to every call the server runs. A result that holds `data.lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope.
+
 ## Disposition values
 
 Every error carries `disposition`, and commands that act on a target may also

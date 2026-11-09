@@ -24,9 +24,13 @@ use agent_desktop_core::{
     session::resolve_active_session,
 };
 use clap::{CommandFactory, FromArgMatches};
-use cli::{Cli, Commands};
+use cli::{
+    Cli, Commands,
+    emit::{emit_response, finish, report_output_failure},
+};
 use cli_args::skills::SkillsAction;
 use dispatch::pre_dispatch_error;
+#[cfg(target_os = "macos")]
 use std::io::{BufWriter, Write};
 use std::process::ExitCode;
 
@@ -106,13 +110,15 @@ fn run() -> ExitCode {
     };
 
     let cmd_name = cmd.name();
+    let lines = cli.output.lines;
     let stdin = cli_args::stdin::input(&mut cmd).is_some();
     if let Err(error) = cli_args::stdin::resolve_stdin_text(&mut cmd, std::io::stdin().lock()) {
-        return finish(cmd_name, Err(error));
+        return finish(cmd_name, Err(error), lines);
     }
     finish(
         cmd_name,
         cli_args::stdin::redact_result(execute(cli, cmd), stdin),
+        lines,
     )
 }
 
@@ -134,10 +140,10 @@ fn report_parse_failure(e: clap::Error) -> ExitCode {
     let summary = diagnostic::clap_error_summary(&e.to_string());
     let error = AppError::invalid_input(diagnostic::bounded_text(&summary, 512));
     let command_name = diagnostic::clap_command_name(std::env::args().skip(1));
-    if let Err(write_err) = emit_response(&Response::err(
-        &command_name,
-        ErrorPayload::from_app_error(&error),
-    )) {
+    if let Err(write_err) = emit_response(
+        &Response::err(&command_name, ErrorPayload::from_app_error(&error)),
+        false,
+    ) {
         report_output_failure(write_err)
     } else {
         ExitCode::from(EXIT_INVALID_ARGS)
@@ -199,10 +205,11 @@ fn execute_with_deadline(
                 std::env::var("AGENT_DESKTOP_SESSION").ok().as_deref(),
             )
             .map_err(pre_dispatch_error)?;
-            let context = CommandContext::new(session_id, cli.trace, cli.trace_strict)
-                .map_err(pre_dispatch_error)?
-                .with_headed(cli.interaction.headed)
-                .with_wait_selector(wait_selector.clone());
+            let context =
+                CommandContext::new(session_id, cli.output.trace, cli.output.trace_strict)
+                    .map_err(pre_dispatch_error)?
+                    .with_headed(cli.interaction.headed)
+                    .with_wait_selector(wait_selector.clone());
             let agent_id = cli
                 .identity
                 .agent_id
@@ -318,42 +325,6 @@ fn execute_with_adapter(
         capture.finish(&mut result, adapter, context);
     }
     result
-}
-
-fn finish(cmd_name: &str, result: Result<serde_json::Value, AppError>) -> ExitCode {
-    let response = response(cmd_name, result);
-    if let Err(write_err) = emit_response(&response) {
-        return report_output_failure(write_err);
-    }
-    if response.ok {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    }
-}
-
-fn response(cmd_name: &str, result: Result<serde_json::Value, AppError>) -> Response {
-    match result {
-        Ok(data) => Response::ok(cmd_name, data),
-        Err(error) => Response::err(cmd_name, ErrorPayload::from_app_error(&error)),
-    }
-}
-
-fn report_output_failure(write_err: std::io::Error) -> ExitCode {
-    eprintln!("agent-desktop: failed to write response to stdout: {write_err}");
-    ExitCode::FAILURE
-}
-
-fn emit_response(response: &impl serde::Serialize) -> std::io::Result<()> {
-    write_response(std::io::stdout().lock(), response)
-}
-
-/// Writes `response` to `out` as one JSON line and flushes it.
-fn write_response(out: impl Write, response: &impl serde::Serialize) -> std::io::Result<()> {
-    let mut writer = BufWriter::new(out);
-    serde_json::to_writer(&mut writer, response).map_err(std::io::Error::other)?;
-    writer.write_all(b"\n")?;
-    writer.flush()
 }
 
 /// The platform adapter, wrapped so web pages in a browser that exposes a
