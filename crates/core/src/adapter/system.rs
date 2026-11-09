@@ -35,6 +35,16 @@ pub trait SystemOps: Send + Sync {
         })
     }
 
+    /// The report a command preflight reads, which never includes Automation.
+    /// Probing Automation can wait on the OS permission daemon, so an adapter
+    /// may leave it unprobed here.
+    fn preflight_permission_report(
+        &self,
+        deadline: Deadline,
+    ) -> Result<PermissionReport, AdapterError> {
+        self.permission_report(deadline)
+    }
+
     fn unknown_accessibility_means_unsupported(&self) -> bool {
         true
     }
