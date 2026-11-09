@@ -42,6 +42,29 @@ pub(super) fn run_in_private_session() -> bool {
     false
 }
 
+pub(super) fn run_batch(
+    dir: &std::path::Path,
+    cmds: serde_json::Value,
+    extra: &[&str],
+) -> serde_json::Value {
+    let mut c = super::binary();
+    c.arg("batch")
+        .arg(cmds.to_string())
+        .args(extra)
+        .env("AGENT_DESKTOP_HOME", dir);
+    let started = std::time::Instant::now();
+    let o = c.output().expect("batch runs");
+    let stderr = String::from_utf8_lossy(&o.stderr);
+    let env: serde_json::Value = serde_json::from_slice(&o.stdout)
+        .unwrap_or_else(|error| panic!("batch stdout is not JSON: {error}; stderr: {stderr}"));
+    let took = started.elapsed();
+    assert!(
+        env["data"]["results"].is_array(),
+        "no data.results after {took:?}: {env}; {stderr}"
+    );
+    env
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn batch_without_a_bus_stops_at_permission_preflight_without_dispatching() {

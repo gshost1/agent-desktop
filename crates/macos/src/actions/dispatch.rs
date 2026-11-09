@@ -9,7 +9,7 @@ mod imp {
     use crate::actions::{
         chain::chain_defs,
         chain::{ChainContext, ChainDef, execute_chain},
-        toggle_state,
+        inline_editor_target, toggle_state,
     };
     use crate::tree::AXElement;
 
@@ -48,12 +48,11 @@ mod imp {
             }
 
             Action::RightClick => {
-                steps.extend(run_chain(
+                steps.extend(crate::actions::chain::menu_settle::execute_menu_chain(
                     el,
                     &chain_defs::RIGHT_CLICK_CHAIN,
-                    None,
-                    request,
-                    deadline,
+                    &budget,
+                    request.policy,
                 )?);
             }
 
@@ -62,6 +61,16 @@ mod imp {
             }
 
             Action::SetValue(val) => {
+                if let Some(editor) = inline_editor_target::editor_for(el, deadline)? {
+                    let steps = run_chain(
+                        &editor,
+                        &chain_defs::SET_VALUE_CHAIN,
+                        Some(val),
+                        request,
+                        deadline,
+                    )?;
+                    return Ok(awaiting_commit(action, steps));
+                }
                 steps.extend(run_chain(
                     el,
                     &chain_defs::SET_VALUE_CHAIN,
@@ -82,12 +91,17 @@ mod imp {
             }
 
             Action::TypeText(text) => {
-                steps.push(crate::actions::type_text::execute_type(
-                    el,
+                let editor = inline_editor_target::editor_for(el, deadline)?;
+                let step = crate::actions::type_text::execute_type(
+                    editor.as_ref().unwrap_or(el),
                     text.as_str(),
                     request.policy,
                     deadline,
-                )?);
+                )?;
+                if editor.is_some() {
+                    return Ok(awaiting_commit(action, vec![step]));
+                }
+                steps.push(step);
             }
 
             Action::PressKey(combo) => {
@@ -198,6 +212,10 @@ mod imp {
         }
 
         Ok(ActionResult::from_execution(action, steps))
+    }
+
+    fn awaiting_commit(action: &Action, steps: Vec<ActionStep>) -> ActionResult {
+        ActionResult::awaiting_commit(action, steps, inline_editor_target::COMMIT_KEY)
     }
 
     fn run_chain(

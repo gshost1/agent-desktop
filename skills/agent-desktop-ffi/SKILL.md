@@ -156,7 +156,7 @@ ABI. A bare `@eN` ref returns
 
 - **Log callback.** `ad_set_log_callback(cb)` registers one process-wide callback
   for diagnostics regardless of session manifest. It receives, as JSON, the
-  `tracing` events emitted inside later `ad_*` calls on the same thread; the FFI
+  `tracing` events emitted inside later `ad_*` calls on any thread; the FFI
   never installs or replaces the host process's global tracing subscriber. `cb`
   receives an `int32_t` level (1=ERROR ... 5=TRACE) and a `const char *msg` valid
   only for the duration of the call. Pass `NULL` to unregister. Sensitive field

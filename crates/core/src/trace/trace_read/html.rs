@@ -10,7 +10,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const VIEWER_HTML: &str = include_str!("viewer.html");
 const VIEWER_CSS: &str = include_str!("viewer.css");
-const VIEWER_JS: &str = include_str!("viewer.js");
+const VIEWER_JS: &str = concat!(
+    include_str!("viewer_group.js"),
+    "\n",
+    include_str!("viewer.js")
+);
 
 pub const TRACE_EXPORT_DEFAULT_LIMIT: usize = 5000;
 const MAX_EMBED_SCREENSHOT_BYTES: u64 = 100 * 1024 * 1024;

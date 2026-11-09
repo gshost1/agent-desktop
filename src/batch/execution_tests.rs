@@ -1,3 +1,4 @@
+use crate::batch::execute;
 use crate::batch::result_entry::bounded_entry;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -12,7 +13,20 @@ struct CountingAdapter {
 }
 
 impl agent_desktop_core::ObservationOps for CountingAdapter {}
-impl agent_desktop_core::ActionOps for CountingAdapter {}
+impl agent_desktop_core::ActionOps for CountingAdapter {
+    fn execute_action(
+        &self,
+        _handle: &agent_desktop_core::NativeHandle,
+        request: agent_desktop_core::ActionRequest,
+        _lease: &agent_desktop_core::InteractionLease,
+    ) -> Result<agent_desktop_core::ActionResult, agent_desktop_core::AdapterError> {
+        self.clears.fetch_add(1, Ordering::SeqCst);
+        Ok(agent_desktop_core::ActionResult::from_execution(
+            &request.action,
+            Vec::new(),
+        ))
+    }
+}
 
 impl agent_desktop_core::InputOps for CountingAdapter {
     fn clear_clipboard(
@@ -148,7 +162,7 @@ fn baseline_failure_prevents_the_producer_action() {
     let output = execute(
         args(
             json!([
-                {"command": "clipboard-clear", "args": {}},
+                {"command": "press", "args": {"combo": "a"}},
                 {"command": "wait", "args": {"event": "window-opened", "timeout": 100}}
             ]),
             60_000,
@@ -207,7 +221,7 @@ fn entry_count_and_output_are_bounded() {
             "retry": "unsafe"
         }
     }));
-    let (entry, oversized) = bounded_entry(0, "snapshot", huge, 0);
+    let (entry, oversized) = bounded_entry(0, "click", CommandEffect::AppInput, huge, 0);
     assert!(oversized);
     assert!(serialized_size(&entry) < super::super::result_entry::OUTPUT_METADATA_RESERVE);
     assert_eq!(
@@ -215,6 +229,52 @@ fn entry_count_and_output_are_bounded() {
         "delivered_verified"
     );
     assert_eq!(entry["error"]["disposition"]["retry"], "unsafe");
+}
+
+#[test]
+fn an_oversized_entry_that_sends_no_input_is_not_delivered() {
+    for (command, effect) in [
+        ("snapshot", CommandEffect::ReadOnly),
+        ("screenshot", CommandEffect::LocalWrite),
+    ] {
+        let huge = Ok(json!({ "payload": "x".repeat(MAX_BATCH_OUTPUT_BYTES) }));
+
+        let (entry, oversized) = bounded_entry(0, command, effect, huge, 0);
+
+        assert!(oversized);
+        assert_eq!(entry["error"]["disposition"]["delivery"], "not_delivered");
+        assert_eq!(entry["error"]["disposition"]["retry"], "safe");
+    }
+}
+
+#[test]
+fn an_oversized_successful_action_without_a_report_is_delivered_unverified() {
+    let huge = Ok(json!({ "payload": "x".repeat(MAX_BATCH_OUTPUT_BYTES) }));
+
+    let (entry, oversized) = bounded_entry(0, "launch", CommandEffect::AppInput, huge, 0);
+
+    assert!(oversized);
+    assert_eq!(
+        entry["error"]["disposition"]["delivery"],
+        "delivered_unverified"
+    );
+    assert_eq!(entry["error"]["disposition"]["retry"], "unsafe");
+}
+
+#[test]
+fn a_trace_failure_body_over_the_output_limit_is_omitted() {
+    let body = json!({
+        "results": [{ "data": { "payload": "x".repeat(MAX_BATCH_OUTPUT_BYTES) } }],
+        "total_entries": 1,
+        "completed_entries": 1,
+    });
+
+    let details = crate::batch::trace_failure_details(body);
+
+    assert_eq!(details["result_omitted"], true);
+    assert_eq!(details["total_entries"], 1);
+    assert!(details.get("batch").is_none());
+    assert!(serialized_size(&details) < 1024);
 }
 
 struct RecordingReadAdapter {

@@ -120,6 +120,54 @@ pub trait SystemOps: Send + Sync {
         Err(AdapterError::not_supported("process_owns_tcp_listener"))
     }
 
+    /// Records a DevTools endpoint that launch verified the process owns, so
+    /// a later invocation can find it. Adapters with no use for it accept it.
+    fn remember_cdp_endpoint(
+        &self,
+        _process: ProcessIdentity,
+        _endpoint: &crate::system::cdp_endpoint::CdpEndpoint,
+    ) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
+    /// Whether `launch --cdp` recorded a DevTools endpoint for this exact
+    /// process instance. Only the record is read; nothing is contacted.
+    fn has_recorded_cdp_endpoint(&self, _process: ProcessIdentity) -> bool {
+        false
+    }
+
+    /// Loads a URL in a browser's visible tab, or in a new background tab.
+    fn open_url(
+        &self,
+        _request: &crate::OpenUrlRequest<'_>,
+    ) -> Result<crate::OpenedPage, AdapterError> {
+        Err(AdapterError::not_supported("open_url"))
+    }
+
+    /// Prepares a browser that is about to launch with `--cdp` to save its
+    /// downloads in `download_dir`, before it starts. An adapter that can
+    /// write the folder into the browser profile's own preference returns
+    /// `Profile`; the default leaves only the DevTools connection to point
+    /// downloads there.
+    fn prepare_cdp_downloads(
+        &self,
+        _options: &crate::system::launch_options::LaunchOptions,
+        _download_dir: &str,
+    ) -> Result<crate::DownloadScope, AdapterError> {
+        Ok(crate::DownloadScope::Connection)
+    }
+
+    /// Waits for the browser process's next download that no earlier wait
+    /// returned, including one that finished before the wait began, and
+    /// returns the saved file. A canceled or interrupted download is an error.
+    fn wait_for_download(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<crate::DownloadInfo, AdapterError> {
+        Err(AdapterError::not_supported("wait_for_download"))
+    }
+
     fn process_state(
         &self,
         _process: ProcessIdentity,
@@ -271,43 +319,8 @@ pub trait SystemOps: Send + Sync {
         policy: InteractionPolicy,
         lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
-        let refusal = || {
-            AdapterError::stale_ref_because(
-                "The named window's exact focus could not be confirmed, so no key was sent",
-            )
-            .with_suggestion(if policy.is_headed() {
-                "Ensure the named window remains active before retrying; a sibling window or another application's menu can hold the keyboard"
-            } else {
-                "Retry with --headed so the named window is brought forward first, or name the active window"
-            })
-            .with_details(serde_json::json!({
-                "check": "window_active",
-                "cause": "exact_window_focus_unconfirmed",
-                "physical_delivery_started": false,
-                "window_id": window.id,
-            }))
-            .with_disposition(crate::DeliverySemantics::not_delivered())
-        };
-        let instance = window
-            .process_instance
-            .as_deref()
-            .filter(|instance| !instance.is_empty())
-            .ok_or_else(refusal)?;
-        let focused = self
-            .focused_window(lease.deadline())
-            .map_err(AdapterError::unsent)?;
-        if !focused.is_some_and(|focused| {
-            focused.id == window.id
-                && focused.pid == window.pid
-                && focused.process_instance.as_deref() == Some(instance)
-        }) {
-            return Err(refusal());
-        }
-        self.press_key_for_app(
-            ProcessIdentity::new(window.pid, instance),
-            combo,
-            policy,
-            lease,
+        crate::adapter::window_key_delivery::press_key_for_focused_window(
+            self, window, combo, policy, lease,
         )
     }
 

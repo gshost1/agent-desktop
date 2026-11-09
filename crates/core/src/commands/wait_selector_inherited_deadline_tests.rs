@@ -107,7 +107,8 @@ fn materialize_after_the_inherited_deadline(truncated: bool) -> (Value, crate::R
     assert_eq!(result.complete, !truncated);
     clock.advance(std::time::Duration::from_millis(31));
 
-    let value = materialized_response(result, &CommandContext::default(), &input, 31)
+    let query = query::validate_selector(&input.query_raw).unwrap();
+    let value = materialized_response(result, &CommandContext::default(), (&input, &query), 31)
         .expect("a satisfied wait's snapshot must survive the expired inherited deadline");
     let snapshot_id = value["snapshot_id"].as_str().unwrap().to_owned();
     drop(deadline_scope);

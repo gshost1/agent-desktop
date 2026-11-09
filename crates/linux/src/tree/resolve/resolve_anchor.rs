@@ -5,7 +5,7 @@ use super::landing::Landing;
 use super::path_descent::descend;
 use super::resolve_errors::no_candidate;
 use crate::tree::AtspiElement;
-use crate::tree::resolve::{Source, settle_outcome, settle_read_error};
+use crate::tree::resolve::{Source, guarded, settle_read_error};
 use crate::tree::walk::walker_expand::UNKNOWN_PID;
 
 fn attempt<S: Source>(
@@ -72,14 +72,14 @@ fn attempt<S: Source>(
 /// accepted when its role is the stored one. There is no search: a path that
 /// leads nowhere, a different role or a destroyed object is settled at once,
 /// so the caller observes afresh instead of waiting. Identity is checked by
-/// the caller's own observation of the returned element.
+/// the caller's own observation of the returned element. A stopped process
+/// is `APP_UNRESPONSIVE` before anything is read, as in a strict resolution.
 pub(crate) fn resolve_anchor<S: Source>(
     source: &mut S,
     entry: &RefEntry,
     deadline: Deadline,
 ) -> Result<AtspiElement, AdapterError> {
-    let outcome = attempt(source, entry, deadline);
-    settle_outcome(source, entry, outcome)
+    guarded(source, entry, |source| attempt(source, entry, deadline))
 }
 
 #[cfg(test)]

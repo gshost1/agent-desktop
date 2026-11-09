@@ -21,6 +21,7 @@ fail=0
 skip=0
 declare -a failures=()
 declare -a skips=()
+declare -a private_skips=()
 declare -a cleanup_files=()
 MODE_FLAG=""
 
@@ -98,6 +99,12 @@ skipmsg() {
     printf '  \033[0;33mSKIP\033[0m %s\n' "$1"
     skip=$((skip + 1))
     skips+=("$1")
+}
+
+private_skip_enabled() { [ "${AGENT_DESKTOP_E2E_SKIP_PRIVATE:-}" = "1" ]; }
+private_skip() {
+    printf '  \033[0;33mSKIP (private): %s\033[0m\n' "$1"
+    private_skips+=("$1")
 }
 
 abort_suite() {
@@ -289,7 +296,7 @@ cleanup() {
     if [ "$fixture_owned" -eq 1 ] && [ -x "$bin" ]; then
         "$bin" close-app "$app" --force >/dev/null 2>&1 || true
     fi
-    for file in "${cleanup_files[@]}"; do
+    for file in ${cleanup_files[@]+"${cleanup_files[@]}"}; do
         remove_artifact "$file" || true
     done
     if [ -n "$raw_bin" ] && ! verify_immutable_binary "$raw_bin" "$raw_bin_sha"; then
@@ -320,10 +327,17 @@ finish() {
         badmsg "immutable release FFI helper identity changed during the suite"
     fi
     printf '  passed: %d  failed: %d  skipped: %d\n' "$pass" "$fail" "$skip"
+    if private_skip_enabled; then
+        printf '  private skips: %d\n' "${#private_skips[@]}"
+        local private_step
+        for private_step in ${private_skips[@]+"${private_skips[@]}"}; do
+            printf '   - SKIP (private): %s\n' "$private_step"
+        done
+    fi
     if [ "$fail" -gt 0 ] || [ "$contaminated" -ne 0 ]; then
         printf '\n  failures:\n'
         local failure
-        for failure in "${failures[@]}"; do
+        for failure in ${failures[@]+"${failures[@]}"}; do
             printf '   - %s\n' "$failure"
         done
         if [ "$contaminated" -ne 0 ]; then
@@ -334,9 +348,13 @@ finish() {
     if [ "$skip" -gt 0 ]; then
         printf '\n  capability skips:\n'
         local skipped
-        for skipped in "${skips[@]}"; do
+        for skipped in ${skips[@]+"${skips[@]}"}; do
             printf '   - %s\n' "$skipped"
         done
     fi
-    echo "  all asserted E2E scenarios passed"
+    if [ "${#private_skips[@]}" -gt 0 ]; then
+        echo "  all asserted E2E scenarios passed; ${#private_skips[@]} private step(s) were skipped, not run"
+    else
+        echo "  all asserted E2E scenarios passed"
+    fi
 }

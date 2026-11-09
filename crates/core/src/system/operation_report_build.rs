@@ -88,6 +88,22 @@ impl OperationReport {
         )
     }
 
+    /// A close whose request may or may not have reached the process, after
+    /// which the process was seen gone. The close may have caused the exit,
+    /// so delivery is not denied, but it is not proved either.
+    pub fn app_gone_after_unconfirmed_request(target: OperationTarget) -> Self {
+        Self::new(
+            ActionResult::delivered_unverified("close-app")
+                .with_steps(vec![
+                    ActionStep::succeeded("process_exit")
+                        .with_mechanism(StepMechanism::SemanticApi)
+                        .with_verified(true),
+                ])
+                .with_details(json!({ "evidence": "process_instance_not_running" })),
+            target,
+        )
+    }
+
     pub fn app_already_gone(target: OperationTarget) -> Self {
         Self::new(
             ActionResult::satisfied_without_delivery("close-app")

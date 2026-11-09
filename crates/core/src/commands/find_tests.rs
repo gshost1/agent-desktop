@@ -55,6 +55,7 @@ fn no_selection() -> FindSelectionArgs {
         last: false,
         nth: None,
         limit: None,
+        allow_partial: false,
     }
 }
 
@@ -143,6 +144,7 @@ fn limit_conflicts_with_single_result_modes_for_batch_too() {
         selection: FindSelectionArgs {
             first: true,
             limit: Some(10),
+            allow_partial: false,
             ..no_selection()
         },
     })

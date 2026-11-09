@@ -112,8 +112,44 @@ fn launch_args(args: &[String], env: &[String]) -> crate::cli_args::system::Laun
         args: args.to_vec(),
         env: env.to_vec(),
         cwd: None,
-        no_attach: false,
-        activate: false,
-        cdp: None,
+        attach: crate::cli_args::launch_flags::LaunchAttachArgs {
+            no_attach: false,
+            activate: false,
+            reopen: false,
+        },
+        cdp: crate::cli_args::launch_flags::LaunchCdpArgs {
+            cdp: None,
+            download_dir: None,
+        },
     }
+}
+
+#[test]
+fn reopen_reaches_the_launch_options() {
+    let mut launch = launch_args(&[], &[]);
+    launch.attach.reopen = true;
+
+    assert!(
+        build_launch_options(&launch)
+            .expect("options")
+            .presentation
+            .reopen
+    );
+    assert!(
+        !build_launch_options(&launch_args(&[], &[]))
+            .expect("options")
+            .presentation
+            .reopen
+    );
+}
+
+#[test]
+fn reopen_with_no_attach_is_refused_before_launch() {
+    let mut launch = launch_args(&[], &[]);
+    launch.attach.reopen = true;
+    launch.attach.no_attach = true;
+
+    let error = build_launch_options(&launch).expect_err("reopen needs the running instance");
+
+    assert_eq!(error.code(), "INVALID_ARGS");
 }

@@ -73,7 +73,9 @@ fn a_remote_display_is_assumed_reachable_because_it_is_not_probed() {
 #[cfg(target_os = "linux")]
 #[test]
 fn the_kernel_table_sees_a_real_listener_and_then_its_stale_file() {
-    let dir = std::env::temp_dir().join(format!("ad-probe-{}", std::process::id()));
+    let dir = crate::input::test_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ad-probe-{}", std::process::id())),
+    );
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let live = dir.join("live");
     let listener = UnixListener::bind(&live).expect("bind");
@@ -81,5 +83,4 @@ fn the_kernel_table_sees_a_real_listener_and_then_its_stale_file() {
     drop(listener);
     assert_eq!(SocketProbe.wayland(&live), Reach::Refused);
     assert_eq!(SocketProbe.wayland(&dir.join("absent")), Reach::Missing);
-    std::fs::remove_dir_all(&dir).expect("cleanup");
 }

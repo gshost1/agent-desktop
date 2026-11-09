@@ -88,13 +88,10 @@ fn attach_process_state_detail(
         );
     let err = err.with_details(details);
     if exited_stale {
-        return err.with_suggestion(EXITED_PROCESS_SUGGESTION);
+        return err.with_suggestion(crate::refs::resolve_errors::EXITED_PROCESS_SUGGESTION);
     }
     err
 }
-
-const EXITED_PROCESS_SUGGESTION: &str = "The target process exited. Run 'list-apps' to see \
-     whether the application runs again, launch it if it does not, then take a new snapshot";
 
 const PROCESS_STATE_PROBE_BUDGET: std::time::Duration = std::time::Duration::from_secs(1);
 
