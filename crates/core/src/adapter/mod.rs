@@ -11,6 +11,7 @@ mod saved_ref_test_support;
 pub(crate) mod system;
 #[cfg(test)]
 mod test_support;
+pub(crate) mod window_key_delivery;
 
 pub(crate) use actions::ActionOps;
 pub(crate) use input::InputOps;

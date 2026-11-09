@@ -5,7 +5,7 @@ use agent_desktop_core::system::launch_options::LaunchOptions;
 use agent_desktop_core::system::launch_result::LaunchResult;
 use agent_desktop_core::{
     AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionLease, ProcessId,
-    RendererKind, WindowInfo,
+    RendererKind, WindowInfo, system::launch_notes::LaunchNotes,
 };
 
 use self::launch_attach::{Decision, decide};
@@ -82,7 +82,7 @@ fn conclude(
             "A running instance was used, so the environment and working directory of this launch were not applied.".to_owned(),
         );
     }
-    if options.activate
+    if options.presentation.activate
         && let Some(target) = &window
     {
         match focus(target) {
@@ -100,7 +100,10 @@ fn conclude(
         window,
         cdp: None,
         renderer: None,
-        suggestion: (!notes.is_empty()).then(|| notes.join(" ")),
+        notes: LaunchNotes {
+            suggestion: (!notes.is_empty()).then(|| notes.join(" ")),
+            launch_path: None,
+        },
     }
 }
 
@@ -234,7 +237,7 @@ impl Launch<'_> {
     }
 
     fn wait_limit(&self, known: &HashSet<String>) -> Deadline {
-        if self.options.activate {
+        if self.options.presentation.activate {
             return self.deadline;
         }
         let wait = if known.is_empty() {
@@ -291,9 +294,12 @@ impl Launch<'_> {
             window: None,
             cdp: None,
             renderer: None,
-            suggestion: Some(
+            notes: LaunchNotes {
+                suggestion: Some(
                 "The process started but is not on the accessibility bus yet. Its pid is the spawned process's and may be a wrapper of the application. Run 'list-apps' to see whether it appears.".to_owned(),
             ),
+                launch_path: None,
+            },
         }
     }
 

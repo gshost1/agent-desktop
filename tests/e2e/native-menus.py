@@ -311,10 +311,21 @@ def run(binary):
     return 0
 
 
+def skip_private():
+    step = "native TextEdit menu regression (osascript System Events)"
+    print(f"SKIP (private): {step}")
+    print("private skips: 1")
+    print(f" - SKIP (private): {step}")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", required=True, help="absolute path to the built agent-desktop binary")
-    return run(Path(parser.parse_args().bin))
+    binary = Path(parser.parse_args().bin)
+    if os.environ.get("AGENT_DESKTOP_E2E_SKIP_PRIVATE") == "1":
+        return skip_private()
+    return run(binary)
 
 
 if __name__ == "__main__":

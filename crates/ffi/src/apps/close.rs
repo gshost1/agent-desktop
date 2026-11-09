@@ -25,11 +25,16 @@ pub unsafe extern "C" fn ad_close_app(
         let id_str = match super::decode_app_id(id) {
             Ok(id) => id,
             Err(err) => {
-                set_last_error(&err);
-                return crate::error::last_error_code();
+                return set_last_error(&err);
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
+        let _lease_marker = match crate::lease_marker::mark_core_mutation() {
+            Ok(marker) => marker,
+            Err(error) => {
+                return set_last_error(&error);
+            }
+        };
         match agent_desktop_core::commands::close_app::execute(
             agent_desktop_core::commands::close_app::CloseAppArgs {
                 app: id_str,
@@ -39,10 +44,7 @@ pub unsafe extern "C" fn ad_close_app(
             adapter.inner.as_ref(),
         ) {
             Ok(_) => AdResult::Ok,
-            Err(e) => {
-                set_last_error(&crate::commands::app_error_to_adapter(e));
-                crate::error::last_error_code()
-            }
+            Err(e) => set_last_error(&crate::commands::app_error_to_adapter(e)),
         }
     })
 }

@@ -37,3 +37,21 @@ fn editable_content_is_fillable_and_static_content_is_not() {
     assert!(actions_of("statictext", &node(json!([]))).is_empty());
     assert!(actions_of("heading", &node(json!([]))).is_empty());
 }
+
+#[test]
+fn a_settable_date_time_or_color_input_takes_a_whole_value() {
+    let settable = node(json!([
+        { "name": "focusable", "value": { "value": true } },
+        { "name": "settable", "value": { "value": true } }
+    ]));
+    for role in ["datefield", "timefield", "colorwell"] {
+        assert_eq!(
+            actions_of(role, &settable),
+            ["SetValue", "SetFocus"],
+            "{role}"
+        );
+        assert!(actions_of(role, &node(json!([]))).is_empty(), "{role}");
+    }
+    assert_eq!(actions_of("incrementor", &settable), ["SetFocus"]);
+    assert_eq!(actions_of("slider", &settable), ["SetFocus"]);
+}

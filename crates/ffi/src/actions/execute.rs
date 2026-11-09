@@ -67,11 +67,10 @@ pub unsafe extern "C" fn ad_execute_action_with_policy(
         crate::pointer_guard::guard_non_null!(action, c"action is null");
         let handle_ref = &*handle;
         if handle_ref.ptr.is_null() {
-            error::set_last_error(&agent_desktop_core::AdapterError::new(
+            return error::set_last_error(&agent_desktop_core::AdapterError::new(
                 agent_desktop_core::ErrorCode::InvalidArgs,
                 "handle.ptr is null — the handle has already been freed or was never resolved",
             ));
-            return AdResult::ErrInvalidArgs;
         }
         let core_action = match decode_action(&*action) {
             Ok(action) => action,
@@ -87,8 +86,7 @@ pub unsafe extern "C" fn ad_execute_action_with_policy(
             match crate::actions::native_handle::acquire_ffi_handle(adapter_id, handle_ref) {
                 Ok(handle) => handle,
                 Err(error) => {
-                    error::set_last_error(&error);
-                    return AdResult::ErrInvalidArgs;
+                    return error::set_last_error(&error);
                 }
             };
         let request = action_request(policy, core_action).with_expected_process(process);
@@ -96,8 +94,7 @@ pub unsafe extern "C" fn ad_execute_action_with_policy(
         if let Action::Drag(params) = &request.action
             && let Err(error) = params.validate(lease.deadline())
         {
-            error::set_last_error(&error);
-            return error::last_error_code();
+            return error::set_last_error(&error);
         }
         match agent_desktop_core::execute_verified_action(
             adapter.inner.as_ref(),
@@ -109,10 +106,7 @@ pub unsafe extern "C" fn ad_execute_action_with_policy(
                 *out = action_result_to_c(&result);
                 AdResult::Ok
             }
-            Err(e) => {
-                error::set_last_error(&e);
-                error::last_error_code()
-            }
+            Err(e) => error::set_last_error(&e),
         }
     })
 }
@@ -142,8 +136,7 @@ pub unsafe extern "C" fn ad_execute_ref_action_exact_with_policy(
         crate::pointer_guard::guard_non_null!(entry, c"entry is null");
         crate::pointer_guard::guard_non_null!(action, c"action is null");
         if let Err(error) = core_ref_entry_from_exact(&*entry) {
-            error::set_last_error(&error);
-            return error::last_error_code();
+            return error::set_last_error(&error);
         }
         if let Err(result) = decode_action(&*action) {
             return result;
@@ -152,8 +145,7 @@ pub unsafe extern "C" fn ad_execute_ref_action_exact_with_policy(
             return result;
         }
         let _live = crate::adapter::acquire_adapter!(adapter);
-        error::set_last_error(&exact_entry_unsupported());
-        error::last_error_code()
+        error::set_last_error(&exact_entry_unsupported())
     })
 }
 
@@ -162,8 +154,7 @@ fn decode_action(action: &AdAction) -> Result<Action, AdResult> {
         error::set_last_error(&agent_desktop_core::AdapterError::new(
             agent_desktop_core::ErrorCode::InvalidArgs,
             msg,
-        ));
-        AdResult::ErrInvalidArgs
+        ))
     })
 }
 
@@ -172,8 +163,7 @@ fn decode_policy(policy: i32) -> Result<AdPolicyKind, AdResult> {
         error::set_last_error(&agent_desktop_core::AdapterError::new(
             agent_desktop_core::ErrorCode::InvalidArgs,
             "invalid policy kind discriminant",
-        ));
-        AdResult::ErrInvalidArgs
+        ))
     })
 }
 

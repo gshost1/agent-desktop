@@ -168,3 +168,16 @@ fn an_unanswering_display_leaves_the_accessibility_result_as_the_bus_probe_found
     assert!(report.accessibility_denied());
     assert_eq!(report.screen_recording, PermissionState::Unknown);
 }
+
+#[test]
+fn the_display_probe_leaves_most_of_the_second_a_command_may_overrun_by() {
+    let command = Deadline::after(5_000).expect("a deadline");
+
+    let probe = capture_probe_deadline(command);
+
+    assert!(
+        probe.remaining() <= Duration::from_millis(500),
+        "{:?}",
+        probe.remaining()
+    );
+}

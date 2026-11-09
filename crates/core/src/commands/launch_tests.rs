@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
+use crate::system::launch_notes::LaunchNotes;
 use crate::system::launch_options::LaunchOptions;
 use crate::{AdapterError, AppInfo, InteractionLease, ProcessId, WindowInfo, WindowState};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -49,7 +50,10 @@ impl SystemOps for LaunchAdapter {
             }),
             cdp: None,
             renderer: None,
-            suggestion: None,
+            notes: LaunchNotes {
+                suggestion: None,
+                launch_path: None,
+            },
         })
     }
 }
@@ -67,6 +71,7 @@ fn launch_lease_uses_the_requested_timeout() {
 
     execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options,
         },
@@ -86,6 +91,7 @@ fn zero_launch_timeout_keeps_a_bounded_lease_for_the_single_attempt() {
 
     execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options: LaunchOptions {
                 timeout_ms: 0,
@@ -114,6 +120,7 @@ fn plain_launch_without_cdp_never_calls_list_apps() {
 
     execute(
         LaunchArgs {
+            download_dir: None,
             app: "Fixture".into(),
             options: LaunchOptions::default(),
         },

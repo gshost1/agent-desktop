@@ -133,7 +133,9 @@ fn flag_shaped_values_stay_values_and_never_become_flags() {
     let mut arguments = Map::new();
     arguments.insert("app".into(), Value::from(hostile));
     let cli = parse(&tool_at(&["snapshot"]), &arguments).expect("parses");
-    assert!(!cli.interaction.headed && cli.trace.is_none() && cli.identity.session.is_none());
+    assert!(
+        !cli.interaction.headed && cli.output.trace.is_none() && cli.identity.session.is_none()
+    );
     let Some(crate::cli::Commands::Snapshot(snapshot)) = cli.command else {
         panic!("snapshot");
     };
@@ -143,7 +145,9 @@ fn flag_shaped_values_stay_values_and_never_become_flags() {
     arguments.insert("ref_id".into(), Value::from("@s8f3k2p9:e1"));
     arguments.insert("text".into(), Value::from(hostile));
     let cli = parse(&tool_at(&["type"]), &arguments).expect("parses");
-    assert!(!cli.interaction.headed && cli.trace.is_none() && cli.identity.session.is_none());
+    assert!(
+        !cli.interaction.headed && cli.output.trace.is_none() && cli.identity.session.is_none()
+    );
     let Some(crate::cli::Commands::Type(typed)) = cli.command else {
         panic!("type");
     };

@@ -12,6 +12,8 @@ use std::time::Duration;
 const ACTION_BUDGET_MS: u64 = 3_000;
 const CAPTURE_LOCK_WAIT_MS: u64 = 50;
 const CAPTURES_PER_ACTION: u64 = 2;
+const SLOW_CAPTURE_ACTION_BUDGET_MS: u64 = 500;
+const PRE_CAPTURE_DISPATCH_RESERVE_MS: u64 = 100;
 
 struct DeadlineConsumingScreenshotAdapter {
     dispatch_calls: AtomicU32,
@@ -73,12 +75,7 @@ impl SystemOps for DeadlineConsumingScreenshotAdapter {
         deadline: crate::Deadline,
     ) -> Result<ImageBuffer, AdapterError> {
         if self.consume_pre_deadline && self.screenshot_calls.fetch_add(1, Ordering::SeqCst) == 0 {
-            let delay = if deadline.was_capped() {
-                std::time::Duration::from_millis(50)
-            } else {
-                deadline.remaining()
-            };
-            std::thread::sleep(delay);
+            crate::wait::deadline::sleep(deadline.remaining());
             return Err(deadline.timeout_error());
         }
         Ok(ImageBuffer {
@@ -91,9 +88,14 @@ impl SystemOps for DeadlineConsumingScreenshotAdapter {
     }
 }
 
+/// The pre capture spends every millisecond its own deadline allows, on a
+/// virtual clock so no scheduler delay can move the numbers. What must survive
+/// is the dispatch reserve: an uncapped capture deadline would spend the whole
+/// action budget and the dispatch would time out.
 #[test]
 fn slow_pre_capture_preserves_dispatch_budget() {
     let (_home, _lock) = setup_artifacts_test();
+    let clock = VirtualClock::freeze();
     let manifest = artifacts_session();
     let context = CommandContext::new(Some(manifest.id), None, false).unwrap();
     let adapter = DeadlineConsumingScreenshotAdapter::new(true);
@@ -106,7 +108,7 @@ fn slow_pre_capture_preserves_dispatch_budget() {
             ref_id: "@e1",
             context: &context,
         },
-        ActionRequest::headless(Action::Click).with_timeout_ms(Some(500)),
+        ActionRequest::headless(Action::Click).with_timeout_ms(Some(SLOW_CAPTURE_ACTION_BUDGET_MS)),
         crate::ref_action::ref_action_single::dispatch_resolved,
     );
 
@@ -115,6 +117,15 @@ fn slow_pre_capture_preserves_dispatch_budget() {
         "slow trace capture blocked dispatch: {result:?}"
     );
     assert_eq!(adapter.dispatch_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        adapter.dispatch_budget_ms.load(Ordering::SeqCst),
+        PRE_CAPTURE_DISPATCH_RESERVE_MS,
+        "the dispatch must get exactly the reserve the slow capture left it"
+    );
+    assert_eq!(
+        clock.elapsed(),
+        Duration::from_millis(SLOW_CAPTURE_ACTION_BUDGET_MS - PRE_CAPTURE_DISPATCH_RESERVE_MS)
+    );
 }
 
 fn trace_body(trace_dir: &std::path::Path) -> String {

@@ -70,3 +70,37 @@ fn unsupported_text_write_names_typing_for_the_actual_mode_and_a_paste_fallback(
         }
     }
 }
+
+#[test]
+fn an_incrementor_refusing_a_value_points_at_the_field_that_contains_it() {
+    let evidence = ActionabilityEvidence {
+        nonspatial: true,
+        state: crate::ElementState {
+            role: "incrementor".into(),
+            states: Vec::new(),
+            value: Some("7".into()),
+            enabled: Some(true),
+            hidden: Some(false),
+            offscreen: Some(false),
+        },
+        states_complete: true,
+        bounds: None,
+        available_actions: vec!["SetFocus".into()],
+    };
+    for action in [Action::SetValue("07".into()), Action::Clear] {
+        let error = check_with_stability(
+            StabilityExpectation::permissive(None),
+            &evidence,
+            &ActionRequest::headless(action),
+            None,
+            crate::Deadline::standard().unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ActionNotSupported);
+        assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
+        let hint = error.suggestion.unwrap();
+        assert!(hint.contains("field that contains it"), "{hint}");
+        assert!(hint.contains("timefield"), "{hint}");
+        assert!(!hint.contains("ArrowUp"), "{hint}");
+    }
+}

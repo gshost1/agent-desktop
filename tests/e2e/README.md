@@ -14,6 +14,7 @@ AGENT_DESKTOP_E2E_EXCLUSIVE=1 bash tests/e2e/run.sh
 The single prerequisite gate requires:
 
 - macOS;
+- `python3` 3.10 or newer on `PATH` (macOS ships 3.9 at `/usr/bin/python3`);
 - Accessibility permission granted to the terminal or runner; and
 - a buildable Swift fixture app.
 
@@ -55,6 +56,10 @@ For a dedicated self-hosted runner, `scripts/run-native-e2e-ci.sh` sets the
 exclusivity acknowledgement and calls `run.sh`; it refuses to run unless
 `AGENT_DESKTOP_NATIVE_E2E_RUNNER=1` is set. The `native-e2e.yml` workflow is
 `workflow_dispatch` only.
+
+## Private steps
+
+Set `AGENT_DESKTOP_E2E_SKIP_PRIVATE=1` to skip every step that runs osascript or System Events, or reads or focuses Notification Center: the fixture window normalization, `scenarios/notifications.sh`, the volume part of `scenarios/os_surfaces.sh`, the AE5 native denied-Automation path and `native-menus.py`. Each prints `SKIP (private): <step>`, is never counted as a pass, and is listed with a count in the final summary. Unset, the harness behaves as before.
 
 ## Native menu regression
 

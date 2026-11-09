@@ -154,8 +154,12 @@ fn build_report_with_requirement(
         request
     };
     let requirements = ActionabilityRequirements::for_action(&request.action);
-    let pointer_delivery =
-        requirements.pointer_delivery(&request.action, &evidence.available_actions, request.policy);
+    let protocol = super::protocol_delivery::applies(evidence, request, hit_test);
+    let pointer_delivery = if protocol {
+        super::PointerDelivery::Semantic
+    } else {
+        requirements.pointer_delivery(&request.action, &evidence.available_actions, request.policy)
+    };
     let mut checks = Vec::new();
     let mut verified_point = None;
     let presentation_point = evidence.bounds.and_then(center_point);
@@ -166,7 +170,7 @@ fn build_report_with_requirement(
     );
     if requirements.visible {
         let requires_geometry =
-            requirements.requires_geometry(request, &evidence.available_actions);
+            !protocol && requirements.requires_geometry(request, &evidence.available_actions);
         let visibility = gates::visibility(evidence, requires_geometry, without_pointer);
         if requires_geometry
             && evidence.bounds.is_none()
@@ -194,7 +198,11 @@ fn build_report_with_requirement(
     if requirements.editable {
         checks.push(gates::editable(evidence, &request.action));
     }
-    checks.push(gates::action_supported(evidence, request));
+    checks.push(if protocol {
+        super::check_result::pass("supported_action")
+    } else {
+        gates::action_supported(evidence, request)
+    });
     checks.push(gates::policy(request));
     if checks
         .iter()
@@ -255,19 +263,19 @@ fn finish(
         return Ok(report);
     }
     let code = report.terminal_code().unwrap_or(ErrorCode::ActionFailed);
+    let not_supported = code == ErrorCode::ActionNotSupported;
+    let editable_failed = report.checks.iter().any(|check| {
+        check.check == "editable" && check.status == super::status::ActionabilityStatus::Fail
+    });
     let suggestion = if code == ErrorCode::ActionFailed {
         "Wait for the target to become actionable, refresh the snapshot, or use an explicit physical/focus command if intended."
-    } else if evidence.state.role == "cell"
-        && report.checks.iter().any(|check| {
-            check.check == "editable" && check.status == super::status::ActionabilityStatus::Fail
-        })
-    {
+    } else if evidence.state.role == "cell" && editable_failed {
         "This cell is not directly editable. Activate it, take a fresh snapshot, and target the text editor if one appears."
-    } else if code == ErrorCode::ActionNotSupported
-        && matches!(request.action, crate::Action::SetFocus)
-    {
+    } else if evidence.state.role == "incrementor" && editable_failed {
+        "This incrementor has no value of its own to set. When it is one part of a date or time field, set the whole value with set-value on the field that contains it, the parent that advertises SetValue (on the web surface, a datefield or timefield)."
+    } else if not_supported && matches!(request.action, crate::Action::SetFocus) {
         "Choose an element advertising SetFocus in a fresh snapshot. To focus the owning window instead, use focus-window."
-    } else if code == ErrorCode::ActionNotSupported
+    } else if not_supported
         && matches!(
             request.action,
             crate::Action::SetValue(_) | crate::Action::Clear

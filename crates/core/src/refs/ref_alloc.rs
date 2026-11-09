@@ -27,7 +27,7 @@ pub(crate) fn ref_entry_from_node(
         identity: crate::RefEntryIdentity {
             retained_object: node.identity.retained_object.clone(),
             role: node.role.clone(),
-            name: meaningful_string(node.identity.name.clone()),
+            name: meaningful_string(identity_name(node).map(str::to_owned)),
             value: meaningful_string(node.identity.value.clone()),
             description: meaningful_string(node.identity.description.clone()),
             native_id: node
@@ -351,6 +351,15 @@ fn allocate_observed_ref(
         crate::refs::ref_allocation::RefAllocation::Allocated(ref_id) => Ok(Some(ref_id)),
         crate::refs::ref_allocation::RefAllocation::SkippedInvalidRole
         | crate::refs::ref_allocation::RefAllocation::SkippedInvalidEntry => Ok(None),
+    }
+}
+
+/// The name a ref may record as identity. A derived name, read from a control
+/// value, locates and displays the element but never identifies it.
+pub(crate) fn identity_name(node: &AccessibilityNode) -> Option<&str> {
+    match node.presentation.descriptors.name_source {
+        Some(_) => None,
+        None => node.identity.name.as_deref(),
     }
 }
 

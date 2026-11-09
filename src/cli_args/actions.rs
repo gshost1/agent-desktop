@@ -170,6 +170,15 @@ pub(crate) struct PressArgs {
     #[serde(default)]
     pub window_id: Option<String>,
     #[arg(
+        long = "ref",
+        value_name = "REF",
+        conflicts_with_all = ["app", "window_id"],
+        help = "Qualified ref (@<snapshot_id>:eN) of the element that receives the key; \
+                a web ref takes it through the page without raising the browser"
+    )]
+    #[serde(default)]
+    pub ref_id: Option<String>,
+    #[arg(
         long,
         help = "Send the combo even if the adapter flags it as a dangerous shortcut"
     )]

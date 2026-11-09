@@ -8,6 +8,25 @@ if [ -z "${AGENT_DESKTOP_INTERACTION_LEASE_FD:-}" ]; then
         echo "macOS is required for the native accessibility E2E suite" >&2
         exit 2
     fi
+    if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+        found_python="$(command -v python3 2>/dev/null)"
+        if [ -n "$found_python" ]; then
+            echo "python3 3.10 or newer is required; found $found_python ($(python3 --version 2>&1))." >&2
+        else
+            echo "python3 3.10 or newer is required; no python3 is on PATH." >&2
+        fi
+        newer_python=""
+        for minor in 14 13 12 11 10; do
+            newer_python="$(command -v "python3.$minor" 2>/dev/null)" && break
+        done
+        if [ -n "$newer_python" ]; then
+            echo "$newer_python is installed but not named python3. Put it first on PATH as python3, for example:" >&2
+            echo "  mkdir -p \"\$HOME/.local/bin\" && ln -sf \"$newer_python\" \"\$HOME/.local/bin/python3\" && export PATH=\"\$HOME/.local/bin:\$PATH\"" >&2
+        else
+            echo "Install Python 3.10 or newer (for example 'brew install python') and put its python3 first on PATH." >&2
+        fi
+        exit 2
+    fi
     if [ "${AGENT_DESKTOP_E2E_EXCLUSIVE:-}" != "1" ]; then
         echo "SKIP (blocked): native E2E requires an exclusive desktop" >&2
         exit 2
@@ -101,7 +120,9 @@ w = min(int(b["width"]) - 40, 1900)
 h = min(int(b["height"]) - 34, 1080)
 print(int(b["x"]) + 20, int(b["y"]) + 28, w, h)
 ')"
-if [ -n "$frame" ]; then
+if private_skip_enabled; then
+    private_skip "fixture window normalization (osascript System Events)"
+elif [ -n "$frame" ]; then
     read -r fx fy fw fh <<EOF_FRAME
 $frame
 EOF_FRAME
@@ -154,7 +175,7 @@ if [ "$fixture_owned" -eq 0 ] || "$bin" close-app "$app" --force >/dev/null 2>&1
         if python3 "$repo/scripts/cursor-multi-agent-probe.py" \
             --bin "$raw_bin" \
             --fixture "$fixture_app/Contents/MacOS/AgentDeskFixture" \
-            --out "$suite_root/multi-agent-cursor-$mode" "${cursor_flags[@]}"; then
+            --out "$suite_root/multi-agent-cursor-$mode" ${cursor_flags[@]+"${cursor_flags[@]}"}; then
             okmsg "$mode multi-agent cursors share session state and preserve renderer isolation"
         else
             badmsg "$mode multi-agent cursor probe failed"

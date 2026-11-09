@@ -22,3 +22,20 @@ fn focused_only_is_empty_when_the_frontmost_owner_reports_no_focused_window() {
 
     assert!(windows.is_empty());
 }
+
+#[test]
+fn an_untitled_window_never_joins_an_untitled_focused_identity() {
+    let owners = owners(&[(10, 100.0)], Some(10));
+    let mut untitled = record(10, 1, "unused");
+    untitled.title = None;
+
+    let joined = assemble_global_windows(vec![untitled], &owners, false, |_| {
+        Ok(ax_state(Some((None, None))))
+    });
+
+    let reported_focus = match joined {
+        Ok(windows) => windows.iter().any(|window| window.state.is_focused),
+        Err(_) => false,
+    };
+    assert!(!reported_focus);
+}

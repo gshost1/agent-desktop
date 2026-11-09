@@ -20,6 +20,7 @@ finite deadline and do not take the interaction lease.
 | read + read | Both may run concurrently; neither waits for the interaction lease |
 | read + mutation | The read does not wait for the lease and may overlap the mutation; its result is a point-in-time observation, not a transaction |
 | mutation + mutation | One lease holder runs at a time for the same OS user; the waiter consumes its command deadline and returns a structured timeout if it cannot acquire the lease |
+| lease-taking call from a log callback while the same thread's lease-taking call holds the lease | Refused at once with `AD_RESULT_ERR_POLICY_DENIED`, details kind `reentrant_interaction_lease`; see Log callback threading for the list |
 | native-handle call on another thread | Rejected with `AD_RESULT_ERR_INVALID_ARGS`; use a qualified ref instead |
 
 Snapshots, finds, gets, display/window/app listings, screenshots, clipboard
@@ -55,9 +56,10 @@ calls that already acquired it finish safely, while calls that begin afterward
 return `AD_RESULT_ERR_INVALID_ARGS`. Concurrent destruction cannot free memory
 still referenced by an in-flight call.
 
-Destroying an adapter also revokes native handles created by that adapter on the
-calling thread. Other threads' handle registries reject subsequent use because
-the owner adapter token no longer exists.
+Destroying an adapter does not release native handles created by it. Using such
+a handle afterward fails because the owner adapter token no longer exists, but
+the handle stays allocated until `ad_free_handle` (with the same adapter pointer
+value) or the end of the thread that created it.
 
 ## Native-handle thread ownership
 
@@ -78,6 +80,25 @@ to cross an async task or thread boundary.
 
 `ad_set_log_callback(cb)` may be called from any thread. The callback may be
 invoked from any thread that calls an `ad_*` function.
+
+The callback may itself call `ad_*` functions. Events those nested calls emit
+are not delivered to the callback.
+
+These calls take the interaction lease through the FFI layer: `ad_mouse_event`, `ad_mouse_event_with_modifiers`, `ad_mouse_wheel`, `ad_drag`, `ad_set_clipboard`, `ad_clear_clipboard`, `ad_execute_action`, `ad_execute_action_with_policy`, `ad_execute_by_ref`, `ad_execute_by_ref_timeout`, `ad_launch_app_exact`, `ad_close_app`, `ad_focus_window_exact`, `ad_window_op_exact`, `ad_notification_action`, `ad_dismiss_notification` and `ad_dismiss_all_notifications`.
+One of them made from the callback while the call that logged is one of them
+and holds the lease fails at once with `AD_RESULT_ERR_POLICY_DENIED`, details
+kind `reentrant_interaction_lease` and `retryable: false`. When the call that
+logged is `ad_execute_by_ref*` or `ad_close_app`, whose lease core takes
+internally, the refusal covers the whole call, including the auto-wait and ref
+resolution before the lease is taken.
+
+Any other nested call that needs the interaction lease while the call that
+logged holds it, including an observation that takes the lease internally (for
+example to switch on a Chromium or Electron renderer's accessibility), waits
+for a release that happens only after the callback returns, and can time out.
+Do not make such calls from the callback; queue them for after the outer call
+returns. Another host thread, or a thread still waiting for the lease, is not
+refused and waits for the lease as usual.
 
 A callback unregistered via `NULL` may still receive an invocation already in
 flight on another thread. Keep the callback and captured state alive for the

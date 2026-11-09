@@ -34,8 +34,7 @@ macro_rules! command_scope {
             Ok(scope) => scope,
             Err(error) => {
                 let error = $crate::commands::app_error_to_adapter(error);
-                $crate::error::set_last_error(&error);
-                return $crate::error::last_error_code();
+                return $crate::error::set_last_error(&error);
             }
         }
     }};
@@ -47,8 +46,7 @@ macro_rules! mutating_command_scope {
             Ok(scope) => scope,
             Err(error) => {
                 let error = $crate::commands::app_error_to_adapter(error);
-                $crate::error::set_last_error(&error);
-                return $crate::error::last_error_code();
+                return $crate::error::set_last_error(&error);
             }
         }
     }};
@@ -58,8 +56,7 @@ macro_rules! complete_scope {
     ($scope:expr, $result:expr) => {{
         if let Err(error) = $scope.complete($result) {
             let error = $crate::commands::app_error_to_adapter(error);
-            $crate::error::set_last_error(&error);
-            return $crate::error::last_error_code();
+            return $crate::error::set_last_error(&error);
         }
     }};
 }
