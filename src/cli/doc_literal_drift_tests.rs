@@ -116,7 +116,7 @@ fn documented_command_counts_match_the_cli() {
 
 #[test]
 fn documented_snapshot_lines_match_the_renderer() {
-    let doc = include_str!("../../docs/json-output.md");
+    let doc = include_str!("../../docs/json-output.md").replace("\r\n", "\n");
     let section = &doc[doc
         .find("## Snapshot lines (`--lines`)")
         .expect("json-output.md documents --lines")..];

@@ -19,7 +19,7 @@ pub(crate) struct OutputArgs {
     #[arg(
         long,
         global = true,
-        help = "Print snapshot trees as data.lines, one indented line per node with its ref first (snapshot and --wait-for results)"
+        help = "Print snapshot trees as data.lines, one indented line per node with its ref first (snapshot, --root drills, --wait-for results and batch entries)"
     )]
     pub lines: bool,
 }

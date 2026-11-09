@@ -79,10 +79,16 @@ fn batch_entries_get_lines_and_their_neighbours_stay() {
 }
 
 #[test]
-fn an_unreadable_tree_keeps_the_result_instead_of_failing_it() {
+fn an_unreadable_tree_keeps_the_result_and_names_why_lines_are_missing() {
     let data = json!({ "action": "click", "tree": { "name": "no role" } });
     let (result, pretty) = present_lines("click", Ok(data.clone()), true);
+    let mut shown = result.unwrap();
+    let reason = shown
+        .as_object_mut()
+        .and_then(|body| body.remove("lines_error"))
+        .and_then(|reason| reason.as_str().map(str::to_owned));
 
     assert!(!pretty);
-    assert_eq!(result.unwrap(), data);
+    assert!(reason.is_some_and(|reason| !reason.is_empty()));
+    assert_eq!(shown, data);
 }

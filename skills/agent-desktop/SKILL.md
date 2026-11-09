@@ -34,10 +34,10 @@ Examples use a POSIX shell. When a ref is built from a variable, brace it: `"${S
 Use `find` when you know the role or exact name. Otherwise map the app first and drill into one region.
 
 ```
-agent-desktop snapshot --skeleton --app "Notes" -i --compact   # shallow map, children_count on cut branches
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # drill into one region
-agent-desktop click @s8f3k2p9:e12                              # act on a qualified ref
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact        # verify: re-read the same region
+agent-desktop snapshot --skeleton --app "Notes" -i --compact --lines   # shallow map, children_count on cut branches
+agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact --lines        # drill into one region
+agent-desktop click @s8f3k2p9:e12                                      # act on a qualified ref
+agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact --lines        # verify: re-read the same region
 ```
 
 - Make the first look `agent-desktop snapshot --app "Font Book" -i --compact --lines`. Each line of `data.lines` is one node, indented by depth: its ref first, then role and quoted name. `--lines` also applies to the snapshot `-w` returns.

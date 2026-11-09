@@ -128,11 +128,12 @@ Each line, in order:
 | `subtree_truncated` | A branch cut by the observation budget or the refmap cap |
 
 - Quoted text stays on one line. `"` and `\` are escaped with a backslash, a line feed, carriage return and tab become `\n`, `\r` and `\t`, and any other control character and the line and paragraph separators U+2028 and U+2029 become `\uXXXX`.
-- Bidirectional marks (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069) are dropped. Text matching in `find`, `wait --text` and selectors already ignores them, so a value copied from a line still matches.
+- Bidirectional marks (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069) are dropped. Text matching in `find`, `wait --text` and selectors already ignores them. A value copied from a line matches once its `\"` and `\\` escapes are undone; a value with neither matches as printed.
 - Every node of the presented tree has a line, in the depth-first order refs are allocated in, including nodes without a ref. `-i`, `--compact`, `--skeleton`, `--max-depth` and `--root` shape the tree as before; `--lines` only changes how it prints.
 - `available_actions`, `native_id`, `subrole`, `role_description`, `dom_classes` and `name_source` are not printed. Run without `--lines` to read them.
 - Every other `data` field keeps its meaning and value, including `snapshot_id`, `ref_count`, `complete`, `truncated`, `nodes_observed`, `refmap_capped`, `identity_unproven`, `matched_selector` and `after_action`. Refs are allocated and saved exactly as without the flag, and a trace records the tree.
 - `jq -r '.data.lines[]'` prints the bare lines.
+- A tree that cannot be rendered stays in `data.tree`, and `data.lines_error` gives the reason.
 - A tree that cannot be rendered stays `data.tree`, and the envelope stays on one line, so a delivered action's report is never replaced by an error. Check for `data.lines` before reading it.
 - `agent-desktop mcp --lines` applies the flag to every call the server runs. A result whose top-level `data` holds `lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope. A `batch` result keeps each entry's lines inside the envelope text.
 
