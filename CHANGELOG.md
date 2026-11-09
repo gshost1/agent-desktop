@@ -60,12 +60,13 @@ This fork release publishes GitHub release archives and checksums only. It does 
 
 ### Testing
 
-* The macOS E2E suite ran with private steps skipped on the release Mac (`AGENT_DESKTOP_E2E_SKIP_PRIVATE=1`).
+* The macOS E2E suite ran against main 15aa75cb on the release Mac with private steps skipped (`AGENT_DESKTOP_E2E_SKIP_PRIVATE=1`): 122 passed, 9 failed, 2 skipped, and 3 private steps skipped. Five of the failures (headed click, headed drag, the wait-actionable click, trace screenshots with Screen Recording denied, and a removed row refused with `APP_UNRESPONSIVE`) also failed in an earlier run on the same Mac on 2026-11-07 ([#32](https://github.com/gshost1/agent-desktop/pull/32)).
 
 ### Known issues
 
 * A web snapshot reads a block's inline text as one name, so `find --native-id` can no longer reach the id of a non-interactive inline span inside it, and two small test pages grew 3–5% in `-i` bytes. ([#78](https://github.com/gshost1/agent-desktop/pull/78))
 * On the web channel, a clickable row that a page exposes only as plain text still gets no ref when its click is handled by a listener on an ancestor (event delegation) or only on `pointerdown`.
+* A ref to a removed row is refused with `APP_UNRESPONSIVE` instead of `STALE_REF`. Nothing is delivered (`not_delivered`); take a fresh snapshot before retrying.
 
 ## [1.2.0](https://github.com/vercel-labs/agent-desktop/compare/v1.1.0...v1.2.0) (2026-11-05)
 
