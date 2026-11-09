@@ -36,7 +36,8 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
             let (target_id, opened) = if request.new_tab {
                 (background_tab(link, deadline)?, NEW_TAB)
             } else {
-                match choose_page(link, request.window, deadline) {
+                let shown_in = request.window.filter(|window| !window.is_process_owner());
+                match choose_page(link, shown_in, deadline) {
                     Ok(page) => (page.target_id, CURRENT_TAB),
                     Err(error) if is_no_page_target(&error) => {
                         (background_tab(link, deadline)?, NEW_TAB)

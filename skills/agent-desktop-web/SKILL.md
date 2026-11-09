@@ -21,6 +21,7 @@ agent-desktop launch "Google Chrome" --cdp --arg=--user-data-dir="$PWD/chrome-pr
 ```
 
 - `--cdp` needs a fresh browser process. If Chrome is already running, `launch` returns `ACTION_FAILED` with `details.kind` `cdp_requires_fresh_launch`. Closing the user's Chrome loses their tabs, so ask first.
+- If the browser's window is not listed (on another Space, or not on screen yet), `snapshot --surface web`, `find --surface web` and `open-url` still reach the page through the process `launch --cdp` started. Such a snapshot has no `data.window`.
 - A browser started this way brings its own first window to the front once. `open-url`, snapshots and web ref actions after that leave the front app and the pointer where they are.
 - `--user-data-dir` keeps the session out of the user's profile. While the DevTools port is open, any local process of the same user can drive the browser; `close-app "Google Chrome"` closes it.
 
@@ -96,6 +97,7 @@ A batch that ran every entry has `ok: true` even when an entry failed. Read `dat
 | `STALE_REF`, `cdp_document_replaced` or `cdp_node_gone` | The page navigated or the element went away since the snapshot | Snapshot again, use the new ref |
 | `ACTION_FAILED`, `cdp_click_intercepted` | Something covers the element (a banner, a dialog) | Snapshot, dismiss the cover, retry |
 | `ACTION_FAILED`, `cdp_node_not_rendered` | The element has no box on screen (hidden, collapsed) | Open the section that holds it, snapshot again |
+| `WINDOW_NOT_FOUND`, message `No window found to identify the application owning surface 'web'`, right after a launch | The browser lists no window and no endpoint was recorded for it | Run `agent-desktop launch "Google Chrome" --activate` once, then retry |
 | `WINDOW_NOT_FOUND`, `cdp_target_gone` | The tab closed | `list-surfaces --app "Google Chrome"` or `open-url` |
 | `WINDOW_NOT_FOUND`, `cdp_browser_has_no_page` or `cdp_page_not_found` | No page to read (a fresh profile, a minimized window) | `open-url`, or restore the window |
 | `AMBIGUOUS_TARGET`, `cdp_window_indistinct` | Two browser windows have the same title and frame, so the named window's page can't be told apart | Bring the window to the front or move one of them, then snapshot again |
