@@ -297,6 +297,27 @@ fn a_clickable_card_is_named_by_the_text_of_the_blocks_it_holds() {
 }
 
 #[test]
+fn a_clickable_card_keeps_the_words_of_spliced_blocks_apart() {
+    let raw = page(
+        &[10],
+        vec![
+            node(10, "generic", None, &[11, 12]),
+            node(11, "generic", None, &[21]),
+            node(21, "StaticText", Some("Title A"), &[]),
+            node(12, "generic", None, &[22]),
+            node(22, "StaticText", Some("Subtitle B"), &[]),
+        ],
+    );
+    let root = build(raw, &[], &[10]);
+
+    let card = &root.children[0].node;
+    assert_eq!(
+        card.presentation.descriptors.derived_name.as_deref(),
+        Some("Title A Subtitle B")
+    );
+}
+
+#[test]
 fn an_inline_wrapper_with_only_a_dom_id_is_read_through_and_a_block_one_is_kept() {
     let raw = page(
         &[10, 30],

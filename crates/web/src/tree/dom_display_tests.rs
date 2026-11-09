@@ -5,7 +5,7 @@ use serde_json::json;
 use super::collect_inline;
 
 #[test]
-fn only_inline_and_contents_layout_objects_are_inline() {
+fn only_inline_layout_objects_are_inline() {
     let capture = json!({
         "strings": ["block", "inline", "inline-block", "contents", "list-item", "inline-flex"],
         "documents": [
@@ -19,7 +19,7 @@ fn only_inline_and_contents_layout_objects_are_inline() {
         ],
     });
 
-    assert_eq!(collect_inline(&capture), HashSet::from([2, 4, 101]));
+    assert_eq!(collect_inline(&capture), HashSet::from([2, 101]));
 }
 
 #[test]

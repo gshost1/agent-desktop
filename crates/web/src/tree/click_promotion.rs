@@ -134,9 +134,16 @@ fn contained_text(children: &[WebNode]) -> String {
 }
 
 fn collect_text(node: &WebNode, text: &mut String) {
-    if let Some(InlineRun::Text(run)) = &node.run {
-        text.push_str(run);
-        return;
+    match &node.run {
+        Some(InlineRun::Text(run)) => {
+            text.push_str(run);
+            return;
+        }
+        Some(InlineRun::BlockEdge) => {
+            text.push(' ');
+            return;
+        }
+        None => {}
     }
     let descriptors = &node.node.presentation.descriptors;
     let own = descriptors.derived_name.as_deref().or(node

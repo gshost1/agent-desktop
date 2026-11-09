@@ -519,7 +519,7 @@ with its own ref and name; its text runs leave the tree:
   them reads as a space. A list item or `div` whose content is text alone reads
   as one `statictext`.
 - Text never merges across the edge of a block-level element, one whose
-  computed `display` is anything but `inline` or `contents`. A block that also
+  computed `display` is anything but `inline` (`display: contents` has no box and counts as a block). A block that also
   holds a field, an image or another block keeps its text in `statictext` nodes
   beside them.
 - An inline element with no role, name, state or action of its own, such as a

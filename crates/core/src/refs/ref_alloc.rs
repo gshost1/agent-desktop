@@ -1,8 +1,8 @@
-use crate::AccessibilityNode;
 use crate::refs::ref_capture_proof::CaptureProof;
 use crate::refs::ref_identity::has_meaningful_identity;
 use crate::refs::ref_skeleton_anchors::{carries_element_token, plan_skeleton_anchors};
 use crate::refs::{RefEntry, RefMap};
+use crate::{AccessibilityNode, NameSource};
 use std::collections::HashSet;
 
 pub(crate) use crate::refs::ref_alloc_config::RefAllocConfig;
@@ -362,7 +362,9 @@ fn allocate_observed_ref(
 /// container without a ref keeps its accessible name but loses a name
 /// derived from the text it contains.
 fn drop_derived_name(node: &mut AccessibilityNode) {
-    if node.presentation.descriptors.name_source.take().is_some() {
+    let descriptors = &mut node.presentation.descriptors;
+    if descriptors.name_source == Some(NameSource::ContainedText) {
+        descriptors.name_source = None;
         node.identity.name = None;
     }
 }

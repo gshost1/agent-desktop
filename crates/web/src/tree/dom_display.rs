@@ -7,10 +7,10 @@ use serde_json::Value;
 pub(crate) const DISPLAY_STYLE: &str = "display";
 
 /// The backend node ids of the nodes a capture laid out inline: those whose
-/// computed `display` is `inline`, or `contents`, which lays its children out
-/// in its parent's box. Every other laid-out element, `inline-block` and
-/// `inline-flex` included, holds its own box, so text never merges across
-/// it. A node with no layout object is in neither set. The capture's
+/// computed `display` is `inline`. Every other laid-out element,
+/// `inline-block` and `inline-flex` included, holds its own box, so text never
+/// merges across it. A node with no layout object, `display: contents` among
+/// them, is in neither set and counts as a block. The capture's
 /// `layout.styles` holds, per layout object, one index into `strings` for
 /// each requested style, and `layout.nodeIndex` points into the document's
 /// nodes.
@@ -60,7 +60,7 @@ pub(crate) fn collect_inline(capture: &Value) -> HashSet<i64> {
 }
 
 fn is_inline_display(display: &str) -> bool {
-    matches!(display.trim(), "inline" | "contents")
+    display.trim() == "inline"
 }
 
 #[cfg(test)]

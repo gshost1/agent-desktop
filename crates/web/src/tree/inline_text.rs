@@ -103,22 +103,31 @@ fn marker(run: InlineRun) -> WebNode {
 
 fn merge_adjacent_runs(children: &mut Vec<WebNode>) {
     let mut merged: Vec<WebNode> = Vec::with_capacity(children.len());
+    let mut grown: Vec<usize> = Vec::new();
     for child in children.drain(..) {
         let Some(InlineRun::Text(next)) = &child.run else {
             merged.push(child);
             continue;
         };
+        let last = merged.len().wrapping_sub(1);
         match merged.last_mut() {
             Some(WebNode {
-                node,
                 run: Some(InlineRun::Text(text)),
                 ..
             }) => {
                 text.push_str(next);
-                let name = collapse_whitespace(text);
-                node.identity.name = (!name.is_empty()).then_some(name);
+                if grown.last() != Some(&last) {
+                    grown.push(last);
+                }
             }
             _ => merged.push(child),
+        }
+    }
+    for index in grown {
+        let node = &mut merged[index];
+        if let Some(InlineRun::Text(text)) = &node.run {
+            let name = collapse_whitespace(text);
+            node.node.identity.name = (!name.is_empty()).then_some(name);
         }
     }
     *children = merged;

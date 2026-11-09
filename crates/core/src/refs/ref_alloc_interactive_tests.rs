@@ -89,3 +89,21 @@ fn a_full_snapshot_keeps_the_contained_text_of_every_block() {
         Some("Conceived by Ada, 1989.")
     );
 }
+
+#[test]
+fn interactive_only_keeps_a_name_derived_from_a_child_field() {
+    let mut row = node("row", Some("report.txt"), &[]);
+    row.presentation.descriptors.name_source = Some(NameSource::ChildFieldValue);
+    row.children = vec![node("textfield", Some("report.txt"), &["Click"])];
+    let mut root = node("webarea", Some("Page"), &[]);
+    root.children = vec![row];
+
+    let out = allocate(root, true);
+
+    let row = &out.children[0];
+    assert_eq!(row.identity.name.as_deref(), Some("report.txt"));
+    assert_eq!(
+        row.presentation.descriptors.name_source,
+        Some(NameSource::ChildFieldValue)
+    );
+}
