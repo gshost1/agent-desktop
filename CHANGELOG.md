@@ -19,6 +19,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 * On macOS, judge Return and Escape on a sheet or dialog by the effect on the surface, and let a sheet or popover frame replace its window's viewport. ([#50](https://github.com/gshost1/agent-desktop/pull/50)) ([#27](https://github.com/gshost1/agent-desktop/pull/27))
 * On macOS, write text into the in-place editor of a renamed list row and leave the commit pending, instead of reporting a write that Return then discards. ([#24](https://github.com/gshost1/agent-desktop/pull/24))
 * On macOS, name file-list rows from their single text field so `find --name` matches them in a Save panel. ([#56](https://github.com/gshost1/agent-desktop/pull/56))
+* On macOS, wait for a row's own selection to settle before verifying it, so a `click` on a list or outline cell that did select the row no longer fails now and then with `ACTION_FAILED` and `delivered_unverified`. ([#76](https://github.com/gshost1/agent-desktop/pull/76))
 * On macOS, find the window of a control that omits `AXWindow`, so `select`, `click` and `expand` on System Settings popups no longer time out. ([#6](https://github.com/gshost1/agent-desktop/pull/6))
 * On macOS, read window titles through accessibility without Screen Recording permission, so `list-windows`, `snapshot` and `wait --window` can tell windows apart. ([#32](https://github.com/gshost1/agent-desktop/pull/32))
 * Stop `find` and surface walks from repeating reads that cannot finish within the budget. ([#33](https://github.com/gshost1/agent-desktop/pull/33))
