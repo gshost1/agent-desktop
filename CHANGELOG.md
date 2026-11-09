@@ -21,6 +21,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 * On macOS, name file-list rows from their single text field so `find --name` matches them in a Save panel. ([#56](https://github.com/gshost1/agent-desktop/pull/56))
 * On macOS, wait for a row's own selection to settle before verifying it, so a `click` on a list or outline cell that did select the row no longer fails now and then with `ACTION_FAILED` and `delivered_unverified`. ([#76](https://github.com/gshost1/agent-desktop/pull/76))
 * Give `close-app` a budget per phase, with a new `--timeout-ms` (default 5000), so waiting for another command's desktop lease can no longer use up the exit check. A close that was sent and whose app then exits now reports `delivered_verified` or `delivered_unverified` instead of `TIMEOUT` or, on macOS, `APP_UNRESPONSIVE`; a `TIMEOUT` names its phase in `details.phase`. ([#38](https://github.com/gshost1/agent-desktop/pull/38))
+* When a browser that `launch --cdp` started lists no window, `snapshot`, `find` and `wait` with `--surface web`, `open-url` and saved web refs now read the page through that browser process instead of failing with `WINDOW_NOT_FOUND`. Without an endpoint recorded for that exact process, the result is still `WINDOW_NOT_FOUND`. The window was most likely off the current Space; that cause is unconfirmed. ([#77](https://github.com/gshost1/agent-desktop/pull/77))
 * On macOS, find the window of a control that omits `AXWindow`, so `select`, `click` and `expand` on System Settings popups no longer time out. ([#6](https://github.com/gshost1/agent-desktop/pull/6))
 * On macOS, read window titles through accessibility without Screen Recording permission, so `list-windows`, `snapshot` and `wait --window` can tell windows apart. ([#32](https://github.com/gshost1/agent-desktop/pull/32))
 * Stop `find` and surface walks from repeating reads that cannot finish within the budget. ([#33](https://github.com/gshost1/agent-desktop/pull/33))
@@ -60,7 +61,6 @@ This fork release publishes GitHub release archives and checksums only. It does 
 
 ### Known issues
 
-* Once in 15 benchmark runs, a cold Chrome start was not exposed to the accessibility tree until `launch "Google Chrome" --activate`.
 * On macOS, a headless `right-click` can report a failure although the context menu opened. On a SwiftUI text field it returned `ACTION_FAILED` with `delivered_unverified` in 3 of 3 runs, and other live checks saw `APP_UNRESPONSIVE` (`AXShowMenu` -25204). Before retrying, check with `wait --menu --app <app>`.
 * On the web channel, a clickable row that a page exposes only as plain text still gets no ref when its click is handled by a listener on an ancestor (event delegation) or only on `pointerdown`.
 
