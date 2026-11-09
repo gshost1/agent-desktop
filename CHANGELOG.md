@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (1.4.0)
+
+### Bug Fixes
+
+* Stop a headed `hover` or `drag` whose target stays covered from raising its window again on every attempt until `--timeout`. When an attempt's focus brought the target in front of another window and the attempt still fails, the command ends with that attempt's error, which carries `details.preparatory_focus`; a target that was already in front, or whose front window cannot be read, keeps waiting as before. ([#58](https://github.com/gshost1/agent-desktop/pull/58))
+
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
 This fork release publishes GitHub release archives and checksums only. It does not publish to npm.
