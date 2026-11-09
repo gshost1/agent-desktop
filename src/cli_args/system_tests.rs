@@ -126,3 +126,15 @@ fn window_mutation_args_accept_window_ids() {
     assert_eq!(move_window.scope.window_id.as_deref(), Some("w-42"));
     assert_eq!(minimize.scope.window_id.as_deref(), Some("w-42"));
 }
+
+#[test]
+fn close_app_timeout_parses_from_cli_and_batch_json() {
+    let cli = CloseAppArgs::try_parse_from(["close-app", "X", "--timeout-ms", "9000"]).unwrap();
+    let batch: CloseAppArgs =
+        serde_json::from_value(serde_json::json!({ "app": "X", "timeout_ms": 9000 })).unwrap();
+    let absent = CloseAppArgs::try_parse_from(["close-app", "X"]).unwrap();
+
+    assert_eq!(cli.timeout_ms, Some(9000));
+    assert_eq!(batch.timeout_ms, Some(9000));
+    assert_eq!(absent.timeout_ms, None);
+}

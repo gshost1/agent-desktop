@@ -38,7 +38,7 @@ agent-desktop click @s8f3k2p9:e8            # act on a ref from that snapshot
 agent-desktop snapshot --app Finder -i      # observe again to verify
 ```
 
-Each command prints one JSON envelope. A trimmed snapshot:
+Each command prints one JSON envelope. Add `--lines` to get the tree as `data.lines`, one line per node with its ref first. A trimmed snapshot:
 
 ```json
 {

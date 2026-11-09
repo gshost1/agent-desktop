@@ -120,6 +120,12 @@ pub trait SystemOps: Send + Sync {
         Ok(())
     }
 
+    /// Whether `launch --cdp` recorded a DevTools endpoint for this exact
+    /// process instance. Only the record is read; nothing is contacted.
+    fn has_recorded_cdp_endpoint(&self, _process: ProcessIdentity) -> bool {
+        false
+    }
+
     /// Loads a URL in a browser's visible tab, or in a new background tab.
     fn open_url(
         &self,

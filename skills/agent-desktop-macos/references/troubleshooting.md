@@ -32,7 +32,7 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Symptom.** A snapshot is slow, or returns `"complete": false` with `"truncated": true`.
 
-**Cause.** Large apps (Xcode, Safari with many tabs) have deep trees. A truncated snapshot ran out of its observation budget.
+**Cause.** Large apps (Xcode, Safari with many tabs) have deep trees. A truncated snapshot ran out of its observation budget, or, when it also carries `"refmap_capped": true`, its refs did not fit the 1 MB refmap a snapshot stores.
 
 **Fix.** Use `find` when you know the target. Otherwise use `snapshot --skeleton -i --compact`, then `snapshot --root @<snapshot_id>:eN` to drill down. Add `--window-id` to limit the window.
 
@@ -56,13 +56,13 @@ For Automation, open Privacy & Security > Automation and allow the launching app
 
 **Fix.** Add the global `--headed` flag only if physical input is what you want. Example: `agent-desktop --headed mouse-click --xy 640,400 --button right`. Take coordinates from `get @ref --property bounds`.
 
-## APP_UNRESPONSIVE after right-click
+## APP_UNRESPONSIVE or ACTION_FAILED after right-click
 
-**Symptom.** `right-click` returns `APP_UNRESPONSIVE` with `delivery_uncertain` and `retry: unsafe`.
+**Symptom.** `right-click` returns `APP_UNRESPONSIVE`, or `ACTION_FAILED` with `details.menu_observed: false`, with `delivery_uncertain` and `retry: unsafe`.
 
-**Cause.** `AXShowMenu` can enter modal menu tracking and return `kAXErrorCannotComplete` after the menu opened.
+**Cause.** `AXShowMenu` does not return until the menu it opened stops tracking, so agent-desktop gives the call about 250 ms and it times out with `kAXErrorCannotComplete`. agent-desktop then reads the app's menu surface for up to 1.5 s and reports a menu it sees as success. These errors mean it saw none: `ACTION_FAILED` when the app answered the reads, `APP_UNRESPONSIVE` when it did not. The menu can still open after that window.
 
-**Fix.** Do not retry. Run `snapshot --app "App" --surface menu -i`. If the menu is there, use it. If not, run `list-surfaces --app "App"`. For a combo box or menu button, use `select @ref "Option"`.
+**Fix.** Do not retry. Run `wait --menu --app "App" --timeout 3000`, or `snapshot --app "App" --surface menu -i`. If the menu is there, use it. If not, run `list-surfaces --app "App"`. For a combo box or menu button, use `select @ref "Option"`.
 
 ## Saved file has `:` in its name, in the wrong folder
 

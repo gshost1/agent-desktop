@@ -60,6 +60,12 @@ pub(crate) struct CloseAppArgs {
     )]
     #[serde(default)]
     pub force: bool,
+    #[arg(
+        long,
+        value_name = "MS",
+        help = "Upper bound in ms for the whole close (default 5000). Finding the app and waiting for the desktop lease get the first half; revalidation, the close and the exit wait get the second, less a small slice kept for confirming the exit"
+    )]
+    pub timeout_ms: Option<u64>,
 }
 
 #[derive(Parser, Debug, Deserialize)]

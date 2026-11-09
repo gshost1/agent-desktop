@@ -74,6 +74,41 @@ fn set_value_the_read_back_disagrees_with_stays_unverified_and_reports_it() {
     assert_eq!(result.details.unwrap()["observed"], "hel");
 }
 
+fn value_script(reply: Value) -> ScriptedTransport {
+    proven(attach(ScriptedTransport::new(), "T"))
+        .expect("DOM.resolveNode", json!({ "object": { "objectId": "s" } }))
+        .expect(
+            "Runtime.callFunctionOn",
+            json!({ "result": { "value": { "valueType": "time" } } }),
+        )
+        .expect(
+            "Runtime.callFunctionOn",
+            json!({ "result": { "value": reply } }),
+        )
+        .expect("Runtime.releaseObject", json!({}))
+}
+
+#[test]
+fn set_value_on_a_time_input_assigns_it_whole_and_names_the_input_type() {
+    let reply = json!({ "status": "assigned", "observed": "19:30" });
+    let result = run(value_script(reply), Action::SetValue("19:30".into())).unwrap();
+    assert_eq!(
+        result.disposition(),
+        DeliverySemantics::delivered_verified()
+    );
+    let details = result.details.unwrap();
+    assert_eq!(details["input_type"], "time");
+    assert_eq!(details["observed"], "19:30");
+    assert_eq!(details["channel"], "cdp");
+}
+
+#[test]
+fn set_value_on_a_time_input_that_holds_the_value_is_not_delivered() {
+    let reply = json!({ "status": "unchanged", "observed": "19:30" });
+    let result = run(value_script(reply), Action::SetValue("19:30".into())).unwrap();
+    assert_eq!(result.disposition(), DeliverySemantics::not_delivered());
+}
+
 #[test]
 fn click_dispatches_page_input_and_stays_unverified() {
     let transport = proven(attach(ScriptedTransport::new(), "T"))

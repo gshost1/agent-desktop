@@ -11,7 +11,7 @@ from scenarios.menus import _toggle, _visible
 from scenarios.surfaces import prepare_about
 
 EXPECTED_STALE_CODE = "STALE_REF"
-STALE_RECOVERY = "refresh_snapshot_then_retry_original"
+STALE_KIND = "menu_closed"
 
 
 def refs(data):
@@ -63,8 +63,15 @@ def stale_verdict(envelope, display_before: str, display_after: str) -> list[str
         problems.append(f"expected {EXPECTED_STALE_CODE}, got ok={envelope.ok} code={error.get('code')!r}")
     if (error.get("disposition") or {}).get("delivery") != "not_delivered":
         problems.append("a stale ref must be reported not_delivered")
-    if (error.get("recovery") or {}).get("strategy") != STALE_RECOVERY:
-        problems.append(f"stale envelope recovery strategy is not {STALE_RECOVERY!r}")
+    details = error.get("details") or {}
+    if details.get("kind") != STALE_KIND:
+        problems.append(f"stale envelope kind is not {STALE_KIND!r}")
+    if details.get("complete") is not True:
+        problems.append("a closed menu must be complete absence evidence")
+    if details.get("retryable") is not False:
+        problems.append("a ref of a closed menu must not be retryable")
+    if error.get("recovery") is not None:
+        problems.append("a ref of a closed menu must offer no refresh recovery")
     if envelope.exit_code != 1:
         problems.append(f"structured error must exit 1, got {envelope.exit_code}")
     if display_before != display_after:
