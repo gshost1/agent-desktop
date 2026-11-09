@@ -157,7 +157,7 @@ def devtools_endpoint(profile):
     return None
 
 
-def quit_chrome_gracefully(proc, profile, grace=20):
+def quit_chrome_gracefully(proc, profile, grace=40):
     """Ask Chrome to quit over DevTools so it removes its code-sign clone, then wait for every profile process."""
     endpoint = devtools_endpoint(profile)
     node = shutil.which("node")
