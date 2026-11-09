@@ -56,7 +56,7 @@ mod imp {
         }
         let settle_end = std::time::Instant::now()
             + std::time::Duration::from_millis(
-                crate::actions::select::container_select::SELECTION_SETTLE_MS,
+                crate::actions::select::selection_settle::SELECTION_SETTLE_MS,
             );
         loop {
             let observed = crate::tree::properties::attributes::copy_bool_attr_result(
@@ -73,7 +73,7 @@ mod imp {
                 return observed;
             }
             std::thread::sleep(deadline.remaining().min(std::time::Duration::from_millis(
-                crate::actions::select::container_select::SELECTION_POLL_MS,
+                crate::actions::select::selection_settle::SELECTION_POLL_MS,
             )));
         }
     }

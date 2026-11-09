@@ -68,8 +68,7 @@ macro_rules! acquire_adapter {
         match $crate::adapter::lookup_adapter($adapter) {
             Ok(adapter) => adapter,
             Err(error) => {
-                $crate::error::set_last_error(&error);
-                return $crate::error::last_error_code();
+                return $crate::error::set_last_error(&error);
             }
         }
     }};
@@ -131,14 +130,14 @@ fn create_adapter(session_id: Option<String>) -> *mut AdAdapter {
     let inner = match build_adapter() {
         Ok(inner) => inner,
         Err(error) => {
-            error::set_last_error(&error);
+            let _ = error::set_last_error(&error);
             return std::ptr::null_mut();
         }
     };
     let session_lease = match crate::session_lease::acquire(session_id.as_deref()) {
         Ok(lease) => lease,
         Err(error) => {
-            error::set_last_error(&error);
+            let _ = error::set_last_error(&error);
             return std::ptr::null_mut();
         }
     };
@@ -149,7 +148,7 @@ fn create_adapter(session_id: Option<String>) -> *mut AdAdapter {
     }) {
         Ok(handle) => handle,
         Err(error) => {
-            error::set_last_error(&error);
+            let _ = error::set_last_error(&error);
             std::ptr::null_mut()
         }
     }
@@ -187,7 +186,7 @@ pub unsafe extern "C" fn ad_adapter_create_with_session(session: *const c_char) 
         let session_id = match optional_adapter_string(session, "session") {
             Ok(opt) => opt,
             Err(err) => {
-                error::set_last_error(&err);
+                let _ = error::set_last_error(&err);
                 return std::ptr::null_mut();
             }
         };
@@ -200,7 +199,7 @@ pub unsafe extern "C" fn ad_adapter_create_with_session(session: *const c_char) 
                         other.to_string(),
                     ),
                 };
-                error::set_last_error(&adapter_err);
+                let _ = error::set_last_error(&adapter_err);
                 return std::ptr::null_mut();
             }
         }
@@ -216,13 +215,17 @@ pub unsafe extern "C" fn ad_adapter_create_with_session(session: *const c_char) 
 ///
 /// Calls that acquired the adapter before destruction retain it until they
 /// return. Calls beginning after destruction fail with `ErrInvalidArgs`.
+/// Platform teardown runs after the adapter registry is unlocked, so other
+/// threads and log callbacks can keep calling `ad_*` functions meanwhile.
+/// When an in-flight call still holds the adapter, teardown runs later, when
+/// that call returns, on that call's thread.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ad_adapter_destroy(adapter: *mut AdAdapter) {
     trap_panic_void(|| {
         if !adapter.is_null() {
-            let id = adapter.addr();
-            if lock_adapters().remove(&id).is_none() {
-                error::set_last_error(&AdapterError::new(
+            let removed = lock_adapters().remove(&adapter.addr());
+            if removed.is_none() {
+                let _ = error::set_last_error(&AdapterError::new(
                     agent_desktop_core::ErrorCode::InvalidArgs,
                     "adapter handle is invalid or has already been destroyed",
                 ));
@@ -243,22 +246,18 @@ pub unsafe extern "C" fn ad_check_permissions(adapter: *const AdAdapter) -> AdRe
         let report = match adapter.inner.permission_report(deadline) {
             Ok(report) => report,
             Err(error) => {
-                error::set_last_error(&error);
-                return error::last_error_code();
+                return error::set_last_error(&error);
             }
         };
         match report.accessibility {
             PermissionState::Granted => AdResult::Ok,
-            PermissionState::Denied { suggestion } => {
-                error::set_last_error(
-                    &agent_desktop_core::AdapterError::new(
-                        agent_desktop_core::ErrorCode::PermDenied,
-                        "Accessibility permission not granted",
-                    )
-                    .with_suggestion(suggestion),
-                );
-                AdResult::ErrPermDenied
-            }
+            PermissionState::Denied { suggestion } => error::set_last_error(
+                &agent_desktop_core::AdapterError::new(
+                    agent_desktop_core::ErrorCode::PermDenied,
+                    "Accessibility permission not granted",
+                )
+                .with_suggestion(suggestion),
+            ),
             PermissionState::NotRequired => AdResult::Ok,
             PermissionState::Unknown => unknown_permission_result(adapter.inner.as_ref()),
         }
@@ -289,8 +288,7 @@ fn unknown_permission_result(adapter: &dyn PlatformAdapter) -> AdResult {
         )
     };
     let err = agent_desktop_core::AdapterError::new(code, message).with_suggestion(suggestion);
-    error::set_last_error(&err);
-    crate::error::last_error_code()
+    error::set_last_error(&err)
 }
 
 #[cfg(test)]

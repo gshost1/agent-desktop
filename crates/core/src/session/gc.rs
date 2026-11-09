@@ -8,6 +8,7 @@ use crate::{
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[derive(Debug, Clone, Copy)]
 pub struct GcOptions {
     /// Consider only sessions that have ended. An ended session takes no new
     /// writes except from commands that already hold a liveness lease, so
@@ -53,6 +54,11 @@ fn has_recent_activity(store: &RefStore, manifest: Option<&SessionManifest>) -> 
     })
 }
 
+/// Removes sessions that no process holds and that `options` select.
+///
+/// A session whose lock or liveness lease is held at the moment of the check is
+/// kept, even when the holder is only a child that another thread forked
+/// before its `exec` closed the inherited descriptor. A later run reclaims it.
 pub fn gc(options: GcOptions) -> Result<GcReport, AppError> {
     let mut removed = Vec::new();
     for manifest in list_sessions()? {

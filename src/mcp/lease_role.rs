@@ -49,7 +49,7 @@ impl LeaseRole {
 fn reads_notifications(command: &Commands) -> bool {
     match command {
         Commands::ListNotifications(_) => true,
-        Commands::Wait(args) => args.mode.notification,
+        Commands::Wait(args) => args.surface.notification,
         _ => false,
     }
 }

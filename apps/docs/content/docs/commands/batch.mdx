@@ -68,7 +68,7 @@ The rejection names the entry in `details.batch_index` and `details.batch_comman
 
 ### Execution and output
 
-Entries run one at a time through the same dispatch as the CLI, so each entry's `data` or `error` is what a direct call returns. Nothing is retried. The batch itself returns `ok: true` and exit code `0` even when entries fail, so read each entry's `ok`.
+Entries run one at a time through the same dispatch as the CLI, so each entry's `data` or `error` is what a direct call returns. Nothing is retried. The batch itself returns `ok: true` and exit code `0` even when entries fail, so read `failed_entries` and each entry's `ok`.
 
 ```json
 {
@@ -78,6 +78,7 @@ Entries run one at a time through the same dispatch as the CLI, so each entry's 
   "data": {
     "completed_entries": 2,
     "elapsed_ms": 100,
+    "failed_entries": 0,
     "limits": { "max_entries": 64, "max_input_bytes": 1048576, "max_output_bytes": 4194304 },
     "not_started_entries": 0,
     "results": [
@@ -104,14 +105,14 @@ Entries run one at a time through the same dispatch as the CLI, so each entry's 
   </thead>
   <tbody>
     <tr><td><code>results[]</code></td><td>One envelope per entry, with <code>index</code> and <code>execution</code> (<code>completed</code> or <code>not_started</code>). A <code>not_started</code> entry has <code>not_started_reason</code> and a <code>not_delivered</code> error.</td></tr>
-    <tr><td><code>total_entries</code>, <code>completed_entries</code>, <code>not_started_entries</code></td><td>Counts. Entries after a stop are counted in <code>not_started_entries</code> without a row.</td></tr>
-    <tr><td><code>stopped</code></td><td>Present when the batch ended early: <code>reason</code> is <code>stop_on_error</code>, <code>deadline</code>, <code>output_limit</code>, or <code>pre_action_baseline_failed</code>, with the <code>index</code>.</td></tr>
+    <tr><td><code>total_entries</code>, <code>completed_entries</code>, <code>failed_entries</code>, <code>not_started_entries</code></td><td>Counts. <code>completed_entries</code> counts every entry that ran; <code>failed_entries</code> counts those that returned an error. Entries after a stop are counted in <code>not_started_entries</code> without a row.</td></tr>
+    <tr><td><code>stopped</code></td><td>Present when the batch ended early, and also when its last entry failed under <code>--stop-on-error</code> or with <code>TIMEOUT</code> once <code>--timeout-ms</code> ran out. <code>reason</code> is <code>stop_on_error</code>, <code>deadline</code>, <code>output_limit</code>, or <code>pre_action_baseline_failed</code>. <code>index</code> names the entry that stopped the batch; a deadline that ran out while an entry ran reports <code>after_index</code> instead, including for the last entry.</td></tr>
   </tbody>
 </table>
 
-- **Deadline.** Before each entry the batch checks `--timeout-ms`. If it expired, that entry is `not_started` with reason `deadline` and the batch stops.
-- **Event waits.** When a `wait` entry with `event` follows another entry, the batch captures the event baseline before that earlier entry runs. If the capture fails, the earlier entry does not start (`pre_action_baseline_failed`).
-- **Notification waits.** When a headless `wait` entry with `notification` follows another entry, the batch lists notifications before that earlier entry runs. A failed listing never blocks the earlier entry; the wait then takes its own first listing and reports `pre_action_seed: "unavailable"`. A headed wait is not seeded (`pre_action_seed: "skipped_headed"`), so no notification surface opens right before the action.
-- **Sessions.** An entry whose session ended before it starts is `not_started` with reason `session_ended`.
+- **Deadline.** Before each entry the batch checks `--timeout-ms`. If it expired, that entry is `not_started` with reason `deadline` and the batch stops. An entry that fails with `TIMEOUT` once `--timeout-ms` has run out stops the batch with reason `deadline`, with or without `--stop-on-error`.
+- **Event waits.** For a `wait` entry with `event`, the batch captures the event baseline before the nearest earlier action that can change windows, apps, surfaces, notifications or focus, whatever sits between them. Clipboard writes, session commands and notification dismissals are not actions here. Several waits after one action all measure from that action, so two waits whose filters overlap can both report the same new window. A wait with no earlier action, or whose action did not run because its session ended, takes its own first read. If the capture fails and the wait directly follows the action, the action does not start and the batch stops (`pre_action_baseline_failed`). Otherwise the entries before the wait still run, and the wait is `not_started` with reason `pre_action_baseline_failed`. A capture that runs out `--timeout-ms` stops the batch with reason `deadline`.
+- **Notification waits.** For a headless `wait` entry with `notification`, the batch lists notifications before the same earlier entry an event wait would use. A failed listing never blocks the earlier entry; the wait then takes its own first listing and reports `pre_action_seed: "unavailable"`. A headed wait is not seeded (`pre_action_seed: "skipped_headed"`), so no notification surface opens right before the action.
+- **Sessions.** An entry whose session ended before it starts is `not_started` with reason `session_ended`. A `session end` entry still runs, since ending a session is repeatable.
 
 Refs in `args` must already exist when you write the array. A `snapshot` entry inside the batch creates refs you cannot name in later entries, so take the snapshot in a separate call.

@@ -78,12 +78,18 @@ pub fn map_cdp_role(role: &str) -> &'static str {
 }
 
 /// Roles whose subtree is rendering detail, never content an agent reads:
-/// inline text boxes under static text, line breaks, list bullets.
+/// inline text boxes under static text, list bullets.
 pub(crate) fn is_text_fragment_role(role: &str) -> bool {
     matches!(
         role.to_ascii_lowercase().as_str(),
-        "inlinetextbox" | "linebreak" | "listmarker"
+        "inlinetextbox" | "listmarker"
     )
+}
+
+/// The role of a `<br>`, which emits no node but separates the text on
+/// either side of it.
+pub(crate) fn is_line_break_role(role: &str) -> bool {
+    role.eq_ignore_ascii_case("linebreak")
 }
 
 /// Roles that own a child frame. They are never collapsed, because a child

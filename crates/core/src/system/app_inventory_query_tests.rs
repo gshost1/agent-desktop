@@ -106,6 +106,7 @@ fn incomplete_post_lease_inventory_refuses_close_before_delivery() {
         crate::commands::close_app::CloseAppArgs {
             app: "Example".into(),
             force: false,
+            timeout_ms: None,
         },
         &IncompleteAfterLease(std::sync::atomic::AtomicUsize::new(0)),
     )

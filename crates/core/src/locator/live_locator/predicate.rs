@@ -58,9 +58,9 @@ pub(crate) fn self_verdict(
         return verdict;
     }
     let verdict = verdict
-        .and(text_verdict(
+        .and(name_verdict(
             query.identity.name.as_deref(),
-            &evidence.name,
+            evidence,
             query.exact,
         ))
         .and(text_verdict(
@@ -83,6 +83,9 @@ pub(crate) fn self_verdict(
     verdict
 }
 
+/// The `--text` verdict on one node. A derived name counts as the node's
+/// text where the accessible name was read and found absent, as a web block
+/// named by the text it contains reads.
 pub(crate) fn self_text_verdict(
     expected: Option<&str>,
     evidence: &LocatorEvidence,
@@ -91,6 +94,11 @@ pub(crate) fn self_text_verdict(
     let Some(expected) = expected else {
         return MatchVerdict::Match;
     };
+    if let Some(derived) = evidence.derived_name()
+        && text_matches(derived, expected, exact)
+    {
+        return MatchVerdict::Match;
+    }
     let mut verdict = MatchVerdict::NoMatch;
     for field in [&evidence.name, &evidence.description, &evidence.value] {
         verdict = verdict.or(text_verdict(Some(expected), field, exact));
@@ -112,6 +120,15 @@ fn role_verdict(expected: Option<&str>, actual: &LocatorField<String>) -> MatchV
     }
 }
 
+/// The `--name` verdict, which falls back to a derived name only where the
+/// accessible name was read and found absent.
+fn name_verdict(expected: Option<&str>, evidence: &LocatorEvidence, exact: bool) -> MatchVerdict {
+    match (expected, evidence.derived_name()) {
+        (Some(expected), Some(derived)) => bool_verdict(text_matches(derived, expected, exact)),
+        _ => text_verdict(expected, &evidence.name, exact),
+    }
+}
+
 fn text_verdict(
     expected: Option<&str>,
     actual: &LocatorField<String>,
@@ -121,16 +138,17 @@ fn text_verdict(
         return MatchVerdict::Match;
     };
     match actual {
-        LocatorField::Known(actual) => {
-            let matched = if exact {
-                search_text::normalize(actual) == expected
-            } else {
-                search_text::contains(actual, expected)
-            };
-            bool_verdict(matched)
-        }
+        LocatorField::Known(actual) => bool_verdict(text_matches(actual, expected, exact)),
         LocatorField::Absent => MatchVerdict::NoMatch,
         LocatorField::Unknown => MatchVerdict::Unknown,
+    }
+}
+
+fn text_matches(actual: &str, expected: &str, exact: bool) -> bool {
+    if exact {
+        search_text::normalize(actual) == expected
+    } else {
+        search_text::contains(actual, expected)
     }
 }
 
@@ -191,3 +209,7 @@ fn bool_verdict(matched: bool) -> MatchVerdict {
         MatchVerdict::NoMatch
     }
 }
+
+#[cfg(test)]
+#[path = "predicate_tests.rs"]
+mod tests;

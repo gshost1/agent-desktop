@@ -14,12 +14,20 @@ use crate::{
         skills::{SkillsAction, SkillsArgs, SkillsGetArgs},
         trace::{TraceAction, TraceArgs, TraceExportArgs, TraceShowArgs},
     },
+    command_policy::CommandEffect,
 };
 
+mod batch_results;
+mod batch_stop;
 mod bounded_json;
+mod entry_errors;
+mod entry_outcome;
 mod execution;
+mod pending_seed;
 mod preparation;
 mod result_entry;
+mod seed_kind;
+mod seed_plan;
 
 #[cfg(test)]
 #[path = "baseline_tests.rs"]
@@ -29,13 +37,27 @@ mod baseline_tests;
 #[path = "open_system_surface_parity_tests.rs"]
 mod open_system_surface_parity_tests;
 
+pub(crate) use result_entry::{entry_disposition, trace_failure_details};
+
+#[cfg(test)]
 pub(crate) fn execute(
     args: BatchArgs,
     adapter: &dyn PlatformAdapter,
     permission_report: &PermissionReport,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    execution::execute(args, adapter, permission_report, context)
+    execution::execute(args, adapter, permission_report, context, &mut Vec::new())
+}
+
+/// Runs the batch and records each prepared entry's effect by its index.
+pub(crate) fn execute_recording_effects(
+    args: BatchArgs,
+    adapter: &dyn PlatformAdapter,
+    permission_report: &PermissionReport,
+    context: &CommandContext,
+    entry_effects: &mut Vec<CommandEffect>,
+) -> Result<Value, AppError> {
+    execution::execute(args, adapter, permission_report, context, entry_effects)
 }
 
 pub(crate) fn parse_command(item: BatchCommand) -> Result<Commands, AppError> {
@@ -85,6 +107,7 @@ pub(crate) fn parse_command(item: BatchCommand) -> Result<Commands, AppError> {
         "restore" => decode(command, item.args).map(Commands::Restore),
         "list-surfaces" => decode(command, item.args).map(Commands::ListSurfaces),
         "open-system-surface" => decode(command, item.args).map(Commands::OpenSystemSurface),
+        "open-url" => decode(command, item.args).map(Commands::OpenUrl),
         "list-notifications" => decode(command, item.args).map(Commands::ListNotifications),
         "dismiss-notification" => decode(command, item.args).map(Commands::DismissNotification),
         "dismiss-all-notifications" => {

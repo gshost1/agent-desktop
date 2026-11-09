@@ -5,6 +5,7 @@ Hand-written golden files that tests compare serialized output against. None is 
 | Fixture | Asserted by |
 |---|---|
 | `skeleton-tree.json` | `test_skeleton_fixture_matches_golden` in `crates/core/src/snapshot/snapshot_tests.rs` |
+| `skeleton-tree.lines.txt` | `skeleton_fixture_renders_to_its_golden_lines` in `crates/core/src/snapshot/ref_lines_tests.rs` |
 | `drilldown-refmap.json` | `test_drilldown_refmap_matches_golden_fixture` in `crates/core/src/snapshot/snapshot_ref_merge_tests.rs` |
 | `trace_show/trace/*.jsonl` | `show_merges_fixture_segments_with_expected_shape` in `crates/core/src/commands/trace_tests.rs` |
 

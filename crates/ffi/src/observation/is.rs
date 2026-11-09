@@ -60,8 +60,7 @@ pub unsafe extern "C" fn ad_is_exact(
         let window = match crate::windows::ad_exact_window_to_core(&*win) {
             Ok(window) => window,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         is_in_window(adapter, &window, &*query, property, out)
@@ -78,15 +77,13 @@ unsafe fn is_in_window(
     let (locator, request) = match unsafe { super::find::decode_query(query) } {
         Ok(decoded) => decoded,
         Err(error) => {
-            set_last_error(&error);
-            return AdResult::ErrInvalidArgs;
+            return set_last_error(&error);
         }
     };
     let property_name = match required_adapter_string(property, "property") {
         Ok(property) => property,
         Err(error) => {
-            set_last_error(&error);
-            return AdResult::ErrInvalidArgs;
+            return set_last_error(&error);
         }
     };
     let property = match SupportedProperty::parse(&property_name) {
@@ -96,8 +93,7 @@ unsafe fn is_in_window(
                 agent_desktop_core::ErrorCode::InvalidArgs,
                 "unknown property — expected one of: focused, disabled, enabled, selected",
             );
-            set_last_error(&error);
-            return AdResult::ErrInvalidArgs;
+            return set_last_error(&error);
         }
     };
     let adapter = crate::adapter::acquire_adapter!(adapter);
@@ -109,31 +105,27 @@ unsafe fn is_in_window(
     ) {
         Ok(resolution) => resolution,
         Err(error) => {
-            set_last_error(&crate::commands::app_error_to_adapter(error));
-            return crate::error::last_error_code();
+            return set_last_error(&crate::commands::app_error_to_adapter(error));
         }
     };
     let selected = if request.selection == agent_desktop_core::LocatorSelection::Strict {
         match agent_desktop_core::require_unique(resolution) {
             Ok(selected) => selected,
             Err(error) => {
-                set_last_error(&crate::commands::app_error_to_adapter(error));
-                return crate::error::last_error_code();
+                return set_last_error(&crate::commands::app_error_to_adapter(error));
             }
         }
     } else {
         if !resolution.meta.selection_complete {
-            set_last_error(&agent_desktop_core::AdapterError::timeout(
+            return set_last_error(&agent_desktop_core::AdapterError::timeout(
                 "Locator traversal could not prove the selected result",
             ));
-            return AdResult::ErrTimeout;
         }
         let Some(selected) = resolution.matches.into_iter().next() else {
-            set_last_error(&agent_desktop_core::AdapterError::new(
+            return set_last_error(&agent_desktop_core::AdapterError::new(
                 agent_desktop_core::ErrorCode::ElementNotFound,
                 "Locator query matched no elements",
             ));
-            return crate::error::last_error_code();
         };
         selected
     };

@@ -132,20 +132,21 @@ pub(crate) fn read_node(
             child_read: ChildRead::empty(false),
         });
     }
-    let (name_evidence, child_label_complete) = if requirements.name || requirements.description {
-        crate::tree::child_labels::complete_name_evidence_with_deadline(
-            &attrs,
-            &role,
-            &child_read.elements,
-            deadline,
-            crate::tree::child_labels::NameEvidenceSinks {
-                stats: &mut *stats,
-                usage: &mut *usage,
-            },
-        )?
-    } else {
-        (attrs.name_evidence.clone(), true)
-    };
+    let (name_evidence, derived_name, child_label_complete) =
+        if requirements.name || requirements.description {
+            crate::tree::child_labels::complete_name_evidence_with_deadline(
+                &attrs,
+                &role,
+                &child_read.elements,
+                deadline,
+                crate::tree::child_labels::NameEvidenceSinks {
+                    stats: &mut *stats,
+                    usage: &mut *usage,
+                },
+            )?
+        } else {
+            (attrs.name_evidence.clone(), None, true)
+        };
     let children_complete =
         child_read.complete && child_label_complete && !unplanned_truncation(&child_read, budget);
     let name_field = if !requirements.name {
@@ -189,6 +190,10 @@ pub(crate) fn read_node(
         attrs.subrole.as_deref(),
         &read.status,
     );
+    let descriptors = crate::tree::child_field_name::derived_descriptor(
+        &name_field,
+        derived_name.filter(|_| requirements.name),
+    );
     let evidence = LocatorEvidence {
         role: role_field,
         name: name_field,
@@ -212,7 +217,7 @@ pub(crate) fn read_node(
                 LocatorField::Unknown
             },
             available_actions: actions,
-            descriptors: Default::default(),
+            descriptors,
         },
     };
     Ok(NodeRead {
