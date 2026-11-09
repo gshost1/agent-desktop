@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (1.4.0)
+
+### Bug Fixes
+
+* A session trace event waits for the shared budget lock as long as its command's deadline allows (up to 2 s, and up to 250 ms from the event when less is left) instead of a fixed 50 ms, and the recording ledger is rewritten in place without a disk sync per line. Eight parallel `--trace-strict` writers in one Linux session failed 128 of 200 commands on lock timeouts and now fail none, and a traced command costs 7.4 ms instead of 21.2 ms. ([#PRNUM](https://github.com/gshost1/agent-desktop/pull/PRNUM))
+
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
 This fork release publishes GitHub release archives and checksums only. It does not publish to npm.
