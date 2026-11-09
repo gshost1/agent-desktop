@@ -243,7 +243,7 @@ pub unsafe extern "C" fn ad_check_permissions(adapter: *const AdAdapter) -> AdRe
     trap_panic(|| {
         let adapter = acquire_adapter!(adapter);
         let deadline = crate::operation::operation_deadline!();
-        let report = match adapter.inner.permission_report(deadline) {
+        let report = match adapter.inner.preflight_permission_report(deadline) {
             Ok(report) => report,
             Err(error) => {
                 return error::set_last_error(&error);
