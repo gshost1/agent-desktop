@@ -71,6 +71,25 @@ fn the_web_skill_is_served_by_its_alias_on_every_platform() {
     );
 }
 
+/// Every web agent loads the quickstart first and carries it on every later
+/// turn, so it stays under this many bytes; detail goes in its reference.
+const WEB_QUICKSTART_BYTE_BUDGET: usize = 4096;
+
+#[test]
+fn the_web_quickstart_stays_within_its_byte_budget() {
+    let quickstart = get(GetArgs {
+        name: "web".into(),
+        full: false,
+        reference: None,
+    })
+    .expect("get web");
+    let bytes = quickstart["content"].as_str().expect("string").len();
+    assert!(
+        bytes <= WEB_QUICKSTART_BYTE_BUDGET,
+        "web quickstart is {bytes} bytes, budget {WEB_QUICKSTART_BYTE_BUDGET}"
+    );
+}
+
 #[test]
 fn the_web_quickstart_names_its_reference_and_the_reference_is_served() {
     let quickstart = get(GetArgs {

@@ -63,6 +63,8 @@ agent-desktop batch '[
 ]' --stop-on-error
 ```
 
+Write every ref in full, as above. A shell variable spliced into the JSON (`'"$P"':e4`) makes an agent's Bash tool refuse the whole command, often with only `Brace expansion`.
+
 A batch has `ok: true` even when an entry failed. `data.failed_entries` is `0` when every entry worked; then do not repeat them. Otherwise read the failed entry's `error` in `data.results`.
 
 ## Errors
