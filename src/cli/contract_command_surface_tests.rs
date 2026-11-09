@@ -7,6 +7,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "combo",
     "execute_by_ref",
     "find_live",
+    "find_response",
     "helpers",
     "helpers_test_support",
     "input_hold_policy",
@@ -28,11 +29,13 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "wait_element",
     "wait_latest_ref_cache",
     "wait_mode",
+    "wait_download",
     "wait_notification",
     "wait_predicate",
     "wait_scheduler",
     "wait_surface",
     "wait_test_support",
+    "wait_refmap_cap_test_support",
     "wait_text_match",
     "wait_timeout",
     "wait_event",
@@ -105,6 +108,7 @@ const ADAPTER_PASSTHROUGH_COMMANDS: &[&str] = &[
     "move-window",
     "notification-action",
     "open-system-surface",
+    "open-url",
     "press",
     "resize-window",
     "restore",
@@ -158,7 +162,7 @@ fn macos_capability_count_includes_restored_notifications() {
     let commands = cli_command_names();
     assert_eq!(
         commands.len(),
-        60,
+        61,
         "the published CLI command count changed; update capability documentation"
     );
 }

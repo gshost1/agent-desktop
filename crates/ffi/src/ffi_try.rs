@@ -108,7 +108,7 @@ mod tests {
     fn test_panic_sets_static_last_error() {
         crate::error::clear_last_error();
         let _ = trap_panic(|| -> AdResult { panic!("synthetic panic") });
-        assert_eq!(crate::error::last_error_code(), AdResult::ErrInternal);
+        assert_eq!(crate::error::ad_last_error_code(), AdResult::ErrInternal);
     }
 
     #[test]

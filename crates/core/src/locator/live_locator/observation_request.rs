@@ -36,6 +36,10 @@ pub struct ObservationMode {
     /// The read only resolves a saved ref: it needs identity evidence and the
     /// child structure, never geometry or actions, so an adapter may skip them.
     pub identity_only: bool,
+    /// Leave the rows of list and table containers unread, and mark the tree
+    /// when they are the only part it did not read. Only a platform that reads
+    /// rows after the rest of the tree honors it.
+    pub leave_rows_unread: bool,
 }
 
 impl ObservationRequest {
@@ -82,6 +86,7 @@ impl ObservationRequest {
                 skeleton: options.skeleton,
                 force_renderer_accessibility: options.force_renderer_accessibility,
                 identity_only: false,
+                leave_rows_unread: false,
             },
         }
     }
@@ -110,6 +115,11 @@ impl ObservationRequest {
             budget: ObservationBudget::default(),
             observation_mode: ObservationMode::default(),
         }
+    }
+
+    pub(crate) fn reading_rows(mut self, rows: super::RowReading) -> Self {
+        self.observation_mode.leave_rows_unread = rows == super::RowReading::LeaveUnread;
+        self
     }
 
     pub(crate) fn locator_for_root(

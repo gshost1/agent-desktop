@@ -15,6 +15,32 @@ pub(crate) fn find(
     matches
 }
 
+/// Says what a refmap cut left of a text match. The wait matched against the
+/// tree it observed; `stored` holds the matches in the tree the saved snapshot
+/// kept. A cut keeps a prefix in document order, so the first observed match
+/// is in the saved tree exactly when any match is. `match_cut` says the match
+/// lies past the cut, so `ref` is absent because the snapshot does not hold
+/// it. With a count, `count` stays what the complete read found and
+/// `stored_count` says how many of those the saved snapshot holds.
+pub(crate) fn describe_refmap_cut(
+    body: &mut serde_json::Value,
+    refmap_capped: bool,
+    stored: &[TextMatch],
+    counted: bool,
+) {
+    if !refmap_capped {
+        return;
+    }
+    body["complete"] = serde_json::json!(false);
+    body["refmap_capped"] = serde_json::json!(true);
+    if stored.is_empty() {
+        body["match_cut"] = serde_json::json!(true);
+    }
+    if counted {
+        body["stored_count"] = serde_json::json!(stored.len());
+    }
+}
+
 fn match_limit(expected_count: Option<usize>) -> usize {
     expected_count
         .map(|expected| expected.saturating_add(1))

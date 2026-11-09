@@ -24,8 +24,7 @@ pub unsafe extern "C" fn ad_list_apps(
         match adapter.inner.list_apps(deadline) {
             Ok(apps) => {
                 if let Err(error) = crate::resource::validate_list_len(apps.len(), "App list") {
-                    set_last_error(&error);
-                    return crate::error::last_error_code();
+                    return set_last_error(&error);
                 }
                 let items: Vec<AdAppInfo> = apps.iter().map(app_info_to_c).collect();
                 let list = Box::new(AdAppList {
@@ -34,10 +33,7 @@ pub unsafe extern "C" fn ad_list_apps(
                 *out = Box::into_raw(list);
                 AdResult::Ok
             }
-            Err(e) => {
-                set_last_error(&e);
-                crate::error::last_error_code()
-            }
+            Err(e) => set_last_error(&e),
         }
     })
 }

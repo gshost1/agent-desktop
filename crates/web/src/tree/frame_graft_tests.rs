@@ -22,6 +22,7 @@ fn node(frame_id: &str, backend: i64) -> WebNode {
             backend_node_id: backend,
         }),
         children: Vec::new(),
+        run: None,
     }
 }
 

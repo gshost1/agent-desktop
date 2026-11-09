@@ -4,6 +4,12 @@ use agent_desktop_core::{
 
 use crate::cli::Commands;
 
+mod command_effect;
+mod preflight_budget;
+
+pub(crate) use command_effect::CommandEffect;
+pub(crate) use preflight_budget::preflight_deadline;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PermissionNeed {
     None,
@@ -68,6 +74,7 @@ pub(crate) fn policy_for(cmd: &Commands) -> PermissionNeed {
         | Commands::CloseApp(_)
         | Commands::FocusWindow(_)
         | Commands::OpenSystemSurface(_)
+        | Commands::OpenUrl(_)
         | Commands::ResizeWindow(_)
         | Commands::MoveWindow(_)
         | Commands::Minimize(_)
@@ -129,6 +136,13 @@ pub(crate) fn preflight_context(
         ));
     }
     Ok(())
+}
+
+pub(crate) fn requires_full_permission_report(cmd: &Commands) -> bool {
+    matches!(
+        cmd,
+        Commands::Status | Commands::Permissions(_) | Commands::Batch(_)
+    )
 }
 
 pub(crate) fn requires_permission_report(cmd: &Commands) -> bool {
@@ -228,6 +242,7 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
         | Commands::ListApps(_)
         | Commands::FocusWindow(_)
         | Commands::OpenSystemSurface(_)
+        | Commands::OpenUrl(_)
         | Commands::ResizeWindow(_)
         | Commands::MoveWindow(_)
         | Commands::Minimize(_)

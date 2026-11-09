@@ -1,18 +1,18 @@
+use agent_desktop_core::system::launch_notes::LaunchNotes;
 use agent_desktop_core::{
     AdapterError, AppInfo, Deadline, DeliverySemantics, ErrorCode, WindowInfo,
-    system::launch_options::LaunchOptions, system::launch_result::LaunchResult,
+    system::launch_options::LaunchOptions, system::launch_path::LaunchPath,
+    system::launch_result::LaunchResult,
 };
 use std::time::{Duration, Instant};
+
+use crate::system::launch_plan::{LaunchPlan, plan_launch};
+use crate::system::launch_target::{launch_target, required_instance, validate_launched_target};
 
 const MAX_ARGUMENT_COUNT: usize = 256;
 const MAX_ENVIRONMENT_COUNT: usize = 256;
 const MAX_LAUNCH_TEXT_BYTES: usize = 1024 * 1024;
 const STARTUP_GRACE: Duration = Duration::from_millis(1500);
-
-enum LaunchTarget {
-    Existing { pid: i32, process_instance: String },
-    New { baseline_instances: Vec<String> },
-}
 
 #[cfg(target_os = "macos")]
 pub(crate) fn launch_app_impl(
@@ -29,20 +29,80 @@ pub(crate) fn launch_app_impl(
     };
     ensure_launch_budget(deadline, id).map_err(before_launch)?;
     let initial = matching_apps(id, deadline).map_err(before_launch)?;
-    if options.attach_if_running && initial.len() == 1 && !options.activate {
-        let app = initial[0].clone();
-        let instance = required_instance(&app).map_err(before_launch)?;
-        let pid = super::process::process_identity::to_pid_t(app.pid).map_err(before_launch)?;
-        let window = exact_window(pid, &instance, deadline).map_err(before_launch)?;
-        return Ok(result_from_app(&app, window));
-    }
+    let plan = plan_launch(options, initial.len());
+    let path = match plan {
+        LaunchPlan::AttachRunning | LaunchPlan::ActivateRunning => {
+            return use_running_app(&initial[0], plan, options, deadline);
+        }
+        LaunchPlan::LaunchServices(path) => path,
+    };
     let target = launch_target(options, initial).map_err(before_launch)?;
 
     let launched = crate::system::launch_workspace::open(id, options, deadline)?;
     validate_launched_target(&target, &launched).map_err(after_launch)?;
     let window =
         settled_window(launched.0, &launched.1, options, deadline).map_err(after_launch)?;
-    result_from_launched(&launched, window, id).map_err(after_launch)
+    result_from_launched(&launched, window, id, path).map_err(after_launch)
+}
+
+/// A running application is reported, and brought forward when asked, without
+/// Launch Services. Launch Services answers a running application with a
+/// reopen event, and an application with no window responds to that by opening
+/// one the caller never asked for. Activation reads whatever windows already
+/// exist: it creates none.
+#[cfg(target_os = "macos")]
+fn use_running_app(
+    app: &AppInfo,
+    plan: LaunchPlan,
+    options: &LaunchOptions,
+    deadline: Deadline,
+) -> Result<LaunchResult, AdapterError> {
+    let activates = plan == LaunchPlan::ActivateRunning;
+    let instance = required_instance(app).map_err(before_launch)?;
+    let pid = super::process::process_identity::to_pid_t(app.pid).map_err(before_launch)?;
+    if activates {
+        activate_running(pid, &instance, deadline)?;
+    }
+    let window = exact_window(pid, &instance, deadline).map_err(|error| {
+        if activates {
+            after_launch(error)
+        } else {
+            before_launch(error)
+        }
+    })?;
+    let path = if activates {
+        LaunchPath::ActivatedRunning
+    } else {
+        LaunchPath::AttachedRunning
+    };
+    let mut result = result_from_app(app, window, path);
+    result.notes.suggestion = ignored_inputs_hint(options);
+    Ok(result)
+}
+
+#[cfg(target_os = "macos")]
+fn activate_running(pid: i32, instance: &str, deadline: Deadline) -> Result<(), AdapterError> {
+    if !super::process::process_identity::matches_instance(pid, instance).map_err(before_launch)? {
+        return Err(AdapterError::new(
+            ErrorCode::AppUnresponsive,
+            "Application process instance changed before activation",
+        )
+        .with_details(serde_json::json!({ "pid": pid, "complete": false }))
+        .with_disposition(DeliverySemantics::not_delivered()));
+    }
+    crate::system::focus::ensure_app_focused(pid, deadline)
+}
+
+/// A running application receives no launch arguments or environment, because
+/// they apply only to the process Launch Services starts. Saying so beats
+/// dropping them without a word.
+#[cfg(target_os = "macos")]
+fn ignored_inputs_hint(options: &LaunchOptions) -> Option<String> {
+    (!options.args.is_empty() || !options.env.is_empty()).then(|| {
+        "--arg and --env apply only to a fresh process, and the app was already running, so \
+         they were not delivered. Add --no-attach to start a new instance with them."
+            .to_owned()
+    })
 }
 
 /// Waits only for the windows the launch itself produces. Starting up is what
@@ -70,7 +130,7 @@ fn settled_window(
             Err(error) => return Err(error),
         }
         if options.timeout_ms == 0
-            || (!options.activate && grace_over(grace_ends_at, Instant::now()))
+            || (!options.presentation.activate && grace_over(grace_ends_at, Instant::now()))
         {
             return last_read_failure.map_or(Ok(None), Err);
         }
@@ -141,7 +201,7 @@ fn launched_display_name(window: Option<&WindowInfo>, id: &str) -> String {
 }
 
 #[cfg(target_os = "macos")]
-fn result_from_app(app: &AppInfo, window: Option<WindowInfo>) -> LaunchResult {
+fn result_from_app(app: &AppInfo, window: Option<WindowInfo>, path: LaunchPath) -> LaunchResult {
     let renderer = super::process::process_identity::to_pid_t(app.pid)
         .ok()
         .and_then(crate::system::renderer_kind::detect_chromium);
@@ -152,7 +212,10 @@ fn result_from_app(app: &AppInfo, window: Option<WindowInfo>) -> LaunchResult {
         window,
         cdp: None,
         renderer,
-        suggestion: None,
+        notes: LaunchNotes {
+            suggestion: None,
+            launch_path: Some(path),
+        },
     }
 }
 
@@ -161,6 +224,7 @@ fn result_from_launched(
     launched: &(i32, String),
     window: Option<WindowInfo>,
     id: &str,
+    path: LaunchPath,
 ) -> Result<LaunchResult, AdapterError> {
     let renderer = crate::system::renderer_kind::detect_chromium(launched.0);
     Ok(LaunchResult {
@@ -171,7 +235,10 @@ fn result_from_launched(
         window,
         cdp: None,
         renderer,
-        suggestion: None,
+        notes: LaunchNotes {
+            suggestion: None,
+            launch_path: Some(path),
+        },
     })
 }
 
@@ -185,71 +252,6 @@ pub(crate) fn launch_app_impl(
 }
 
 #[cfg(target_os = "macos")]
-fn launch_target(
-    options: &LaunchOptions,
-    mut initial: Vec<AppInfo>,
-) -> Result<LaunchTarget, AdapterError> {
-    if options.attach_if_running {
-        if initial.len() > 1 {
-            return Err(ambiguous_apps(&initial));
-        }
-        if let Some(app) = initial.pop() {
-            let process_instance = required_instance(&app)?;
-            return Ok(LaunchTarget::Existing {
-                pid: super::process::process_identity::to_pid_t(app.pid)?,
-                process_instance,
-            });
-        }
-    }
-    let baseline_instances = initial
-        .iter()
-        .map(required_instance)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(LaunchTarget::New { baseline_instances })
-}
-
-#[cfg(target_os = "macos")]
-fn validate_launched_target(
-    target: &LaunchTarget,
-    launched: &(i32, String),
-) -> Result<(), AdapterError> {
-    match target {
-        LaunchTarget::Existing {
-            pid,
-            process_instance,
-        } => {
-            if launched.0 == *pid && launched.1 == *process_instance {
-                Ok(())
-            } else {
-                Err(AdapterError::new(
-                    ErrorCode::AppUnresponsive,
-                    "NSWorkspace returned a different application while attaching",
-                )
-                .with_details(serde_json::json!({
-                    "expected_pid": pid,
-                    "returned_pid": launched.0,
-                    "complete": false,
-                })))
-            }
-        }
-        LaunchTarget::New { baseline_instances } => {
-            if baseline_instances.contains(&launched.1) {
-                Err(AdapterError::new(
-                    ErrorCode::AppUnresponsive,
-                    "NSWorkspace reused an existing application during an exact fresh launch",
-                )
-                .with_details(serde_json::json!({
-                    "returned_pid": launched.0,
-                    "complete": false,
-                })))
-            } else {
-                Ok(())
-            }
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
 fn matching_apps(id: &str, deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
     ensure_launch_budget(deadline, id)?;
     let until = deadline_instant(deadline)?;
@@ -260,25 +262,6 @@ fn matching_apps(id: &str, deadline: Deadline) -> Result<Vec<AppInfo>, AdapterEr
         }
         Ok(inventory.apps)
     })
-}
-
-#[cfg(target_os = "macos")]
-fn required_instance(app: &AppInfo) -> Result<String, AdapterError> {
-    app.process_instance.clone().ok_or_else(|| {
-        AdapterError::new(
-            ErrorCode::AppUnresponsive,
-            "Running application has no exact process instance token",
-        )
-        .with_details(serde_json::json!({ "pid": app.pid, "complete": false }))
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn ambiguous_apps(apps: &[AppInfo]) -> AdapterError {
-    AdapterError::ambiguous_process_target(
-        "More than one application instance matches the launch target",
-        &apps.iter().map(|app| app.pid).collect::<Vec<_>>(),
-    )
 }
 
 #[cfg(target_os = "macos")]
@@ -350,6 +333,13 @@ fn validate_launch_options(options: &LaunchOptions) -> Result<(), AdapterError> 
             "macOS Launch Services does not support an exact launch working directory",
         )
         .with_suggestion("Remove --cwd, or start the app through a dedicated launcher script"));
+    }
+    if options.presentation.reopen && !options.attach_if_running {
+        return Err(AdapterError::new(
+            ErrorCode::InvalidArgs,
+            "A reopen applies to the running instance and cannot start a new instance",
+        )
+        .with_suggestion("Remove --reopen or --no-attach."));
     }
     if options.args.len() > MAX_ARGUMENT_COUNT || options.env.len() > MAX_ENVIRONMENT_COUNT {
         return Err(AdapterError::new(

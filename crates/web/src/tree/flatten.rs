@@ -10,6 +10,7 @@ pub(crate) fn flatten(root: WebNode, origins: &mut Vec<Option<NodeOrigin>>) -> A
         mut node,
         origin,
         children,
+        ..
     } = root;
     origins.push(origin);
     node.children = children

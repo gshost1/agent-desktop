@@ -49,8 +49,7 @@ pub unsafe extern "C" fn ad_launch_app_exact(
         let id = match super::decode_app_id(id) {
             Ok(id) => id,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         let adapter = crate::adapter::acquire_adapter!(adapter);
@@ -61,15 +60,15 @@ pub unsafe extern "C" fn ad_launch_app_exact(
         let deadline = match launch_deadline(timeout_ms) {
             Ok(deadline) => deadline,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
-        let lease = match adapter.inner.acquire_interaction_lease(deadline) {
+        let lease = match crate::ffi_lease::FfiLease::take(|| {
+            adapter.inner.acquire_interaction_lease(deadline)
+        }) {
             Ok(lease) => lease,
             Err(error) => {
-                set_last_error(&error);
-                return crate::error::last_error_code();
+                return set_last_error(&error);
             }
         };
         match adapter
@@ -82,15 +81,9 @@ pub unsafe extern "C" fn ad_launch_app_exact(
                     *out = exact_window_info_to_c(&window);
                     AdResult::Ok
                 }
-                Err(error) => {
-                    set_last_error(&error);
-                    crate::error::last_error_code()
-                }
+                Err(error) => set_last_error(&error),
             },
-            Err(error) => {
-                set_last_error(&error);
-                crate::error::last_error_code()
-            }
+            Err(error) => set_last_error(&error),
         }
     })
 }
@@ -111,6 +104,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+    use agent_desktop_core::system::launch_notes::LaunchNotes;
     use agent_desktop_core::system::launch_options::LaunchOptions;
     use agent_desktop_core::{ActionOps, InputOps, ObservationOps, SystemOps};
     use agent_desktop_core::{
@@ -165,7 +159,10 @@ mod tests {
                 }),
                 cdp: None,
                 renderer: None,
-                suggestion: None,
+                notes: LaunchNotes {
+                    suggestion: None,
+                    launch_path: None,
+                },
             })
         }
     }

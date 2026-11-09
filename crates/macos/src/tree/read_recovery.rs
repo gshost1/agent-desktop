@@ -24,6 +24,29 @@ pub(crate) fn read<T>(
     Err(accessibility_sys::kAXErrorCannotComplete)
 }
 
+/// Applies [`read`] to a native call that hands back an owned value beside its
+/// error. A value returned with a failed attempt is released before the retry,
+/// so only the value of the attempt that is returned leaves this function.
+pub(crate) fn read_owned(
+    deadline: Instant,
+    mut observe: impl FnMut() -> (i32, core_foundation::base::CFTypeRef),
+) -> (i32, core_foundation::base::CFTypeRef) {
+    let result = read(deadline, || {
+        let (error, value) = observe();
+        if error == accessibility_sys::kAXErrorSuccess {
+            return Ok(value);
+        }
+        if !value.is_null() {
+            unsafe { core_foundation::base::CFRelease(value) };
+        }
+        Err(error)
+    });
+    match result {
+        Ok(value) => (accessibility_sys::kAXErrorSuccess, value),
+        Err(error) => (error, std::ptr::null()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,5 +89,32 @@ mod tests {
             read::<()>(Instant::now(), || panic!("expired read")),
             Err(kAXErrorCannotComplete)
         );
+    }
+
+    #[test]
+    fn a_busy_batch_is_read_again_in_place_instead_of_failing_the_node() {
+        let mut calls = 0;
+        let (error, value) = read_owned(Instant::now() + Duration::from_secs(60), || {
+            calls += 1;
+            if calls == 1 {
+                (kAXErrorCannotComplete, std::ptr::null())
+            } else {
+                (accessibility_sys::kAXErrorSuccess, std::ptr::null())
+            }
+        });
+        assert_eq!(error, accessibility_sys::kAXErrorSuccess);
+        assert!(value.is_null());
+        assert_eq!(
+            calls, 2,
+            "one slice overrun must not leave the node unknown"
+        );
+
+        let mut terminal_calls = 0;
+        let (error, _) = read_owned(Instant::now() + Duration::from_secs(60), || {
+            terminal_calls += 1;
+            (kAXErrorInvalidUIElement, std::ptr::null())
+        });
+        assert_eq!(error, kAXErrorInvalidUIElement);
+        assert_eq!(terminal_calls, 1);
     }
 }

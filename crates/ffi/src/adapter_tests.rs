@@ -95,3 +95,76 @@ fn check_permissions_preserves_ambiguous_unknown_accessibility_as_internal() {
 
     assert_eq!(result, AdResult::ErrInternal);
 }
+
+struct PendingAutomationPromptAdapter;
+
+impl ObservationOps for PendingAutomationPromptAdapter {}
+impl ActionOps for PendingAutomationPromptAdapter {}
+impl InputOps for PendingAutomationPromptAdapter {}
+
+impl SystemOps for PendingAutomationPromptAdapter {
+    fn permission_report(
+        &self,
+        _deadline: agent_desktop_core::Deadline,
+    ) -> Result<agent_desktop_core::PermissionReport, agent_desktop_core::AdapterError> {
+        Err(agent_desktop_core::AdapterError::new(
+            agent_desktop_core::ErrorCode::AppUnresponsive,
+            "the Automation probe is waiting on a consent prompt",
+        ))
+    }
+
+    fn preflight_permission_report(
+        &self,
+        _deadline: agent_desktop_core::Deadline,
+    ) -> Result<agent_desktop_core::PermissionReport, agent_desktop_core::AdapterError> {
+        Ok(agent_desktop_core::PermissionReport {
+            accessibility: PermissionState::Granted,
+            screen_recording: PermissionState::Unknown,
+            automation: PermissionState::Unknown,
+        })
+    }
+}
+
+#[test]
+fn check_permissions_reads_accessibility_without_probing_automation() {
+    let adapter = registered_adapter(Box::new(PendingAutomationPromptAdapter));
+    let result = unsafe { ad_check_permissions(adapter) };
+    unsafe { ad_adapter_destroy(adapter) };
+
+    assert_eq!(result, AdResult::Ok);
+}
+
+static REGISTRY_FREE_DURING_TEARDOWN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+struct RegistryProbeAdapter;
+
+impl ObservationOps for RegistryProbeAdapter {}
+impl ActionOps for RegistryProbeAdapter {}
+impl InputOps for RegistryProbeAdapter {}
+impl SystemOps for RegistryProbeAdapter {}
+
+impl Drop for RegistryProbeAdapter {
+    fn drop(&mut self) {
+        let free = (0..200).any(|_| {
+            let held = matches!(
+                adapters().try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            );
+            if held {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            !held
+        });
+        REGISTRY_FREE_DURING_TEARDOWN.store(free, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn destroy_tears_down_the_adapter_outside_the_registry_lock() {
+    let adapter = registered_adapter(Box::new(RegistryProbeAdapter));
+
+    unsafe { ad_adapter_destroy(adapter) };
+
+    assert!(REGISTRY_FREE_DURING_TEARDOWN.load(std::sync::atomic::Ordering::SeqCst));
+}

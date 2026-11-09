@@ -23,6 +23,26 @@ impl LocatorEvidence {
             && (!requirements.ref_evidence.actions
                 || !self.ref_evidence.available_actions.is_unknown())
     }
+
+    /// The derived name an adapter read for an element no accessible-name
+    /// source named. It applies only while the accessible name was read and
+    /// found absent, and it locates and displays the element only: `name` stays
+    /// absent, so ref identity and capture proofs never read it.
+    pub(crate) fn derived_name(&self) -> Option<&str> {
+        match self.name {
+            LocatorField::Absent => crate::tree::accname::non_blank(
+                self.ref_evidence.descriptors.derived_name.as_deref(),
+            ),
+            LocatorField::Known(_) | LocatorField::Unknown => None,
+        }
+    }
+
+    /// The name a match response or projected node displays.
+    pub(crate) fn display_name(&self) -> Option<String> {
+        self.name
+            .meaningful_string()
+            .or_else(|| self.derived_name().map(str::to_owned))
+    }
 }
 
 #[cfg(test)]

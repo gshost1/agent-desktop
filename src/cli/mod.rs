@@ -1,6 +1,9 @@
+use crate::command_policy::CommandEffect;
 use clap::Subcommand;
 
+pub(crate) mod emit;
 mod identity;
+pub(crate) mod output;
 mod post_action_wait;
 mod root;
 
@@ -24,8 +27,8 @@ use crate::cli_args::{
     skills::SkillsArgs,
     system::{
         AppRefArgs, ClipboardGetArgs, ClipboardSetArgs, CloseAppArgs, FocusWindowArgs, LaunchArgs,
-        ListAppsArgs, ListWindowsArgs, MoveWindowCliArgs, OpenSystemSurfaceArgs, PermissionsArgs,
-        ResizeWindowCliArgs, WaitArgs,
+        ListAppsArgs, ListWindowsArgs, MoveWindowCliArgs, OpenSystemSurfaceArgs, OpenUrlArgs,
+        PermissionsArgs, ResizeWindowCliArgs, WaitArgs,
     },
     trace::TraceArgs,
 };
@@ -132,6 +135,10 @@ pub(crate) enum Commands {
         about = "Open a shell surface (start-menu, taskbar, dock, menu-bar-extras ...) and return the window it presents, if any"
     )]
     OpenSystemSurface(OpenSystemSurfaceArgs),
+    #[command(
+        about = "Load a URL in a browser over its DevTools endpoint: the window's visible tab, or a new background tab"
+    )]
+    OpenUrl(OpenUrlArgs),
     #[command(about = "List notifications from Notification Center")]
     ListNotifications(ListNotificationsCliArgs),
     #[command(about = "Dismiss a notification by index")]
@@ -230,6 +237,7 @@ impl Commands {
             Self::Restore(_) => CommandMetadata::new("restore", false),
             Self::ListSurfaces(_) => CommandMetadata::new("list-surfaces", false),
             Self::OpenSystemSurface(_) => CommandMetadata::new("open-system-surface", false),
+            Self::OpenUrl(_) => CommandMetadata::new("open-url", false),
             Self::ListNotifications(_) => CommandMetadata::new("list-notifications", false),
             Self::DismissNotification(_) => CommandMetadata::new("dismiss-notification", false),
             Self::DismissAllNotifications(_) => {
@@ -259,7 +267,23 @@ impl Commands {
         self.metadata().post_action_wait
     }
 
+    /// Whether the command still runs when its session has ended. Only
+    /// `session end` does: teardown is repeatable on an ended session.
+    pub(crate) fn runs_in_an_ended_session(&self) -> bool {
+        matches!(self, Self::Session(args)
+            if matches!(args.action, crate::cli_args::session::SessionAction::End(_)))
+    }
+
     pub(crate) fn is_mutating(&self) -> bool {
+        self.effect() != CommandEffect::ReadOnly
+    }
+
+    /// The widest effect this command can have outside the process. The match
+    /// is exhaustive down to subcommands, so a new command cannot build
+    /// without deciding it.
+    pub(crate) fn effect(&self) -> CommandEffect {
+        use crate::cli_args::{session::SessionAction, trace::TraceAction};
+        use CommandEffect::{AppInput, LocalWrite, ReadOnly};
         match self {
             Self::Click(_)
             | Self::DoubleClick(_)
@@ -291,6 +315,7 @@ impl Commands {
             | Self::CloseApp(_)
             | Self::FocusWindow(_)
             | Self::OpenSystemSurface(_)
+            | Self::OpenUrl(_)
             | Self::ResizeWindow(_)
             | Self::MoveWindow(_)
             | Self::Minimize(_)
@@ -301,18 +326,24 @@ impl Commands {
             | Self::NotificationAction(_)
             | Self::ClipboardSet(_)
             | Self::ClipboardClear
-            | Self::Batch(_) => true,
-            Self::Screenshot(args) => args.output_path.is_some(),
-            Self::ClipboardGet(args) => args.out.is_some(),
-            Self::Permissions(args) => args.request,
-            Self::Session(args) => {
-                !matches!(&args.action, crate::cli_args::session::SessionAction::List)
-            }
-            Self::CursorOverlay(_) => true,
-            Self::Trace(args) => {
-                matches!(&args.action, crate::cli_args::trace::TraceAction::Export(_))
-            }
-            Self::Snapshot(_)
+            | Self::CursorOverlay(_)
+            | Self::Batch(_) => AppInput,
+            Self::Permissions(args) if args.request => AppInput,
+            Self::Screenshot(args) if args.output_path.is_some() => LocalWrite,
+            Self::ClipboardGet(args) if args.out.is_some() => LocalWrite,
+            Self::Session(args) => match &args.action {
+                SessionAction::Start(_) | SessionAction::End(_) => AppInput,
+                SessionAction::Gc(_) => LocalWrite,
+                SessionAction::List => ReadOnly,
+            },
+            Self::Trace(args) => match &args.action {
+                TraceAction::Export(_) => LocalWrite,
+                TraceAction::Show(_) => ReadOnly,
+            },
+            Self::Screenshot(_)
+            | Self::ClipboardGet(_)
+            | Self::Permissions(_)
+            | Self::Snapshot(_)
             | Self::Find(_)
             | Self::Get(_)
             | Self::Is(_)
@@ -324,7 +355,7 @@ impl Commands {
             | Self::Wait(_)
             | Self::Status
             | Self::Version
-            | Self::Skills(_) => false,
+            | Self::Skills(_) => ReadOnly,
         }
     }
 }

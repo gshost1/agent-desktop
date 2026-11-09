@@ -135,7 +135,7 @@ if [ -n "$baseline_binary" ]; then
 fi
 report_started=1
 guard_agent_wrapper_exec 1800 4194304 python3 "$repo/tests/e2e/electron_metrics.py" \
-    --binary "$current_binary" "${baseline_args[@]}" --app "$app" --out "$out" \
+    --binary "$current_binary" ${baseline_args[@]+"${baseline_args[@]}"} --app "$app" --out "$out" \
     --work-root "$suite_root" --warmups 5 --samples 31 >/dev/null || exit 1
 
 verify_immutable_binary "$current_binary" "$current_sha" || { contaminated=1; exit 1; }

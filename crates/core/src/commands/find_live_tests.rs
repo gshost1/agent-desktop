@@ -34,6 +34,7 @@ fn named_find(window_id: &str, name: &str) -> FindArgs {
             last: false,
             nth: None,
             limit: None,
+            allow_partial: false,
         },
     }
 }
@@ -187,6 +188,7 @@ fn count_uses_live_evidence_without_creating_a_snapshot() {
         last: false,
         nth: None,
         limit: None,
+        allow_partial: false,
     };
 
     let response = execute(
@@ -261,6 +263,7 @@ fn ordinal_modes_preserve_live_document_order() {
         last: false,
         nth: None,
         limit: None,
+        allow_partial: false,
     };
     let last = FindSelectionArgs {
         count: false,
@@ -268,6 +271,7 @@ fn ordinal_modes_preserve_live_document_order() {
         last: true,
         nth: None,
         limit: None,
+        allow_partial: false,
     };
 
     let first_response = execute(
