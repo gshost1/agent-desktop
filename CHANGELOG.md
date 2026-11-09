@@ -10,6 +10,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 * Add `wait --download`, which returns the saved path of a browser download. Launch the browser with `--cdp --download-dir <dir>` to follow a download an earlier command started. ([#47](https://github.com/gshost1/agent-desktop/pull/47))
 * On macOS, run a `cmd` chord given to `press --app` through the app's menu item when one owns the chord, so it works while the app is in the background. ([#25](https://github.com/gshost1/agent-desktop/pull/25))
 * Add `launch --reopen` to opt in to the Launch Services reopen that `launch --activate` no longer sends to a running app. ([#54](https://github.com/gshost1/agent-desktop/pull/54))
+* Add `--lines`, an opt-in global flag that prints a snapshot tree as `data.lines`, one indented line per node with its ref first, then role, quoted name and value. It replaces `data.tree` only when set; default output is unchanged and the envelope version stays 2.6. It applies to `snapshot`, `--root` drills, the snapshot `-w` returns, and batch entries, and `mcp --lines` turns it on for an MCP server. The agent skill points agents at it. This is an additive contract change; `docs/json-output.md` has the grammar under "Snapshot lines". ([#74](https://github.com/gshost1/agent-desktop/pull/74))
 
 ### Bug Fixes
 
