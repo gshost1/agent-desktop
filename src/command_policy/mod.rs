@@ -138,6 +138,13 @@ pub(crate) fn preflight_context(
     Ok(())
 }
 
+pub(crate) fn requires_full_permission_report(cmd: &Commands) -> bool {
+    matches!(
+        cmd,
+        Commands::Status | Commands::Permissions(_) | Commands::Batch(_)
+    )
+}
+
 pub(crate) fn requires_permission_report(cmd: &Commands) -> bool {
     policy_for(cmd) != PermissionNeed::None
         || matches!(

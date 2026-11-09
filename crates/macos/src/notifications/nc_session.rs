@@ -63,7 +63,7 @@ impl NcSession {
             return Err(closed_center_policy_error(policy));
         }
         let previous_app = frontmost_app(deadline)?;
-        crate::system::permissions::require_automation_permission()?;
+        crate::system::permissions::require_automation_permission(deadline)?;
         Self::open_with(
             previous_app,
             deadline,

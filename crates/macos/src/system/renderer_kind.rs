@@ -10,9 +10,19 @@ const CHROMIUM_FRAMEWORK_MARKERS: [&str; 2] = [
     "Chromium Embedded Framework.framework",
 ];
 
+/// The V8 startup snapshot every Chromium content embedder ships in its
+/// framework's resources, whatever the framework is named: a browser such as
+/// Chrome bundles `<Product> Framework.framework`, which no name list covers.
+const V8_SNAPSHOT_RESOURCES: [&str; 3] = [
+    "Resources/v8_context_snapshot.bin",
+    "Resources/v8_context_snapshot.arm64.bin",
+    "Resources/v8_context_snapshot.x86_64.bin",
+];
+
 /// Best-effort: any failure resolving the executable path, the bundle root,
 /// or reading `Contents/Frameworks` reports "not detected" rather than
-/// failing the launch that asked for it. Costs at most one `readdir`.
+/// failing the launch that asked for it. Costs one `readdir` and up to three
+/// `stat` calls per bundled framework.
 #[cfg(target_os = "macos")]
 pub(crate) fn detect_chromium(pid: i32) -> Option<RendererKind> {
     let executable = executable_path(pid)?;
@@ -28,9 +38,18 @@ fn chromium_marker_in_bundle(bundle_root: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(frameworks) else {
         return false;
     };
-    entries
-        .filter_map(Result::ok)
-        .any(|entry| is_chromium_framework_marker(&entry.file_name().to_string_lossy()))
+    entries.filter_map(Result::ok).any(|entry| {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        is_chromium_framework_marker(&name)
+            || (name.ends_with(".framework") && ships_v8_snapshot(&entry.path()))
+    })
+}
+
+fn ships_v8_snapshot(framework: &Path) -> bool {
+    V8_SNAPSHOT_RESOURCES
+        .iter()
+        .any(|resource| framework.join(resource).exists())
 }
 
 fn is_chromium_framework_marker(entry_name: &str) -> bool {
