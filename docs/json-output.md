@@ -417,6 +417,8 @@ Each returned or failed download is consumed, so the next `wait --download` move
 
 ## Find result shape
 
+A match object leaves out what it does not have, like every other object in the contract: a context match has no `ref_id`, and `value`, `states` and `path` are omitted when absent or empty (the window root has no `path`). `role` and `interactive` are always present. Earlier builds printed `"ref_id": null`, `"value": null`, `"states": []` and `"path": []`; a reader that indexed those keys must treat a missing key as that value. `tests/fixtures/find-matches.json` pins the shape.
+
 `find` match objects report the element's actual accessibility `name`. Elements
 without an accessible name omit `name` entirely; their content stays in `value`.
 Earlier output synthesized a display name, falling back to `value` or
