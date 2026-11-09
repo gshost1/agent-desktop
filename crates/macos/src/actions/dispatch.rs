@@ -48,12 +48,11 @@ mod imp {
             }
 
             Action::RightClick => {
-                steps.extend(run_chain(
+                steps.extend(crate::actions::chain::menu_settle::execute_menu_chain(
                     el,
                     &chain_defs::RIGHT_CLICK_CHAIN,
-                    None,
-                    request,
-                    deadline,
+                    &budget,
+                    request.policy,
                 )?);
             }
 

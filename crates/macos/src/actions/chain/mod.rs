@@ -20,6 +20,21 @@ mod imp {
         ctx: &ChainContext,
         policy: InteractionPolicy,
     ) -> Result<Vec<ActionStep>, AdapterError> {
+        match run_steps(el, def, ctx, policy)? {
+            (steps, true) => Ok(steps),
+            (steps, false) => Err(exhaustion_error(&steps, def.suggestion)),
+        }
+    }
+
+    /// Runs the chain and returns its recorded steps with whether a step ended
+    /// it. `false` means every step ran without one, the state
+    /// [`exhaustion_error`] reports.
+    pub(crate) fn run_steps(
+        el: &AXElement,
+        def: &ChainDef,
+        ctx: &ChainContext,
+        policy: InteractionPolicy,
+    ) -> Result<(Vec<ActionStep>, bool), AdapterError> {
         let total = def.steps.len();
         let mut steps = Vec::new();
         if let Some(pid) = crate::system::app::app_ops::pid_from_element(el, ctx.deadline) {
@@ -42,13 +57,13 @@ mod imp {
             let continue_unverified = def.continue_after_unverified_delivery;
             if record_step_outcome(&mut steps, step, outcome, continue_unverified) {
                 tracing::debug!("chain: [{}/{}] {} -> success", i + 1, total, label);
-                return Ok(steps);
+                return Ok((steps, true));
             }
             tracing::debug!("chain: [{}/{}] {} -> skip", i + 1, total, label);
         }
 
         tracing::debug!("chain: all {total} steps exhausted");
-        Err(exhaustion_error(&steps, def.suggestion))
+        Ok((steps, false))
     }
 
     pub(crate) fn exhaustion_error(steps: &[ActionStep], suggestion: &str) -> AdapterError {
@@ -139,8 +154,8 @@ mod imp {
 
 #[cfg(all(test, target_os = "macos"))]
 pub(crate) use imp::{
-    after_steps, build_step, exhaustion_disposition, exhaustion_error, record_step_outcome,
-    step_allowed, step_mechanism,
+    after_steps, build_step, exhaustion_disposition, record_step_outcome, step_allowed,
+    step_mechanism,
 };
 
 pub(crate) mod activate_descendant;
@@ -154,6 +169,9 @@ pub(super) mod chain_step;
 pub(crate) mod chain_step_exec;
 pub(crate) mod chain_value_write;
 pub(crate) mod chain_verify;
+pub(crate) mod menu_baseline;
+pub(crate) mod menu_read;
+pub(crate) mod menu_settle;
 pub(crate) mod press_selection;
 #[cfg(test)]
 #[path = "chain_tests.rs"]
@@ -182,3 +200,5 @@ mod imp {
 }
 
 pub(crate) use imp::execute_chain;
+#[cfg(target_os = "macos")]
+pub(crate) use imp::{exhaustion_error, run_steps};
