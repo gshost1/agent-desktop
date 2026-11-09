@@ -54,7 +54,7 @@ fn node_line(node: &AccessibilityNode, depth: usize) -> String {
         line.push_str(&quote_text(name));
     }
     push_field(&mut line, "value", node.identity.value.as_deref());
-    push_field(&mut line, "desc", node.identity.description.as_deref());
+    push_field(&mut line, "desc", distinct_description(node));
     let descriptors = &node.presentation.descriptors;
     push_field(&mut line, "placeholder", descriptors.placeholder.as_deref());
     push_field(&mut line, "hint", node.presentation.hint.as_deref());
@@ -71,6 +71,13 @@ fn node_line(node: &AccessibilityNode, depth: usize) -> String {
         line.push_str(" subtree_truncated");
     }
     line
+}
+
+/// The description when it says something the name does not: a description
+/// equal to the name, as on links whose title repeats their text, is left out.
+fn distinct_description(node: &AccessibilityNode) -> Option<&str> {
+    let description = node.identity.description.as_deref()?;
+    (node.identity.name.as_deref() != Some(description)).then_some(description)
 }
 
 fn push_field(line: &mut String, key: &str, text: Option<&str>) {

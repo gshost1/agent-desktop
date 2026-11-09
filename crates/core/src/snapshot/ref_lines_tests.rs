@@ -90,6 +90,27 @@ fn fields_states_and_bounds_follow_the_documented_order() {
 }
 
 #[test]
+fn a_description_equal_to_the_name_is_left_out_and_a_different_one_kept() {
+    let mut repeated = with_ref(node("link", "Northern Ohio"), "@s1:e4");
+    repeated.identity.description = Some("Northern Ohio".into());
+    let mut longer = with_ref(node("link", "Fix parser"), "@s1:e5");
+    longer.identity.description = Some("Fix parser and add a test".into());
+    let mut unnamed = node("img", "");
+    unnamed.identity.name = None;
+    unnamed.identity.description = Some("Map".into());
+
+    assert_eq!(
+        render_ref_lines(&repeated),
+        vec!["@s1:e4 link \"Northern Ohio\""]
+    );
+    assert_eq!(
+        render_ref_lines(&longer),
+        vec!["@s1:e5 link \"Fix parser\" desc=\"Fix parser and add a test\""]
+    );
+    assert_eq!(render_ref_lines(&unnamed), vec!["img desc=\"Map\""]);
+}
+
+#[test]
 fn cut_branches_carry_their_markers() {
     let mut skeleton = node("group", "Sidebar");
     skeleton.children_count = Some(26);
