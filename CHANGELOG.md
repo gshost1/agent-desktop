@@ -60,6 +60,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 ### Known issues
 
 * Once in 15 benchmark runs, a cold Chrome start was not exposed to the accessibility tree until `launch "Google Chrome" --activate`.
+* On macOS, a headless `right-click` can report a failure although the context menu opened. On a SwiftUI text field it returned `ACTION_FAILED` with `delivered_unverified` in 3 of 3 runs, and other live checks saw `APP_UNRESPONSIVE` (`AXShowMenu` -25204). Before retrying, check with `wait --menu --app <app>`.
 * On the web channel, a clickable row that a page exposes only as plain text still gets no ref when its click is handled by a listener on an ancestor (event delegation) or only on `pointerdown`.
 
 ## [1.2.0](https://github.com/vercel-labs/agent-desktop/compare/v1.1.0...v1.2.0) (2026-11-05)
