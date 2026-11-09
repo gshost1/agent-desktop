@@ -19,15 +19,25 @@ pub struct SnapshotResult {
     pub snapshot_id: Option<String>,
     pub complete: bool,
     pub nodes_observed: usize,
-    /// Set when the whole-window read that proves tokenless refs failed or was
-    /// cut short; it says why, and those refs are refused when used.
-    pub identity_unproven: Option<String>,
+    pub notes: crate::SnapshotNotes,
 }
 
 impl SnapshotResult {
     /// Saves the refmap of this already-built result. Whether the walk was
     /// complete does not change how the save is budgeted.
-    pub(crate) fn save_refmap(&self, store: &RefStore) -> Result<String, AppError> {
+    ///
+    /// A refmap above the store's size cap is first cut to fit, and the tree
+    /// with it (see `refmap_fit`), which makes the result partial. The cut
+    /// happens here rather than in `build`, so a wait that matches against the
+    /// built tree still sees every node it observed. Structural hints are
+    /// recomputed after a cut, so a splitter that lost columns no longer
+    /// states a total.
+    pub(crate) fn save_refmap(&mut self, store: &RefStore) -> Result<String, AppError> {
+        if refmap_fit::fit_refmap_cap(&mut self.tree, &mut self.refmap)? {
+            self.complete = false;
+            self.notes.refmap_capped = true;
+            crate::snapshot::hints::add_structural_hints(&mut self.tree);
+        }
         store.save_new_snapshot(&self.refmap)
     }
 
@@ -65,6 +75,11 @@ pub(crate) fn build_for_owners(
     })?;
     let identity_unproven = capture.identity_unproven.clone();
     let (raw_tree, complete, nodes_observed, observed) = capture.into_parts()?;
+    let notes = crate::SnapshotNotes {
+        identity_unproven,
+        channel: observed.channel().cloned(),
+        ..crate::SnapshotNotes::default()
+    };
     let capture_proof = crate::refs::ref_capture_proof::CaptureProof::new(&observed);
 
     let mut refmap = RefMap::new();
@@ -93,7 +108,7 @@ pub(crate) fn build_for_owners(
         snapshot_id: None,
         complete,
         nodes_observed,
-        identity_unproven,
+        notes,
     })
 }
 
@@ -196,7 +211,7 @@ pub(crate) fn emit_snapshot_saved(
         if !result.owner.app_name().is_empty() {
             fields["app"] = json!(result.owner.app_name());
         }
-        if let Some(reason) = &result.identity_unproven {
+        if let Some(reason) = &result.notes.identity_unproven {
             fields["identity_unproven"] = json!(reason);
         }
         fields
@@ -204,7 +219,11 @@ pub(crate) fn emit_snapshot_saved(
 }
 
 pub mod hints;
+pub mod ref_lines;
 pub(crate) mod ref_owner_observation;
+pub(crate) mod refmap_fit;
+pub mod snapshot_channel;
+pub mod snapshot_notes;
 pub(crate) mod snapshot_owner;
 pub(crate) mod snapshot_ref;
 pub mod snapshot_surface;

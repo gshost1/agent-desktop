@@ -1,5 +1,5 @@
 use agent_desktop_core::{
-    AppError, CursorOverlayControl, PlatformAdapter, commands::cursor_overlay,
+    AppError, CursorOverlayConfig, CursorOverlayControl, PlatformAdapter, commands::cursor_overlay,
     context::CommandContext,
 };
 use serde_json::Value;
@@ -19,7 +19,7 @@ pub(crate) fn dispatch(
             "Run `session start`, then pass its id with --session or AGENT_DESKTOP_SESSION.",
         )
     })?;
-    let (action, control) = match args.action {
+    match args.action {
         CursorOverlayAction::Enable(args) => {
             let multi_agent = args.multi_agent || context.multi_agent();
             let config = args.to_core()?.with_multi_agent(multi_agent);
@@ -41,37 +41,48 @@ pub(crate) fn dispatch(
                     "agent_id": agent_id,
                 }));
             }
-            let control =
-                CursorOverlayControl::enable(session_id.to_owned(), config.style().clone())
-                    .with_motion(config.motion().clone());
-            (
-                cursor_overlay::CursorOverlayAction::Enable(Box::new(config)),
-                (!multi_agent).then_some(control),
-            )
+            let mut value = cursor_overlay::execute(
+                session_id,
+                cursor_overlay::CursorOverlayAction::Enable(Box::new(config.clone())),
+            )?;
+            if !multi_agent {
+                value["rendered"] = Value::from(render(adapter, session_id, &config));
+            }
+            Ok(value)
         }
-        CursorOverlayAction::Disable => (
-            cursor_overlay::CursorOverlayAction::Disable,
-            Some(CursorOverlayControl::disable(session_id.to_owned())),
-        ),
-    };
-    let mut value = cursor_overlay::execute(session_id, action)?;
-    if let Some(control) = control {
-        let is_enable = control.is_enable();
-        let rendered = match adapter.update_cursor_overlay(&control) {
-            Ok(()) => true,
-            Err(error) => {
-                if control.is_disable() && !nothing_to_tear_down(&error) {
+        CursorOverlayAction::Disable => {
+            let value =
+                cursor_overlay::execute(session_id, cursor_overlay::CursorOverlayAction::Disable)?;
+            if let Err(error) =
+                adapter.update_cursor_overlay(&CursorOverlayControl::disable(session_id.to_owned()))
+            {
+                if !nothing_to_tear_down(&error) {
                     return Err(teardown_error(error));
                 }
                 super::overlay_skipped::log(&error);
-                false
             }
-        };
-        if is_enable {
-            value["rendered"] = Value::from(rendered);
+            Ok(value)
         }
     }
-    Ok(value)
+}
+
+/// Asks the renderer to draw the cursor of a session whose manifest already
+/// enables it. The overlay is presentation only, so a refusal is logged and
+/// reported as `false` and the next action that draws asks again.
+pub(super) fn render(
+    adapter: &dyn PlatformAdapter,
+    session_id: &str,
+    config: &CursorOverlayConfig,
+) -> bool {
+    let control = CursorOverlayControl::enable(session_id.to_owned(), config.style().clone())
+        .with_motion(config.motion().clone());
+    match adapter.update_cursor_overlay(&control) {
+        Ok(()) => true,
+        Err(error) => {
+            super::overlay_skipped::log(&error);
+            false
+        }
+    }
 }
 
 fn nothing_to_tear_down(error: &agent_desktop_core::AdapterError) -> bool {

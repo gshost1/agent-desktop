@@ -8,6 +8,7 @@ use agent_desktop_core::{
 
 use super::ax_value::AxValue;
 use super::cdp_ax_node::CdpAxNode;
+use super::click_promotion::promote_clickable;
 use super::frame_context::FrameContext;
 use super::node_actions::actions_of;
 use super::node_states::states_of;
@@ -20,7 +21,9 @@ use crate::NodeOrigin;
 /// children; text fragments are dropped with their subtrees; a static-text
 /// child that only repeats its parent's name is dropped. Static text and
 /// text fields are leaves, as the native AX path exposes them: their
-/// children are inline text boxes and the field's inner editor.
+/// children are inline text boxes and the field's inner editor. A node the
+/// DOM snapshot reports as clickable, whose accessibility node exposes no
+/// control, takes a click (see [`promote_clickable`]).
 pub(crate) fn build_frame(nodes: Vec<CdpAxNode>, context: &FrameContext<'_>) -> Vec<WebNode> {
     let children: HashSet<&str> = nodes
         .iter()
@@ -69,7 +72,15 @@ fn build_node(
     if node.ignored {
         return children;
     }
-    let built = convert(node, &raw_role, context);
+    let mut built = convert(node, &raw_role, context);
+    if built
+        .origin
+        .as_ref()
+        .is_some_and(|origin| context.dom.clickable.contains(&origin.backend_node_id))
+    {
+        let owns_frame = holds_frame_owner(node, by_id);
+        promote_clickable(&mut built, &mut children, &raw_role, owns_frame);
+    }
     if matches!(built.node.role.as_str(), "statictext" | "textfield") {
         children.clear();
     } else if let Some(name) = built.node.identity.name.as_deref() {
@@ -85,7 +96,28 @@ fn build_node(
     vec![WebNode { children, ..built }]
 }
 
-fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'_>) -> WebNode {
+/// Whether a frame-owner element sits anywhere below `node` in the frame's
+/// accessibility tree. A child frame's tree is grafted beneath its owner only
+/// after every frame is built, so the built children cannot show its controls.
+fn holds_frame_owner(node: &CdpAxNode, by_id: &NodeIndex<'_>) -> bool {
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut pending: Vec<&str> = node.child_ids.iter().map(String::as_str).collect();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let Some(child) = by_id.get(id) else {
+            continue;
+        };
+        if is_frame_owner_role(&child.raw_role()) {
+            return true;
+        }
+        pending.extend(child.child_ids.iter().map(String::as_str));
+    }
+    false
+}
+
+pub(crate) fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'_>) -> WebNode {
     let role = map_cdp_role(raw_role);
     let text = |value: &Option<AxValue>| value.as_ref().and_then(AxValue::as_text);
     let origin = node.backend_dom_node_id.map(|backend_node_id| NodeOrigin {
@@ -101,7 +133,7 @@ fn convert(node: &CdpAxNode, raw_role: &str, context: &FrameContext<'_>) -> WebN
         .map(|origin| origin.element_token().to_string());
     let native_id = node
         .backend_dom_node_id
-        .and_then(|backend| context.dom_ids.get(&backend))
+        .and_then(|backend| context.dom.ids.get(&backend))
         .map(|value| ElementIdentifier {
             kind: IdentifierKind::AxDomIdentifier,
             value: value.clone(),

@@ -71,6 +71,7 @@ fn supported_surface_requests_do_not_discover_unrelated_capabilities() {
                 last: false,
                 nth: None,
                 limit: None,
+                allow_partial: false,
             },
             timeout_ms: None,
         },

@@ -90,3 +90,41 @@ fn a_timed_out_surface_report_leaves_the_result_without_surfaces() {
 
     assert!(surfaces.is_empty());
 }
+
+struct RaisedOnlyAdapter;
+
+impl ObservationOps for RaisedOnlyAdapter {
+    fn list_surfaces(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        panic!("the settled report must not list content surfaces")
+    }
+
+    fn list_raised_surfaces(
+        &self,
+        _process: ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        sheet()
+    }
+}
+impl ActionOps for RaisedOnlyAdapter {}
+impl InputOps for RaisedOnlyAdapter {}
+impl SystemOps for RaisedOnlyAdapter {}
+
+#[test]
+fn the_settled_report_reads_only_surfaces_an_action_can_raise() {
+    let surfaces = read(
+        &RaisedOnlyAdapter,
+        process(),
+        Deadline::after(5_000).expect("deadline"),
+    );
+
+    let kinds: Vec<&str> = surfaces
+        .iter()
+        .map(|surface| surface.kind.as_str())
+        .collect();
+    assert_eq!(kinds, vec!["sheet"]);
+}

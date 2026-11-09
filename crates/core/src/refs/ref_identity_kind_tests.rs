@@ -65,3 +65,11 @@ fn ax_only_and_dom_only_identifiers_resolve_deterministically() {
         );
     }
 }
+
+#[test]
+fn ax_and_devtools_tokens_are_element_tokens_and_paths_are_not() {
+    assert!(is_element_token("axtok1:7f3a"));
+    assert!(is_element_token("cdp:TARGET:42"));
+    assert!(!is_element_token("path:0/3/1"));
+    assert!(!is_element_token("cdpx:TARGET:42"));
+}

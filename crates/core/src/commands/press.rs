@@ -11,6 +11,7 @@ pub struct PressArgs {
     pub combo: String,
     pub app: Option<String>,
     pub window_id: Option<String>,
+    pub ref_id: Option<String>,
     pub force: bool,
 }
 
@@ -22,6 +23,9 @@ pub fn execute(
     super::helpers::validate_post_action_wait(context)?;
     let combo = parse_combo_normalized(&args.combo)?;
     ensure_combo_allowed(&combo, &args.combo, args.force, adapter)?;
+    if args.ref_id.is_some() {
+        return press_into_ref(args, combo, adapter, context);
+    }
     let deadline = crate::Deadline::standard()?;
 
     let mut pressed_process = None;
@@ -83,6 +87,28 @@ pub fn execute(
     )
 }
 
+fn press_into_ref(
+    args: PressArgs,
+    combo: crate::KeyCombo,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Result<Value, AppError> {
+    let (Some(ref_id), None, None) = (args.ref_id, args.app, args.window_id) else {
+        return Err(AppError::invalid_input(
+            "--ref names the element that receives the key; drop --app and --window-id",
+        ));
+    };
+    super::helpers::execute_ref_action_with_context(
+        super::helpers::RefArgs {
+            ref_id,
+            timeout_ms: None,
+        },
+        adapter,
+        context.request_base(Action::PressKey(combo)),
+        context,
+    )
+}
+
 fn target_app(
     args: &PressArgs,
     adapter: &dyn PlatformAdapter,
@@ -116,3 +142,7 @@ mod window_tests;
 #[cfg(test)]
 #[path = "press_focus_tests.rs"]
 mod focus_tests;
+
+#[cfg(test)]
+#[path = "press_ref_tests.rs"]
+mod ref_tests;

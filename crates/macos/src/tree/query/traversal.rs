@@ -1,4 +1,9 @@
-use super::{arena::TraversalArena, child_read::ChildRead, node_read::read_node};
+use super::{
+    arena::TraversalArena,
+    child_read::ChildRead,
+    deferred_list::{DeferredList, defers_children},
+    node_read::read_node,
+};
 use crate::tree::AXElement;
 use agent_desktop_core::{
     AdapterError, ErrorCode, ObservationRequest, ObservationSource, ObservedSubtree, ObservedTree,
@@ -7,11 +12,12 @@ use serde_json::json;
 use std::time::{Duration, Instant};
 
 pub(crate) struct LocatorTraversal {
-    request: ObservationRequest,
-    context: crate::tree::TreeBuildContext,
-    deadline: Instant,
-    arena: TraversalArena,
-    usage: crate::tree::observation_usage::ObservationUsage,
+    pub(super) request: ObservationRequest,
+    pub(super) context: crate::tree::TreeBuildContext,
+    pub(super) deadline: Instant,
+    pub(super) arena: TraversalArena,
+    pub(super) usage: crate::tree::observation_usage::ObservationUsage,
+    pub(super) deferred: std::collections::VecDeque<DeferredList>,
 }
 
 impl LocatorTraversal {
@@ -26,6 +32,7 @@ impl LocatorTraversal {
             deadline,
             arena: TraversalArena::new(),
             usage: crate::tree::observation_usage::ObservationUsage::new(request.budget),
+            deferred: std::collections::VecDeque::new(),
         }
     }
 
@@ -35,7 +42,10 @@ impl LocatorTraversal {
         source: ObservationSource,
     ) -> Result<(ObservedTree, bool, agent_desktop_core::LocatorStats), AdapterError> {
         self.arena.add_handles(1);
-        let root = self.visit(root, 0, 0)?;
+        let root = self.visit(root, (0, 0), &[])?;
+        let rows_left_unread =
+            self.request.observation_mode.leave_rows_unread && !self.deferred.is_empty();
+        let root = self.read_deferred_lists(root)?;
         let complete = self.arena.structurally_complete;
         let renderer_ready = self.arena.stats.activation.ready;
         let stats = self.arena.finish()?;
@@ -55,23 +65,25 @@ impl LocatorTraversal {
                 "query_stats": stats,
             }))
         })?;
-        let tree = ObservedTree::from_roots(vec![root], source, stats.clone(), complete)?;
+        let mut tree = ObservedTree::from_roots(vec![root], source, stats.clone(), complete)?;
+        if rows_left_unread && complete {
+            tree.mark_rows_unread();
+        }
         Ok((tree, renderer_ready, stats))
     }
 
     fn visit(
         &mut self,
         element: AXElement,
-        logical_depth: u8,
-        raw_depth: u8,
+        (logical_depth, raw_depth): (u8, u8),
+        path: &[usize],
     ) -> Result<Option<ObservedSubtree>, AdapterError> {
         let Some(_) = self.remaining_budget() else {
             self.note_deadline_exhausted();
             self.arena.drop_handles(1);
             return Ok(None);
         };
-        let pointer = element.0 as usize;
-        if !self.arena.ancestors.insert(pointer) {
+        if !self.arena.enter(&element) {
             self.arena.stats.traversal.cycles_skipped += 1;
             self.arena.drop_handles(1);
             return Ok(None);
@@ -79,7 +91,7 @@ impl LocatorTraversal {
         if !self.usage.claim_node() {
             self.arena.stats.traversal.limits.node_hits += 1;
             self.arena.mark_incomplete();
-            self.arena.ancestors.remove(&pointer);
+            self.arena.leave(&element);
             self.arena.drop_handles(1);
             return Ok(None);
         }
@@ -112,7 +124,8 @@ impl LocatorTraversal {
             self.arena.stats.activation.ready = true;
         }
         if read.invalid_element {
-            self.arena.ancestors.remove(&pointer);
+            self.arena.leave(&element);
+            self.arena.stats.reads.health.invalidated_elements += 1;
             self.arena.drop_handles(1);
             if raw_depth == 0 {
                 return Err(AdapterError::new(
@@ -143,6 +156,20 @@ impl LocatorTraversal {
                     .filter(|count| *count > 0),
                 read.child_read.complete,
             )
+        } else if defers_children(read.attrs.role.as_deref()) {
+            self.usage.claim_edges(loaded_child_count);
+            self.deferred.push_back(DeferredList {
+                path: path.to_vec(),
+                children: read.child_read,
+                depths: (child_logical_depth, raw_depth),
+                viewport: crate::tree::element_bounds::clipped_viewport(
+                    self.context.window_bounds,
+                    read.attrs.role.as_deref().unwrap_or(""),
+                    read.attrs.bounds,
+                ),
+                ancestors: self.arena.ancestor_path(),
+            });
+            (Vec::new(), None, true)
         } else {
             self.usage.claim_edges(loaded_child_count);
             let original_viewport = self.context.window_bounds;
@@ -151,12 +178,13 @@ impl LocatorTraversal {
                 read.attrs.role.as_deref().unwrap_or(""),
                 read.attrs.bounds,
             );
-            let result = self.visit_children(read.child_read, (child_logical_depth, raw_depth));
+            let result =
+                self.visit_children(read.child_read, (child_logical_depth, raw_depth), path);
             self.context.window_bounds = original_viewport;
             let (children, complete) = result?;
             (children, None, complete)
         };
-        self.arena.ancestors.remove(&pointer);
+        self.arena.leave(&element);
         self.arena.drop_handles(1);
         if !subtree_complete {
             self.arena.mark_incomplete();
@@ -167,10 +195,11 @@ impl LocatorTraversal {
         ))
     }
 
-    fn visit_children(
+    pub(super) fn visit_children(
         &mut self,
         read: ChildRead,
         depths: (u8, u8),
+        parent_path: &[usize],
     ) -> Result<(Vec<ObservedSubtree>, bool), AdapterError> {
         let mut complete = read.complete && !read.truncated();
         if !complete {
@@ -192,7 +221,9 @@ impl LocatorTraversal {
                 complete = false;
                 break;
             }
-            match self.visit(child, depths.0, depths.1.saturating_add(1))? {
+            let mut child_path = parent_path.to_vec();
+            child_path.push(children.len());
+            match self.visit(child, (depths.0, depths.1.saturating_add(1)), &child_path)? {
                 Some(subtree) => {
                     complete &= subtree.is_complete();
                     let edge_complete = retained_edge_certainty(&mut predecessors_complete, true);
@@ -214,14 +245,14 @@ impl LocatorTraversal {
         Ok((children, complete))
     }
 
-    fn remaining_budget(&self) -> Option<Duration> {
+    pub(super) fn remaining_budget(&self) -> Option<Duration> {
         self.deadline
             .checked_duration_since(Instant::now())
             .map(|remaining| remaining.min(crate::tree::locator_deadline::MAX_IPC_SLICE))
             .filter(|remaining| !remaining.is_zero())
     }
 
-    fn note_deadline_exhausted(&mut self) {
+    pub(super) fn note_deadline_exhausted(&mut self) {
         self.arena.stats.reads.health.deadline_exhausted += 1;
         self.arena.mark_incomplete();
     }
@@ -281,7 +312,7 @@ mod tests {
         read.elements.push(AXElement(std::ptr::null_mut()));
         read.total_count = 1;
 
-        let (children, complete) = traversal.visit_children(read, (1, 0)).unwrap();
+        let (children, complete) = traversal.visit_children(read, (1, 0), &[]).unwrap();
 
         assert!(children.is_empty());
         assert!(!complete);

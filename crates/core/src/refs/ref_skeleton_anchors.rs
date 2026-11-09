@@ -1,5 +1,5 @@
 use crate::AccessibilityNode;
-use crate::refs::ref_alloc::is_ref_able;
+use crate::refs::ref_alloc::{identity_name, is_ref_able};
 use crate::refs::ref_identity::is_element_token;
 use std::collections::HashSet;
 
@@ -43,7 +43,7 @@ pub(crate) fn plan_skeleton_anchors(
 /// Without one it is no drill target, so it earns neither a ref nor a census.
 fn carries_identity_evidence(node: &AccessibilityNode) -> bool {
     carries_element_token(node)
-        || has_meaningful_text(node.identity.name.as_deref())
+        || has_meaningful_text(identity_name(node))
         || has_meaningful_text(node.identity.description.as_deref())
         || node.identity.native_id.as_ref().is_some_and(|identifier| {
             identifier.kind != crate::IdentifierKind::Unknown && !identifier.value.trim().is_empty()

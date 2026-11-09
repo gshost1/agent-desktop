@@ -63,6 +63,7 @@ fn refusal(headed: bool) -> AdapterError {
         combo: "a".into(),
         app: Some("Editor".into()),
         window_id: None,
+        ref_id: None,
         force: false,
     };
     let context = CommandContext::default().with_headed(headed);

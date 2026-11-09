@@ -220,3 +220,7 @@ struct LiveKey<'a> {
 #[cfg(test)]
 #[path = "ref_capture_proof_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ref_capture_proof_derived_name_tests.rs"]
+mod derived_name_tests;

@@ -10,18 +10,22 @@ use crate::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct CountingAdapter {
-    builds: AtomicUsize,
-    observe: Option<fn(usize) -> ObservedTree>,
+pub(super) struct CountingAdapter {
+    pub(super) builds: AtomicUsize,
+    pub(super) observe: Option<fn(usize) -> ObservedTree>,
+    pub(super) observe_with_request: Option<fn(usize, &ObservationRequest) -> ObservedTree>,
 }
 
 impl ObservationOps for CountingAdapter {
     fn observe_tree(
         &self,
         _root: ObservationRoot<'_>,
-        _request: &ObservationRequest,
+        request: &ObservationRequest,
     ) -> Result<ObservedTree, AdapterError> {
         let attempt = self.builds.fetch_add(1, Ordering::SeqCst);
+        if let Some(observe) = self.observe_with_request {
+            return Ok(observe(attempt, request));
+        }
         self.observe
             .map(|observe| observe(attempt))
             .ok_or_else(|| AdapterError::not_supported("fixture locator tree"))
@@ -32,11 +36,11 @@ impl ActionOps for CountingAdapter {}
 impl InputOps for CountingAdapter {}
 impl SystemOps for CountingAdapter {}
 
-fn request() -> LocatorResolveRequest {
+pub(super) fn request() -> LocatorResolveRequest {
     request_with_timeout(std::time::Duration::from_secs(5))
 }
 
-fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
+pub(super) fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
     LocatorResolveRequest {
         selection: LocatorSelection::Strict,
         deadline: crate::Deadline::from_duration(timeout).unwrap(),
@@ -46,7 +50,7 @@ fn request_with_timeout(timeout: std::time::Duration) -> LocatorResolveRequest {
     }
 }
 
-fn observed_tree(complete: bool, stats: LocatorStats) -> ObservedTree {
+pub(super) fn observed_tree(complete: bool, stats: LocatorStats) -> ObservedTree {
     let root = super::test_support::node(
         0,
         super::test_support::evidence("window", Some("Fixture")),
@@ -91,6 +95,7 @@ fn resolve_query_validates_before_calling_the_adapter() {
     let adapter = CountingAdapter {
         builds: AtomicUsize::new(0),
         observe: None,
+        observe_with_request: None,
     };
     let query = LocatorQuery {
         states: vec![StatePredicate {
@@ -116,6 +121,7 @@ fn resolve_query_delegates_valid_queries_once() {
     let adapter = CountingAdapter {
         builds: AtomicUsize::new(0),
         observe: None,
+        observe_with_request: None,
     };
     let error = resolve_query(
         &adapter,
@@ -134,6 +140,7 @@ fn child_count_churn_retries_until_the_observation_is_stable() {
     let adapter = CountingAdapter {
         builds: AtomicUsize::new(0),
         observe: Some(churn_then_stable),
+        observe_with_request: None,
     };
 
     let resolution = resolve_query(
@@ -156,6 +163,7 @@ fn persistent_cannot_complete_exhausts_one_deadline_with_last_evidence() {
     let adapter = CountingAdapter {
         builds: AtomicUsize::new(0),
         observe: Some(always_cannot_complete),
+        observe_with_request: None,
     };
 
     let error = resolve_query(
@@ -189,6 +197,7 @@ fn child_label_cap_alone_is_not_a_global_budget_failure() {
     let adapter = CountingAdapter {
         builds: AtomicUsize::new(0),
         observe: Some(child_label_cap),
+        observe_with_request: None,
     };
 
     let resolution = resolve_query(
@@ -208,6 +217,7 @@ fn deterministic_observation_limit_fails_without_retrying() {
     let adapter = CountingAdapter {
         builds: AtomicUsize::new(0),
         observe: Some(node_limit),
+        observe_with_request: None,
     };
 
     let error = resolve_query(
@@ -232,6 +242,7 @@ fn strict_unknown_incomplete_result_fails_closed() {
     let adapter = CountingAdapter {
         builds: AtomicUsize::new(0),
         observe: Some(|_| observed_tree(false, LocatorStats::default())),
+        observe_with_request: None,
     };
 
     let error = match resolve_query(
@@ -248,6 +259,64 @@ fn strict_unknown_incomplete_result_fails_closed() {
         panic!("expected adapter error");
     };
     assert_eq!(error.code, ErrorCode::Timeout);
-    assert_eq!(error.details.unwrap()["kind"], "locator_incomplete");
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "locator_incomplete");
+    assert_eq!(details["query_stats"]["reads"]["observation_attempts"], 2);
+    assert_eq!(adapter.builds.load(Ordering::SeqCst), 2);
+}
+
+fn spends_its_observation_budget(_: usize, request: &ObservationRequest) -> ObservedTree {
+    crate::wait::deadline::sleep(request.deadline.remaining());
+    let mut stats = LocatorStats::default();
+    stats.reads.health.deadline_exhausted = 1;
+    observed_tree(false, stats)
+}
+
+#[test]
+fn an_attempt_that_spent_its_observation_budget_is_not_walked_again() {
+    let clock = crate::wait::deadline::VirtualClock::freeze();
+    let adapter = CountingAdapter {
+        builds: AtomicUsize::new(0),
+        observe: None,
+        observe_with_request: Some(spends_its_observation_budget),
+    };
+    let request = LocatorResolveRequest {
+        selection: LocatorSelection::All { limit: Some(50) },
+        materialization: LocatorMaterialization::SelectedMatches,
+        ..request_with_timeout(std::time::Duration::from_secs(5))
+    };
+    let query = LocatorQuery {
+        identity: crate::IdentityPredicate {
+            role: Some("button".into()),
+            ..Default::default()
+        },
+        ..LocatorQuery::default()
+    };
+
+    let error = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .err()
+    .expect("a walk cut by its budget must time out");
+
+    let AppError::Adapter(error) = error else {
+        panic!("expected adapter error");
+    };
+    assert_eq!(error.code, ErrorCode::Timeout);
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "locator_transient_incomplete");
+    assert_eq!(details["last_incomplete"]["deadline_exhausted"], 1);
+    assert_eq!(
+        details["query_stats"]["elapsed_us"], 4_000_000,
+        "a timeout must say how long the resolution ran"
+    );
     assert_eq!(adapter.builds.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        clock.elapsed(),
+        std::time::Duration::from_secs(4),
+        "the walk gets the budget less the hydration reserve, and nothing after it"
+    );
 }
