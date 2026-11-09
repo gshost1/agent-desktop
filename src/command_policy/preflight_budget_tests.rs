@@ -11,9 +11,21 @@ fn remaining(args: &[&str]) -> Duration {
         .remaining()
 }
 
+fn assert_bounded(args: &[&str], at_most_ms: u64) {
+    let left = remaining(args);
+    assert!(
+        left <= Duration::from_millis(at_most_ms),
+        "{args:?}: {left:?}"
+    );
+    assert!(
+        left > Duration::from_millis(at_most_ms / 2),
+        "{args:?}: {left:?}"
+    );
+}
+
 #[test]
-fn a_command_with_a_shorter_timeout_bounds_its_permission_read_by_it() {
-    for args in [
+fn a_short_timeout_bounds_the_permission_read_by_it_plus_the_slack() {
+    assert_bounded(
         &[
             "agent-desktop",
             "snapshot",
@@ -21,58 +33,72 @@ fn a_command_with_a_shorter_timeout_bounds_its_permission_read_by_it() {
             "X",
             "--timeout-ms",
             "1000",
-        ][..],
+        ],
+        1_900,
+    );
+    assert_bounded(
         &[
             "agent-desktop",
             "click",
             "@s1234abcd:e1",
             "--timeout-ms",
             "1000",
-        ][..],
+        ],
+        1_900,
+    );
+    assert_bounded(
         &[
             "agent-desktop",
-            "find",
-            "--app",
-            "X",
-            "--role",
-            "button",
-            "--timeout-ms",
+            "wait",
+            "--window",
+            "W",
+            "--timeout",
             "1000",
-        ][..],
-    ] {
-        let left = remaining(args);
-        assert!(left <= Duration::from_millis(1_000), "{args:?}: {left:?}");
-    }
+        ],
+        1_900,
+    );
 }
 
 #[test]
-fn a_snapshot_without_a_timeout_bounds_its_permission_read_by_the_snapshot_default() {
-    let left = remaining(&["agent-desktop", "snapshot", "--app", "X"]);
-    assert!(left <= Duration::from_millis(3_000), "{left:?}");
-    assert!(left > Duration::from_millis(2_000), "{left:?}");
-}
-
-#[test]
-fn a_longer_zero_or_absent_timeout_keeps_the_standard_permission_read() {
-    for args in [
-        &[
-            "agent-desktop",
-            "click",
-            "@s1234abcd:e1",
-            "--timeout-ms",
-            "60000",
-        ][..],
+fn a_tiny_or_zero_timeout_still_leaves_a_healthy_permission_read_the_slack() {
+    assert_bounded(
         &[
             "agent-desktop",
             "click",
             "@s1234abcd:e1",
             "--timeout-ms",
             "0",
-        ][..],
-        &["agent-desktop", "status"][..],
-    ] {
-        let left = remaining(args);
-        assert!(left <= Duration::from_millis(5_000), "{args:?}: {left:?}");
-        assert!(left > Duration::from_millis(4_000), "{args:?}: {left:?}");
-    }
+        ],
+        900,
+    );
+    assert_bounded(
+        &[
+            "agent-desktop",
+            "click",
+            "@s1234abcd:e1",
+            "--timeout-ms",
+            "50",
+        ],
+        950,
+    );
+}
+
+#[test]
+fn a_snapshot_without_a_timeout_uses_the_snapshot_default() {
+    assert_bounded(&["agent-desktop", "snapshot", "--app", "X"], 3_900);
+}
+
+#[test]
+fn a_long_or_absent_timeout_keeps_the_standard_permission_read() {
+    assert_bounded(
+        &[
+            "agent-desktop",
+            "click",
+            "@s1234abcd:e1",
+            "--timeout-ms",
+            "60000",
+        ],
+        5_000,
+    );
+    assert_bounded(&["agent-desktop", "status"], 5_000);
 }

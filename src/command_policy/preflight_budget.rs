@@ -7,10 +7,15 @@ use crate::cli::Commands;
 /// Cap on a top-level batch's permission preflight, which may outlast five seconds.
 const BATCH_PREFLIGHT_CAP_MS: u64 = 15_000;
 
+/// How far past its own timeout a command's permission read may run. The read
+/// happens before the command's deadline starts, so a read that never answers
+/// must end within the one second a command may overrun its timeout by, while
+/// a healthy read, a cold bus connection included, always gets this long.
+const PREFLIGHT_SLACK_MS: u64 = 900;
+
 /// The preflight deadline: the caller's, a batch's capped budget, else the
-/// standard one cut to the command's own timeout when that is shorter, so a
-/// permission read that never answers cannot hold a command past the time it
-/// was given.
+/// standard one, cut to the command's own timeout plus [`PREFLIGHT_SLACK_MS`]
+/// when that is shorter.
 pub(crate) fn preflight_deadline(
     cmd: &Commands,
     deadline: Option<Deadline>,
@@ -18,13 +23,14 @@ pub(crate) fn preflight_deadline(
     match (cmd, deadline) {
         (_, Some(deadline)) => Ok(deadline),
         (Commands::Batch(a), None) => Deadline::after(a.timeout_ms.min(BATCH_PREFLIGHT_CAP_MS)),
-        (_, None) => Deadline::after(
-            own_timeout_ms(cmd)
-                .filter(|timeout_ms| *timeout_ms > 0)
-                .map_or(DEFAULT_OPERATION_TIMEOUT_MS, |timeout_ms| {
-                    timeout_ms.min(DEFAULT_OPERATION_TIMEOUT_MS)
-                }),
-        ),
+        (_, None) => Deadline::after(own_timeout_ms(cmd).map_or(
+            DEFAULT_OPERATION_TIMEOUT_MS,
+            |timeout_ms| {
+                timeout_ms
+                    .saturating_add(PREFLIGHT_SLACK_MS)
+                    .min(DEFAULT_OPERATION_TIMEOUT_MS)
+            },
+        )),
     }
 }
 
@@ -53,9 +59,9 @@ fn own_timeout_ms(cmd: &Commands) -> Option<u64> {
         Commands::Scroll(a) => Some(a.timeout_ms),
         Commands::Hover(a) => Some(a.timeout_ms),
         Commands::Drag(a) => Some(a.timeout_ms),
-        Commands::ListWindows(a) => a.timeout_ms,
-        Commands::ListApps(a) => a.timeout_ms,
         Commands::OpenUrl(a) => a.timeout_ms,
+        Commands::Wait(a) => Some(a.timeout),
+        Commands::Launch(a) => Some(a.timeout),
         _ => None,
     }
 }
