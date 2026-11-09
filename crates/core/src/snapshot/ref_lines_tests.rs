@@ -114,7 +114,10 @@ fn skeleton_fixture_renders_to_its_golden_lines() {
     .unwrap();
     let golden = include_str!("../../../../tests/fixtures/skeleton-tree.lines.txt");
 
-    assert_eq!(render_ref_lines(&tree).join("\n") + "\n", golden);
+    assert_eq!(
+        render_ref_lines(&tree).join("\n") + "\n",
+        golden.replace("\r\n", "\n")
+    );
 }
 
 #[test]
