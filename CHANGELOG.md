@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+* On macOS, a ref taken with `--surface focused` that carries no element address now resolves only while the window it was captured from is still the app's focused window. It used to re-root at whichever window had focus, so after focus moved to another document of the same app it could act on a same-named control there; it now returns `STALE_REF` with `details.kind: "focused_window_changed"` and sends nothing. `snapshot --surface focused --window-id` of a window that is not focused fails the same way. ([#80](https://github.com/gshost1/agent-desktop/pull/80))
 * On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
 * On macOS, verify a headless `click` that opens a file or folder item through `AXOpen` by its effect: the sheet that held the item closes, or the window takes the item's name as its title. Such an open used to be reported as failed when the app answered with an uninformative code or reported the removed target as invalid. ([#9](https://github.com/gshost1/agent-desktop/pull/9))
 
