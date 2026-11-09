@@ -23,7 +23,8 @@ Other open fork PRs not owned by this session: #59, #48, #41, #36, #30, #9, #7, 
 **Next:** the 21 rows fixable on the laptop under "Remaining work plan", then the 11 Mac/Windows drafts.
 
 **Traps:**
-- Gates: `audit/tools/gates.sh <worktree>` (flock-serialized; at most two builds at once). `export PATH=$HOME/.cargo/bin:$PATH` first, or the pre-commit hook skips itself.
+- Gates: `bash /home/george/Projects/agent-desktop/.agents/worktrees/ledger/audit/tools/gates.sh <worktree>` (absolute path; usable from any worktree or session). It takes the lock `/tmp/claude-1000/gates.serial.lock` with `flock`, so only one full gate runs at a time on the laptop; queue behind it, run it in the background. Ends with `GATES: GREEN` or `GATES: RED`. `export PATH=$HOME/.cargo/bin:$PATH` first, or the pre-commit hook skips itself.
+- Memory (2026-11-09: two agents OOM-killed with six building at once on 14 GB): at most six building sessions on the laptop, counting the web track; `export CARGO_BUILD_JOBS=2` in every shell; one cargo command at a time per session; full gates only through gates.sh.
 - Commits need `DISPLAY` pointed at a throwaway Xvfb (displays 150-199), because the hook runs `the_lifecycle_overrides_are_wired_to_the_adapter`. Run long commands under `setsid -w`.
 - `w15/target-win/` is an untracked Windows cross-build dir, not work in progress. Old `target` dirs total about 41 GB; delete only with George's yes.
 - The laptop `gh` token has no `workflow` scope, so pushes that touch `.github/workflows/` are rejected (see Blocked on George).
