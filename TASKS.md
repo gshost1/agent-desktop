@@ -432,3 +432,4 @@ Next plan
 - Right-click false failure is upstream too (b43ac4f6, 3/3), not a fork regression.
 - [ ] 1.3.1: trim the right-click baseline read (#79 adds ~115 ms per right-click: process identity + AX menu read + CGWindowList before step 1). Control 2026-11-08.
 - 1.3.0 merge scope (control 20:55): only #18 and #34 may still merge, if the laptop remerges them green before 23:00. #14 is breaking (fix(refs)!) and goes to a later release even if green.
+- Found (20:58 PST): Windows flake on #62 55229bfd (changelog-only diff from green c24d5a3): context::tests::trace_on_session_writes_segment_without_explicit_trace_flag saw 0 trace segments, expected 1 (context_tests.rs:270). Failed job rerun. Post-release: look for a shared-state race in the session trace test on Windows.
