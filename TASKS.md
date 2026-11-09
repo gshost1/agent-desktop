@@ -438,3 +438,19 @@ Next plan
 - [ ] 1.3.1: replace the E2E Finder anchor with a bench-owned anchor window that isn't Finder. The strict headless gate needs exactly one focused non-fixture window, and with Finder at 0 windows there was none (23:30 run exited 2). The 23:41 rerun used a Finder window on ~/agent-desktop-bench/e2e-anchor, which shows the personal sidebar on screen (not read). Control 2026-11-08.
 - 1.3.0 merge scope (control 20:55): only #18 and #34 may still merge, if the laptop remerges them green before 23:00. #14 is breaking (fix(refs)!) and goes to a later release even if green.
 - Found (20:58 PST): Windows flake on #62 55229bfd (changelog-only diff from green c24d5a3): context::tests::trace_on_session_writes_segment_without_explicit_trace_flag saw 0 trace segments, expected 1 (context_tests.rs:270). Failed job rerun. Post-release: look for a shared-state race in the session trace test on Windows.
+
+## Release 1.3.0 wrap-up (2026-11-09 06:30 PST)
+
+**Blocked on me**
+- George: merge #62 (https://github.com/gshost1/agent-desktop/pull/62) Monday 9 am. Run `gh workflow enable Release --repo gshost1/agent-desktop` right before merging. Head e39ff5f3, 27/27 green, CLEAN, contains main 15aa75cb.
+
+**Changed**
+- #62: main 15aa75cb merged in (aedef6e9). The changelog Testing line now states the E2E counts (122 passed, 9 failed, 2 skipped, 3 private skips), and a Known issue was added for the removed row refused with APP_UNRESPONSIVE (e39ff5f3). The PR body's How tested and Measurements sections were rewritten.
+- bench/overnight.sh takes a desktop-not-before time for the desktop steps (830512af). It was restarted early on George's order; the old pid 45664 was stopped before it ran anything.
+- Merged into main tonight: #75, #76, #38, #77, #36, #78, #79. #14, #18, #34 and #58 move to 1.3.1.
+
+**Found**
+- The E2E strict headless gate needs exactly one focused non-fixture window. Finder at 0 windows gives none (exit 2).
+- tests/e2e/lib.sh check_fixture_contention marks every full run contaminated after the suite's own force-close. The bug is inherited from upstream; patch at bench/out/overnight/e2e-contention-fix.patch.
+- scripts/cursor-multi-agent-probe.py takes a full-screen screencapture. That's first on the 1.3.1 list (private_skip).
+- Perf of main against upstream b43ac4f6 (fixture p50): snapshots -1.3% to +0.8%, click +4.4%, set-value +6.0%, type +2.5%.
