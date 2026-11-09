@@ -15,7 +15,7 @@ use crate::{
     AccessibilityNode, AdapterError, Deadline, NativeHandle, RefEntry, RefMap, WindowInfo,
 };
 
-pub(super) struct RuleAdapter {
+pub(crate) struct RuleAdapter {
     pub(super) windows: Vec<WindowInfo>,
     pub(super) shell: Option<WindowInfo>,
     pub(super) observed: AccessibilityNode,
@@ -28,7 +28,7 @@ pub(super) struct RuleAdapter {
 }
 
 impl RuleAdapter {
-    pub(super) fn new(observed: AccessibilityNode) -> Self {
+    pub(crate) fn new(observed: AccessibilityNode) -> Self {
         Self {
             windows: vec![window()],
             shell: None,
@@ -157,18 +157,18 @@ pub(super) fn window() -> WindowInfo {
     }
 }
 
-pub(super) fn entry() -> RefEntry {
+pub(crate) fn entry() -> RefEntry {
     let mut entry = crate::adapter::minimal_ref_entry("button", Some("Run"));
     entry.source.source_app = Some("Fixture".into());
     entry.source.source_window_id = Some("w-1".into());
     entry
 }
 
-pub(super) fn node(role: &str, name: &str) -> AccessibilityNode {
+pub(crate) fn node(role: &str, name: &str) -> AccessibilityNode {
     crate::adapter::minimal_accessibility_node(role, name)
 }
 
-pub(super) fn tree_with(children: Vec<AccessibilityNode>) -> AccessibilityNode {
+pub(crate) fn tree_with(children: Vec<AccessibilityNode>) -> AccessibilityNode {
     let mut root = node("group", "Window");
     root.children = children;
     root

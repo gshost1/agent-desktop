@@ -51,7 +51,7 @@ agent-desktop permissions [--request] [--guide]
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "permissions",
   "data": {
@@ -69,7 +69,7 @@ Each state is `granted`, `denied` (with a `suggestion`), `not_required`, or `unk
 Prints the version, CPU architecture, and OS. It takes no flags.
 
 ```json
-{ "version": "2.6", "ok": true, "command": "version", "data": { "os": "linux", "target": "x86_64", "version": "1.0.1" } }
+{ "version": "2.7", "ok": true, "command": "version", "data": { "os": "linux", "target": "x86_64", "version": "1.0.1" } }
 ```
 
 The envelope's `version` is the JSON contract version; `data.version` is the release.
@@ -111,7 +111,7 @@ agent-desktop session gc [--older-than SECONDS] [--ended]
   </tbody>
 </table>
 
-`start` returns `session_id`, `name`, `trace`, `artifacts`, `created_at`, `next` (the shell line that exports the id), and `activation`; [Sessions](/desktop/sessions#start-list-end-and-clean-up) shows a full result. `end` returns `session_id` and `ended_at`, `list` returns `data.sessions`, and `gc` returns `data.removed`. `--screenshots` with `--no-trace` is `INVALID_ARGS`, and `--multi-agent` without `--cursor` is a parse error.
+`start` returns `session_id`, `name`, `trace`, `artifacts`, `created_at`, `next` (the shell line that exports the id), and `activation`; [Sessions](/desktop/sessions#start-list-end-and-clean-up) shows a full result. With `--cursor` it also returns `cursor_overlay` (the saved setting) and `rendered` (`true` once the renderer draws; always `false` with `--multi-agent`, whose cursors appear per agent). The session and its overlay setting are saved in one write, so an error from `start` means no session was created and nothing is left to end. A renderer that cannot draw does not fail the start: it still returns the session id with `rendered: false`, the session is active with the overlay enabled, and the next action that draws asks for the renderer again. `end` returns `session_id` and `ended_at`, `list` returns `data.sessions`, and `gc` returns `data.removed`. `--screenshots` with `--no-trace` is `INVALID_ARGS`, and `--multi-agent` without `--cursor` is a parse error.
 
 ## cursor-overlay
 
@@ -144,7 +144,7 @@ agent-desktop --session "$AGENT_DESKTOP_SESSION" cursor-overlay disable
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "cursor-overlay",
   "data": {
@@ -188,7 +188,7 @@ agent-desktop --session "$AGENT_DESKTOP_SESSION" trace export [--out PATH] [--li
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "trace",
   "data": {

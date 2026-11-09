@@ -126,6 +126,28 @@ impl ObservationOps for DispatchGuardAdapter {
     ) -> Result<crate::adapter::hit_test::HitTestResult, AdapterError> {
         Ok(crate::adapter::hit_test::HitTestResult::ReachesTarget)
     }
+
+    fn list_surfaces(
+        &self,
+        _process: crate::ProcessIdentity,
+        deadline: crate::Deadline,
+    ) -> Result<Vec<crate::SurfaceInfo>, AdapterError> {
+        if self.mode != "surface_budget" {
+            return Err(AdapterError::not_supported("list_surfaces"));
+        }
+        if deadline.remaining() > crate::ref_action::settled_surface::SETTLED_SURFACE_BUDGET {
+            return Err(AdapterError::timeout(
+                "surface report ran on the action budget",
+            ));
+        }
+        Ok(vec![crate::SurfaceInfo {
+            id: "focused-window".into(),
+            kind: "sheet".into(),
+            title: None,
+            item_count: None,
+            unclassified: Vec::new(),
+        }])
+    }
     crate::adapter::saved_ref_scope!("button", Some("Run"));
 }
 
@@ -356,4 +378,14 @@ fn zero_geometry_semantic_click_dispatches_without_scrolling_into_view() {
     execute(&adapter, 500).unwrap();
     assert_eq!(adapter.scroll_calls.load(Ordering::SeqCst), 0);
     assert_eq!(adapter.dispatch_calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_click_reports_raised_surfaces_within_the_surface_budget_not_its_own() {
+    let adapter = DispatchGuardAdapter::new("surface_budget", 0);
+
+    let result = execute(&adapter, 30_000).expect("click delivered");
+
+    assert_eq!(result.surfaces.len(), 1);
+    assert_eq!(result.surfaces[0].kind, "sheet");
 }

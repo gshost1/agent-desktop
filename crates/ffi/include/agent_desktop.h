@@ -1209,6 +1209,10 @@ struct AdAdapter *ad_adapter_create_with_session(const char *session);
  *
  * Calls that acquired the adapter before destruction retain it until they
  * return. Calls beginning after destruction fail with `ErrInvalidArgs`.
+ * Platform teardown runs after the adapter registry is unlocked, so other
+ * threads and log callbacks can keep calling `ad_*` functions meanwhile.
+ * When an in-flight call still holds the adapter, teardown runs later, when
+ * that call returns, on that call's thread.
  */
 void ad_adapter_destroy(struct AdAdapter *adapter);
 
@@ -1744,13 +1748,36 @@ AdResult ad_mouse_wheel(const struct AdAdapter *adapter,
                         uint32_t modifier_mask);
 
 /**
- * Registers or clears the callback used for events emitted synchronously
- * inside later `ad_*` calls on the same thread.
+ * Registers or clears the process-wide callback used for events emitted
+ * synchronously inside later `ad_*` calls on any thread. The callback runs on
+ * the thread that made the call.
  *
- * The callback may be invoked concurrently by different host threads. The
- * message pointer is valid only until the callback returns. The callback must
- * not unwind across this C ABI boundary; C++ exceptions and Rust panics must
- * be caught inside the callback. Violating that contract may abort the host.
+ * The callback may be invoked concurrently by different host threads. After
+ * it is cleared, each call already in flight on another thread may still
+ * invoke it once.
+ *
+ * The callback may call other `ad_*` functions. Events those nested calls emit
+ * are not delivered to it. The calls that take the interaction lease through
+ * this library's FFI layer are `ad_mouse_event`, `ad_mouse_event_with_modifiers`,
+ * `ad_mouse_wheel`, `ad_drag`, `ad_set_clipboard`, `ad_clear_clipboard`,
+ * `ad_execute_action`, `ad_execute_action_with_policy`, `ad_execute_by_ref`,
+ * `ad_execute_by_ref_timeout`, `ad_launch_app_exact`, `ad_close_app`,
+ * `ad_focus_window_exact`, `ad_window_op_exact`, `ad_notification_action`,
+ * `ad_dismiss_notification` and `ad_dismiss_all_notifications`. One of these
+ * made from the callback while the call that logged is one of them and holds
+ * the lease fails at once with `AD_RESULT_ERR_POLICY_DENIED` and details kind
+ * `reentrant_interaction_lease`. For `ad_execute_by_ref*` and `ad_close_app`
+ * as the call that logged, the refusal applies for the whole call, including
+ * its work before the lease is taken. Any other nested call that needs the
+ * lease while the call that logged holds it, including an observation that
+ * takes the lease internally, waits for a release that happens only after the
+ * callback returns, so it can time out. Do not make such calls from the
+ * callback.
+ *
+ * The message pointer is valid only until the callback returns. The callback
+ * must not unwind across this C ABI boundary; C++ exceptions and Rust panics
+ * must be caught inside the callback. Violating that contract may abort the
+ * host.
  */
 AdResult ad_set_log_callback(void (*callback)(int32_t level, const char *msg));
 

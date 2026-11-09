@@ -7,6 +7,7 @@ mod child_read_status;
 mod child_read_telemetry;
 pub(crate) mod child_source;
 mod child_source_availability;
+mod deferred_list;
 mod evidence_fields;
 mod node_evidence;
 pub(crate) mod node_read;

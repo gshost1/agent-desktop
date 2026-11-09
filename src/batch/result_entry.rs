@@ -5,24 +5,33 @@ use agent_desktop_core::{
 use serde_json::{Value, json};
 
 use super::bounded_json::serialized_fits;
+use crate::command_policy::CommandEffect;
 
 pub(super) const MAX_BATCH_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const OUTPUT_METADATA_RESERVE: usize = 8 * 1024;
+const TRACE_FAILURE_RESERVE: usize = 2 * 1024;
 
 #[cfg(test)]
 pub(super) fn bounded_entry(
     index: usize,
     command: &str,
+    effect: CommandEffect,
     result: Result<Value, AppError>,
     used: usize,
 ) -> (Value, bool) {
     let entry = completed_entry(index, command, result);
-    bounded_completed_entry(index, command, entry, used)
+    bounded_completed_entry(index, command, effect, entry, used)
 }
 
+/// Keeps an entry that fits the remaining output budget. An entry that does
+/// not is replaced by an error that keeps the entry's own disposition: an
+/// action's report or error, `not_delivered` for a command that sends no
+/// input, and the `delivered_unverified` a successful action scope reports
+/// when the action's result carries none.
 pub(super) fn bounded_completed_entry(
     index: usize,
     command: &str,
+    effect: CommandEffect,
     entry: Value,
     used: usize,
 ) -> (Value, bool) {
@@ -32,7 +41,7 @@ pub(super) fn bounded_completed_entry(
     if serialized_fits(&entry, available) {
         return (entry, false);
     }
-    let disposition = entry_disposition(&entry);
+    let disposition = entry_disposition(&entry, effect);
     let error = AdapterError::new(
         ErrorCode::InvalidArgs,
         "Batch entry completed but its result exceeded the response limit",
@@ -90,7 +99,39 @@ pub(super) fn not_started_entry(
     })
 }
 
-fn entry_disposition(entry: &Value) -> DeliverySemantics {
+/// The details of a batch whose closing trace record failed under
+/// `--trace-strict`. The body travels whole when it fits the batch output
+/// limit with room for the error around it; otherwise it is omitted and only
+/// its counts and stop reason are kept.
+pub(crate) fn trace_failure_details(body: Value) -> Value {
+    let limit = MAX_BATCH_OUTPUT_BYTES.saturating_sub(TRACE_FAILURE_RESERVE);
+    if serialized_fits(&body, limit) {
+        return json!({ "kind": "batch_trace_end_failed", "batch": body });
+    }
+    let mut details = json!({
+        "kind": "batch_trace_end_failed",
+        "result_omitted": true,
+        "max_output_bytes": MAX_BATCH_OUTPUT_BYTES,
+    });
+    for key in [
+        "total_entries",
+        "completed_entries",
+        "failed_entries",
+        "not_started_entries",
+        "stopped",
+    ] {
+        if let Some(value) = body.get(key) {
+            details[key] = value.clone();
+        }
+    }
+    details
+}
+
+/// The disposition of one batch entry: its result's `data.disposition` or
+/// `error.disposition`, else what its effect allows. A command that sends no
+/// input sent nothing; a successful one that sends input reports the
+/// `delivered_unverified` its action scope would.
+pub(crate) fn entry_disposition(entry: &Value, effect: CommandEffect) -> DeliverySemantics {
     let disposition = entry
         .get("data")
         .and_then(|data| data.get("disposition"))
@@ -102,5 +143,11 @@ fn entry_disposition(entry: &Value) -> DeliverySemantics {
     disposition
         .cloned()
         .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_else(DeliverySemantics::uncertain)
+        .unwrap_or_else(|| {
+            if effect.sends_input() {
+                DeliverySemantics::delivered_unverified()
+            } else {
+                DeliverySemantics::not_delivered()
+            }
+        })
 }

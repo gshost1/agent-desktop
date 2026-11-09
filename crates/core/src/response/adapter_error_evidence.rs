@@ -38,10 +38,20 @@ impl AdapterError {
     }
 
     /// Whether this error records a focus call that ran before it.
-    pub(crate) fn moved_focus(&self) -> bool {
+    pub fn moved_focus(&self) -> bool {
+        self.has_detail("preparatory_focus")
+    }
+
+    /// Whether this error records a preparatory scroll that ran before it,
+    /// which may have changed the view.
+    pub fn changed_view(&self) -> bool {
+        self.has_detail("preparatory_scroll")
+    }
+
+    fn has_detail(&self, key: &str) -> bool {
         self.details
             .as_ref()
-            .is_some_and(|details| details.get("preparatory_focus").is_some())
+            .is_some_and(|details| details.get(key).is_some())
     }
 }
 

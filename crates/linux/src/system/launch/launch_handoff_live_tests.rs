@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::*;
+use agent_desktop_core::system::launch_presentation::LaunchPresentation;
 
 const HANDOFF_APP: &str = r#"
 import os, sys
@@ -112,7 +113,10 @@ fn live_a_clean_launcher_hands_off_to_a_resident_with_different_arguments() {
     let result = launch(
         &script,
         &LaunchOptions {
-            activate: true,
+            presentation: LaunchPresentation {
+                activate: true,
+                ..Default::default()
+            },
             env: env
                 .into_iter()
                 .map(|(key, value)| (key.to_owned(), value))

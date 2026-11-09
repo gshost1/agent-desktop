@@ -18,18 +18,20 @@ pub fn evaluate_locator_tree(
     query: &LocatorQuery,
     request: &LocatorResolveRequest,
 ) -> Result<LocatorResolution, AdapterError> {
-    evaluate_locator_tree_in(tree, None, query, request)
+    evaluate_locator_tree_in(tree, None, query, request).map(|(resolution, _)| resolution)
 }
 
 /// `evaluate_locator_tree` over one complete observation, with the matches drawn
 /// from the subtree at `scope` alone. Each match carries the capture verdict of
-/// that read, which hydration keeps rather than judging the match again.
+/// that read, which hydration keeps rather than judging the match again. The
+/// observation comes back with the resolution, because a hydrated match is
+/// named and published from the same read its query was answered from.
 pub(super) fn evaluate_locator_tree_in(
     mut tree: ObservedTree,
     scope: Option<&RefPath>,
     query: &LocatorQuery,
     request: &LocatorResolveRequest,
-) -> Result<LocatorResolution, AdapterError> {
+) -> Result<(LocatorResolution, ObservedTree), AdapterError> {
     validate_query(query)?;
     validate_request(request)?;
     let normalized = normalize_query(query);
@@ -136,7 +138,11 @@ pub(super) fn evaluate_locator_tree_in(
     };
     let total_matches = u32::try_from(matched_indices.len())
         .map_err(|_| AdapterError::internal("locator match count exceeds u32"))?;
-    let selection_complete = complete || {
+    let first_outside_unread_rows = matches!(request.selection, super::LocatorSelection::First)
+        && tree.rows_unread()
+        && !unknown
+        && !selected_matches.is_empty();
+    let selection_complete = complete || first_outside_unread_rows || {
         matches!(request.selection, super::LocatorSelection::First)
             && selected_matches.first().is_some_and(|selected| {
                 let root_verdicts = (0..tree.nodes.len())
@@ -150,18 +156,21 @@ pub(super) fn evaluate_locator_tree_in(
                 )
             })
     };
-    Ok(LocatorResolution {
-        matches: selected_matches,
-        refmap,
-        stats,
-        meta: LocatorResolutionMeta {
-            total_matches,
-            complete,
-            selection_complete,
-            truncated,
-            roles_present,
+    Ok((
+        LocatorResolution {
+            matches: selected_matches,
+            refmap,
+            stats,
+            meta: LocatorResolutionMeta {
+                total_matches,
+                complete,
+                selection_complete,
+                truncated,
+                roles_present,
+            },
         },
-    })
+        tree,
+    ))
 }
 
 fn evaluate_node(

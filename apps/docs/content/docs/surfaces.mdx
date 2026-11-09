@@ -63,7 +63,7 @@ You rarely need to poll for a surface. `click`, `double-click`, `right-click`, `
 }
 ```
 
-A `menu`, `sheet`, or `alert` entry means the app is waiting on that overlay. Observe it next with `snapshot --surface` or `find --surface`. The field is omitted when nothing is open or the read failed.
+A `menu`, `sheet`, or `alert` entry means the app is waiting on that overlay. Observe it next with `snapshot --surface` or `find --surface`. The read gets at most one second after the action. The field is omitted when nothing is open or the read failed, and an entry whose `unclassified` names a kind means that kind could not be read in time. Neither proves the overlay is closed: when you expect one, snapshot that surface.
 
 ## Snapshot or search a surface
 
@@ -88,7 +88,7 @@ To reach one item, `find --surface` is cheaper than a dump:
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "find",
   "data": {
@@ -117,15 +117,18 @@ How agent-desktop selects an owner depends on the kind and platform:
 - For window-owned surfaces, `--window-id` pins the read to that window.
 
 A missing `complete`, `complete: false`, a timeout, or an incomplete accessibility read leaves menu absence unknown. After a delivery with `retry: unsafe`, inspect the current UI before taking another action.
-A surface that is not open returns an error. On Linux, a closed menu returns `ELEMENT_NOT_FOUND`:
+A surface that is not open returns an error. On Linux, a closed menu returns `ELEMENT_NOT_FOUND` with the same complete absence evidence, so `snapshot --surface menu --wait-for` keeps waiting for a menu that opens later:
 
 ```json
 {
   "code": "ELEMENT_NOT_FOUND",
   "message": "The window does not present an open menu",
-  "suggestion": "Open the menu first, then snapshot the menu surface"
+  "suggestion": "Open the menu, then take a fresh snapshot with --surface menu",
+  "details": { "kind": "surface_absent", "complete": true, "surface": "menu" }
 }
 ```
+
+A ref taken in a menu that has since closed returns `STALE_REF` with `details.kind: "menu_closed"` and `retryable: false`. Reopen the menu and take new refs; a fresh window snapshot cannot bring the item back.
 
 A closed shell surface returns `WINDOW_NOT_FOUND`. `--surface` cannot combine with `--root`, because a ref already carries the surface it was captured from. Do not use `--skeleton` on a surface: it is already small and focused. See [Skeleton and drill-down](/desktop/skeleton-and-drill-down#when-to-skip-the-skeleton).
 
@@ -137,7 +140,7 @@ agent-desktop list-surfaces --app gtk3-widget-factory
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "list-surfaces",
   "data": {
@@ -150,7 +153,7 @@ agent-desktop list-surfaces --app gtk3-widget-factory
 }
 ```
 
-`list-surfaces` returns the overlays an app presents now, which are the kinds `snapshot --surface` accepts for it. Shell surfaces belong to the OS and never appear here. An entry can carry `"unclassified": ["sheet"]` or `["menu"]` when the check could not read that window, often because the app was busy. Treat the missing entry as unknown, not absent.
+`list-surfaces` returns the overlays an app presents now, which are the kinds `snapshot --surface` accepts for it. Shell surfaces belong to the OS and never appear here. An entry can carry `"unclassified": ["sheet"]` or `["menu"]` when the check could not read that window, often because the app was busy. Treat the missing entry as unknown, not absent. On macOS menus belong to the application, and proving none is open walks the whole app tree. When that walk cannot finish, the sheets and alerts already read are kept and an `app/menubar` entry carries `"unclassified": ["menu"]`.
 
 ## Open an OS shell surface
 

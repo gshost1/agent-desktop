@@ -371,7 +371,7 @@ fn an_unproven_capture_is_flagged_in_the_payload() {
         snapshot_id: None,
         complete: true,
         nodes_observed: 1,
-        identity_unproven: None,
+        notes: crate::SnapshotNotes::default(),
     };
     let proven = format_snapshot_fields(&result, None, None).unwrap();
     assert!(proven.get("identity_unproven").is_none());
@@ -387,7 +387,7 @@ fn an_unproven_capture_is_flagged_in_the_payload() {
             .is_none()
     );
 
-    result.identity_unproven = Some("the whole-window read was cut short".into());
+    result.notes.identity_unproven = Some("the whole-window read was cut short".into());
     let unproven = format_snapshot_fields(&result, None, None).unwrap();
     assert_eq!(unproven["identity_unproven"], true);
     assert_eq!(unproven["complete"], true);

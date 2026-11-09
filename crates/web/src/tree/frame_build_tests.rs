@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use super::build_frame;
 use crate::ElementToken;
 use crate::tree::cdp_ax_node::CdpAxNode;
+use crate::tree::dom_facts::DomFacts;
 use crate::tree::frame_context::FrameContext;
 use crate::tree::web_node::WebNode;
 
@@ -13,11 +14,15 @@ fn nodes(raw: Value) -> Vec<CdpAxNode> {
 }
 
 fn build(raw: Value, dom_ids: &HashMap<i64, String>) -> Vec<WebNode> {
+    let dom = DomFacts {
+        ids: dom_ids.clone(),
+        ..DomFacts::default()
+    };
     let context = FrameContext {
         target_id: "T1",
         frame_id: "F1",
         loader_id: "L1",
-        dom_ids,
+        dom: &dom,
     };
     build_frame(nodes(raw), &context)
 }

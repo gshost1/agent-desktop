@@ -41,6 +41,7 @@ pub use adapter::live_identity::LiveIdentity;
 pub use adapter::native_handle::NativeHandle;
 pub use adapter::observation::ObservationOps;
 pub use adapter::system::SystemOps;
+pub use context::command_scope::CommandScope;
 pub use context::{CommandContext, WaitSelector};
 pub use cursor_overlay::{
     CURSOR_ARRIVAL_TIMEOUT_MS, CURSOR_HIGHLIGHT_HOLD_MS, CURSOR_IDLE_REST_MS,
@@ -116,12 +117,15 @@ pub use session::interaction_lease::{
 };
 pub use session::process_lease_guard::ProcessLeaseGuard;
 pub use session::session_affinity::SessionAffinity;
+pub use snapshot::snapshot_channel::SnapshotChannel;
+pub use snapshot::snapshot_notes::SnapshotNotes;
 pub use snapshot::snapshot_owner::SnapshotOwner;
 pub use snapshot::snapshot_surface::SnapshotSurface;
 pub use storage::file_lock::FileLock;
 pub use storage::private_file_ops::{
     PrivateFileOps, bounded_read, install_private_file_ops, temporary_file_name,
 };
+pub use storage::state_file::StateFile;
 pub use storage::state_root::validate_state_root_env;
 pub use system::app_info::{AppInfo, AppPresentation, app_name_matches};
 pub use system::app_inventory::AppInventory;
@@ -131,8 +135,12 @@ pub use system::cdp_endpoint::{
 };
 pub use system::devtools_websocket_url::DevtoolsWebSocketUrl;
 pub use system::display_info::DisplayInfo;
+pub use system::download_info::DownloadInfo;
+pub use system::download_scope::DownloadScope;
 pub use system::image_buffer::{ImageBuffer, MAX_PNG_INPUT_BYTES, parse_png_dimensions};
 pub use system::image_format::ImageFormat;
+pub use system::open_url_request::OpenUrlRequest;
+pub use system::opened_page::OpenedPage;
 pub use system::operation_report::OperationReport;
 pub use system::operation_target::OperationTarget;
 pub use system::permission_report::PermissionReport;
@@ -154,6 +162,7 @@ pub use tree::element_state::ElementState;
 pub use tree::identifier_kind::IdentifierKind;
 pub use tree::name_evidence::NameEvidence;
 pub use tree::name_slot_status::{NameSlotStatus, SlotStatus};
+pub use tree::name_source::NameSource;
 pub use tree::node::AccessibilityNode;
 pub use tree::node_descriptor::NodeDescriptor;
 pub use tree::node_identity::NodeIdentity;

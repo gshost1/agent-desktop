@@ -8,12 +8,13 @@ description: Reference for press, key-down, and key-up. press sends key combos; 
 
 ## press
 
-Sends a key combo to the focused window, or to one app.
+Sends a key combo to the focused window, to one app, or to one element.
 
 ```bash
-agent-desktop press COMBO [--app NAME] [--window-id ID] [--force]
+agent-desktop press COMBO [--app NAME] [--window-id ID] [--ref REF] [--force]
 agent-desktop press ctrl+shift+z
 agent-desktop press return --app gnome-calculator
+agent-desktop press return --ref @s8f3k2p9:e3
 ```
 
 <table>
@@ -24,17 +25,18 @@ agent-desktop press return --app gnome-calculator
     <tr><td><code>COMBO</code></td><td>required</td><td>Keys joined with <code>+</code>. The last part is the key; the parts before it are modifiers.</td></tr>
     <tr><td><code>--app NAME</code></td><td>focused window</td><td>Send the keys to this application. With <code>--headed</code>, its window is focused first. Several instances with the same name return <code>AMBIGUOUS_TARGET</code>.</td></tr>
     <tr><td><code>--window-id ID</code></td><td>none</td><td>Target the instance that owns this window.</td></tr>
+    <tr><td><code>--ref REF</code></td><td>none</td><td>Send the keys to this element. It is focused first, without moving the pointer. A web ref takes the key through the page, in the background. Cannot combine with <code>--app</code> or <code>--window-id</code>.</td></tr>
     <tr><td><code>--force</code></td><td>off</td><td>Send a combo the platform blocks as dangerous, such as a quit or lock shortcut.</td></tr>
   </tbody>
 </table>
 
 The combo is lowercased and stripped of spaces, so `Ctrl + A` is `ctrl+a`. Modifiers are `meta` (aliases `cmd`, `command`, `super`, `win`: Command on macOS, the Windows key on Windows, Super on Linux), `ctrl` (`control`), `alt` (`option`), and `shift`. A bare uppercase letter adds Shift. Key names that work everywhere are `return`, `escape`, `tab`, `space`, `delete`, `up`, `down`, `left`, `right`, and `f1` to `f12`. Copy is `cmd+c` on macOS and `ctrl+c` elsewhere.
 
-Keys are physical keyboard input, and `press` does not need `--headed` for an unscoped press. The result is always `delivered_unverified`, because delivery does not prove the shortcut did anything:
+Keys are physical keyboard input, and `press` does not need `--headed` for an unscoped press. On macOS, a chord that holds `cmd` and names an app with `--app` or `--window-id` first presses the one enabled menu-bar item whose shortcut is that chord, so it works on a background app for commands the app keeps enabled there; that step is labeled `AXPress menu shortcut` and `data.details.menu_shortcut` names the item. See the [macOS platform page](/desktop/platforms/macos). The result is always `delivered_unverified`, because delivery does not prove the shortcut did anything:
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "press",
   "data": {
@@ -68,7 +70,7 @@ A held key needs a process that can guarantee its release, and every agent-deskt
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": false,
   "command": "key-down",
   "error": {

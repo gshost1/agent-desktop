@@ -233,3 +233,7 @@ mod tests;
 #[cfg(test)]
 #[path = "ref_capture_proof_verdict_tests.rs"]
 mod verdict_tests;
+
+#[cfg(test)]
+#[path = "ref_capture_proof_derived_name_tests.rs"]
+mod derived_name_tests;

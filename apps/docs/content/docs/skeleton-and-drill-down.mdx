@@ -29,7 +29,7 @@ agent-desktop snapshot --app gnome-calculator --skeleton -i --compact
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "snapshot",
   "data": {
@@ -92,7 +92,7 @@ agent-desktop snapshot --root @s2txcl95uvubmn:e1 -i --compact
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "snapshot",
   "data": {
@@ -163,7 +163,7 @@ agent-desktop get @s2txcl95uvubmn:e11                  # inside the region: repl
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "get",
   "data": { "property": "role", "ref": "@s2txcl95uvubmn:e2", "value": "group" }
@@ -172,7 +172,7 @@ agent-desktop get @s2txcl95uvubmn:e11                  # inside the region: repl
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": false,
   "command": "get",
   "error": {
@@ -211,7 +211,7 @@ A drill is all or nothing. It replaces refs inside an existing snapshot, and a p
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": false,
   "command": "snapshot",
   "error": {
@@ -250,7 +250,7 @@ A `find` that returns matches saves its own new snapshot, and its refs are quali
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "find",
   "data": {
@@ -300,7 +300,7 @@ agent-desktop snapshot --app gtk3-widget-factory -i --compact --timeout-ms 50
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "snapshot",
   "data": {
@@ -330,6 +330,8 @@ The `tree` above is emptied for space; the real one holds the nodes that were re
 </table>
 
 Read `complete` instead of waiting for a `TIMEOUT`. Only a full snapshot can be partial; a drill never is. To finish a partial tree, raise `--timeout-ms` or drill the regions you need. Reading the same window with `--timeout-ms 150` returned a complete tree.
+
+The stored ref map has a size limit too. When a full snapshot's refs would not fit in 1 MB, as on a long web page, it keeps the refs that fit in the order they were allocated (depth first, a node before its children) and ends the tree at the first ref that did not fit. The response has the same `complete`, `truncated`, `nodes_observed`, and `subtree_truncated` fields, plus `"refmap_capped": true`. Every ref left in that tree is saved with the snapshot and resolves like any other ref. Raising `--timeout-ms` does not change this cut; shrink the tree with `-i` or `--max-depth`, or find what lies past the cut with `find`. A drill whose refs would push the snapshot past 1 MB fails and replaces nothing.
 
 A cold Chromium or Electron app can take 10 to 25 seconds to expose its web tree. If a fresh snapshot comes back thin, raise `--timeout-ms` and snapshot again.
 
