@@ -21,6 +21,10 @@ note() { echo "$(date '+%Y-%m-%d %H:%M:%S %Z') $*" | tee -a "$status"; }
 note "started; waiting for $not_before"
 while [ "$(date +%Y%m%d%H%M)" -lt "$not_before" ]; do sleep 60; done
 
+note "step 0: disk guard (free $(df -g "$HOME" | awk 'NR==2{print $4}') GB)"
+BENCH_CARGO_TIMEOUT_S=1800 bash bench/serial_cargo.sh python3 bench/prune_merged_targets.py --min-free-gb 30 > "$out/prune.log" 2>&1
+note "step 0 exit $? $(grep -E '^prune: removed' "$out/prune.log" | tail -1)"
+
 note "step 1: remerge main into the release branch"
 (
     cd "$release_wt" || exit 9
