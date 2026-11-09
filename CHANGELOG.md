@@ -4,7 +4,13 @@
 
 ### Bug Fixes
 
+* On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
+* On macOS, verify a headless `click` that opens a file or folder item through `AXOpen` by its effect: the sheet that held the item closes, or the window takes the item's name as its title. Such an open used to be reported as failed when the app answered with an uninformative code or reported the removed target as invalid. ([#9](https://github.com/gshost1/agent-desktop/pull/9))
 * A session trace event waits for the shared budget lock as long as its command's deadline allows (up to 2 s, and up to 250 ms from the event when less is left) instead of a fixed 50 ms, and the recording ledger is rewritten in place without a disk sync per line. Eight parallel `--trace-strict` writers in one Linux session failed 128 of 200 commands on lock timeouts and now fail none, and a traced command costs 7.4 ms instead of 21.2 ms. ([#PRNUM](https://github.com/gshost1/agent-desktop/pull/PRNUM))
+
+### Performance
+
+* On macOS, wait the 2 s accessibility settle only for a Chromium process, recognized by a bundled framework that ships the V8 startup snapshot or is named `Electron Framework` or `Chromium Embedded Framework`. The first snapshot of a freshly launched native app no longer pays it, and `launch` now reports `renderer: "chromium"` for browsers and renamed Electron builds too. ([#5](https://github.com/gshost1/agent-desktop/pull/5))
 
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 

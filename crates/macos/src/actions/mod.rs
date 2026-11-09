@@ -1,4 +1,4 @@
-pub(crate) mod activation_effect;
+pub(crate) mod activation;
 mod adapter;
 pub(crate) mod ax_helpers;
 #[cfg(target_os = "macos")]
