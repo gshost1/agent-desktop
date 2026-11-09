@@ -62,7 +62,7 @@ This fork release publishes GitHub release archives and checksums only. It does 
 
 ### Known issues
 
-* On macOS, a headless `right-click` on a control whose context menu the accessibility tree does not expose (a SwiftUI text field in tests) returns `ACTION_FAILED` with `delivered_unverified` although the menu opened (3 of 3 runs). Before retrying, check for the menu, for example with `snapshot --surface menu`.
+* On macOS, a headless `right-click` on a control whose context menu the accessibility tree does not expose (a SwiftUI text field in tests) returns `ACTION_FAILED` with `delivered_unverified` although the menu opened (3 of 3 runs). The menu may already be open, so a retry can open a second one.
 * On the web channel, a clickable row that a page exposes only as plain text still gets no ref when its click is handled by a listener on an ancestor (event delegation) or only on `pointerdown`.
 
 ## [1.2.0](https://github.com/vercel-labs/agent-desktop/compare/v1.1.0...v1.2.0) (2026-11-05)
