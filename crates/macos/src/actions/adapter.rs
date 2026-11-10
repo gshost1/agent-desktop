@@ -46,7 +46,7 @@ impl ActionOps for MacOSAdapter {
         handle: &NativeHandle,
         lease: &InteractionLease,
     ) -> Result<(), AdapterError> {
-        crate::actions::scroll_into_view::scroll_into_view_impl(
+        crate::actions::scroll::scroll_into_view::scroll_into_view_impl(
             ax_element(handle)?,
             lease.deadline(),
         )
