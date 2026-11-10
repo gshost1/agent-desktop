@@ -36,6 +36,11 @@ assert "wait enabled observes the asynchronous transition" \
     "elapsed_ms=$(json_field "$wait_enabled" data.elapsed_ms)"
 
 require_target primary button primary-button
+actionable_scroll="$("$bin" scroll-to "$(target_ref "$primary")" 2>/dev/null)"
+actionable_visible="$(is_target "$primary" visible 2>/dev/null)"
+assert "scroll-to brings the primary button into view before wait actionable" \
+    "$([ "$(json_field "$actionable_scroll" ok)" = "True" ] && [ "$(json_field "$actionable_visible" data.result)" = "True" ] && echo 1 || echo 0)" \
+    "ok=$(json_field "$actionable_scroll" ok) error=$(json_field "$actionable_scroll" error.code) visible=$(json_field "$actionable_visible" data.result)"
 require_value actionable_before click-status
 wait_actionable="$(wait_target "$primary" actionable 3000 --action click 2>/dev/null)"
 actionable_click="$(act_target "$primary" click 2>/dev/null)"
