@@ -8,7 +8,7 @@ use super::bus_stage::Stage;
 pub(crate) const SERVICE_UNKNOWN: &str = "org.freedesktop.DBus.Error.ServiceUnknown";
 pub(crate) const NAME_HAS_NO_OWNER: &str = "org.freedesktop.DBus.Error.NameHasNoOwner";
 const SPAWN_ERROR_PREFIX: &str = "org.freedesktop.DBus.Error.Spawn.";
-const NO_REPLY: &str = "org.freedesktop.DBus.Error.NoReply";
+pub(crate) const NO_REPLY: &str = "org.freedesktop.DBus.Error.NoReply";
 const SERVICE_EXITED: &str = "service_exited";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,7 +34,6 @@ impl BusFault {
             zbus::Error::Address(_) => Some(Self::unreachable_at(stage)),
             zbus::Error::MethodError(name, _, _) => match name.as_str() {
                 SERVICE_UNKNOWN | NAME_HAS_NO_OWNER => Some(Self::NotInstalled),
-                NO_REPLY => Some(Self::ServiceExited),
                 other if other.starts_with(SPAWN_ERROR_PREFIX) => Some(Self::CannotStart),
                 _ => None,
             },

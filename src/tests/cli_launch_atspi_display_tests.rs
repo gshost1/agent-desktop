@@ -5,7 +5,7 @@ use std::path::Path;
 /// bus also inherits. The AT-SPI services that bus activates exit on the dead
 /// display, so their calls get no reply.
 fn on_dead_display(scratch: &Path, args: &[&str]) -> serde_json::Value {
-    let output = std::process::Command::new("/usr/bin/dbus-run-session")
+    let output = std::process::Command::new("dbus-run-session")
         .arg("--")
         .arg(env!("CARGO_BIN_EXE_agent-desktop"))
         .args(args)
@@ -29,8 +29,18 @@ fn on_dead_display(scratch: &Path, args: &[&str]) -> serde_json::Value {
 /// with the display named and nothing spawned.
 #[test]
 fn an_accessibility_bus_that_dies_with_the_display_is_reported_as_the_display() {
-    if !Path::new("/usr/bin/dbus-run-session").exists() {
-        eprintln!("skipped: dbus-run-session is not installed");
+    let runs = std::process::Command::new("dbus-run-session")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    let atspi = [
+        "/usr/share/dbus-1/services/org.a11y.Bus.service",
+        "/usr/local/share/dbus-1/services/org.a11y.Bus.service",
+    ]
+    .iter()
+    .any(|service| Path::new(service).exists());
+    if !runs || !atspi {
+        eprintln!("skipped: needs dbus-run-session and an activatable AT-SPI bus (at-spi2-core)");
         return;
     }
     let scratch = std::env::temp_dir().join(format!("adl-atspi-display-{}", std::process::id()));
@@ -69,7 +79,7 @@ fn an_accessibility_bus_that_dies_with_the_display_is_reported_as_the_display() 
         "{listed}"
     );
     assert!(
-        listed["error"]["details"]["bus_error"].is_string(),
+        listed["error"]["details"]["bus_error"].is_object(),
         "{listed}"
     );
     assert_eq!(launched["error"]["code"], "PERM_DENIED", "{launched}");
