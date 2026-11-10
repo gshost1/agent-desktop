@@ -200,12 +200,59 @@ pub(crate) fn resolve(
     match ids.len() {
         0 => Err(not_found(identifier)),
         1 => entry_plan(&ids.remove(0), arguments, search),
-        _ => Err(AdapterError::ambiguous_target(format!(
-            "'{identifier}' is the name of several desktop entries: {}",
-            ids.join(", ")
-        ))
-        .with_disposition(DeliverySemantics::not_delivered())),
+        _ => named_plan(identifier, ids, arguments, search),
     }
+}
+
+/// The plan for a desktop `Name` that several entries share. Entries that
+/// cannot be started are left out. When every remaining entry runs the same
+/// command line in the same working directory, the one whose desktop id
+/// sorts first is used, because the choice cannot change what runs. Entries
+/// that run different commands are refused with each desktop id and command.
+fn named_plan(
+    identifier: &str,
+    mut ids: Vec<String>,
+    arguments: &[String],
+    search: &Search,
+) -> Result<Plan, AdapterError> {
+    ids.sort();
+    ids.dedup();
+    let mut plans = Vec::new();
+    let mut refusal = None;
+    for id in ids {
+        match entry_plan(&id, arguments, search) {
+            Ok(plan) => plans.push((id, plan)),
+            Err(error) => {
+                refusal.get_or_insert(error);
+            }
+        }
+    }
+    let same_command = plans
+        .windows(2)
+        .all(|pair| pair[0].1.argv == pair[1].1.argv && pair[0].1.cwd == pair[1].1.cwd);
+    if plans.is_empty() {
+        return Err(refusal.unwrap_or_else(|| not_found(identifier)));
+    }
+    if same_command {
+        return Ok(plans.remove(0).1);
+    }
+    let ids: Vec<&str> = plans.iter().map(|(id, _)| id.as_str()).collect();
+    let candidates: Vec<serde_json::Value> = plans
+        .iter()
+        .map(|(id, plan)| serde_json::json!({ "desktop_id": id, "argv": plan.argv }))
+        .collect();
+    Err(refuse(
+        ErrorCode::AmbiguousTarget,
+        format!(
+            "'{identifier}' is the name of several desktop entries that run different commands: {}",
+            ids.join(", ")
+        ),
+    )
+    .with_details(serde_json::json!({ "candidates": candidates }))
+    .with_suggestion(format!(
+        "Launch one of them by its desktop id, for example 'agent-desktop launch {}'; details.candidates lists the command each one runs.",
+        ids[0]
+    )))
 }
 
 #[cfg(test)]
@@ -215,3 +262,7 @@ mod tests;
 #[cfg(test)]
 #[path = "launch_identity_tests.rs"]
 mod identity_tests;
+
+#[cfg(test)]
+#[path = "launch_target_name_tests.rs"]
+mod name_tests;

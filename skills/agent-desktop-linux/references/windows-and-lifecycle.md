@@ -43,6 +43,13 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   name with a separator or NUL, is `INVALID_ARGS`, `not_delivered`; an unknown name is
   `APP_NOT_FOUND`; an entry with `Terminal=true` or no `Exec` is
   `ACTION_NOT_SUPPORTED`.
+- A `Name` that several desktop entries share skips the entries that cannot be
+  started. When the rest run the same command line in the same working
+  directory, as a package that installs one app under two desktop ids does,
+  `launch` starts the one whose desktop id sorts first in byte order. Entries
+  that run different commands are `AMBIGUOUS_TARGET`, `not_delivered`, with
+  `details.candidates` (`desktop_id` and the resolved `argv` of each); launch one
+  by its desktop id, for example `agent-desktop launch google-chrome`.
 - The app is spawned with null stdio in its own process group, so a caller that
   reads through a pipe sees end of file at exit. Every spawn adds
   `AGENT_DESKTOP_LAUNCHED=1` to the child's environment; `close-app` reads it to

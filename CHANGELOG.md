@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+* On Linux, `launch "<Name>"` where several desktop entries share the name and run the same command line (one package installing an app under two desktop ids, such as `com.google.Chrome` and `google-chrome`) now starts the entry whose desktop id sorts first, instead of failing with `AMBIGUOUS_TARGET`. Entries that cannot be started are skipped. Entries that run different commands still fail with `AMBIGUOUS_TARGET`, now with `details.candidates` (desktop id and command of each) and a suggestion to launch one by its desktop id, instead of a suggestion to refresh refs. The shipped `launch "Google Chrome"` examples now run on such a host. ([#PRNUM](https://github.com/gshost1/agent-desktop/pull/PRNUM))
 * On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
 
 ### Performance
