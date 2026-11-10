@@ -86,7 +86,7 @@ pub(crate) fn select_then_selected_items_menu(
 /// an open menu would be opened twice, and an unreadable read is what an
 /// application tracking a menu returns, so it is treated as one being up.
 fn may_open_menu(observation: MenuObservation) -> bool {
-    observation != MenuObservation::Open
+    observation == MenuObservation::Closed
 }
 
 /// Reads the menu state again while it is unreadable, a few times within the
@@ -132,10 +132,10 @@ fn after_selection(
 ) -> Result<DeliveryOutcome, AdapterError> {
     match selection {
         SelectionWrite::NotWritten => Ok(DeliveryOutcome::NotDelivered),
-        SelectionWrite::Unconfirmed => Ok(DeliveryOutcome::NotDelivered),
+        SelectionWrite::Unconfirmed => Ok(DeliveryOutcome::DeliveredUnverified),
         SelectionWrite::Selected => match then() {
             Ok(outcome) if outcome.was_delivered() => Ok(outcome),
-            Ok(other) => Ok(other),
+            Ok(_) => Ok(DeliveryOutcome::DeliveredUnverified),
             Err(error) => Err(after_write(error)),
         },
     }
@@ -157,7 +157,7 @@ fn selection_after_write(
 }
 
 fn after_write(error: AdapterError) -> AdapterError {
-    error
+    crate::actions::DeliveryTracker::from_delivered_units(1).annotate(error)
 }
 
 fn show_menu_on_element(
