@@ -203,6 +203,21 @@ carries no such detail, and neither does a failure in a step after the action,
 such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
+A headed `hover` or `drag` is a pointer command, not a ref action, and waits
+on after its focus call. It raises its target's window at most once. The
+first step that needs focus makes the focus call, whether that is the scroll
+of the wait or the first attempt; later steps skip it and go straight to
+their checks. A target that another window still covers keeps failing the
+`receives_events` check until the budget ends, without the window being
+raised again on every poll. A focus call that failed after it may have raised
+the window ends the command with its error, because trying again would raise
+the window a second time. Once the focus call has run, every error before the
+input is sent, including the `TIMEOUT` that ends the wait, carries
+`details.preparatory_focus`. A `TIMEOUT` that ends a `hover` or `drag` wait
+after a refusal carries that last refusal in `details.refusal` (its `code`,
+`message`, and `details` when it had any, as a ref action's does), and its
+suggestion names the check that refused: another element covering the target
+(`receives_events`), a target that was not visible, or one still moving.
 
 On macOS, `press --app` reports `data.details.keyboard_target` when the app's
 keyboard focus may belong to another process, such as a Save panel that a
@@ -366,6 +381,7 @@ Version 2.7 changes the error code of ref refusals on Windows and Linux, and on 
 - Both reasons keep the disposition `not_delivered` with `retry: "safe"`, because nothing is sent.
 - `AMBIGUOUS_TARGET` with `identity_not_unique` now means the capture saw two or more elements matching the ref, in a whole or a partial read. It can still come from a refmap written before 2.7, which recorded only that a ref was not unique and so reads every unproven ref as a twin; take a new snapshot to learn which case it is.
 - `find` match objects, and the `candidates` of an `AMBIGUOUS_TARGET` from a locator, omit what they do not have: a context match has no `ref_id`, an unnamed one no `name`, and `value`, `states` and `path` are left out when absent or empty. 2.6 printed `"ref_id": null`, `"value": null`, `"states": []`, `"path": []` and `"name": ""`. Read a missing key as that value.
+- A `TIMEOUT` that ends a headed `hover` or `drag` wait after a refusal now carries that refusal in `details.refusal`, the same shape a ref action's wait uses, and a suggestion for the check that refused instead of the generic one. The field is additive.
 - Refmaps written before 2.7 still load. Every refmap entry now carries `capture` (`"unique"`, `"ambiguous"`, `"incomplete"` or `"unknown"`); an entry without it is read as an older refmap through its `unique_at_capture` flag. A proven entry also keeps `unique_at_capture: true`, so a 2.6 binary still resolves the refs a 2.7 snapshot proved and refuses the rest as `identity_not_unique`. A `capture` name this version does not know reads as `unknown`, and a `unique_at_capture` that contradicts `capture` makes the entry `unknown`; neither fails the refmap.
 
 ## Web channel
