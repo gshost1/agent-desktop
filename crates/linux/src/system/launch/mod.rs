@@ -292,9 +292,9 @@ impl Launch<'_> {
         identity: &Option<crate::system::process::executable_identity::ExecutableIdentity>,
         running: &[Running],
     ) -> Result<LaunchResult, AdapterError> {
+        require_display(self.deadline)?;
         let before = baseline::prepare(self.bus, identity, running, self.deadline);
         self.deadline.ensure_remaining().map_err(before_spawn)?;
-        require_display(self.deadline)?;
         let mut spawned = spawn(self.id, plan, self.options)?;
         let query = OwnerQuery::new(
             identity,

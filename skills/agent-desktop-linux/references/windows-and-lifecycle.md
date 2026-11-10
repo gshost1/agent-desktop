@@ -51,11 +51,14 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   name with a separator or NUL, is `INVALID_ARGS`, `not_delivered`; an unknown name is
   `APP_NOT_FOUND`; an entry with `Terminal=true` or no `Exec` is
   `ACTION_NOT_SUPPORTED`.
-- `launch` spawns only when a display server answers: with no `DISPLAY` or
-  `WAYLAND_DISPLAY`, or one that is not running or refuses this client, it
-  answers `PLATFORM_NOT_SUPPORTED` with `details.display_unavailable` (`TIMEOUT`
-  for an X server that does not answer), `not_delivered`, before the spawn. An
-  attach to a running instance is not refused by this check. A failure after
+- `launch` spawns only when a display server answers. The check reads
+  agent-desktop's own `DISPLAY` and `WAYLAND_DISPLAY`, not `--env`. With
+  neither set, or one that is not running or refuses this client, it answers
+  `PLATFORM_NOT_SUPPORTED` with `details.display_unavailable`, `not_delivered`,
+  before the spawn; an X server that does not answer is `TIMEOUT` and one whose
+  reply cannot be used is `INTERNAL`, both `not_delivered`. An attach to a
+  running instance that shows a window does not reach this check; one with no
+  window is started again and does. A failure after
   the spawn carries the spawned process in `details.spawned_pid`.
 - A `Name` that several desktop entries share launches, when all of them run
   the same command, the first entry in byte order of desktop id that can

@@ -39,7 +39,10 @@ fn launch_with_display(display: Option<&str>, label: &str) -> (serde_json::Value
         command.env("DISPLAY", display);
     }
     let output = command.output().expect("binary starts");
-    let started = marker.exists();
+    let started = (0..10).any(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        marker.exists()
+    });
     let _ = std::process::Command::new("pkill")
         .args(["-f", &scratch.display().to_string()])
         .status();
