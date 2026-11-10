@@ -42,7 +42,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` | **PASS** for Part 1, the real 1e and Part 2 (2 runs). Part D (dense) fails identically on main: pre-existing, ledgered DENSE-MENU-1. Control: merge allowed with Risks stated and an identical macOS diff |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
-| #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
+| #34 | SURFACE-3 | `670ebc04` | re-pointed from e3818161 (main merged, script assumptions verified unchanged); HELD for George's go-ahead + Script Editor settings; CI running at write time |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
 ## #80 SURFACE-10: a focused-surface ref resolves only in the window it was captured from
@@ -520,7 +520,7 @@ Report the last line (`RESULT: ...`) and any `FAIL` or `SETUP FAIL` line verbati
 
 ## #34 SURFACE-3: notification keys (accepted; HELD for George's go-ahead)
 
-Head: `e3818161e6201c24989de964ad567aecb0056d95` (agent will not move it unless main conflicts). CI at write time: 23
+Head: `670ebc04f7f8df9e7d272a80d6d94e09fa718149`, re-pointed 2026-11-10 from `e3818161`: main `b94ad897` merged in, CHANGELOG-only conflict, gates GREEN 5173/0 in its own target dir, CI running at write time. The PR's own diff for every path the script relies on is byte-identical before and after (macOS and core notifications, the four notification commands, macos system/adapter.rs, src cli_args and dispatch notifications; cmp equal, 1608 lines). Main changed none of those paths, and none of main's macOS changes touch the Notification Center open/close path, headless POLICY_DENIED, `press escape`, the list fields or the 2.7 envelope. CI at write time: 23
 pass, 4 pending, none red. Revision 2 (2026-11-10), with control's five changes.
 
 **agent-desktop itself uses System Events (decided: accept the race for this check; product fix queued as MAC-SE-1).** On a closed Notification Center, every `--headed`
@@ -589,7 +589,7 @@ Run block (one paste):
 
 ```bash
 set -u
-SHA=e3818161e6201c24989de964ad567aecb0056d95
+SHA=670ebc04f7f8df9e7d272a80d6d94e09fa718149
 R=~/Projects/agent-desktop; W=/tmp/adbench-34; PY=/tmp/adbench-34-check.py; SP=/tmp/adbench-34-space.sh
 undo() { [ -d "$W" ] && git -C "$R" worktree remove --force "$W" && echo "UNDO removed worktree $W"; rm -f "$PY" "$SP" && echo "UNDO removed $PY $SP"; }
 trap undo EXIT
