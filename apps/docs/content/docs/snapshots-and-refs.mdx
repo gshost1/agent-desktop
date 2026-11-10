@@ -128,7 +128,7 @@ An element gets a ref when either condition holds:
 - Its role is interactive: `button`, `cell`, `checkbox`, `colorwell`, `combobox`, `dockitem`, `incrementor`, `link`, `listbox`, `menubutton`, `menuitem`, `option`, `radiobutton`, `slider`, `switch`, `tab`, `textfield`, or `treeitem`.
 - It advertises a primary action. `scrollarea` (Scroll) and `disclosure` (Expand and Collapse) qualify this way, because `scroll`, `expand`, and `collapse` need a ref to target them. In the example above, the calculator's history pane is a `scrollarea` with a ref.
 
-`SetFocus`, `RightClick`, and `ScrollTo` do not count on their own. Web runtimes advertise them on nearly every node, so counting them would give every inert container a ref and overflow the [ref map size limit](#where-refs-are-stored). Static text and inert containers stay in the tree without a ref. `find` returns them as context matches with `"ref_id": null`.
+`SetFocus`, `RightClick`, and `ScrollTo` do not count on their own. Web runtimes advertise them on nearly every node, so counting them would give every inert container a ref and overflow the [ref map size limit](#where-refs-are-stored). Static text and inert containers stay in the tree without a ref. `find` returns them as context matches, without a `ref_id`.
 
 A container cut off by a skeleton can also receive a ref as a drill target. See [Find the drill target](/desktop/skeleton-and-drill-down#find-the-drill-target).
 

@@ -18,6 +18,7 @@ use self::launch_target::{Plan, resolve};
 use self::launch_unlisted::report_unlisted;
 use super::SharedBus;
 use crate::system::app::app_alias::current_index;
+use crate::system::app::launched_entries::remember_launch;
 use crate::system::focus::focus_window::focus_window;
 use crate::system::process::liveness::{Liveness, liveness};
 use crate::system::process::running_app::Running;
@@ -313,7 +314,10 @@ impl Launch<'_> {
                 let window = match known {
                     Some((_, windows)) => self.window_of(&owner, true, windows),
                     None if before.processes.contains(&owner.identity()) => Ok(None),
-                    None => self.window_of(&owner, true, &HashSet::new()),
+                    None => {
+                        remember_launch(plan.desktop_id.as_deref(), &owner);
+                        self.window_of(&owner, true, &HashSet::new())
+                    }
                 }
                 .map_err(|error| with_spawned_pid(error, spawned_pid))?;
                 Ok(self.conclude_with(&owner, window, owner.pid == spawned.pid))

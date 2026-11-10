@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Clone, Copy)]
 enum Mode {
+    TextFullyObserved,
     TextWitnessRemoved,
     WitnessRemoved,
     ForbiddenAdded,
@@ -36,11 +37,10 @@ impl ObservationOps for SubtreeHydrationAdapter {
             ObservationRoot::Application { .. } => panic!("expected a window or element root"),
             ObservationRoot::Window(_) => {
                 self.window_observations.fetch_add(1, Ordering::SeqCst);
-                let evidence = request.descendant_evidence();
-                assert!(evidence.identifiers);
-                assert!(evidence.ref_evidence.bounds);
-                assert!(!evidence.states);
-                assert!(!evidence.ref_evidence.actions);
+                assert_eq!(
+                    request.descendant_evidence(),
+                    super::EvidenceRequirements::snapshot()
+                );
                 Ok(initial_tree(self.mode))
             }
             ObservationRoot::Element { .. } => {
@@ -71,6 +71,23 @@ impl ObservationOps for SubtreeHydrationAdapter {
 impl ActionOps for SubtreeHydrationAdapter {}
 impl InputOps for SubtreeHydrationAdapter {}
 impl SystemOps for SubtreeHydrationAdapter {}
+
+#[test]
+fn a_fully_observed_text_match_is_published_from_the_window_read() {
+    let adapter = adapter(Mode::TextFullyObserved);
+    let resolution = resolve_query(
+        &adapter,
+        &query(Mode::TextFullyObserved),
+        ObservationRoot::Window(&window()),
+        &request(),
+    )
+    .expect("a text match the window read observed whole needs no second read");
+
+    assert_eq!(resolution.matches.len(), 1);
+    assert_eq!(adapter.window_observations.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.anchor_resolutions.load(Ordering::SeqCst), 0);
+    assert_eq!(adapter.selected_observations.load(Ordering::SeqCst), 0);
+}
 
 #[test]
 fn has_text_witness_removed_between_phases_is_rejected() {
@@ -160,7 +177,7 @@ fn adapter(mode: Mode) -> SubtreeHydrationAdapter {
 
 fn initial_tree(mode: Mode) -> ObservedTree {
     let child = match mode {
-        Mode::TextWitnessRemoved => text_evidence("needle"),
+        Mode::TextFullyObserved | Mode::TextWitnessRemoved => text_evidence("needle"),
         Mode::WitnessRemoved | Mode::PositiveIncompleteSuffix => role_evidence("button"),
         Mode::ForbiddenAdded | Mode::NegativeIncomplete => role_evidence("link"),
     };
@@ -176,7 +193,7 @@ fn initial_tree(mode: Mode) -> ObservedTree {
 
 fn selected_tree(root: ObservationRoot<'_>, mode: Mode) -> ObservedTree {
     let children = match mode {
-        Mode::TextWitnessRemoved => vec![text_evidence("other")],
+        Mode::TextFullyObserved | Mode::TextWitnessRemoved => vec![text_evidence("other")],
         Mode::WitnessRemoved => vec![role_evidence("link")],
         Mode::ForbiddenAdded => vec![role_evidence("button")],
         Mode::NegativeIncomplete => vec![role_evidence("link")],
@@ -216,6 +233,9 @@ fn selected_tree(root: ObservationRoot<'_>, mode: Mode) -> ObservedTree {
 }
 
 fn phase_one_root(mode: Mode) -> super::LocatorEvidence {
+    if matches!(mode, Mode::TextFullyObserved) {
+        return hydrated_root();
+    }
     let mut evidence = role_evidence("group");
     if matches!(mode, Mode::TextWitnessRemoved) {
         evidence.name = LocatorField::Absent;
@@ -262,7 +282,9 @@ fn query(mode: Mode) -> LocatorQuery {
         ..Default::default()
     };
     match mode {
-        Mode::TextWitnessRemoved => query.has_text = Some("needle".into()),
+        Mode::TextFullyObserved | Mode::TextWitnessRemoved => {
+            query.has_text = Some("needle".into())
+        }
         Mode::WitnessRemoved | Mode::PositiveIncompleteSuffix => {
             query.containment = containment(true)
         }

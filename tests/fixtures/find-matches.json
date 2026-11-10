@@ -1,0 +1,29 @@
+[
+  {
+    "interactive": false,
+    "name": "Python (programming language) - Wikipedia",
+    "role": "webarea"
+  },
+  {
+    "bounds": { "height": 40.0, "width": 600.0, "x": 10.0, "y": 300.0 },
+    "interactive": false,
+    "name": "Python was conceived in the late 1980s",
+    "path": ["webarea:Python (programming language) - Wikipedia", "main", "region:History"],
+    "role": "paragraph"
+  },
+  {
+    "interactive": true,
+    "name": "History",
+    "path": ["webarea:Python (programming language) - Wikipedia", "navigation"],
+    "ref_id": "@s8f3k2p9:e2",
+    "role": "link",
+    "states": ["selected"]
+  },
+  {
+    "interactive": true,
+    "path": ["webarea:Python (programming language) - Wikipedia", "main", "form"],
+    "ref_id": "@s8f3k2p9:e3",
+    "role": "textfield",
+    "value": "Ada"
+  }
+]

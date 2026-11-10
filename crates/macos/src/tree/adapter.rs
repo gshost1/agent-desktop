@@ -67,6 +67,11 @@ impl ObservationOps for MacOSAdapter {
         crate::tree::resolve::resolve_locator_anchor_with_deadline(entry, deadline)
     }
 
+    fn prepare_window_inventory(&self) -> Result<(), AdapterError> {
+        crate::system::connection_warmup::start_window_server();
+        Ok(())
+    }
+
     fn list_windows(
         &self,
         filter: &WindowFilter,

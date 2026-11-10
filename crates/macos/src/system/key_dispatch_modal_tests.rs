@@ -10,14 +10,24 @@ fn watch() -> ModalWatch {
     }
 }
 
+/// Runs the reads in order with a limit far beyond them, so the answer comes
+/// from the sequence alone and not from how fast the host runs. Reading past
+/// the script ends the settle as "no effect".
 fn scripted(reads: &[Option<&'static str>]) -> Option<&'static str> {
     let mut reads: VecDeque<Option<&'static str>> = reads.iter().copied().collect();
-    settle_with(
-        || Ok(reads.pop_front().flatten()),
-        Duration::from_millis(120),
-        Deadline::standard().unwrap(),
-    )
-    .unwrap()
+    match settle_with(
+        || {
+            reads
+                .pop_front()
+                .ok_or_else(|| AdapterError::internal("script exhausted"))
+        },
+        Duration::from_secs(60),
+        Deadline::after(60_000).unwrap(),
+    ) {
+        Ok(signal) => signal,
+        Err(error) if error.message == "script exhausted" => None,
+        Err(error) => panic!("{error:?}"),
+    }
 }
 
 #[test]
@@ -49,7 +59,13 @@ fn a_signal_seen_on_two_consecutive_reads_is_an_effect() {
 #[test]
 fn a_surface_that_never_reacts_settles_within_the_limit() {
     let started = Instant::now();
-    assert_eq!(scripted(&[]), None);
+    let settled = settle_with(
+        || Ok(None),
+        Duration::from_millis(120),
+        Deadline::standard().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(settled, None);
     assert!(started.elapsed() < Duration::from_millis(400));
 }
 
