@@ -211,7 +211,7 @@ impl Bench {
                 retained_object: link.identity.retained_object.clone(),
                 role: link.role.clone(),
                 name: link.identity.name.clone(),
-                unique_at_capture: true,
+                capture: agent_desktop_core::CaptureVerdict::Unique,
                 ..RefEntryIdentity::default()
             },
             source: RefSource {

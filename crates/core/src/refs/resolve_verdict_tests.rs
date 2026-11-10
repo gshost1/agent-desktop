@@ -151,3 +151,28 @@ fn the_core_refusals_carry_their_documented_verdicts() {
         assert_eq!(ResolveVerdict::for_ref_action(&error), expected);
     }
 }
+
+/// A ref its capture could not prove is refused before anything is read, and
+/// neither reason can change on another attempt with the same ref, so both
+/// settle at once for a ref action and for `wait --element`.
+#[test]
+fn a_capture_refusal_is_settled() {
+    for verdict in [
+        crate::CaptureVerdict::Incomplete,
+        crate::CaptureVerdict::Unknown,
+    ] {
+        let mut entry = crate::adapter::minimal_ref_entry("button", Some("Run"));
+        entry.identity.capture = verdict;
+        let refusal = crate::refs::resolve_errors::refused_before_reading(&entry)
+            .expect("an unproven ref is refused");
+        assert_eq!(
+            refusal.details.as_ref().unwrap()["kind"],
+            "identity_unproven"
+        );
+        assert_eq!(ResolveVerdict::of(&refusal), ResolveVerdict::Settled);
+        assert_eq!(
+            ResolveVerdict::for_ref_action(&refusal),
+            ResolveVerdict::Settled
+        );
+    }
+}

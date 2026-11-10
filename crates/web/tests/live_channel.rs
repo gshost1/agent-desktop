@@ -175,7 +175,7 @@ fn entry(tree: &AccessibilityNode, role: &str, name: &str, pid: u32) -> RefEntry
             retained_object: node.identity.retained_object.clone(),
             role: node.role.clone(),
             name: node.identity.name.clone(),
-            unique_at_capture: true,
+            capture: agent_desktop_core::CaptureVerdict::Unique,
             ..RefEntryIdentity::default()
         },
         geometry: RefGeometry {

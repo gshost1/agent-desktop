@@ -19,19 +19,6 @@ thread_local! {
     static HOME_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
-/// A write that fails at a path the caller named is a problem with that path,
-/// not a missing OS permission, so it is an argument error rather than the
-/// `PERM_DENIED` or `INTERNAL` the generic io mapping would give it.
-pub(crate) fn unwritable_output(what: &str, path: &Path, error: AppError) -> AppError {
-    match error {
-        AppError::Io(io) => AppError::invalid_input_with_suggestion(
-            format!("Cannot write {what} to '{}': {io}", path.display()),
-            "Pass an output path in a directory this user can write to; missing parent directories are created",
-        ),
-        other => other,
-    }
-}
-
 pub fn validate_ref_id(ref_id: &str) -> Result<(), AppError> {
     crate::refs::ref_token::validate_ref_token(ref_id)
 }
@@ -356,6 +343,7 @@ pub(crate) fn home_override_active() -> bool {
     HOME_OVERRIDE.with(|cell| cell.borrow().is_some())
 }
 
+pub(crate) mod capture_verdict;
 pub mod ref_alloc;
 pub(crate) mod ref_alloc_config;
 pub(crate) mod ref_alloc_options;
