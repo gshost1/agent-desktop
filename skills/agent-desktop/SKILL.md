@@ -21,7 +21,7 @@ agent-desktop is a CLI that reads and operates desktop apps through the OS acces
 
 ## Shell syntax
 
-Examples use a POSIX shell. When a ref is built from a variable, brace it and keep the `e` in each part you list: `for r in e7 e8; do agent-desktop click "${S}:${r}"; done`. In zsh, `$S:e1` applies the `:e` modifier and passes `1`, even inside double quotes. A list of bare numbers (`for n in 7 8` with `"${S}:e${n}"`) is easy to mix up with the digits or values you are typing. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), because a bare `@token` is the splatting operator. Use `$env:NAME = 'value'` instead of `export`, and `| ConvertFrom-Json` instead of `$(...)` and `jq`. The Windows skill has the PowerShell forms.
+Examples use a POSIX shell. When a ref is built from a variable, brace it and keep the `e` in each part you list: `for r in e7 e8; do agent-desktop click "${S}:${r}"; done`. In zsh, `$S:e1` applies the `:e` modifier and passes `1`, even inside double quotes. A list of bare numbers (`for n in 7 8` with `"${S}:e${n}"`) is easy to mix up with the digits or values you are typing. PowerShell needs quoted refs and its own forms: read the Windows skill.
 
 ## First run
 
@@ -42,7 +42,7 @@ agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact --lines        # verify:
 
 - Make the first look `agent-desktop snapshot --app "Font Book" -i --compact --lines`. Each line of `data.lines` is one node, indented by depth: its ref first, then role and quoted name. `--lines` also applies to the snapshot `-w` returns.
 - A small app needs no skeleton. Take a full `snapshot -i`.
-- `-i` keeps interactive nodes only, so a row's static-text label is dropped. To tell which row a repeated button belongs to, drill that row's container with `--root` and leave out `-i`. On Windows and Linux that reads the row but does not make its button actionable: a button repeated in other rows is a twin in the window and its ref is refused (see Refs).
+- `-i` keeps interactive nodes only, so a row's static-text label is dropped. To tell which row a repeated button belongs to, drill that row's container with `--root` and leave out `-i`. On Windows and Linux a button repeated in other rows has no ref (see Refs).
 - A `--root` drill adds its refs to the same snapshot id. Refs outside the drilled subtree, and the drilled root itself, stay valid; refs that were already inside it are replaced, so an old ref there returns `STALE_REF`.
 - Never skeleton a surface (`--surface menu`, `sheet`, `alert`). A surface is already focused.
 - An action that opens a menu, sheet or alert lists it in `data.surfaces`. Target that overlay next. The report gets at most one second, so in an app with a large tree it can be missing or carry `unclassified`; when you expect a dialog, snapshot `--surface sheet` or `--surface alert`.
@@ -70,7 +70,7 @@ agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
 - Output refs are qualified: `@<snapshot_id>:e<N>`, for example `@s8f3k2p9:e1`. Pass them to later commands as they are.
 - Refs are valid for one snapshot. After any UI change, re-drill the affected region or take a new snapshot.
 - Only addressable elements get refs. Static text and inert containers do not.
-- A command re-identifies the element before it acts. On macOS the ref carries the element's own address, so identical twins each keep their ref. On Windows and Linux a ref resolves only when it was the only element in the window its snapshot captured with its role, native id, name and description, counted even below a skeleton or depth cut, and exactly one live element still matches. Identical twins there have no ref path: only `--headed mouse-click --xy X,Y` can choose one, it takes the foreground, and a Linux Wayland session refuses it.
+- A command re-identifies the element before it acts. On macOS the ref carries the element's own address, so identical twins each keep their ref. On Windows and Linux a ref resolves only when it was unique in its window at capture and exactly one live element still matches, so identical twins have no ref; the platform skill has the rules and the pointer fallback.
 - `STALE_REF`: the element is gone or no longer matches. `details.kind` is `saved_ref_absent`, or `retained_object_stale` on macOS. Take a fresh snapshot and use the new ref. `identity_unproven` means no capture proved the ref: with `details.reason: capture_incomplete` the snapshot could not read the whole window, so retake it with a larger `--timeout-ms` (the same timeout falls short again); with `capture_unknown` the element's identity could not be read, so use a different selector or `--headed mouse-click --xy`.
 - `AMBIGUOUS_TARGET`: an identical element appeared (`saved_ref_ambiguous`), or the snapshot found an identical twin (`identity_not_unique`). Repeating the ref or re-snapshotting identical twins gives the same refusal; act on a control that is unique in the window. `identity_not_unique` on a ref from a snapshot taken before version 2.7 may not be a twin: take a new snapshot first.
 - `TIMEOUT` with `details.kind: resolution_identity_unknown`: a live read did not answer, so identity is unproven. Nothing was sent; retry.

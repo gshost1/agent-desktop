@@ -50,6 +50,9 @@ observation, actions and capture there fail or return nothing.
   splatting operator and deletes the argument before the binary sees it, so
   `set-value @s8f3k2p9:e1 hi` fails `INVALID_ARGS`. Write
   `set-value '@s8f3k2p9:e1' hi`. cmd.exe and bash need no quoting.
+- **Use PowerShell forms for the core skill's POSIX examples.** Write
+  `$env:NAME = 'value'` instead of `export`, and pipe to `ConvertFrom-Json`
+  instead of `$(...)` and `jq`.
 - **A window behind another window is drivable. A minimized one is not.**
   Every element of a minimized window reports `offscreen` and ref actions
   fail. Run `restore --app <image>` and snapshot again. Do not use
