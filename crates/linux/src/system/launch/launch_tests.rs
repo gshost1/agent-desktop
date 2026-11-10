@@ -38,6 +38,7 @@ fn plan_of(argv: &[&str]) -> Plan {
         argv: argv.iter().map(|word| (*word).to_owned()).collect(),
         cwd: None,
         identity: None,
+        desktop_id: None,
     }
 }
 
