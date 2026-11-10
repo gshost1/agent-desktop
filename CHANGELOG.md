@@ -16,6 +16,10 @@
 
 * On macOS, wait the 2 s accessibility settle only for a Chromium process, recognized by a bundled framework that ships the V8 startup snapshot or is named `Electron Framework` or `Chromium Embedded Framework`. The first snapshot of a freshly launched native app no longer pays it, and `launch` now reports `renderer: "chromium"` for browsers and renamed Electron builds too. ([#5](https://github.com/gshost1/agent-desktop/pull/5))
 
+### Documentation
+
+* Add a synopsis of `press`, `find`, `type`, `select` and `set-value` to the interaction reference, loaded on demand, with tests that keep each form in step with the command's flags. Taken from [#48](https://github.com/gshost1/agent-desktop/pull/48) without its additions to the core skill, which in a paired run made the three bench tasks use 14% more input tokens. ([#82](https://github.com/gshost1/agent-desktop/pull/82))
+
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
 This fork release publishes GitHub release archives and checksums only. It does not publish to npm.
