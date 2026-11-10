@@ -18,6 +18,7 @@
 
 ### Performance
 
+* On macOS, count the children of an element that has none once instead of twice. The second count only proves a list did not change while it was read, and a childless element has no list to read. Snapshot, `find` and the settled-surface walk after a click make one accessibility round trip fewer per leaf: medians fell 10-17 ms on the SwiftUI fixture and Weather and 2-4 ms on smaller trees, with identical trees. ([#97](https://github.com/gshost1/agent-desktop/pull/97))
 * On macOS, wait the 2 s accessibility settle only for a Chromium process, recognized by a bundled framework that ships the V8 startup snapshot or is named `Electron Framework` or `Chromium Embedded Framework`. The first snapshot of a freshly launched native app no longer pays it, and `launch` now reports `renderer: "chromium"` for browsers and renamed Electron builds too. ([#5](https://github.com/gshost1/agent-desktop/pull/5))
 
 ### Documentation
