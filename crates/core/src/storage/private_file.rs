@@ -174,7 +174,7 @@ pub(crate) fn validate_private_regular(file: &File) -> std::io::Result<std::fs::
             ));
         }
         if metadata.mode() & 0o077 != 0 {
-            return Err(super::state_exposure::exposed_file());
+            return Err(super::state_exposure::exposed(None, false));
         }
         if metadata.nlink() != 1 {
             return Err(permission_denied("private file must not be hard-linked"));

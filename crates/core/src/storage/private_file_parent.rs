@@ -21,7 +21,7 @@ pub(crate) fn ensure_private_portable(path: &Path) -> std::io::Result<()> {
             ));
         }
         if metadata.mode() & 0o077 != 0 {
-            return Err(super::state_exposure::exposed_directory(path));
+            return Err(super::state_exposure::exposed(Some(path), true));
         }
     }
     Ok(())

@@ -22,19 +22,11 @@ impl std::fmt::Display for StateExposure {
 
 impl std::error::Error for StateExposure {}
 
-pub(crate) fn exposed_directory(path: &Path) -> std::io::Error {
-    exposure(Some(path.to_path_buf()), true)
-}
-
-pub(crate) fn exposed_file() -> std::io::Error {
-    exposure(None, false)
-}
-
 /// Names `path` on a file exposure raised where only the open handle was
 /// known; any other error passes through unchanged.
 pub(crate) fn with_exposed_path(error: std::io::Error, path: &Path) -> std::io::Error {
     match find(&error) {
-        Some(found) if found.path.is_none() => exposure(Some(path.to_path_buf()), found.directory),
+        Some(found) if found.path.is_none() => exposed(Some(path), found.directory),
         _ => error,
     }
 }
@@ -43,10 +35,15 @@ pub(crate) fn find(error: &std::io::Error) -> Option<&StateExposure> {
     error.get_ref()?.downcast_ref::<StateExposure>()
 }
 
-fn exposure(path: Option<PathBuf>, directory: bool) -> std::io::Error {
+/// Raises the refusal for `path`, a directory or a file, that group or
+/// other users can reach. `None` stands for a file known only by its handle.
+pub(crate) fn exposed(path: Option<&Path>, directory: bool) -> std::io::Error {
     std::io::Error::new(
         std::io::ErrorKind::PermissionDenied,
-        StateExposure { path, directory },
+        StateExposure {
+            path: path.map(Path::to_path_buf),
+            directory,
+        },
     )
 }
 

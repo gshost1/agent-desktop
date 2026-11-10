@@ -1,11 +1,11 @@
 use super::state_io_error;
 use crate::ErrorCode;
-use crate::storage::state_exposure::{exposed_directory, exposed_file, with_exposed_path};
+use crate::storage::state_exposure::{exposed, with_exposed_path};
 use std::path::Path;
 
 #[test]
 fn a_state_directory_others_can_reach_is_perm_denied_with_its_path_and_fix() {
-    let error = state_io_error(exposed_directory(Path::new("/state/snapshots")));
+    let error = state_io_error(exposed(Some(Path::new("/state/snapshots")), true));
 
     assert_eq!(error.code, ErrorCode::PermDenied);
     assert!(error.suggestion.unwrap().contains("chmod 700"));
@@ -18,7 +18,7 @@ fn a_state_directory_others_can_reach_is_perm_denied_with_its_path_and_fix() {
 #[test]
 fn a_state_file_others_can_read_names_the_file_mode_fix() {
     let error = state_io_error(with_exposed_path(
-        exposed_file(),
+        exposed(None, false),
         Path::new("/state/a.lock"),
     ));
 
@@ -29,7 +29,7 @@ fn a_state_file_others_can_read_names_the_file_mode_fix() {
 
 #[test]
 fn an_exposure_with_no_known_path_omits_the_path() {
-    let error = state_io_error(exposed_file());
+    let error = state_io_error(exposed(None, false));
 
     assert!(error.details.unwrap().get("path").is_none());
     assert!(!error.suggestion.unwrap().contains("details.path"));

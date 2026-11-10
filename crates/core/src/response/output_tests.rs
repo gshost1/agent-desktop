@@ -263,8 +263,9 @@ fn err_response_omits_optional_error_subfields_when_absent() {
 
 #[test]
 fn an_io_exposure_payload_carries_the_state_permission_details() {
-    let error = AppError::Io(crate::storage::state_exposure::exposed_directory(
-        std::path::Path::new("/state/liveness"),
+    let error = AppError::Io(crate::storage::state_exposure::exposed(
+        Some(std::path::Path::new("/state/liveness")),
+        true,
     ));
 
     let payload = ErrorPayload::from_app_error(&error);
