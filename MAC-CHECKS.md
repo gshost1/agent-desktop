@@ -10,6 +10,10 @@ Rules learned from the #58 run (2026-11-10), binding for every section:
 - Start with the desktop-space reset (`bench-tools/desktop_space.sh` from `origin/chore/speed-1.4-tasks`; its paths are Mac-local) and wait for the app or fixture window to exist and be front before the first check. A full-screen T3 Code Space made the fixture vanish after ~12 s.
 - `find` on a shipped binary omits `bounds` when the match has a ref (`crates/core/src/commands/find_response.rs:61-70`); read bounds with `get <ref> --property bounds`.
 - Print full error envelopes, never truncated.
+- `wc -w` pads its output on macOS: compare counts with `-eq`, never with `= 1`.
+- desktop_space.sh's mktemp must point at the check's own dir, never another session's scratchpad.
+- Ship each section as a BUILD block, run outside the desktop lock, and a RUN block, run inside it.
+- Every status read must assert that its before-value is non-empty, or HALT; a vacuous PASS is a FAIL.
 - No System Events and no UI scripting through osascript, in any section, not even read-only (Automation for System Events is denied on that Mac on purpose). Independent window observations use a CGWindowListCopyWindowInfo helper filtered by the test app's pid (owner pid and layer only; never print other processes' window titles) or agent-desktop's own `list-windows` cross-checked with `kill -0 <pid>`. AppleScript/JXA applets as test subjects are fine if they script no other app.
 - Anything a script registers or changes (LaunchServices registrations, apps it launched) is undone in a `trap ... EXIT`, with a line confirming it ran. Quit only apps the script itself launched; an app already running at the start stays running, and the script says so.
 
@@ -27,7 +31,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
-| #80 | SURFACE-10 | `2711e496` | steps ready (revision 2, below); CI 13/13, gates GREEN, draft, CLEAN |
+| #80 | SURFACE-10 | `2711e496` | **Part 1 (Script Editor) PASS 2/2; Part 2 NOT RUN**: the fixture capture was `incomplete`, and the status read is vacuous. Rev 3 pending; first an open product question: is `find --first` capture-incomplete since #14? |
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
