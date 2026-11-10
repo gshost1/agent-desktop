@@ -19,7 +19,7 @@ impl ProcessLeaseGuard {
             {
                 if deadline.is_expired() {
                     PROCESS_LEASE_HELD.store(false, Ordering::Release);
-                    return Err(timeout(deadline, contention_count));
+                    return Err(expired_on_acquire(deadline, contention_count));
                 }
                 return Ok(Self { contention_count });
             }
@@ -28,7 +28,7 @@ impl ProcessLeaseGuard {
             if remaining.is_zero() {
                 return Err(timeout(deadline, contention_count));
             }
-            std::thread::sleep(remaining.min(Duration::from_millis(1)));
+            crate::wait::deadline::sleep(remaining.min(Duration::from_millis(1)));
         }
     }
 
@@ -43,9 +43,27 @@ impl Drop for ProcessLeaseGuard {
     }
 }
 
+/// A lease taken without ever finding it held, after the deadline had already
+/// run out, is a deadline expiry, not lock contention: it reports the deadline
+/// shape so a caller does not go looking for another holder.
+fn expired_on_acquire(deadline: Deadline, contention_count: u64) -> AdapterError {
+    if contention_count == 0 {
+        deadline.timeout_error()
+    } else {
+        timeout(deadline, contention_count)
+    }
+}
+
 fn timeout(deadline: Deadline, contention_count: u64) -> AdapterError {
     deadline.timeout_error().with_details(serde_json::json!({
         "kind": "interaction_process_lock_timeout",
         "contention_count": contention_count,
     }))
 }
+
+#[cfg(test)]
+pub(crate) static PROCESS_LEASE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+#[path = "process_lease_guard_tests.rs"]
+mod tests;
