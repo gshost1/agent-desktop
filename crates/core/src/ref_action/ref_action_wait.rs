@@ -49,6 +49,14 @@ pub(crate) fn execute_with_auto_wait_and_lease<'a>(
     ) -> Result<ActionResult, AppError>,
 ) -> Result<LeasedOutcome<'a>, AdapterError> {
     let deadline = operation_deadline(&request)?;
+    if let Some(refusal) = crate::refs::resolve_errors::refused_before_reading(context.entry) {
+        crate::ref_action::ref_action_wait_support::trace_resolve_error(
+            context.context,
+            context.ref_id,
+            &refusal,
+        );
+        return Err(refusal);
+    }
     let result = execute_with_deadline(context, request, deadline, dispatch);
     result.map_err(|error| {
         if deadline.is_expired() {
