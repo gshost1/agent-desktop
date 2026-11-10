@@ -1,4 +1,5 @@
 use super::*;
+use crate::system::display::display_unavailable::Unavailable;
 use zbus::Message;
 
 pub(crate) fn connected(client: zbus::Connection) -> SharedBus {
@@ -193,56 +194,76 @@ fn a_registry_owner_change_invalidates_the_read_and_registers_the_replacement() 
     assert_eq!(registrations.load(Ordering::SeqCst), 2);
 }
 
+fn no_reply_saying(text: &str) -> zbus::Error {
+    match method_error("org.freedesktop.DBus.Error.NoReply") {
+        zbus::Error::MethodError(name, _, reply) => {
+            zbus::Error::MethodError(name, Some(text.to_owned()), reply)
+        }
+        other => other,
+    }
+}
+
+const SERVICE_LEFT: &str = "Message recipient disconnected from message bus without replying";
+
 #[test]
-fn a_service_that_exits_without_replying_is_not_internal_but_an_application_call_is_unchanged() {
-    let no_reply = method_error("org.freedesktop.DBus.Error.NoReply");
-    let service = classify_service(Stage::AccessibilityBus, &no_reply);
+fn only_a_service_that_disconnected_without_replying_has_exited() {
+    let left = no_reply_saying(SERVICE_LEFT);
+    let service = classify_service(Stage::AccessibilityBus, &left);
     assert_eq!(service.code, ErrorCode::PlatformNotSupported);
-    let application = classify(&no_reply);
-    assert_eq!(application.code, ErrorCode::Internal);
-    let other = classify_service(
-        Stage::SessionBus,
-        &method_error("org.example.Error.Unheard"),
-    );
-    assert_eq!(other.code, ErrorCode::Internal);
+    assert_eq!(classify(&left).code, ErrorCode::Internal);
+    for unanswered in [
+        no_reply_saying(
+            "Did not receive a reply. Possible causes include: the remote application did not send a reply",
+        ),
+        method_error("org.freedesktop.DBus.Error.NoReply"),
+        method_error("org.example.Error.Unheard"),
+    ] {
+        let answer = classify_service(Stage::SessionBus, &unanswered);
+        assert_eq!(answer.code, ErrorCode::Internal, "{answer:?}");
+    }
 }
 
 fn exited() -> AdapterError {
-    let mut error =
-        BusFault::ServiceExited.into_error(&method_error("org.freedesktop.DBus.Error.NoReply"));
+    let mut error = BusFault::ServiceExited.into_error(&no_reply_saying(SERVICE_LEFT));
     error.platform_detail = Some("org.freedesktop.DBus.Error.NoReply: gone".to_owned());
     error
 }
 
-fn refusal(cause: &str) -> AdapterError {
-    AdapterError::new(
-        ErrorCode::PlatformNotSupported,
-        "The display server is not running",
-    )
-    .with_details(serde_json::json!({ "display_unavailable": cause }))
+fn display(cause: Cause) -> DisplayServer {
+    DisplayServer::Unavailable(Unavailable {
+        cause,
+        detail: "DISPLAY=:1987".to_owned(),
+    })
 }
 
 #[test]
 fn a_service_gone_with_a_named_but_dead_display_is_the_display_refusal() {
-    let answer = display_behind(exited(), Some(refusal("missing")));
-    assert!(is_display_refusal(&answer));
-    let details = answer.details.clone().expect("details");
-    assert_eq!(details["display_unavailable"], "missing");
-    assert_eq!(
-        details["bus_error"]["message"],
-        "The AT-SPI accessibility bus is not available in this session"
-    );
-    assert_eq!(
-        answer.platform_detail.as_deref(),
-        Some("org.freedesktop.DBus.Error.NoReply: gone")
-    );
+    for cause in [Cause::Missing, Cause::Refused] {
+        let answer = display_behind(exited(), display(cause));
+        assert!(names_its_cause(&answer));
+        let details = answer.details.clone().expect("details");
+        assert!(details["display_unavailable"].is_string(), "{details}");
+        assert_eq!(
+            details["bus_error"]["message"],
+            "The AT-SPI accessibility bus is not available in this session"
+        );
+        assert_eq!(
+            answer.platform_detail.as_deref(),
+            Some("org.freedesktop.DBus.Error.NoReply: gone")
+        );
+    }
 }
 
 #[test]
-fn a_session_with_no_display_named_or_a_working_one_keeps_the_service_error() {
-    for display in [Some(refusal("not_configured")), None] {
-        let answer = display_behind(exited(), display);
-        assert!(!is_display_refusal(&answer));
-        assert_eq!(answer.details.expect("details")["kind"], "service_exited");
+fn a_session_with_no_display_named_or_a_working_one_keeps_the_retryable_service_error() {
+    for server in [display(Cause::NotConfigured), DisplayServer::Wayland] {
+        let answer = display_behind(exited(), server);
+        assert!(names_its_cause(&answer));
+        let details = answer.details.expect("details");
+        assert_eq!(details["kind"], "service_exited");
+        assert_eq!(details["retryable"], true);
     }
+    assert!(!names_its_cause(&classify(&method_error(
+        "org.example.Error.Unheard"
+    ))));
 }

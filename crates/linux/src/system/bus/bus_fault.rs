@@ -9,7 +9,8 @@ pub(crate) const SERVICE_UNKNOWN: &str = "org.freedesktop.DBus.Error.ServiceUnkn
 pub(crate) const NAME_HAS_NO_OWNER: &str = "org.freedesktop.DBus.Error.NameHasNoOwner";
 const SPAWN_ERROR_PREFIX: &str = "org.freedesktop.DBus.Error.Spawn.";
 pub(crate) const NO_REPLY: &str = "org.freedesktop.DBus.Error.NoReply";
-const SERVICE_EXITED: &str = "service_exited";
+pub(crate) const SERVICE_EXITED: &str = "service_exited";
+pub(crate) const RECIPIENT_LEFT: &str = "recipient disconnected";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BusFault {
@@ -60,7 +61,7 @@ impl BusFault {
                 "AT-SPI is installed but its bus launcher could not start. Read the launch error with 'systemctl --user status at-spi-dbus-bus.service'."
             }
             Self::ServiceExited => {
-                "An AT-SPI service (the bus launcher or the registry) exited before it answered. They exit when the display they were started with cannot be reached: check DISPLAY and WAYLAND_DISPLAY, or read 'systemctl --user status at-spi-dbus-bus.service'."
+                "An AT-SPI service (the bus launcher or the registry) disconnected before it answered. Retry once: a restarted service answers the next call. If it repeats, the service exits as it starts, which it does when the display it was started with cannot be reached: check DISPLAY and WAYLAND_DISPLAY, or read 'systemctl --user status at-spi-dbus-bus.service'."
             }
             Self::SocketGone => {
                 "The accessibility bus daemon's socket is missing or refusing connections. Restart it with 'systemctl --user restart at-spi-dbus-bus.service', or log out and back in."
@@ -75,7 +76,7 @@ impl BusFault {
         )
         .with_suggestion(self.suggestion())
         .with_details(match self {
-            Self::ServiceExited => json!({ "retryable": false, "kind": SERVICE_EXITED }),
+            Self::ServiceExited => json!({ "retryable": true, "kind": SERVICE_EXITED }),
             _ => json!({ "retryable": false }),
         })
         .with_platform_detail(source.to_string())
