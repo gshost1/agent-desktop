@@ -14,7 +14,12 @@ AGENT_DESKTOP_E2E_EXCLUSIVE=1 bash tests/e2e/run.sh
 The single prerequisite gate requires:
 
 - macOS;
-- `python3` 3.10 or newer on `PATH` (macOS ships 3.9 at `/usr/bin/python3`);
+- Python 3.10 or newer. The harness uses `AGENT_DESKTOP_E2E_PYTHON` when it
+  names one, then the first of `python3.14` through `python3.10` on `PATH`, then
+  `python3` if it is new enough, so the 3.9 at `/usr/bin/python3` is never used.
+  An override that is older is reported and ignored;
+- a display that leaves room for the fixture's minimum window, at least
+  1020x836 points, or the run stops with exit `2` before any scenario;
 - Accessibility permission granted to the terminal or runner; and
 - a buildable Swift fixture app.
 
@@ -26,7 +31,8 @@ not set the acknowledgement while the desktop is in use.
 
 Before taking the desktop lock, `run.sh` builds the CLI, macOS helper, and FFI
 library from the current checkout with `--locked` into the canonical repository
-`target` directory. It then hashes and copies those exact artifacts to read-only
+`target` directory, plus the `agent-desktop-macos` library tests that AE5 runs,
+so no cargo step inside the lock compiles anything. It then hashes and copies those exact artifacts to read-only
 paths under a private suite directory. The suite uses only those copies plus an
 isolated `HOME`, ref/session stores, fixture build, and `TMPDIR`. Every CLI child
 runs in its own process group with an absolute timeout and bounded stdout/stderr
@@ -40,7 +46,19 @@ asserts that semantic click, type, set-value, and check/uncheck/toggle commands
 each produce their effect while the fixture never becomes frontmost. Its exit
 code (`1` failure, `2` blocked prerequisite) ends the run before any headed case.
 
-The harness then builds and launches `AgentDeskFixture.app`. Once the fixture is
+The harness then builds and launches `AgentDeskFixture.app`. Every fixture
+launch passes `AGENT_DESKTOP_FIXTURE_FRAME` (`x,y,width,height` in top-left
+screen points), a frame on the largest display that is 1000 points wide and at
+most 868 points tall, so the window is the same on every display that fits it. The fixture
+places its window there, cut to the screen's visible area, and the harness
+checks the result with `list-windows`. A launch with that variable replaces any
+frame an earlier launch saved and leaves no saved frame in the
+`com.agentdesktop.fixture` defaults. A launch refuses to start while another
+fixture process is running, and refuses a recorded process that has the
+previous pid. `scenarios/wide_window.sh` relaunches the fixture 1300 points
+wide, wider than its content, and asserts a plain click on `primary-button`; it
+reports `SKIP` only when the display is narrower than 1340 points; a failure to
+read the display bounds is a `FAIL`. Once the fixture is
 running, a missing control, window, status readout, bounds record, or surface is
 a test failure. Scenarios never turn a missing prerequisite into a successful
 `SKIP`. Exit `0` means every assertion passed from an uncontaminated run, exit
@@ -49,8 +67,15 @@ failed.
 
 Headed cases move the real cursor. Run them on a machine where that is safe.
 The fixture process is force-closed by the cleanup trap even when a test fails.
-After the scenarios, `run.sh` closes the fixture and runs
+The force-close lifecycle observation relaunches the fixture through the same
+launch path, which records the new process as the expected owner, so the
+contention check that follows still fails on any fixture the harness did not
+launch. After the scenarios, `run.sh` closes the fixture and runs
 `scripts/cursor-multi-agent-probe.py` in headless and headed modes.
+
+`safe-semantic.sh` needs a focused, visible window that is not the fixture. When
+no app has one, it opens Calculator and quits it afterwards if it was not
+already running.
 
 For a dedicated self-hosted runner, `scripts/run-native-e2e-ci.sh` sets the
 exclusivity acknowledgement and calls `run.sh`; it refuses to run unless
@@ -59,7 +84,13 @@ exclusivity acknowledgement and calls `run.sh`; it refuses to run unless
 
 ## Private steps
 
-Set `AGENT_DESKTOP_E2E_SKIP_PRIVATE=1` to skip every step that runs osascript or System Events, or reads or focuses Notification Center: the fixture window normalization, `scenarios/notifications.sh`, the volume part of `scenarios/os_surfaces.sh`, the AE5 native denied-Automation path and `native-menus.py`. Each prints `SKIP (private): <step>`, is never counted as a pass, and is listed with a count in the final summary. Unset, the harness behaves as before.
+Set `AGENT_DESKTOP_E2E_SKIP_PRIVATE=1` to skip every step that runs osascript or reads or focuses Notification Center: `scenarios/notifications.sh`, the volume part of `scenarios/os_surfaces.sh`, the AE5 native denied-Automation path and `native-menus.py`. In that mode the Dock launch check only considers Calculator. Each skipped step prints `SKIP (private): <step>`, is never counted as a pass, and is listed with a count in the final summary. Unset, the harness behaves as before.
+
+The run prints the scenarios a private-safe run skips as its first line. Print them without running anything:
+
+```bash
+bash tests/e2e/run.sh --list-skipped
+```
 
 ## Native menu regression
 

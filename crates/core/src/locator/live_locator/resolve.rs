@@ -111,9 +111,33 @@ pub(crate) fn resolve_query_from_allowing_partial(
     resolve_attempts(&attempt, observe)
 }
 
+/// Resolves through every attempt. A `--first` answer that waited for the
+/// row pass to prove its ref is kept, without that ref, when the row pass
+/// fails as `row_proof::kept_through_row_pass_failure` allows.
 fn resolve_attempts(
     attempt: &Attempt<'_>,
+    observe: impl FnMut(crate::Deadline, RowReading) -> Result<ObservedObservation, AppError>,
+) -> Result<LocatorResolution, AppError> {
+    let started = crate::wait::deadline::now();
+    let mut answer_without_ref = None;
+    match resolve_attempts_with(attempt, observe, &mut answer_without_ref) {
+        Err(error) if super::row_proof::kept_through_row_pass_failure(&error) => {
+            match answer_without_ref {
+                Some(resolution) => {
+                    let aggregate = resolution.stats.clone();
+                    finish_partial(resolution, aggregate, started)
+                }
+                None => Err(error),
+            }
+        }
+        resolved => resolved,
+    }
+}
+
+fn resolve_attempts_with(
+    attempt: &Attempt<'_>,
     mut observe: impl FnMut(crate::Deadline, RowReading) -> Result<ObservedObservation, AppError>,
+    answer_without_ref: &mut Option<LocatorResolution>,
 ) -> Result<LocatorResolution, AppError> {
     let (query, request) = (attempt.query, attempt.request);
     validate_query(query)?;
@@ -144,12 +168,22 @@ fn resolve_attempts(
             .into());
         }
         let attempt_deadline = observation_deadline(request);
-        match observe(attempt_deadline, rows)
-            .and_then(|observed| resolve_observed_attempt(attempt, observed, &mut aggregate))
-        {
-            Ok((mut resolution, rows_left_unread)) => {
+        match observe(attempt_deadline, rows).and_then(|observed| {
+            let proving = answer_without_ref.is_some();
+            resolve_observed_attempt(attempt, observed, &mut aggregate, proving)
+        }) {
+            Ok((mut resolution, rows_left_unread, awaits_row_proof)) => {
                 resolution.stats.reads.counts.observation_attempts =
                     resolution.stats.reads.counts.observation_attempts.max(1);
+                if awaits_row_proof {
+                    aggregate.merge_attempt(&resolution.stats);
+                    if attempt_deadline.is_expired() {
+                        return finish_partial(resolution, aggregate, started);
+                    }
+                    *answer_without_ref = Some(resolution);
+                    rows = RowReading::All;
+                    continue;
+                }
                 if rows_left_unread
                     && !resolution.meta.selection_complete
                     && !attempt_deadline.is_expired()
@@ -277,7 +311,8 @@ fn resolve_observed_attempt(
     attempt: &Attempt<'_>,
     observed: ObservedObservation,
     aggregate: &mut LocatorStats,
-) -> Result<(LocatorResolution, bool), AppError> {
+    proving: bool,
+) -> Result<(LocatorResolution, bool, bool), AppError> {
     let (adapter, query, request) = (attempt.adapter, attempt.query, attempt.request);
     let ObservedObservation { mut tree, scope } = observed;
     tree.stats.reads.counts.observation_attempts =
@@ -297,7 +332,15 @@ fn resolve_observed_attempt(
     )?;
     let rows_left_unread = tree.rows_unread();
     let unanswered = !resolution.meta.selection_complete;
-    let published_as_partial = attempt.allow_partial && unanswered && !rows_left_unread;
+    let unproven_first = request.selection == super::LocatorSelection::First
+        && request.materialization == super::LocatorMaterialization::SelectedMatches
+        && !unanswered
+        && (rows_left_unread || proving)
+        && super::row_proof::has_unproven_tokenless_match(&resolution, &tree);
+    let awaits_proof =
+        unproven_first && rows_left_unread && !has_deterministic_limit(&resolution.stats);
+    let published_as_partial =
+        (attempt.allow_partial && unanswered && !rows_left_unread) || awaits_proof;
     if published_as_partial {
         super::partial::publish_observed_matches(adapter, query, request, &mut resolution, &tree)?;
     } else if request.materialization == super::LocatorMaterialization::SelectedMatches
@@ -309,8 +352,11 @@ fn resolve_observed_attempt(
             aggregate.merge_attempt(&resolution.stats);
             return Err(error);
         }
+        if unproven_first {
+            super::row_proof::withhold_unproven_refs(&mut resolution)?;
+        }
     }
-    Ok((resolution, rows_left_unread))
+    Ok((resolution, rows_left_unread, awaits_proof))
 }
 
 fn observation_deadline(request: &LocatorResolveRequest) -> crate::Deadline {

@@ -1,5 +1,5 @@
 use super::super::child_read_telemetry::record_status as record_error;
-use super::imp::{is_absent_error, read_without_count};
+use super::imp::is_absent_error;
 use super::*;
 use accessibility_sys::{
     kAXErrorAttributeUnsupported, kAXErrorCannotComplete, kAXErrorFailure, kAXErrorNoValue,
@@ -184,26 +184,4 @@ fn ax_failure_remains_a_native_read_failure() {
 
     assert_eq!(status.health.native_read_failures, 1);
     assert_eq!(status.health.cannot_complete, 0);
-}
-
-#[test]
-fn count_fallback_preserves_a_terminal_prefix_failure() {
-    let mut status = ChildReadStatus {
-        attempts: 1,
-        ..Default::default()
-    };
-    record_error(&mut status, kAXErrorCannotComplete);
-    let read = read_without_count(
-        &AXElement(std::ptr::null_mut()),
-        "AXChildren",
-        1,
-        std::time::Instant::now() + std::time::Duration::from_secs(1),
-        status,
-    );
-
-    assert!(read.status.invalid_element);
-    assert_eq!(read.status.health.cannot_complete, 1);
-    assert_eq!(read.status.attempts, 2);
-    assert!(!read.complete);
-    assert!(!read.prefix_certain);
 }

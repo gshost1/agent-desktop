@@ -1,12 +1,14 @@
 mod arena;
 mod child_page;
 pub(crate) mod child_read;
+mod child_read_at;
 pub(crate) mod child_read_budget;
 pub(crate) mod child_read_plan;
 mod child_read_status;
 mod child_read_telemetry;
 pub(crate) mod child_source;
 mod child_source_availability;
+mod child_values_read;
 mod deferred_list;
 mod evidence_fields;
 mod node_evidence;
@@ -16,6 +18,7 @@ pub(crate) mod read_error;
 mod traversal;
 
 use crate::tree::AXElement;
+use crate::tree::resolve::resolve_focused::focused_surface_of;
 use agent_desktop_core::{
     AdapterError, ErrorCode, ObservationRequest, ObservationRoot, ObservationSource, ObservedTree,
     SnapshotSurface,
@@ -256,8 +259,7 @@ fn resolve_window_surface(
                 window, deadline,
             )?
         }
-        SnapshotSurface::Focused => crate::tree::surfaces::focused_surface_for_pid(pid, deadline)?
-            .ok_or_else(|| AdapterError::element_not_found("No focused surface found"))?,
+        SnapshotSurface::Focused => focused_surface_of(window, pid, deadline)?,
         SnapshotSurface::Menu => crate::tree::app_menu::require_root(
             crate::tree::app_menu::root_for_pid(pid, SnapshotSurface::Menu, deadline),
             SnapshotSurface::Menu,

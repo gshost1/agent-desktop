@@ -1,6 +1,6 @@
 use super::{
-    RetainedFacts, RetainedMismatch, native_identifier_attribute, resolve_saved_token,
-    token_mismatch,
+    RetainedFacts, RetainedMismatch, destroyed_as_stale, native_identifier_attribute,
+    resolve_saved_token, token_mismatch,
 };
 use agent_desktop_core::{
     ElementIdentifier, IdentifierKind, ProcessId, RefCapabilities, RefEntry, RefEntryIdentity,
@@ -145,4 +145,41 @@ fn a_ref_without_a_token_keeps_the_attribute_path() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
 
     assert!(resolve_saved_token(&stored, deadline).unwrap().is_none());
+}
+
+#[test]
+fn a_destroyed_token_element_is_a_stale_ref_that_was_never_delivered() {
+    use accessibility_sys::{
+        kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement,
+    };
+    use agent_desktop_core::{DeliverySemantics, ErrorCode};
+    let stored = entry("button");
+
+    let destroyed = destroyed_as_stale(
+        &stored,
+        crate::tree::surface_read::map_error("AXRole", kAXErrorInvalidUIElement),
+    );
+    assert_eq!(destroyed.code, ErrorCode::StaleRef);
+    assert_eq!(destroyed.disposition, DeliverySemantics::not_delivered());
+    assert!(destroyed.permits_retry_by_default());
+    let details = destroyed.details.expect("stale token details");
+    assert_eq!(details["kind"], "retained_object_stale");
+    assert_eq!(details["reason"], "dead");
+    assert!(details.get("ax_error").is_none());
+
+    for (error, code) in [
+        (kAXErrorCannotComplete, ErrorCode::Timeout),
+        (kAXErrorAPIDisabled, ErrorCode::PermDenied),
+    ] {
+        let kept = destroyed_as_stale(
+            &stored,
+            crate::tree::surface_read::map_error("AXRole", error),
+        );
+        assert_eq!(kept.code, code);
+    }
+    let busy = agent_desktop_core::AdapterError::new(ErrorCode::AppUnresponsive, "busy");
+    assert_eq!(
+        destroyed_as_stale(&stored, busy).code,
+        ErrorCode::AppUnresponsive
+    );
 }
