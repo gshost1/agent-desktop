@@ -172,3 +172,31 @@ fn a_multi_call_binary_reached_under_another_name_is_another_command() {
         .expect("two commands");
     assert_eq!(error.code, ErrorCode::AmbiguousTarget);
 }
+
+#[test]
+fn a_desktop_file_shadowed_by_an_earlier_data_dir_records_no_desktop_id() {
+    let fixture = fixture(
+        &[("tool", "Name=Tool\nType=Application\nExec=tool")],
+        &["tool"],
+    );
+    let shadowed_dir = fixture.search.data_dirs[0].with_file_name("shadowed-apps");
+    std::fs::create_dir_all(&shadowed_dir).unwrap();
+    let shadowed = shadowed_dir.join("tool.desktop");
+    std::fs::write(
+        &shadowed,
+        "[Desktop Entry]\nName=Tool Old\nType=Application\nExec=tool\n",
+    )
+    .unwrap();
+    let search = Search {
+        data_dirs: vec![fixture.search.data_dirs[0].clone(), shadowed_dir.clone()],
+        path_dirs: fixture.search.path_dirs.clone(),
+    };
+    let shadowed_plan = resolve(shadowed.to_str().unwrap(), &[], &search, &fixture.index)
+        .expect("a trusted desktop file");
+    assert_eq!(shadowed_plan.desktop_id, None);
+    let indexed = search.data_dirs[0].join("tool.desktop");
+    let indexed_plan = resolve(indexed.to_str().unwrap(), &[], &search, &fixture.index)
+        .expect("the indexed desktop file");
+    assert_eq!(indexed_plan.desktop_id.as_deref(), Some("tool"));
+    let _ = std::fs::remove_dir_all(&shadowed_dir);
+}

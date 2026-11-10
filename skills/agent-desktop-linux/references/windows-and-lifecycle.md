@@ -10,11 +10,13 @@ are not used.
   or id whose `Exec` resolves to the running executable (`/proc/<pid>/exe`) with
   matching full arguments. Every entry that runs that same command names the
   process; a desktop name that an entry running another command also uses gets
-  no alias. A process that `launch` started from a desktop entry also answers
-  to that entry's `Name` and id, even when a wrapper `exec`ed another binary or
-  the launch passed arguments (`launch "Google Chrome" --cdp`, then
-  `--app "Google Chrome"`): the launch records the entry for that exact process
-  instance and executable in a private file under `$XDG_RUNTIME_DIR`. Registry
+  no alias. A process that `launch` spawned from a desktop entry, itself or
+  through a wrapper that `exec`s the application, also answers to that entry's
+  id, and to its `Name` unless an entry running another command shares it,
+  even when the launch passed arguments (`launch google-chrome --cdp`, then
+  `--app "Google Chrome"`). The launch records the entry for that pid, process
+  instance and executable in a private file under `$XDG_RUNTIME_DIR`; a
+  process the launch only handed off to gets no record. Registry
   labels and truncated `comm` names are never aliases.
 - Scoped matching is exact and case-insensitive, and the process must belong to
   this session. `list-windows --app` uses that exact rule. `list-apps --app`

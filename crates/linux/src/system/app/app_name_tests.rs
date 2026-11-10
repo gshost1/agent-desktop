@@ -99,3 +99,28 @@ fn a_recorded_entry_that_no_longer_exists_names_nothing() {
         None
     );
 }
+
+#[test]
+fn a_recorded_entry_whose_name_another_command_shares_gives_only_its_id() {
+    let index = AliasIndex::build(
+        &[
+            (
+                "com.example.Browser".to_owned(),
+                "[Desktop Entry]\nType=Application\nName=Example Browser\nExec=/opt/example/launcher %U\n"
+                    .to_owned(),
+            ),
+            (
+                "other.Browser".to_owned(),
+                "[Desktop Entry]\nType=Application\nName=Example Browser\nExec=/opt/other/browser %U\n"
+                    .to_owned(),
+            ),
+        ],
+        &[],
+    );
+    let aliases = aliases_with(
+        &index,
+        &wrapped_process(),
+        Some("com.example.Browser".to_owned()),
+    );
+    assert_eq!(aliases, ["com.example.Browser"]);
+}
