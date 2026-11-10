@@ -42,6 +42,27 @@ fn a_passed_deadline_messages_no_application() {
 }
 
 #[test]
+fn preparing_an_application_connection_warms_that_process_once() {
+    use agent_desktop_core::ObservationOps;
+    let own = std::process::id();
+    let adapter = crate::adapter::MacOSAdapter::new();
+    assert!(
+        adapter
+            .prepare_application_connection(agent_desktop_core::ProcessId::new(own))
+            .is_ok()
+    );
+    assert!(
+        adapter
+            .prepare_application_connection(agent_desktop_core::ProcessId::new(u32::MAX))
+            .is_ok()
+    );
+    let warmed = warmed();
+    let own = i32::try_from(own).unwrap_or_default();
+    assert_eq!(warmed.iter().filter(|pid| **pid == own).count(), 1);
+    assert!(warmed.iter().all(|pid| *pid > 0));
+}
+
+#[test]
 fn preparing_a_window_inventory_starts_the_window_server_connection() {
     use agent_desktop_core::ObservationOps;
     assert!(
