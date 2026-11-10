@@ -6,13 +6,15 @@ use agent_desktop_core::{
 };
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "macos")]
+use self::launch_settle::{SettleProbes, launch_target_gone, settle_window};
+use self::launch_window::LaunchWindow;
 use crate::system::launch_plan::{LaunchPlan, plan_launch};
 use crate::system::launch_target::{launch_target, required_instance, validate_launched_target};
 
 const MAX_ARGUMENT_COUNT: usize = 256;
 const MAX_ENVIRONMENT_COUNT: usize = 256;
 const MAX_LAUNCH_TEXT_BYTES: usize = 1024 * 1024;
-const STARTUP_GRACE: Duration = Duration::from_millis(1500);
 
 #[cfg(target_os = "macos")]
 pub(crate) fn launch_app_impl(
@@ -63,20 +65,22 @@ fn use_running_app(
     if activates {
         activate_running(pid, &instance, deadline)?;
     }
-    let window = exact_window(pid, &instance, deadline).map_err(|error| {
-        if activates {
-            after_launch(error)
-        } else {
-            before_launch(error)
-        }
-    })?;
+    let (window, several) = exact_window(pid, &instance, deadline)
+        .map_err(|error| {
+            if activates {
+                after_launch(error)
+            } else {
+                before_launch(error)
+            }
+        })?
+        .into_parts();
     let path = if activates {
         LaunchPath::ActivatedRunning
     } else {
         LaunchPath::AttachedRunning
     };
     let mut result = result_from_app(app, window, path);
-    result.notes.suggestion = ignored_inputs_hint(options);
+    result.notes.suggestion = joined_notes([several, ignored_inputs_hint(options)]);
     Ok(result)
 }
 
@@ -93,6 +97,12 @@ fn activate_running(pid: i32, instance: &str, deadline: Deadline) -> Result<(), 
     crate::system::focus::ensure_app_focused(pid, deadline)
 }
 
+#[cfg(target_os = "macos")]
+fn joined_notes(notes: [Option<String>; 2]) -> Option<String> {
+    let notes: Vec<String> = notes.into_iter().flatten().collect();
+    (!notes.is_empty()).then(|| notes.join(" "))
+}
+
 /// A running application receives no launch arguments or environment, because
 /// they apply only to the process Launch Services starts. Saying so beats
 /// dropping them without a word.
@@ -105,57 +115,35 @@ fn ignored_inputs_hint(options: &LaunchOptions) -> Option<String> {
     })
 }
 
-/// Waits only for the windows the launch itself produces. Starting up is what
-/// creates them, so once the application reports that it finished starting up,
-/// every window it was going to open on its own already exists and further
-/// polling can only run out the deadline. An application that opens its first
-/// window in response to being brought forward — TextEdit, Preview, any
-/// document-based application — reports no window here, and `activate` is how a
-/// caller asks for one instead of waiting for one it never requested.
+/// Waits for the launch's window while the launched process lives. See
+/// `settle_window` for when the wait ends.
 #[cfg(target_os = "macos")]
 fn settled_window(
     pid: i32,
     process_instance: &str,
     options: &LaunchOptions,
     deadline: Deadline,
-) -> Result<Option<WindowInfo>, AdapterError> {
-    let mut poll_interval = Duration::from_millis(25);
-    let mut grace_ends_at = None;
-    let mut last_read_failure: Option<AdapterError>;
-    loop {
-        match exact_window(pid, process_instance, deadline) {
-            Ok(Some(window)) => return Ok(Some(window)),
-            Ok(None) => last_read_failure = None,
-            Err(error) if window_read_is_not_ready_yet(&error) => last_read_failure = Some(error),
-            Err(error) => return Err(error),
-        }
-        if options.timeout_ms == 0
-            || (!options.presentation.activate && grace_over(grace_ends_at, Instant::now()))
-        {
-            return last_read_failure.map_or(Ok(None), Err);
-        }
-        if grace_ends_at.is_none() && startup_finished(pid, process_instance)? {
-            grace_ends_at = Instant::now().checked_add(STARTUP_GRACE);
-        }
-        let remaining = deadline.remaining();
-        if remaining.is_zero() {
-            return last_read_failure.map_or(Ok(None), Err);
-        }
-        std::thread::sleep(poll_interval.min(remaining));
-        poll_interval = (poll_interval * 3 / 2).min(Duration::from_millis(250));
-    }
+) -> Result<LaunchWindow, AdapterError> {
+    settle_window(
+        SettleProbes {
+            read: || exact_window(pid, process_instance, deadline),
+            startup_finished: || startup_finished(pid, process_instance),
+            alive: || {
+                if super::process::process_identity::matches_instance(pid, process_instance)? {
+                    Ok(())
+                } else {
+                    Err(launch_target_gone(pid))
+                }
+            },
+        },
+        options,
+        deadline,
+    )
 }
 
-#[cfg(target_os = "macos")]
-fn window_read_is_not_ready_yet(error: &AdapterError) -> bool {
-    matches!(error.code, ErrorCode::AppUnresponsive | ErrorCode::Timeout)
-}
-
-/// Ends the wait when the application has created whatever windows its launch
-/// produces. The window server keeps no record of a process that exited, and
-/// none of one that has not registered yet, so libproc decides which happened:
-/// a process that is gone ends the launch with an error rather than an answer
-/// about windows it will never open.
+/// Whether the application reports that it finished starting up. The window
+/// server keeps no record of a process that exited, and none of one that has
+/// not registered yet, so libproc decides which happened.
 #[cfg(target_os = "macos")]
 fn startup_finished(pid: i32, process_instance: &str) -> Result<bool, AdapterError> {
     use crate::system::appkit_bridge::StartupState;
@@ -170,24 +158,6 @@ fn startup_finished(pid: i32, process_instance: &str) -> Result<bool, AdapterErr
             }
         }
     }
-}
-
-#[cfg(target_os = "macos")]
-fn launch_target_gone(pid: i32) -> AdapterError {
-    AdapterError::new(
-        ErrorCode::AppUnresponsive,
-        "Launched application exited before it presented a window",
-    )
-    .with_details(serde_json::json!({ "pid": pid, "complete": false }))
-    .with_suggestion("Check the application's own launch requirements, then retry.")
-}
-
-/// The grace covers the gap between an application reporting that it started
-/// and its first window reaching the window server. Waiting starts running out
-/// only once there is a completed startup to measure from.
-#[cfg(target_os = "macos")]
-fn grace_over(grace_ends_at: Option<Instant>, now: Instant) -> bool {
-    grace_ends_at.is_some_and(|end| now >= end)
 }
 
 /// The attaching path reports the display name, so the launching path has to
@@ -222,11 +192,12 @@ fn result_from_app(app: &AppInfo, window: Option<WindowInfo>, path: LaunchPath) 
 #[cfg(target_os = "macos")]
 fn result_from_launched(
     launched: &(i32, String),
-    window: Option<WindowInfo>,
+    window: LaunchWindow,
     id: &str,
     path: LaunchPath,
 ) -> Result<LaunchResult, AdapterError> {
     let renderer = crate::system::renderer_kind::detect_chromium(launched.0);
+    let (window, several) = window.into_parts();
     Ok(LaunchResult {
         app: launched_display_name(window.as_ref(), id),
         pid: agent_desktop_core::ProcessId::try_from(launched.0)
@@ -236,7 +207,7 @@ fn result_from_launched(
         cdp: None,
         renderer,
         notes: LaunchNotes {
-            suggestion: None,
+            suggestion: several,
             launch_path: Some(path),
         },
     })
@@ -269,14 +240,14 @@ fn exact_window(
     pid: i32,
     process_instance: &str,
     deadline: Deadline,
-) -> Result<Option<WindowInfo>, AdapterError> {
-    let window = match crate::system::window::window_inventory::exact_window_for_pid_until(
+) -> Result<LaunchWindow, AdapterError> {
+    let windows = crate::system::window::window_inventory::real_windows_for_pid_until(
         pid,
         deadline_instant(deadline)?,
-    ) {
-        Ok(window) => window,
-        Err(error) if error.code == ErrorCode::WindowNotFound => return Ok(None),
-        Err(error) => return Err(error),
+    )?;
+    let window = match LaunchWindow::pick(windows) {
+        LaunchWindow::Shown(window) => window,
+        other => return Ok(other),
     };
     if window.process_instance.as_deref() != Some(process_instance) {
         return Err(AdapterError::new(
@@ -285,7 +256,7 @@ fn exact_window(
         )
         .with_details(serde_json::json!({ "pid": pid, "complete": false })));
     }
-    Ok(Some(window))
+    Ok(LaunchWindow::Shown(window))
 }
 
 #[cfg(target_os = "macos")]
@@ -388,3 +359,9 @@ fn deadline_instant(deadline: Deadline) -> Result<Instant, AdapterError> {
 #[cfg(test)]
 #[path = "launch_tests.rs"]
 mod tests;
+
+#[path = "launch_settle.rs"]
+pub(crate) mod launch_settle;
+
+#[path = "launch_window.rs"]
+pub(crate) mod launch_window;
