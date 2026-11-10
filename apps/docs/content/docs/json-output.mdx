@@ -55,7 +55,7 @@ An error envelope has `error` and no `data`:
 
 - A typed field that is `None` is omitted, and so is an empty array. An error without a suggestion has no `suggestion` key, and a node without children has no `children` key.
 - Snapshot node bounds are omitted unless you pass `--include-bounds`.
-- Some commands build their `data` by hand and write `null` or `[]` for an absent value. `session list` writes `"ended_at": null` for an open session, and `find` matches write `"value": null` and `"states": []`. Treat a missing key, `null`, and an empty array the same way.
+- Some commands build their `data` by hand and write `null` or `[]` for an absent value, such as `session list`, which writes `"ended_at": null` for an open session. Treat a missing key, `null`, and an empty array the same way.
 - Ignore keys you do not know. New optional fields can appear without a version change.
 - Snapshot `data.window` appears when a window owns the observation. On macOS, application-owned `menu` and `menubar` snapshots omit it.
 
@@ -193,16 +193,14 @@ A failed `--wait-for` after a delivered operation keeps the operation's own deli
       "name": "7",
       "path": ["window:Calculator", "group", "group", "group"],
       "ref_id": "@s3jjre8xzrvo2l:e1",
-      "role": "button",
-      "states": [],
-      "value": null
+      "role": "button"
     },
     "snapshot_id": "s3jjre8xzrvo2l"
   }
 }
 ```
 
-Each match carries `ref_id`, `role`, `name`, `value`, `states`, `interactive`, and `path` (trimmed above). A match that earns a ref has a qualified `ref_id`, and the response then includes the `snapshot_id` that holds it. A match with no ref is a context match: its `ref_id` is `null` and it carries `bounds` when the platform reports them, so you can see where it is. An element without an accessible name omits `name`, and its content stays in `value`. When a query with `--role` matches nothing, `roles_present` lists the roles the search did see.
+Each match carries `role` and `interactive`, and `ref_id`, `name`, `value`, `states` and `path` when it has them (`path` is trimmed above). A match that earns a ref has a qualified `ref_id`, and the response then includes the `snapshot_id` that holds it. A match with no ref is a context match: it has no `ref_id` and carries `bounds` when the platform reports them, so you can see where it is. An element without an accessible name omits `name`, and its content stays in `value`. When a query with `--role` matches nothing, `roles_present` lists the roles the search did see.
 
 ## Exit codes
 

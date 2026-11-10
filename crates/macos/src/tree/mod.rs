@@ -11,6 +11,7 @@ pub(crate) mod element_name;
 pub(crate) mod hit_test;
 pub(crate) mod inline_editor;
 pub(crate) mod locator_deadline;
+pub(crate) mod menu_search_node;
 pub(crate) mod native_menu;
 pub(crate) mod observation_usage;
 pub(crate) mod properties;
