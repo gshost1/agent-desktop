@@ -106,6 +106,11 @@ impl AliasIndex {
         matching
     }
 
+    /// The entry with this desktop id.
+    pub(in crate::system) fn entry(&self, desktop_id: &str) -> Option<&IndexedEntry> {
+        self.entries.iter().find(|entry| entry.id == desktop_id)
+    }
+
     /// Every entry whose `Name` equals `name`, ignoring case.
     pub(in crate::system) fn entries_named(&self, name: &str) -> Vec<&IndexedEntry> {
         self.entries
