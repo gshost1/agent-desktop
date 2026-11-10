@@ -18,10 +18,11 @@ not post, and proves it with the foreign count and key-hash set before and after
 
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
-| #80 | SURFACE-10 | `2982cc00` | steps ready (below); branch 2 behind main (#14, #82), will move when re-merged |
-| #58 | ACTION-12 | `d57dadfa` | steps ready (below; replaces the old TextEdit/Finder steps) |
-| #86 | ADAPTERS-4 + ADAPTERS-1 | pending | draft, steps pending |
-| #34 | SURFACE-3 | pending | being merged up with main (after #14); privacy-constrained script pending |
+| #80 | SURFACE-10 | STALE (`2982cc00`; PR head moved to `db60af6e`, DIRTY) | do not run: being re-merged with main; the SHA below will be updated when the new head is green |
+| #58 | ACTION-12 | `d57dadfa` | running on the Mac (01:47Z); head frozen until the verdict |
+| #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
+| #88 | LIFECYCLE-2 + LIFECYCLE-12 | pending | DIRTY; being re-merged; steps pending |
+| #34 | SURFACE-3 | pending | held: control reviews the privacy-constrained script before it runs |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
 ## #80 SURFACE-10: focused-surface ref resolves only in its capture window
