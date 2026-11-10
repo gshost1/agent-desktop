@@ -26,6 +26,7 @@ pub(crate) mod state_reader;
 pub(crate) mod surface_inventory;
 pub(crate) mod surface_read;
 pub(crate) mod surfaces;
+pub(crate) mod system_wide;
 pub(crate) mod window_surface;
 
 pub(crate) use ax_element::AXElement;
