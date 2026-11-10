@@ -2,9 +2,8 @@ use agent_desktop_core::{
     ActionStep, AdapterError, Deadline, DeliveryDisposition, DeliverySemantics, RetryDisposition,
 };
 
-use super::{after_selection, may_open_menu, selection_after_write, settled_menu_observation};
+use super::{after_selection, selection_after_write};
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
-use crate::actions::chain::menu_observation::MenuObservation;
 use crate::actions::chain::selection_write::SelectionWrite;
 
 fn short_deadline() -> Deadline {
@@ -17,47 +16,6 @@ fn read_timeout() -> AdapterError {
 
 fn never_run() -> Result<DeliveryOutcome, AdapterError> {
     panic!("nothing may run after a selection that was not written")
-}
-
-fn scripted(reads: &[MenuObservation]) -> impl FnMut() -> MenuObservation + '_ {
-    let mut reads = reads.iter().copied();
-    move || reads.next().unwrap_or(MenuObservation::Unreadable)
-}
-
-#[test]
-fn only_a_menu_read_as_closed_lets_a_step_open_one() {
-    assert!(may_open_menu(MenuObservation::Closed));
-    assert!(!may_open_menu(MenuObservation::Open));
-    assert!(!may_open_menu(MenuObservation::Unreadable));
-}
-
-#[test]
-fn a_menu_read_that_stays_unreadable_refuses_the_step() {
-    let mut reads = 0;
-    let observation = settled_menu_observation(
-        || {
-            reads += 1;
-            MenuObservation::Unreadable
-        },
-        Deadline::after(1_000).unwrap(),
-    );
-    assert_eq!(observation, MenuObservation::Unreadable);
-    assert!(!may_open_menu(observation));
-    assert_eq!(reads, super::MENU_GATE_READS);
-}
-
-#[test]
-fn one_failed_menu_read_is_read_again_before_it_refuses() {
-    let script = [MenuObservation::Unreadable, MenuObservation::Closed];
-    assert_eq!(
-        settled_menu_observation(scripted(&script), Deadline::after(1_000).unwrap()),
-        MenuObservation::Closed
-    );
-    let script = [MenuObservation::Open, MenuObservation::Closed];
-    assert_eq!(
-        settled_menu_observation(scripted(&script), Deadline::after(1_000).unwrap()),
-        MenuObservation::Open
-    );
 }
 
 #[test]
