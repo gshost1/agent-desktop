@@ -1,4 +1,4 @@
-use super::{environment_has_marker, process_start_time};
+use super::{environment_has_marker, is_candidate, process_start_time};
 
 const MARKER: &str = "AGENT_DESKTOP_INTERNAL_COMMAND_HOST=1";
 
@@ -67,4 +67,20 @@ fn process_start_time_requires_the_process_owner() {
     if uid != 0 {
         assert!(process_start_time(1, uid).is_none());
     }
+}
+
+#[test]
+fn the_environment_is_read_only_for_an_agent_desktop_process() {
+    let environment_reads = std::cell::Cell::new(0);
+    let read_environment = || {
+        environment_reads.set(environment_reads.get() + 1);
+        true
+    };
+    assert!(!is_candidate(42, 7, || false, read_environment));
+    assert_eq!(environment_reads.get(), 0);
+    assert!(is_candidate(42, 7, || true, read_environment));
+    assert_eq!(environment_reads.get(), 1);
+    assert!(!is_candidate(7, 7, || true, read_environment));
+    assert!(!is_candidate(0, 7, || true, read_environment));
+    assert_eq!(environment_reads.get(), 1);
 }

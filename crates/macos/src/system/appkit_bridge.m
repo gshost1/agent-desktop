@@ -123,7 +123,30 @@ static NSString *agent_desktop_application_name(NSRunningApplication *app) {
     return name;
 }
 
-AgentDesktopBytesResult agent_desktop_copy_workspace_snapshot_json(uint8_t frontmostOnly) {
+typedef uint8_t (*AgentDesktopNameFilter)(void *context, const uint8_t *name, size_t length);
+
+static NSIndexSet *agent_desktop_selected_indexes(
+    NSArray<NSRunningApplication *> *running, AgentDesktopNameFilter filter, void *context) {
+    if (filter == NULL) {
+        return nil;
+    }
+    NSMutableIndexSet *selected = [NSMutableIndexSet indexSet];
+    [running enumerateObjectsUsingBlock:^(NSRunningApplication *app, NSUInteger index, BOOL *stop) {
+        (void)stop;
+        if (![app isKindOfClass:[NSRunningApplication class]] ||
+            app.activationPolicy == NSApplicationActivationPolicyProhibited) {
+            return;
+        }
+        NSData *name = [agent_desktop_application_name(app) dataUsingEncoding:NSUTF8StringEncoding];
+        if (name != nil && filter(context, name.bytes, name.length) != 0) {
+            [selected addIndex:index];
+        }
+    }];
+    return selected.count == 0 ? nil : selected;
+}
+
+static AgentDesktopBytesResult agent_desktop_workspace_snapshot(
+    uint8_t frontmostOnly, AgentDesktopNameFilter filter, void *filterContext) {
     AgentDesktopBytesResult result = {
         .status = 5, .failureField = NULL, .failureIndex = -1,
         .failurePID = 0, .bytes = NULL, .length = 0
@@ -142,6 +165,7 @@ AgentDesktopBytesResult agent_desktop_copy_workspace_snapshot_json(uint8_t front
                 result.status = 1;
                 return result;
             }
+            NSIndexSet *selected = agent_desktop_selected_indexes(running, filter, filterContext);
             NSMutableArray<NSDictionary *> *skipped = [NSMutableArray array];
             int32_t frontmostPID = 0;
             id frontmostLaunchTime = [NSNull null];
@@ -174,6 +198,9 @@ AgentDesktopBytesResult agent_desktop_copy_workspace_snapshot_json(uint8_t front
                 NSRunningApplication *app = running[index];
                 if (![app isKindOfClass:[NSRunningApplication class]]) {
                     [skipped addObject:@{@"pid": @(0), @"field": @"application_class", @"index": @(index)}];
+                    continue;
+                }
+                if (selected != nil && ![selected containsIndex:index]) {
                     continue;
                 }
                 int32_t pid = app.processIdentifier;
@@ -244,6 +271,9 @@ AgentDesktopBytesResult agent_desktop_copy_workspace_snapshot_json(uint8_t front
             if (skipped.count > 0) {
                 snapshot[@"skipped"] = skipped;
             }
+            if (selected != nil) {
+                snapshot[@"selected_only"] = @YES;
+            }
             NSError *error = nil;
             NSData *data = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:&error];
             if (data == nil || error != nil || data.length > 1048576) {
@@ -272,6 +302,15 @@ AgentDesktopBytesResult agent_desktop_copy_workspace_snapshot_json(uint8_t front
         result.status = 5;
         return result;
     }
+}
+
+AgentDesktopBytesResult agent_desktop_copy_workspace_snapshot_json(uint8_t frontmostOnly) {
+    return agent_desktop_workspace_snapshot(frontmostOnly, NULL, NULL);
+}
+
+AgentDesktopBytesResult agent_desktop_copy_named_workspace_snapshot_json(
+    AgentDesktopNameFilter filter, void *context) {
+    return agent_desktop_workspace_snapshot(0, filter, context);
 }
 
 void agent_desktop_free_bridge_bytes(uint8_t *bytes) {

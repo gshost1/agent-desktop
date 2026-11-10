@@ -4,9 +4,7 @@ mod imp {
         AXElement, element_bounds::read_bounds_with_deadline,
         properties::capabilities::same_element, properties::element::ABSOLUTE_MAX_DEPTH,
     };
-    use accessibility_sys::{
-        AXUIElementCreateSystemWide, kAXApplicationRole, kAXErrorSuccess, kAXRoleAttribute,
-    };
+    use accessibility_sys::{kAXApplicationRole, kAXErrorSuccess, kAXRoleAttribute};
     use agent_desktop_core::{
         AdapterError, Point, Rect, adapter::hit_test::HitTestResult,
         adapter::native_handle::NativeHandle,
@@ -57,7 +55,7 @@ mod imp {
         if !clipping_is_complete(target, &point, deadline)? {
             return Ok(HitTestResult::Unknown);
         }
-        let system = AXElement(unsafe { AXUIElementCreateSystemWide() });
+        let system = crate::tree::system_wide::element();
         if system.0.is_null() {
             return Ok(HitTestResult::Unknown);
         }

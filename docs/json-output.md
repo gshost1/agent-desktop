@@ -121,7 +121,7 @@ Each line, in order:
 | The qualified ref (`@s8f3k2p9:e1`) and a space | The node has a ref |
 | The role | Always |
 | The quoted name | The node has a name; an empty name prints `""` |
-| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field |
+| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field; `desc=` only when the description prints differently from the name (bidirectional marks and surrounding whitespace ignored) |
 | `bounds=x,y,WxH` | The tree carries bounds (`--include-bounds`) |
 | `[state, state]` | The node has states |
 | `children_count=N` | A skeleton cut container |
@@ -365,6 +365,7 @@ Version 2.7 changes the error code of ref refusals on Windows and Linux, and on 
 - `capture_unknown` carries `details.retryable: false` and no `recovery`, because a field that cannot be read may stay unreadable in every snapshot. Target the element through a different selector, or use an explicit `--headed` coordinate click where headed pointer input is available.
 - Both reasons keep the disposition `not_delivered` with `retry: "safe"`, because nothing is sent.
 - `AMBIGUOUS_TARGET` with `identity_not_unique` now means the capture saw two or more elements matching the ref, in a whole or a partial read. It can still come from a refmap written before 2.7, which recorded only that a ref was not unique and so reads every unproven ref as a twin; take a new snapshot to learn which case it is.
+- `find` match objects, and the `candidates` of an `AMBIGUOUS_TARGET` from a locator, omit what they do not have: a context match has no `ref_id`, an unnamed one no `name`, and `value`, `states` and `path` are left out when absent or empty. 2.6 printed `"ref_id": null`, `"value": null`, `"states": []`, `"path": []` and `"name": ""`. Read a missing key as that value.
 - Refmaps written before 2.7 still load. Every refmap entry now carries `capture` (`"unique"`, `"ambiguous"`, `"incomplete"` or `"unknown"`); an entry without it is read as an older refmap through its `unique_at_capture` flag. A proven entry also keeps `unique_at_capture: true`, so a 2.6 binary still resolves the refs a 2.7 snapshot proved and refuses the rest as `identity_not_unique`. A `capture` name this version does not know reads as `unknown`, and a `unique_at_capture` that contradicts `capture` makes the entry `unknown`; neither fails the refmap.
 
 ## Web channel
@@ -428,6 +429,8 @@ Errors carry `details.kind`:
 Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
 
 ## Find result shape
+
+A match object leaves out what it does not have, like every other object in the contract: a context match has no `ref_id`, and `value`, `states` and `path` are omitted when absent or empty (the window root has no `path`). `role` and `interactive` are always present. Earlier builds printed `"ref_id": null`, `"value": null`, `"states": []` and `"path": []`; a reader that indexed those keys must treat a missing key as that value. `tests/fixtures/find-matches.json` pins the shape.
 
 `find` match objects report the element's actual accessibility `name`. Elements
 without an accessible name omit `name` entirely; their content stays in `value`.
