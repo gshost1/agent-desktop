@@ -3,11 +3,14 @@ set -uo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 json_tool="$repo/tests/e2e/json_tool.py"
+# shellcheck source=tests/e2e/python.sh
+source "$repo/tests/e2e/python.sh"
+require_e2e_python || exit 2
 cd "$repo" || exit 2
 
 test_output="$(AGENT_DESKTOP_E2E_TIMEOUT_SECONDS=300 \
     AGENT_DESKTOP_E2E_MAX_CAPTURE_BYTES=4194304 \
-    python3 "$json_tool" exec scripts/cargo-test-isolated-home.sh test --locked --quiet --lib \
+    "$e2e_python" "$json_tool" exec scripts/cargo-test-isolated-home.sh test --locked --quiet --lib \
     -p agent-desktop-macos system::permissions::tests 2>&1)"
 test_exit=$?
 test_count="$(printf '%s' "$test_output" | grep -Eo '[0-9]+ passed' | tail -1 | awk '{print $1}')"

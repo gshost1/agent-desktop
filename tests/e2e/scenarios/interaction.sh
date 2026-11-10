@@ -29,7 +29,7 @@ interaction_suite() {
     case "$before_number" in *[!0-9]*|'') before_number=0 ;; esac
     case "$after_number" in *[!0-9]*|'') after_number=0 ;; esac
     click_ok="$(json_field "$click_output" ok)"
-    click_mechanism="$(printf '%s' "$click_output" | python3 "$json_tool" delivered-mechanism 2>/dev/null)"
+    click_mechanism="$(printf '%s' "$click_output" | "$e2e_python" "$json_tool" delivered-mechanism 2>/dev/null)"
     assert "[$mode] click dispatches exactly once" \
         "$([ "$click_ok" = "True" ] && [ "$after_number" -eq $((before_number + 1)) ] && [ "$click_mechanism" = "$natural_mechanism" ] && echo 1 || echo 0)" \
         "before=$click_before after=$click_after ok=$click_ok mechanism=$click_mechanism"
@@ -70,7 +70,7 @@ interaction_suite() {
     scroll_output="$(act_target "$scroll_area" scroll --direction "$direction" --amount 10 2>/dev/null)"
     sleep 0.4
     require_value scroll_after scroll-offset
-    scroll_mechanism="$(printf '%s' "$scroll_output" | python3 "$json_tool" delivered-mechanism 2>/dev/null)"
+    scroll_mechanism="$(printf '%s' "$scroll_output" | "$e2e_python" "$json_tool" delivered-mechanism 2>/dev/null)"
     assert "[$mode] scroll moves content" \
         "$([ "$scroll_before" != "$scroll_after" ] && [ "$scroll_mechanism" = "$natural_mechanism" ] && echo 1 || echo 0)" \
         "before=$scroll_before after=$scroll_after direction=$direction cmd_ok=$(json_field "$scroll_output" ok) cmd_err=$(json_field "$scroll_output" error.code) mechanism=$scroll_mechanism error=$(json_field "$scroll_output" error.message)"
