@@ -149,6 +149,7 @@ pub(crate) fn report(deadline: Deadline) -> Result<PermissionReport, AdapterErro
 
 pub(crate) fn preflight_report(deadline: Deadline) -> Result<PermissionReport, AdapterError> {
     deadline.ensure_remaining()?;
+    crate::system::connection_warmup::start_window_server();
     let (accessibility, screen_recording) = std::thread::scope(|scope| {
         let screen_recording = ConcurrentCheck::start(scope, screen_recording_report_state);
         (accessibility_report_state(), screen_recording.join())

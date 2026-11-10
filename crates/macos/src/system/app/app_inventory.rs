@@ -29,10 +29,11 @@ pub(crate) fn list_apps_scoped_until(
     deadline: Instant,
 ) -> Result<Vec<AppInfo>, AdapterError> {
     let apps = stabilize_apps_until(deadline, || capture_scoped_apps(name, bundle_id, deadline))?;
-    crate::system::connection_warmup::start_applications(
-        apps.iter()
-            .filter_map(|app| i32::try_from(app.pid.get()).ok()),
-    );
+    let pids: Vec<i32> = apps
+        .iter()
+        .filter_map(|app| i32::try_from(app.pid.get()).ok())
+        .collect();
+    crate::system::connection_warmup::start_applications(&pids, deadline);
     Ok(apps)
 }
 

@@ -13,9 +13,14 @@
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+/// A command aims at one application, which may run as a few processes. A
+/// larger set is an unscoped inventory, and warming it would message
+/// applications the command never reads.
 const MAX_WARMED_APPLICATIONS: usize = 4;
-const APPLICATION_READ_LIMIT: Duration = Duration::from_secs(1);
-const EXIT_WAIT_LIMIT: Duration = Duration::from_millis(100);
+/// The accessibility layer caps one message at 250 ms; a warm-up never needs
+/// more than one message.
+const APPLICATION_READ_LIMIT: Duration = Duration::from_millis(250);
+const EXIT_WAIT_LIMIT: Duration = Duration::from_millis(300);
 
 static IN_FLIGHT: Mutex<usize> = Mutex::new(0);
 static IDLE: Condvar = Condvar::new();
@@ -32,29 +37,41 @@ pub(crate) fn start_window_server() {
     });
 }
 
-/// Starts the accessibility connection to each application process once, for
-/// at most a few processes.
-pub(crate) fn start_applications(pids: impl IntoIterator<Item = i32>) {
+/// Starts the accessibility connection to each process of a command's target
+/// application once. An inventory of more processes than one application
+/// runs, or a deadline that has passed, starts nothing.
+pub(crate) fn start_applications(pids: &[i32], deadline: Instant) {
+    let now = Instant::now();
+    if pids.len() > MAX_WARMED_APPLICATIONS || now >= deadline {
+        return;
+    }
+    let read_deadline = deadline.min(now + APPLICATION_READ_LIMIT);
     let Ok(mut warmed) = WARMED_APPLICATIONS.lock() else {
         return;
     };
-    for pid in pids {
-        if pid <= 0 || warmed.contains(&pid) || warmed.len() >= MAX_WARMED_APPLICATIONS {
-            continue;
+    for &pid in pids {
+        if admit(&mut warmed, pid) {
+            spawn(move || read_application_role(pid, read_deadline));
         }
-        warmed.push(pid);
-        spawn(move || read_application_role(pid));
     }
 }
 
-fn read_application_role(pid: i32) {
+fn admit(warmed: &mut Vec<i32>, pid: i32) -> bool {
+    if pid <= 0 || warmed.contains(&pid) || warmed.len() >= MAX_WARMED_APPLICATIONS {
+        return false;
+    }
+    warmed.push(pid);
+    true
+}
+
+fn read_application_role(pid: i32, deadline: Instant) {
     use core_foundation::{base::TCFType, string::CFString};
     let application = crate::tree::element_for_pid(pid);
     let attribute = CFString::from_static_string("AXRole");
     let (_, value) = crate::tree::properties::ax_ipc::copy_attribute_value(
         &application,
         attribute.as_concrete_TypeRef(),
-        Instant::now() + APPLICATION_READ_LIMIT,
+        deadline,
     );
     if !value.is_null() {
         unsafe { core_foundation::base::CFRelease(value) };
@@ -73,10 +90,20 @@ fn spawn(work: impl FnOnce() + Send + 'static) {
     let spawned = std::thread::Builder::new()
         .name("agent-desktop-connection-warmup".into())
         .spawn(move || {
+            let _finished = Finished;
             work();
-            finish();
         });
     if spawned.is_err() {
+        finish();
+    }
+}
+
+/// Counts a warm-up as finished however its thread ends, so a panic inside a
+/// framework call cannot leave exit waiting on it.
+struct Finished;
+
+impl Drop for Finished {
+    fn drop(&mut self) {
         finish();
     }
 }
@@ -92,32 +119,14 @@ fn finish() {
 }
 
 /// Exiting while a warm-up thread is inside a framework call could race the
-/// framework's own teardown, so exit waits briefly for warm-ups still running.
-/// A warm-up blocked on an unresponsive application is left behind after the
-/// limit; it is waiting in a kernel message receive by then.
+/// framework's own teardown, so exit waits for warm-ups still running. The
+/// limit covers the longest a warm-up message can take, and a command that
+/// finishes after its warm-ups waits for nothing.
 extern "C" fn wait_at_exit() {
     let Ok(count) = IN_FLIGHT.lock() else {
         return;
     };
     let _ = IDLE.wait_timeout_while(count, EXIT_WAIT_LIMIT, |count| *count > 0);
-}
-
-#[cfg(test)]
-pub(crate) fn in_flight() -> usize {
-    IN_FLIGHT.lock().map(|count| *count).unwrap_or(usize::MAX)
-}
-
-#[cfg(test)]
-pub(crate) fn window_server_started() -> bool {
-    WINDOW_SERVER.get().is_some()
-}
-
-#[cfg(test)]
-pub(crate) fn warmed_applications() -> Vec<i32> {
-    WARMED_APPLICATIONS
-        .lock()
-        .map(|warmed| warmed.clone())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

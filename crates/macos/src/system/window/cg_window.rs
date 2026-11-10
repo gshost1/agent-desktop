@@ -64,10 +64,13 @@ pub(crate) fn window_records_until(
     scope: WindowRecordScope<'_>,
 ) -> Result<Vec<WindowRecord>, AdapterError> {
     match scope {
-        WindowRecordScope::Pid(pid) => crate::system::connection_warmup::start_applications([pid]),
-        WindowRecordScope::Pids(pids) => {
-            crate::system::connection_warmup::start_applications(pids.iter().copied())
+        WindowRecordScope::Pid(pid) => {
+            crate::system::connection_warmup::start_applications(&[pid], deadline)
         }
+        WindowRecordScope::Pids(pids) => crate::system::connection_warmup::start_applications(
+            &pids.iter().copied().collect::<Vec<_>>(),
+            deadline,
+        ),
         WindowRecordScope::Window(_) => {}
     }
     stabilize_records_until(deadline, || capture_once(deadline, scope))

@@ -2,7 +2,6 @@ pub struct MacOSAdapter;
 
 impl MacOSAdapter {
     pub fn new() -> Self {
-        crate::system::connection_warmup::start_window_server();
         Self
     }
 }

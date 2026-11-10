@@ -31,27 +31,5 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_concurrent_check_returns_its_own_result() {
-        let value = std::thread::scope(|scope| {
-            let check = ConcurrentCheck::start(scope, || std::thread::current().id());
-            (check.join(), std::thread::current().id())
-        });
-        assert_ne!(value.0, value.1);
-    }
-
-    #[test]
-    fn checks_run_at_the_same_time() {
-        let pause = std::time::Duration::from_millis(100);
-        let started = std::time::Instant::now();
-        std::thread::scope(|scope| {
-            let first = ConcurrentCheck::start(scope, move || std::thread::sleep(pause));
-            std::thread::sleep(pause);
-            first.join();
-        });
-        assert!(started.elapsed() < pause * 2);
-    }
-}
+#[path = "concurrent_check_tests.rs"]
+mod tests;
