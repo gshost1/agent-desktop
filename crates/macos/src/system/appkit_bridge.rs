@@ -104,9 +104,35 @@ pub(crate) fn focused_snapshot_json() -> Result<Vec<u8>, AdapterError> {
     copy_workspace_snapshot_json(1)
 }
 
+/// The workspace snapshot restricted to applications whose display name `selects` accepts; the
+/// others are never read past their name, so their identity fields cost nothing.
+#[cfg(target_os = "macos")]
+pub(crate) fn named_workspace_snapshot_json(
+    selects: &dyn Fn(&str) -> bool,
+) -> Result<Vec<u8>, AdapterError> {
+    let context = &selects as *const &dyn Fn(&str) -> bool as *mut std::ffi::c_void;
+    workspace_snapshot_bytes(unsafe {
+        agent_desktop_copy_named_workspace_snapshot_json(select_name, context)
+    })
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn select_name(context: *mut std::ffi::c_void, name: *const u8, length: usize) -> u8 {
+    if context.is_null() || name.is_null() {
+        return 1;
+    }
+    let selects = unsafe { &*(context as *const &dyn Fn(&str) -> bool) };
+    let name = unsafe { std::slice::from_raw_parts(name, length) };
+    std::str::from_utf8(name).map_or(1, |name| u8::from(selects(name)))
+}
+
 #[cfg(target_os = "macos")]
 fn copy_workspace_snapshot_json(frontmost_only: u8) -> Result<Vec<u8>, AdapterError> {
-    let result = unsafe { agent_desktop_copy_workspace_snapshot_json(frontmost_only) };
+    workspace_snapshot_bytes(unsafe { agent_desktop_copy_workspace_snapshot_json(frontmost_only) })
+}
+
+#[cfg(target_os = "macos")]
+fn workspace_snapshot_bytes(result: BytesResult) -> Result<Vec<u8>, AdapterError> {
     let bytes = BridgeBytes(result.bytes);
     if result.status != 0 {
         return Err(workspace_snapshot_error(&result));
@@ -215,6 +241,10 @@ unsafe extern "C" {
     fn agent_desktop_app_finished_launching(pid: i32) -> i32;
     fn agent_desktop_ensure_cocoa_multithreaded() -> u8;
     fn agent_desktop_copy_workspace_snapshot_json(frontmost_only: u8) -> BytesResult;
+    fn agent_desktop_copy_named_workspace_snapshot_json(
+        filter: extern "C" fn(*mut std::ffi::c_void, *const u8, usize) -> u8,
+        context: *mut std::ffi::c_void,
+    ) -> BytesResult;
     fn agent_desktop_free_bridge_bytes(bytes: *mut u8);
 }
 
@@ -230,6 +260,15 @@ pub(crate) fn terminate(
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn ensure_cocoa_multithreaded() -> Result<(), String> {
     Err("AppKit is unavailable".into())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn named_workspace_snapshot_json(
+    _selects: &dyn Fn(&str) -> bool,
+) -> Result<Vec<u8>, AdapterError> {
+    Err(AdapterError::not_supported(
+        "workspace application snapshot",
+    ))
 }
 
 #[cfg(not(target_os = "macos"))]
