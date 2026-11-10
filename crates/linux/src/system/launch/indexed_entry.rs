@@ -1,4 +1,6 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::system::process::executable_identity::ExecutableIdentity;
 
@@ -7,9 +9,68 @@ pub(in crate::system) struct IndexedEntry {
     pub(in crate::system) name: String,
     pub(in crate::system) argv: Vec<String>,
     pub(in crate::system) cwd: Option<String>,
+    resolved: OnceLock<Option<ExecutableIdentity>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static RESOLUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many entry executables this thread resolved, for tests that bound
+/// the lookup cost.
+#[cfg(test)]
+pub(in crate::system) fn resolutions() -> usize {
+    RESOLUTIONS.with(std::cell::Cell::get)
 }
 
 impl IndexedEntry {
+    pub(in crate::system) fn new(
+        id: String,
+        name: String,
+        argv: Vec<String>,
+        cwd: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            argv,
+            cwd,
+            resolved: OnceLock::new(),
+        }
+    }
+
+    /// The entry's command as an executable identity, resolved through PATH
+    /// and canonicalized once and kept with the entry.
+    pub(in crate::system) fn resolved(&self, path: &[PathBuf]) -> Option<&ExecutableIdentity> {
+        self.resolved
+            .get_or_init(|| {
+                #[cfg(test)]
+                RESOLUTIONS.with(|count| count.set(count.get() + 1));
+                ExecutableIdentity::requested(&self.argv, path)
+            })
+            .as_ref()
+    }
+
+    /// Whether this entry can run the process at all, decided from the words
+    /// alone: the process was invoked under the entry program's name with the
+    /// entry's arguments. Every entry `ExecutableIdentity::matches` accepts
+    /// passes, so the filter only spares resolving the ones it cannot accept.
+    pub(in crate::system) fn could_run(&self, actual: &ExecutableIdentity) -> bool {
+        let (Some((program, arguments)), Some((invocation, actual_arguments))) = (
+            self.argv.split_first(),
+            actual.argv.as_deref().and_then(<[_]>::split_first),
+        ) else {
+            return false;
+        };
+        Path::new(program).file_name() == Path::new(invocation).file_name()
+            && arguments.len() == actual_arguments.len()
+            && arguments
+                .iter()
+                .zip(actual_arguments)
+                .all(|(expected, actual)| OsStr::new(expected) == actual)
+    }
+
     /// Whether two entries run the same command: one canonical executable
     /// reached under the same invocation name, so a multi-call binary that
     /// dispatches on its name counts once per name, with the same arguments
@@ -27,10 +88,7 @@ impl IndexedEntry {
         {
             return false;
         }
-        match (
-            ExecutableIdentity::requested(&self.argv, path),
-            ExecutableIdentity::requested(&other.argv, path),
-        ) {
+        match (self.resolved(path), other.resolved(path)) {
             (Some(mine), Some(theirs)) => mine.executable == theirs.executable,
             (None, None) => program == other_program,
             _ => false,

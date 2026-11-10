@@ -74,8 +74,8 @@ fn aliases_with(index: &AliasIndex, facts: &ProcessFacts, launched: Option<Strin
         .executable
         .as_ref()
         .map(|actual| {
-            let mut aliases = index.names_for(actual);
-            aliases.extend(index.ids_for(actual));
+            let (mut aliases, ids) = index.names_and_ids(actual);
+            aliases.extend(ids);
             aliases
         })
         .unwrap_or_default();

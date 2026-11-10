@@ -168,3 +168,48 @@ fn an_in_place_desktop_edit_invalidates_the_previous_executable_alias() {
     assert!(!Arc::ptr_eq(&before, &after));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_lookup_resolves_only_the_entries_whose_words_can_run_the_process() {
+    let actual = ExecutableIdentity::read(std::process::id()).expect("own identity");
+    let own = actual
+        .argv
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|word| {
+            format!(
+                "\"{}\"",
+                word.to_string_lossy()
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('%', "%%")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut files = vec![file("owned", "Owned App", &own)];
+    for index in 0..40 {
+        files.push(file(
+            &format!("other-{index}"),
+            &format!("Other {index}"),
+            &format!("/usr/bin/other-program-{index} --flag"),
+        ));
+    }
+    let index = AliasIndex::build(&files, &[]);
+    let before = crate::system::launch::indexed_entry::resolutions();
+    assert_eq!(index.names_for(&actual), ["Owned App"]);
+    assert_eq!(index.ids_for(&actual), ["owned"]);
+    let (names, ids) = index.names_and_ids(&actual);
+    assert_eq!(
+        (names, ids),
+        (vec!["Owned App".to_owned()], vec!["owned".to_owned()])
+    );
+    let resolved = crate::system::launch::indexed_entry::resolutions() - before;
+    assert_eq!(
+        resolved,
+        1,
+        "resolved {resolved} of {} entries",
+        files.len()
+    );
+}
