@@ -32,9 +32,9 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i --lines
 ```
 
 - `data.channel` is `cdp`. With `ax`, no endpoint was reached: follow `data.suggestion`.
-- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name), `placeholder=` and `[states]`. Copy the ref from the line that names the control. Each snapshot gives new refs.
+- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name), `placeholder=` and `[states]`. Copy the ref from the line that names the control.
 - Snapshot right after a click, with no `sleep`: it waits for the page the click opens. `data.url` names the page. For a slower change, add `-w 'role:text'` to the action to get the snapshot once that appears.
-- A search field's suggestions appear after a key: `press down --ref @field -w 'statictext:Honolulu'`, then `press down`, `press return --ref @field`.
+- A search field's suggestions appear after a key: `press down --ref @field -w 'statictext:Honolulu'`, `press down --ref @field`, `press return --ref @field`.
 - `-i` keeps interactive nodes only. To read text such as a total or a sentence, search for it:
 
 ```bash
@@ -56,7 +56,7 @@ agent-desktop snapshot --app "Google Chrome" --surface web --lines | grep -nE '"
 | Tick a checkbox or radio button | `check @ref` (`uncheck` clears) |
 | Press Enter in a field | `press return --ref @ref` |
 
-`delivered_verified` means the element was read back and holds the value: do not set it again, even with `application_commit: not_verified`.
+`delivered_verified` in `data.disposition.delivery` means the element was read back and holds the value: do not set it again, even with `application_commit: not_verified`.
 
 Several steps on one page fit in one `batch`:
 
