@@ -55,7 +55,30 @@ assert "menu bar exposes the custom Fixture menu" \
     "menuitems=$menu_items fixture_menu=$has_fixture_menu"
 
 note "Source-tracked drag gesture"
+drag_canvas_offscreen() {
+    local window points
+    window="$(fixture_window_frame)"
+    points="$("$bin" snapshot --app "$app" --include-bounds --max-depth 30 2>/dev/null | \
+        "$e2e_python" "$json_tool" tree drag-canvas drag 2>/dev/null)"
+    [ -n "$window" ] && [ -n "$points" ] || return 2
+    "$e2e_python" -c '
+import sys
+x, y, w, h = (float(v) for v in sys.argv[1].split(","))
+px, py = (float(v) for v in sys.argv[2].split(" ")[0].split(","))
+sys.exit(1 if x <= px <= x + w and y <= py <= y + h else 0)
+' "$window" "$points"
+}
 require_value drag_before drag-canvas-status
+drag_pushed=0
+if ! drag_canvas_offscreen; then
+    require_target drag_top button primary-button
+    "$bin" scroll-to "$(target_ref "$drag_top")" >/dev/null 2>&1
+    sleep 0.3
+    drag_pushed=1
+fi
+assert "drag canvas starts scrolled off the window before scroll-to" \
+    "$(drag_canvas_offscreen && echo 1 || echo 0)" \
+    "pushed_off_by_scrolling_to_the_top=$drag_pushed window=$(fixture_window_frame)"
 drag_anchor="$(find_target_by_id group drag-canvas || find_target group drag-canvas || true)"
 if [ -n "$drag_anchor" ]; then
     act_target "$drag_anchor" scroll-to >/dev/null 2>&1

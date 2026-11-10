@@ -45,6 +45,9 @@ require_e2e_python() {
 }
 
 if ! e2e_python_is_suitable "${AGENT_DESKTOP_E2E_PYTHON:-}"; then
+    if [ -n "${AGENT_DESKTOP_E2E_PYTHON:-}" ]; then
+        echo "AGENT_DESKTOP_E2E_PYTHON=$AGENT_DESKTOP_E2E_PYTHON is not Python 3.10 or newer; ignoring it and searching PATH." >&2
+    fi
     AGENT_DESKTOP_E2E_PYTHON="$(resolve_e2e_python)" || AGENT_DESKTOP_E2E_PYTHON=""
 fi
 export AGENT_DESKTOP_E2E_PYTHON

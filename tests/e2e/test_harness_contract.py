@@ -1,5 +1,6 @@
 import re
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -584,7 +585,7 @@ class FixtureLifecycleTests(unittest.TestCase):
                 'source "$1"\n'
                 'bin="$2"\n'
                 "sleep() { :; }\n"
-                "guard_exec() { return 0; }\n"
+                'guard_exec() { current_pid="$next_pid"; return 0; }\n'
                 "find_target() { return 0; }\n"
                 "fixture_frame() { :; }\n"
                 'pgrep() { [ -n "$current_pid" ] && printf "%s\\n" "$current_pid"; }\n' + body
@@ -598,12 +599,12 @@ class FixtureLifecycleTests(unittest.TestCase):
 
     def test_relaunch_moves_the_expected_owner_and_contention_still_catches_a_change(self):
         result = self.run_lib(
-            "current_pid=111\n"
+            "current_pid=; next_pid=111\n"
             "launch_fixture && check_fixture_contention && echo first-owner-ok\n"
             "current_pid=\n"
             "check_fixture_contention || echo vanished-caught\n"
             "contaminated=0\n"
-            "current_pid=222\n"
+            "next_pid=222\n"
             "launch_fixture && check_fixture_contention && echo relaunched-owner-ok\n"
             "current_pid=333\n"
             "check_fixture_contention || echo replaced-caught\n"
@@ -612,6 +613,26 @@ class FixtureLifecycleTests(unittest.TestCase):
         for marker in ("first-owner-ok", "vanished-caught", "relaunched-owner-ok", "replaced-caught"):
             self.assertIn(marker, result.stdout)
         self.assertIn("expected pid '222', found '333'", result.stdout)
+
+    def test_relaunch_refuses_a_fixture_it_did_not_launch(self):
+        result = self.run_lib(
+            "fixture_pid=111; fixture_started=1; current_pid=999; next_pid=999\n"
+            "launch_fixture; status=$?\n"
+            'printf "status=%s contaminated=%s owned=%s\\n" "$status" "$contaminated" "$fixture_owned"\n'
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("status=1 contaminated=1 owned=0", result.stdout)
+        self.assertIn("is already running as pid(s) 999", result.stdout)
+
+    def test_relaunch_refuses_the_previous_pid(self):
+        result = self.run_lib(
+            "fixture_pid=222; fixture_started=1; current_pid=; next_pid=222\n"
+            "launch_fixture; status=$?\n"
+            'printf "status=%s contaminated=%s\\n" "$status" "$contaminated"\n'
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("status=1 contaminated=1", result.stdout)
+        self.assertIn("adopted the previous process pid 222", result.stdout)
 
     def test_force_close_observation_is_followed_by_a_relaunch_and_a_contention_check(self):
         scenario = (E2E_ROOT / "scenarios" / "trace_performance.sh").read_text()
@@ -653,6 +674,74 @@ class FixtureLifecycleTests(unittest.TestCase):
 
 
 MANUAL_PRIVATE_SCRIPTS = {"native-menus.py"}
+
+
+class DisplayPreconditionTests(unittest.TestCase):
+    def check(self, width: int, height: int) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as directory:
+            display = Path(directory) / "agent-desktop"
+            display.write_text(
+                "#!/bin/sh\n"
+                f"echo '{{\"ok\":true,\"data\":[{{\"bounds\":{{\"x\":0,\"y\":0,\"width\":{width},\"height\":{height}}}}}]}}'\n"
+            )
+            display.chmod(0o700)
+            return subprocess.run(
+                ["bash", "-c", 'source "$1"; require_display_fits_fixture "$2" && echo fits', "check",
+                 str(E2E_ROOT / "harness.sh"), str(display)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+    def test_a_display_that_leaves_room_for_the_minimum_frame_passes(self):
+        result = self.check(1470, 956)
+        self.assertEqual(result.stdout.strip(), "fits", result.stderr)
+
+    def test_a_small_display_stops_with_one_blocked_message(self):
+        result = self.check(1024, 768)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SKIP (blocked): the largest display leaves a fixture frame of 20,64,984,680", result.stderr)
+        self.assertIn("at least 980x748 points", result.stderr)
+
+    def test_run_checks_the_display_before_any_scenario(self):
+        source = (E2E_ROOT / "run.sh").read_text()
+        gate = source.index('require_display_fits_fixture "$release_bin" || exit 2')
+        self.assertLess(gate, source.index('bash "$here/safe-semantic.sh"'))
+
+
+class LaunchFrameParseTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin" and shutil.which("swiftc"), "needs swiftc on macOS")
+    def test_frame_parsing_is_all_or_nothing(self):
+        cases = {
+            "20,64,1000,868": "20.0,64.0,1000.0,868.0",
+            " 1, 2, 3, 4": "1.0,2.0,3.0,4.0",
+            "10,x,800,900,50": "default",
+            "10,20,800,900,50": "default",
+            "1,2,3": "default",
+            "1,,3,4": "default",
+            "nan,0,800,900": "default",
+            "0,0,inf,900": "default",
+            "0,0,0,900": "default",
+            "0,0,800,-1": "default",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / "main.swift"
+            main.write_text(
+                "for raw in CommandLine.arguments.dropFirst() {\n"
+                "    if let f = FixtureLaunchFrame.parse(raw) {\n"
+                '        print("\\(f.origin.x),\\(f.origin.y),\\(f.width),\\(f.height)")\n'
+                '    } else { print("default") }\n'
+                "}\n"
+            )
+            binary = Path(directory) / "parse"
+            subprocess.run(
+                ["swiftc", "-o", str(binary), str(main),
+                 str(E2E_ROOT.parent / "fixture-app" / "FixtureLaunchFrame.swift")],
+                check=True,
+                capture_output=True,
+            )
+            result = subprocess.run([str(binary), *cases], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.splitlines(), list(cases.values()))
 
 
 class HarnessSafetyTests(unittest.TestCase):
@@ -774,6 +863,10 @@ class PythonResolutionTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, f"{directory}/python3.11")
+        self.assertIn(
+            "AGENT_DESKTOP_E2E_PYTHON=/usr/bin/false is not Python 3.10 or newer; ignoring it",
+            result.stderr,
+        )
 
 
 if __name__ == "__main__":

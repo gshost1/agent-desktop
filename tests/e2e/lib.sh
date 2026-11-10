@@ -84,7 +84,15 @@ record_fixture_process() {
 }
 
 fixture_frame() {
-    "$bin" list-displays 2>/dev/null | fixture_frame_from_displays
+    "$bin" list-displays 2>/dev/null | fixture_frame_from_displays "${1:-}"
+}
+
+await_no_fixture_process() {
+    for _ in $(seq 1 25); do
+        [ -z "$(pgrep -x "$app" 2>/dev/null || true)" ] && return 0
+        sleep 0.2
+    done
+    return 1
 }
 
 fixture_window_frame() {
@@ -108,8 +116,8 @@ if len(request) != 4 or len(observed) != 4:
 rx, ry, rw, rh = request
 ox, oy, ow, oh = observed
 inside = ox >= rx - 2 and oy >= ry - 2 and ox + ow <= rx + rw + 2 and oy + oh <= ry + rh + 2
-sys.exit(0 if inside and abs(ow - rw) <= 2 and oh >= 720 else 1)
-' "$1" "$2" 2>/dev/null
+sys.exit(0 if inside and abs(ow - rw) <= 2 and oh >= int(sys.argv[3]) else 1)
+' "$1" "$2" "$fixture_min_height" 2>/dev/null
 }
 
 await_fixture_frame() {
@@ -126,12 +134,19 @@ await_fixture_frame() {
 }
 
 launch_fixture() {
-    local frame ready="" tries=0
+    local width="${1:-}" frame ready="" tries=0 previous_pid="$fixture_pid"
     local open_args=(open)
-    frame="$(fixture_frame)"
+    if ! await_no_fixture_process; then
+        badmsg "fixture launch refused: $app is already running as pid(s) $(pgrep -x "$app" 2>/dev/null | tr '\n' ' ')that the harness did not launch"
+        contaminated=1
+        return 1
+    fi
+    frame="$(fixture_frame "$width")"
     if [ -n "$frame" ]; then
         open_args+=(--env "AGENT_DESKTOP_FIXTURE_FRAME=$frame")
-        export AGENT_DESKTOP_FIXTURE_FRAME="$frame"
+        if [ -z "$width" ]; then
+            export AGENT_DESKTOP_FIXTURE_FRAME="$frame"
+        fi
     fi
     guard_exec 10 1048576 "${open_args[@]}" "$fixture_app" >/dev/null || return 2
     fixture_owned=1
@@ -149,6 +164,11 @@ launch_fixture() {
         return 1
     fi
     record_fixture_process || return 1
+    if [ -n "$previous_pid" ] && [ "$fixture_pid" = "$previous_pid" ]; then
+        badmsg "fixture launch adopted the previous process pid $previous_pid instead of a new one"
+        contaminated=1
+        return 1
+    fi
     okmsg "fixture launched and primary-button exposed with exact snapshot namespace"
     if [ -n "$frame" ]; then
         await_fixture_frame "$frame"

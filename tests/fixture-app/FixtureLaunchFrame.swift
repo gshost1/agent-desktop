@@ -3,18 +3,39 @@ import AppKit
 // Places the main fixture window at the frame the harness passes in
 // AGENT_DESKTOP_FIXTURE_FRAME as "x,y,width,height" in global top-left screen
 // points, the coordinate space `list-displays` and `list-windows` report. The
-// frame is cut to the visible area of the screen it lands on, so the menu bar
-// and the Dock never move it. The harness verifies the result through
-// `list-windows`, so no UI scripting is needed to normalize the window.
+// value is all-or-nothing: exactly four finite numbers with a positive width
+// and height, or the window keeps its default frame. The frame is cut to the
+// visible area of the screen it lands on, so the menu bar and the Dock never
+// move it. A frame saved by an earlier launch is restored when the window is
+// created; applying the requested frame replaces it. Autosave is turned off,
+// and every window-frame entry is removed from the fixture's defaults whenever
+// they change, because SwiftUI re-arms the autosave later in a window's life.
+// A launch with a requested frame therefore leaves no saved frame behind. The
+// harness verifies the result through `list-windows`, so no UI scripting is
+// needed.
 enum FixtureLaunchFrame {
     static let environmentKey = "AGENT_DESKTOP_FIXTURE_FRAME"
     static let mainWindowTitle = "AgentDesk Fixture"
+    static let savedFramePrefix = "NSWindow Frame "
+    private static var defaultsObserver: NSObjectProtocol?
 
     static func requested() -> NSRect? {
         guard let raw = ProcessInfo.processInfo.environment[environmentKey] else { return nil }
-        let parts = raw.split(separator: ",").compactMap { Double($0) }
-        guard parts.count == 4, parts[2] > 0, parts[3] > 0 else { return nil }
-        return NSRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
+        return parse(raw)
+    }
+
+    static func parse(_ raw: String) -> NSRect? {
+        let fields = raw.split(separator: ",", omittingEmptySubsequences: false)
+        guard fields.count == 4 else { return nil }
+        var values: [Double] = []
+        for field in fields {
+            guard let value = Double(field.trimmingCharacters(in: .whitespaces)), value.isFinite else {
+                return nil
+            }
+            values.append(value)
+        }
+        guard values[2] > 0, values[3] > 0 else { return nil }
+        return NSRect(x: values[0], y: values[1], width: values[2], height: values[3])
     }
 
     static func apply(_ topLeftFrame: NSRect, remainingAttempts: Int = 100) {
@@ -27,6 +48,8 @@ enum FixtureLaunchFrame {
             }
             return
         }
+        stopFrameAutosave(window)
+        removeSavedFrames()
         let cocoaFrame = NSRect(
             x: topLeftFrame.minX,
             y: primary.frame.maxY - topLeftFrame.minY - topLeftFrame.height,
@@ -36,5 +59,28 @@ enum FixtureLaunchFrame {
         let screen = NSScreen.screens.first { $0.frame.intersects(cocoaFrame) } ?? primary
         let visibleFrame = cocoaFrame.intersection(screen.visibleFrame)
         window.setFrame(visibleFrame.isEmpty ? cocoaFrame : visibleFrame, display: true)
+    }
+
+    static func keepFramesOutOfDefaults() {
+        removeSavedFrames()
+        guard defaultsObserver == nil else { return }
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { _ in
+            NSApp.windows.forEach(stopFrameAutosave)
+            removeSavedFrames()
+        }
+    }
+
+    private static func removeSavedFrames() {
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(savedFramePrefix) {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    private static func stopFrameAutosave(_ window: NSWindow) {
+        guard !window.frameAutosaveName.isEmpty else { return }
+        window.setFrameAutosaveName("")
     }
 }

@@ -171,16 +171,44 @@ copy_immutable_file() {
     copied_file_sha="$destination_hash"
 }
 
+fixture_min_width=980
+fixture_min_height=748
+
 fixture_frame_from_displays() {
     "$e2e_python" -c '
 import json, sys
+width = int(sys.argv[1]) if sys.argv[1] else 1000
 d = json.load(sys.stdin)["data"]
 best = max(d, key=lambda x: x["bounds"]["width"] * x["bounds"]["height"])
 b = best["bounds"]
-w = min(int(b["width"]) - 40, 1000)
+if int(b["width"]) - 40 < width and sys.argv[1]:
+    sys.exit(3)
+w = min(int(b["width"]) - 40, width)
 h = min(int(b["height"]) - 88, 1080)
 print(",".join(str(v) for v in (int(b["x"]) + 20, int(b["y"]) + 64, w, h)))
-' 2>/dev/null
+' "${1:-}" 2>/dev/null
+}
+
+fixture_frame_meets_minimum() {
+    "$e2e_python" -c '
+import sys
+parts = sys.argv[1].split(",")
+ok = len(parts) == 4 and float(parts[2]) >= int(sys.argv[2]) and float(parts[3]) >= int(sys.argv[3])
+sys.exit(0 if ok else 1)
+' "$1" "$fixture_min_width" "$fixture_min_height" 2>/dev/null
+}
+
+require_display_fits_fixture() {
+    local frame
+    frame="$("$1" list-displays 2>/dev/null | fixture_frame_from_displays)"
+    if [ -z "$frame" ]; then
+        echo "SKIP (blocked): display bounds are unreadable, so the fixture window frame cannot be normalized" >&2
+        return 1
+    fi
+    if ! fixture_frame_meets_minimum "$frame"; then
+        echo "SKIP (blocked): the largest display leaves a fixture frame of $frame (x,y,width,height); the scenarios need at least ${fixture_min_width}x${fixture_min_height} points. Use a display of at least $((fixture_min_width + 40))x$((fixture_min_height + 88)) points." >&2
+        return 1
+    fi
 }
 
 guard_exec() {

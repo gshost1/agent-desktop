@@ -16,7 +16,10 @@ The single prerequisite gate requires:
 - macOS;
 - Python 3.10 or newer. The harness uses `AGENT_DESKTOP_E2E_PYTHON` when it
   names one, then the first of `python3.14` through `python3.10` on `PATH`, then
-  `python3` if it is new enough, so the 3.9 at `/usr/bin/python3` is never used;
+  `python3` if it is new enough, so the 3.9 at `/usr/bin/python3` is never used.
+  An override that is older is reported and ignored;
+- a display that leaves room for the fixture's minimum window, at least
+  1020x836 points, or the run stops with exit `2` before any scenario;
 - Accessibility permission granted to the terminal or runner; and
 - a buildable Swift fixture app.
 
@@ -47,8 +50,13 @@ The harness then builds and launches `AgentDeskFixture.app`. Every fixture
 launch passes `AGENT_DESKTOP_FIXTURE_FRAME` (`x,y,width,height` in top-left
 screen points), a 1000-point-wide frame on the largest display. The fixture
 places its window there, cut to the screen's visible area, and the harness
-checks the result with `list-windows`. Without it, the window reopens at the
-size the previous run left in the fixture's saved state. Once the fixture is
+checks the result with `list-windows`. A launch with that variable replaces any
+frame an earlier launch saved and leaves no saved frame in the
+`com.agentdesktop.fixture` defaults. A launch refuses to start while another
+fixture process is running, and refuses a recorded process that has the
+previous pid. `scenarios/wide_window.sh` relaunches the fixture 1300 points
+wide, wider than its content, and asserts a plain click on `primary-button`; it
+reports `SKIP` when the display is narrower than 1340 points. Once the fixture is
 running, a missing control, window, status readout, bounds record, or surface is
 a test failure. Scenarios never turn a missing prerequisite into a successful
 `SKIP`. Exit `0` means every assertion passed from an uncontaminated run, exit

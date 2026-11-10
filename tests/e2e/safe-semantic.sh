@@ -350,6 +350,8 @@ establish_neutral_front_window || blocked "frontmost identity is missing or ambi
 
 fixture_frame="$(agent_exec 0 list-displays 2>/dev/null | fixture_frame_from_displays)"
 [ -n "$fixture_frame" ] || blocked "display bounds are unreadable, so the fixture window frame cannot be normalized"
+fixture_frame_meets_minimum "$fixture_frame" || \
+    blocked "the largest display leaves a fixture frame of $fixture_frame; the scenarios need at least ${fixture_min_width}x${fixture_min_height} points"
 AGENT_DESKTOP_FIXTURE_FRAME="$fixture_frame" AGENT_DESKTOP_FIXTURE_NO_ACTIVATE=1 "$fixture_executable" \
     >"$suite_root/fixture.stdout" 2>"$suite_root/fixture.stderr" &
 fixture_pid=$!

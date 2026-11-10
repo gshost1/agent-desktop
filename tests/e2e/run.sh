@@ -54,6 +54,7 @@ if [ ! -f "$release_ffi" ] || [ ! -x "$release_ffi_helper" ]; then
     echo "release FFI bundle missing; build agent-desktop-ffi with release-ffi and the agent-desktop-macos-helper binary with release" >&2
     exit 2
 fi
+require_display_fits_fixture "$release_bin" || exit 2
 note "Strict headless non-interference gate"
 AGENT_DESKTOP_E2E_RELEASE_BIN="$release_bin" bash "$here/safe-semantic.sh"
 safe_semantic_status=$?
@@ -114,6 +115,9 @@ source "$here/scenarios/keyboard.sh"
 check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/trace_performance.sh
 source "$here/scenarios/trace_performance.sh"
+check_fixture_contention || { finish; exit 1; }
+# shellcheck source=tests/e2e/scenarios/wide_window.sh
+source "$here/scenarios/wide_window.sh"
 check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/notifications.sh
 source "$here/scenarios/notifications.sh"
