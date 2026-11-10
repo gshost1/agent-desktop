@@ -1,72 +1,111 @@
-use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, Rect};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, Direction, ErrorCode};
 use std::time::Duration;
 
+use super::scroll_signals::ScrollSignals;
 use crate::tree::AXElement;
 
-const SETTLE_READS: usize = 3;
-const SETTLE_PAUSE: Duration = Duration::from_millis(20);
+const SETTLE_READS: usize = 11;
+const SETTLE_PAUSE: Duration = Duration::from_millis(25);
 
-/// Reads where a scroll area's content sits: the frame of its first child that
-/// is not a scroll bar. Scrolling moves that frame, so comparing it before and
-/// after a page action shows whether the action moved anything. A failed read
-/// is no observation, never a claim that nothing moved.
-pub(super) fn content_frame(area: &AXElement, deadline: Deadline) -> Option<Rect> {
-    let children = super::scroll_read::children(area, deadline).ok()?;
+/// Reads every signal a page scroll on `direction`'s axis could move: that
+/// axis's scroll bar value, the frame of the area's first child that is not a
+/// scroll bar, and that child's first child. A signal that exists but cannot
+/// be read is recorded as unreadable, never as unchanged.
+pub(super) fn capture(
+    area: &AXElement,
+    direction: &Direction,
+    deadline: Deadline,
+) -> ScrollSignals {
+    let bar_attribute = match direction {
+        Direction::Up | Direction::Down => "AXVerticalScrollBar",
+        Direction::Left | Direction::Right => "AXHorizontalScrollBar",
+    };
+    let bar = match super::scroll_read::element(area, bar_attribute, deadline) {
+        Ok(Some(bar)) => Some(
+            super::scroll_read::number(&bar, "AXValue", deadline)
+                .ok()
+                .flatten()
+                .map(f64::to_bits),
+        ),
+        Ok(None) => None,
+        Err(_) => Some(None),
+    };
+    let content = content_child(area, deadline);
+    let descendant = match &content {
+        Some(Some(child)) => match super::scroll_read::children(child, deadline) {
+            Ok(children) => children.first().map(|first| frame_hash(first, deadline)),
+            Err(_) => Some(None),
+        },
+        Some(None) => Some(None),
+        None => None,
+    };
+    ScrollSignals {
+        bar,
+        content: content.map(|child| child.and_then(|child| frame_hash(&child, deadline))),
+        descendant,
+    }
+}
+
+fn content_child(area: &AXElement, deadline: Deadline) -> Option<Option<AXElement>> {
+    let Ok(children) = super::scroll_read::children(area, deadline) else {
+        return Some(None);
+    };
     for child in children {
-        let role = super::scroll_read::string(&child, "AXRole", deadline).ok()?;
-        if role.as_deref() == Some("AXScrollBar") {
-            continue;
+        match super::scroll_read::string(&child, "AXRole", deadline) {
+            Ok(Some(role)) if role == "AXScrollBar" => continue,
+            Ok(_) => return Some(Some(child)),
+            Err(_) => return Some(None),
         }
-        let instant = crate::tree::locator_deadline::from_operation(deadline).ok()?;
-        return crate::tree::element_bounds::read_bounds_with_deadline(&child, instant)
-            .ok()
-            .flatten();
     }
     None
 }
 
+fn frame_hash(element: &AXElement, deadline: Deadline) -> Option<u64> {
+    let instant = crate::tree::locator_deadline::from_operation(deadline).ok()?;
+    crate::tree::element_bounds::read_bounds_with_deadline(element, instant)
+        .ok()
+        .flatten()
+        .and_then(|frame| frame.bounds_hash())
+}
+
 /// Settles a page action that failed on its first step. `kAXErrorCannotComplete`
-/// alone cannot tell a hung application from a scroll area that has no page
-/// to move to, so the content frame read before the action is compared with a
-/// fresh read: content that stayed put proves the action did nothing, which is
-/// an unavailable action and not an unresponsive application. Content that
-/// moved means the scroll happened. Any other error, or a frame that cannot be
-/// read, keeps the original error and its uncertain disposition.
+/// alone cannot tell a hung application from a scroll area that has no page to
+/// move to. Any signal that moved means the scroll happened. The action counts
+/// as undelivered only when every signal the area has stayed readable and
+/// unchanged for the whole settle window, long enough for an animated scroll
+/// to start. Anything less keeps the original error and its uncertain
+/// disposition, because an unchanged or unreadable state is not proof.
 pub(super) fn settle_refusal(
     area: &AXElement,
-    action: &str,
-    before: Option<Rect>,
+    direction: &Direction,
+    before: ScrollSignals,
     error: AdapterError,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
     settle_observed(
-        action,
+        super::page_action(direction),
         before,
         error,
-        || content_frame(area, deadline),
+        || capture(area, direction, deadline),
         || pause_for_settle(deadline),
     )
 }
 
 pub(super) fn settle_observed(
     action: &str,
-    before: Option<Rect>,
+    before: ScrollSignals,
     error: AdapterError,
-    mut read_after: impl FnMut() -> Option<Rect>,
+    mut read_after: impl FnMut() -> ScrollSignals,
     mut pause: impl FnMut() -> bool,
 ) -> Result<(), AdapterError> {
     if !is_first_step_cannot_complete(&error) {
         return Err(error);
     }
-    let Some(before) = before.and_then(|frame| frame.bounds_hash()) else {
-        return Err(error);
-    };
     for read in 0..SETTLE_READS {
-        let Some(after) = read_after() else {
-            return Err(error);
-        };
-        if after.bounds_hash() != Some(before) {
-            return Ok(());
+        match before.movement(read_after()) {
+            Some(true) => return Ok(()),
+            Some(false) => {}
+            None => return Err(error),
         }
         if read + 1 < SETTLE_READS && !pause() {
             return Err(error);
@@ -103,7 +142,7 @@ fn unavailable_page_action(action: &str, source: &AdapterError) -> AdapterError 
         "kind": "scroll_action_unavailable",
         "operation": action,
         "ax_error": accessibility_sys::kAXErrorCannotComplete,
-        "content_moved": false,
+        "scroll_signals_unchanged": true,
     }))
     .with_disposition(DeliverySemantics::not_delivered())
     .with_suggestion(

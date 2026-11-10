@@ -8,6 +8,7 @@ pub(crate) mod scroll_into_view;
 mod scroll_page;
 mod scroll_plan;
 mod scroll_read;
+mod scroll_signals;
 
 const MAX_SCROLL_AMOUNT: u32 = 1_000;
 
@@ -39,12 +40,12 @@ pub(crate) fn ax_scroll(
         }
     }
     let page = page_action(direction);
-    let content_before = scroll_page::content_frame(target, deadline);
+    let before = scroll_page::capture(target, direction, deadline);
     match perform_repeated_action(target, page, amount, deadline) {
         Ok(true) => return Ok((StepMechanism::SemanticApi, false)),
         Ok(false) => {}
         Err(error) => {
-            scroll_page::settle_refusal(target, page, content_before, error, deadline)?;
+            scroll_page::settle_refusal(target, direction, before, error, deadline)?;
             if amount > 1 {
                 return Err(partial_scroll_error(page, 1, amount, None));
             }
