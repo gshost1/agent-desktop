@@ -252,7 +252,7 @@ fn test_run_from_ref_returns_subtree_and_persists_refs() {
         "drilled refs must retain an absolute path for fast, scoped resolution"
     );
     assert_eq!(drill_entry.scope.path.as_slice(), [0, 0]);
-    assert!(drill_entry.identity.unique_at_capture);
+    assert!(drill_entry.identity.capture.is_unique());
 }
 
 #[test]

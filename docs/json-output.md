@@ -4,7 +4,7 @@ Every command returns structured JSON:
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "click",
   "data": {
@@ -18,7 +18,7 @@ Errors include machine-readable codes and recovery hints:
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": false,
   "command": "click",
   "error": {
@@ -89,7 +89,7 @@ With it, each snapshot tree a command returns is replaced by `data.lines`, an ar
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "snapshot",
   "data": {
@@ -305,7 +305,7 @@ Each of these commands now returns the adapter's own report inside `data`:
 
 Version 2.6 changes which refs resolve on Windows and Linux, and on macOS for an element that yields no address. Such a ref resolves only when one complete read of its window proved it unique when it was captured and exactly one live element matches its role and stable fields now. The only new payload fields are `data.identity_unproven` and, on a ref action whose budget ran out after a refusal, `error.details.refusal`.
 
-- A ref to one of two identical controls, which earlier resolved by position or geometry, now fails `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"` before anything is read. So does a ref captured from a window that could not be read whole within the snapshot timeout.
+- A ref to one of two identical controls, which earlier resolved by position or geometry, now fails `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"` before anything is read. So does a ref captured from a window that could not be read whole within the snapshot timeout. Version 2.7 moves that second case to `STALE_REF`; see the version 2.7 migration.
 - A refmap written before 2.6 records no capture proof, so all of its refs on these platforms fail the same way. Take a new snapshot.
 - An identical twin that appears after capture fails `AMBIGUOUS_TARGET` with `details.kind: "saved_ref_ambiguous"`.
 - All of these carry `details.retryable: false` and a `not_delivered` disposition. `disposition.retry` stays `safe` because nothing was sent, but repeating the same ref returns the same refusal.
@@ -314,7 +314,7 @@ Version 2.6 changes which refs resolve on Windows and Linux, and on macOS for an
 - On macOS, `open-system-surface --surface dock` and `--surface menu-bar-extras` now succeed headless. Their `data` has no `window`; check for the field before reading it. Windows and Linux still return `window` and need `--headed`.
 - On macOS, a snapshot of a background app that lists no window (a menu-bar app, the Dock, Control Center), and `--surface dock` or `--surface menu-bar-extras`, now succeed and read the app through its process. Earlier they failed `WINDOW_NOT_FOUND`. `data.window` is omitted from such a snapshot and `data.app` names the process; check for the field before reading `data.window.id`.
 
-A snapshot that needed one complete read of its window to prove its refs, and could not get it, says so with `"identity_unproven": true` in `data`. `complete` still describes the presented tree. On Windows and Linux, and on macOS for an element with no address, every ref of that snapshot fails `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"`; retake the snapshot with a larger `--timeout-ms`. The field is omitted otherwise.
+A snapshot that needed one complete read of its window to prove its refs, and could not get it, says so with `"identity_unproven": true` in `data`. `complete` still describes the presented tree. On Windows and Linux, and on macOS for an element with no address, a ref of that snapshot fails `STALE_REF` with `details.kind: "identity_unproven"`, `details.reason: "capture_incomplete"` and `details.retryable: false`; retake the snapshot with a larger `--timeout-ms`. A ref with an identical twin inside the part the snapshot did read still fails `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"`, because a longer read cannot remove the twin. The field is omitted otherwise.
 
 A `--surface web` snapshot of a browser that lists no window, such as one whose window is on another Space, is owned by the browser process when `launch --cdp` recorded a DevTools endpoint for that exact process. It omits `data.window`, and `data.app` names the process. Without a recorded endpoint it fails `WINDOW_NOT_FOUND` as before. `open-url` and `find --surface web` resolve the browser the same way.
 
@@ -355,9 +355,21 @@ When a ref action returns `delivery_uncertain` with a post-action wait selector,
 | `timed_out` | The wait budget expired without observing the expected state, including when transient read errors persisted through the last poll. `last_observation_error` may hold the last error. |
 | `identity_unavailable` | The ref has no usable process generation, so observation was skipped. |
 
+## Version 2.7 migration
+
+Version 2.7 changes the error code of ref refusals on Windows and Linux, and on macOS for an element that yields no address. A refmap now records why its capture could not prove a ref, so a ref the capture could not count no longer reads as an identical twin. A twin the capture saw still does, even when it saw only part of the window.
+
+- A ref from a snapshot that could not read its window whole (the snapshot reported `data.identity_unproven`) failed `AMBIGUOUS_TARGET` with `details.kind: "identity_not_unique"` in 2.6. It now fails `STALE_REF` with `details.kind: "identity_unproven"` and `details.reason: "capture_incomplete"`, unless the part the snapshot did read already held an identical twin, which still fails `identity_not_unique`. The 2.6 bullet that put this case under `identity_not_unique` is superseded.
+- A ref whose capture read the whole window, but where an element left a field the ref records unread (so the count could not exclude a twin), also failed `identity_not_unique`. It now fails `STALE_REF` with `details.kind: "identity_unproven"` and `details.reason: "capture_unknown"`. So does a ref whose own element left a recorded field unread or whose recorded fields match one other element and not its own, in a whole or a partial read, and a ref no capture judged.
+- `capture_incomplete` carries `details.retryable: false` and no `recovery`: repeating the ref returns the same refusal, and retaking the snapshot at the same timeout falls short the same way. Retake it with a larger `--timeout-ms`.
+- `capture_unknown` carries `details.retryable: false` and no `recovery`, because a field that cannot be read may stay unreadable in every snapshot. Target the element through a different selector, or use an explicit `--headed` coordinate click where headed pointer input is available.
+- Both reasons keep the disposition `not_delivered` with `retry: "safe"`, because nothing is sent.
+- `AMBIGUOUS_TARGET` with `identity_not_unique` now means the capture saw two or more elements matching the ref, in a whole or a partial read. It can still come from a refmap written before 2.7, which recorded only that a ref was not unique and so reads every unproven ref as a twin; take a new snapshot to learn which case it is.
+- Refmaps written before 2.7 still load. Every refmap entry now carries `capture` (`"unique"`, `"ambiguous"`, `"incomplete"` or `"unknown"`); an entry without it is read as an older refmap through its `unique_at_capture` flag. A proven entry also keeps `unique_at_capture: true`, so a 2.6 binary still resolves the refs a 2.7 snapshot proved and refuses the rest as `identity_not_unique`. A `capture` name this version does not know reads as `unknown`, and a `unique_at_capture` that contradicts `capture` makes the entry `unknown`; neither fails the refmap.
+
 ## Web channel
 
-The envelope version stays `2.6`. The web channel adds fields and one command; nothing existing changes shape.
+The web channel arrived with envelope version `2.6`. It adds fields and one command; nothing existing changes shape.
 
 `snapshot --surface web --app <browser>` reads the page the browser window shows. When the browser exposes a DevTools endpoint that its own process owns, the page is read over CDP and `data` carries:
 
@@ -433,8 +445,9 @@ them, and `find --first` answers it without reading the rows. Only when nothing
 outside the rows matches does it read them, and then it returns the first match
 inside them. Platforms that read the tree in document order return the first
 match in document order. A ref from such an answer re-identifies by element
-token. A platform without one keeps its usual rule: an element it cannot prove
-unique gets the `identity_not_unique` refusal when you act on it.
+token. A platform without one keeps its usual rule: an element whose capture
+saw a twin gets the `identity_not_unique` refusal when you act on it, and one
+the capture could not count gets `identity_unproven`.
 
 ### Partial results
 
@@ -532,20 +545,21 @@ with its own ref and name; its text runs leave the tree:
 
 ## Ref re-identification details
 
-Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these four kinds:
+Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these five kinds:
 
 | `details.kind` | Code | Meaning |
 |------|------|---------|
 | `retained_object_stale` | `STALE_REF` | macOS: the element's recorded address is dead, or its process, role or recorded identifier no longer matches. `details.reason` is `dead`, `pid`, `role` or `native_identifier`. No search runs, so the ref cannot land on a look-alike. Take a fresh snapshot. |
 | `saved_ref_absent` | `STALE_REF` | No live element matches the stored role and stable fields over complete evidence, so the element is gone. Take a fresh snapshot. |
 | `saved_ref_ambiguous` | `AMBIGUOUS_TARGET` | An element identical to the captured one appeared, so two or more live elements match the stored role and stable fields. A fresh snapshot refuses both as twins; act on a control that is unique in the window. |
-| `identity_not_unique` | `AMBIGUOUS_TARGET` | The ref was not proven the only element matching its role and stable fields when it was captured, so nothing is searched. Either an identical twin existed, or the window could not be read whole within the snapshot timeout (retake the snapshot with a larger `--timeout-ms`). It is reached on Windows, on Linux, and on macOS when the element yields no address. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
+| `identity_not_unique` | `AMBIGUOUS_TARGET` | The capture counted two or more elements matching the ref's role and stable fields, so nothing is searched. It is reached on Windows, on Linux, and on macOS when the element yields no address, and for every unproven ref of a refmap written before 2.7, which a new snapshot re-judges. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
+| `identity_unproven` | `STALE_REF` | No capture proved the ref, so nothing is searched and no twin was seen. Both reasons carry `details.retryable: false` and no `recovery`. `details.reason` is `capture_incomplete` when the capture was not a complete read of the whole window (the snapshot reports `data.identity_unproven`) or no longer holds the path a drill recorded: retake the snapshot with a larger `--timeout-ms`. It is `capture_unknown` when an element in the window left a field the ref records unread, the ref's fields match one other element and not its own, or no capture judged the ref: a new snapshot may read the same way, so use a different selector or an explicit `--headed` coordinate click. A twin seen in a partial read is `identity_not_unique`, not this kind. |
 
 Two outcomes are retryable. `saved_ref_landing_moved` carries `STALE_REF` with `details.complete: false` and `details.retryable: true`: the whole-window count found the element exactly once, but a different element sat at its path when the resolver reached it, as when a list re-sorts during the read. The element was there and only the descent disagreed, so this is not `saved_ref_absent`; the next attempt counts again. A ref action retries it at most twice in a row and answers the third with `saved_ref_absent`. A landing with no count just before it, such as the C find entry point's first-match landing, reports `saved_ref_absent` instead.
 
 The other is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
 
-After the core resolver chooses the element, the platform adapter lands it, and a landing failure keeps the adapter's own `details.kind` (for example `resolve_no_candidate` on Linux and Windows, or `resolution_complete_absence` on macOS). The platform skills list those kinds. `saved_ref_absent`, `saved_ref_ambiguous` and `identity_not_unique` carry `details.retryable: false`, because waiting cannot change the answer. Every one of these is `not_delivered`.
+After the core resolver chooses the element, the platform adapter lands it, and a landing failure keeps the adapter's own `details.kind` (for example `resolve_no_candidate` on Linux and Windows, or `resolution_complete_absence` on macOS). The platform skills list those kinds. `saved_ref_absent`, `saved_ref_ambiguous`, `identity_not_unique` and `identity_unproven` carry `details.retryable: false`, because waiting cannot change the answer. Every one of these is `not_delivered`, `identity_unproven` included.
 
 A refusal without `details.retryable: true` ends every wait at once. With it, what happens next depends on the caller. A ref action (its auto-wait, its retry under the interaction lease, and the pointer actions' waits) treats a known complete absence, a `STALE_REF` with `details.complete: true` and kind `resolve_no_candidate`, `resolution_complete_absence` or `saved_ref_absent`, as final and answers at once, whatever its `retryable` stamp, because the recovery is a new snapshot. That includes a list rebuilt under the lease while the action resolved it. It polls any other retryable resolution refusal within its budget; when the budget runs out on a retryable `STALE_REF` or `AMBIGUOUS_TARGET` read over complete evidence, it reports that refusal with `details.elapsed_ms` instead of the actionability `TIMEOUT`. `wait --element` waits for an element to appear, so it keeps polling every retryable refusal, a complete absence included, until its deadline.
 
