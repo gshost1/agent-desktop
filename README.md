@@ -42,7 +42,7 @@ Each command prints one JSON envelope. Add `--lines` to get the tree as `data.li
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": true,
   "command": "snapshot",
   "data": {
