@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=tests/e2e/python.sh
+source "$repo/tests/e2e/python.sh"
 json_tool="$repo/tests/e2e/json_tool.py"
 command_guard="$repo/tests/e2e/guard-command.sh"
 release_bin="${AGENT_DESKTOP_E2E_RELEASE_BIN:-$repo/target/release/agent-desktop}"
@@ -29,7 +31,7 @@ acquire_exclusive_lock() {
             return 1
             ;;
     esac
-    if ! python3 "$repo/tests/e2e/interaction_lock.py" verify \
+    if ! "$e2e_python" "$repo/tests/e2e/interaction_lock.py" verify \
         "$AGENT_DESKTOP_INTERACTION_LEASE_FD"; then
         echo "SKIP (blocked): inherited interaction lease FD is invalid" >&2
         return 1
@@ -48,12 +50,14 @@ setup_isolated_environment() {
     printf '%s\n' "$$" > "$suite_root/.agent-desktop-e2e-root"
     mkdir -p "$suite_root/home" "$suite_root/tmp" "$suite_root/bin" "$suite_root/fixture"
     chmod 700 "$suite_root/tmp"
+    export CARGO_HOME="${CARGO_HOME:-$host_home/.cargo}"
+    export RUSTUP_HOME="${RUSTUP_HOME:-$host_home/.rustup}"
     export HOME="$suite_root/home"
     export TMPDIR="$suite_root/tmp"
     export XDG_CACHE_HOME="$suite_root/home/.cache"
     export XDG_CONFIG_HOME="$suite_root/home/.config"
     export XDG_DATA_HOME="$suite_root/home/.local/share"
-    export CARGO_TARGET_DIR="$suite_root/cargo-target"
+    export CARGO_TARGET_DIR="${AGENT_DESKTOP_E2E_CARGO_TARGET_DIR:-$suite_root/cargo-target}"
     export AGENT_DESKTOP_E2E_TIMEOUT_SECONDS="${AGENT_DESKTOP_E2E_TIMEOUT_SECONDS:-20}"
     export AGENT_DESKTOP_E2E_MAX_CAPTURE_BYTES="${AGENT_DESKTOP_E2E_MAX_CAPTURE_BYTES:-2097152}"
     unset AGENT_DESKTOP_SESSION
@@ -167,13 +171,25 @@ copy_immutable_file() {
     copied_file_sha="$destination_hash"
 }
 
+fixture_frame_from_displays() {
+    "$e2e_python" -c '
+import json, sys
+d = json.load(sys.stdin)["data"]
+best = max(d, key=lambda x: x["bounds"]["width"] * x["bounds"]["height"])
+b = best["bounds"]
+w = min(int(b["width"]) - 40, 1000)
+h = min(int(b["height"]) - 88, 1080)
+print(",".join(str(v) for v in (int(b["x"]) + 20, int(b["y"]) + 64, w, h)))
+' 2>/dev/null
+}
+
 guard_exec() {
     local timeout_seconds="$1"
     local max_capture_bytes="$2"
     shift 2
     AGENT_DESKTOP_E2E_TIMEOUT_SECONDS="$timeout_seconds" \
         AGENT_DESKTOP_E2E_MAX_CAPTURE_BYTES="$max_capture_bytes" \
-        python3 "$json_tool" exec "$@"
+        "$e2e_python" "$json_tool" exec "$@"
 }
 
 guard_agent_wrapper_exec() {
@@ -183,5 +199,5 @@ guard_agent_wrapper_exec() {
     AGENT_DESKTOP_E2E_TIMEOUT_SECONDS="$timeout_seconds" \
         AGENT_DESKTOP_E2E_MAX_CAPTURE_BYTES="$max_capture_bytes" \
         AGENT_DESKTOP_E2E_INHERIT_LEASE=1 \
-        python3 "$json_tool" exec "$@"
+        "$e2e_python" "$json_tool" exec "$@"
 }

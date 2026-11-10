@@ -1,6 +1,7 @@
 import re
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,13 @@ SOURCED_SUITE_FILES = [
     E2E_ROOT / "lib.sh",
     *sorted((E2E_ROOT / "scenarios").glob("*.sh")),
 ]
+
+def shell_function_body(path: Path, name: str) -> str:
+    match = re.search(rf"^{name}\(\) \{{(?P<body>.*?)\n\}}", path.read_text(), re.DOTALL | re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"{name} is not defined in {path.name}")
+    return match.group("body")
+
 
 class HarnessContractTests(unittest.TestCase):
     def test_sourced_suite_has_one_canonical_exit_path(self):
@@ -77,7 +85,7 @@ class HarnessContractTests(unittest.TestCase):
 
     def test_multi_agent_probe_runs_before_the_interaction_lease_is_released(self):
         source = (E2E_ROOT / "run.sh").read_text()
-        lease_holder = source.index('exec python3 "$here/interaction_lock.py"')
+        lease_holder = source.index('exec "$e2e_python" "$here/interaction_lock.py"')
         probe = source.index("cursor-multi-agent-probe.py")
         finishes = [match.start() for match in re.finditer(r"^finish$", source, re.MULTILINE)]
 
@@ -92,7 +100,10 @@ class HarnessContractTests(unittest.TestCase):
 
         cli_build = source.index("cargo build --locked --release -p agent-desktop")
         ffi_build = source.index("cargo build --locked --profile release-ffi")
-        desktop_lock = source.index('exec python3 "$here/interaction_lock.py"')
+        desktop_lock = source.index('exec "$e2e_python" "$here/interaction_lock.py"')
+        permission_tests = source.index("cargo test --locked --no-run --lib")
+        self.assertLess(permission_tests, desktop_lock)
+        self.assertIn('export AGENT_DESKTOP_E2E_CARGO_TARGET_DIR="$repo/target"', source)
         self.assertLess(cli_build, desktop_lock)
         self.assertLess(ffi_build, desktop_lock)
         self.assertIn(
@@ -105,10 +116,10 @@ class HarnessContractTests(unittest.TestCase):
         )
 
     def test_post_launch_readiness_failure_still_closes_owned_fixture(self):
-        run_source = (E2E_ROOT / "run.sh").read_text()
-        opened = run_source.index('guard_exec 10 1048576 open "$fixture_app"')
-        owned = run_source.index("fixture_owned=1", opened)
-        readiness = run_source.index('if [ -z "$ready" ]', owned)
+        launch = shell_function_body(E2E_ROOT / "lib.sh", "launch_fixture")
+        opened = launch.index('guard_exec 10 1048576 "${open_args[@]}" "$fixture_app"')
+        owned = launch.index("fixture_owned=1", opened)
+        readiness = launch.index('if [ -z "$ready" ]', owned)
         self.assertLess(opened, owned)
         self.assertLess(owned, readiness)
 
@@ -416,7 +427,6 @@ PRIVATE_SITE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PRIVATE_GUARDS = {
-    "run.sh": ("if private_skip_enabled; then", 'osascript -e "tell application'),
     "scenarios/notifications.sh": (
         "if private_skip_enabled; then",
         'if osascript -e "display notification',
@@ -562,6 +572,208 @@ printf 'pass=%s fail=%s skip=%s private=%s\n' "$pass" "$fail" "$skip" "${#privat
         )
         self.assertNotEqual(unset.returncode, 0)
         self.assertNotIn("SKIP (private)", unset.stdout)
+
+
+class FixtureLifecycleTests(unittest.TestCase):
+    def run_lib(self, body: str) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as directory:
+            mock_bin = Path(directory) / "agent-desktop"
+            mock_bin.write_text("#!/bin/sh\nexit 1\n")
+            mock_bin.chmod(0o700)
+            script = (
+                'source "$1"\n'
+                'bin="$2"\n'
+                "sleep() { :; }\n"
+                "guard_exec() { return 0; }\n"
+                "find_target() { return 0; }\n"
+                "fixture_frame() { :; }\n"
+                'pgrep() { [ -n "$current_pid" ] && printf "%s\\n" "$current_pid"; }\n' + body
+            )
+            return subprocess.run(
+                ["bash", "-c", script, "lifecycle", str(E2E_ROOT / "lib.sh"), str(mock_bin)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+    def test_relaunch_moves_the_expected_owner_and_contention_still_catches_a_change(self):
+        result = self.run_lib(
+            "current_pid=111\n"
+            "launch_fixture && check_fixture_contention && echo first-owner-ok\n"
+            "current_pid=\n"
+            "check_fixture_contention || echo vanished-caught\n"
+            "contaminated=0\n"
+            "current_pid=222\n"
+            "launch_fixture && check_fixture_contention && echo relaunched-owner-ok\n"
+            "current_pid=333\n"
+            "check_fixture_contention || echo replaced-caught\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for marker in ("first-owner-ok", "vanished-caught", "relaunched-owner-ok", "replaced-caught"):
+            self.assertIn(marker, result.stdout)
+        self.assertIn("expected pid '222', found '333'", result.stdout)
+
+    def test_force_close_observation_is_followed_by_a_relaunch_and_a_contention_check(self):
+        scenario = (E2E_ROOT / "scenarios" / "trace_performance.sh").read_text()
+        force_close = scenario.index('"$bin" close-app "$app" --force')
+        relaunch = scenario.index("launch_fixture || abort_suite", force_close)
+        self.assertLess(force_close, relaunch)
+        run_source = (E2E_ROOT / "run.sh").read_text()
+        trace = run_source.index('source "$here/scenarios/trace_performance.sh"')
+        notifications = run_source.index('source "$here/scenarios/notifications.sh"')
+        self.assertIn(CONTENTION_GUARD, run_source[trace:notifications])
+
+    def test_launch_passes_the_normalized_frame_and_verifies_it_by_observation(self):
+        launch = shell_function_body(E2E_ROOT / "lib.sh", "launch_fixture")
+        self.assertIn('open_args+=(--env "AGENT_DESKTOP_FIXTURE_FRAME=$frame")', launch)
+        self.assertIn('await_fixture_frame "$frame"', launch)
+        self.assertIn('export AGENT_DESKTOP_FIXTURE_FRAME="$frame"', launch)
+        safe_semantic = (E2E_ROOT / "safe-semantic.sh").read_text()
+        self.assertIn(
+            'AGENT_DESKTOP_FIXTURE_FRAME="$fixture_frame" AGENT_DESKTOP_FIXTURE_NO_ACTIVATE=1 "$fixture_executable"',
+            safe_semantic,
+        )
+        swift = (E2E_ROOT.parent / "fixture-app" / "FixtureLaunchFrame.swift").read_text()
+        self.assertIn('"AGENT_DESKTOP_FIXTURE_FRAME"', swift)
+
+    def test_frame_check_accepts_a_visible_area_cut_and_rejects_a_moved_or_narrow_window(self):
+        result = self.run_lib(
+            'frame_fits_request 20,64,1000,868 21,63,1001,868 && echo exact\n'
+            'frame_fits_request 20,64,1000,868 20,64,1000,795 && echo dock-cut\n'
+            'frame_fits_request 20,64,1000,868 20,34,1000,825 || echo above-request\n'
+            'frame_fits_request 20,64,1000,868 20,64,900,868 || echo narrower\n'
+            'frame_fits_request 20,64,1000,868 20,64,1000,600 || echo too-short\n'
+            'frame_fits_request 20,64,1000,868 20,64 || echo malformed\n'
+        )
+        self.assertEqual(
+            result.stdout.split(),
+            ["exact", "dock-cut", "above-request", "narrower", "too-short", "malformed"],
+            result.stderr,
+        )
+
+
+MANUAL_PRIVATE_SCRIPTS = {"native-menus.py"}
+
+
+class HarnessSafetyTests(unittest.TestCase):
+    def test_no_harness_file_uses_system_events_or_a_full_screen_capture(self):
+        paths = [
+            path
+            for path in sorted(E2E_ROOT.rglob("*"))
+            if path.suffix in (".sh", ".py")
+            and not path.name.startswith("test_")
+            and path.name not in MANUAL_PRIVATE_SCRIPTS
+        ]
+        paths.append(E2E_ROOT.parent.parent / "scripts" / "cursor-multi-agent-probe.py")
+        for path in paths:
+            source = path.read_text()
+            self.assertNotIn("System Events", source, path.name)
+            self.assertNotIn("screencapture", source, path.name)
+
+    def test_run_never_calls_a_manual_private_script(self):
+        run_source = (E2E_ROOT / "run.sh").read_text()
+        for name in MANUAL_PRIVATE_SCRIPTS:
+            self.assertNotIn(name, run_source)
+
+    def test_safety_checkpoint_never_prints_the_window_list(self):
+        source = shell_function_body(E2E_ROOT / "safe-semantic.sh", "safety_checkpoint")
+        self.assertIn("focus-summary", source)
+        self.assertNotRegex(source, r"printf [^\n]*\$windows")
+
+
+class PrivateScenarioListTests(unittest.TestCase):
+    def declared(self) -> list:
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; printf "%s\\n" "${private_scenarios[@]}"', "list", str(E2E_ROOT / "lib.sh")],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.splitlines()
+
+    def test_every_private_skip_names_a_declared_scenario_and_every_scenario_is_used(self):
+        used = []
+        for path in sorted((E2E_ROOT / "scenarios").glob("*.sh")):
+            for label in re.findall(r'private_skip "([^"]+)"', path.read_text()):
+                used.append(label.split(" (", 1)[0])
+        self.assertEqual(sorted(used), sorted(self.declared()))
+
+    def test_list_skipped_prints_the_scenarios_and_builds_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory) / "calls"
+            cargo = Path(directory) / "cargo"
+            cargo.write_text(f'#!/bin/sh\necho cargo >> "{calls}"\n')
+            cargo.chmod(0o700)
+            environment = os.environ.copy()
+            environment["PATH"] = f"{directory}{os.pathsep}{environment['PATH']}"
+            result = subprocess.run(
+                ["bash", str(E2E_ROOT / "run.sh"), "--list-skipped"],
+                capture_output=True,
+                text=True,
+                env=environment,
+                check=False,
+            )
+            self.assertFalse(calls.exists())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        line = result.stdout.strip()
+        self.assertTrue(line.startswith("AGENT_DESKTOP_E2E_SKIP_PRIVATE=1 skips 3 scenario(s): "), line)
+        for scenario in self.declared():
+            self.assertIn(scenario, line)
+
+
+class PythonResolutionTests(unittest.TestCase):
+    def resolve(self, names: dict, preset: str = "") -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as directory:
+            for name, target in names.items():
+                path = Path(directory) / name
+                if target is None:
+                    path.write_text("#!/bin/sh\necho 'Python 3.9.6'\nexit 1\n")
+                    path.chmod(0o700)
+                else:
+                    path.symlink_to(target)
+            environment = {"PATH": directory, "HOME": directory}
+            if preset:
+                environment["AGENT_DESKTOP_E2E_PYTHON"] = preset
+            return subprocess.run(
+                [
+                    "/bin/bash",
+                    "--norc",
+                    "-c",
+                    'source "$1"; require_e2e_python && printf "%s" "$e2e_python"',
+                    "resolve",
+                    str(E2E_ROOT / "python.sh"),
+                ],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                env=environment,
+                check=False,
+            ), directory
+
+    def test_prefers_a_versioned_interpreter_over_an_old_python3(self):
+        (result, directory) = self.resolve({"python3": None, "python3.12": sys.executable})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, f"{directory}/python3.12")
+
+    def test_uses_python3_when_it_is_new_enough(self):
+        (result, directory) = self.resolve({"python3": sys.executable})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, f"{directory}/python3")
+
+    def test_fails_with_what_it_found_and_what_to_do(self):
+        (result, _) = self.resolve({"python3": None})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("needs Python 3.10 or newer", result.stderr)
+        self.assertIn("(Python 3.9.6)", result.stderr)
+        self.assertIn("AGENT_DESKTOP_E2E_PYTHON", result.stderr)
+
+    def test_an_old_override_is_ignored(self):
+        (result, directory) = self.resolve(
+            {"python3": None, "python3.11": sys.executable}, preset="/usr/bin/false"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, f"{directory}/python3.11")
 
 
 if __name__ == "__main__":

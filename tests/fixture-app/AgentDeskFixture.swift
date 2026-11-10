@@ -366,6 +366,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let frame = FixtureLaunchFrame.requested() {
+            FixtureLaunchFrame.apply(frame)
+        }
         if isBackgroundFixture {
             return
         }

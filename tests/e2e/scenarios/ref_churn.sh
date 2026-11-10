@@ -16,7 +16,7 @@ delivery="$(json_field "$output" error.disposition.delivery)"
 assert "removed row is refused without delivery" \
     "$([ "$ok" = "False" ] && [ "$code" = "STALE_REF" ] && [ "$delivery" = "not_delivered" ] && echo 1 || echo 0)" \
     "ok=$ok code=$code delivery=$delivery"
-batch_payload="$(python3 - "$(target_ref "$alpha")" <<'BATCH_PY'
+batch_payload="$("$e2e_python" - "$(target_ref "$alpha")" <<'BATCH_PY'
 import json, sys
 print(json.dumps([{"command": "set-value", "args": {"ref_id": sys.argv[1], "value": "poisoned"}}]))
 BATCH_PY

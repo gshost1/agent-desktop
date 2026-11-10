@@ -3,30 +3,20 @@ set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
+# shellcheck source=tests/e2e/python.sh
+source "$here/python.sh"
+if [ "${1:-}" = "--list-skipped" ]; then
+    # shellcheck source=tests/e2e/lib.sh
+    source "$here/lib.sh"
+    print_private_skip_plan
+    exit 0
+fi
 if [ -z "${AGENT_DESKTOP_INTERACTION_LEASE_FD:-}" ]; then
     if [ "$(uname -s)" != "Darwin" ]; then
         echo "macOS is required for the native accessibility E2E suite" >&2
         exit 2
     fi
-    if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
-        found_python="$(command -v python3 2>/dev/null)"
-        if [ -n "$found_python" ]; then
-            echo "python3 3.10 or newer is required; found $found_python ($(python3 --version 2>&1))." >&2
-        else
-            echo "python3 3.10 or newer is required; no python3 is on PATH." >&2
-        fi
-        newer_python=""
-        for minor in 14 13 12 11 10; do
-            newer_python="$(command -v "python3.$minor" 2>/dev/null)" && break
-        done
-        if [ -n "$newer_python" ]; then
-            echo "$newer_python is installed but not named python3. Put it first on PATH as python3, for example:" >&2
-            echo "  mkdir -p \"\$HOME/.local/bin\" && ln -sf \"$newer_python\" \"\$HOME/.local/bin/python3\" && export PATH=\"\$HOME/.local/bin:\$PATH\"" >&2
-        else
-            echo "Install Python 3.10 or newer (for example 'brew install python') and put its python3 first on PATH." >&2
-        fi
-        exit 2
-    fi
+    require_e2e_python || exit 2
     if [ "${AGENT_DESKTOP_E2E_EXCLUSIVE:-}" != "1" ]; then
         echo "SKIP (blocked): native E2E requires an exclusive desktop" >&2
         exit 2
@@ -36,15 +26,21 @@ if [ -z "${AGENT_DESKTOP_INTERACTION_LEASE_FD:-}" ]; then
         -p agent-desktop-macos --bin agent-desktop-macos-helper || exit 2
     CARGO_TARGET_DIR="$repo/target" cargo build --locked --profile release-ffi \
         -p agent-desktop-ffi || exit 2
+    CARGO_TARGET_DIR="$repo/target" cargo test --locked --no-run --lib \
+        -p agent-desktop-macos || exit 2
+    export AGENT_DESKTOP_E2E_CARGO_TARGET_DIR="$repo/target"
     export AGENT_DESKTOP_E2E_RELEASE_BIN="$repo/target/release/agent-desktop"
     export AGENT_DESKTOP_E2E_RELEASE_FFI="$repo/target/release-ffi/libagent_desktop_ffi.dylib"
     export AGENT_DESKTOP_E2E_RELEASE_FFI_HELPER="$repo/target/release/agent-desktop-macos-helper"
-    exec python3 "$here/interaction_lock.py" run "$0" "$@"
+    exec "$e2e_python" "$here/interaction_lock.py" run "$0" "$@"
 fi
 # shellcheck source=tests/e2e/lib.sh
 source "$here/lib.sh"
 trap cleanup EXIT
 
+if private_skip_enabled; then
+    print_private_skip_plan
+fi
 note "Global prerequisite gate"
 if [ "$(uname -s)" != "Darwin" ]; then
     echo "macOS is required for the native accessibility E2E suite" >&2
@@ -83,57 +79,15 @@ guard_exec 120 4194304 "$repo/tests/fixture-app/build.sh" "$suite_root/fixture" 
     exit 2
 }
 
-guard_exec 10 1048576 open "$fixture_app" || {
+launch_fixture
+launch_status=$?
+if [ "$launch_status" -eq 2 ]; then
     echo "fixture could not be opened" >&2
     exit 2
-}
-fixture_owned=1
-
-ready=""
-tries=0
-for _ in $(seq 1 20); do
-    tries=$((tries + 1))
-    "$bin" focus-window --app "$app" >/dev/null 2>&1 || true
-    if find_target button primary-button >/dev/null; then
-        ready=1
-        break
-    fi
-    sleep 0.5
-done
-if [ -z "$ready" ]; then
-    badmsg "fixture launched but primary-button was not exposed after $tries attempts"
+fi
+if [ "$launch_status" -ne 0 ]; then
     finish
     exit 1
-fi
-if ! record_fixture_process; then
-    finish
-    exit 1
-fi
-okmsg "fixture launched and primary-button exposed with exact snapshot namespace"
-
-frame="$("$bin" list-displays 2>/dev/null | python3 -c '
-import json, sys
-d = json.load(sys.stdin)["data"]
-best = max(d, key=lambda x: x["bounds"]["width"] * x["bounds"]["height"])
-b = best["bounds"]
-w = min(int(b["width"]) - 40, 1900)
-h = min(int(b["height"]) - 34, 1080)
-print(int(b["x"]) + 20, int(b["y"]) + 28, w, h)
-')"
-if private_skip_enabled; then
-    private_skip "fixture window normalization (osascript System Events)"
-elif [ -n "$frame" ]; then
-    read -r fx fy fw fh <<EOF_FRAME
-$frame
-EOF_FRAME
-    osascript -e "tell application \"System Events\" to tell process \"$app\"" \
-        -e "set position of front window to {$fx, $fy}" \
-        -e "set size of front window to {$fw, $fh}" \
-        -e "end tell" >/dev/null 2>&1 || true
-    sleep 0.5
-    okmsg "fixture window normalized to {$fx,$fy} ${fw}x${fh} on the largest display"
-else
-    badmsg "fixture window normalization skipped: list-displays returned nothing"
 fi
 
 check_fixture_contention || { finish; exit 1; }
@@ -160,6 +114,7 @@ source "$here/scenarios/keyboard.sh"
 check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/trace_performance.sh
 source "$here/scenarios/trace_performance.sh"
+check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/notifications.sh
 source "$here/scenarios/notifications.sh"
 check_fixture_contention || { finish; exit 1; }
@@ -172,7 +127,7 @@ if [ "$fixture_owned" -eq 0 ] || "$bin" close-app "$app" --force >/dev/null 2>&1
     for mode in headless headed; do
         cursor_flags=()
         if [[ "$mode" == headed ]]; then cursor_flags=(--headed); fi
-        if python3 "$repo/scripts/cursor-multi-agent-probe.py" \
+        if "$e2e_python" "$repo/scripts/cursor-multi-agent-probe.py" \
             --bin "$raw_bin" \
             --fixture "$fixture_app/Contents/MacOS/AgentDeskFixture" \
             --out "$suite_root/multi-agent-cursor-$mode" ${cursor_flags[@]+"${cursor_flags[@]}"}; then

@@ -24,6 +24,11 @@ declare -a skips=()
 declare -a private_skips=()
 declare -a cleanup_files=()
 MODE_FLAG=""
+private_scenarios=(
+    "AE5 native denied-Automation path"
+    "NT1-NT4 notifications lifecycle"
+    "OS surfaces Control Center volume set and restore"
+)
 
 prepare_native_harness() {
     require_exclusive_acknowledgement || return 1
@@ -78,6 +83,80 @@ record_fixture_process() {
     fixture_started=1
 }
 
+fixture_frame() {
+    "$bin" list-displays 2>/dev/null | fixture_frame_from_displays
+}
+
+fixture_window_frame() {
+    "$bin" list-windows --app "$app" 2>/dev/null | "$e2e_python" -c '
+import json, sys
+pid = int(sys.argv[1])
+windows = [w for w in json.load(sys.stdin).get("data", [])
+           if w.get("pid") == pid and w.get("title") == "AgentDesk Fixture" and w.get("bounds")]
+if len(windows) == 1:
+    b = windows[0]["bounds"]
+    print(",".join(str(round(b[k])) for k in ("x", "y", "width", "height")))
+' "$fixture_pid" 2>/dev/null
+}
+
+frame_fits_request() {
+    "$e2e_python" -c '
+import sys
+request, observed = ([float(v) for v in arg.split(",")] for arg in sys.argv[1:3])
+if len(request) != 4 or len(observed) != 4:
+    sys.exit(1)
+rx, ry, rw, rh = request
+ox, oy, ow, oh = observed
+inside = ox >= rx - 2 and oy >= ry - 2 and ox + ow <= rx + rw + 2 and oy + oh <= ry + rh + 2
+sys.exit(0 if inside and abs(ow - rw) <= 2 and oh >= 720 else 1)
+' "$1" "$2" 2>/dev/null
+}
+
+await_fixture_frame() {
+    local expected="$1" observed=""
+    for _ in $(seq 1 25); do
+        observed="$(fixture_window_frame)"
+        if [ -n "$observed" ] && frame_fits_request "$expected" "$observed"; then
+            okmsg "fixture window opened inside the normalized frame on the largest display  [requested=$expected observed=$observed]"
+            return 0
+        fi
+        sleep 0.2
+    done
+    badmsg "fixture window did not take the normalized frame  [expected=$expected observed=${observed:-none}]"
+}
+
+launch_fixture() {
+    local frame ready="" tries=0
+    local open_args=(open)
+    frame="$(fixture_frame)"
+    if [ -n "$frame" ]; then
+        open_args+=(--env "AGENT_DESKTOP_FIXTURE_FRAME=$frame")
+        export AGENT_DESKTOP_FIXTURE_FRAME="$frame"
+    fi
+    guard_exec 10 1048576 "${open_args[@]}" "$fixture_app" >/dev/null || return 2
+    fixture_owned=1
+    for _ in $(seq 1 20); do
+        tries=$((tries + 1))
+        "$bin" focus-window --app "$app" >/dev/null 2>&1 || true
+        if find_target button primary-button >/dev/null; then
+            ready=1
+            break
+        fi
+        sleep 0.5
+    done
+    if [ -z "$ready" ]; then
+        badmsg "fixture launched but primary-button was not exposed after $tries attempts"
+        return 1
+    fi
+    record_fixture_process || return 1
+    okmsg "fixture launched and primary-button exposed with exact snapshot namespace"
+    if [ -n "$frame" ]; then
+        await_fixture_frame "$frame"
+    else
+        badmsg "fixture window normalization skipped: list-displays returned nothing"
+    fi
+}
+
 check_fixture_contention() {
     local current
     current="$(pgrep -x "$app" 2>/dev/null || true)"
@@ -106,6 +185,13 @@ private_skip() {
     printf '  \033[0;33mSKIP (private): %s\033[0m\n' "$1"
     private_skips+=("$1")
 }
+print_private_skip_plan() {
+    local joined="" scenario
+    for scenario in "${private_scenarios[@]}"; do
+        joined="${joined:+$joined; }$scenario"
+    done
+    printf 'AGENT_DESKTOP_E2E_SKIP_PRIVATE=1 skips %d scenario(s): %s\n' "${#private_scenarios[@]}" "$joined"
+}
 
 abort_suite() {
     badmsg "$1"
@@ -120,7 +206,7 @@ assert() {
     fi
 }
 
-json_field() { printf '%s' "$1" | python3 "$json_tool" get "$2" 2>/dev/null; }
+json_field() { printf '%s' "$1" | "$e2e_python" "$json_tool" get "$2" 2>/dev/null; }
 target_ref() { printf '%s' "${1%%$'\t'*}"; }
 target_snapshot() { printf '%s' "${1#*$'\t'}"; }
 
@@ -129,7 +215,7 @@ find_target() {
     for _ in $(seq 1 25); do
         output="$("$bin" find --app "$app" --role "$role" --name "$name" --first 2>/dev/null)"
         if [ -n "$output" ]; then
-            value="$(printf '%s' "$output" | python3 "$json_tool" target 2>/dev/null)"
+            value="$(printf '%s' "$output" | "$e2e_python" "$json_tool" target 2>/dev/null)"
             if [ -n "$value" ]; then
                 printf '%s' "$value"
                 return 0
@@ -145,7 +231,7 @@ find_target_by_id() {
     local role="$1" native_id="$2" output value
     for _ in $(seq 1 25); do
         if output="$("$bin" find --app "$app" --role "$role" --native-id "$native_id" --first 2>/dev/null)"; then
-            value="$(printf '%s' "$output" | python3 "$json_tool" target 2>/dev/null)"
+            value="$(printf '%s' "$output" | "$e2e_python" "$json_tool" target 2>/dev/null)"
             if [ -n "$value" ]; then
                 printf '%s' "$value"
                 return 0
@@ -176,7 +262,7 @@ find_value() {
     local name="$1" output value
     for _ in $(seq 1 25); do
         if output="$("$bin" find --app "$app" --role statictext --native-id "$name" --first 2>/dev/null)" \
-            && value="$(printf '%s' "$output" | python3 "$json_tool" match-value 2>/dev/null)"; then
+            && value="$(printf '%s' "$output" | "$e2e_python" "$json_tool" match-value 2>/dev/null)"; then
             printf '%s' "$value"
             return 0
         fi
@@ -262,7 +348,7 @@ verify() {
     require_value after "$status"
     command_ok="$(json_field "$output" ok)"
     error="$(json_field "$output" error.code)"
-    mechanism="$(printf '%s' "$output" | python3 "$json_tool" delivered-mechanism 2>/dev/null)"
+    mechanism="$(printf '%s' "$output" | "$e2e_python" "$json_tool" delivered-mechanism 2>/dev/null)"
     assert "$label" "$([ "$after" = "$expected" ] && [ "$command_ok" = "True" ] && [ "$mechanism" = "$expected_mechanism" ] && echo 1 || echo 0)" \
         "before='$before' after='$after' expected='$expected' ok=$command_ok mechanism=$mechanism${error:+ error=$error}"
 }
@@ -272,14 +358,14 @@ run_timed() {
     output_file="$(mktemp -t agentdesk-e2e-command.XXXXXX)"
     cleanup_files+=("$output_file")
     metadata="$(AGENT_DESKTOP_E2E_INHERIT_LEASE=1 \
-        python3 "$json_tool" run "$output_file" "$@")"
+        "$e2e_python" "$json_tool" run "$output_file" "$@")"
     RUN_EXIT="${metadata%%$'\t'*}"
     RUN_MS="${metadata#*$'\t'}"
     RUN_JSON="$(<"$output_file")"
 }
 
 elapsed_in_range() {
-    python3 - "$1" "$2" "$3" <<'PY'
+    "$e2e_python" - "$1" "$2" "$3" <<'PY'
 import sys
 value, lower, upper = map(float, sys.argv[1:])
 print(1 if lower <= value <= upper else 0)
@@ -287,7 +373,7 @@ PY
 }
 
 running() {
-    "$bin" list-apps --app "$app" 2>/dev/null | python3 -c \
+    "$bin" list-apps --app "$app" 2>/dev/null | "$e2e_python" -c \
         'import json,sys; d=json.load(sys.stdin); print(any(a.get("name") == "AgentDeskFixture" for a in d.get("data",{}).get("apps",[])))' \
         2>/dev/null
 }
