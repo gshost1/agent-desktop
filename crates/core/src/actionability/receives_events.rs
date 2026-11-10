@@ -34,7 +34,10 @@ pub(super) fn receives_events_check(
     };
     for point in candidate_points(bounds) {
         evidence.attempted += 1;
-        match adapter.hit_test(handle, point.clone(), deadline) {
+        let hit_started = std::time::Instant::now();
+        let hit = adapter.hit_test(handle, point.clone(), deadline);
+        probe_hit("hit_test.candidate", &point, hit_started, &hit);
+        match hit {
             Ok(HitTestResult::ReachesTarget) => {
                 let mut check = pass("receives_events");
                 check.hit_test = Some(evidence);
@@ -74,6 +77,26 @@ pub(super) fn receives_events_check(
     Ok((check, None))
 }
 
+fn probe_hit(
+    event: &str,
+    point: &Point,
+    started: std::time::Instant,
+    hit: &Result<HitTestResult, AdapterError>,
+) {
+    let result = match hit {
+        Ok(HitTestResult::ReachesTarget) => json!("reaches_target"),
+        Ok(HitTestResult::Unknown) => json!("unknown"),
+        Ok(HitTestResult::InterceptedBy { role, name, bounds }) => {
+            json!({ "intercepted_by": { "role": role, "name": name, "bounds": bounds } })
+        }
+        Err(error) => crate::trace::probe_log::probe_error(error),
+    };
+    crate::trace::probe_log::probe_log(
+        event,
+        json!({ "x": point.x, "y": point.y, "elapsed_us": crate::trace::probe_log::probe_since_us(started), "result": result }),
+    );
+}
+
 fn candidate_points(bounds: crate::Rect) -> [Point; 5] {
     let point = |x: f64, y: f64| Point {
         x: bounds.x + bounds.width * x,
@@ -94,7 +117,10 @@ pub(crate) fn require_receives_events(
     adapter: &dyn PlatformAdapter,
     deadline: crate::Deadline,
 ) -> Result<(), AdapterError> {
-    let check = match adapter.hit_test(handle, point, deadline) {
+    let hit_started = std::time::Instant::now();
+    let hit = adapter.hit_test(handle, point.clone(), deadline);
+    probe_hit("hit_test.single", &point, hit_started, &hit);
+    let check = match hit {
         Ok(HitTestResult::ReachesTarget) => return Ok(()),
         Ok(HitTestResult::Unknown) => return Ok(()),
         Err(error) if error.code == ErrorCode::PlatformNotSupported => return Ok(()),

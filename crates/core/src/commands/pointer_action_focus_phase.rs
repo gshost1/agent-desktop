@@ -7,6 +7,11 @@ use crate::{
     commands::point_resolve::PointResolveArgs, context::CommandContext,
     ref_action::ref_action_wait::with_refusal, refs::ref_resolve_deadline::POLL_INTERVAL,
 };
+use crate::trace::probe_log::{
+    probe_app_error, probe_front, probe_log, probe_poll_front_enabled, probe_since_us,
+    probe_window,
+};
+use serde_json::json;
 
 /// What one leased attempt of a pointer command did to the front window. The
 /// focus runs under the attempt's own lease, next to the hit test and the
@@ -41,9 +46,12 @@ impl AttemptFocus {
         context: &CommandContext,
     ) -> Result<bool, AppError> {
         let mut before = Self::Unfocused;
+        let mut raised: Option<crate::WindowInfo> = None;
         let outcome = focus_point_under_lease(args, lease, adapter, context, &mut |target| {
             before = front_before_focus(target, lease, adapter);
+            raised = Some(target.clone());
         });
+        let raise_done = std::time::Instant::now();
         let focus_ran = match &outcome {
             Ok(ran) => *ran,
             Err(AppError::Adapter(error)) => error.moved_focus(),
@@ -51,6 +59,13 @@ impl AttemptFocus {
         };
         if focus_ran {
             *self = before;
+        }
+        probe_log(
+            "focus.outcome",
+            json!({ "focus_ran": focus_ran, "classification": format!("{:?}", self), "result": match &outcome { Ok(ran) => json!({ "ok": ran }), Err(error) => probe_app_error(error) } }),
+        );
+        if let (true, Some(target)) = (focus_ran, raised.as_ref()) {
+            probe_front_after_raise(target, raise_done, lease, adapter);
         }
         outcome
     }
@@ -61,12 +76,55 @@ fn front_before_focus(
     lease: &crate::InteractionLease,
     adapter: &dyn PlatformAdapter,
 ) -> AttemptFocus {
-    match adapter.focused_window(lease.deadline()) {
-        Ok(Some(front)) if same_window(&front, target) => AttemptFocus::AlreadyFront,
-        Ok(Some(front)) if instance_unknown_for_target(&front, target) => AttemptFocus::Unknown,
+    let started = std::time::Instant::now();
+    let read = adapter.focused_window(lease.deadline());
+    let elapsed_us = probe_since_us(started);
+    let classification = match &read {
+        Ok(Some(front)) if same_window(front, target) => AttemptFocus::AlreadyFront,
+        Ok(Some(front)) if instance_unknown_for_target(front, target) => AttemptFocus::Unknown,
         Ok(Some(_)) => AttemptFocus::FrontChanged,
         Ok(None) | Err(_) => AttemptFocus::Unknown,
+    };
+    probe_log(
+        "front.before_raise",
+        json!({ "target": probe_window(target), "front": probe_front(&read), "read_us": elapsed_us, "classification": format!("{classification:?}") }),
+    );
+    classification
+}
+
+fn probe_front_after_raise(
+    target: &crate::WindowInfo,
+    raise_done: std::time::Instant,
+    lease: &crate::InteractionLease,
+    adapter: &dyn PlatformAdapter,
+) {
+    let read = adapter.focused_window(lease.deadline());
+    let is_target = matches!(&read, Ok(Some(front)) if same_window(front, target));
+    probe_log(
+        "front.after_raise",
+        json!({ "since_raise_us": probe_since_us(raise_done), "front": probe_front(&read), "is_target": is_target }),
+    );
+    if !probe_poll_front_enabled() || is_target {
+        return;
     }
+    let mut reads = 0;
+    while raise_done.elapsed() < std::time::Duration::from_millis(1000) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        reads += 1;
+        let read = adapter.focused_window(lease.deadline());
+        if matches!(&read, Ok(Some(front)) if same_window(front, target)) {
+            probe_log(
+                "front.poll_became_target",
+                json!({ "since_raise_us": probe_since_us(raise_done), "reads": reads }),
+            );
+            return;
+        }
+    }
+    let read = adapter.focused_window(lease.deadline());
+    probe_log(
+        "front.poll_never_target",
+        json!({ "since_raise_us": probe_since_us(raise_done), "reads": reads, "front": probe_front(&read) }),
+    );
 }
 
 fn instance_unknown_for_target(front: &crate::WindowInfo, target: &crate::WindowInfo) -> bool {
@@ -125,21 +183,35 @@ pub(crate) fn retry_leased_point_phase<T>(
 ) -> Result<T, AppError> {
     let auto_wait = timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let mut refusal: Option<AdapterError> = None;
+    let mut attempt_index = 0u32;
     loop {
+        attempt_index += 1;
         let mut focus = AttemptFocus::Unfocused;
-        let error = match attempt(&mut focus) {
-            Ok(value) => return Ok(value),
+        let attempt_started = std::time::Instant::now();
+        let result = attempt(&mut focus);
+        probe_log(
+            "attempt.end",
+            json!({ "attempt": attempt_index, "elapsed_us": probe_since_us(attempt_started), "focus": format!("{focus:?}"), "result": match &result { Ok(_) => json!("ok"), Err(error) => probe_app_error(error) }, "remaining_ms": deadline.remaining().as_millis() as u64 }),
+        );
+        let error = match result {
+            Ok(value) => {
+                probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "success" }));
+                return Ok(value);
+            }
             Err(error) if focus == AttemptFocus::Unfocused => error,
             Err(error) => AppError::Adapter(error.into_adapter_error().after_focus_ran()),
         };
         if focus == AttemptFocus::FrontChanged && !may_settle_after_raise(&error) {
+            probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "stop_front_changed" }));
             return Err(with_refusal(error.into_adapter_error(), refusal.as_ref()).into());
         }
         if !auto_wait || !is_retryable_point_error(&error) {
+            probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "return_not_retryable", "auto_wait": auto_wait, "settle": may_settle_after_raise(&error) }));
             return Err(error);
         }
         let remaining = deadline.remaining();
         if remaining.is_zero() {
+            probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "timeout" }));
             let timeout = point_actionability_timeout(Some(point_error_report(&error)));
             if focus == AttemptFocus::Unfocused {
                 return Err(timeout);
@@ -148,6 +220,7 @@ pub(crate) fn retry_leased_point_phase<T>(
                 timeout.into_adapter_error().after_focus_ran(),
             ));
         }
+        probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "retry", "front_changed_but_settling": focus == AttemptFocus::FrontChanged }));
         refusal = Some(error.into_adapter_error());
         std::thread::sleep(POLL_INTERVAL.min(remaining));
     }

@@ -371,6 +371,7 @@ fn with_exclusive_file<T>(
 #[cfg(test)]
 #[path = "trace_tests.rs"]
 mod tests;
+pub(crate) mod probe_log;
 pub(crate) mod trace_artifact_budget;
 pub(crate) mod trace_artifacts;
 pub(crate) mod trace_file;

@@ -104,17 +104,26 @@ pub(crate) fn focus_exact_window(
     context: &crate::CommandContext,
     lease: &crate::InteractionLease,
 ) -> Result<WindowInfo, AdapterError> {
-    let live = adapter
-        .resolve_window_strict(expected, lease.deadline())
-        .map_err(AdapterError::unsent)?;
+    let resolve_started = std::time::Instant::now();
+    let live = adapter.resolve_window_strict(expected, lease.deadline());
+    crate::trace::probe_log::probe_log(
+        "raise.resolve_window",
+        json!({ "expected": crate::trace::probe_log::probe_window(expected), "elapsed_us": crate::trace::probe_log::probe_since_us(resolve_started), "result": match &live { Ok(window) => crate::trace::probe_log::probe_window(window), Err(error) => crate::trace::probe_log::probe_error(error) } }),
+    );
+    let live = live.map_err(AdapterError::unsent)?;
     if !same_window(&live, expected) {
         return Err(AdapterError::stale_ref_because(
             "Headed target window belongs to a different process instance",
         ));
     }
-    adapter
-        .focus_window(&live, lease)
-        .map_err(AdapterError::after_focus)?;
+    let raise_started = std::time::Instant::now();
+    crate::trace::probe_log::probe_log("raise.call", json!({ "window": crate::trace::probe_log::probe_window(&live) }));
+    let raised = adapter.focus_window(&live, lease);
+    crate::trace::probe_log::probe_log(
+        "raise.result",
+        json!({ "elapsed_us": crate::trace::probe_log::probe_since_us(raise_started), "result": match &raised { Ok(()) => json!("ok"), Err(error) => crate::trace::probe_log::probe_error(error) } }),
+    );
+    raised.map_err(AdapterError::after_focus)?;
     context
         .trace_lazy(
             "input.focus_window",

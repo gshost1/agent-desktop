@@ -72,7 +72,13 @@ pub fn execute(
             wait_for_point_with_deadline(to_args, deadline, adapter, context)?;
         }
         let (from, to, lease) = retry_leased_point_phase(args.timeout_ms, deadline, |focus| {
-            let lease = adapter.acquire_interaction_lease(deadline)?;
+            let lease_started = std::time::Instant::now();
+            let lease = adapter.acquire_interaction_lease(deadline);
+            crate::trace::probe_log::probe_log(
+                "lease.acquire",
+                serde_json::json!({ "elapsed_us": crate::trace::probe_log::probe_since_us(lease_started), "result": match &lease { Ok(_) => serde_json::json!("ok"), Err(error) => crate::trace::probe_log::probe_error(error) } }),
+            );
+            let lease = lease?;
             let focused = focus.run(from_args, &lease, adapter, context)?;
             let from = resolve_point_under_lease(
                 PointResolveAttempt {

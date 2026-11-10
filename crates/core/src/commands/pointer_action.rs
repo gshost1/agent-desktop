@@ -34,6 +34,22 @@ fn resolve_point_from_entry(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<crate::commands::point_resolve::ResolvedPoint, AppError> {
+    let started = std::time::Instant::now();
+    let inputs = json!({ "stability": format!("{:?}", request.stability), "leased": request.lease.is_some(), "allow_scroll": request.allow_scroll, "verify_receives_events": request.verify_receives_events });
+    let result = resolve_point_from_entry_probed(request, deadline, adapter, context);
+    crate::trace::probe_log::probe_log(
+        "point.resolve",
+        json!({ "inputs": inputs, "elapsed_us": crate::trace::probe_log::probe_since_us(started), "remaining_ms": deadline.remaining().as_millis() as u64, "result": match &result { Ok(point) => json!({ "ok": { "x": point.point.x, "y": point.point.y, "bounds_hash": point.bounds_hash } }), Err(error) => crate::trace::probe_log::probe_app_error(error) } }),
+    );
+    result
+}
+
+fn resolve_point_from_entry_probed(
+    request: EntryPointResolve<'_>,
+    deadline: crate::Deadline,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Result<crate::commands::point_resolve::ResolvedPoint, AppError> {
     let EntryPointResolve {
         ref_id,
         entry,
@@ -58,6 +74,10 @@ fn resolve_point_from_entry(
         mut bounds,
         mut states,
     } = adapter.observe_pointer(&handle, deadline)?;
+    crate::trace::probe_log::probe_log(
+        "point.observe",
+        json!({ "bounds": bounds, "states": format!("{states:?}"), "visible": pointer_is_visible(bounds, &states) }),
+    );
     if !pointer_is_visible(bounds, &states) {
         if deadline.is_expired() {
             return Err(crate::AdapterError::timeout(
