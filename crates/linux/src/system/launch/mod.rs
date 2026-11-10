@@ -9,15 +9,16 @@ use agent_desktop_core::{
 };
 
 use self::launch_attach::{Decision, decide};
-use self::launch_observe::{POLL_INTERVAL, Spawned, find_owner, pids_of, running_of};
+use self::launch_observe::{POLL_INTERVAL, find_owner, pids_of, running_of};
+use self::launch_owner_query::OwnerQuery;
 use self::launch_search::Search;
 use self::launch_spawn::{before_spawn, spawn, validate};
 use self::launch_target::{Plan, resolve};
+use self::launch_unlisted::report_unlisted;
 use super::SharedBus;
 use crate::system::app::app_alias::current_index;
 use crate::system::focus::focus_window::focus_window;
 use crate::system::process::liveness::{Liveness, liveness};
-use crate::system::process::process_facts;
 use crate::system::process::running_app::Running;
 use crate::system::process::web_family::WebFamily;
 use crate::system::registry::registry_frames::RootRead;
@@ -283,26 +284,6 @@ impl Launch<'_> {
         }
     }
 
-    fn report_unlisted(&self, spawned: &Spawned) -> LaunchResult {
-        let facts = process_facts::read(spawned.pid);
-        LaunchResult {
-            app: facts
-                .as_ref()
-                .map_or_else(|| self.id.to_owned(), super::listed_app_name),
-            pid: ProcessId::new(spawned.pid),
-            process_instance: facts.map(|facts| facts.instance),
-            window: None,
-            cdp: None,
-            renderer: None,
-            notes: LaunchNotes {
-                suggestion: Some(
-                "The process started but is not on the accessibility bus yet. Its pid is the spawned process's and may be a wrapper of the application. Run 'list-apps' to see whether it appears.".to_owned(),
-            ),
-                launch_path: None,
-            },
-        }
-    }
-
     fn start(
         &self,
         plan: &Plan,
@@ -312,7 +293,13 @@ impl Launch<'_> {
         let before = baseline::prepare(self.bus, identity, running, self.deadline);
         self.deadline.ensure_remaining().map_err(before_spawn)?;
         let mut spawned = spawn(self.id, plan, self.options)?;
-        match find_owner(self.bus, &mut spawned, identity, &before, self.deadline)? {
+        let query = OwnerQuery::new(
+            identity,
+            &before,
+            self.deadline,
+            self.options.presentation.activate,
+        );
+        match find_owner(self.bus, &mut spawned, &query)? {
             Some(owner) => {
                 let known = before
                     .residents
@@ -325,7 +312,7 @@ impl Launch<'_> {
                 };
                 Ok(self.conclude_with(&owner, window, owner.pid == spawned.pid))
             }
-            None => Ok(self.report_unlisted(&spawned)),
+            None => Ok(report_unlisted(self.id, spawned.pid)),
         }
     }
 }
@@ -393,8 +380,10 @@ mod launch_handoff;
 #[cfg(test)]
 pub(super) mod launch_live_tests;
 pub(super) mod launch_observe;
+mod launch_owner_query;
 pub(crate) mod launch_sample;
 pub(crate) mod launch_search;
 mod launch_spawn;
 pub(crate) mod launch_step;
 pub(super) mod launch_target;
+mod launch_unlisted;
