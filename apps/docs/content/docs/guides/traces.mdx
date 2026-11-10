@@ -82,6 +82,8 @@ The file is created private. While `--trace` is set, the session's trace directo
 
 A session's recording budget is 32 MiB, 100,000 events, and 4,096 directory entries. When it is spent, existing events stay readable and new ones are dropped; start a new session to keep recording.
 
+Commands running in parallel in one session take turns writing. An event waits for its turn as long as its command's deadline allows, up to 2 seconds. With less than 250 ms left, it waits up to 250 ms from that event, so a contended command can finish up to 250 ms per event past its deadline. A wait that still runs out drops the event, or fails a `--trace-strict` command with `TIMEOUT` and the action's disposition. Trace lines are not synced to disk; a power loss can lose the newest events or stop the session's recording, and a new session records again.
+
 ## Make a visual debug file
 
 Visual debug writes one HTML file that pairs a window screenshot with labeled element bounds:
