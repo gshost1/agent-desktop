@@ -7,6 +7,8 @@ use crate::actions::chain::selection_write::SelectionWrite;
 use crate::tree::AXElement;
 
 const MAX_MENU_SEARCH_NODES: usize = 2_048;
+const MENU_GATE_READS: usize = 3;
+const MENU_GATE_PAUSE_MS: u64 = 25;
 
 pub(crate) fn show_menu(
     element: &AXElement,
@@ -54,7 +56,7 @@ pub(crate) fn select_then_show_menu(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    if !menu_closed_for(element, deadline) {
+    if closed_menu_pid(element, deadline).is_none() {
         return Ok(DeliveryOutcome::NotDelivered);
     }
     after_selection(select_containing_item(element, deadline)?, || {
@@ -66,7 +68,7 @@ pub(crate) fn select_then_selected_items_menu(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    if !menu_closed_for(element, deadline) {
+    if closed_menu_pid(element, deadline).is_none() {
         return Ok(DeliveryOutcome::NotDelivered);
     }
     after_selection(select_containing_item(element, deadline)?, || {
@@ -83,20 +85,48 @@ pub(crate) fn select_then_selected_items_menu(
 /// Only a menu read that positively answered "closed" lets a step open one:
 /// an open menu would be opened twice, and an unreadable read is what an
 /// application tracking a menu returns, so it is treated as one being up.
-pub(crate) fn may_open_menu(observation: MenuObservation) -> bool {
+fn may_open_menu(observation: MenuObservation) -> bool {
     observation == MenuObservation::Closed
 }
 
-fn menu_closed_for(element: &AXElement, deadline: Deadline) -> bool {
-    crate::system::app::app_ops::pid_from_element(element, deadline)
-        .is_some_and(|pid| may_open_menu(observe_menu(pid, deadline)))
+/// Reads the menu state again while it is unreadable, a few times within the
+/// deadline, so one failed read of a responsive application does not refuse
+/// the step; a read that keeps failing is the answer.
+fn settled_menu_observation(
+    mut observe: impl FnMut() -> MenuObservation,
+    deadline: Deadline,
+) -> MenuObservation {
+    let mut observation = observe();
+    for _ in 1..MENU_GATE_READS {
+        if observation != MenuObservation::Unreadable || deadline.is_expired() {
+            break;
+        }
+        std::thread::sleep(
+            deadline
+                .remaining()
+                .min(std::time::Duration::from_millis(MENU_GATE_PAUSE_MS)),
+        );
+        observation = observe();
+    }
+    observation
+}
+
+/// The target's pid when its menu state reads as closed, the one state from
+/// which a step may write the selection or open a menu.
+fn closed_menu_pid(element: &AXElement, deadline: Deadline) -> Option<i32> {
+    let pid = crate::system::app::app_ops::pid_from_element(element, deadline)?;
+    may_open_menu(settled_menu_observation(
+        || observe_menu(pid, deadline),
+        deadline,
+    ))
+    .then_some(pid)
 }
 
 /// A step that has written the selection has changed the application, so
 /// what it reports afterwards carries that delivery: a later "nothing
-/// delivered" is still an unverified delivery and a later failure is
-/// `delivered_unverified`, never a safe retry.
-pub(crate) fn after_selection(
+/// delivered" is still an unverified delivery and a later failure is never a
+/// safe retry.
+fn after_selection(
     selection: SelectionWrite,
     then: impl FnOnce() -> Result<DeliveryOutcome, AdapterError>,
 ) -> Result<DeliveryOutcome, AdapterError> {
@@ -111,15 +141,18 @@ pub(crate) fn after_selection(
     }
 }
 
-/// Reads the selection back after a write that the application accepted. A
-/// read that fails cannot undo the write, so its error carries the delivery.
-pub(crate) fn selection_after_write(
-    read: impl FnOnce() -> Result<bool, AdapterError>,
-) -> Result<SelectionWrite, AdapterError> {
-    match read() {
-        Ok(true) => Ok(SelectionWrite::Selected),
-        Ok(false) => Ok(SelectionWrite::Unconfirmed),
-        Err(error) => Err(after_write(error)),
+/// Reads the selection back after a write that the application accepted,
+/// with the settle every selection write gets, since the application applies
+/// it a moment after it answers. A read that keeps failing cannot undo the
+/// write, so it leaves the selection unconfirmed, not unwritten.
+fn selection_after_write(
+    deadline: Deadline,
+    mut read: impl FnMut() -> Result<bool, AdapterError>,
+) -> SelectionWrite {
+    if crate::actions::select::selection_settle::direct_selection_holds(deadline, || read().ok()) {
+        SelectionWrite::Selected
+    } else {
+        SelectionWrite::Unconfirmed
     }
 }
 
@@ -131,13 +164,10 @@ fn show_menu_on_element(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    let Some(pid) = crate::system::app::app_ops::pid_from_element(element, deadline) else {
+    let Some(pid) = closed_menu_pid(element, deadline) else {
         return Ok(DeliveryOutcome::NotDelivered);
     };
-    let baseline = observe_menu(pid, deadline);
-    if !may_open_menu(baseline) {
-        return Ok(DeliveryOutcome::NotDelivered);
-    }
+    let baseline = MenuObservation::Closed;
     perform_menu_action(
         element,
         "AXShowMenu",
@@ -150,13 +180,10 @@ fn show_menu_or_press(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    let Some(pid) = crate::system::app::app_ops::pid_from_element(element, deadline) else {
+    let Some(pid) = closed_menu_pid(element, deadline) else {
         return Ok(DeliveryOutcome::NotDelivered);
     };
-    let baseline = observe_menu(pid, deadline);
-    if !may_open_menu(baseline) {
-        return Ok(DeliveryOutcome::NotDelivered);
-    }
+    let baseline = MenuObservation::Closed;
     for action in ["AXShowMenu", "AXPress"] {
         let outcome = perform_menu_action(element, action, MenuTarget { pid, baseline }, deadline)?;
         if outcome.was_delivered() {
@@ -245,7 +272,9 @@ fn select_containing_item(
                 true,
                 deadline,
             )? {
-                return selection_after_write(|| selected(&candidate, deadline));
+                return Ok(selection_after_write(deadline, || {
+                    selected(&candidate, deadline)
+                }));
             }
         }
         current = parent(&candidate, deadline)?;
