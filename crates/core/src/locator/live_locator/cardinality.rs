@@ -40,12 +40,17 @@ pub fn require_unique(resolution: LocatorResolution) -> Result<LocatorMatch, App
                 .iter()
                 .take(10)
                 .map(|candidate| {
-                    json!({
+                    let mut entry = json!({
                         "document_order": candidate.document_order,
-                        "name": candidate.data.name,
-                        "ref_id": candidate.data.ref_id,
                         "role": candidate.data.role,
-                    })
+                    });
+                    if !candidate.data.name.is_empty() {
+                        entry["name"] = json!(candidate.data.name);
+                    }
+                    if let Some(ref_id) = &candidate.data.ref_id {
+                        entry["ref_id"] = json!(ref_id);
+                    }
+                    entry
                 })
                 .collect::<Vec<_>>();
             Err(AppError::Adapter(
