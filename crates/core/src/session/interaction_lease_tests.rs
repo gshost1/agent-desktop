@@ -1,9 +1,6 @@
 #![cfg(unix)]
 
-use std::{
-    sync::{Mutex, MutexGuard},
-    time::Duration,
-};
+use std::{sync::MutexGuard, time::Duration};
 
 use super::*;
 
@@ -33,10 +30,8 @@ fn wait_for_marker(path: &std::path::Path) -> bool {
     path.is_file()
 }
 
-static INTERACTION_LEASE_TEST_LOCK: Mutex<()> = Mutex::new(());
-
 fn interaction_lease_test_guard() -> MutexGuard<'static, ()> {
-    INTERACTION_LEASE_TEST_LOCK
+    crate::session::process_lease_guard::PROCESS_LEASE_TEST_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

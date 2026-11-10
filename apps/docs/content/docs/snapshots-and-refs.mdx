@@ -128,7 +128,7 @@ An element gets a ref when either condition holds:
 - Its role is interactive: `button`, `cell`, `checkbox`, `colorwell`, `combobox`, `dockitem`, `incrementor`, `link`, `listbox`, `menubutton`, `menuitem`, `option`, `radiobutton`, `slider`, `switch`, `tab`, `textfield`, or `treeitem`.
 - It advertises a primary action. `scrollarea` (Scroll) and `disclosure` (Expand and Collapse) qualify this way, because `scroll`, `expand`, and `collapse` need a ref to target them. In the example above, the calculator's history pane is a `scrollarea` with a ref.
 
-`SetFocus`, `RightClick`, and `ScrollTo` do not count on their own. Web runtimes advertise them on nearly every node, so counting them would give every inert container a ref and overflow the [ref map size limit](#where-refs-are-stored). Static text and inert containers stay in the tree without a ref. `find` returns them as context matches with `"ref_id": null`.
+`SetFocus`, `RightClick`, and `ScrollTo` do not count on their own. Web runtimes advertise them on nearly every node, so counting them would give every inert container a ref and overflow the [ref map size limit](#where-refs-are-stored). Static text and inert containers stay in the tree without a ref. `find` returns them as context matches, without a `ref_id`.
 
 A container cut off by a skeleton can also receive a ref as a drill target. See [Find the drill target](/desktop/skeleton-and-drill-down#find-the-drill-target).
 
@@ -196,6 +196,8 @@ An older snapshot stays on disk until it is pruned, and its refs keep resolving 
 ## Where refs are stored
 
 `RefStore` keeps one file per snapshot at `snapshots/<snapshot_id>/refmap.json` under the [state root](/desktop/configuration#state-root). Inside a [session](/desktop/sessions), the same layout sits under `sessions/<session_id>/`, and a lookup never searches another session's snapshots.
+
+Each ref map is written to a temporary file, synced and renamed into place, so another command, a killed process or a crashed system finds the old map or the new one whole. On macOS the sync is `fsync`, not a full drive-cache flush. A power loss before the drive empties its cache can lose the newest snapshot (`SNAPSHOT_NOT_FOUND`) or leave its ref map unreadable (`INTERNAL`). Take a new snapshot to recover.
 
 <table>
   <thead>

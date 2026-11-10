@@ -271,6 +271,7 @@ fn execute_with_adapter(
 
     let adapter = build_adapter();
     let adapter: &dyn agent_desktop_core::PlatformAdapter = &adapter;
+    command_policy::prepare_connections(&cmd, adapter);
     let report = if command_policy::requires_permission_report(&cmd) {
         match preflight_deadline(&cmd, deadline)
             .map_err(AppError::from)
