@@ -81,7 +81,11 @@ fn the_web_quickstart_stays_within_its_byte_budget() {
         reference: None,
     })
     .expect("get web");
-    let bytes = quickstart["content"].as_str().expect("string").len();
+    let bytes = quickstart["content"]
+        .as_str()
+        .expect("string")
+        .replace("\r\n", "\n")
+        .len();
     assert!(
         bytes <= WEB_QUICKSTART_BYTE_BUDGET,
         "web quickstart is {bytes} bytes, budget {WEB_QUICKSTART_BYTE_BUDGET}"
