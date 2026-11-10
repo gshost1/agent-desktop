@@ -44,8 +44,8 @@ Exit codes: `0` success, `1` structured error, `2` argument error. The `error` o
 |------|---------|----------|
 | `PERM_DENIED` | A required OS permission is missing | Read the platform skill |
 | `ELEMENT_NOT_FOUND` | Ref is absent, or the requested surface is absent | Read `details.kind` and `details.surface`; open an absent menu or refresh only after checking the UI |
-| `STALE_REF` | Ref no longer matches the live UI | Snapshot again, use the new ref. With `details.process_state: exited` the app is gone: `list-apps`, `launch` it if needed, then snapshot |
-| `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or it was not proven unique at capture | Act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
+| `STALE_REF` | Ref no longer matches the live UI, or no capture proved it (`identity_unproven`) | Snapshot again and use the new ref. With `details.process_state: exited` the app is gone: `list-apps`, `launch` it if needed, then snapshot. For `identity_unproven` raise `--timeout-ms` when `details.reason` is `capture_incomplete`, and use another selector or `--headed mouse-click --xy` when it is `capture_unknown` |
+| `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or its snapshot found an identical twin | A ref from a snapshot taken before version 2.7 may not be a twin: take a new snapshot first. Otherwise act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
 | `SNAPSHOT_NOT_FOUND` | Snapshot id missing or expired | Snapshot again |
 | `APP_NOT_FOUND` | App not running | `launch` it |
 | `WINDOW_NOT_FOUND` | No matching window | Check the name, use `list-windows` |

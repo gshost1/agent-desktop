@@ -2,6 +2,10 @@
 
 ## Unreleased (1.4.0)
 
+### BREAKING CHANGES
+
+* The response envelope moves to 2.7. On Windows and Linux, and on macOS for an element with no address, a ref whose snapshot could not read the window whole now fails `STALE_REF` with `details.kind: identity_unproven` and `details.reason: capture_incomplete` instead of `AMBIGUOUS_TARGET` `identity_not_unique`; retake the snapshot with a larger `--timeout-ms`. A ref whose capture left a recorded field unread, or that no capture judged, fails `STALE_REF` `identity_unproven` with `details.reason: capture_unknown`. `identity_not_unique` now means the capture saw an identical twin. Refmap entries record `capture` (`unique`, `ambiguous`, `incomplete`, `unknown`); refmaps from earlier versions still load. See the version 2.7 migration in `docs/json-output.md`. ([#14](https://github.com/gshost1/agent-desktop/pull/14))
+
 ### Bug Fixes
 
 * On Linux, a `launch` whose spawned process keeps running without joining the accessibility bus (a plain X11 program, an app started with `NO_AT_BRIDGE=1`, Chromium without its accessibility flags) now returns after 5 s instead of waiting the whole `--timeout` (30 s by default); `--activate` still waits until `--timeout`. The result is still `ok` with the spawned pid and no `window`, and its suggestion says the process did not join the bus. ([#81](https://github.com/gshost1/agent-desktop/pull/81))
