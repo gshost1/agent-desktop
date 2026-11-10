@@ -30,7 +30,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 probe | ACTION-12 | `8959fc5c` (branch `probe/pointer-focus-once`) | READY: run it and send back `/tmp/pfo/probe.log` |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
-| #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | steps ready, revised per control (no System Events, EXIT trap, Calculator rule); CI 13/13 green |
+| #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | NOT RUN 2026-11-10 (fixture defects: /tmp bundles unresolvable by Launch Services, applets without CFBundleIdentifier); script being rewritten by agent A; do not run the section below |
 | #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
