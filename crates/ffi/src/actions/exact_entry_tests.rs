@@ -357,3 +357,19 @@ fn exact_ref_entry_refuses_the_version_that_predates_the_geometry_frame() {
     assert_eq!(error.code, ErrorCode::InvalidArgs);
     assert!(error.message.contains("version or size"));
 }
+
+/// A ref a C caller hands over was never judged by a capture, so it claims no
+/// twin: it is refused as an unknown identity, not as ambiguous.
+#[test]
+fn ffi_ref_entry_is_never_claimed_unique_or_a_twin() {
+    let role = CString::new("button").unwrap();
+    let name = CString::new("Primary").unwrap();
+    let mut entry = test_ref_entry();
+    entry.identity.role = role.as_ptr();
+    entry.identity.name = name.as_ptr();
+    let decoded = decode(entry).expect("the entry decodes");
+    assert_eq!(
+        decoded.identity.capture,
+        agent_desktop_core::CaptureVerdict::Unknown
+    );
+}

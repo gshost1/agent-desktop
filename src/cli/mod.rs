@@ -374,3 +374,7 @@ mod contract_command_surface_tests;
 
 #[cfg(test)]
 mod agent_identity_tests;
+
+#[cfg(test)]
+#[path = "skill_synopsis_tests.rs"]
+mod skill_synopsis_tests;
