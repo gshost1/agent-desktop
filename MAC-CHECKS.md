@@ -22,7 +22,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 | ACTION-12 | `d57dadfa` | running on the Mac (01:47Z); head frozen until the verdict |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | pending | DIRTY; being re-merged; steps pending |
-| #34 | SURFACE-3 | `e3818161` | HELD: script below awaits control's review; CI was running at write time |
+| #34 | SURFACE-3 | `e3818161` (old) | HELD: control asked for 5 changes (temp AGENT_DESKTOP_HOME, catch-all, --app on action, stop on first FAIL, close the NC panel) and George's go-ahead; do not run the script below |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
 ## #80 SURFACE-10: focused-surface ref resolves only in its capture window
