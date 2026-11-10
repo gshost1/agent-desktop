@@ -42,6 +42,8 @@ const SKILL_LINUX_REF_TROUBLESHOOTING: &str =
     include_str!("../../../../skills/agent-desktop-linux/references/troubleshooting.md");
 
 const SKILL_WEB_MAIN: &str = include_str!("../../../../skills/agent-desktop-web/SKILL.md");
+const SKILL_WEB_REF_REFERENCE: &str =
+    include_str!("../../../../skills/agent-desktop-web/references/reference.md");
 
 const SKILL_JEV_MAIN: &str = include_str!("../../../../skills/jev-desktop/SKILL.md");
 
@@ -170,6 +172,11 @@ const SKILL_LINUX_REFS: &[SkillRef] = &[
     },
 ];
 
+const SKILL_WEB_REFS: &[SkillRef] = &[SkillRef {
+    rel_path: "references/reference.md",
+    body: SKILL_WEB_REF_REFERENCE,
+}];
+
 const SKILLS: &[Skill] = &[
     Skill {
         canonical: "agent-desktop",
@@ -206,10 +213,10 @@ const SKILLS: &[Skill] = &[
     Skill {
         canonical: "agent-desktop-web",
         aliases: &["web", "agent-desktop-web"],
-        summary: "Web pages in Chrome on their own: launch with a DevTools endpoint, open a URL, snapshot the web surface, act on its refs in the background, and recover from web errors. Enough for web work without the desktop and platform skills.",
+        summary: "Web pages in Chrome on their own: a short quickstart for the open, snapshot, find, act loop, with launch options, date and time inputs, long pages and every web error in its reference. Enough for web work without the desktop and platform skills.",
         platform: None,
         main: SKILL_WEB_MAIN,
-        refs: &[],
+        refs: SKILL_WEB_REFS,
     },
     Skill {
         canonical: "agent-desktop-ffi",
