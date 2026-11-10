@@ -8,10 +8,12 @@ use zbus::blocking::Connection;
 use zbus::connection::Builder;
 
 use crate::system::bus::bus_deadline::within;
-use crate::system::bus::bus_fault::BusFault;
+use crate::system::bus::bus_fault::{BusFault, NO_REPLY, RECIPIENT_LEFT, SERVICE_EXITED};
 use crate::system::bus::bus_stage::Stage;
 use crate::system::context::cached_connection::{self, CachedConnection};
 use crate::system::context::service_owner::ServiceOwner;
+use crate::system::display::display_cause::Cause;
+use crate::system::display::display_server::{DisplayServer, session_server};
 
 const BUS_SERVICE: &str = "org.a11y.Bus";
 const BUS_PATH: &str = "/org/a11y/bus";
@@ -45,6 +47,60 @@ pub(crate) fn classify_at(stage: Stage, error: &zbus::Error) -> AdapterError {
     }
 }
 
+/// [`classify_at`] for a call to an AT-SPI service itself: the bus launcher
+/// or the registry. A service that disconnected without replying has exited;
+/// a NoReply that only means the bus timed the call out keeps its own answer,
+/// and so does an application call. A service exits when the display it was
+/// started with cannot be reached, so when this session names a display that
+/// does not answer, the display refusal is the answer, with the bus error kept
+/// in `details.bus_error`. A session that names no display, as over SSH, says
+/// nothing about the services' display.
+fn classify_service(stage: Stage, error: &zbus::Error) -> AdapterError {
+    if !service_left(error) {
+        return classify_at(stage, error);
+    }
+    display_behind(BusFault::ServiceExited.into_error(error), session_server())
+}
+
+fn service_left(error: &zbus::Error) -> bool {
+    matches!(error, zbus::Error::MethodError(name, Some(text), _)
+        if name.as_str() == NO_REPLY && text.contains(RECIPIENT_LEFT))
+}
+
+fn display_behind(error: AdapterError, display: DisplayServer) -> AdapterError {
+    let DisplayServer::Unavailable(why) = display else {
+        return error;
+    };
+    if why.cause == Cause::NotConfigured {
+        return error;
+    }
+    let mut refusal = crate::system::display::unreachable(why);
+    let mut details = match refusal.details.take() {
+        Some(serde_json::Value::Object(map)) => map,
+        _ => serde_json::Map::new(),
+    };
+    details.insert(
+        "bus_error".to_owned(),
+        serde_json::json!({ "message": error.message, "suggestion": error.suggestion }),
+    );
+    let refusal = refusal.with_details(serde_json::Value::Object(details));
+    match error.platform_detail {
+        Some(detail) => refusal.with_platform_detail(detail),
+        None => refusal,
+    }
+}
+
+/// Whether an error names its own cause, which a reconnect reports as it is:
+/// a display refusal or an AT-SPI service that exited.
+fn names_its_cause(error: &AdapterError) -> bool {
+    error.details.as_ref().is_some_and(|details| {
+        details.get("display_unavailable").is_some()
+            || details
+                .get("kind")
+                .is_some_and(|kind| kind == SERVICE_EXITED)
+    })
+}
+
 fn discover_address(deadline: Deadline, reconnect: bool) -> Result<String, AdapterError> {
     within(deadline, async {
         let session = Builder::session()
@@ -63,7 +119,7 @@ fn discover_address(deadline: Deadline, reconnect: bool) -> Result<String, Adapt
         proxy
             .call_with_flags("GetAddress", flags, &())
             .await
-            .map_err(|error| classify_at(Stage::SessionBus, &error))?
+            .map_err(|error| classify_service(Stage::SessionBus, &error))?
             .ok_or_else(|| AdapterError::internal("The accessibility bus returned no address"))
     })
 }
@@ -106,7 +162,7 @@ async fn announce_listener(connection: &AsyncConnection) -> Result<(), AdapterEr
         )
         .await
         .map(|_| ())
-        .map_err(|error| classify(&error))
+        .map_err(|error| classify_service(Stage::AccessibilityBus, &error))
 }
 
 /// Reads `ChildCount` from the AT-SPI registry root, which answers even when
@@ -134,7 +190,7 @@ pub(crate) fn probe_registry(
                 if is_connection_failure(&error) {
                     bus.forget(connection);
                 }
-                classify(&error)
+                classify_service(Stage::AccessibilityBus, &error)
             })
     })?;
     deadline.ensure_remaining()
@@ -173,7 +229,10 @@ impl SharedBus {
             connect(deadline, reconnect)
                 .map(|connection| connection.inner().clone())
                 .map_err(|error| {
-                    if reconnect && error.code == ErrorCode::PlatformNotSupported {
+                    if reconnect
+                        && error.code == ErrorCode::PlatformNotSupported
+                        && !names_its_cause(&error)
+                    {
                         AdapterError::internal("The established accessibility bus was lost")
                             .with_suggestion(
                                 "Retry after the application's accessibility connection recovers",
