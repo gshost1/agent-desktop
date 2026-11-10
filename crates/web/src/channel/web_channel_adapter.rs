@@ -46,7 +46,8 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         self
     }
 
-    pub fn inner(&self) -> &P {
+    #[cfg(test)]
+    pub(crate) fn inner(&self) -> &P {
         &self.inner
     }
 
@@ -157,12 +158,10 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
 }
 
 fn is_transport_failure(error: &AdapterError) -> bool {
-    let kind = error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(serde_json::Value::as_str);
-    matches!(kind, Some("cdp_transport_closed" | "cdp_transport_failed"))
+    matches!(
+        crate::cdp::protocol_error::error_kind(error),
+        Some("cdp_transport_closed" | "cdp_transport_failed")
+    )
 }
 
 #[cfg(test)]
