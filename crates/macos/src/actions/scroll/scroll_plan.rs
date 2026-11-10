@@ -62,6 +62,45 @@ pub(crate) fn next_direction(
     }
 }
 
+/// The next scroll while revealing a target inside one area, given the
+/// direction of the step this area last took. Once the area has moved, a
+/// target that is partly inside its viewport is revealed, and a direction that
+/// reverses the last step means page-sized steps are overshooting the target,
+/// so the area stops instead of bouncing between the two.
+pub(crate) fn next_reveal_direction(
+    target: Rect,
+    viewport: Rect,
+    blocked: BlockedDirections,
+    previous: Option<&Direction>,
+) -> Option<Direction> {
+    if previous.is_some() && overlaps(target, viewport) {
+        return None;
+    }
+    let direction = next_direction(target, viewport, blocked)?;
+    if previous.is_some_and(|previous| reverses(previous, &direction)) {
+        return None;
+    }
+    Some(direction)
+}
+
+fn overlaps(target: Rect, viewport: Rect) -> bool {
+    let width =
+        (target.x + target.width).min(viewport.x + viewport.width) - target.x.max(viewport.x);
+    let height =
+        (target.y + target.height).min(viewport.y + viewport.height) - target.y.max(viewport.y);
+    width > 0.0 && height > 0.0
+}
+
+fn reverses(previous: &Direction, next: &Direction) -> bool {
+    matches!(
+        (previous, next),
+        (Direction::Up, Direction::Down)
+            | (Direction::Down, Direction::Up)
+            | (Direction::Left, Direction::Right)
+            | (Direction::Right, Direction::Left)
+    )
+}
+
 fn toward(side: Ordering, before: Direction, after: Direction) -> Direction {
     if side == Ordering::Less {
         before

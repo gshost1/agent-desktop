@@ -1,6 +1,6 @@
 use agent_desktop_core::{Direction, Rect};
 
-use super::{BlockedDirections, bar_can_move, next_direction};
+use super::{BlockedDirections, bar_can_move, next_direction, next_reveal_direction};
 
 fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
     Rect {
@@ -157,4 +157,62 @@ fn scroll_bar_at_a_limit_cannot_move_past_it() {
     assert!(bar_can_move(1.0, &Direction::Up));
     assert!(bar_can_move(0.5, &Direction::Left));
     assert!(bar_can_move(f64::NAN, &Direction::Up));
+}
+
+#[test]
+fn page_steps_that_overshoot_stop_instead_of_bouncing() {
+    let viewport = rect(0.0, 100.0, 400.0, 300.0);
+    let overshot_below = rect(10.0, 420.0, 50.0, 20.0);
+
+    assert!(matches!(
+        next_reveal_direction(overshot_below, viewport, BlockedDirections::default(), None),
+        Some(Direction::Down)
+    ));
+    assert!(
+        next_reveal_direction(
+            overshot_below,
+            viewport,
+            BlockedDirections::default(),
+            Some(&Direction::Up)
+        )
+        .is_none()
+    );
+    assert!(matches!(
+        next_reveal_direction(
+            overshot_below,
+            viewport,
+            BlockedDirections::default(),
+            Some(&Direction::Down)
+        ),
+        Some(Direction::Down)
+    ));
+}
+
+#[test]
+fn partly_visible_target_is_revealed_once_the_area_has_moved() {
+    let viewport = rect(0.0, 100.0, 400.0, 300.0);
+    let clipped = rect(10.0, 390.0, 50.0, 20.0);
+
+    assert!(matches!(
+        next_reveal_direction(clipped, viewport, BlockedDirections::default(), None),
+        Some(Direction::Down)
+    ));
+    assert!(
+        next_reveal_direction(
+            clipped,
+            viewport,
+            BlockedDirections::default(),
+            Some(&Direction::Down)
+        )
+        .is_none()
+    );
+    assert!(matches!(
+        next_reveal_direction(
+            rect(10.0, 420.0, 50.0, 20.0),
+            viewport,
+            BlockedDirections::default(),
+            Some(&Direction::Down)
+        ),
+        Some(Direction::Down)
+    ));
 }
