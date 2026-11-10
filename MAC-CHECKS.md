@@ -36,7 +36,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
-| #86 | ADAPTERS-4 + ADAPTERS-1 | `5dbbfcc9` | steps ready (below); CI 13/13 (macOS Test 1035/0, 9 new chain_menu_steps tests), gates GREEN 5102/0, draft, CLEAN |
+| #86 | ADAPTERS-4 + ADAPTERS-1 | `5dbbfcc9` | **-a..-d PASS 2/2 on both apps; 1e VACUOUS** (POLICY_DENIED before send; selection read None), so no merge yet. 1e-only rev 2 pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
 | #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
