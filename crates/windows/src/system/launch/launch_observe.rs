@@ -41,6 +41,7 @@ pub(crate) fn watch_window(
 /// process appeared, with the code the shared launch contract gives that case. A stub that starts another program and exits ends
 /// here too: the window it caused belongs to a process this launch cannot
 /// attribute, so reporting the exited pid as the launch would be wrong.
+#[allow(dead_code)]
 pub(crate) fn exited_before_window(image: &str, pid: ProcessId, code: u32) -> AdapterError {
     let (kind, message) = match state_from_exit_code(code) {
         ProcessState::Crashed { .. } => (

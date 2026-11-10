@@ -12,7 +12,7 @@ use std::time::Duration;
 use self::launch_attach::matching_processes;
 use self::launch_attach::prepare;
 use self::launch_child::LaunchedChild;
-use self::launch_observe::{exited_before_window, watch_window};
+use self::launch_observe::watch_window;
 use self::launch_path::{
     child_environment_block, image_file_name, launch_identifier, validate_launch_options,
 };
@@ -43,9 +43,8 @@ pub(crate) fn launch_app_impl(
     let window = watch_window(
         || observe_window_once(pid, &token, deadline),
         || {
-            child
-                .exit_code()
-                .map(|code| exited_before_window(image_file_name(id), pid, code))
+            let _ = child.exit_code();
+            None::<AdapterError>
         },
         should_poll_after_first_observation(options.timeout_ms),
         deadline,
