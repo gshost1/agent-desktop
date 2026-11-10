@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::{
-    ElementIdentifier, IdentityMatch, RefEntry,
+    CaptureVerdict, ElementIdentifier, IdentityMatch, RefEntry,
     locator::live_locator::{LocatorEvidence, LocatorField, ObservationSource, ObservedTree},
     refs::ref_full_predicate::{DESCRIPTION, FullPredicate, NAME, NATIVE_ID},
     refs::ref_identity::stable_name,
@@ -14,8 +14,8 @@ const ROLE: u8 = DESCRIPTION << 1;
 const MASKS: usize = (NATIVE_ID | NAME | DESCRIPTION) as usize + 1;
 
 /// One whole-window observation, counted once into the field subsets its
-/// entries record, so every tokenless entry published from it is proven by the
-/// rule `proves_node` applies rather than by a fresh scan per entry.
+/// entries record, so every tokenless entry published from it is judged by the
+/// rule `verdict` applies rather than by a fresh scan per entry.
 ///
 /// The count is the comparison resolution runs: `FullPredicate::of_entry` of the
 /// entry being published, measured against the evidence every node reported, so
@@ -24,7 +24,7 @@ const MASKS: usize = (NATIVE_ID | NAME | DESCRIPTION) as usize + 1;
 pub(crate) struct CaptureProof<'a> {
     observed: &'a ObservedTree,
     start: Option<usize>,
-    buckets: [OnceLock<HashMap<LiveKey<'a>, usize>>; MASKS],
+    buckets: [OnceLock<HashMap<LiveKey<'a>, Option<usize>>>; MASKS],
     unread: Vec<(u8, LivePredicate<'a>)>,
     whole_window: bool,
 }
@@ -63,66 +63,75 @@ impl<'a> CaptureProof<'a> {
         self
     }
 
-    /// Whether `entry`, allocated at `path`, is proven. The path is read the way
+    /// The verdict on `entry`, allocated at `path`. The path is read the way
     /// allocation wrote it: the start node's own path, then child positions in
     /// the projection, which skips no child the observation kept even when the
-    /// native indices have gaps.
-    pub(crate) fn proves(&self, entry: &RefEntry, path: &[usize]) -> bool {
-        let Some(mut index) = self.start else {
-            return false;
-        };
-        let Some(prefix) = self
-            .observed
-            .nodes
-            .get(index)
-            .map(|node| node.path.as_slice())
-        else {
-            return false;
-        };
-        let Some(steps) = path.strip_prefix(prefix) else {
-            return false;
-        };
-        for step in steps {
-            match self
-                .observed
-                .nodes
-                .get(index)
-                .and_then(|node| node.children.get(*step))
-            {
-                Some(child) => index = *child as usize,
-                None => return false,
-            }
+    /// native indices have gaps. A path the observation does not hold is a
+    /// stale cut of the window, such as a drill root that moved, which a fresh
+    /// snapshot re-reads, so it is `Incomplete`, unless the read already holds
+    /// a twin of the entry, which no fresh snapshot removes.
+    pub(crate) fn verdict_at(&self, entry: &RefEntry, path: &[usize]) -> CaptureVerdict {
+        match self.node_at(path) {
+            Some(index) => self.verdict(entry, index),
+            None => match self.matched(&FullPredicate::of_entry(entry)) {
+                Some(None) => CaptureVerdict::Ambiguous,
+                _ => CaptureVerdict::Incomplete,
+            },
         }
-        self.proves_node(entry, index)
     }
 
-    /// Whether `entry` was proven unique at the node it was built from: the
-    /// observation must be a complete whole-window read, exactly one of its nodes
-    /// must match the entry's full predicate, no node may leave a recorded field
-    /// unread, and that one node must be this one.
-    pub(crate) fn proves_node(&self, entry: &RefEntry, index: usize) -> bool {
-        if !self.whole_window {
-            return false;
+    fn node_at(&self, path: &[usize]) -> Option<usize> {
+        let mut index = self.start?;
+        let prefix = self.observed.nodes.get(index)?.path.as_slice();
+        for step in path.strip_prefix(prefix)? {
+            index = *self.observed.nodes.get(index)?.children.get(*step)? as usize;
         }
+        Some(index)
+    }
+
+    /// The verdict on `entry` at the node it was built from. Matches are
+    /// counted first: two or more elements matching the entry's full predicate
+    /// are a twin, `Ambiguous`, even in a partial read, because more reading
+    /// cannot remove them. When this node is the one match, a read that is not
+    /// a complete whole-window read is `Incomplete`, and a complete one is
+    /// `Unique` unless a node leaves a recorded field unread. Every other
+    /// outcome is `Unknown`, in a partial read too, because it rests on this
+    /// node's own evidence, which a longer read does not change: the predicate
+    /// matches no node, because this node left a recorded field unread, or one
+    /// other node, so the entry does not describe the node it was built from.
+    pub(crate) fn verdict(&self, entry: &RefEntry, index: usize) -> CaptureVerdict {
         let predicate = FullPredicate::of_entry(entry);
-        let fields = predicate.mask();
-        if self.buckets[fields as usize]
-            .get_or_init(|| count_nodes(self.observed, fields))
-            .get(&key_of(&predicate))
-            != Some(&index)
-        {
-            return false;
+        match self.matched(&predicate) {
+            Some(None) => CaptureVerdict::Ambiguous,
+            Some(Some(found)) if found == index && !self.whole_window => CaptureVerdict::Incomplete,
+            Some(Some(found)) if found == index && !self.leaves_unread(&predicate) => {
+                CaptureVerdict::Unique
+            }
+            _ => CaptureVerdict::Unknown,
         }
-        !self.unread.iter().any(|(bits, live)| {
+    }
+
+    /// The node `predicate` matched: its index when exactly one node did,
+    /// `None` inside when two or more did, and `None` when none did.
+    fn matched(&self, predicate: &FullPredicate<'_>) -> Option<Option<usize>> {
+        let fields = predicate.mask();
+        self.buckets[fields as usize]
+            .get_or_init(|| count_nodes(self.observed, fields))
+            .get(&key_of(predicate))
+            .copied()
+    }
+
+    fn leaves_unread(&self, predicate: &FullPredicate<'_>) -> bool {
+        let fields = predicate.mask();
+        self.unread.iter().any(|(bits, live)| {
             bits & (fields | ROLE) != 0 && predicate.compare(live) == IdentityMatch::Unknown
         })
     }
 }
 
-/// The node indices each full predicate of this field subset matched, as a
-/// single index per predicate. A predicate two nodes match is stored with the
-/// last of them, so it never equals the node an entry was built from.
-fn count_nodes(observed: &ObservedTree, fields: u8) -> HashMap<LiveKey<'_>, usize> {
+/// The node each full predicate of this field subset matched: its index when
+/// exactly one node matched, `None` when two or more did.
+fn count_nodes(observed: &ObservedTree, fields: u8) -> HashMap<LiveKey<'_>, Option<usize>> {
     let mut counted: HashMap<LiveKey<'_>, (usize, usize)> = HashMap::new();
     for (index, node) in observed.nodes.iter().enumerate() {
         for key in keys_of(&node.evidence, fields) {
@@ -133,8 +142,7 @@ fn count_nodes(observed: &ObservedTree, fields: u8) -> HashMap<LiveKey<'_>, usiz
     }
     counted
         .into_iter()
-        .filter(|(_, (count, _))| *count == 1)
-        .map(|(key, (_, index))| (key, index))
+        .map(|(key, (count, index))| (key, (count == 1).then_some(index)))
         .collect()
 }
 
@@ -220,6 +228,10 @@ struct LiveKey<'a> {
 #[cfg(test)]
 #[path = "ref_capture_proof_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ref_capture_proof_verdict_tests.rs"]
+mod verdict_tests;
 
 #[cfg(test)]
 #[path = "ref_capture_proof_derived_name_tests.rs"]

@@ -128,7 +128,7 @@ fn an_oversized_snapshot_succeeds_as_a_partial_tree_with_resolvable_refs() {
     assert_eq!(stored.len(), local.len());
     for ref_id in [local.first().unwrap(), local.last().unwrap()] {
         let entry = stored.get(ref_id).expect("a presented ref is stored");
-        assert!(entry.identity.unique_at_capture);
+        assert!(entry.identity.capture.is_unique());
         resolve(&adapter, entry).expect("a stored ref resolves");
     }
 }
