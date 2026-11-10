@@ -40,8 +40,9 @@ pub(crate) fn list_windows_until(
     crate::system::window::window_inventory_global::stabilize_global_with(deadline, || {
         crate::system::window::window_inventory_global::capture_validated_with(
             || {
-                let owners =
-                    crate::system::app::workspace_apps::window_owner_snapshot_until(deadline)?;
+                let owners = crate::system::app::workspace_apps::named_window_owner_snapshot_until(
+                    app_filter, deadline,
+                )?;
                 owners.require_match(app_filter)?;
                 Ok(owners)
             },
