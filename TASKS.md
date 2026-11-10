@@ -498,3 +498,23 @@ exists and also runs CI's core Win32-leakage check.
 | LINUX-LAUNCH-ATSPI-INTERNAL-1 | Found while writing #122: on Linux with a private session bus and an unreachable `DISPLAY` (e.g. :1987) that the AT-SPI launcher inherits, `launch`'s registry read answers INTERNAL NoReply BEFORE the display check. The agent gets INTERNAL instead of the documented display error. | Do the display check first, or map an AT-SPI launcher NoReply caused by an unreachable display to the documented display / PLATFORM_NOT_SUPPORTED error, never INTERNAL. Add a test. | linux | none (private session) | S | none | queued (laptop, agent A) |
 | PREFLIGHT-DISPLAY-PASSTHROUGH-1 | From #124: on Linux with a named but dead DISPLAY, `launch` answers PERM_DENIED through the core permission preflight; #124 names the display in the suggestion. A display refusal (PLATFORM_NOT_SUPPORTED, display_unavailable) is the more accurate code. | Let the core permission preflight pass an adapter's display refusal through unchanged instead of mapping it to PERM_DENIED. Test across launch, snapshot and list-apps. | core + linux | none | S | #124 lands first | queued |
 | NOTIF-RESTORE-REPORT-1 | From #111's review (verdict MERGE). On Linux, a delivered `dismiss-notification` or `dismiss-all-notifications` whose message-list close cannot be verified answers `ok: true` with no `list_restore` and no log (`crates/linux/src/notifications/restore_report.rs` empty impls). Windows only logs it. Before #111 the agent at least got an error naming the restore. #111 deferred carrying it because #34 edits the same core files (`dismiss_notification.rs`, `NotificationInfo`); per AGENTS.md that is not a blocking reason, so it is owned here. | Carry `list_restore: "unverified"` on dismiss and clear results on both platforms once #34 lands. Invert-verify. Linux has no `tracing` dependency, so no log-only stopgap was added (it would touch Cargo.toml and Cargo.lock in the train). | laptop | after #34 |
+
+## After 1.4
+
+Scope freeze 2026-11-10 ~17:35Z (George via control): 1.4 is the 19 PRs in the two trains plus #126 and #121. Everything below waits. One line per item: what, state, branch, next step.
+
+- #34 SURFACE-3 notification identity key: PR open, head 670ebc04, local gates green, no CI running. Branch fix/notification-identity-key. Next: George's Mac check rev 2 (MAC-CHECKS.md), then merge main in and land.
+- #18 SURFACE-1 menu close wait: draft PR, head 42373866. Branch fix/menu-close-wait-phase. Next: after #34, merge main in, gates, review, Mac check.
+- CI flakes (WIN-ARM-FLAKE-1, WIN-E2E-SELFTEST-FLAKE-1, WIN-PRESENTATION-FLAKE-1, CORE-EXACTLY-ONCE-FLAKE-1, WEB-DOWNLOAD-FLAKE-1): fixes committed, not proven. Branch wip/test/windows-ci-flakes a378622e, no PR. Next: open the PR and run 3+ CI proof runs once macOS runners are healthy.
+- CLI time, no-sync cache class (SNAPSHOT-FSYNC-1): paused mid-work. Branch perf/refstore-no-fsync e3b4d481 (backup wip/perf/refstore-no-fsync). Next: meet control's two conditions, measure before/after, gates, PR.
+- FIND-TEXT-SLOW-1: measured, not started. Next: probe after the web innermost-only find --text item.
+- TEST-ISOLATE-SESSION-1: row only, not started. Next: own worktree, fix, invert-verify.
+- PREFLIGHT-DISPLAY-PASSTHROUGH-1: row only, not started (found from #124). Next: let the core permission preflight pass an adapter's display refusal through unchanged.
+- NOTIF-RESTORE-REPORT-1: row only (from #111's review). Next: after #34, carry list_restore on dismiss and clear results.
+- LOCK-LABEL-2: row only. Next: after #41 lands, label a deadline expiry with no contention as kind: deadline in FileLock and the Windows handle lock.
+- STRICT-TRACE-CLOSE-1: row only. Next: after #18.
+- MAC-SE-1: row only. Next: after #34 (Mac).
+- DENSE-MENU-1, FULLSCREEN-LAUNCH-1, SETVALUE-SE-1: Mac-owned rows, not started here.
+- CHANGELOG-FRAGMENTS-1: post-1.4 by design.
+- SURFACE-5 follow-ups beyond #111: waiting for the agent's per-item lines (it is stopping now).
+- Web session items (innermost-only find --text, weather suggestion skill line, auto_wait/batch trims, --first -> matches 2.7): waiting for the web session's per-item lines (it is stopping now).
