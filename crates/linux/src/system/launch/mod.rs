@@ -11,12 +11,14 @@ use agent_desktop_core::{
 use self::launch_attach::{Decision, decide};
 use self::launch_observe::{POLL_INTERVAL, find_owner, pids_of, running_of};
 use self::launch_owner_query::OwnerQuery;
+use self::launch_preflight::{require_display, with_spawned_pid};
 use self::launch_search::Search;
 use self::launch_spawn::{before_spawn, spawn, validate};
 use self::launch_target::{Plan, resolve};
 use self::launch_unlisted::report_unlisted;
 use super::SharedBus;
 use crate::system::app::app_alias::current_index;
+use crate::system::display::display_server::session_server;
 use crate::system::focus::focus_window::focus_window;
 use crate::system::process::liveness::{Liveness, liveness};
 use crate::system::process::running_app::Running;
@@ -299,17 +301,21 @@ impl Launch<'_> {
             self.deadline,
             self.options.presentation.activate,
         );
-        match find_owner(self.bus, &mut spawned, &query)? {
+        let spawned_pid = spawned.pid;
+        let owner = find_owner(self.bus, &mut spawned, &query)
+            .map_err(|error| with_spawned_pid(error, spawned_pid))?;
+        match owner {
             Some(owner) => {
                 let known = before
                     .residents
                     .iter()
                     .find(|(resident, _)| resident.identity() == owner.identity());
                 let window = match known {
-                    Some((_, windows)) => self.window_of(&owner, true, windows)?,
-                    None if before.processes.contains(&owner.identity()) => None,
-                    None => self.window_of(&owner, true, &HashSet::new())?,
-                };
+                    Some((_, windows)) => self.window_of(&owner, true, windows),
+                    None if before.processes.contains(&owner.identity()) => Ok(None),
+                    None => self.window_of(&owner, true, &HashSet::new()),
+                }
+                .map_err(|error| with_spawned_pid(error, spawned_pid))?;
                 Ok(self.conclude_with(&owner, window, owner.pid == spawned.pid))
             }
             None => Ok(report_unlisted(self.id, spawned.pid)),
@@ -331,6 +337,7 @@ pub(crate) fn launch_app(
     let deadline = bounded(lease.deadline(), options.timeout_ms);
     let search = Search::from_env();
     let plan = resolve(id, &options.args, &search, &current_index())?;
+    require_display(session_server())?;
     let registry = crate::system::registry::read_processes(bus, deadline).map_err(before_spawn)?;
     let running = running_of(&registry).map_err(before_spawn)?;
     let launch = Launch {
@@ -381,6 +388,7 @@ mod launch_handoff;
 pub(super) mod launch_live_tests;
 pub(super) mod launch_observe;
 mod launch_owner_query;
+mod launch_preflight;
 pub(crate) mod launch_sample;
 pub(crate) mod launch_search;
 mod launch_spawn;
