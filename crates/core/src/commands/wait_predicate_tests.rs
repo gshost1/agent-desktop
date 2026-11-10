@@ -119,6 +119,7 @@ impl SystemOps for FlippingPredicateAdapter {}
 #[test]
 fn element_wait_enabled_predicate_uses_live_state() {
     let _guard = HomeGuard::new();
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let snapshot_id = snapshot_with_one_ref();
     let adapter = PredicateAdapter {
         state: Some(ElementState {
@@ -150,6 +151,7 @@ fn element_wait_enabled_predicate_uses_live_state() {
 #[test]
 fn element_wait_value_predicate_matches_live_value_without_leaking_it() {
     let _guard = HomeGuard::new();
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let snapshot_id = snapshot_with_one_ref();
     let adapter = PredicateAdapter {
         state: None,
@@ -299,6 +301,7 @@ fn element_wait_actionable_retries_transient_observation_errors() {
 #[test]
 fn element_wait_actionable_type_fails_on_uneditable_role() {
     let _guard = HomeGuard::new();
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let snapshot_id = snapshot_with_one_ref();
     let adapter = PredicateAdapter {
         state: Some(ElementState {
