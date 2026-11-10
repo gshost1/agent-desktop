@@ -8,7 +8,7 @@ use windows_sys::Win32::System::Threading::{
 
 use crate::system::fixture::test_support::with_interaction_lease_test_lock;
 use crate::system::interaction_lease::INTERACTION_LEASE_HANDLE_ENV;
-use crate::system::launch_path::{child_environment_block, resolve_executable};
+use crate::system::launch::launch_path::{child_environment_block, resolve_executable};
 
 /// End-to-end proof that a process this crate launches never inherits the
 /// adopted-lease handoff variable: builds the exact block `create_process`

@@ -6,8 +6,8 @@ use agent_desktop_core::{
 };
 
 use super::super::app_ops::{ProcessRow, process_snapshot};
-use super::super::launch_path::{image_file_name, resolve_executable};
 use super::super::process_identity;
+use super::launch_path::{image_file_name, resolve_executable};
 
 pub(super) fn prepare(
     id: &str,
@@ -49,7 +49,7 @@ pub(super) fn prepare(
         return Err(super::ambiguous_apps(&rows));
     }
     if let Some((row, token, _process)) = exact_matches.pop() {
-        let window = super::observe_window(row.pid, &token, options, deadline)?;
+        let window = super::observe_window_once(row.pid, &token, deadline)?;
         return Ok((
             executable,
             Some(super::launch_result(id, row.pid, token, window)),
