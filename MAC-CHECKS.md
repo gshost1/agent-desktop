@@ -31,20 +31,20 @@ not post, and proves it with the foreign count and key-hash set before and after
 
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
-| #80 | SURFACE-10 | `4ef2c62a` | **PASS**, 2 runs (rev 3), CI 13/13. Landing: the verdict carries if the PR's own macOS diff is identical after the main merge-in |
+| #80 | SURFACE-10 | `321c63ef` | **RERUN rev 3** on the new head (PASSed on `4ef2c62a`; #110 changed the child walk). CI 13/13, CLEAN; all laptop merges held until #80 lands |
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
 | #58 (a) cap-1 | ACTION-12 | `063d9229` | READY: BUILD + RUN below; CI 13/13 (run 42807214725), gates GREEN 5138/0, draft. Run after #80's rerun (all laptop merges are held for #80) |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
-| #86 | ADAPTERS-4 + ADAPTERS-1 | `5dbbfcc9` | **-a..-d PASS 2/2 on both apps; 1e VACUOUS** (POLICY_DENIED before send; selection read None), so no merge yet. 1e-only rev 2 pending |
+| #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` | revision 2 ready (full: Part 1, real 1e, Part 2, dense Part D, timing Part T); CI 13/13, CLEAN, draft |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
 | #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
 ## #80 SURFACE-10: a focused-surface ref resolves only in the window it was captured from
 
-Head: `4ef2c62a5e2563d4334f9c65e07bfd2598119a2f` (revision 3, 2026-11-10). It merges origin/main `9132aa89` and contains
+Head: `321c63efbadb6e393ca609fafa90dcad959ec3c1` (revision 3, rerun on the new head: main `4a41ffc8` merged in, gates GREEN 5136/0, CI 13/13, CLEAN). The Mac PASSed rev 3 on `4ef2c62a`; #110 changed the child walk the observation uses, so it reruns. It merges origin/main `9132aa89` and contains
 the docs fix `cf21c2cd`. CI was running at write time: check the head is green before running.
 
 crates/macos changed vs the Part-1-PASS head `2711e496` (main brought in #97 child_read and other macOS files), so Part 1
@@ -74,8 +74,8 @@ BUILD (no lock; prints `BUILD-OK R=<dir>`):
 
 ```bash
 #!/usr/bin/env bash
-# BUILD for #80 at 4ef2c62a5e2563d4334f9c65e07bfd2598119a2f: run outside the desktop lock
-SHA=4ef2c62a5e2563d4334f9c65e07bfd2598119a2f
+# BUILD for #80 at 321c63efbadb6e393ca609fafa90dcad959ec3c1: run outside the desktop lock
+SHA=321c63efbadb6e393ca609fafa90dcad959ec3c1
 TAG=ad-s10
 set -u
 REPO="$HOME/Projects/agent-desktop"
@@ -129,8 +129,8 @@ RUN (desktop lock held; save as `run.sh`, then `bash run.sh <R>`):
 
 ```bash
 #!/usr/bin/env bash
-# RUN for #80 at 4ef2c62a5e2563d4334f9c65e07bfd2598119a2f: run with the desktop lock held; arguments: the dir BUILD printed, then all (default)
-SHA=4ef2c62a5e2563d4334f9c65e07bfd2598119a2f
+# RUN for #80 at 321c63efbadb6e393ca609fafa90dcad959ec3c1: run with the desktop lock held; arguments: the dir BUILD printed, then all (default)
+SHA=321c63efbadb6e393ca609fafa90dcad959ec3c1
 set -u
 R="${1:?usage: run.sh <scratch dir printed by BUILD-OK>}"
 B="$R/src/target/release/agent-desktop"
@@ -2342,81 +2342,73 @@ python3 "$R/probe_repro.py"
 echo "probe exit $? ; send $R/probe.log"
 ```
 
-## #86 ADAPTERS-4 + ADAPTERS-1: a right-click fallback's selection carries into its delivery; an unreadable menu probe refuses
+## #86 ADAPTERS-4 + ADAPTERS-1: a right-click fallback's selection carries into its delivery; the menu gate refuses unless the menu state is known
 
-Head: `5dbbfcc977a72d89db2e91a66b2b7462f02e7ef9`. The script is verbatim from the PR body's "Mac verification" section.
-It covers the AgentDeskFixture (SwiftUI) and Script Editor (AppKit).
+Head: `d448d78164eb734cdfbafa58a611bd8ab82b41be`, revision 2 (2026-11-10). CI 13/13 (run 42807833451; all 13
+menu_gate + chain_menu_steps tests pass in macOS Test 1082/0), gates GREEN 5136/0, CLEAN, draft. Commits:
+- `a834bb8b`: the F1 window-server menu gate, as control approved.
+- `06fe3a29`: invert; CI run 42803486018 failed exactly `a_capped_search_without_a_window_server_answer_refuses`.
+- `d448d781`: revert.
 
-Expected:
-- every `-a`, `-c` and `1e` line reads PASS, and every `-b` and `-d` line reads True;
-- `1e` may print SKIP when list-item-3 has no ref;
-- Part 2 is skipped, and says so, if Script Editor was already running.
+Main is merged at `4f7d3837`; a main merge-in is needed before landing.
 
-How it runs:
-- builds the SHA in a detached worktree under a fresh `mktemp -d`, after cargo is idle;
-- copies desktop_space.sh before building, with its `rm` line replaced by an echo; the script refuses to run if any
-  `rm` remains or a Mac-local path in it is missing;
-- observes windows with a CGWindowList helper (pid and layer only);
-- launches the fixture by its executable, so no Launch Services resolution is needed.
+crates/macos changed since `5dbbfcc9`, so the earlier -a..-d pass does not carry over: this is a full run.
 
-What it leaves: the trap quits only the apps it launched and runs `lsregister -u` on the fixture. The scratch dir and
-worktree stay for George; the remove command is printed. Laptop checks: `bash -n` is clean, and grep finds no `rm`,
-System Events, osascript, lsappinfo, Finder or TextEdit.
+RUN parts:
+- **Part 1:** fixture -a..-d.
+- **1e:** a `--headed` right-click on list-item-3, with the selection read via `find --role statictext --native-id
+  list-selection`. It HALTs "1e not exercised" if the before-value is empty, the row is off-window, or the selection is
+  unchanged.
+- **Part 2:** Script Editor -a..-d; skipped if Script Editor was already running.
+- **Part D:** a throwaway DenseMenu AppKit app (3,000 NSButtons) built by BUILD and launched by its executable. The
+  precondition is that `snapshot --surface menu` reports `surface_search_limit`, else HALT. Then D-a..D-d: D-a, no
+  menu open: the step acts. D-c, menu open: the second right-click is not_delivered.
+- **Part T:** headless right-click ms, min/median/max of 7 after a warm-up, merge-base main vs head, on the fixture
+  and on DenseMenu. This decides whether the gate's window-list read needs reusing (control, 2026-11-10).
+
+No scroll-to anywhere.
+
+Expected: every -a, -c and 1e line PASS; every -b and -d line True; the D precondition line printed; four `T ...`
+lines.
+
+Notes for the worker:
+- 1e FAIL with `retry=safe` is the product failure this check exists for.
+- D-a FAIL with POLICY_DENIED supported_action means the NSButton exposed no AXShowMenu: a setup limit, so report the
+  envelope.
+- A Part T "sample failed" on dense head while dense base acts means the gate refuses in dense windows (F1 not fixed).
+
+Laptop checks: `bash -n` is clean, and grep finds no rm, System Events, osascript, lsappinfo, Finder or TextEdit.
+
+BUILD (no lock; prints `BUILD-OK R=<dir>`):
 
 ```bash
 #!/usr/bin/env bash
-SHA=5dbbfcc977a72d89db2e91a66b2b7462f02e7ef9
+# BUILD for #86 at d448d78164eb734cdfbafa58a611bd8ab82b41be: run outside the desktop lock
+SHA=d448d78164eb734cdfbafa58a611bd8ab82b41be
 TAG=ad-a41
 set -u
 REPO="$HOME/Projects/agent-desktop"
 R=$(mktemp -d "${TMPDIR:-/tmp}/$TAG.XXXXXX") || { echo "FAIL-SETUP mktemp"; exit 1; }
-mkdir "$R/home" && chmod 700 "$R/home"
+mkdir "$R/home" "$R/space" && chmod 700 "$R/home" "$R/space"
 echo "scratch dir: $R (nothing is removed; leave it for George)"
-export AGENT_DESKTOP_HOME="$R/home"
-LAUNCHED_PIDS=""
-LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-cleanup() {
-  echo "== cleanup (trap EXIT)"
-  for entry in $LAUNCHED_PIDS; do
-    name=${entry%%=*}; name=${name//_/ }; pid=${entry##*=}
-    kill -0 "$pid" 2>/dev/null || { echo "cleanup: $name pid $pid already gone"; continue; }
-    [ -x "${B:-}" ] && "$B" close-app "$name" >/dev/null 2>&1
-    for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
-    kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null
-    for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
-    kill -0 "$pid" 2>/dev/null && echo "cleanup: $name pid $pid STILL RUNNING" || echo "cleanup: quit $name pid $pid (launched by this script)"
-  done
-  if [ -d "$R/fixture/AgentDeskFixture.app" ]; then
-    "$LSREG" -u "$R/fixture/AgentDeskFixture.app" 2>/dev/null
-    echo "cleanup: lsregister -u $R/fixture/AgentDeskFixture.app ran"
-  fi
-  echo "cleanup: done. Left for George: $R and the worktree $R/src"
-  echo "  (git -C ~/Projects/agent-desktop worktree remove --force $R/src)"
-}
-trap cleanup EXIT
-full() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d, indent=1)) if d.get("ok") is not True else None'; }
-jget() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
-ref_of() { jget '((d.get("data") or {}).get("match") or {}).get("ref_id","")'; }
-
-[ "$(pgrep -x AgentDeskFixture)" = "" ] || { echo "FAIL-SETUP AgentDeskFixture already running (pid $(pgrep -x AgentDeskFixture)); quit it first"; exit 1; }
 git -C "$REPO" fetch -q origin || { echo "FAIL-SETUP fetch"; exit 1; }
 [ "$(git -C "$REPO" rev-parse "$SHA^{commit}" 2>/dev/null)" = "$SHA" ] || { echo "FAIL-SETUP $SHA not in the repo"; exit 1; }
 DS="$R/desktop_space.sh"
 git -C "$REPO" show origin/chore/speed-1.4-tasks:bench-tools/desktop_space.sh \
-  | sed 's|^r[m] .*AGENT_DESKTOP_HOME.*$|echo "desktop-space home left at $AGENT_DESKTOP_HOME"|' > "$DS" \
+  | sed -e 's|^r[m] .*AGENT_DESKTOP_HOME.*$|echo "desktop-space home left at $AGENT_DESKTOP_HOME"|' \
+        -e 's|mktemp -d /[^)]*|mktemp -d "$SPACE_DIR/space.XXXX"|' > "$DS" \
   || { echo "FAIL-SETUP desktop_space.sh copy"; exit 1; }
 if grep -nE '(^|[;&|[:space:]])r[m][[:space:]]' "$DS"; then echo "FAIL-SETUP desktop_space.sh still runs rm"; exit 1; fi
+grep -q 'mktemp -d "$SPACE_DIR/space.XXXX"' "$DS" || { echo "FAIL-SETUP desktop_space.sh mktemp line not redirected"; cat "$DS"; exit 1; }
 for p in $(grep -oE '/(Users|private)/[^ "()]+' "$DS"); do
-  case "$p" in *XXXX) p=$(dirname "$p");; esac
   [ -e "$p" ] || { echo "FAIL-SETUP desktop_space.sh path missing: $p"; exit 1; }
 done
-echo "desktop_space.sh copied to $DS"
+echo "desktop_space.sh copied to $DS (homes go under $R/space)"
 git -C "$REPO" worktree add -q --detach "$R/src" "$SHA" || { echo "FAIL-SETUP worktree"; exit 1; }
 while pgrep -x cargo >/dev/null; do sleep 5; done
-( cd "$R/src" && cargo build -q --release -p agent-desktop ) || { echo "FAIL-SETUP build"; exit 1; }
+( cd "$R/src" && CARGO_TARGET_DIR="$R/src/target" cargo build -q --release -p agent-desktop ) || { echo "FAIL-SETUP build"; exit 1; }
 B="$R/src/target/release/agent-desktop"
 echo "built $("$B" --version) at $(git -C "$R/src" rev-parse HEAD)"
-
 cat > "$R/cgfront.swift" <<'SWIFT'
 import CoreGraphics
 import Foundation
@@ -2437,11 +2429,113 @@ for window in list {
 print("windows=\(own) front=\(front == pid ? "yes" : "no")")
 SWIFT
 swiftc -O -o "$R/cgfront" "$R/cgfront.swift" 2>"$R/cgfront.log" || { echo "FAIL-SETUP cgfront build"; cat "$R/cgfront.log"; exit 1; }
+bash "$R/src/tests/fixture-app/build.sh" "$R/fixture" >"$R/fixture-build.log" 2>&1 || { echo "FAIL-SETUP fixture build"; cat "$R/fixture-build.log"; exit 1; }
+BASE=$(git -C "$REPO" merge-base "$SHA" origin/main) || { echo "FAIL-SETUP merge-base"; exit 1; }
+git -C "$REPO" worktree add -q --detach "$R/base" "$BASE" || { echo "FAIL-SETUP base worktree"; exit 1; }
+while pgrep -x cargo >/dev/null; do sleep 5; done
+( cd "$R/base" && CARGO_TARGET_DIR="$R/base/target" cargo build -q --release -p agent-desktop ) || { echo "FAIL-SETUP base build"; exit 1; }
+echo "base (merge-base main) built: $("$R/base/target/release/agent-desktop" --version) at $BASE"
+mkdir "$R/dense"
+cat > "$R/dense/main.swift" <<'SWIFT'
+import AppKit
 
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+final class Delegate: NSObject, NSApplicationDelegate {
+    var window: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 160, y: 160, width: 900, height: 640),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false)
+        window.title = "Dense Menu"
+        let document = FlippedView(frame: NSRect(x: 0, y: 0, width: 1960, height: 40 + 150 * 24))
+        let target = NSButton(title: "Dense Target", target: nil, action: nil)
+        target.frame = NSRect(x: 10, y: 8, width: 160, height: 24)
+        target.setAccessibilityIdentifier("dense-target")
+        let menu = NSMenu(title: "Dense")
+        menu.addItem(withTitle: "Dense Choice", action: nil, keyEquivalent: "")
+        target.menu = menu
+        document.addSubview(target)
+        for row in 0..<150 {
+            for column in 0..<20 {
+                let button = NSButton(title: "b\(row)-\(column)", target: nil, action: nil)
+                button.frame = NSRect(x: 10 + column * 97, y: 40 + row * 24, width: 92, height: 22)
+                document.addSubview(button)
+            }
+        }
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 640))
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.documentView = document
+        window.contentView = scroll
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.window = window
+    }
+}
+
+let application = NSApplication.shared
+application.setActivationPolicy(.regular)
+let delegate = Delegate()
+application.delegate = delegate
+application.run()
+SWIFT
+swiftc -O -o "$R/dense/DenseMenu" "$R/dense/main.swift" 2>"$R/dense/build.log" || { echo "FAIL-SETUP DenseMenu build"; cat "$R/dense/build.log"; exit 1; }
+echo "DenseMenu built at $R/dense/DenseMenu"
+echo "BUILD-OK R=$R"
+echo "next, with the desktop lock held: bash run.sh $R"
+```
+
+RUN (desktop lock held; save as `run.sh`, then `bash run.sh <R>`; optional second argument: all | checks | timing):
+
+```bash
+#!/usr/bin/env bash
+# RUN for #86 at d448d78164eb734cdfbafa58a611bd8ab82b41be: run with the desktop lock held; arguments: the dir BUILD printed, then all (default)
+SHA=d448d78164eb734cdfbafa58a611bd8ab82b41be
+set -u
+R="${1:?usage: run.sh <scratch dir printed by BUILD-OK>}"
+B="$R/src/target/release/agent-desktop"
+[ -x "$B" ] && [ -x "$R/cgfront" ] && [ -d "$R/fixture/AgentDeskFixture.app" ] || { echo "FAIL-SETUP $R is not a finished BUILD dir"; exit 1; }
+[ "$(git -C "$R/src" rev-parse HEAD)" = "$SHA" ] || { echo "FAIL-SETUP $R/src is not at $SHA"; exit 1; }
+RUNDIR=$(mktemp -d "$R/run.XXXXXX") || { echo "FAIL-SETUP mktemp"; exit 1; }
+mkdir "$RUNDIR/home" && chmod 700 "$RUNDIR/home"
+export AGENT_DESKTOP_HOME="$RUNDIR/home"
+echo "run dir: $RUNDIR (binary $("$B" --version) at $SHA)"
+LAUNCHED_PIDS=""
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+cleanup() {
+  echo "== cleanup (trap EXIT)"
+  for entry in $LAUNCHED_PIDS; do
+    name=${entry%%=*}; name=${name//_/ }; pid=${entry##*=}
+    kill -0 "$pid" 2>/dev/null || { echo "cleanup: $name pid $pid already gone"; continue; }
+    "$B" close-app "$name" >/dev/null 2>&1
+    for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+    kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null
+    for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+    kill -0 "$pid" 2>/dev/null && echo "cleanup: $name pid $pid STILL RUNNING" || echo "cleanup: quit $name pid $pid (launched by this script)"
+  done
+  "$LSREG" -u "$R/fixture/AgentDeskFixture.app" 2>/dev/null
+  echo "cleanup: lsregister -u $R/fixture/AgentDeskFixture.app ran"
+  echo "cleanup: done. Left for George: $R (worktree $R/src: git -C ~/Projects/agent-desktop worktree remove --force $R/src)"
+}
+trap cleanup EXIT
+halt() { echo "HALT: $*"; exit 3; }
+full() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d, indent=1)) if d.get("ok") is not True else None'; }
+jget() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
+ref_of() { jget '((d.get("data") or {}).get("match") or {}).get("ref_id","")'; }
+count_of() { echo "$1" | wc -w | tr -d ' '; }
+status_value() { "$B" find --app "$1" --window-id "$2" --role statictext --native-id "$3" --first | jget '((d.get("data") or {}).get("match") or {}).get("value") or ""'; }
+
+[ -z "$(pgrep -x AgentDeskFixture)" ] || { echo "FAIL-SETUP AgentDeskFixture already running (pid $(pgrep -x AgentDeskFixture)); quit it first"; exit 1; }
 if pgrep -x Calculator >/dev/null; then
   echo "desktop-space reset SKIPPED: Calculator was already running (pid $(pgrep -x Calculator)) and stays running; make sure no full-screen app is in front"
 else
-  bash "$DS"; echo "desktop-space reset ran ($DS)"
+  SPACE_DIR="$R/space" bash "$R/desktop_space.sh"; echo "desktop-space reset ran (homes under $R/space)"
 fi
 
 focused_id() { "$B" list-windows --app "$1" | python3 -c 'import json,sys; print(" ".join(w["id"] for w in json.load(sys.stdin).get("data",[]) if w.get("is_focused")))'; }
@@ -2455,7 +2549,19 @@ front_on() {
   done
   echo "FAIL-SETUP $APP window $WID not front: cg='$CG' focused='$F'"; exit 1
 }
-
+win_ids() { "$B" list-windows --app "$1" | python3 -c 'import json,sys; t=sys.argv[1].split("|"); print(" ".join(w["id"] for w in json.load(sys.stdin).get("data",[]) if w.get("title") in t))' "$2"; }
+wait_ids() { for _ in $(seq 1 50); do v=$(win_ids "$1" "$2"); [ "$(count_of "$v")" -ge "$3" ] && { echo $v; return; }; sleep 0.2; done; echo ""; }
+start_fixture() {
+  "$R/fixture/AgentDeskFixture.app/Contents/MacOS/AgentDeskFixture" >"$RUNDIR/fixture.log" 2>&1 &
+  FPID=$!; LAUNCHED_PIDS="$LAUNCHED_PIDS AgentDeskFixture=$FPID"
+  for _ in $(seq 1 50); do
+    M=$("$B" list-windows --app AgentDeskFixture | python3 -c 'import json,sys; print(" ".join(w["id"] for w in json.load(sys.stdin).get("data",[]) if w.get("title")!="Duplicate Window"))')
+    [ "$(count_of "$M")" -eq 1 ] && break; sleep 0.2
+  done
+  echo "fixture pid=$FPID M=$M"; [ "$(count_of "$M")" -eq 1 ] || { echo "FAIL-SETUP fixture window"; exit 1; }
+  front_on AgentDeskFixture "$FPID" "$M"
+}
+PARTS="${2:-all}"
 first_ok() { python3 -c '
 import json,sys
 d=json.load(sys.stdin); e=d.get("error") or {}
@@ -2468,6 +2574,16 @@ d=json.load(sys.stdin); e=d.get("error") or {}; dl=(e.get("disposition") or {}).
 print("PASS" if d.get("ok") is False and dl=="not_delivered" else "FAIL ok=%s delivery=%s" % (d.get("ok"), dl))
 print(json.dumps(d, indent=1))'; }
 ok_of() { OUT=$(cat); echo "$OUT" | jget 'd["ok"]'; echo "$OUT" | full; }
+on_screen() { python3 -c '
+import json,sys
+el=(json.loads(sys.argv[1]).get("data") or {}); w=json.loads(sys.argv[2]).get("data") or []
+b=el.get("value") if isinstance(el.get("value"),dict) else el.get("bounds") or el
+win=[x.get("bounds") for x in w if x.get("id")==sys.argv[3]]
+ok=False
+try:
+    wb=win[0]; ok = b["x"]>=wb["x"] and b["y"]>=wb["y"] and b["x"]+b["width"]<=wb["x"]+wb["width"] and b["y"]+b["height"]<=wb["y"]+wb["height"]
+except Exception: pass
+print("yes" if ok else "no element=%s window=%s" % (json.dumps(b), json.dumps(win)))' "$1" "$2" "$3"; }
 
 second_menu_check() {
   APP="$1"; PID="$2"; WID="$3"; REF="$4"; LABEL="$5"
@@ -2479,52 +2595,103 @@ second_menu_check() {
   echo "$LABEL-d menu closed after escape (expect True):"; "$B" wait --menu-closed --app "$APP" --timeout 2000 | ok_of
 }
 
+if [ "$PARTS" = all ] || [ "$PARTS" = checks ]; then
 echo "== Part 1: AgentDeskFixture (SwiftUI)"
-bash "$R/src/tests/fixture-app/build.sh" "$R/fixture" >"$R/fixture-build.log" 2>&1 || { echo "FAIL-SETUP fixture build"; cat "$R/fixture-build.log"; exit 1; }
-"$R/fixture/AgentDeskFixture.app/Contents/MacOS/AgentDeskFixture" >"$R/fixture.log" 2>&1 &
-FPID=$!; LAUNCHED_PIDS="$LAUNCHED_PIDS AgentDeskFixture=$FPID"
-for _ in $(seq 1 50); do M=$("$B" list-windows --app AgentDeskFixture | jget '" ".join(w["id"] for w in d.get("data",[]))'); [ "$(echo $M | wc -w)" = 1 ] && break; sleep 0.2; done
-echo "fixture pid=$FPID M=$M"; [ "$(echo $M | wc -w)" = 1 ] || { echo "FAIL-SETUP fixture window"; exit 1; }
-front_on AgentDeskFixture "$FPID" "$M"
+start_fixture
 CT=$("$B" find --app AgentDeskFixture --window-id "$M" --role button --name context-target --exact --first | ref_of)
 [ -n "$CT" ] || { echo "FAIL-SETUP no context-target ref"; exit 1; }
-"$B" scroll-to "$CT" | full
-CT=$("$B" find --app AgentDeskFixture --window-id "$M" --role button --name context-target --exact --first | ref_of)
-echo "context-target ref=$CT bounds: $("$B" get "$CT" --property bounds | jget '(d.get("data") or {})')"
 second_menu_check AgentDeskFixture "$FPID" "$M" "$CT" 1
-selection() { "$B" find --app AgentDeskFixture --window-id "$M" --name list-selection --exact --first | jget '((d.get("data") or {}).get("match") or {}).get("value")'; }
+
+echo "== 1e: a headed right-click whose selecting fallback changes the list selection"
+BEFORE=$(status_value AgentDeskFixture "$M" list-selection); echo "list-selection before: '$BEFORE'"
+[ -n "$BEFORE" ] || halt "1e not exercised: list-selection unreadable before the right-click"
+[ "$BEFORE" != 3 ] || halt "1e not exercised: list-item-3 already selected"
 ROW=$("$B" find --app AgentDeskFixture --window-id "$M" --name list-item-3 --exact --first | ref_of)
-if [ -z "$ROW" ]; then echo "1e SKIP: list-item-3 has no ref (setup limit, not a failure)"; else
-  "$B" scroll-to "$ROW" | full
-  ROW=$("$B" find --app AgentDeskFixture --window-id "$M" --name list-item-3 --exact --first | ref_of)
-  front_on AgentDeskFixture "$FPID" "$M"
-  BEFORE=$(selection); OUT=$("$B" right-click "$ROW"); AFTER=$(selection)
-  echo "list-selection before=$BEFORE after=$AFTER"
-  echo "1e a right-click that changed the selection never says retry safe (expect PASS):"
-  printf '%s' "$OUT" | python3 -c '
+[ -n "$ROW" ] || halt "1e not exercised: list-item-3 has no ref"
+VIS=$(on_screen "$("$B" get "$ROW" --property bounds)" "$("$B" list-windows --app AgentDeskFixture)" "$M"); echo "list-item-3 on screen: $VIS"
+[ "$VIS" = yes ] || halt "1e not exercised: list-item-3 is not inside the window"
+front_on AgentDeskFixture "$FPID" "$M"
+OUT=$("$B" --headed right-click "$ROW")
+for _ in $(seq 1 10); do AFTER=$(status_value AgentDeskFixture "$M" list-selection); [ "$AFTER" != "$BEFORE" ] && break; sleep 0.2; done
+echo "list-selection after: '$AFTER'"; echo "right-click envelope:"; echo "$OUT" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), indent=1))'
+[ -n "$AFTER" ] && [ "$AFTER" != "$BEFORE" ] || { "$B" press escape --app AgentDeskFixture | full; halt "1e not exercised: selection unchanged (before='$BEFORE' after='$AFTER')"; }
+echo "1e a right-click that changed the selection never says retry safe (expect PASS):"
+echo "$OUT" | python3 -c '
 import json,sys
-d=json.load(sys.stdin); b,a=sys.argv[1],sys.argv[2]; e=d.get("error") or {}; r=(e.get("disposition") or {}).get("retry")
-print("PASS" if d.get("ok") is True or b==a or r=="unsafe" else "FAIL ok=%s retry=%s code=%s" % (d.get("ok"), r, e.get("code")))
-if d.get("ok") is not True: print(json.dumps(d, indent=1))' "$BEFORE" "$AFTER"
-  "$B" press escape --app AgentDeskFixture | full
-  "$B" wait --menu-closed --app AgentDeskFixture --timeout 2000 | full
-fi
+d=json.load(sys.stdin); e=d.get("error") or {}; r=(e.get("disposition") or {}).get("retry")
+print("PASS (ok true)" if d.get("ok") is True else ("PASS (retry unsafe)" if r=="unsafe" else "FAIL ok=%s retry=%s code=%s" % (d.get("ok"), r, e.get("code"))))'
+"$B" press escape --app AgentDeskFixture | full
+"$B" wait --menu-closed --app AgentDeskFixture --timeout 2000 | full
 
 echo "== Part 2: Script Editor (AppKit)"
 if pgrep -x "Script Editor" >/dev/null; then
   echo "Part 2 SKIP: Script Editor was already running (pid $(pgrep -x "Script Editor")); it stays running and untouched"
 else
-  printf 'return 1\n' > "$R/a.applescript"
-  open -a "Script Editor" "$R/a.applescript"
+  printf 'return 1\n' > "$RUNDIR/a.applescript"
+  open -a "Script Editor" "$RUNDIR/a.applescript"
   for _ in $(seq 1 50); do SEPID=$(pgrep -x "Script Editor"); [ -n "$SEPID" ] && break; sleep 0.2; done
   [ -n "$SEPID" ] || { echo "FAIL-SETUP Script Editor did not start"; exit 1; }
   LAUNCHED_PIDS="$LAUNCHED_PIDS Script_Editor=$SEPID"
-  for _ in $(seq 1 50); do A=$("$B" list-windows --app "Script Editor" | python3 -c 'import json,sys; print(" ".join(w["id"] for w in json.load(sys.stdin).get("data",[]) if w.get("title") in ("a.applescript","a")))'); [ -n "$A" ] && break; sleep 0.2; done
+  A=$(wait_ids "Script Editor" "a.applescript|a" 1)
   echo "Script Editor pid=$SEPID A=$A"; [ -n "$A" ] || { echo "FAIL-SETUP Script Editor window"; exit 1; }
   front_on "Script Editor" "$SEPID" "$A"
   TV=$("$B" find --app "Script Editor" --window-id "$A" --role textfield --first | ref_of)
   [ -n "$TV" ] || { echo "FAIL-SETUP no text view ref"; exit 1; }
   second_menu_check "Script Editor" "$SEPID" "$A" "$TV" 2
+fi
+fi
+
+start_dense() {
+  "$R/dense/DenseMenu" >"$RUNDIR/dense.log" 2>&1 &
+  DPID=$!; LAUNCHED_PIDS="$LAUNCHED_PIDS DenseMenu=$DPID"
+  for _ in $(seq 1 75); do DW=$(win_ids DenseMenu "Dense Menu"); [ "$(count_of "$DW")" -eq 1 ] && break; sleep 0.2; done
+  echo "DenseMenu pid=$DPID window=$DW"; [ "$(count_of "$DW")" -eq 1 ] || { echo "FAIL-SETUP DenseMenu window"; exit 1; }
+  front_on DenseMenu "$DPID" "$DW"
+}
+
+if [ "$PARTS" = all ] || [ "$PARTS" = checks ]; then
+echo "== Part D: dense AppKit window (3,000 buttons; the menu search passes its 2,048-node cap)"
+start_dense
+PRE=$("$B" snapshot --app DenseMenu --surface menu); echo "$PRE" | full
+case "$PRE" in *surface_search_limit*) echo "dense precondition: the menu search hits its node cap with no menu open";; *) halt "dense precondition not met: snapshot --surface menu did not report surface_search_limit";; esac
+DT=$("$B" find --app DenseMenu --window-id "$DW" --role button --name "Dense Target" --exact --first | ref_of)
+[ -n "$DT" ] || { echo "FAIL-SETUP no Dense Target ref"; exit 1; }
+second_menu_check DenseMenu "$DPID" "$DW" "$DT" D
+fi
+
+if [ "$PARTS" = all ] || [ "$PARTS" = timing ]; then
+echo "== Part T: headless right-click latency, merge-base main vs this head (min/median of 7, warm-up discarded)"
+BB="$R/base/target/release/agent-desktop"
+[ -x "$BB" ] || { echo "FAIL-SETUP no base binary"; exit 1; }
+bench() {
+  LABEL="$1"; BIN="$2"; APP="$3"; PID="$4"; WID="$5"; NAME="$6"
+  REF=$("$BIN" find --app "$APP" --window-id "$WID" --role button --name "$NAME" --exact --first | ref_of)
+  [ -n "$REF" ] || { echo "T $LABEL: FAIL-SETUP no ref"; return; }
+  : > "$RUNDIR/samples"
+  for i in $(seq 0 7); do
+    front_on "$APP" "$PID" "$WID" >/dev/null
+    python3 -c '
+import json,subprocess,sys,time
+t=time.perf_counter(); p=subprocess.run(sys.argv[2:],capture_output=True,text=True); ms=(time.perf_counter()-t)*1000
+d=json.loads(p.stdout or "{}")
+if d.get("ok") is True or (d.get("error") or {}).get("code")=="APP_UNRESPONSIVE":
+    open(sys.argv[1],"a").write("%.1f\n" % ms)
+else:
+    print("sample failed:", json.dumps(d, indent=1))' "$RUNDIR/samples" "$BIN" right-click "$REF"
+    "$BIN" press escape --app "$APP" >/dev/null
+    "$BIN" wait --menu-closed --app "$APP" --timeout 2000 >/dev/null
+  done
+  python3 -c '
+import statistics,sys
+rows=[float(l) for l in open(sys.argv[1]) if l.strip()][1:]
+print("T %s: n=%d min=%.1f ms median=%.1f ms max=%.1f ms" % (sys.argv[2], len(rows), min(rows), statistics.median(rows), max(rows)) if rows else "T %s: no valid samples" % sys.argv[2])' "$RUNDIR/samples" "$LABEL"
+}
+if [ -z "${FPID:-}" ] || ! kill -0 "$FPID" 2>/dev/null; then start_fixture; fi
+bench "fixture base" "$BB" AgentDeskFixture "$FPID" "$M" context-target
+bench "fixture head" "$B" AgentDeskFixture "$FPID" "$M" context-target
+if [ -z "${DPID:-}" ] || ! kill -0 "$DPID" 2>/dev/null; then start_dense; fi
+bench "dense base" "$BB" DenseMenu "$DPID" "$DW" "Dense Target"
+bench "dense head" "$B" DenseMenu "$DPID" "$DW" "Dense Target"
 fi
 echo "== checks done"
 ```
