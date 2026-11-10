@@ -1,4 +1,5 @@
 use agent_desktop_core::{AdapterError, Deadline, PermissionReport, PermissionState};
+use concurrent_check::ConcurrentCheck;
 
 const ACCESSIBILITY_SUGGESTION: &str = "Run agent-desktop permissions --guide. It opens System Settings > Privacy & Security > Accessibility (Device Control and Data Access on macOS 27 and later) with a guide that shows which app to drag into the list: the app that launches agent-desktop, such as Terminal, iTerm, or Codex. If macOS lists the built binary separately, add that binary too.";
 const SCREEN_RECORDING_SUGGESTION: &str = "Run agent-desktop permissions --guide. It opens System Settings > Privacy & Security > Screen Recording with a guide that shows which app to drag into the list: the app that launches agent-desktop, such as Terminal, iTerm, or Codex. If macOS lists the built binary separately, add that binary too.";
@@ -131,10 +132,16 @@ mod imp {
 
 pub(crate) fn report(deadline: Deadline) -> Result<PermissionReport, AdapterError> {
     deadline.ensure_remaining()?;
+    let (accessibility, screen_recording, automation) = std::thread::scope(|scope| {
+        let screen_recording = ConcurrentCheck::start(scope, screen_recording_report_state);
+        let automation = ConcurrentCheck::start(scope, move || automation_report_state(deadline));
+        let accessibility = accessibility_report_state();
+        (accessibility, screen_recording.join(), automation.join())
+    });
     let report = PermissionReport {
-        accessibility: accessibility_report_state(),
-        screen_recording: screen_recording_report_state(),
-        automation: automation_report_state(deadline)?,
+        accessibility,
+        screen_recording,
+        automation: automation?,
     };
     deadline.ensure_remaining()?;
     Ok(report)
@@ -142,9 +149,14 @@ pub(crate) fn report(deadline: Deadline) -> Result<PermissionReport, AdapterErro
 
 pub(crate) fn preflight_report(deadline: Deadline) -> Result<PermissionReport, AdapterError> {
     deadline.ensure_remaining()?;
+    crate::system::connection_warmup::start_window_server();
+    let (accessibility, screen_recording) = std::thread::scope(|scope| {
+        let screen_recording = ConcurrentCheck::start(scope, screen_recording_report_state);
+        (accessibility_report_state(), screen_recording.join())
+    });
     Ok(PermissionReport {
-        accessibility: accessibility_report_state(),
-        screen_recording: screen_recording_report_state(),
+        accessibility,
+        screen_recording,
         automation: PermissionState::Unknown,
     })
 }
@@ -328,6 +340,7 @@ fn bounded_platform_text(bytes: &[u8]) -> String {
 }
 
 mod automation_probe;
+mod concurrent_check;
 pub(crate) mod permission_guide;
 pub(crate) mod permission_helper;
 pub(crate) mod permission_operation;
