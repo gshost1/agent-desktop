@@ -30,6 +30,9 @@ struct BridgedWorkspaceSnapshot {
     frontmost_launch_time: NullableLaunchTime,
     #[serde(default)]
     skipped: Vec<serde_json::Value>,
+    /// Set when the bridge read records only for the apps a caller selected.
+    #[serde(default)]
+    selected_only: bool,
 }
 
 #[derive(Deserialize)]
@@ -217,7 +220,10 @@ fn inventory_error(message: &str) -> AdapterError {
 mod owners;
 #[cfg(test)]
 use owners::window_owner_snapshot_from_json;
-pub(crate) use owners::{WindowOwnerSnapshot, focused_owner_until, window_owner_snapshot_until};
+pub(crate) use owners::{
+    WindowOwnerSnapshot, focused_owner_until, named_window_owner_snapshot_until,
+    window_owner_snapshot_until,
+};
 
 #[cfg(test)]
 #[path = "workspace_apps_pid_tests.rs"]

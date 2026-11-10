@@ -76,6 +76,23 @@ pub(crate) fn focused_owner_until(deadline: Instant) -> Result<Option<WindowOwne
     Ok(snapshot.frontmost().cloned())
 }
 
+/// The window owners `identifier` names by display name, read with records
+/// only for those apps. When no app has that display name the bridge returns
+/// every record, so an alias matches exactly as it does in a full read. A
+/// read of only the named apps holds the frontmost app's record only when it
+/// is one of them, and reports no frontmost app otherwise.
+pub(crate) fn named_window_owner_snapshot_until(
+    identifier: &str,
+    deadline: Instant,
+) -> Result<WindowOwnerSnapshot, AdapterError> {
+    ensure_before_deadline(deadline)?;
+    crate::system::cocoa_runtime::ensure_cocoa_multithreaded()?;
+    let selects = |candidate: &str| agent_desktop_core::app_name_matches(candidate, identifier);
+    let bytes = crate::system::appkit_bridge::named_workspace_snapshot_json(&selects)?;
+    ensure_before_deadline(deadline)?;
+    window_owner_snapshot_from_json(&bytes, deadline)
+}
+
 pub(crate) fn window_owner_snapshot_until(
     deadline: Instant,
 ) -> Result<WindowOwnerSnapshot, AdapterError> {
@@ -119,13 +136,15 @@ pub(super) fn window_owner_snapshot_from_json(
             "AppKit returned incomplete frontmost-application identity",
         ));
     };
-    let frontmost_pid = if bridged
-        .skipped
+    let frontmost_unread = !owners
         .iter()
-        .any(|record| record["pid"].as_i64() == Some(i64::from(bridged.frontmost_pid)))
-        && !owners
-            .iter()
-            .any(|owner| owner.pid == bridged.frontmost_pid)
+        .any(|owner| owner.pid == bridged.frontmost_pid);
+    let frontmost_pid = if frontmost_unread
+        && (bridged.selected_only
+            || bridged
+                .skipped
+                .iter()
+                .any(|record| record["pid"].as_i64() == Some(i64::from(bridged.frontmost_pid))))
     {
         None
     } else {
@@ -174,3 +193,7 @@ fn validate_frontmost(
     }
     Ok(Some(pid))
 }
+
+#[cfg(test)]
+#[path = "workspace_apps_owners_tests.rs"]
+mod tests;
