@@ -225,7 +225,7 @@ fn matching_apps(id: &str, deadline: Deadline) -> Result<Vec<AppInfo>, AdapterEr
     ensure_launch_budget(deadline, id)?;
     let until = deadline_instant(deadline)?;
     crate::system::app::app_inventory::stabilize_apps_until(until, || {
-        let inventory = super::app::workspace_apps::list_apps_scoped_until(id, None, until)?;
+        let inventory = super::app::workspace_scoped_apps::list_apps_scoped_until(id, None, until)?;
         if inventory.apps.is_empty() {
             super::app::workspace_apps::require_complete(&inventory.skipped)?;
         }
