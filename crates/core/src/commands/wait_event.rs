@@ -1,8 +1,11 @@
 use crate::commands::wait_event_filter::{signal_filter, validate_signal_scope};
 use crate::{
     AdapterError, AppError, ErrorCode, EventKind, ProcessIdentity, SignalBaseline, UiEvent,
-    adapter::PlatformAdapter, commands::wait_event_input::EventWaitInput, diff_signals,
-    system::process_state::ProcessState, wait::signals::merge_signal_baseline,
+    adapter::PlatformAdapter,
+    commands::wait_event_input::EventWaitInput,
+    diff_signals,
+    system::process_state::ProcessState,
+    wait::signals::{merge_signal_baseline, shrink_signal_floor},
 };
 use serde_json::{Value, json};
 use std::time::Instant;
@@ -64,7 +67,7 @@ pub(crate) fn wait_for_event(
         Some(Err(error)) => return Err(AppError::Adapter(error)),
         None => (None, None),
     };
-    let mut seen = baseline.clone();
+    let mut reference = baseline.clone();
 
     loop {
         if deadline.is_expired() {
@@ -94,14 +97,10 @@ pub(crate) fn wait_for_event(
                 match &baseline {
                     None => {
                         baseline = Some(current.clone());
-                        seen = Some(current);
+                        reference = Some(current);
                     }
                     Some(base) => {
-                        let diff_base: &SignalBaseline = if disappearance {
-                            seen.as_ref().unwrap_or(base)
-                        } else {
-                            base
-                        };
+                        let diff_base: &SignalBaseline = reference.as_ref().unwrap_or(base);
                         let events = diff_signals(diff_base, &current);
                         if let Some(found) = find_match(
                             &events,
@@ -120,7 +119,9 @@ pub(crate) fn wait_for_event(
                             }));
                         }
                         if disappearance {
-                            seen = Some(merge_signal_baseline(diff_base, &current));
+                            reference = Some(merge_signal_baseline(diff_base, &current));
+                        } else if let Some(floor) = reference.as_mut() {
+                            shrink_signal_floor(floor, &current);
                         }
                     }
                 }
@@ -299,3 +300,7 @@ mod tests;
 #[cfg(test)]
 #[path = "wait_event_stopped_tests.rs"]
 mod stopped_tests;
+
+#[cfg(test)]
+#[path = "wait_event_surface_floor_tests.rs"]
+mod surface_floor_tests;

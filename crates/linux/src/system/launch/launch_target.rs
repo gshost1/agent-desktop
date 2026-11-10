@@ -16,6 +16,7 @@ pub(crate) struct Plan {
     pub(crate) argv: Vec<String>,
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) identity: Option<ExecutableIdentity>,
+    pub(crate) desktop_id: Option<String>,
 }
 
 fn refuse(code: ErrorCode, message: String) -> AdapterError {
@@ -136,6 +137,7 @@ fn plan_file(
         argv,
         cwd: entry.path.map(PathBuf::from),
         identity,
+        desktop_id: Some(id.to_owned()),
     })
 }
 
@@ -148,6 +150,7 @@ fn direct_plan(program: String, arguments: &[String]) -> Plan {
         argv,
         cwd: None,
         identity,
+        desktop_id: None,
     }
 }
 
