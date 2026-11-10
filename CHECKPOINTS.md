@@ -60,3 +60,34 @@ Newest last. The laptop lead appends here when a send to the control thread fail
 | notifications/* | 50–100 ms polls, 2.5–6 s settles | notification commands | partly | **PR #34 owns these** |
 
 - 2026-11-10: /tmp cleanup verified safe but not done: the session's permission layer denied the `rm -rf`. /tmp is at 5.7 of 7.5 GB (76%). The command for George is under Needs George.
+- 2026-11-10: CLI-time step 1 is done. The fixed cost per invocation on Linux is 2–4 ms (release build, no app): process start is not where CLI time goes. Linux permission preflight is about 1.5 ms. Time goes into per-action work: step 3's raised-surface walk, readiness gaps and settles. Steps 2, 4 and 5 are next.
+
+### CLI-time step 1: fixed cost per invocation (release build, no app)
+
+Base `644dc78e`, release `cargo build --release -p agent-desktop` (7.97 MB). `AGENT_DESKTOP_HOME=/tmp/clitime-home` (empty). Wall time is fork+exec to exit, from Python `subprocess.run`. Method: one discarded warm-up, then seven runs: min, median, max. The run held `gates.serial.lock`. Load before: 2.44; after: 1.89. perf is **unavailable** (`perf_event_paranoid=4`, no sudo), so attribution comes from `strace -c -f` / `strace -f -tt`.
+
+| command | min ms | median ms | max ms | exit | result |
+|---|---:|---:|---:|---:|---|
+| `/bin/true` (spawn floor) | 0.36 | 0.49 | 0.61 | 0 | |
+| `--version` | 1.72 | 1.98 | 2.04 | 0 | |
+| `version` | 1.93 | 1.97 | 2.10 | 0 | ok |
+| `status` | 3.77 | 4.14 | 4.34 | 0 | ok |
+| `skills get desktop` | 1.88 | 1.94 | 2.10 | 0 | ok |
+| `click @e1` (bare ref) | 3.46 | 3.52 | 3.85 | 1 | INVALID_ARGS |
+| `click @s00000000:e1` (missing snapshot) | 3.46 | 3.60 | 3.76 | 1 | SNAPSHOT_NOT_FOUND |
+| `list-apps` | 3.70 | 3.81 | 4.01 | 0 | ok |
+
+Breakdown (strace timeline of `click @e1`; strace inflates the absolute times by about 3x, so the shares matter more than the numbers):
+
+| phase | share | evidence |
+|---|---|---|
+| exec + dynamic link (libc, libm, libgcc_s) + Rust runtime start | ~1.3 ms of the ~2 ms `version` floor | 99 syscalls for `version`, mostly mmap/brk/mprotect. No file I/O beyond ld.so |
+| clap parse + state-root validation | <0.3 ms | 6 `statx` of `$HOME` and `AGENT_DESKTOP_HOME` (state root resolved 3 times, cheap) |
+| session/interaction lock, refmap read, trace write, snapshot-store pruning | **0** for these commands | no `openat`/`flock` under the state root: no session is active, `click @e1` fails before any refmap read, and the missing snapshot is a single failed `openat` |
+| permission preflight (Linux: session bus connect → `org.a11y.Bus.GetAddress` → AT-SPI bus connect → 2 calls, 4 tokio/zbus threads) | **~1.5 ms** | `status`, `list-apps` and both `click` cases pay it. `version`/`skills` do not |
+| JSON emit | <0.1 ms | one `write(1, …)` |
+
+Findings:
+- The fixed cost is 2–4 ms, far below the 100 ms bar. Process start is not where CLI time goes.
+- `click @e1` (bare ref, `INVALID_ARGS`) connects to two D-Bus buses before it rejects the argument. Validating the ref token before the permission preflight saves about 1.5 ms on that path only, an error path. Low value.
+
