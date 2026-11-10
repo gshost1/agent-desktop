@@ -40,10 +40,25 @@ pub(super) fn count_deadline(boundary: bool, deadline: std::time::Instant) -> st
     deadline.min(now + budget)
 }
 
+/// A second count after the prefix read proves the children did not change
+/// while they were being read. With nothing read there is no read for the
+/// count to bracket: a second count would only sample the same moment again,
+/// so a leaf costs one count instead of two.
+pub(super) fn recount_after_prefix(requested: usize) -> bool {
+    requested > 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn only_a_read_prefix_is_bracketed_by_a_second_count() {
+        assert!(!recount_after_prefix(0));
+        assert!(recount_after_prefix(1));
+        assert!(recount_after_prefix(128));
+    }
 
     #[test]
     fn a_boundary_count_gets_only_a_slice_of_a_long_deadline() {
