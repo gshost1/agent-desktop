@@ -1,6 +1,8 @@
-use crate::refs::refs_lock::RefStoreLock;
-use crate::{AppError, Deadline, storage::private_file::read_private_bounded};
-use std::path::{Path, PathBuf};
+use crate::refs::refs_lock::{LOCK_TIMEOUT_MS, RefStoreLock};
+use crate::{AppError, Deadline, storage::private_file::open_private_lock};
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::Path;
 
 pub(crate) const MAX_SESSION_BYTES: usize = 32 * 1024 * 1024;
 pub(crate) const MAX_SESSION_EVENTS: usize = 100_000;
@@ -8,9 +10,17 @@ pub(crate) const MAX_DIRECTORY_ENTRIES: usize = 4_096;
 const ARTIFACT_AND_LEDGER_ENTRY_RESERVE: usize = 16;
 const WRITER_ENTRY_LIMIT: usize = MAX_DIRECTORY_ENTRIES - ARTIFACT_AND_LEDGER_ENTRY_RESERVE;
 const LEDGER: &str = ".trace-usage.json";
+const LEDGER_MAX_BYTES: u64 = 256;
+const LEDGER_FIELD_WIDTH: usize = 20;
+
+/// The shortest lock wait one trace event gets, measured from that event, so
+/// the closing record of an action that spent its deadline is not dropped, or
+/// a strict delivered action failed, by a brief wait behind another writer.
+const TRACE_LOCK_FLOOR_MS: u64 = 250;
 
 pub(crate) struct TraceWriteBudget {
-    directory: PathBuf,
+    ledger: File,
+    ledger_len: u64,
     usage: (usize, usize, usize),
     _lock: RefStoreLock,
 }
@@ -20,15 +30,28 @@ impl TraceWriteBudget {
         crate::trace::trace_file::ensure_trace_dir(directory)?;
         let lock = RefStoreLock::acquire_with_deadline(
             &directory.join(".trace-budget.lock"),
-            Deadline::detached_after(50)?,
+            trace_lock_deadline()?,
         )?;
-        let usage = match read_private_bounded(&directory.join(LEDGER), 256) {
-            Ok(bytes) => serde_json::from_slice(&bytes)?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => initial_usage(directory)?,
+        let ledger_path = directory.join(LEDGER);
+        let (ledger, ledger_len, usage) = match open_private_lock(&ledger_path, false) {
+            Ok(mut ledger) => {
+                let bytes = read_ledger(&mut ledger)?;
+                let usage = if bytes.is_empty() {
+                    initial_usage(directory, true)?
+                } else {
+                    parse_ledger(&bytes)?
+                };
+                (ledger, bytes.len() as u64, usage)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let usage = initial_usage(directory, false)?;
+                (open_private_lock(&ledger_path, true)?, 0, usage)
+            }
             Err(error) => return Err(error.into()),
         };
         let mut budget = Self {
-            directory: directory.to_path_buf(),
+            ledger,
+            ledger_len,
             usage,
             _lock: lock,
         };
@@ -50,7 +73,13 @@ impl TraceWriteBudget {
         self.persist()
     }
 
-    fn persist(&self) -> Result<(), AppError> {
+    /// Rewrites the ledger in place with one fixed-width write and no sync.
+    /// Every encoding has the same length, so a killed writer leaves either
+    /// the old record or the new one, never a torn mix; a longer file is
+    /// emptied first, which reads as a ledger to rebuild. The trace segments
+    /// are not synced either, so a sync here bought no durability the trace
+    /// has, while it held the cross-process lock for the whole flush.
+    fn persist(&mut self) -> Result<(), AppError> {
         if self.usage.0 > MAX_SESSION_BYTES
             || self.usage.1 > MAX_SESSION_EVENTS
             || self.usage.2 > WRITER_ENTRY_LIMIT
@@ -60,16 +89,73 @@ impl TraceWriteBudget {
                 "Start a new session to continue recording; the existing trace remains readable.",
             ));
         }
-        crate::refs::write_private_file(
-            &self.directory.join(LEDGER),
-            &serde_json::to_vec(&self.usage)?,
-        )
+        let record = encode_ledger(self.usage);
+        let record_len = record.len() as u64;
+        if self.ledger_len > record_len {
+            self.ledger.set_len(0)?;
+        }
+        self.ledger.seek(SeekFrom::Start(0))?;
+        self.ledger.write_all(record.as_bytes())?;
+        self.ledger_len = record_len;
+        Ok(())
     }
 }
 
-fn initial_usage(directory: &Path) -> Result<(usize, usize, usize), AppError> {
+/// The lock wait is what the command deadline has left, at most the
+/// store-lock bound; when less than [`TRACE_LOCK_FLOOR_MS`] is left, it is
+/// that floor from now, so a contended event can outlast its command
+/// deadline by at most the floor.
+fn trace_lock_deadline() -> Result<Deadline, AppError> {
+    let command = Deadline::after(LOCK_TIMEOUT_MS)?;
+    let floor = Deadline::detached_after(TRACE_LOCK_FLOOR_MS)?;
+    if command.remaining() >= floor.remaining() {
+        Ok(command)
+    } else {
+        Ok(floor)
+    }
+}
+
+fn read_ledger(ledger: &mut File) -> Result<Vec<u8>, AppError> {
+    let mut bytes = Vec::new();
+    ledger
+        .take(LEDGER_MAX_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > LEDGER_MAX_BYTES {
+        return Err(AppError::invalid_input_with_suggestion(
+            "Session trace recording ledger is larger than its record",
+            "Start a new session.",
+        ));
+    }
+    Ok(bytes)
+}
+
+fn parse_ledger(bytes: &[u8]) -> Result<(usize, usize, usize), AppError> {
+    serde_json::from_slice(bytes).map_err(|_| {
+        AppError::invalid_input_with_suggestion(
+            "Session trace recording ledger is unreadable, so recording stopped",
+            "Start a new session to continue recording; the existing trace remains readable.",
+        )
+    })
+}
+
+fn encode_ledger(usage: (usize, usize, usize)) -> String {
+    format!(
+        "[{:>width$},{:>width$},{:>width$}]",
+        usage.0,
+        usage.1,
+        usage.2,
+        width = LEDGER_FIELD_WIDTH
+    )
+}
+
+/// Counts the session's usage from disk. The ledger takes one directory
+/// entry; `ledger_present` says whether the scan below already sees it.
+fn initial_usage(
+    directory: &Path,
+    ledger_present: bool,
+) -> Result<(usize, usize, usize), AppError> {
     let mut bytes = 0_usize;
-    let mut entries = 1_usize;
+    let mut entries = usize::from(!ledger_present);
     for entry in std::fs::read_dir(directory)? {
         entries += 1;
         if entries > WRITER_ENTRY_LIMIT {
@@ -107,3 +193,7 @@ fn initial_usage(directory: &Path) -> Result<(usize, usize, usize), AppError> {
     }
     Ok((bytes, trace.total_events, entries))
 }
+
+#[cfg(test)]
+#[path = "trace_write_budget_tests.rs"]
+mod tests;
