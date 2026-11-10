@@ -80,3 +80,16 @@ fn preparing_a_window_inventory_is_a_no_op_by_default() {
     assert!(resolver.prepare_window_inventory().is_ok());
     assert!(resolver.observed.lock().expect("capture lock").is_none());
 }
+
+#[test]
+fn preparing_an_application_connection_is_a_no_op_by_default() {
+    let resolver = TimedResolver {
+        observed: Mutex::new(None),
+    };
+    assert!(
+        resolver
+            .prepare_application_connection(crate::ProcessId::new(7))
+            .is_ok()
+    );
+    assert!(resolver.observed.lock().expect("capture lock").is_none());
+}

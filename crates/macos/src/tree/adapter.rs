@@ -72,6 +72,14 @@ impl ObservationOps for MacOSAdapter {
         Ok(())
     }
 
+    fn prepare_application_connection(
+        &self,
+        pid: agent_desktop_core::ProcessId,
+    ) -> Result<(), AdapterError> {
+        crate::system::connection_warmup::start_application(pid.get());
+        Ok(())
+    }
+
     fn list_windows(
         &self,
         filter: &WindowFilter,
