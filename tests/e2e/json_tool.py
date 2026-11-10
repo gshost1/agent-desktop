@@ -77,9 +77,10 @@ def command_target():
 def command_match_value():
     data = read_json()
     match = data.get("data", {}).get("match")
-    if data.get("ok") is not True or not isinstance(match, dict) or "value" not in match:
+    if data.get("ok") is not True or not isinstance(match, dict):
         raise SystemExit(2)
-    print("" if match["value"] is None else match["value"])
+    value = match.get("value")
+    print("" if value is None else value)
 
 
 def command_delivered_mechanism():

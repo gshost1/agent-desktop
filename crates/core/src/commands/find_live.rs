@@ -280,7 +280,7 @@ mod tests {
         let response = format_match(data.clone(), Some(bounds)).unwrap();
 
         assert_eq!(response["bounds"], json!(bounds));
-        assert!(response["ref_id"].is_null());
+        assert!(response.get("ref_id").is_none());
         assert!(format_match(data, None).unwrap().get("bounds").is_none());
     }
 

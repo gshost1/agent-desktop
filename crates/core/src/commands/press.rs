@@ -41,6 +41,9 @@ pub fn execute(
         let process = crate::commands::helpers::process_identity(&live)
             .map_err(|error| error.into_adapter_error().unsent())?;
         pressed_process = Some(process.pid);
+        if let Err(error) = adapter.prepare_keyboard_input() {
+            tracing::debug!(%error, "press: keyboard preparation failed");
+        }
         let headed = context.physical_input_policy().is_headed();
         if headed {
             match &window {
@@ -146,3 +149,7 @@ mod focus_tests;
 #[cfg(test)]
 #[path = "press_ref_tests.rs"]
 mod ref_tests;
+
+#[cfg(test)]
+#[path = "press_keyboard_tests.rs"]
+mod keyboard_tests;
