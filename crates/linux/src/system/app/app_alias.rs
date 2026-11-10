@@ -40,40 +40,15 @@ impl AliasIndex {
                         )
                     })
                     .unwrap_or_default();
-                IndexedEntry {
-                    id: entry.id,
-                    name: entry.name,
-                    argv,
-                    cwd: entry.path,
-                }
+                IndexedEntry::new(entry.id, entry.name, argv, entry.path)
             })
             .collect();
         Self { entries }
     }
 
-    /// Aliases require desktop entries whose resolved executable and full
-    /// argv match the verified process. Several entries that run that same
-    /// command each name the process. A name is an alias only when no entry
-    /// with that name runs another command.
+    #[cfg(test)]
     pub(crate) fn names_for(&self, actual: &ExecutableIdentity) -> Vec<String> {
-        let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
-        let matching = self.matching_entries(actual, &path);
-        let mut names: Vec<String> = Vec::new();
-        for entry in &matching {
-            let shared_only_by_this_command = self
-                .entries
-                .iter()
-                .filter(|other| other.name.eq_ignore_ascii_case(&entry.name))
-                .all(|other| other.runs_same_command(entry, &path));
-            if shared_only_by_this_command
-                && !names
-                    .iter()
-                    .any(|name| name.eq_ignore_ascii_case(&entry.name))
-            {
-                names.push(entry.name.clone());
-            }
-        }
-        names
+        self.names_and_ids(actual).0
     }
 
     /// The desktop ids of the entries that run the verified process's
@@ -86,9 +61,40 @@ impl AliasIndex {
             .collect()
     }
 
+    /// The names and desktop ids the verified process answers to, from one
+    /// pass over the entries. Aliases require desktop entries whose resolved
+    /// executable and full argv match the process. Several entries that run
+    /// that same command each name the process. A name is an alias only when
+    /// no entry with that name runs another command. The ids are in byte
+    /// order.
+    pub(crate) fn names_and_ids(&self, actual: &ExecutableIdentity) -> (Vec<String>, Vec<String>) {
+        let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
+        let matching = self.matching_entries(actual, &path);
+        let ids = matching.iter().map(|entry| entry.id.clone()).collect();
+        let mut names: Vec<String> = Vec::new();
+        for entry in &matching {
+            let shared_only_by_this_command = self
+                .entries
+                .iter()
+                .filter(|other| {
+                    !std::ptr::eq(*other, *entry) && other.name.eq_ignore_ascii_case(&entry.name)
+                })
+                .all(|other| other.runs_same_command(entry, &path));
+            if shared_only_by_this_command
+                && !names
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(&entry.name))
+            {
+                names.push(entry.name.clone());
+            }
+        }
+        (names, ids)
+    }
+
     /// The entries whose command is the verified process's, sorted by
     /// desktop id. Each one runs the process's executable with its arguments,
-    /// so they all run one command.
+    /// so they all run one command. Only entries whose words can run the
+    /// process are resolved.
     fn matching_entries(
         &self,
         actual: &ExecutableIdentity,
@@ -98,8 +104,10 @@ impl AliasIndex {
             .entries
             .iter()
             .filter(|entry| {
-                ExecutableIdentity::requested(&entry.argv, path)
-                    .is_some_and(|wanted| wanted.matches(actual))
+                actual.could_be_run_by(&entry.argv)
+                    && entry
+                        .resolved(path)
+                        .is_some_and(|wanted| wanted.matches(actual))
             })
             .collect();
         matching.sort_by(|left, right| left.id.cmp(&right.id));
