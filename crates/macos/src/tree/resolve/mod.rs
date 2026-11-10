@@ -303,6 +303,7 @@ fn can_use_locator_anchor_path(entry: &RefEntry) -> bool {
 pub(crate) mod resolve_ax_read;
 pub(super) mod resolve_classify;
 pub(super) mod resolve_errors;
+pub(super) mod resolve_focused;
 pub(super) mod resolve_read_context;
 pub(super) mod resolve_roots;
 pub(super) mod resolve_search;
