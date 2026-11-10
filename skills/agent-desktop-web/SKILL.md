@@ -12,7 +12,7 @@ description: >
 
 # agent-desktop: web pages
 
-Every command prints one JSON envelope: read `ok`, then `data` or `error`. This quickstart covers the loop. Date and time inputs, several windows, long pages and every error code are in `agent-desktop skills get web reference`. For a native app in the same task, also read `agent-desktop skills get desktop`.
+Every command prints one JSON envelope: read `ok`, then `data` or `error`. Date and time inputs, several windows, long pages and every error code are in `agent-desktop skills get web reference`. For a native app in the same task, also read `agent-desktop skills get desktop`.
 
 Chrome needs a DevTools endpoint. Skip this when the task says Chrome already has one:
 
@@ -32,8 +32,9 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i --lines
 ```
 
 - `data.channel` is `cdp`. With `ax`, no endpoint was reached: follow `data.suggestion`.
-- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name), `placeholder=` and `[states]`. Copy the ref from the start of the line that names the control. Each snapshot gives new refs.
-- Snapshot right after a click, with no `sleep`: it waits for the page the click opens. `data.url` names the page.
+- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name), `placeholder=` and `[states]`. Copy the ref from the line that names the control. Each snapshot gives new refs.
+- Snapshot right after a click, with no `sleep`: it waits for the page the click opens. `data.url` names the page. For a slower change, add `-w 'role:text'` to the action to get the snapshot once that appears.
+- A search field's suggestions appear after a key: `press down --ref @field -w 'statictext:Honolulu'`, then `press down`, `press return --ref @field`.
 - `-i` keeps interactive nodes only. To read text such as a total or a sentence, search for it:
 
 ```bash
@@ -41,7 +42,7 @@ agent-desktop find --app "Google Chrome" --surface web --text "late 1980s"
 agent-desktop snapshot --app "Google Chrome" --surface web --lines | grep -nE '"complete"|Total'
 ```
 
-- `find --text` also returns the containers around the text. Read the match whose `name` holds the words: a paragraph carries its whole text as its name.
+- `find --text` also returns the containers around the text. Read the match whose `name` holds the words.
 - `"complete": false` means a long page was cut off; use `find --text` for what is past the end.
 
 ## Acting on refs
@@ -52,10 +53,10 @@ agent-desktop snapshot --app "Google Chrome" --surface web --lines | grep -nE '"
 | Fill a text field, replacing its text | `set-value @ref "text"` |
 | Set a date, time or color input | `set-value @ref "2026-11-08"`, `"19:30"`, `"#ff8800"` |
 | Choose a select option | `select @ref "Norway"` |
-| Tick a checkbox or a radio button | `check @ref` (`uncheck @ref` to clear) |
+| Tick a checkbox or radio button | `check @ref` (`uncheck` clears) |
 | Press Enter in a field | `press return --ref @ref` |
 
-`data.disposition.delivery` `delivered_verified` means the element was read back and holds the value (`data.post_state`). Do not set it again; `application_commit: not_verified` only says the page's own save was not observed.
+`delivered_verified` means the element was read back and holds the value: do not set it again, even with `application_commit: not_verified`.
 
 Several steps on one page fit in one `batch`:
 
