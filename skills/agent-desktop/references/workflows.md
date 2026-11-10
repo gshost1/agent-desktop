@@ -156,7 +156,7 @@ Launch with a download folder, click the download, and let `wait --download` ret
 ```bash
 agent-desktop launch "Google Chrome" --cdp --download-dir "$PWD/downloads" --arg=--user-data-dir="$PWD/chrome-profile" --arg=--no-first-run --arg=--no-default-browser-check
 agent-desktop open-url "https://example.com/reports" --app "Google Chrome"
-agent-desktop snapshot --app "Google Chrome" --surface web -i
+agent-desktop snapshot --app "Google Chrome" --surface web -i --lines
 agent-desktop click @s8f3k2p9:e4
 agent-desktop wait --download --app "Google Chrome" --timeout 60000
 ```
