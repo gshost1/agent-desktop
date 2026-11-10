@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+* On macOS, `launch` checks on every poll whether the launched app is still running. An app that finishes starting up and then quits, with or without `--activate`, now fails with `APP_UNRESPONSIVE` "Launched application exited before it presented a window" and `details.pid` instead of answering `ok` with the pid of the exited process, which with `--activate` took the whole `--timeout`. An app that restores several windows with none focused now launches with no `data.window` and a `data.suggestion` that lists the window ids, instead of failing with `AMBIGUOUS_TARGET`. ([#88](https://github.com/gshost1/agent-desktop/pull/88))
 * On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
 
 ### Performance
