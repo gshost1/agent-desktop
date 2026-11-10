@@ -204,13 +204,15 @@ such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
 A headed `hover` or `drag` raises its target's window at most once. The
-first attempt that needs focus makes the focus call; later attempts in the
-wait skip it and go straight to their checks. A target that another window
-still covers keeps failing the `receives_events` check until the budget ends,
-without the window being raised again on every poll. Every error after the
-focus call has run, including the `TIMEOUT` that ends such a wait, carries
-`details.preparatory_focus`. A focus call that failed after it may have raised
-the window counts as run.
+first step that needs focus makes the focus call, whether that is the scroll
+of the wait or the first attempt; later steps skip it and go straight to
+their checks. A target that another window still covers keeps failing the
+`receives_events` check until the budget ends, without the window being
+raised again on every poll. A focus call that failed after it may have raised
+the window ends the command with its error, because trying again would raise
+the window a second time. Once the focus call has run, every error before the
+input is sent, including the `TIMEOUT` that ends the wait, carries
+`details.preparatory_focus`.
 
 On macOS, `press --app` reports `data.details.keyboard_target` when the app's
 keyboard focus may belong to another process, such as a Save panel that a

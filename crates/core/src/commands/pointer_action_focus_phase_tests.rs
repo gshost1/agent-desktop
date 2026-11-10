@@ -10,6 +10,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 const TIMEOUT_MS: u64 = 400;
 const FOREVER: u32 = u32::MAX;
+const TARGET: Rect = Rect {
+    x: 100.0,
+    y: 200.0,
+    width: 20.0,
+    height: 10.0,
+};
 
 #[derive(Default)]
 struct Counts {
@@ -23,6 +29,7 @@ struct CoveredTargetAdapter {
     occlusions: AtomicU32,
     counts: Counts,
     focus_fails_retryably: bool,
+    offscreen_until_focus: bool,
 }
 
 impl CoveredTargetAdapter {
@@ -32,6 +39,7 @@ impl CoveredTargetAdapter {
             occlusions: AtomicU32::new(occlusions),
             counts: Counts::default(),
             focus_fails_retryably: false,
+            offscreen_until_focus: false,
         }
     }
 
@@ -53,17 +61,28 @@ impl ObservationOps for CoveredTargetAdapter {
         Ok(NativeHandle::null())
     }
 
+    fn observe_pointer(
+        &self,
+        _handle: &NativeHandle,
+        _deadline: crate::Deadline,
+    ) -> Result<crate::PointerObservation, AdapterError> {
+        let states = if self.offscreen_until_focus && self.focuses() == 0 {
+            vec![crate::tree::state::OFFSCREEN.to_string()]
+        } else {
+            Vec::new()
+        };
+        Ok(crate::PointerObservation {
+            bounds: Some(TARGET),
+            states,
+        })
+    }
+
     fn get_element_bounds(
         &self,
         _handle: &NativeHandle,
         _deadline: crate::Deadline,
     ) -> Result<Option<Rect>, AdapterError> {
-        Ok(Some(Rect {
-            x: 100.0,
-            y: 200.0,
-            width: 20.0,
-            height: 10.0,
-        }))
+        Ok(Some(TARGET))
     }
 
     fn hit_test(
@@ -96,7 +115,15 @@ impl ObservationOps for CoveredTargetAdapter {
     crate::adapter::saved_ref_scope!("button", Some("Target"));
 }
 
-impl ActionOps for CoveredTargetAdapter {}
+impl ActionOps for CoveredTargetAdapter {
+    fn scroll_into_view(
+        &self,
+        _handle: &NativeHandle,
+        _lease: &crate::InteractionLease,
+    ) -> Result<(), AdapterError> {
+        Ok(())
+    }
+}
 
 impl InputOps for CoveredTargetAdapter {
     fn mouse_event(
@@ -241,27 +268,51 @@ fn a_drag_onto_a_covered_drop_point_raises_its_window_once() {
 }
 
 #[test]
-fn a_focus_call_that_may_have_raised_and_failed_is_not_repeated() {
+fn a_raise_made_while_the_wait_scrolls_is_the_commands_only_raise() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = point_ref_snapshot();
+    let mut adapter = CoveredTargetAdapter::new(0);
+    adapter.offscreen_until_focus = true;
+
+    let value = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap();
+
+    assert_eq!(adapter.focuses(), 1);
+    assert_eq!(value["focused"], true);
+}
+
+#[test]
+fn a_focus_call_that_failed_after_it_may_have_raised_ends_the_command() {
     let _guard = HomeGuard::new();
     let snapshot_id = point_ref_snapshot();
     let mut adapter = CoveredTargetAdapter::new(0);
     adapter.focus_fails_retryably = true;
 
-    let value = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap();
+    let error = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap_err();
 
     assert_eq!(adapter.focuses(), 1);
-    assert_eq!(adapter.leases(), 2);
-    assert_eq!(value["focused"], true);
+    assert_eq!(adapter.leases(), 1);
+    assert_eq!(error.code(), "APP_UNRESPONSIVE");
+    assert!(moved_focus(&error));
+}
+
+fn marked_phase<T>(
+    timeout_ms: u64,
+    raised: bool,
+    mut attempt: impl FnMut() -> Result<T, AppError>,
+) -> Result<T, AppError> {
+    let deadline = crate::Deadline::after(timeout_ms.max(1)).unwrap();
+    super::CommandFocus::default().marking(|focus| {
+        focus.raised = raised;
+        super::retry_leased_point_phase(Some(timeout_ms), deadline, focus, |_| attempt())
+    })
 }
 
 #[test]
 fn a_refusal_after_the_raise_carries_preparatory_focus() {
-    let deadline = crate::Deadline::after(TIMEOUT_MS).unwrap();
     let mut attempts = 0;
 
-    let error = super::retry_leased_point_phase::<()>(Some(0), deadline, |focus| {
+    let error = marked_phase::<()>(0, true, || {
         attempts += 1;
-        focus.ran = true;
         Err(refusal("receives_events"))
     })
     .unwrap_err();
@@ -273,10 +324,7 @@ fn a_refusal_after_the_raise_carries_preparatory_focus() {
 
 #[test]
 fn every_error_after_the_raise_carries_preparatory_focus_and_keeps_its_code() {
-    let deadline = crate::Deadline::after(TIMEOUT_MS).unwrap();
-
-    let error = super::retry_leased_point_phase::<()>(Some(TIMEOUT_MS), deadline, |focus| {
-        focus.ran = true;
+    let error = marked_phase::<()>(TIMEOUT_MS, true, || {
         Err(AppError::Internal("trace sink closed".into()))
     })
     .unwrap_err();
@@ -286,28 +334,17 @@ fn every_error_after_the_raise_carries_preparatory_focus_and_keeps_its_code() {
 }
 
 #[test]
-fn the_timeout_after_attempts_with_no_focus_call_carries_no_preparatory_focus() {
-    let deadline = crate::Deadline::after(150).unwrap();
-
-    let error = super::retry_leased_point_phase::<()>(Some(150), deadline, |_| {
-        Err(refusal("receives_events"))
-    })
-    .unwrap_err();
-
-    assert_eq!(error.code(), "TIMEOUT");
-    assert!(!moved_focus(&error));
-}
-
-#[test]
 fn the_timeout_that_ends_a_wait_after_the_raise_carries_preparatory_focus() {
-    let deadline = crate::Deadline::after(150).unwrap();
-
-    let error = super::retry_leased_point_phase::<()>(Some(150), deadline, |focus| {
-        focus.ran = true;
-        Err(refusal("receives_events"))
-    })
-    .unwrap_err();
+    let error = marked_phase::<()>(150, true, || Err(refusal("receives_events"))).unwrap_err();
 
     assert_eq!(error.code(), "TIMEOUT");
     assert!(moved_focus(&error));
+}
+
+#[test]
+fn the_timeout_after_attempts_with_no_focus_call_carries_no_preparatory_focus() {
+    let error = marked_phase::<()>(150, false, || Err(refusal("receives_events"))).unwrap_err();
+
+    assert_eq!(error.code(), "TIMEOUT");
+    assert!(!moved_focus(&error));
 }
