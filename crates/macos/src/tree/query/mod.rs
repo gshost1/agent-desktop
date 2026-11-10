@@ -1,12 +1,14 @@
 mod arena;
 mod child_page;
 pub(crate) mod child_read;
+mod child_read_at;
 pub(crate) mod child_read_budget;
 pub(crate) mod child_read_plan;
 mod child_read_status;
 mod child_read_telemetry;
 pub(crate) mod child_source;
 mod child_source_availability;
+mod child_values_read;
 mod deferred_list;
 mod evidence_fields;
 mod node_evidence;
