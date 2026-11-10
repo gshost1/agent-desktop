@@ -42,10 +42,13 @@ fn a_passed_deadline_messages_no_application() {
 }
 
 #[test]
-fn a_permission_preflight_starts_the_window_server_connection() {
-    if let Ok(deadline) = agent_desktop_core::Deadline::after(5_000) {
-        let _ = crate::system::permissions::preflight_report(deadline);
-    }
+fn preparing_a_window_inventory_starts_the_window_server_connection() {
+    use agent_desktop_core::ObservationOps;
+    assert!(
+        crate::adapter::MacOSAdapter::new()
+            .prepare_window_inventory()
+            .is_ok()
+    );
     assert!(WINDOW_SERVER.get().is_some());
 }
 
