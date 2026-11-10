@@ -2,6 +2,10 @@
 
 ## Unreleased (1.4.0)
 
+### BREAKING CHANGES
+
+* The response envelope moves to 2.7. On Windows and Linux, and on macOS for an element with no address, a ref whose snapshot could not read the window whole now fails `STALE_REF` with `details.kind: identity_unproven` and `details.reason: capture_incomplete` instead of `AMBIGUOUS_TARGET` `identity_not_unique`; retake the snapshot with a larger `--timeout-ms`. A ref whose capture left a recorded field unread, or that no capture judged, fails `STALE_REF` `identity_unproven` with `details.reason: capture_unknown`. `identity_not_unique` now means the capture saw an identical twin. Refmap entries record `capture` (`unique`, `ambiguous`, `incomplete`, `unknown`); refmaps from earlier versions still load. See the version 2.7 migration in `docs/json-output.md`. ([#14](https://github.com/gshost1/agent-desktop/pull/14))
+
 ### Bug Fixes
 
 * On macOS, a headless `right-click` fallback that selects the row before opening its menu now reports that selection as delivered: a later failure, or no menu, carries `retry: unsafe` instead of `not_delivered` and a safe retry. Each fallback also opens a menu only after the app's menu state reads as closed; a read that stays unreadable, as while an app tracks a menu, no longer lets a second `AXShowMenu` or `AXPress` through. ([#86](https://github.com/gshost1/agent-desktop/pull/86))
@@ -11,6 +15,10 @@
 ### Performance
 
 * On macOS, wait the 2 s accessibility settle only for a Chromium process, recognized by a bundled framework that ships the V8 startup snapshot or is named `Electron Framework` or `Chromium Embedded Framework`. The first snapshot of a freshly launched native app no longer pays it, and `launch` now reports `renderer: "chromium"` for browsers and renamed Electron builds too. ([#5](https://github.com/gshost1/agent-desktop/pull/5))
+
+### Documentation
+
+* Add a synopsis of `press`, `find`, `type`, `select` and `set-value` to the interaction reference, loaded on demand, with tests that keep each form in step with the command's flags. Taken from [#48](https://github.com/gshost1/agent-desktop/pull/48) without its additions to the core skill, which in a paired run made the three bench tasks use 14% more input tokens. ([#82](https://github.com/gshost1/agent-desktop/pull/82))
 
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
