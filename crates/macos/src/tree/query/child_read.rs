@@ -153,7 +153,9 @@ mod imp {
             }
         };
         complete &= elements.len() == requested;
-        let final_count = match stable_count(element, attribute, deadline, &mut status) {
+        let recount = super::super::child_read_budget::recount_after_prefix(requested)
+            .then(|| stable_count(element, attribute, deadline, &mut status));
+        let final_count = match recount.unwrap_or(Ok(count)) {
             Ok(final_count) => final_count,
             Err(error) => {
                 telemetry::record(&mut status, attribute, "stable_count", error, Some(count));
