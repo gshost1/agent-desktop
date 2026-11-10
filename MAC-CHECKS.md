@@ -19,7 +19,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
 | #80 | SURFACE-10 | `2982cc00` | steps ready (below); branch 2 behind main (#14, #82), will move when re-merged |
-| #58 | ACTION-12 | pending | being re-merged with main; the PR body's old steps use TextEdit and Finder, do not run them; new steps pending |
+| #58 | ACTION-12 | `d57dadfa` | steps ready (below; replaces the old TextEdit/Finder steps) |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | draft, steps pending |
 | #34 | SURFACE-3 | pending | being merged up with main (after #14); privacy-constrained script pending |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
@@ -99,3 +99,233 @@ echo "== done; scratch worktree left at $R/src"
 ```
 
 Cleanup: `git -C ~/Projects/agent-desktop worktree remove --force /tmp/ad-s10/src && rm -rf /tmp/ad-s10`.
+
+## #58 ACTION-12: headed hover/drag stops after a raise that changed the front window
+
+Head: `d57dadfab3284ef4234d05c68217fd789c255265`. Uses the e2e AgentDeskFixture, Calculator and a floating-panel helper
+under `/tmp/pfo`. Run in a terminal that already has Accessibility trust (the one used for `tests/e2e/run.sh`). The
+Python was dry-run against a stub binary on the laptop (17 checks); not yet run on a real Mac.
+
+The earlier Mac run (AgentDeskFixture with Font Book in front) never covered the target, so it did not exercise the raise. This check covers the fixture's `hover-target` with a floating panel from a throwaway helper in `/tmp/pfo`, which stays above the fixture after the raise. It uses only the e2e fixture, Calculator (used by `tests/e2e/scenarios/os_surfaces.sh`) and `/tmp/pfo`. Run it on the Mac in a terminal that already has Accessibility trust (the one used for `tests/e2e/run.sh`). Each check prints `PASS` or `FAIL` with the command's code and time.
+
+| Case | Setup | Expected |
+|---|---|---|
+| A ×5 | fixture in front, target uncovered | `ok: true`, `hover-status` = `hovered` |
+| B ×5 | Calculator in front, target uncovered | `ok: true`, `hover-status` = `hovered` (a run flagged `ASYNC-RAISE-RISK` is the accepted risk below) |
+| D ×2 | fixture in front, target covered | `TIMEOUT` after ≥ 2.5 s of a 3 s budget, `details.preparatory_focus` set (no raise over another window, so it keeps waiting) |
+| C ×3 | Calculator in front, target covered | `ACTION_FAILED` (occluded) in < 2.5 s of a 5 s budget, `details.preparatory_focus` set, fixture now in front (on `main` the unit test shows it raising every attempt, then `TIMEOUT`) |
+| E ×2 | Calculator in front, drag from `context-target` onto the covered `hover-target` | same as C |
+
+```bash
+cd ~/Projects/agent-desktop
+git status --short                      # expect: no output (stop if the checkout is dirty)
+git fetch origin && git switch fix/pointer-focus-once && git pull --ff-only
+git log -1 --format=%H                  # expect: d57dadfab3284ef4234d05c68217fd789c255265
+cargo test -p agent-desktop-core --lib focus_phase   # expect: test result: ok. 14 passed; 0 failed
+cargo test -p agent-desktop-macos       # expect: every "test result:" line says 0 failed
+cargo build --release -p agent-desktop
+pgrep -x AgentDeskFixture || echo none  # expect: none
+pgrep -x Calculator || echo none        # expect: none
+rm -rf /tmp/pfo && mkdir -p /tmp/pfo/fixture
+bash tests/fixture-app/build.sh /tmp/pfo/fixture
+cat > /tmp/pfo/overlay.swift <<'EOF'
+import AppKit
+
+let application = NSApplication.shared
+application.setActivationPolicy(.accessory)
+let numbers = CommandLine.arguments.dropFirst().compactMap { Double($0) }
+guard numbers.count == 4, let primary = NSScreen.screens.first else { exit(2) }
+let frame = NSRect(x: numbers[0], y: primary.frame.height - numbers[1] - numbers[3],
+                   width: numbers[2], height: numbers[3])
+let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                    backing: .buffered, defer: false)
+panel.level = .floating
+panel.hidesOnDeactivate = false
+panel.backgroundColor = .systemRed
+let cover = NSButton(title: "pfo-cover", target: nil, action: nil)
+cover.frame = NSRect(origin: .zero, size: frame.size)
+panel.contentView?.addSubview(cover)
+panel.orderFrontRegardless()
+application.run()
+EOF
+swiftc -O -o /tmp/pfo/overlay /tmp/pfo/overlay.swift -framework AppKit
+cat > /tmp/pfo/check.py <<'EOF'
+import json, os, subprocess, sys, time
+
+BIN = os.environ.get("PFO_BIN", os.path.expanduser("~/Projects/agent-desktop/target/release/agent-desktop"))
+APP = "AgentDeskFixture"
+OTHER = "Calculator"
+overlay = None
+failures = 0
+checks = 0
+
+
+def run(*args):
+    started = time.monotonic()
+    proc = subprocess.run([BIN, *args], capture_output=True, text=True, timeout=60)
+    elapsed = int((time.monotonic() - started) * 1000)
+    try:
+        body = json.loads(proc.stdout)
+    except ValueError:
+        body = {"ok": None, "raw": (proc.stdout + proc.stderr)[:600]}
+    return body, elapsed
+
+
+def cleanup():
+    if overlay is not None:
+        overlay.kill()
+    run("close-app", OTHER)
+    run("close-app", APP, "--force")
+
+
+def setup_fail(message, body=None):
+    print(f"SETUP FAIL: {message} {json.dumps(body)[:600] if body else ''}")
+    cleanup()
+    sys.exit(1)
+
+
+def match_of(body):
+    return (body.get("data") or {}).get("match") or {}
+
+
+def find_button(name):
+    body = None
+    for _ in range(100):
+        body, _ = run("find", "--app", APP, "--role", "button", "--name", name, "--exact", "--first")
+        match = match_of(body)
+        if body.get("ok") is True and match.get("ref_id") and match.get("bounds"):
+            return match
+        time.sleep(0.2)
+    setup_fail(f"button {name} not found", body)
+
+
+def readout(name):
+    body, _ = run("find", "--app", APP, "--role", "statictext", "--native-id", name, "--first")
+    return match_of(body).get("value")
+
+
+def front_name():
+    asn = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True).stdout.strip()
+    return subprocess.run(["lsappinfo", "info", "-only", "name", asn], capture_output=True, text=True).stdout
+
+
+def bring_front(name):
+    if name == APP:
+        run("focus-window", "--app", APP)
+    else:
+        subprocess.run(["open", "-a", name])
+    for _ in range(50):
+        if f'"{name}"' in front_name():
+            time.sleep(0.3)
+            return
+        time.sleep(0.1)
+    setup_fail(f"{name} did not come to the front: {front_name()}")
+
+
+def record(label, passed, detail):
+    global failures, checks
+    checks += 1
+    failures += 0 if passed else 1
+    print(f"{'PASS' if passed else 'FAIL'} {label}: {detail}")
+
+
+def error_of(body):
+    return body.get("error") or {}
+
+
+def hovered_within(seconds):
+    for _ in range(int(seconds * 5)):
+        if readout("hover-status") == "hovered":
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def uncovered_hover(case, front, runs, hover_ref):
+    for index in range(1, runs + 1):
+        run("--headed", "mouse-move", "--xy", "20,20")
+        bring_front(front)
+        body, elapsed = run("--headed", "hover", hover_ref, "--timeout-ms", "3000")
+        error = error_of(body)
+        detail = f"ok={body.get('ok')} code={error.get('code')} ms={elapsed}"
+        if body.get("ok") is not True and "preparatory_focus" in json.dumps(error):
+            detail += " ASYNC-RAISE-RISK"
+        record(f"{case} run {index}", body.get("ok") is True and hovered_within(3), detail + f" hover-status={readout('hover-status')}")
+
+
+def covered(case, front, runs, command, expect_code, ms_check):
+    for index in range(1, runs + 1):
+        bring_front(front)
+        body, elapsed = run("--headed", *command)
+        error = error_of(body)
+        text = json.dumps(error)
+        passed = (body.get("ok") is False and error.get("code") == expect_code
+                  and "occluded" in text and ms_check(elapsed))
+        passed = passed and "preparatory_focus" in (error.get("details") or {})
+        if expect_code == "ACTION_FAILED":
+            for _ in range(20):
+                if f'"{APP}"' in front_name():
+                    break
+                time.sleep(0.1)
+            raised = f'"{APP}"' in front_name()
+            passed = passed and raised
+            text = f"raised={raised} " + text
+        record(f"{case} run {index}", passed, f"ok={body.get('ok')} code={error.get('code')} ms={elapsed} {text[:300]}")
+
+
+def overlaps(a, b):
+    return not (a["x"] + a["width"] <= b["x"] or b["x"] + b["width"] <= a["x"]
+                or a["y"] + a["height"] <= b["y"] or b["y"] + b["height"] <= a["y"])
+
+
+def main():
+    global overlay
+    run("move-window", "--app", APP, "--x", "40", "--y", "60")
+    run("resize-window", "--app", APP, "--width", "1000", "--height", "700")
+    bring_front(APP)
+    for _ in range(3):
+        body, _ = run("scroll-to", find_button("hover-target")["ref_id"])
+        if body.get("ok") is True:
+            break
+        time.sleep(0.5)
+    time.sleep(0.5)
+    hover = find_button("hover-target")
+    context = find_button("context-target")
+    box = hover["bounds"]
+    cover = {"x": box["x"] - 6, "y": box["y"] - 6, "width": box["width"] + 12, "height": box["height"] + 12}
+    if overlaps(cover, context["bounds"]):
+        setup_fail(f"overlay would cover context-target: hover={box} context={context['bounds']}")
+    print(f"hover-target {hover['ref_id']} bounds={box}; context-target {context['ref_id']}")
+
+    uncovered_hover("A already-front uncovered hover (expect ok, hovered)", APP, 5, hover["ref_id"])
+    uncovered_hover("B behind-Calculator uncovered hover (expect ok, hovered)", OTHER, 5, hover["ref_id"])
+
+    run("--headed", "mouse-move", "--xy", "20,20")
+    overlay = subprocess.Popen([os.environ.get("PFO_OVERLAY", "/tmp/pfo/overlay"), str(cover["x"]), str(cover["y"]),
+                                str(cover["width"]), str(cover["height"])])
+    time.sleep(1.5)
+    if overlay.poll() is not None:
+        setup_fail(f"overlay exited with {overlay.returncode}")
+
+    covered("D already-front covered hover (expect TIMEOUT, >=2500 ms, preparatory_focus)", APP, 2,
+            ["hover", hover["ref_id"], "--timeout-ms", "3000"], "TIMEOUT", lambda ms: ms >= 2500)
+    covered("C behind-Calculator covered hover (expect ACTION_FAILED, <2500 ms, preparatory_focus, fixture raised)", OTHER, 3,
+            ["hover", hover["ref_id"], "--timeout-ms", "5000"], "ACTION_FAILED", lambda ms: ms < 2500)
+    covered("E behind-Calculator drag onto covered drop (expect ACTION_FAILED, <2500 ms, preparatory_focus, fixture raised)", OTHER, 2,
+            ["drag", "--from", context["ref_id"], "--to", hover["ref_id"], "--timeout-ms", "5000"],
+            "ACTION_FAILED", lambda ms: ms < 2500)
+
+    cleanup()
+    print(f"RESULT: {'ALL PASS' if failures == 0 else f'{failures} FAIL'} ({checks} checks)")
+    sys.exit(0 if failures == 0 else 1)
+
+
+main()
+EOF
+open /tmp/pfo/fixture/AgentDeskFixture.app
+python3 /tmp/pfo/check.py               # expect: 17 PASS lines, then: RESULT: ALL PASS (17 checks)
+pgrep -x AgentDeskFixture || echo none  # expect: none
+pgrep -x Calculator || echo none        # expect: none
+```
+
+Report the last line (`RESULT: ...`) and any `FAIL` or `SETUP FAIL` line verbatim on this PR or to the control thread.
