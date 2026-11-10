@@ -9,14 +9,36 @@ fn marking_program(scratch: &Path) -> (PathBuf, PathBuf) {
     std::fs::write(
         &program,
         format!(
-            "#!/bin/sh\ntouch '{}'\nexec '{}' 30\n",
-            marker.display(),
-            sleeper.display()
+            "#!/bin/sh\necho $$ > '{marker}.tmp' && mv '{marker}.tmp' '{marker}'\nexec '{}' 30\n",
+            sleeper.display(),
+            marker = marker.display()
         ),
     )
     .expect("a program");
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("mode");
     (program, marker)
+}
+
+/// Stops the one process the fixture recorded: the pid it wrote, which the
+/// `exec` keeps, only while that pid still runs the fixture's own sleeper.
+fn stop_recorded(marker: &Path, sleeper: &Path) {
+    let Some(pid) = std::fs::read_to_string(marker)
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok())
+    else {
+        return;
+    };
+    let runs_sleeper = std::fs::read(format!("/proc/{pid}/cmdline")).is_ok_and(|cmdline| {
+        cmdline
+            .split(|byte| *byte == 0)
+            .next()
+            .is_some_and(|program| program == sleeper.as_os_str().as_encoded_bytes())
+    });
+    if runs_sleeper {
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status();
+    }
 }
 
 fn launch_with_display(display: Option<&str>, label: &str) -> (serde_json::Value, bool) {
@@ -43,9 +65,7 @@ fn launch_with_display(display: Option<&str>, label: &str) -> (serde_json::Value
         std::thread::sleep(std::time::Duration::from_millis(50));
         marker.exists()
     });
-    let _ = std::process::Command::new("pkill")
-        .args(["-f", &scratch.display().to_string()])
-        .status();
+    stop_recorded(&marker, &scratch.join("adl-no-display-sleep"));
     let _ = std::fs::remove_dir_all(&scratch);
     let envelope = serde_json::from_slice(&output.stdout).expect("stdout is one JSON envelope");
     (envelope, started)
