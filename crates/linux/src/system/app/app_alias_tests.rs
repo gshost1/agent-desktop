@@ -52,9 +52,18 @@ fn desktop_aliases_require_unique_verified_executable_identity() {
     );
     assert!(index.names_for(&actual).is_empty());
     assert_eq!(index.ids_for(&actual), ["owned", "twin"]);
-    let index = AliasIndex::build(&[entry, file("twin", "Owned App", executable)], &[]);
+    let index = AliasIndex::build(&[entry.clone(), file("twin", "Owned App", executable)], &[]);
     assert_eq!(index.names_for(&actual), ["Owned App"]);
     assert_eq!(index.ids_for(&actual), ["owned", "twin"]);
+    let elsewhere = (
+        "elsewhere".to_owned(),
+        format!(
+            "{}Path=/tmp\n",
+            file("elsewhere", "Owned App", executable).1
+        ),
+    );
+    let index = AliasIndex::build(&[entry, elsewhere], &[]);
+    assert!(index.names_for(&actual).is_empty());
     let index = AliasIndex::build(&[file("wrong", "Wrong App", "/missing/elsewhere")], &[]);
     assert!(index.names_for(&actual).is_empty());
 }

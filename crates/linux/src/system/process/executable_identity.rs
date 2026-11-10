@@ -45,17 +45,6 @@ impl ExecutableIdentity {
         Some(Self { executable, argv })
     }
 
-    /// Whether two requested commands run the same program with the same
-    /// arguments: one canonical executable and the same words after the
-    /// program, however the program was spelled.
-    pub(crate) fn runs_same_command(&self, other: &Self) -> bool {
-        self.executable == other.executable
-            && match (&self.argv, &other.argv) {
-                (Some(mine), Some(theirs)) => mine.get(1..) == theirs.get(1..),
-                _ => false,
-            }
-    }
-
     pub(crate) fn matches(&self, running: &Self) -> bool {
         self.executable == running.executable
             && self.argv.as_ref().is_some_and(|argv| {

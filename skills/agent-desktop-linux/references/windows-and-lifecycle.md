@@ -45,15 +45,16 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   name with a separator or NUL, is `INVALID_ARGS`, `not_delivered`; an unknown name is
   `APP_NOT_FOUND`; an entry with `Terminal=true` or no `Exec` is
   `ACTION_NOT_SUPPORTED`.
-- A `Name` that several desktop entries share launches the entry whose desktop
-  id sorts first in byte order when every entry can be started and all run the
-  same command: one canonical executable, the same arguments and the same
-  working directory, as a package that installs one app under two desktop ids
-  does. Any other mix is `AMBIGUOUS_TARGET`, `not_delivered`, with
-  `details.candidates` (each `desktop_id` with its resolved `argv`, or the
-  `refusal` that keeps it from starting). Rerun the launch with a desktop id in
-  place of the name, for example `agent-desktop launch google-chrome`, keeping
-  the same options.
+- A `Name` that several desktop entries share launches, when all of them run
+  the same command, the first entry in byte order of desktop id that can
+  start. The same command means one canonical executable reached under the
+  same name (a multi-call binary under another name is another command), the
+  same arguments and the same working directory, as a package that installs
+  one app under two desktop ids has. Entries that run different commands are
+  `AMBIGUOUS_TARGET`, `not_delivered`, with `details.candidates` (each
+  `desktop_id` with its resolved `argv`, or the `refusal` that keeps it from
+  starting). Rerun the launch with a startable desktop id in place of the name,
+  for example `agent-desktop launch google-chrome`, keeping the same options.
 - The app is spawned with null stdio in its own process group, so a caller that
   reads through a pipe sees end of file at exit. Every spawn adds
   `AGENT_DESKTOP_LAUNCHED=1` to the child's environment; `close-app` reads it to

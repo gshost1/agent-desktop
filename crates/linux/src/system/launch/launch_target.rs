@@ -7,6 +7,7 @@ use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode};
 use super::desktop_entry::{DesktopEntry, parse};
 use super::desktop_exec::{ExecContext, expand, program_word};
 use super::desktop_lookup::{find, is_trusted};
+use super::indexed_entry::IndexedEntry;
 use crate::system::app::app_alias::AliasIndex;
 use crate::system::process::executable_identity::ExecutableIdentity;
 
@@ -196,65 +197,57 @@ pub(crate) fn resolve(
         let program = resolve_program(identifier, &search.path_dirs)?;
         return Ok(direct_plan(program, arguments));
     }
-    let mut ids = index.ids_named(identifier);
-    match ids.len() {
+    let mut entries = index.entries_named(identifier);
+    match entries.len() {
         0 => Err(not_found(identifier)),
-        1 => entry_plan(&ids.remove(0), arguments, search),
-        _ => named_plan(identifier, ids, arguments, search),
+        1 => entry_plan(&entries.remove(0).id, arguments, search),
+        _ => named_plan(identifier, entries, arguments, search),
     }
 }
 
-/// The plan for a desktop `Name` that several entries share. When every
-/// entry can be started and all run the same command (one canonical
-/// executable, the same arguments and the same working directory), the
-/// choice cannot change what runs, so the entry whose desktop id sorts first
-/// is used. When none can be started, the first one's refusal is the answer.
-/// Any other mix is refused with each desktop id and what it runs or why it
-/// cannot start.
+/// The plan for a desktop `Name` that several entries share. When all of
+/// them run the same command (see [`IndexedEntry::runs_same_command`]), the
+/// choice cannot change what runs, so the first entry in desktop id order
+/// that can start is used, and when none can, the first one's refusal is
+/// the answer. Entries that run different commands are refused with each
+/// desktop id and what it runs or why it cannot start.
 fn named_plan(
     identifier: &str,
-    mut ids: Vec<String>,
+    mut entries: Vec<&IndexedEntry>,
     arguments: &[String],
     search: &Search,
 ) -> Result<Plan, AdapterError> {
-    ids.sort();
-    let mut plans: Vec<(String, Result<Plan, AdapterError>)> = ids
-        .into_iter()
-        .map(|id| {
-            let plan = entry_plan(&id, arguments, search);
-            (id, plan)
-        })
+    entries.sort_by(|left, right| left.id.cmp(&right.id));
+    let Some(first) = entries.first().copied() else {
+        return Err(not_found(identifier));
+    };
+    let same = entries
+        .iter()
+        .all(|entry| entry.runs_same_command(first, &search.path_dirs));
+    let plans: Vec<(&str, Result<Plan, AdapterError>)> = entries
+        .iter()
+        .map(|entry| (entry.id.as_str(), entry_plan(&entry.id, arguments, search)))
         .collect();
-    if plans.iter().all(|(_, plan)| plan.is_err()) {
-        return plans.remove(0).1;
+    if !same {
+        return Err(ambiguous_entries(identifier, &plans));
     }
-    let first = plans.iter().find_map(|(_, plan)| plan.as_ref().ok());
-    let same = plans.iter().all(|(_, plan)| {
-        plan.as_ref()
-            .ok()
-            .zip(first)
-            .is_some_and(|(plan, first)| runs_same_command(plan, first))
-    });
-    if same {
-        return plans.remove(0).1;
+    let mut refusal = None;
+    for (_, plan) in plans {
+        match plan {
+            Ok(plan) => return Ok(plan),
+            Err(error) => {
+                refusal.get_or_insert(error);
+            }
+        }
     }
-    Err(ambiguous_entries(identifier, &plans))
-}
-
-fn runs_same_command(left: &Plan, right: &Plan) -> bool {
-    left.cwd == right.cwd
-        && left
-            .identity
-            .as_ref()
-            .zip(right.identity.as_ref())
-            .is_some_and(|(left, right)| left.runs_same_command(right))
+    Err(refusal.unwrap_or_else(|| not_found(identifier)))
 }
 
 fn ambiguous_entries(
     identifier: &str,
-    plans: &[(String, Result<Plan, AdapterError>)],
+    plans: &[(&str, Result<Plan, AdapterError>)],
 ) -> AdapterError {
-    let ids: Vec<&str> = plans.iter().map(|(id, _)| id.as_str()).collect();
+    let ids: Vec<&str> = plans.iter().map(|(id, _)| *id).collect();
     let candidates: Vec<serde_json::Value> = plans
         .iter()
         .map(|(id, plan)| match plan {
@@ -262,6 +255,10 @@ fn ambiguous_entries(
             Err(error) => serde_json::json!({ "desktop_id": id, "refusal": error.message }),
         })
         .collect();
+    let example = plans
+        .iter()
+        .find(|(_, plan)| plan.is_ok())
+        .map_or(ids[0], |(id, _)| *id);
     refuse(
         ErrorCode::AmbiguousTarget,
         format!(
@@ -271,8 +268,7 @@ fn ambiguous_entries(
     )
     .with_details(serde_json::json!({ "candidates": candidates }))
     .with_suggestion(format!(
-        "Run the same launch with a desktop id in place of the name, for example 'agent-desktop launch {}' followed by the same options; details.candidates lists what each entry runs or why it cannot start.",
-        ids[0]
+        "Run the same launch with a desktop id in place of the name, for example 'agent-desktop launch {example}' followed by the same options; details.candidates lists what each entry runs or why it cannot start."
     ))
 }
 

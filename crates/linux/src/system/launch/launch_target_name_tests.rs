@@ -1,9 +1,5 @@
-use super::tests::{argv_in, fixture};
+use super::tests::{argv_in, code_of, fixture};
 use super::*;
-
-fn code_of(result: Result<Vec<String>, ErrorCode>) -> ErrorCode {
-    result.expect_err("an error")
-}
 
 #[test]
 fn a_name_whose_entries_run_different_commands_is_ambiguous_and_names_each_one() {
@@ -70,7 +66,7 @@ fn entries_that_differ_only_in_working_directory_are_still_ambiguous() {
 }
 
 #[test]
-fn an_entry_that_cannot_start_keeps_the_name_ambiguous_and_says_why() {
+fn an_entry_that_cannot_start_and_runs_another_command_keeps_the_name_ambiguous() {
     let fixture = fixture(
         &[
             (
@@ -92,6 +88,30 @@ fn an_entry_that_cannot_start_keeps_the_name_ambiguous_and_says_why() {
             .is_some_and(|why| why.contains("terminal"))
     );
     assert!(candidates[1]["argv"].is_array());
+    let suggestion = error.suggestion.as_deref().expect("a suggestion");
+    assert!(
+        suggestion.contains("agent-desktop launch two"),
+        "{suggestion}"
+    );
+}
+
+#[test]
+fn a_twin_that_cannot_start_does_not_block_the_entry_that_can() {
+    let fixture = fixture(
+        &[
+            (
+                "one",
+                "Name=Tool\nType=Application\nExec=tool\nTryExec=missing-tool",
+            ),
+            ("two", "Name=Tool\nType=Application\nExec=tool"),
+        ],
+        &["tool"],
+    );
+    let program = fixture.search.path_dirs[0].join("tool");
+    assert_eq!(
+        argv_in(&fixture, "Tool").unwrap(),
+        [program.to_str().unwrap()]
+    );
 }
 
 #[test]
@@ -116,16 +136,39 @@ fn a_name_none_of_whose_entries_can_start_reports_why_the_first_cannot() {
 }
 
 #[test]
-fn one_program_spelled_two_ways_is_the_same_command() {
+fn one_program_spelled_by_path_and_by_name_is_the_same_command() {
     let fixture = fixture(
         &[
             ("one", "Name=Tool\nType=Application\nExec=tool %U"),
-            ("two", "Name=Tool\nType=Application\nExec=tool-link %U"),
+            ("two", "Name=Tool\nType=Application\nExec=TOOLPATH %U"),
         ],
         &["tool"],
     );
     let program = fixture.search.path_dirs[0].join("tool");
-    std::os::unix::fs::symlink(&program, fixture.search.path_dirs[0].join("tool-link")).unwrap();
-    let plan = resolve("Tool", &[], &fixture.search, &fixture.index).expect("one command");
+    let rewritten = fixture.search.data_dirs[0].join("two.desktop");
+    let text = std::fs::read_to_string(&rewritten)
+        .unwrap()
+        .replace("TOOLPATH", program.to_str().unwrap());
+    std::fs::write(&rewritten, text).unwrap();
+    let index = crate::system::app::alias_cache::AliasCache::new().index(&fixture.search.data_dirs);
+    let plan = resolve("Tool", &[], &fixture.search, &index).expect("one command");
     assert_eq!(plan.argv, [program.to_str().unwrap()]);
+}
+
+#[test]
+fn a_multi_call_binary_reached_under_another_name_is_another_command() {
+    let fixture = fixture(
+        &[
+            ("one", "Name=Tool\nType=Application\nExec=tool %U"),
+            ("two", "Name=Tool\nType=Application\nExec=tool-view %U"),
+        ],
+        &["tool"],
+    );
+    let program = fixture.search.path_dirs[0].join("tool");
+    std::os::unix::fs::symlink(&program, fixture.search.path_dirs[0].join("tool-view")).unwrap();
+    let index = crate::system::app::alias_cache::AliasCache::new().index(&fixture.search.data_dirs);
+    let error = resolve("Tool", &[], &fixture.search, &index)
+        .err()
+        .expect("two commands");
+    assert_eq!(error.code, ErrorCode::AmbiguousTarget);
 }
