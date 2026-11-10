@@ -13,6 +13,7 @@
 
 ### Performance
 
+* `skills get web` now returns a short quickstart, 1,818 tokens instead of 4,369, which every web agent loads first and carries on every later turn; the long guide is `skills get web reference`. The quickstart tells agents to read snapshots with `--lines` (about a third fewer tokens than the JSON tree), to write batch refs literally, and to read a batch back by `failed_entries` and `not_started_entries`. ([#92](https://github.com/gshost1/agent-desktop/pull/92))
 * On macOS, wait the 2 s accessibility settle only for a Chromium process, recognized by a bundled framework that ships the V8 startup snapshot or is named `Electron Framework` or `Chromium Embedded Framework`. The first snapshot of a freshly launched native app no longer pays it, and `launch` now reports `renderer: "chromium"` for browsers and renamed Electron builds too. ([#5](https://github.com/gshost1/agent-desktop/pull/5))
 
 ### Documentation
