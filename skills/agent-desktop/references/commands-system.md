@@ -22,7 +22,7 @@ The process running and the app showing a window are separate facts:
 { "app": "TextEdit", "pid": 611, "window": { "id": "w-110407", "title": "Open", "visible": true } }
 ```
 
-- `window` is present when the app already has one, and omitted when it has none. Its absence is not a failure. `launch` still returns `ok: true`.
+- `window` is present when the app already has one, and omitted when it has none. Its absence is not a failure. `launch` still returns `ok: true`. On macOS it is also omitted when the app shows several windows and none is focused; `data.suggestion` then lists their ids.
 - A document-based app may open its first window only when brought forward. Use `--activate` on an app that is starting up: it asks the app to present a window and waits for it up to `--timeout` (default 30000). On a macOS app that is already running with no window, `--activate` does not open one; add `--reopen`, or open one yourself with a menu or key command. This brings the app forward, so it is not headless. Or trigger the window yourself and use `wait --event window-opened`.
 - A process that exits before it shows a window returns `APP_UNRESPONSIVE`.
 - Windowless and menu-bar-only apps report no `window`. Use `list-apps` and read `presentation`.

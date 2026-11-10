@@ -33,13 +33,11 @@ fn the_only_focused_window_among_several_is_claimed() {
 
 #[test]
 fn several_windows_without_one_focused_claim_none_and_name_each() {
-    for focus in [false, true] {
-        let picked = LaunchWindow::pick(vec![window("w-1", focus), window("w-2", focus)]);
-        assert!(matches!(&picked, LaunchWindow::Several(ids) if ids == &["w-1", "w-2"]));
-        let (shown, note) = picked.into_parts();
-        assert!(shown.is_none());
-        assert!(note.is_some_and(|note| note.contains("w-1, w-2")));
-    }
+    let picked = LaunchWindow::pick(vec![window("w-1", false), window("w-2", false)]);
+    assert!(matches!(&picked, LaunchWindow::Several(ids) if ids == &["w-1", "w-2"]));
+    let (shown, note) = picked.into_parts();
+    assert!(shown.is_none());
+    assert!(note.is_some_and(|note| note.contains("w-1, w-2")));
 }
 
 #[test]

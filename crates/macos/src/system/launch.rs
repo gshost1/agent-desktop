@@ -128,13 +128,7 @@ fn settled_window(
         SettleProbes {
             read: || exact_window(pid, process_instance, deadline),
             startup_finished: || startup_finished(pid, process_instance),
-            alive: || {
-                if super::process::process_identity::matches_instance(pid, process_instance)? {
-                    Ok(())
-                } else {
-                    Err(launch_target_gone(pid))
-                }
-            },
+            alive: || ensure_launched_alive(pid, process_instance),
         },
         options,
         deadline,
@@ -150,13 +144,17 @@ fn startup_finished(pid: i32, process_instance: &str) -> Result<bool, AdapterErr
     match crate::system::appkit_bridge::startup_state(pid) {
         StartupState::Starting => Ok(false),
         StartupState::Finished => Ok(true),
-        StartupState::NoRecord => {
-            if super::process::process_identity::matches_instance(pid, process_instance)? {
-                Ok(true)
-            } else {
-                Err(launch_target_gone(pid))
-            }
-        }
+        StartupState::NoRecord => ensure_launched_alive(pid, process_instance).map(|()| true),
+    }
+}
+
+/// `Err` once the launched process instance no longer runs.
+#[cfg(target_os = "macos")]
+fn ensure_launched_alive(pid: i32, process_instance: &str) -> Result<(), AdapterError> {
+    if super::process::process_identity::matches_instance(pid, process_instance)? {
+        Ok(())
+    } else {
+        Err(launch_target_gone(pid))
     }
 }
 
@@ -245,18 +243,17 @@ fn exact_window(
         pid,
         deadline_instant(deadline)?,
     )?;
-    let window = match LaunchWindow::pick(windows) {
-        LaunchWindow::Shown(window) => window,
-        other => return Ok(other),
-    };
-    if window.process_instance.as_deref() != Some(process_instance) {
+    if windows
+        .iter()
+        .any(|window| window.process_instance.as_deref() != Some(process_instance))
+    {
         return Err(AdapterError::new(
             ErrorCode::AppUnresponsive,
             "Application process instance changed while waiting for its window",
         )
         .with_details(serde_json::json!({ "pid": pid, "complete": false })));
     }
-    Ok(LaunchWindow::Shown(window))
+    Ok(LaunchWindow::pick(windows))
 }
 
 #[cfg(target_os = "macos")]

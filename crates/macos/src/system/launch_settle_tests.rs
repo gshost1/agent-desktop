@@ -99,17 +99,25 @@ fn an_application_that_exits_inside_the_startup_grace_is_not_reported_as_launche
 }
 
 #[test]
-fn several_windows_end_the_wait_without_claiming_one() {
+fn several_windows_keep_the_wait_going_and_end_it_without_claiming_one() {
+    let reads = Cell::new(0);
     let found = settle_window(
         SettleProbes {
-            read: || Ok(LaunchWindow::Several(vec!["w-1".into(), "w-2".into()])),
+            read: || {
+                reads.set(reads.get() + 1);
+                Ok(LaunchWindow::Several(vec!["w-1".into(), "w-2".into()]))
+            },
             startup_finished: || Ok(true),
             alive: || Ok(()),
         },
-        &activating(),
+        &LaunchOptions {
+            timeout_ms: 30_000,
+            ..Default::default()
+        },
         long_deadline(),
     )
     .expect("several windows are a launch");
+    assert!(reads.get() > 1, "the wait ended on the first read");
     let (window, note) = found.into_parts();
     assert!(window.is_none());
     let note = note.expect("a note");
@@ -125,12 +133,38 @@ fn a_zero_timeout_reads_once() {
             startup_finished: || Ok(false),
             alive: || Ok(()),
         },
-        &LaunchOptions::default(),
+        &LaunchOptions {
+            timeout_ms: 0,
+            ..Default::default()
+        },
         long_deadline(),
     )
     .expect("no window is a launch outcome");
     assert!(matches!(found, LaunchWindow::Absent));
     assert_eq!(reads.get(), 1);
+}
+
+#[test]
+fn focus_that_settles_after_several_windows_claims_the_focused_window() {
+    let reads = Cell::new(0);
+    let found = settle_window(
+        SettleProbes {
+            read: || {
+                reads.set(reads.get() + 1);
+                if reads.get() == 1 {
+                    Ok(LaunchWindow::Several(vec!["w-1".into(), "w-2".into()]))
+                } else {
+                    Ok(LaunchWindow::Shown(window("w-2")))
+                }
+            },
+            startup_finished: || Ok(false),
+            alive: || Ok(()),
+        },
+        &activating(),
+        long_deadline(),
+    )
+    .expect("a window");
+    assert!(matches!(found, LaunchWindow::Shown(shown) if shown.id == "w-2"));
 }
 
 #[test]

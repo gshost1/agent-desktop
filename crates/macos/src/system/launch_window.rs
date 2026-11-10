@@ -11,20 +11,16 @@ pub(crate) enum LaunchWindow {
 }
 
 impl LaunchWindow {
-    /// The only window, else the only focused one. A launch that restores
+    /// The only window, else the focused one; the inventory marks at most one
+    /// window focused. A launch that restores
     /// several windows in the background has no window it can claim, which
     /// is not a failure of the launch.
     pub(crate) fn pick(mut windows: Vec<WindowInfo>) -> Self {
         if windows.len() == 1 {
             return Self::Shown(windows.remove(0));
         }
-        let mut focused: Vec<WindowInfo> = windows
-            .iter()
-            .filter(|window| window.state.is_focused)
-            .cloned()
-            .collect();
-        if focused.len() == 1 {
-            return Self::Shown(focused.remove(0));
+        if let Some(focused) = windows.iter().position(|window| window.state.is_focused) {
+            return Self::Shown(windows.swap_remove(focused));
         }
         if windows.is_empty() {
             return Self::Absent;
