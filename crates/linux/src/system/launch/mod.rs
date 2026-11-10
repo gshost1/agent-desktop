@@ -18,7 +18,6 @@ use self::launch_target::{Plan, resolve};
 use self::launch_unlisted::report_unlisted;
 use super::SharedBus;
 use crate::system::app::app_alias::current_index;
-use crate::system::display::display_server::session_server;
 use crate::system::focus::focus_window::focus_window;
 use crate::system::process::liveness::{Liveness, liveness};
 use crate::system::process::running_app::Running;
@@ -294,6 +293,7 @@ impl Launch<'_> {
     ) -> Result<LaunchResult, AdapterError> {
         let before = baseline::prepare(self.bus, identity, running, self.deadline);
         self.deadline.ensure_remaining().map_err(before_spawn)?;
+        require_display(self.deadline)?;
         let mut spawned = spawn(self.id, plan, self.options)?;
         let query = OwnerQuery::new(
             identity,
@@ -337,7 +337,6 @@ pub(crate) fn launch_app(
     let deadline = bounded(lease.deadline(), options.timeout_ms);
     let search = Search::from_env();
     let plan = resolve(id, &options.args, &search, &current_index())?;
-    require_display(session_server())?;
     let registry = crate::system::registry::read_processes(bus, deadline).map_err(before_spawn)?;
     let running = running_of(&registry).map_err(before_spawn)?;
     let launch = Launch {

@@ -1,60 +1,73 @@
-use std::path::Path;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 
-fn processes_running(program: &Path) -> Vec<u32> {
-    let wanted = program.to_string_lossy().into_owned();
-    std::fs::read_dir("/proc")
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
-        .filter(|pid| {
-            std::fs::read(format!("/proc/{pid}/cmdline")).is_ok_and(|bytes| {
-                bytes
-                    .split(|byte| *byte == 0)
-                    .next()
-                    .is_some_and(|first| first == wanted.as_bytes())
-            })
-        })
-        .collect()
+fn marking_program(scratch: &Path) -> (PathBuf, PathBuf) {
+    let marker = scratch.join("started");
+    let program = scratch.join("adl-no-display-program");
+    let sleeper = scratch.join("adl-no-display-sleep");
+    std::fs::copy("/bin/sleep", &sleeper).expect("copy sleep");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\ntouch '{}'\nexec '{}' 30\n",
+            marker.display(),
+            sleeper.display()
+        ),
+    )
+    .expect("a program");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    (program, marker)
 }
 
-#[test]
-fn a_launch_without_a_display_server_starts_nothing() {
-    let scratch = std::env::temp_dir().join(format!("adl-no-display-{}", std::process::id()));
+fn launch_with_display(display: Option<&str>, label: &str) -> (serde_json::Value, bool) {
+    let scratch =
+        std::env::temp_dir().join(format!("adl-no-display-{label}-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).expect("scratch");
-    let program = scratch.join("adl-no-display-sleep");
-    std::fs::copy("/bin/sleep", &program).expect("copy sleep");
-    let output = super::binary()
+    let (program, marker) = marking_program(&scratch);
+    let mut command = super::binary();
+    command
         .args([
             "launch",
             program.to_str().expect("utf8"),
-            "--arg",
-            "30",
             "--timeout",
             "3000",
         ])
         .env_remove("DISPLAY")
         .env_remove("WAYLAND_DISPLAY")
-        .env("AGENT_DESKTOP_HOME", scratch.join("home"))
-        .output()
-        .expect("binary starts");
-    let started = processes_running(&program);
-    for pid in &started {
-        let _ = std::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status();
+        .env("AGENT_DESKTOP_HOME", scratch.join("home"));
+    if let Some(display) = display {
+        command.env("DISPLAY", display);
     }
+    let output = command.output().expect("binary starts");
+    let started = marker.exists();
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", &scratch.display().to_string()])
+        .status();
     let _ = std::fs::remove_dir_all(&scratch);
-    let envelope: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("stdout is one JSON envelope");
-    assert_eq!(envelope["ok"], false, "{envelope}");
-    assert_eq!(
-        envelope["error"]["code"], "PLATFORM_NOT_SUPPORTED",
-        "{envelope}"
-    );
-    assert_eq!(
-        envelope["error"]["disposition"]["delivery"], "not_delivered",
-        "{envelope}"
-    );
-    assert!(started.is_empty(), "the launch started {started:?}");
+    let envelope = serde_json::from_slice(&output.stdout).expect("stdout is one JSON envelope");
+    (envelope, started)
+}
+
+#[test]
+fn a_launch_without_a_display_server_starts_nothing() {
+    for (display, label, cause) in [
+        (None, "unset", "not_configured"),
+        (Some(":1987"), "missing", "missing"),
+    ] {
+        let (envelope, started) = launch_with_display(display, label);
+        assert_eq!(envelope["ok"], false, "{label}: {envelope}");
+        assert_eq!(
+            envelope["error"]["code"], "PLATFORM_NOT_SUPPORTED",
+            "{envelope}"
+        );
+        assert_eq!(
+            envelope["error"]["disposition"]["delivery"], "not_delivered",
+            "{envelope}"
+        );
+        assert_eq!(
+            envelope["error"]["details"]["display_unavailable"], cause,
+            "{envelope}"
+        );
+        assert!(!started, "{label}: the launch started the program");
+    }
 }

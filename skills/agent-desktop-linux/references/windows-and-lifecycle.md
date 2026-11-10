@@ -43,10 +43,11 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   name with a separator or NUL, is `INVALID_ARGS`, `not_delivered`; an unknown name is
   `APP_NOT_FOUND`; an entry with `Terminal=true` or no `Exec` is
   `ACTION_NOT_SUPPORTED`.
-- `launch` needs a display server that answers: with no `DISPLAY` or
-  `WAYLAND_DISPLAY`, or one that is not running or refuses, it answers
-  `PLATFORM_NOT_SUPPORTED` with `details.display_unavailable`, `not_delivered`,
-  before anything is spawned. A failure after the spawn carries the spawned
+- `launch` spawns only when a display server answers: with no `DISPLAY` or
+  `WAYLAND_DISPLAY`, or one that is not running or refuses this client, it
+  answers `PLATFORM_NOT_SUPPORTED` with `details.display_unavailable` (`TIMEOUT`
+  for an X server that does not answer), `not_delivered`, before the spawn. An
+  attach to a running instance is not refused by this check. A failure after the spawn carries the spawned
   process in `details.spawned_pid`.
 - The app is spawned with null stdio in its own process group, so a caller that
   reads through a pipe sees end of file at exit. Every spawn adds
