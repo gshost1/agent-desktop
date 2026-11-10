@@ -1,8 +1,9 @@
 use std::time::Duration;
 
-use agent_desktop_core::{AdapterError, Deadline, ErrorCode, InteractionLease, InteractionPolicy};
-use serde_json::{Value, json};
+use agent_desktop_core::{AdapterError, Deadline, InteractionLease, InteractionPolicy};
+use serde_json::Value;
 
+use super::restore_report::{LIST_RESTORE, RestoreReport, with_entry};
 use super::world::ShellWorld;
 use crate::system::shell::open::Opened;
 
@@ -30,7 +31,10 @@ pub(crate) fn require_headed(policy: InteractionPolicy) -> Result<(), AdapterErr
 
 /// The message list for one mutation. A list that was showing on entry is
 /// adopted and left showing; a list this session opened is closed on the way
-/// out, and the close is checked by reading `SHOWING` back.
+/// out, and the close is checked by reading `SHOWING` back. A close that
+/// cannot be shown never replaces the mutation's own answer: a delivered
+/// mutation keeps its result, and a failed one keeps its error, each naming
+/// the restore.
 pub(crate) struct Session<'a> {
     world: &'a dyn ShellWorld,
     lease: &'a InteractionLease,
@@ -63,20 +67,14 @@ impl<'a> Session<'a> {
         }
     }
 
-    pub(crate) fn finish<T>(self, result: Result<T, AdapterError>) -> Result<T, AdapterError> {
+    pub(crate) fn finish<T: RestoreReport>(
+        self,
+        result: Result<T, AdapterError>,
+    ) -> Result<T, AdapterError> {
         let restore = restore(self.world, self.lease, self.opened);
         match (result, restore) {
             (Ok(value), Restore::Adopted | Restore::Closed) => Ok(value),
-            (Ok(_), Restore::Unverified) => Err(with_restore(
-                AdapterError::new(
-                    ErrorCode::ActionFailed,
-                    "The call finished but the message list it opened could not be closed",
-                )
-                .with_suggestion(
-                    "Close the message list by hand with Escape or a click on the date menu",
-                ),
-                restore,
-            )),
+            (Ok(value), Restore::Unverified) => Ok(value.with_unverified_restore()),
             (Err(error), restore) => Err(with_restore(error, restore)),
         }
     }
@@ -109,17 +107,13 @@ fn restore(world: &dyn ShellWorld, lease: &InteractionLease, opened: bool) -> Re
 }
 
 fn with_restore(mut error: AdapterError, restore: Restore) -> AdapterError {
-    let mut details = match error.details.take() {
-        Some(Value::Object(map)) => map,
-        _ => serde_json::Map::new(),
-    };
     let name = match restore {
         Restore::Adopted => "adopted",
         Restore::Closed => "closed",
         Restore::Unverified => "unverified",
     };
-    details.insert("list_restore".to_owned(), json!(name));
-    error.with_details(Value::Object(details))
+    let details = with_entry(error.details.take(), LIST_RESTORE, name);
+    error.with_details(details)
 }
 
 #[cfg(test)]

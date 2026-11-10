@@ -2,6 +2,7 @@ use agent_desktop_core::{
     AdapterError, Deadline, ErrorCode, InteractionPolicy, SnapshotSurface, WindowInfo,
 };
 
+use super::restore_report::{RestoreReport, error_with_unverified_restore};
 use crate::system::shell::shell_surface::resolve_surface;
 use crate::system::shell::shell_surface_open::{close_surface, open_surface};
 
@@ -17,7 +18,9 @@ mod tests;
 /// is left presented on exit; a center this session raised itself is dismissed
 /// on exit. The teardown runs on every path out of the wrapped call - return,
 /// error, and drop after a panic in the caller's own bookkeeping - so a raised
-/// center is never leaked behind a failed read. The session carries no
+/// center is never leaked behind a failed read. A teardown that fails never
+/// replaces a delivered mutation's result, and never displaces a failed
+/// call's own error; it is named beside either. The session carries no
 /// lifecycle beyond its one call: every call that needs the surface opens its
 /// own session, so a poll loop opens and closes per poll.
 pub(crate) struct ActionCenterSession {
@@ -63,7 +66,7 @@ impl ActionCenterSession {
             }),
             Err(error) => {
                 let cleanup = close_surface(SnapshotSurface::ActionCenter, cleanup_deadline()?);
-                merge_session_result(Err(error), cleanup)
+                Err(failure_after_cleanup(error, cleanup))
             }
         }
     }
@@ -91,24 +94,30 @@ impl Drop for ActionCenterSession {
     }
 }
 
-pub(super) fn close_session<T>(
+pub(super) fn close_session<T: RestoreReport>(
     session: ActionCenterSession,
     result: Result<T, AdapterError>,
 ) -> Result<T, AdapterError> {
     merge_session_result(result, session.close())
 }
 
-pub(super) fn merge_session_result<T>(
+pub(super) fn merge_session_result<T: RestoreReport>(
     result: Result<T, AdapterError>,
     cleanup: Result<(), AdapterError>,
 ) -> Result<T, AdapterError> {
     match (result, cleanup) {
         (Ok(value), Ok(())) => Ok(value),
-        (Ok(_), Err(close_err)) => Err(close_err),
-        (Err(err), Ok(())) => Err(err),
-        (Err(err), Err(close_err)) => {
+        (Ok(value), Err(close_err)) => value.after_failed_restore(close_err),
+        (Err(err), cleanup) => Err(failure_after_cleanup(err, cleanup)),
+    }
+}
+
+fn failure_after_cleanup(error: AdapterError, cleanup: Result<(), AdapterError>) -> AdapterError {
+    match cleanup {
+        Ok(()) => error,
+        Err(close_err) => {
             tracing::warn!(error = %close_err, "Action Center cleanup also failed after the operation failed");
-            Err(err)
+            error_with_unverified_restore(error)
         }
     }
 }
