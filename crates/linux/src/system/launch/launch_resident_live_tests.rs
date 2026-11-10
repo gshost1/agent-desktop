@@ -200,7 +200,7 @@ fn live_a_process_started_through_an_exec_wrapper_entry_answers_to_that_entry() 
     std::fs::write(&app, RESIDENT_APP).expect("an app");
     std::fs::write(
         &wrapper,
-        format!("#!/bin/sh\nexec -a \"$0\" /usr/bin/python3 {app} \"$@\"\n"),
+        format!("#!/bin/bash\nexec -a \"$0\" /usr/bin/python3 {app} \"$@\"\n"),
     )
     .expect("a wrapper");
     for file in [&app, &wrapper] {

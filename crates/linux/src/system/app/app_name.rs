@@ -86,7 +86,7 @@ fn aliases_with(index: &AliasIndex, facts: &ProcessFacts, launched: Option<Strin
             .entries_named(&entry.name)
             .iter()
             .all(|other| other.runs_same_command(entry, &path));
-        let recorded = [Some(&entry.id), name_is_unshared.then_some(&entry.name)];
+        let recorded = [name_is_unshared.then_some(&entry.name), Some(&entry.id)];
         for alias in recorded.into_iter().flatten() {
             if !aliases
                 .iter()
