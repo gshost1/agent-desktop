@@ -2,6 +2,20 @@
 
 Commands that change UI state. Run `agent-desktop <command> --help` for flags.
 
+## Command synopsis
+
+Each line is a runnable example. The comment after it is the command's full form, without the global flags such as `--lines`, `-w` and `--headed`. A test keeps each form in step with the command's flags.
+
+```
+agent-desktop press cmd+s --app "TextEdit"                   # COMBO [--ref REF | [--app NAME] [--window-id ID]] [--force]
+agent-desktop find --app "Finder" --role textfield --name "Name"   # [--app NAME] [--window-id ID] [--role R] [--name N] [--value V] [--text T] [--description D] [--native-id ID] [--state TOKEN[=BOOL]]... [--exact] [--root REF | --surface S] [--timeout-ms N] [--allow-partial] [--first | --last | --nth N | --limit N | --count]
+agent-desktop type @s8f3k2p9:e2 "hello"                      # REF (TEXT | --stdin) [--interval-ms N] [--timeout-ms N]
+agent-desktop select @s8f3k2p9:e4 "Option B"                 # REF VALUE [--timeout-ms N]
+agent-desktop set-value @s8f3k2p9:e2 "new value"             # REF (VALUE | --stdin) [--timeout-ms N]
+```
+
+`find --first`, `--last` and `--nth` return one `data.match`; without them the result is the `data.matches` array.
+
 ## Headless and headed
 
 `--headed` is global (`agent-desktop --headed click @s8f3k2p9:e5`) and applies to every `batch` entry. A headed action may focus the exact source window first, and a pointer action needs a verified target point.
