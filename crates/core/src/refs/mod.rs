@@ -257,6 +257,14 @@ pub(crate) fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), AppErr
     crate::storage::private_file::write_atomic(path, bytes).map_err(AppError::from)
 }
 
+/// Writes snapshot state without flushing it to the disk. A refmap is only
+/// valid while the processes it names keep running, so the power loss that a
+/// flush guards against already invalidates every ref in it, and the flushes
+/// cost more than the rest of a snapshot save together.
+pub(crate) fn write_private_cache_file(path: &Path, bytes: &[u8]) -> Result<(), AppError> {
+    crate::storage::private_file::write_atomic_cache(path, bytes).map_err(AppError::from)
+}
+
 /// Writes user-requested output for `screenshot` and `clipboard get`.
 ///
 /// Unlike `write_private_file`, this does not route through the

@@ -3,7 +3,7 @@ use crate::{
     context::validate_session_id,
     refs::ref_persist_budget::PersistBudget,
     refs::refs_lock::RefStoreLock,
-    refs::{RefMap, new_snapshot_id, validate_snapshot_id, write_private_file},
+    refs::{RefMap, new_snapshot_id, validate_snapshot_id, write_private_cache_file},
 };
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -201,12 +201,12 @@ impl RefStore {
         validate_snapshot_id(snapshot_id)?;
         let json = refmap.serialize_with_size_check()?;
         let path = self.snapshot_path(snapshot_id);
-        write_private_file(&path, json.as_bytes())
+        write_private_cache_file(&path, json.as_bytes())
     }
 
     fn set_latest_unlocked(&self, snapshot_id: &str) -> Result<(), AppError> {
         validate_snapshot_id(snapshot_id)?;
-        write_private_file(&self.latest_path(), snapshot_id.as_bytes())
+        write_private_cache_file(&self.latest_path(), snapshot_id.as_bytes())
     }
 
     fn latest_path(&self) -> PathBuf {
@@ -318,3 +318,7 @@ mod transaction_tests;
 #[cfg(test)]
 #[path = "refs_store_retained_tests.rs"]
 mod retained_tests;
+
+#[cfg(test)]
+#[path = "refs_store_durability_tests.rs"]
+mod durability_tests;
