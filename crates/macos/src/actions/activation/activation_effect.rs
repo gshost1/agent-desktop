@@ -155,16 +155,16 @@ mod imp {
     }
 
     pub(crate) fn settled_change(
-        before: &Option<FocusState>,
+        before: &crate::actions::activation::activation_state::ActivationState,
         element: &AXElement,
         deadline: Deadline,
     ) -> bool {
-        if before.is_none() {
+        if !before.observable() {
             return false;
         }
         let deadline = deadline.capped(std::time::Duration::from_millis(SETTLE_BUDGET_MS));
         while !deadline.is_expired() {
-            if changed_now(before, element, deadline) {
+            if before.surface_changed(deadline) || changed_now(&before.focus, element, deadline) {
                 return true;
             }
             std::thread::sleep(
@@ -397,4 +397,4 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 pub(crate) use imp::focus_reached;
-pub(crate) use imp::{changed_now, focus_state, settled_change};
+pub(crate) use imp::{FocusState, changed_now, focus_state, settled_change};
