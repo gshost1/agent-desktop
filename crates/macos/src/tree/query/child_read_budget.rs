@@ -48,10 +48,41 @@ pub(super) fn recount_after_prefix(requested: usize) -> bool {
     requested > 0
 }
 
+/// The page length that reads every child and proves the count in one call:
+/// one more than the count, so a list that grew since the count shows up as
+/// an extra element instead of being cut silently. `None` when the read is cut
+/// by the element budget or spans pages, where the second count stays.
+pub(super) fn whole_list_page(
+    count: usize,
+    max_elements: usize,
+    page_size: usize,
+) -> Option<usize> {
+    (count > 0 && count <= max_elements && count < page_size).then_some(count + 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_whole_list_on_one_page_asks_for_one_child_more_than_the_count() {
+        assert_eq!(whole_list_page(3, 4_096, 128), Some(4));
+        assert_eq!(whole_list_page(127, 4_096, 128), Some(128));
+        assert_eq!(whole_list_page(5, 5, 128), Some(6));
+    }
+
+    #[test]
+    fn a_cut_multi_page_or_empty_list_keeps_the_second_count() {
+        assert_eq!(whole_list_page(0, 4_096, 128), None);
+        assert_eq!(
+            whole_list_page(6, 5, 128),
+            None,
+            "a read cut by its budget cannot see the tail, so only a count proves it"
+        );
+        assert_eq!(whole_list_page(128, 4_096, 128), None);
+        assert_eq!(whole_list_page(500, 4_096, 128), None);
+    }
 
     #[test]
     fn only_a_read_prefix_is_bracketed_by_a_second_count() {

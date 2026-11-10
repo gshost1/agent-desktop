@@ -23,6 +23,16 @@ pub(crate) fn synthesize_key(
 }
 
 #[cfg(target_os = "macos")]
+pub(crate) fn prepare_keyboard_input() -> Result<(), AdapterError> {
+    crate::input::keyboard::keyboard_event::prepare_key_events()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn prepare_keyboard_input() -> Result<(), AdapterError> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 pub(crate) fn reject_standalone_key_state(
     _combo: &KeyCombo,
     _down: bool,
