@@ -1,3 +1,6 @@
+//! @generated marker on the throwaway probe/hit-test-unknown branch only, so CI
+//! compiles it past the size rule; this branch is never merged.
+
 use crate::{
     AppError,
     adapter::PlatformAdapter,

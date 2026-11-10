@@ -1,15 +1,14 @@
 use super::{
     focus_point_under_lease, is_retryable_point_error, point_error_report, point_failed_check,
 };
+use crate::trace::probe_log::{
+    probe_app_error, probe_front, probe_log, probe_poll_front_enabled, probe_since_us, probe_window,
+};
 use crate::{
     AdapterError, AppError, actionability::pointer_timeout::point_actionability_timeout,
     actions::headed_focus::same_window, adapter::PlatformAdapter,
     commands::point_resolve::PointResolveArgs, context::CommandContext,
     ref_action::ref_action_wait::with_refusal, refs::ref_resolve_deadline::POLL_INTERVAL,
-};
-use crate::trace::probe_log::{
-    probe_app_error, probe_front, probe_log, probe_poll_front_enabled, probe_since_us,
-    probe_window,
 };
 use serde_json::json;
 
@@ -195,23 +194,35 @@ pub(crate) fn retry_leased_point_phase<T>(
         );
         let error = match result {
             Ok(value) => {
-                probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "success" }));
+                probe_log(
+                    "loop.branch",
+                    json!({ "attempt": attempt_index, "branch": "success" }),
+                );
                 return Ok(value);
             }
             Err(error) if focus == AttemptFocus::Unfocused => error,
             Err(error) => AppError::Adapter(error.into_adapter_error().after_focus_ran()),
         };
         if focus == AttemptFocus::FrontChanged && !may_settle_after_raise(&error) {
-            probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "stop_front_changed" }));
+            probe_log(
+                "loop.branch",
+                json!({ "attempt": attempt_index, "branch": "stop_front_changed" }),
+            );
             return Err(with_refusal(error.into_adapter_error(), refusal.as_ref()).into());
         }
         if !auto_wait || !is_retryable_point_error(&error) {
-            probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "return_not_retryable", "auto_wait": auto_wait, "settle": may_settle_after_raise(&error) }));
+            probe_log(
+                "loop.branch",
+                json!({ "attempt": attempt_index, "branch": "return_not_retryable", "auto_wait": auto_wait, "settle": may_settle_after_raise(&error) }),
+            );
             return Err(error);
         }
         let remaining = deadline.remaining();
         if remaining.is_zero() {
-            probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "timeout" }));
+            probe_log(
+                "loop.branch",
+                json!({ "attempt": attempt_index, "branch": "timeout" }),
+            );
             let timeout = point_actionability_timeout(Some(point_error_report(&error)));
             if focus == AttemptFocus::Unfocused {
                 return Err(timeout);
@@ -220,7 +231,10 @@ pub(crate) fn retry_leased_point_phase<T>(
                 timeout.into_adapter_error().after_focus_ran(),
             ));
         }
-        probe_log("loop.branch", json!({ "attempt": attempt_index, "branch": "retry", "front_changed_but_settling": focus == AttemptFocus::FrontChanged }));
+        probe_log(
+            "loop.branch",
+            json!({ "attempt": attempt_index, "branch": "retry", "front_changed_but_settling": focus == AttemptFocus::FrontChanged }),
+        );
         refusal = Some(error.into_adapter_error());
         std::thread::sleep(POLL_INTERVAL.min(remaining));
     }

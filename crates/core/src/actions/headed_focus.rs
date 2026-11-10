@@ -117,7 +117,10 @@ pub(crate) fn focus_exact_window(
         ));
     }
     let raise_started = std::time::Instant::now();
-    crate::trace::probe_log::probe_log("raise.call", json!({ "window": crate::trace::probe_log::probe_window(&live) }));
+    crate::trace::probe_log::probe_log(
+        "raise.call",
+        json!({ "window": crate::trace::probe_log::probe_window(&live) }),
+    );
     let raised = adapter.focus_window(&live, lease);
     crate::trace::probe_log::probe_log(
         "raise.result",
