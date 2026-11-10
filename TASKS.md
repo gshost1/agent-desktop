@@ -517,4 +517,7 @@ Scope freeze 2026-11-10 ~17:35Z (George via control): 1.4 is the 19 PRs in the t
 - DENSE-MENU-1, FULLSCREEN-LAUNCH-1, SETVALUE-SE-1: Mac-owned rows, not started here.
 - CHANGELOG-FRAGMENTS-1: post-1.4 by design.
 - SURFACE-5 follow-ups beyond #111: waiting for the agent's per-item lines (it is stopping now).
-- Web session items (innermost-only find --text, weather suggestion skill line, auto_wait/batch trims, --first -> matches 2.7): waiting for the web session's per-item lines (it is stopping now).
+- Web: `ref -w` reads the page, plus the weather suggestion-list skill line. Done locally, gates GREEN. Branch wip/fix/web-ref-wait-surface 6cfef33e, no PR or CI. r3 turns 10->8, wall 23.9->16.1 s, sleep 13->3 s. Next: merge main, add the CHANGELOG line, open the PR when the freeze lifts.
+- Web: find --text innermost-only matches. Not started, no branch. Next: build after the freeze. Breaking, so it ships in 2.7 or as an opt-in flag.
+- Web: 2.7 trims (auto_wait only when informative, drop batch limits/semantics). Not started, no branch. Next: build. Breaking, so 2.7 only, else 2.8.
+- Web: find --first -> matches. Not started, no branch. Next: after #118 lands. Breaking, 2.7 only.
