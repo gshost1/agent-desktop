@@ -198,21 +198,20 @@ fn cwd_is_honored_for_create_process() {
         timeout_ms: 0,
         ..Default::default()
     };
-    match launch_app_impl(
+    let launched = launch_app_impl(
         probe.to_str().expect("utf8 path"),
         &options,
         deadline(10_000),
-    ) {
-        Ok(result) => {
-            let _guard = KillOnDrop(result.pid);
-            assert!(
-                result.window.is_none(),
-                "the probe presents no window: {result:?}"
-            );
-        }
+    );
+    let _guard = launched.as_ref().ok().map(|result| KillOnDrop(result.pid));
+    match &launched {
+        Ok(result) => assert!(
+            result.window.is_none(),
+            "the probe presents no window: {result:?}"
+        ),
         Err(error) => {
             assert_eq!(error.code, ErrorCode::AppUnresponsive, "{error:?}");
-            assert_eq!(error.details.expect("details")["status"], 0);
+            assert_eq!(error.details.as_ref().expect("details")["status"], 0);
         }
     }
     let written = poll_read_marker(&marker, Deadline::after(5_000).expect("deadline"));
