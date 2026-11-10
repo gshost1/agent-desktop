@@ -142,6 +142,8 @@ agent-desktop wait --text Calculator --app gnome-calculator --timeout 3000
 
 `event.kind` uses snake_case. Surface events add `surface` and require `--app`; `--window` and `--window-id` apply only to the three window kinds.
 
+`surface-appeared` fires for a surface that a complete read since the wait began did not show. A menu open at the start that closes and reopens counts, even under the same id. A surface replaced by another of the same id between two reads is not seen, and adapters reuse ids today: on Windows every menu of a process has one id, on Linux a menu takes its owner window's id, and on macOS sheets, popovers and menus are identified by position.
+
 `--app` resolves once, at the start, to one process. When no app matches, `app-launched`, `window-opened`, and `surface-appeared` keep polling, so you can race a launch. `app-terminated`, `window-closed`, and `surface-dismissed` return at once with `found: true` and `target_unresolved: true`, which a misspelled `--app` also produces. `focus-changed` returns `APP_NOT_FOUND`.
 
 ### Errors
