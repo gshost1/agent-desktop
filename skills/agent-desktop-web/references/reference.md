@@ -77,7 +77,9 @@ agent-desktop batch '[
 ]' --stop-on-error
 ```
 
-A batch that ran every entry has `ok: true` even when an entry failed. Read `data.failed_entries`, and each entry's `ok` in `data.results`.
+Write every ref in full: a shell variable spliced into the JSON can make an agent's shell tool refuse the whole command.
+
+A batch has `ok: true` even when an entry failed. When `data.failed_entries` and `data.not_started_entries` are both `0`, every entry worked. Otherwise read each entry's `ok` and `error` in `data.results`.
 
 ## Errors
 

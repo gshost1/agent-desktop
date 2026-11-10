@@ -12,13 +12,15 @@ description: >
 
 # agent-desktop: web pages
 
-Every command prints one JSON envelope: read `ok`, then `data` or `error`. This quickstart covers the loop. Launch options, date and time inputs, several windows, long pages and every error code are in `agent-desktop skills get web reference`. For a native app in the same task, also read `agent-desktop skills get desktop`.
+Every command prints one JSON envelope: read `ok`, then `data` or `error`. This quickstart covers the loop. Date and time inputs, several windows, long pages and every error code are in `agent-desktop skills get web reference`. For a native app in the same task, also read `agent-desktop skills get desktop`.
 
-Chrome needs a DevTools endpoint. Skip this when the task says Chrome is already running with one:
+Chrome needs a DevTools endpoint. Skip this when the task says Chrome already has one:
 
 ```bash
 agent-desktop launch "Google Chrome" --cdp --arg=--user-data-dir="$PWD/chrome-profile" --arg=--no-first-run --arg=--no-default-browser-check
 ```
+
+If Chrome is already running, `launch` fails with `cdp_requires_fresh_launch`. Closing it loses the user's tabs: ask first.
 
 ## The loop
 
@@ -29,16 +31,18 @@ agent-desktop click @s8f3k2p9:e1
 agent-desktop snapshot --app "Google Chrome" --surface web -i --lines
 ```
 
-- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name) and `[states]`. Copy the ref from the start of the line that names the control. Each snapshot gives new refs.
-- Take the snapshot right after a click, with no `sleep`: it waits for the page the click opens. Its `data.url` and `data.title` name the page.
-- `-i` keeps interactive nodes only. To read text such as a total, a code or a sentence, search for it instead of reading the whole page:
+- `data.channel` is `cdp`. With `ax`, no endpoint was reached: follow `data.suggestion`.
+- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name), `placeholder=` and `[states]`. Copy the ref from the start of the line that names the control. Each snapshot gives new refs.
+- Snapshot right after a click, with no `sleep`: it waits for the page the click opens. `data.url` names the page.
+- `-i` keeps interactive nodes only. To read text such as a total or a sentence, search for it:
 
 ```bash
 agent-desktop find --app "Google Chrome" --surface web --text "late 1980s"
-agent-desktop snapshot --app "Google Chrome" --surface web --lines | grep -n "Total"
+agent-desktop snapshot --app "Google Chrome" --surface web --lines | grep -nE '"complete"|Total'
 ```
 
-- `find --text` also returns the containers around the text. Read the match whose `name` holds the words: a paragraph or list item carries its whole text as its name.
+- `find --text` also returns the containers around the text. Read the match whose `name` holds the words: a paragraph carries its whole text as its name.
+- `"complete": false` means a long page was cut off; use `find --text` for what is past the end.
 
 ## Acting on refs
 
@@ -47,28 +51,27 @@ agent-desktop snapshot --app "Google Chrome" --surface web --lines | grep -n "To
 | Click a link or button | `click @ref` |
 | Fill a text field, replacing its text | `set-value @ref "text"` |
 | Set a date, time or color input | `set-value @ref "2026-11-08"`, `"19:30"`, `"#ff8800"` |
-| Choose a select option, by label or value | `select @ref "Norway"` |
-| Tick a checkbox or choose a radio button | `check @ref` (`uncheck @ref` to clear) |
+| Choose a select option | `select @ref "Norway"` |
+| Tick a checkbox or a radio button | `check @ref` (`uncheck @ref` to clear) |
 | Press Enter in a field | `press return --ref @ref` |
 
-`data.disposition.delivery` `delivered_verified` means the element was read back and holds the value, as `data.post_state` shows. Do not set it again. `application_commit: not_verified` only says the page's own save was not observed.
+`data.disposition.delivery` `delivered_verified` means the element was read back and holds the value (`data.post_state`). Do not set it again; `application_commit: not_verified` only says the page's own save was not observed.
 
 Several steps on one page fit in one `batch`:
 
 ```bash
 agent-desktop batch '[
   {"command":"set-value","args":{"ref_id":"@s8f3k2p9:e4","value":"Ada Lovelace"}},
-  {"command":"select","args":{"ref_id":"@s8f3k2p9:e6","value":"Norway"}},
   {"command":"check","args":{"ref_id":"@s8f3k2p9:e22"}}
 ]' --stop-on-error
 ```
 
-Write every ref in full, as above. A shell variable spliced into the JSON (`'"$P"':e4`) makes an agent's Bash tool refuse the whole command, often with only `Brace expansion`.
+Write every ref in full. A shell variable spliced into the JSON (`'"$P"':e4`) can make an agent's shell tool refuse the whole command.
 
-A batch has `ok: true` even when an entry failed. `data.failed_entries` is `0` when every entry worked; then do not repeat them. Otherwise read the failed entry's `error` in `data.results`.
+A batch has `ok: true` even when an entry failed. When `data.failed_entries` and `data.not_started_entries` are both `0`, every entry worked: do not repeat them. Otherwise read each entry's `ok` and `error` in `data.results`.
 
 ## Errors
 
 - `STALE_REF`: the page changed since the snapshot. Snapshot again and use the new ref.
-- `ACTION_FAILED` with `details.kind` `cdp_click_intercepted`: a banner or dialog covers the element. Dismiss it, then retry.
-- Retry an action only when `error.disposition.retry` is `safe`. For any other code, see `agent-desktop skills get web reference`.
+- `ACTION_FAILED`, `cdp_click_intercepted`: a banner or dialog covers the element. Dismiss it, then retry.
+- Retry only when `error.disposition.retry` is `safe`. For other codes, see `agent-desktop skills get web reference`.
