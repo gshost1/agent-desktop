@@ -8,7 +8,11 @@ use super::launch_window::LaunchWindow;
 
 pub(crate) const STARTUP_GRACE: Duration = Duration::from_millis(1500);
 const FIRST_POLL: Duration = Duration::from_millis(25);
-const POLL_LIMIT: Duration = Duration::from_millis(250);
+/// The longest gap between two reads of a launching application's windows.
+/// The launch returns at the first read that shows its window placed, so the
+/// gap is latency added after the window appears; one read costs a window
+/// list and an accessibility state read of a few milliseconds.
+const POLL_LIMIT: Duration = Duration::from_millis(50);
 
 /// The probes one launch wait reads on every poll.
 pub(crate) struct SettleProbes<R, S, A> {
@@ -79,8 +83,12 @@ where
             return last_read_failure.map_or(Ok(unclaimed), Err);
         }
         std::thread::sleep(poll_interval.min(remaining));
-        poll_interval = (poll_interval * 3 / 2).min(POLL_LIMIT);
+        poll_interval = next_poll_interval(poll_interval);
     }
+}
+
+fn next_poll_interval(interval: Duration) -> Duration {
+    (interval * 3 / 2).min(POLL_LIMIT)
 }
 
 pub(crate) fn window_read_is_not_ready_yet(error: &AdapterError) -> bool {

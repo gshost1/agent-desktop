@@ -271,3 +271,14 @@ fn an_activating_wait_ends_on_a_window_still_forming_after_the_grace() {
     assert!(matches!(found, LaunchWindow::Forming(forming) if forming.id == "w-1"));
     assert!(reads.get() > 1, "the wait ended before the grace");
 }
+
+#[test]
+fn no_gap_between_window_reads_passes_fifty_milliseconds() {
+    let mut interval = FIRST_POLL;
+    let mut elapsed = Duration::ZERO;
+    while elapsed < Duration::from_secs(5) {
+        assert!(interval <= Duration::from_millis(50), "{interval:?}");
+        elapsed += interval;
+        interval = next_poll_interval(interval);
+    }
+}
