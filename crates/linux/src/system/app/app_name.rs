@@ -1,4 +1,5 @@
 use super::app_alias::{AliasIndex, current_index};
+use super::launched_entries::LaunchedEntries;
 use crate::system::process::process_facts::ProcessFacts;
 
 fn non_blank(text: Option<&str>) -> Option<&str> {
@@ -33,8 +34,27 @@ pub(crate) fn aliases_of(facts: &ProcessFacts) -> Vec<String> {
     aliases_in(&current_index(), facts)
 }
 
+/// The desktop entry `launch` recorded for this process instance and
+/// executable, when there is one.
+fn launched_entry(facts: &ProcessFacts) -> Option<String> {
+    let executable = &facts.executable.as_ref()?.executable;
+    LaunchedEntries::in_runtime_dir()?.recall(&facts.instance, executable)
+}
+
 pub(crate) fn desktop_id_in(index: &AliasIndex, facts: &ProcessFacts) -> Option<String> {
-    index.ids_for(facts.executable.as_ref()?).into_iter().next()
+    desktop_id_with(index, facts, launched_entry(facts))
+}
+
+/// The entry `launch` recorded for the process, else the first entry whose
+/// command the process runs.
+fn desktop_id_with(
+    index: &AliasIndex,
+    facts: &ProcessFacts,
+    launched: Option<String>,
+) -> Option<String> {
+    launched
+        .filter(|desktop_id| index.entry(desktop_id).is_some())
+        .or_else(|| index.ids_for(facts.executable.as_ref()?).into_iter().next())
 }
 
 pub(crate) fn desktop_id(facts: &ProcessFacts) -> Option<String> {
@@ -44,11 +64,31 @@ pub(crate) fn desktop_id(facts: &ProcessFacts) -> Option<String> {
 /// As [`aliases_of`] over an index the caller already holds, for a caller that
 /// asks about many processes.
 pub(crate) fn aliases_in(index: &AliasIndex, facts: &ProcessFacts) -> Vec<String> {
-    let Some(actual) = facts.executable.as_ref() else {
-        return Vec::new();
-    };
-    let mut aliases = index.names_for(actual);
-    aliases.extend(index.ids_for(actual));
+    aliases_with(index, facts, launched_entry(facts))
+}
+
+/// The names and ids of the entries whose command the process runs, then
+/// the name and id of the entry `launch` started it from.
+fn aliases_with(index: &AliasIndex, facts: &ProcessFacts, launched: Option<String>) -> Vec<String> {
+    let mut aliases = facts
+        .executable
+        .as_ref()
+        .map(|actual| {
+            let mut aliases = index.names_for(actual);
+            aliases.extend(index.ids_for(actual));
+            aliases
+        })
+        .unwrap_or_default();
+    if let Some(entry) = launched.and_then(|desktop_id| index.entry(&desktop_id)) {
+        for alias in [&entry.name, &entry.id] {
+            if !aliases
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(alias))
+            {
+                aliases.push(alias.clone());
+            }
+        }
+    }
     aliases
 }
 
