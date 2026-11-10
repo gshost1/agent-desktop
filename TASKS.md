@@ -59,14 +59,14 @@ The fixed per-process floor, paid by every command and measured with an interpos
 
 Measured by interleaved A/B against origin/main on 5 apps; medians.
 
-- [x] 1. Overlap OS connections and TCC checks (#95). Saves 25-38 ms on `list-windows`, 26-40 on `snapshot -i`, 28-42 on `find`, 19-37 on `press`, 9-13 on `get`/`set-value`/`click`. CI pending after review fixes.
+- [x] 1. Overlap OS connections and TCC checks (#95, merged 16a252506). Saves 25-38 ms on `list-windows`, 26-40 on `snapshot -i`, 28-42 on `find`, 19-37 on `press`, 9-13 on `get`/`set-value`/`click`.
 - [x] 3. Skip the second child count on leaves (#97, merged 272c08378). Saves 10-17 ms on the fixture and Weather, 2-4 elsewhere; trees identical.
-- [x] 5. Stabilizer recapture without the 5 ms pause (#98). Saves 3-7 ms on `list-windows`, 3-16 on `press`.
+- [x] 5. Stabilizer recapture without the 5 ms pause (#98). Saves 3-7 ms on `list-windows`, 3-16 on `press`. Merged e49b2295f.
 - [x] 4. Legacy host scan reads identity first (#96). Saves 1.5 ms on every command (`--version` 7.72 to 6.19 ms).
 - [x] FRONT-READ-COLD-1 (#99). The first system-wide focus read failed -25204 in every fresh process because there was no window-server connection yet. Classification is now correct, at +6 ms (front) and +35 ms (behind) per headed pointer command on the probe branch.
-- [x] LAUNCH-WIN-1 (#100). `launch` now reports the window once it is placed: real bounds and visible in 16/16, at +56-160 ms per launch.
-- [ ] 2. Context-menu walk after click-like actions (`app_menu.rs`). Mostly app-busy time on Weather; fixture and Settings pay about 675-950 single-attribute IPCs per click. Batching needs the child-read guarantees (count stability, truncation) rebuilt for a one-call read.
-- [ ] 6. Launch poll granularity: the 250 ms cap leaves up to 250 ms between the window appearing and the launch seeing it.
+- [x] LAUNCH-WIN-1 (#100, merged 3f593469f). `launch` now reports the window once it is placed: real bounds and visible in 16/16, at +56-160 ms per launch.
+- [x] 6. Launch poll granularity: poll cap 250 to 50 ms, folded into #100. Saves 4/16/18/182 ms on the four launch apps.
+- [x] 2. Context-menu walk after click-like actions (#101). `AXRole`+`AXChildren` in one batched read per element; `AXVisible` only for menus (batching it made Weather 8-47 ms slower); any unclear slot falls back to the old reads. `click` medians: System Settings -40/-51 ms, Weather -56/-89, fixture -8, Calculator -1, Script Editor 0/+3. Also fixes a `read_owned` leak of a value that arrives after the deadline.
 
 ## Found (for core / laptop)
 
