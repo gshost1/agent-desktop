@@ -5,6 +5,7 @@ observations. Run a section only if the PR's current head equals the SHA written
 for that PR: skip it and say so. Report per PR: head SHA, each check's PASS/FAIL line, and anything unexpected.
 
 Rules learned from the #58 run (2026-11-10), binding for every section:
+- No `rm -rf` in any Mac script: Mac sessions cannot run it. Unlink known files and rmdir known dirs, or leave a listed dir for George.
 - Build from a detached worktree under `/tmp` at the SHA (`git -C ~/Projects/agent-desktop worktree add --detach /tmp/<name> <SHA>`); never `git switch` in `~/Projects/agent-desktop`. Wait `while pgrep -x cargo >/dev/null; do sleep 5; done` before building.
 - Start with the desktop-space reset (`bench-tools/desktop_space.sh` from `origin/chore/speed-1.4-tasks`; its paths are Mac-local) and wait for the app or fixture window to exist and be front before the first check. A full-screen T3 Code Space made the fixture vanish after ~12 s.
 - `find` on a shipped binary omits `bounds` when the match has a ref (`crates/core/src/commands/find_response.rs:61-70`); read bounds with `get <ref> --property bounds`.
@@ -27,7 +28,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
 | #80 | SURFACE-10 | STALE (`2982cc00`; PR head moved to `db60af6e`, DIRTY) | do not run: being re-merged with main; the SHA below will be updated when the new head is green |
-| #58 probe | ACTION-12 | `8959fc5c` (branch `probe/pointer-focus-once`) | READY: run it and send back `/tmp/pfo/probe.log` |
+| #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | revision 2 ready (fixtures under $HOME/.agent-desktop-bench-target, resolution asserted, build outside the lock); needs `ADL_DESKTOP_LOCK` set by the Mac worker |
