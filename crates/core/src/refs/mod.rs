@@ -377,6 +377,7 @@ pub(crate) mod resolve_attempt_outcome;
 pub mod resolve_errors;
 pub mod resolve_saved_ref;
 pub(crate) mod resolve_verdict;
+pub mod saved_ref_process;
 #[cfg(test)]
 #[path = "refs_serde_tests.rs"]
 mod serde_tests;
