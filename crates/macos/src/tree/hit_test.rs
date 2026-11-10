@@ -49,24 +49,50 @@ mod imp {
         deadline: std::time::Instant,
     ) -> Result<HitTestResult, AdapterError> {
         let Some(bounds) = read_bounds_with_deadline(target, deadline)? else {
+            pfo("hit_test.unknown_exit", "bounds_none".to_string());
             return Ok(HitTestResult::Unknown);
         };
         if bounds.width <= 0.0 || bounds.height <= 0.0 {
+            pfo(
+                "hit_test.unknown_exit",
+                format!("zero_size bounds={bounds:?}"),
+            );
             return Ok(HitTestResult::Unknown);
         }
         if !clipping_is_complete(target, &point, deadline)? {
+            let clip = clipped_bounds(target, deadline);
+            pfo(
+                "hit_test.unknown_exit",
+                format!(
+                    "clipping_incomplete point=({}, {}) bounds={bounds:?} clip={clip:?}",
+                    point.x, point.y
+                ),
+            );
             return Ok(HitTestResult::Unknown);
         }
         let system = AXElement(unsafe { AXUIElementCreateSystemWide() });
         if system.0.is_null() {
+            pfo("hit_test.unknown_exit", "system_wide_null".to_string());
             return Ok(HitTestResult::Unknown);
         }
         let Some(hit) = hit_at_position(&system, &point, deadline) else {
+            pfo(
+                "hit_test.unknown_exit",
+                "system_wide_no_element_at_position".to_string(),
+            );
             return Ok(HitTestResult::Unknown);
         };
         let Some(classification) = classify_hit(target, &hit, deadline) else {
+            pfo(
+                "hit_test.unknown_exit",
+                "system_wide_ancestry_incomplete".to_string(),
+            );
             return Ok(HitTestResult::Unknown);
         };
+        pfo(
+            "hit_test.system_wide_classification",
+            format!("{classification:?}"),
+        );
         if needs_application_retry(classification) {
             return Ok(hit_test_in_application(target, &point, deadline));
         }
@@ -80,6 +106,15 @@ mod imp {
     ) -> Option<AXElement> {
         let (error, hit) =
             crate::tree::properties::ax_ipc::element_at_position(root, ax_point(point), deadline);
+        pfo(
+            "hit_test.element_at_position",
+            format!(
+                "ax_error={error} hit_null={} point=({}, {})",
+                hit.is_null(),
+                point.x,
+                point.y
+            ),
+        );
         (error == kAXErrorSuccess && !hit.is_null()).then(|| AXElement(hit))
     }
 
@@ -88,16 +123,34 @@ mod imp {
         point: &Point,
         deadline: std::time::Instant,
     ) -> HitTestResult {
-        let Ok(pid) = crate::tree::properties::ax_ipc::pid(target, deadline) else {
-            return HitTestResult::Unknown;
+        let pid = match crate::tree::properties::ax_ipc::pid(target, deadline) {
+            Ok(pid) => pid,
+            Err(error) => {
+                pfo(
+                    "hit_test.unknown_exit",
+                    format!("application_retry_pid_error ax_error={error}"),
+                );
+                return HitTestResult::Unknown;
+            }
         };
         let application = crate::tree::element_for_pid(pid);
         let Some(hit) = hit_at_position(&application, point, deadline) else {
+            pfo(
+                "hit_test.unknown_exit",
+                "application_retry_no_element_at_position".to_string(),
+            );
             return HitTestResult::Unknown;
         };
-        match classify_hit(target, &hit, deadline) {
+        let classification = classify_hit(target, &hit, deadline);
+        match classification {
             Some(HitClassification::ReachesTarget) => HitTestResult::ReachesTarget,
-            _ => HitTestResult::Unknown,
+            other => {
+                pfo(
+                    "hit_test.unknown_exit",
+                    format!("application_retry_classification={other:?}"),
+                );
+                HitTestResult::Unknown
+            }
         }
     }
 
@@ -136,11 +189,36 @@ mod imp {
     ) -> HitTestResult {
         match classification {
             HitClassification::ReachesTarget => HitTestResult::ReachesTarget,
-            HitClassification::AncestorOfTarget => HitTestResult::Unknown,
-            HitClassification::Unrelated => {
-                intercepted_by(hit, deadline).unwrap_or(HitTestResult::Unknown)
+            HitClassification::AncestorOfTarget => {
+                pfo(
+                    "hit_test.unknown_exit",
+                    "classification_ancestor_of_target".to_string(),
+                );
+                HitTestResult::Unknown
             }
+            HitClassification::Unrelated => match intercepted_by(hit, deadline) {
+                Ok(result) => result,
+                Err(error) => {
+                    pfo(
+                        "hit_test.unknown_exit",
+                        format!("intercepted_by_error {error:?}"),
+                    );
+                    HitTestResult::Unknown
+                }
+            },
         }
+    }
+
+    fn pfo(event: &str, detail: String) {
+        let wall_us = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_micros() as u64)
+            .unwrap_or(0);
+        tracing::debug!(
+            target: "pfo",
+            "{}",
+            serde_json::json!({ "event": event, "wall_us": wall_us, "pid": std::process::id(), "fields": { "detail": detail } })
+        );
     }
 
     pub(super) fn ax_point(point: &Point) -> (f32, f32) {
