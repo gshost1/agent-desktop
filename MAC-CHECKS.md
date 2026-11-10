@@ -31,7 +31,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
-| #80 | SURFACE-10 | `4ef2c62a` | revision 3 ready (BUILD + RUN, below); Part 1 must rerun (crates/macos changed); CI was running at write time |
+| #80 | SURFACE-10 | `4ef2c62a` | **PASS**, 2 runs (rev 3), CI 13/13. Landing: the verdict carries if the PR's own macOS diff is identical after the main merge-in |
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
