@@ -155,7 +155,7 @@ pub use system::window_op::WindowOp;
 pub use system::window_readback::WindowReadback;
 pub use system::window_state::WindowState;
 pub use trace::trace_sanitize::sanitize_trace_value;
-pub use tree::accname::{compute_description, compute_name, resolve_description, resolve_name};
+pub use tree::accname::{resolve_description, resolve_name};
 pub use tree::bounds_space::BoundsSpace;
 pub use tree::element_identifier::ElementIdentifier;
 pub use tree::element_state::ElementState;
