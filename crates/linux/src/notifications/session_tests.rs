@@ -1,6 +1,25 @@
 use super::*;
 use crate::notifications::fake::{DaemonFailure, FakeWorld, lease, log, reading, spec};
-use agent_desktop_core::{ErrorCode, InteractionPolicy};
+use agent_desktop_core::{ActionResult, ErrorCode, InteractionPolicy, NotificationInfo};
+use serde_json::json;
+
+impl RestoreReport for i32 {}
+
+impl RestoreReport for () {}
+
+fn entry() -> NotificationInfo {
+    NotificationInfo {
+        index: 1,
+        app_name: "Mail".into(),
+        title: "a".into(),
+        body: None,
+        actions: Vec::new(),
+    }
+}
+
+fn sticking_session<'a>(world: &'a FakeWorld, lease: &'a InteractionLease) -> Session<'a> {
+    Session::open(world, InteractionPolicy::headed(), lease).expect("open")
+}
 
 fn world(log: &crate::notifications::fake::Log) -> FakeWorld {
     FakeWorld::new(log, vec![reading(&[spec("Mail", "a")])])
@@ -66,13 +85,52 @@ fn a_list_that_was_showing_is_adopted_and_left_open() {
 }
 
 #[test]
-fn a_close_that_does_not_stick_turns_a_success_into_an_error_naming_it() {
+fn a_delivered_action_keeps_its_result_when_the_list_it_opened_does_not_close() {
     let log = log();
     let mut world = world(&log);
     world.faults.close_sticks = true;
     let lease = lease(500);
-    let session = Session::open(&world, InteractionPolicy::headed(), &lease).expect("open");
-    let error = session.finish(Ok(())).expect_err("unverified");
+    let pressed = ActionResult::delivered_unverified("notification_action")
+        .with_details(json!({ "evidence": "entry_removed" }));
+    let disposition = serde_json::to_value(&pressed).expect("json")["disposition"].clone();
+
+    let kept = sticking_session(&world, &lease)
+        .finish(Ok(pressed))
+        .expect("the delivered action stays the answer");
+
+    let kept = serde_json::to_value(kept).expect("json");
+    assert_eq!(kept["details"]["list_restore"], "unverified");
+    assert_eq!(kept["details"]["evidence"], "entry_removed");
+    assert_eq!(kept["disposition"], disposition);
+}
+
+#[test]
+fn a_delivered_dismissal_keeps_the_dismissed_entry_when_the_list_does_not_close() {
+    let log = log();
+    let mut world = world(&log);
+    world.faults.close_sticks = true;
+    let lease = lease(500);
+
+    let kept = sticking_session(&world, &lease)
+        .finish(Ok(entry()))
+        .expect("the delivered dismissal stays the answer");
+
+    assert_eq!(kept.title, "a");
+}
+
+#[test]
+fn a_failed_mutation_keeps_its_own_error_when_the_list_does_not_close() {
+    let log = log();
+    let mut world = world(&log);
+    world.faults.close_sticks = true;
+    let lease = lease(500);
+    let failed = AdapterError::new(ErrorCode::NotificationNotFound, "gone");
+
+    let error = sticking_session(&world, &lease)
+        .finish::<NotificationInfo>(Err(failed))
+        .expect_err("the mutation error stays");
+
+    assert_eq!(error.code, ErrorCode::NotificationNotFound);
     assert_eq!(
         error.details.expect("details")["list_restore"],
         "unverified"
