@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
-use crate::locator::live_locator::ObservationRoot;
+use crate::locator::live_locator::{ObservationRoot, ObservedTree};
 use crate::refs::ref_alloc::allocate_refs;
 use crate::refs::ref_alloc_config::RefAllocConfig;
 use crate::refs::ref_alloc_options::RefAllocOptions;
@@ -15,7 +15,7 @@ use crate::{
     AccessibilityNode, AdapterError, Deadline, NativeHandle, RefEntry, RefMap, WindowInfo,
 };
 
-pub(super) struct RuleAdapter {
+pub(crate) struct RuleAdapter {
     pub(super) windows: Vec<WindowInfo>,
     pub(super) shell: Option<WindowInfo>,
     pub(super) observed: AccessibilityNode,
@@ -28,7 +28,7 @@ pub(super) struct RuleAdapter {
 }
 
 impl RuleAdapter {
-    pub(super) fn new(observed: AccessibilityNode) -> Self {
+    pub(crate) fn new(observed: AccessibilityNode) -> Self {
         Self {
             windows: vec![window()],
             shell: None,
@@ -157,18 +157,18 @@ pub(super) fn window() -> WindowInfo {
     }
 }
 
-pub(super) fn entry() -> RefEntry {
+pub(crate) fn entry() -> RefEntry {
     let mut entry = crate::adapter::minimal_ref_entry("button", Some("Run"));
     entry.source.source_app = Some("Fixture".into());
     entry.source.source_window_id = Some("w-1".into());
     entry
 }
 
-pub(super) fn node(role: &str, name: &str) -> AccessibilityNode {
+pub(crate) fn node(role: &str, name: &str) -> AccessibilityNode {
     crate::adapter::minimal_accessibility_node(role, name)
 }
 
-pub(super) fn tree_with(children: Vec<AccessibilityNode>) -> AccessibilityNode {
+pub(crate) fn tree_with(children: Vec<AccessibilityNode>) -> AccessibilityNode {
     let mut root = node("group", "Window");
     root.children = children;
     root
@@ -182,9 +182,21 @@ pub(super) fn resolve(
 }
 
 pub(super) fn capture(root: AccessibilityNode, name: &str) -> RefEntry {
+    capture_observed(root, |_| {}, name)
+}
+
+/// Captures `root` the way a snapshot does, after `edit` changes what the
+/// observation behind the capture proof read.
+pub(super) fn capture_observed(
+    root: AccessibilityNode,
+    edit: impl FnOnce(&mut ObservedTree),
+    name: &str,
+) -> RefEntry {
     let mut refmap = RefMap::new();
-    let observed = crate::adapter::observed_tree(&ObservationRoot::Window(&window()), root.clone())
-        .expect("the fixture observes");
+    let mut observed =
+        crate::adapter::observed_tree(&ObservationRoot::Window(&window()), root.clone())
+            .expect("the fixture observes");
+    edit(&mut observed);
     let proof = crate::refs::ref_capture_proof::CaptureProof::new(&observed);
     let config = RefAllocConfig {
         capture: Some(&proof),
@@ -195,6 +207,17 @@ pub(super) fn capture(root: AccessibilityNode, name: &str) -> RefEntry {
         .filter_map(|index| refmap.get(&format!("@e{index}")).cloned())
         .find(|entry| entry.identity.name.as_deref() == Some(name))
         .expect("the captured element has a ref")
+}
+
+/// Allocates `root` with no capture proof at all, the way an entry no capture
+/// judged is built.
+pub(super) fn capture_unjudged(root: AccessibilityNode, name: &str) -> RefEntry {
+    let mut refmap = RefMap::new();
+    allocate_refs(root, &mut refmap, &config_without_uniqueness()).unwrap();
+    (1..=refmap.len())
+        .filter_map(|index| refmap.get(&format!("@e{index}")).cloned())
+        .find(|entry| entry.identity.name.as_deref() == Some(name))
+        .expect("the element has a ref")
 }
 
 fn config_without_uniqueness() -> RefAllocConfig<'static> {

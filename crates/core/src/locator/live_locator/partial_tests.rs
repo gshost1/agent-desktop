@@ -52,7 +52,7 @@ fn incomplete_walk() -> ObservedTree {
 fn observed(name: &str, token: Option<&str>, fully_observed: bool) -> LocatorMatch {
     let mut entry = crate::adapter::minimal_ref_entry("button", Some(name));
     entry.identity.retained_object = token.map(String::from);
-    entry.identity.unique_at_capture = false;
+    entry.identity.capture = crate::CaptureVerdict::Ambiguous;
     LocatorMatch {
         data: LocatorMatchData {
             ref_id: Some("@e9".into()),

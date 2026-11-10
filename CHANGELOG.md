@@ -2,6 +2,10 @@
 
 ## Unreleased (1.4.0)
 
+### BREAKING CHANGES
+
+* The response envelope moves to 2.7. On Windows and Linux, and on macOS for an element with no address, a ref whose snapshot could not read the window whole now fails `STALE_REF` with `details.kind: identity_unproven` and `details.reason: capture_incomplete` instead of `AMBIGUOUS_TARGET` `identity_not_unique`; retake the snapshot with a larger `--timeout-ms`. A ref whose capture left a recorded field unread, or that no capture judged, fails `STALE_REF` `identity_unproven` with `details.reason: capture_unknown`. `identity_not_unique` now means the capture saw an identical twin. Refmap entries record `capture` (`unique`, `ambiguous`, `incomplete`, `unknown`); refmaps from earlier versions still load. See the version 2.7 migration in `docs/json-output.md`. ([#14](https://github.com/gshost1/agent-desktop/pull/14))
+
 ### Bug Fixes
 
 * On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
@@ -10,6 +14,11 @@
 ### Performance
 
 * On macOS, wait the 2 s accessibility settle only for a Chromium process, recognized by a bundled framework that ships the V8 startup snapshot or is named `Electron Framework` or `Chromium Embedded Framework`. The first snapshot of a freshly launched native app no longer pays it, and `launch` now reports `renderer: "chromium"` for browsers and renamed Electron builds too. ([#5](https://github.com/gshost1/agent-desktop/pull/5))
+
+### Documentation
+
+* Add a synopsis of `press`, `find`, `type`, `select` and `set-value` to the interaction reference, loaded on demand, with tests that keep each form in step with the command's flags. Taken from [#48](https://github.com/gshost1/agent-desktop/pull/48) without its additions to the core skill, which in a paired run made the three bench tasks use 14% more input tokens. ([#82](https://github.com/gshost1/agent-desktop/pull/82))
+* Tell agents to take a path the task names, and the answer, in one call: `find` each step by name, `click` it with `-w` naming the next step, and end with a `grep`-filtered read, never `head`; `jq -e` stops the chain at the first miss. On the three macOS bench tasks (Opus 5.5, 8 runs per task per build, paired against main cce8fa1c) System Settings fell from 4 to 2 turns, 51.1K to 25.8K input tokens and 19.2 s to 12.4 s (medians); the summed medians went from 48.6 s to 43.2 s and 119.0K to 95.4K tokens, 24 of 24 passing on both. ([#85](https://github.com/gshost1/agent-desktop/pull/85))
 
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
