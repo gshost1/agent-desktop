@@ -15,7 +15,7 @@ New: `axattr.dylib` interposer counts every AX call per (function, attribute) an
   "Humidity" (independent AX walk 0 hits; 1 hit in 91 nodes before). Round 2 counted find's `ok` with `total_matches: 0` as a match.
 - [ ] C. #112 open, green, waits for laptop #86 (touches app_menu.rs): the window pass skips the focused subtree the focused pass finished.
   Weather click 286→203 AX calls, −21 ms median, max 455→202. Script Editor −15.
-- [ ] D. #113 open: ref commands start the app's AX warm-up from the refmap pid before the TCC check; press --ref also warms the window server in the background.
+- [x] D. #113 merged b94ad8976: ref commands start the app's AX warm-up from the refmap pid before the TCC check; press --ref also warms the window server in the background.
   Medians: get −12 to −15 ms (5 apps), click −9 to −19 (Weather −3, settle-bound), press --ref −30 to −35 headless and headed (Calculator 159→126, Script Editor 161→131).
   Rejected: early keyboard-layout load before the preflight (stalls main 33 ms: window-server connection not yet open).
 - [ ] E. #114 open: #108 follow-ups (live app-list tests retry until the list is stable; JSON-driven every_app closure test; workspace_apps.rs / appkit_bridge.rs untouched, so no split needed).
@@ -36,6 +36,9 @@ New: `axattr.dylib` interposer counts every AX call per (function, attribute) an
 - [x] G3. Full-screen Space launch: measured reason, no change. With a full-screen app in front, `launch Calculator` returns ok without a window after 1.8-2.4 s (20-25 sleeps, 41-51 window reads).
   The window exists only as an off-screen CG record (layer 0, 230x408, kCGWindowIsOnscreen absent); AXWindows lists none (AX lists current-Space windows only).
   `narrow_to_real_windows` cannot tell it from an ordered-out helper window without private Space APIs, so the wait ends at the 1.5 s startup grace by design. `--activate` is the documented way to get the window.
+
+- [ ] H. (found via F) scoped window list read every app's AppKit record twice: #119 open. Named owner read; list-windows --app -6 to -11 ms, snapshot/find/focus-window -4 to -11 on 5 apps; parity 25/25 plus alias/not-found.
+  Left: unscoped list-windows and other full owner reads (global inventory, actions/physical_target (waits for #86), notifications).
 
 ## Found
 
