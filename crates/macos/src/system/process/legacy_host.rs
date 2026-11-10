@@ -30,7 +30,12 @@ pub fn stop_legacy_command_hosts() {
         return;
     };
     for pid in list_pids(PROC_UID_ONLY, uid).unwrap_or_default() {
-        if pid <= 0 || pid == own_pid || !has_marker(pid, &mut buffer) {
+        if !is_candidate(
+            pid,
+            own_pid,
+            || is_agent_desktop(pid),
+            || has_marker(pid, &mut buffer),
+        ) {
             continue;
         }
         let Some(started_at) = process_start_time(pid, uid) else {
@@ -43,6 +48,20 @@ pub fn stop_legacy_command_hosts() {
             unsafe { libc::kill(pid, libc::SIGKILL) };
         }
     }
+}
+
+/// Whether a process is worth the full check. The code-signing identity is
+/// one cheap kernel call, while the environment needs the process's whole
+/// argument area copied out, so the identity is read first and rules out
+/// nearly every process before its environment is read. A candidate still
+/// passes the full start-time-bracketed check before it is stopped.
+fn is_candidate(
+    pid: libc::pid_t,
+    own_pid: libc::pid_t,
+    is_agent_desktop: impl FnOnce() -> bool,
+    has_marker: impl FnOnce() -> bool,
+) -> bool {
+    pid > 0 && pid != own_pid && is_agent_desktop() && has_marker()
 }
 
 /// Whether a `KERN_PROCARGS2` buffer carries the host marker in its environment,
