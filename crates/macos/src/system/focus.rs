@@ -276,38 +276,6 @@ fn prepare(element: &crate::tree::AXElement, deadline: Deadline) -> Result<(), A
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn finish_mutation(
-    element: &crate::tree::AXElement,
-    error: i32,
-    operation: &str,
-    deadline: Deadline,
-) -> Result<(), AdapterError> {
-    let delivered = crate::actions::ax_mutation::classify_result(
-        element,
-        operation,
-        "AXUIElement mutation",
-        error,
-    )?;
-    if !delivered {
-        return Err(AdapterError::new(
-            ErrorCode::ActionNotSupported,
-            format!("Accessibility does not support {operation}"),
-        )
-        .with_disposition(DeliverySemantics::not_delivered()));
-    }
-    if deadline.is_expired() {
-        return Err(deadline
-            .timeout_error()
-            .with_details(serde_json::json!({
-                "kind": "mutation_completed_after_deadline",
-                "operation": operation,
-            }))
-            .with_disposition(DeliverySemantics::delivered_unverified()));
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn map_ax_read_error(error: i32, operation: &str) -> AdapterError {
     use accessibility_sys::{
         kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement,

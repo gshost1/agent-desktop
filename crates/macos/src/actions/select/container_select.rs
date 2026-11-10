@@ -155,7 +155,6 @@ mod imp {
                 deadline,
             )?;
             let delivered = crate::actions::ax_mutation::classify_result(
-                container,
                 attribute,
                 "AXUIElementSetAttributeValue",
                 error,

@@ -70,7 +70,7 @@ mod imp {
             ax_value.as_CFTypeRef(),
             deadline,
         )?;
-        finish(el, err, "resize window", deadline)?;
+        finish_mutation(err, "resize window", deadline)?;
         crate::system::window::window_postcondition::wait_for_geometry(
             el,
             agent_desktop_core::Rect {
@@ -108,7 +108,7 @@ mod imp {
             ax_value.as_CFTypeRef(),
             deadline,
         )?;
-        finish(el, err, "move window", deadline)?;
+        finish_mutation(err, "move window", deadline)?;
         crate::system::window::window_postcondition::wait_for_geometry(
             el,
             agent_desktop_core::Rect {
@@ -140,8 +140,7 @@ mod imp {
             val.as_CFTypeRef(),
             deadline,
         )?;
-        finish(
-            el,
+        finish_mutation(
             err,
             if minimized {
                 "minimize window"
@@ -186,13 +185,30 @@ mod imp {
         crate::tree::properties::attributes::set_messaging_timeout(el, deadline)
     }
 
-    fn finish(
-        element: &crate::tree::AXElement,
+    pub(super) fn finish_mutation(
         error: i32,
         operation: &str,
         deadline: Deadline,
     ) -> Result<(), AdapterError> {
-        crate::system::focus::finish_mutation(element, error, operation, deadline)
+        let delivered =
+            crate::actions::ax_mutation::classify_result(operation, "AXUIElement mutation", error)?;
+        if !delivered {
+            return Err(AdapterError::new(
+                ErrorCode::ActionNotSupported,
+                format!("Accessibility does not support {operation}"),
+            )
+            .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered()));
+        }
+        if deadline.is_expired() {
+            return Err(deadline
+                .timeout_error()
+                .with_details(serde_json::json!({
+                    "kind": "mutation_completed_after_deadline",
+                    "operation": operation,
+                }))
+                .with_disposition(agent_desktop_core::DeliverySemantics::delivered_unverified()));
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -233,7 +249,6 @@ mod raise {
             deadline,
         )?;
         let outcome = crate::actions::ax_mutation::classify_result(
-            window,
             "AXRaise",
             crate::actions::ax_mutation::PERFORM_API,
             raise_err,
@@ -251,7 +266,7 @@ mod raise {
             CFBoolean::true_value().as_CFTypeRef(),
             deadline,
         )?;
-        crate::system::focus::finish_mutation(window, ax_err, "raise window", deadline)?;
+        super::imp::finish_mutation(ax_err, "raise window", deadline)?;
         crate::system::focus::wait_until_main(window, deadline).map_err(after_delivery)
     }
 

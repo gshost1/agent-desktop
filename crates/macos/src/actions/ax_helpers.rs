@@ -24,7 +24,7 @@ mod imp {
             return Ok(false);
         }
         let action = CFString::new(name);
-        run_mutation(el, name, ax_mutation::PERFORM_API, deadline, |deadline| {
+        run_mutation(name, ax_mutation::PERFORM_API, deadline, |deadline| {
             crate::tree::properties::ax_ipc::perform_action(
                 el,
                 action.as_concrete_TypeRef(),
@@ -45,20 +45,14 @@ mod imp {
         } else {
             CFBoolean::false_value()
         };
-        run_mutation(
-            el,
-            attr,
-            "AXUIElementSetAttributeValue",
-            deadline,
-            |deadline| {
-                crate::tree::properties::ax_ipc::set_attribute_value(
-                    el,
-                    cf_attr.as_concrete_TypeRef(),
-                    cf_val.as_CFTypeRef(),
-                    deadline,
-                )
-            },
-        )
+        run_mutation(attr, "AXUIElementSetAttributeValue", deadline, |deadline| {
+            crate::tree::properties::ax_ipc::set_attribute_value(
+                el,
+                cf_attr.as_concrete_TypeRef(),
+                cf_val.as_CFTypeRef(),
+                deadline,
+            )
+        })
     }
 
     pub(crate) fn set_ax_string_or_err(
@@ -69,20 +63,14 @@ mod imp {
     ) -> Result<(), AdapterError> {
         let cf_attr = CFString::new(attr);
         let cf_val = CFString::new(value);
-        let delivered = run_mutation(
-            el,
-            attr,
-            "AXUIElementSetAttributeValue",
-            deadline,
-            |deadline| {
-                crate::tree::properties::ax_ipc::set_attribute_value(
-                    el,
-                    cf_attr.as_concrete_TypeRef(),
-                    cf_val.as_CFTypeRef(),
-                    deadline,
-                )
-            },
-        )?;
+        let delivered = run_mutation(attr, "AXUIElementSetAttributeValue", deadline, |deadline| {
+            crate::tree::properties::ax_ipc::set_attribute_value(
+                el,
+                cf_attr.as_concrete_TypeRef(),
+                cf_val.as_CFTypeRef(),
+                deadline,
+            )
+        })?;
         if !delivered {
             return Err(AdapterError::new(
                 ErrorCode::ActionFailed,
@@ -159,7 +147,6 @@ mod imp {
         match coerced {
             Some(cf_value) => {
                 let delivered = run_mutation(
-                    el,
                     kAXValueAttribute,
                     "AXUIElementSetAttributeValue",
                     deadline,
@@ -196,14 +183,13 @@ mod imp {
     }
 
     fn run_mutation(
-        element: &AXElement,
         operation: &str,
         api: &str,
         deadline: agent_desktop_core::Deadline,
         mutate: impl FnOnce(agent_desktop_core::Deadline) -> Result<i32, AdapterError>,
     ) -> Result<bool, AdapterError> {
         let error = mutate(deadline)?;
-        let delivered = ax_mutation::classify_result(element, operation, api, error)?;
+        let delivered = ax_mutation::classify_result(operation, api, error)?;
         if deadline.is_expired() {
             let disposition = if delivered {
                 agent_desktop_core::DeliverySemantics::delivered_unverified()

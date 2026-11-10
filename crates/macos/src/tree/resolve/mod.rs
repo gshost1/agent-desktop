@@ -142,7 +142,6 @@ fn resolve_locator_anchor_once(
             &mut read_context,
             started,
             "locator_anchor_insufficient",
-            true,
         );
     }
     let roots = match candidate_roots(entry, &mut read_context) {
@@ -153,18 +152,11 @@ fn resolve_locator_anchor_once(
                 &mut read_context,
                 started,
                 "locator_anchor_roots",
-                true,
             );
         }
     };
     let result = find_entry_by_path(&roots, entry, &mut read_context);
-    finish_resolution(
-        result,
-        &mut read_context,
-        started,
-        "locator_anchor_path",
-        true,
-    )
+    finish_resolution(result, &mut read_context, started, "locator_anchor_path")
 }
 
 /// The token answer a resolution pass shares: `Some` when the saved ref carries
@@ -183,7 +175,6 @@ fn token_resolution(
             context,
             started,
             "remote_token",
-            true,
         )),
         Ok(None) => None,
         Err(error) => Some(finish_resolution(
@@ -191,7 +182,6 @@ fn token_resolution(
             context,
             started,
             "remote_token",
-            true,
         )),
     }
 }
@@ -202,12 +192,11 @@ fn finish_resolution<T>(
     context: &mut ResolveReadContext,
     started: Instant,
     phase: &str,
-    path_fast: bool,
 ) -> Result<T, AdapterError> {
     context.stats.elapsed_us = started.elapsed().as_micros() as u64;
     match result {
         Ok(value) => {
-            tracing::debug!(phase, path_fast, stats = ?context.stats, "strict resolution completed");
+            tracing::debug!(phase, path_fast = true, stats = ?context.stats, "strict resolution completed");
             Ok(value)
         }
         Err(mut error) => {
@@ -217,10 +206,10 @@ fn finish_resolution<T>(
                 .unwrap_or_else(|| serde_json::json!({}));
             if let Some(object) = details.as_object_mut() {
                 object.insert("resolution_phase".into(), serde_json::json!(phase));
-                object.insert("path_fast".into(), serde_json::json!(path_fast));
+                object.insert("path_fast".into(), serde_json::json!(true));
                 object.insert("query_stats".into(), serde_json::json!(&context.stats));
             }
-            tracing::debug!(phase, path_fast, code = error.code.as_str(), stats = ?context.stats, "strict resolution failed");
+            tracing::debug!(phase, path_fast = true, code = error.code.as_str(), stats = ?context.stats, "strict resolution failed");
             Err(error.with_details(details))
         }
     }

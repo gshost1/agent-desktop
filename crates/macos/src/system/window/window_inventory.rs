@@ -3,30 +3,6 @@ use std::time::Instant;
 
 use crate::system::window::cg_window;
 
-#[cfg(test)]
-fn apps_from_window_records(
-    records: &[cg_window::WindowRecord],
-) -> Vec<agent_desktop_core::AppInfo> {
-    let mut seen_pids = rustc_hash::FxHashSet::default();
-    let mut apps = Vec::new();
-
-    for record in records {
-        if !seen_pids.insert(record.pid) {
-            continue;
-        }
-        apps.push(agent_desktop_core::AppInfo {
-            name: record.app_name.clone(),
-            pid: agent_desktop_core::ProcessId::try_from(record.pid)
-                .expect("fixture pid must be positive"),
-            bundle_id: None,
-            process_instance: record.process_instance.clone(),
-            presentation: None,
-        });
-    }
-
-    apps
-}
-
 pub(crate) fn list_windows_until(
     filter: &WindowFilter,
     deadline: Instant,
