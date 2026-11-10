@@ -45,6 +45,9 @@ pub(crate) fn ax_scroll(
         Ok(false) => {}
         Err(error) => {
             scroll_page::settle_refusal(target, page, content_before, error, deadline)?;
+            if amount > 1 {
+                return Err(partial_scroll_error(page, 1, amount, None));
+            }
             return Ok((StepMechanism::SemanticApi, true));
         }
     }
