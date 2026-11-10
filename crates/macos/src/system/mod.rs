@@ -2,6 +2,7 @@ mod adapter;
 pub(crate) mod app;
 pub(crate) mod appkit_bridge;
 pub(crate) mod cocoa_runtime;
+pub(crate) mod connection_warmup;
 pub(crate) mod cursor_overlay;
 pub(crate) mod display;
 pub(crate) mod display_work_area;
