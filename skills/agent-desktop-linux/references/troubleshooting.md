@@ -173,6 +173,7 @@ D-Bus or X11 error.
 | `PLATFORM_NOT_SUPPORTED` | `org.freedesktop.DBus.Error.ServiceUnknown` | AT-SPI not installed or not visible |
 | `PLATFORM_NOT_SUPPORTED` | `org.freedesktop.DBus.Error.Spawn.*` | The bus launcher cannot start |
 | `PLATFORM_NOT_SUPPORTED` | ``Failed to connect to address `unix:path=/run/user/1000/at-spi/bus_0,guid=...`: No such file or directory (os error 2)`` | The accessibility bus socket is missing (suggestion: restart the bus launcher). The same text with the session bus address means no session bus |
+| `PLATFORM_NOT_SUPPORTED` | `org.freedesktop.DBus.Error.NoReply` (`details.kind: service_exited`) | An AT-SPI service (the bus launcher or the registry) exited before it answered, which it does when its display cannot be reached. When this session's display is unreachable too, the answer is the display refusal instead: `details.display_unavailable`, with the bus error in `details.bus_error`. A command that checks permissions first, such as `launch`, answers `PERM_DENIED` with that display suggestion, and `status` shows accessibility `denied` with it |
 | `TIMEOUT` | "The accessibility bus did not answer in time" | A hung or slow bus: nothing learned |
 | `INTERNAL` | "The accessibility bus returned an unexpected error" | An unclassified bus reply: retry once, then report it |
 | `INVALID_ARGS` | "Native handle does not contain a Linux accessibility element" | A ref of another kind than the command accepts |

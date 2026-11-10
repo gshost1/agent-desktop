@@ -192,3 +192,43 @@ fn a_registry_owner_change_invalidates_the_read_and_registers_the_replacement() 
     fresh.finish(deadline()).unwrap();
     assert_eq!(registrations.load(Ordering::SeqCst), 2);
 }
+
+#[test]
+fn a_service_that_exits_without_replying_is_not_internal() {
+    for stage in [
+        crate::system::bus::bus_stage::Stage::SessionBus,
+        crate::system::bus::bus_stage::Stage::AccessibilityBus,
+    ] {
+        let fault = BusFault::of(stage, &method_error("org.freedesktop.DBus.Error.NoReply"));
+        assert_eq!(fault, Some(BusFault::ServiceExited));
+    }
+    let error =
+        BusFault::ServiceExited.into_error(&method_error("org.freedesktop.DBus.Error.NoReply"));
+    assert_eq!(error.code, ErrorCode::PlatformNotSupported);
+    assert_eq!(error.details.expect("details")["kind"], "service_exited");
+}
+
+#[test]
+fn a_service_gone_with_its_display_is_the_display_refusal() {
+    use crate::system::display::display_cause::Cause;
+    use crate::system::display::display_server::DisplayServer;
+    use crate::system::display::display_unavailable::Unavailable;
+    let exited =
+        BusFault::ServiceExited.into_error(&method_error("org.freedesktop.DBus.Error.NoReply"));
+    let refusal = display_behind(
+        exited.clone(),
+        DisplayServer::Unavailable(Unavailable {
+            cause: Cause::Missing,
+            detail: "DISPLAY=:1987 names a server that is not running".to_owned(),
+        }),
+    );
+    assert_eq!(refusal.code, ErrorCode::PlatformNotSupported);
+    let details = refusal.details.expect("details");
+    assert_eq!(details["display_unavailable"], "missing");
+    assert_eq!(
+        details["bus_error"],
+        "The AT-SPI accessibility bus is not available in this session"
+    );
+    let kept = display_behind(exited, DisplayServer::X11(":0".to_owned()));
+    assert_eq!(kept.details.expect("details")["kind"], "service_exited");
+}

@@ -35,6 +35,10 @@ pub(crate) fn classify_at(stage: Stage, error: &zbus::Error) -> AdapterError {
             .with_platform_detail(error.to_string());
     }
     match BusFault::of(stage, error) {
+        Some(BusFault::ServiceExited) => display_behind(
+            BusFault::ServiceExited.into_error(error),
+            crate::system::display::display_server::session_server(),
+        ),
         Some(fault) => fault.into_error(error),
         None => AdapterError::new(
             ErrorCode::Internal,
@@ -43,6 +47,27 @@ pub(crate) fn classify_at(stage: Stage, error: &zbus::Error) -> AdapterError {
         .with_suggestion("Retry the command; report the platform detail if it persists")
         .with_platform_detail(error.to_string()),
     }
+}
+
+/// An AT-SPI service that exits without answering usually went down with its
+/// display: the bus launcher and the registry exit when the display they were
+/// started with cannot be reached. When this session's display is
+/// unreachable too, the display refusal is the cause and the answer, with the
+/// bus error kept in `details.bus_error`.
+fn display_behind(
+    error: AdapterError,
+    display: crate::system::display::display_server::DisplayServer,
+) -> AdapterError {
+    let crate::system::display::display_server::DisplayServer::Unavailable(why) = display else {
+        return error;
+    };
+    let mut refusal = crate::system::display::unreachable(why);
+    let mut details = match refusal.details.take() {
+        Some(serde_json::Value::Object(map)) => map,
+        _ => serde_json::Map::new(),
+    };
+    details.insert("bus_error".to_owned(), error.message.into());
+    refusal.with_details(serde_json::Value::Object(details))
 }
 
 fn discover_address(deadline: Deadline, reconnect: bool) -> Result<String, AdapterError> {
