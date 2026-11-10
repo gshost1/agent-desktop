@@ -40,7 +40,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
 | #58 (a) cap-1 | ACTION-12 | `063d9229` | rev 2 ran: **cap-1 PROVEN** (1 raise vs 24-25 on main, 8/8). FAIL 8/8 on 'occluded': the final TIMEOUT drops the refusal reason. Product fix (details.last_refusal plus the right suggestion) then rev 3 |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
-| #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` | **PASS** for Part 1, the real 1e and Part 2 (2 runs). Part D (dense) fails identically on main: pre-existing, ledgered DENSE-MENU-1. Control: merge allowed with Risks stated and an identical macOS diff |
+| #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` -> merged `fba4c8cc` | **DONE**: rev 2 PASS for Part 1, the real 1e and Part 2; dense Part D pre-existing (DENSE-MENU-1) |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
 | #34 | SURFACE-3 | `670ebc04` | re-pointed from e3818161 (main merged, script assumptions verified unchanged); HELD for George's go-ahead + Script Editor settings; CI running at write time |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
