@@ -16,6 +16,26 @@ const ROWS: u32 = 3000;
 struct PanelAdapter {
     passes_without_rows: AtomicUsize,
     passes_with_rows: AtomicUsize,
+    combobox_token: Option<&'static str>,
+    pass_without_rows_takes: Option<std::time::Duration>,
+    pass_with_rows_fails: bool,
+}
+
+impl PanelAdapter {
+    fn stamped(&self, mut tree: ObservedTree) -> ObservedTree {
+        if let Some(token) = self.combobox_token {
+            for node in &mut tree.nodes {
+                if node.evidence.role.known().map(String::as_str) == Some("combobox") {
+                    let identifiers = std::mem::replace(
+                        &mut node.evidence.identifiers,
+                        crate::IdentifierEvidence::absent(),
+                    );
+                    node.evidence.identifiers = identifiers.with_retained_object(token.to_string());
+                }
+            }
+        }
+        tree
+    }
 }
 
 impl ObservationOps for PanelAdapter {
@@ -26,10 +46,19 @@ impl ObservationOps for PanelAdapter {
     ) -> Result<ObservedTree, AdapterError> {
         if request.observation_mode.leave_rows_unread {
             self.passes_without_rows.fetch_add(1, Ordering::SeqCst);
-            return Ok(panel_without_rows());
+            if let Some(duration) = self.pass_without_rows_takes {
+                std::thread::sleep(duration);
+            }
+            return Ok(self.stamped(panel_without_rows()));
         }
         self.passes_with_rows.fetch_add(1, Ordering::SeqCst);
-        Ok(panel_with_rows())
+        if self.pass_with_rows_fails {
+            return Err(AdapterError::new(
+                crate::ErrorCode::AppUnresponsive,
+                "row read failed",
+            ));
+        }
+        Ok(self.stamped(panel_with_rows()))
     }
 }
 
@@ -149,4 +178,124 @@ fn a_tree_read_without_rows_answers_only_first() {
             "{selection:?} needs the rows and must not answer from a tree without them"
         );
     }
+}
+
+fn first_with_refs(role: &str) -> (LocatorQuery, LocatorResolveRequest) {
+    let (query, request) = first(role);
+    let request = LocatorResolveRequest {
+        materialization: LocatorMaterialization::SelectedMatches,
+        ..request
+    };
+    (query, request)
+}
+
+#[test]
+fn a_tokenless_first_match_outside_the_rows_waits_for_the_row_pass_to_prove_its_ref() {
+    let adapter = PanelAdapter::default();
+    let (query, request) = first_with_refs("combobox");
+
+    let resolution = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .expect("a control outside the rows answers --first");
+
+    let ref_id = resolution.matches[0]
+        .data
+        .ref_id
+        .as_deref()
+        .expect("the match publishes a ref");
+    let entry = resolution
+        .refmap
+        .as_ref()
+        .and_then(|refmap| refmap.get(ref_id))
+        .expect("the ref is in the published refmap");
+    assert!(
+        entry.identity.capture.is_unique(),
+        "a ref with no element token must be proven over the whole window, got {:?}",
+        entry.identity.capture
+    );
+    assert_eq!(adapter.passes_without_rows.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.passes_with_rows.load(Ordering::SeqCst), 1);
+}
+
+fn assert_answered_without_a_ref(resolution: &super::LocatorResolution) {
+    assert!(resolution.meta.selection_complete);
+    assert_eq!(resolution.matches.len(), 1);
+    assert_eq!(resolution.matches[0].data.name, "Where:");
+    assert!(
+        resolution.matches[0].data.ref_id.is_none(),
+        "an unproven tokenless ref must never be published"
+    );
+}
+
+#[test]
+fn a_tokenless_first_match_with_no_budget_left_for_the_rows_is_answered_without_a_ref() {
+    let adapter = PanelAdapter {
+        pass_without_rows_takes: Some(std::time::Duration::from_millis(250)),
+        ..PanelAdapter::default()
+    };
+    let (query, request) = first_with_refs("combobox");
+    let request = LocatorResolveRequest {
+        deadline: crate::Deadline::from_duration(std::time::Duration::from_millis(400)).unwrap(),
+        ..request
+    };
+
+    let resolution = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .expect("the match found before the budget ran out is still the answer");
+
+    assert_answered_without_a_ref(&resolution);
+    assert_eq!(adapter.passes_with_rows.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_tokenless_first_match_whose_row_pass_fails_is_answered_without_a_ref() {
+    let adapter = PanelAdapter {
+        pass_with_rows_fails: true,
+        ..PanelAdapter::default()
+    };
+    let (query, request) = first_with_refs("combobox");
+
+    let resolution = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .expect("a failed row pass must not discard the match the first pass found");
+
+    assert_answered_without_a_ref(&resolution);
+    assert!(adapter.passes_with_rows.load(Ordering::SeqCst) >= 1);
+}
+
+#[test]
+fn a_first_match_with_an_element_token_keeps_the_rows_unread() {
+    let adapter = PanelAdapter {
+        combobox_token: Some("axtok1:combobox"),
+        ..PanelAdapter::default()
+    };
+    let (query, request) = first_with_refs("combobox");
+
+    let resolution = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .expect("a control outside the rows answers --first");
+
+    assert!(resolution.matches[0].data.ref_id.is_some());
+    assert_eq!(adapter.passes_without_rows.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        adapter.passes_with_rows.load(Ordering::SeqCst),
+        0,
+        "a ref that re-identifies itself by token needs no window-wide count"
+    );
 }
