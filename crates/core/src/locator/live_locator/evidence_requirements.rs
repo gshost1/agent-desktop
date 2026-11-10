@@ -33,6 +33,11 @@ impl EvidenceRequirements {
         if request.materialization == LocatorMaterialization::FullRefMap {
             return Self::snapshot();
         }
+        if request.materialization == LocatorMaterialization::SelectedMatches
+            && query.reads_subtrees()
+        {
+            return Self::snapshot();
+        }
         let mut requirements = Self::query(query);
         if request.materialization == LocatorMaterialization::SelectedMatches {
             requirements.identifiers = true;
@@ -113,5 +118,29 @@ mod tests {
         assert!(requirements.ref_evidence.bounds);
         assert!(!requirements.states);
         assert!(!requirements.ref_evidence.actions);
+    }
+
+    #[test]
+    fn selected_subtree_matches_read_snapshot_evidence_so_they_publish_from_one_read() {
+        let query = LocatorQuery {
+            has_text: Some("needle".into()),
+            ..Default::default()
+        };
+        let request = LocatorResolveRequest {
+            selection: LocatorSelection::All { limit: Some(10) },
+            deadline: crate::Deadline::after(500).unwrap(),
+            max_raw_depth: 50,
+            surface: None,
+            materialization: LocatorMaterialization::SelectedMatches,
+        };
+        assert_eq!(
+            EvidenceRequirements::locator(&query, &request),
+            EvidenceRequirements::snapshot()
+        );
+        let unpublished = LocatorResolveRequest {
+            materialization: LocatorMaterialization::None,
+            ..request
+        };
+        assert!(!EvidenceRequirements::locator(&query, &unpublished).states);
     }
 }

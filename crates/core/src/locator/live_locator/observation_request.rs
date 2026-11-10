@@ -140,9 +140,7 @@ impl ObservationRequest {
         root: super::ObservationRoot<'_>,
         deadline: Deadline,
     ) -> Self {
-        let subtree_query = query.has_text.is_some()
-            || query.containment.has.is_some()
-            || query.containment.has_not.is_some();
+        let subtree_query = query.reads_subtrees();
         Self {
             deadline,
             max_raw_depth: if subtree_query {
