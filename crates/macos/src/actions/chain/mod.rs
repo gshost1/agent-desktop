@@ -178,6 +178,7 @@ pub(crate) mod menu_read;
 pub(crate) mod menu_settle;
 pub(crate) mod menu_tracking;
 pub(crate) mod press_selection;
+pub(crate) mod selection_write;
 #[cfg(test)]
 #[path = "chain_tests.rs"]
 mod tests;

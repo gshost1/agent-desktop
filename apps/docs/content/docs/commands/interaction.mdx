@@ -147,7 +147,7 @@ Opens an element's context menu. Afterward, `data.surfaces` lists the open `menu
 agent-desktop right-click <REF> [--timeout-ms MS]
 ```
 
-Headless delivery needs a context-menu action on the element. On a GTK entry without one, it returns `POLICY_DENIED` with `supported_action` failing. On macOS, `AXShowMenu` times out while the menu it opened is tracking; agent-desktop reads the menu surface and reports a menu it sees as success. If none appears within 1.5 s it returns `ACTION_FAILED` (`menu_observed: false`) or `APP_UNRESPONSIVE` with an unsafe disposition: look before you retry.
+Headless delivery needs a context-menu action on the element. On a GTK entry without one, it returns `POLICY_DENIED` with `supported_action` failing. On macOS, `AXShowMenu` times out while the menu it opened is tracking; agent-desktop reads the menu surface and reports a menu it sees as success. If none appears within 1.5 s it returns `ACTION_FAILED` (`menu_observed: false`) or `APP_UNRESPONSIVE` with an unsafe disposition: look before you retry. Each fallback step first reads whether a menu is open and sends nothing more unless the read answers closed, so an app that stops answering while its menu tracks never gets a second menu. A fallback that selects the row first counts that selection as delivered: a later failure, or no menu, ends with `delivered_unverified` and `retry: unsafe`.
 
 Platform limits: Windows always needs `--headed`. See [Windows](/desktop/platforms/windows).
 
