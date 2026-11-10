@@ -103,3 +103,19 @@ Cold first snapshot/find and close-app each pay one 25 ms fixed sleep. Launch pa
 ## Fixes
 
 - [x] #99 review: hit test through `system_wide::element()`, trusted-or-skip test (pushed 1015100e9).
+
+## Round 2 fixes (2026-11-10)
+
+- [x] #104 window-server connection beside the permission check — merged 8a8dbe449
+- [x] #105 find --text publishes from one window read — merged d45c64e31
+- [x] #106 element-valued AXValue reads as no value (find --text TIMEOUT on tab/radio groups) — merged f46bd9907
+- [ ] #107 fsync instead of F_FULLFSYNC for private state files (-6 to -26 ms snapshot/find/wait) — green before main merge, re-CI
+- [ ] #108 scoped app lookup reads full records only for named apps (press -10 to -19, close-app -14 to -23) — re-CI
+- [ ] #109 keyboard layout loaded while the app's first AX reply is pending (press -3 to -28) — CI pending
+- [ ] press --ref (headed 115 ms): start the AX warm-up from the refmap pid and the window-server hint for headed ref presses; the 9.9 ms layout load and the 28 ms CG connect sit on its main thread
+- [ ] close-app 25 ms exit poll (`system/app/app_ops.rs:155-157`)
+- [ ] launch settle polls 25/37.5/50 ms (`system/launch_settle.rs`)
+- [ ] settled-surface walk after click (21-229 ms)
+- [ ] #101 follow-ups (menu_search_node child-limit test, read() fallback tests, batch bound)
+- [ ] full-screen Space launch: ok:true without a window after ~1.8 s (22 sleeps, 46 CG calls)
+- Found: thread-built key events carry no characters, so keyboard warm-up must run on the main thread.
