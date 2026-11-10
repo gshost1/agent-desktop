@@ -38,7 +38,7 @@ pub(crate) fn watch_window(
 }
 
 /// The refusal for a launched program that exited before any window of its
-/// process appeared. A stub that starts another program and exits ends
+/// process appeared, with the code the shared launch contract gives that case. A stub that starts another program and exits ends
 /// here too: the window it caused belongs to a process this launch cannot
 /// attribute, so reporting the exited pid as the launch would be wrong.
 pub(crate) fn exited_before_window(image: &str, pid: ProcessId, code: u32) -> AdapterError {
@@ -54,7 +54,7 @@ pub(crate) fn exited_before_window(image: &str, pid: ProcessId, code: u32) -> Ad
             format!("'{image}' (pid {pid}) exited with status {code} before it showed a window"),
         ),
     };
-    AdapterError::new(ErrorCode::ActionFailed, message)
+    AdapterError::new(ErrorCode::AppUnresponsive, message)
         .with_details(serde_json::json!({ "kind": kind, "status": code, "pid": pid }))
         .with_suggestion(
             "The program may have started another process and exited, as a launcher stub does. Run 'list-windows' to see whether a window opened before you launch again.",

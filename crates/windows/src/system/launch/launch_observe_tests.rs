@@ -47,7 +47,7 @@ fn a_launched_process_that_exits_without_a_window_ends_the_wait_on_that_poll() {
         long_deadline(),
     )
     .expect_err("an exited launcher is not a launch");
-    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.code, ErrorCode::AppUnresponsive);
     assert_eq!(reads.get(), 2);
     assert_eq!(error.details.expect("details")["kind"], "exited");
 }
@@ -91,7 +91,7 @@ fn a_running_process_without_a_window_is_polled_until_the_deadline() {
 #[test]
 fn an_exit_is_reported_as_delivered_with_its_status_and_kind() {
     let exited = exited_before_window("stub.exe", ProcessId::new(7), 3);
-    assert_eq!(exited.code, ErrorCode::ActionFailed);
+    assert_eq!(exited.code, ErrorCode::AppUnresponsive);
     assert_eq!(
         exited.disposition.delivery(),
         DeliveryDisposition::DeliveredUnverified

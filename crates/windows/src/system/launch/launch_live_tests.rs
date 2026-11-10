@@ -3,7 +3,7 @@ use super::{
     KillOnDrop, copy_probe_binary, copy_system_exe, deadline, full_image_path, matching_pids,
     probe_launch_options, scratch_dir, start_named_windowless, start_windowed_probe,
 };
-use crate::system::launch_path::resolve_executable;
+use crate::system::launch::launch_path::resolve_executable;
 use agent_desktop_core::{Deadline, DeliveryDisposition, ErrorCode};
 use std::sync::Mutex;
 
@@ -192,26 +192,29 @@ fn cwd_is_honored_for_create_process() {
     let probe = copy_system_exe("cmd.exe", &temp, "launchprobe_cwd.exe");
     let marker = temp.join("cwd.txt");
     let options = LaunchOptions {
-        args: vec![
-            "/C".into(),
-            format!("cd > \"{}\" & ping -n 30 127.0.0.1 > nul", marker.display()),
-        ],
+        args: vec!["/C".into(), format!("cd > \"{}\"", marker.display())],
         cwd: Some(temp.clone()),
         attach_if_running: false,
         timeout_ms: 0,
         ..Default::default()
     };
-    let result = launch_app_impl(
+    match launch_app_impl(
         probe.to_str().expect("utf8 path"),
         &options,
         deadline(10_000),
-    )
-    .expect("a windowless probe is a successful launch");
-    let _guard = KillOnDrop(result.pid);
-    assert!(
-        result.window.is_none(),
-        "the probe presents no window: {result:?}"
-    );
+    ) {
+        Ok(result) => {
+            let _guard = KillOnDrop(result.pid);
+            assert!(
+                result.window.is_none(),
+                "the probe presents no window: {result:?}"
+            );
+        }
+        Err(error) => {
+            assert_eq!(error.code, ErrorCode::AppUnresponsive, "{error:?}");
+            assert_eq!(error.details.expect("details")["status"], 0);
+        }
+    }
     let written = poll_read_marker(&marker, Deadline::after(5_000).expect("deadline"));
     let normalized_written = written.trim().trim_end_matches('\\').to_ascii_lowercase();
     let normalized_temp = temp
@@ -330,7 +333,7 @@ fn a_launcher_that_exits_without_a_window_is_refused_before_the_timeout() {
     )
     .expect_err("a program that exits before any window is not a running launch");
     let waited = started.elapsed();
-    assert_eq!(error.code, ErrorCode::ActionFailed, "{error:?}");
+    assert_eq!(error.code, ErrorCode::AppUnresponsive, "{error:?}");
     assert_eq!(
         error.disposition.delivery(),
         DeliveryDisposition::DeliveredUnverified

@@ -4,7 +4,7 @@ use agent_desktop_core::{
 };
 
 #[cfg(target_os = "windows")]
-use super::super::launch_path::resolve_executable;
+use super::launch_path::resolve_executable;
 #[cfg(target_os = "windows")]
 use std::path::{Path, PathBuf};
 

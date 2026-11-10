@@ -13,10 +13,10 @@ use self::launch_attach::matching_processes;
 use self::launch_attach::prepare;
 use self::launch_child::LaunchedChild;
 use self::launch_observe::{exited_before_window, watch_window};
-use super::app_ops::ProcessRow;
-use super::launch_path::{
+use self::launch_path::{
     child_environment_block, image_file_name, launch_identifier, validate_launch_options,
 };
+use super::app_ops::ProcessRow;
 use super::process_identity;
 #[cfg(target_os = "windows")]
 use super::runtime::hresult::win32_last_error;
@@ -53,10 +53,6 @@ pub(crate) fn launch_app_impl(
     Ok(launch_result(id, pid, token, window))
 }
 
-/// A process that presents no window is a fact the caller reads from
-/// `LaunchResult.window`, not a failure: a background or windowless process
-/// is a legitimate launch outcome. A launched process that exits first is not
-/// a launch of a running program and is refused by `watch_window`.
 fn launch_result(
     id: &str,
     pid: ProcessId,
@@ -302,7 +298,7 @@ fn quote_arg(value: &str) -> String {
 /// that test caller remains, so this exists for `#[cfg(test)]` builds alone.
 #[cfg(test)]
 fn environment_block(overrides: &BTreeMap<String, String>) -> Result<Vec<u16>, AdapterError> {
-    super::launch_path::environment_block(overrides)
+    self::launch_path::environment_block(overrides)
 }
 
 #[cfg(target_os = "windows")]
@@ -374,6 +370,9 @@ mod launch_lease_isolation_tests;
 
 #[path = "launch_attach.rs"]
 pub(crate) mod launch_attach;
+
+#[path = "launch_path.rs"]
+pub(crate) mod launch_path;
 
 #[path = "launch_child.rs"]
 mod launch_child;
