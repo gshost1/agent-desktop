@@ -20,6 +20,7 @@ struct PanelAdapter {
     pass_without_rows_takes: Option<std::time::Duration>,
     pass_with_rows_fails: Option<crate::ErrorCode>,
     pass_with_rows_cut: bool,
+    every_pass_cut: bool,
 }
 
 impl PanelAdapter {
@@ -45,10 +46,14 @@ impl ObservationOps for PanelAdapter {
         _root: ObservationRoot<'_>,
         request: &ObservationRequest,
     ) -> Result<ObservedTree, AdapterError> {
+        if self.every_pass_cut {
+            self.passes_with_rows.fetch_add(1, Ordering::SeqCst);
+            return Ok(self.stamped(panel_cut_inside_rows()));
+        }
         if request.observation_mode.leave_rows_unread {
             self.passes_without_rows.fetch_add(1, Ordering::SeqCst);
             if let Some(duration) = self.pass_without_rows_takes {
-                std::thread::sleep(duration);
+                crate::wait::deadline::sleep(duration);
             }
             return Ok(self.stamped(panel_without_rows()));
         }
@@ -254,6 +259,7 @@ fn assert_answered_without_a_ref(resolution: &super::LocatorResolution) {
 
 #[test]
 fn a_tokenless_first_match_with_no_budget_left_for_the_rows_is_answered_without_a_ref() {
+    let _clock = crate::wait::deadline::VirtualClock::freeze();
     let adapter = PanelAdapter {
         pass_without_rows_takes: Some(std::time::Duration::from_millis(250)),
         ..PanelAdapter::default()
@@ -277,23 +283,25 @@ fn a_tokenless_first_match_with_no_budget_left_for_the_rows_is_answered_without_
 }
 
 #[test]
-fn a_tokenless_first_match_whose_row_pass_times_out_is_answered_without_a_ref() {
-    let adapter = PanelAdapter {
-        pass_with_rows_fails: Some(crate::ErrorCode::Timeout),
-        ..PanelAdapter::default()
-    };
-    let (query, request) = first_with_refs("combobox");
+fn a_tokenless_first_match_whose_row_pass_times_out_or_stalls_is_answered_without_a_ref() {
+    for code in [crate::ErrorCode::Timeout, crate::ErrorCode::AppUnresponsive] {
+        let adapter = PanelAdapter {
+            pass_with_rows_fails: Some(code.clone()),
+            ..PanelAdapter::default()
+        };
+        let (query, request) = first_with_refs("combobox");
 
-    let resolution = resolve_query(
-        &adapter,
-        &query,
-        ObservationRoot::Window(&window()),
-        &request,
-    )
-    .expect("a failed row pass must not discard the match the first pass found");
+        let resolution = resolve_query(
+            &adapter,
+            &query,
+            ObservationRoot::Window(&window()),
+            &request,
+        )
+        .unwrap_or_else(|error| panic!("{code:?} in the row pass discarded the match: {error:?}"));
 
-    assert_answered_without_a_ref(&resolution);
-    assert!(adapter.passes_with_rows.load(Ordering::SeqCst) >= 1);
+        assert_answered_without_a_ref(&resolution);
+        assert!(adapter.passes_with_rows.load(Ordering::SeqCst) >= 1);
+    }
 }
 
 #[test]
@@ -358,4 +366,25 @@ fn a_row_pass_cut_inside_the_rows_publishes_no_unproven_ref() {
     .expect("the match outside the rows still answers --first");
 
     assert_answered_without_a_ref(&resolution);
+}
+
+#[test]
+fn a_platform_that_never_leaves_rows_unread_keeps_its_first_answer_as_before() {
+    let adapter = PanelAdapter {
+        every_pass_cut: true,
+        ..PanelAdapter::default()
+    };
+    let (query, request) = first_with_refs("combobox");
+
+    let resolution = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .expect("a cut read answers --first as it did before");
+
+    assert!(resolution.matches[0].data.ref_id.is_some());
+    assert_eq!(adapter.passes_with_rows.load(Ordering::SeqCst), 1);
+    assert_eq!(adapter.passes_without_rows.load(Ordering::SeqCst), 0);
 }

@@ -57,19 +57,15 @@ pub(crate) fn addressability(evidence: &LocatorEvidence) -> (bool, bool) {
 /// addressability counts as addressable: hydration can read actions that make
 /// such a node publishable.
 pub(crate) fn selects_tokenless_entry(tree: &ObservedTree) -> bool {
-    tree.nodes.iter().any(may_publish_tokenless_ref)
-}
-
-/// Whether this node could get a ref that names it without an element
-/// token: it is or may become addressable, and it carries no token.
-pub(crate) fn may_publish_tokenless_ref(node: &super::ObservedNode) -> bool {
-    let (addressable, settled) = addressability(&node.evidence);
-    (addressable || !settled)
-        && !node
-            .evidence
-            .identifiers
-            .retained_object()
-            .is_some_and(crate::refs::ref_identity::is_element_token)
+    tree.nodes.iter().any(|node| {
+        let (addressable, settled) = addressability(&node.evidence);
+        (addressable || !settled)
+            && !node
+                .evidence
+                .identifiers
+                .retained_object()
+                .is_some_and(crate::refs::ref_identity::is_element_token)
+    })
 }
 
 /// Whether every field a ref entry and a match response carry was read, none
