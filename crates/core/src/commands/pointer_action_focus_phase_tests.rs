@@ -348,3 +348,38 @@ fn the_timeout_after_attempts_with_no_focus_call_carries_no_preparatory_focus() 
     assert_eq!(error.code(), "TIMEOUT");
     assert!(!moved_focus(&error));
 }
+
+#[test]
+fn an_endpoint_that_needs_no_focus_does_not_stop_the_raise_another_endpoint_needs() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = point_ref_snapshot();
+    let ref_id = format!("@{snapshot_id}:e1");
+    let adapter = CoveredTargetAdapter::new(0);
+    let context = headed();
+    let lease =
+        crate::InteractionLease::guarded(crate::Deadline::after(TIMEOUT_MS).unwrap(), ()).unwrap();
+    let args = |headed_requirement| crate::commands::point_resolve::PointResolveArgs {
+        ref_id: Some(ref_id.as_str()),
+        xy: None,
+        missing_input_message: "",
+        headed_requirement,
+    };
+    let mut focus = super::CommandFocus::default();
+
+    let drop_point = focus.run(
+        args(crate::HeadedRequirement::None),
+        &lease,
+        &adapter,
+        &context,
+    );
+    let pickup = focus.run(
+        args(crate::HeadedRequirement::FocusedWindowAndCursor),
+        &lease,
+        &adapter,
+        &context,
+    );
+
+    assert!(!drop_point.unwrap());
+    assert!(pickup.unwrap());
+    assert_eq!(adapter.focuses(), 1);
+}

@@ -8,22 +8,19 @@ use crate::{
 /// The headed focus of one pointer command, shared by its pre-lease wait and
 /// its leased attempts. The command raises its target's window at most once:
 /// after a focus call has raised it, later calls go straight to their checks
-/// and input. A raise cannot be confirmed by reading the front window before
-/// it, because that read can fail in a fresh process, and raising again does
-/// not uncover a target that another window still covers. Such a target fails
-/// the hit test until the budget ends, without a raise on every poll.
+/// and input. Raising again does not uncover a target that another window
+/// still covers; such a target fails the hit test until the budget ends,
+/// without a raise on every poll.
 #[derive(Debug, Default)]
 pub(crate) struct CommandFocus {
     raised: bool,
     failed: bool,
-    not_needed: bool,
 }
 
 impl CommandFocus {
-    /// Focuses the target's window when headed input needs it and this
-    /// command has not raised it yet, and returns whether the window was
-    /// raised. That is what a command reports as `focused: true`. A command
-    /// whose input needs no focus decides that once.
+    /// Focuses the target's window when `args` needs it for headed input and
+    /// this command has not raised it yet, and returns whether the window was
+    /// raised. That is what a command reports as `focused: true`.
     pub(crate) fn run(
         &mut self,
         args: PointResolveArgs<'_>,
@@ -34,13 +31,9 @@ impl CommandFocus {
         if self.raised {
             return Ok(true);
         }
-        if self.not_needed {
-            return Ok(false);
-        }
         let outcome = focus_point_under_lease(args, lease, adapter, context);
         match &outcome {
-            Ok(true) => self.raised = true,
-            Ok(false) => self.not_needed = true,
+            Ok(raised) => self.raised = *raised,
             Err(AppError::Adapter(error)) if error.moved_focus() => self.failed = true,
             Err(_) => {}
         }

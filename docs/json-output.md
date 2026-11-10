@@ -203,7 +203,8 @@ carries no such detail, and neither does a failure in a step after the action,
 such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
-A headed `hover` or `drag` raises its target's window at most once. The
+A headed `hover` or `drag` is a pointer command, not a ref action, and waits
+on after its focus call. It raises its target's window at most once. The
 first step that needs focus makes the focus call, whether that is the scroll
 of the wait or the first attempt; later steps skip it and go straight to
 their checks. A target that another window still covers keeps failing the
