@@ -10,6 +10,7 @@ import AppKit
 // created; applying the requested frame replaces it. Autosave is turned off,
 // and every window-frame entry is removed from the fixture's defaults whenever
 // they change, because SwiftUI re-arms the autosave later in a window's life.
+// Only the fixture's own persistent domain is scanned, never the global one.
 // A launch with a requested frame therefore leaves no saved frame behind. The
 // harness verifies the result through `list-windows`, so no UI scripting is
 // needed.
@@ -74,7 +75,9 @@ enum FixtureLaunchFrame {
 
     private static func removeSavedFrames() {
         let defaults = UserDefaults.standard
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(savedFramePrefix) {
+        guard let domain = Bundle.main.bundleIdentifier,
+              let saved = defaults.persistentDomain(forName: domain) else { return }
+        for key in saved.keys where key.hasPrefix(savedFramePrefix) {
             defaults.removeObject(forKey: key)
         }
     }

@@ -1,3 +1,4 @@
+import json
 import re
 import os
 import shutil
@@ -707,6 +708,61 @@ class DisplayPreconditionTests(unittest.TestCase):
         source = (E2E_ROOT / "run.sh").read_text()
         gate = source.index('require_display_fits_fixture "$release_bin" || exit 2')
         self.assertLess(gate, source.index('bash "$here/safe-semantic.sh"'))
+
+
+class FixtureFrameTests(unittest.TestCase):
+    def frame(self, payload: str, width: str = "") -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", "-c", 'source "$1"; printf "%s" "$2" | fixture_frame_from_displays "$3"; echo " status=$?"',
+             "frame", str(E2E_ROOT / "harness.sh"), payload, width],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+    @staticmethod
+    def displays(width: int, height: int) -> str:
+        return json.dumps({"ok": True, "data": [{"bounds": {"x": 0, "y": 0, "width": width, "height": height}}]})
+
+    def test_the_frame_height_is_capped_so_tall_displays_get_the_same_window(self):
+        for width, height in ((1470, 956), (1728, 1117), (2560, 1440)):
+            self.assertEqual(self.frame(self.displays(width, height)).stdout.split()[0].split(",")[3], "868")
+
+    def test_only_a_narrow_display_exits_three(self):
+        self.assertIn("status=3", self.frame(self.displays(1280, 800), "1300").stdout)
+        self.assertEqual(self.frame(self.displays(1470, 800), "1300").stdout.split(), ["20,64,1300,712", "status=0"])
+        broken = self.frame("not json", "1300").stdout
+        self.assertNotIn("status=0", broken)
+        self.assertNotIn("status=3", broken)
+
+    def run_wide(self, status: int) -> subprocess.CompletedProcess:
+        scenario = E2E_ROOT / "scenarios" / "wide_window.sh"
+        script = (
+            'source "$1"\n'
+            "sleep() { :; }\n"
+            f"fixture_frame() {{ return {status}; }}\n"
+            'launch_fixture() { echo launch-called; return 1; }\n'
+            f'source "{scenario}"\n'
+            'printf "pass=%s fail=%s skip=%s\\n" "$pass" "$fail" "$skip"\n'
+        )
+        return subprocess.run(
+            ["bash", "-c", script, "wide", str(E2E_ROOT / "lib.sh")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_wide_window_skips_only_on_a_narrow_display(self):
+        result = self.run_wide(3)
+        self.assertIn("pass=0 fail=0 skip=1", result.stdout, result.stderr)
+        self.assertIn("narrower than 1340 points", result.stdout)
+        self.assertNotIn("launch-called", result.stdout)
+
+    def test_wide_window_fails_when_the_frame_cannot_be_computed(self):
+        result = self.run_wide(1)
+        self.assertIn("pass=0 fail=1 skip=0", result.stdout, result.stderr)
+        self.assertIn("could not be computed from list-displays, status=1", result.stdout)
+        self.assertNotIn("launch-called", result.stdout)
 
 
 class LaunchFrameParseTests(unittest.TestCase):

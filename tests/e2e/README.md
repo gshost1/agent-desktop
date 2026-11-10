@@ -48,7 +48,8 @@ code (`1` failure, `2` blocked prerequisite) ends the run before any headed case
 
 The harness then builds and launches `AgentDeskFixture.app`. Every fixture
 launch passes `AGENT_DESKTOP_FIXTURE_FRAME` (`x,y,width,height` in top-left
-screen points), a 1000-point-wide frame on the largest display. The fixture
+screen points), a frame on the largest display that is 1000 points wide and at
+most 868 points tall, so the window is the same on every display that fits it. The fixture
 places its window there, cut to the screen's visible area, and the harness
 checks the result with `list-windows`. A launch with that variable replaces any
 frame an earlier launch saved and leaves no saved frame in the
@@ -56,7 +57,8 @@ frame an earlier launch saved and leaves no saved frame in the
 fixture process is running, and refuses a recorded process that has the
 previous pid. `scenarios/wide_window.sh` relaunches the fixture 1300 points
 wide, wider than its content, and asserts a plain click on `primary-button`; it
-reports `SKIP` when the display is narrower than 1340 points. Once the fixture is
+reports `SKIP` only when the display is narrower than 1340 points; a failure to
+read the display bounds is a `FAIL`. Once the fixture is
 running, a missing control, window, status readout, bounds record, or surface is
 a test failure. Scenarios never turn a missing prerequisite into a successful
 `SKIP`. Exit `0` means every assertion passed from an uncontaminated run, exit

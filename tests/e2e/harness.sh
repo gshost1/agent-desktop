@@ -173,20 +173,22 @@ copy_immutable_file() {
 
 fixture_min_width=980
 fixture_min_height=748
+fixture_max_height=868
 
 fixture_frame_from_displays() {
     "$e2e_python" -c '
 import json, sys
 width = int(sys.argv[1]) if sys.argv[1] else 1000
+max_height = int(sys.argv[2])
 d = json.load(sys.stdin)["data"]
 best = max(d, key=lambda x: x["bounds"]["width"] * x["bounds"]["height"])
 b = best["bounds"]
 if int(b["width"]) - 40 < width and sys.argv[1]:
     sys.exit(3)
 w = min(int(b["width"]) - 40, width)
-h = min(int(b["height"]) - 88, 1080)
+h = min(int(b["height"]) - 88, max_height)
 print(",".join(str(v) for v in (int(b["x"]) + 20, int(b["y"]) + 64, w, h)))
-' "${1:-}" 2>/dev/null
+' "${1:-}" "$fixture_max_height" 2>/dev/null
 }
 
 fixture_frame_meets_minimum() {

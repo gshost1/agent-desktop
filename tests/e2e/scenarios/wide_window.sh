@@ -1,8 +1,11 @@
 note "Wide fixture window: plain click on content narrower than the window"
 wide_width=1300
-wide_frame="$(fixture_frame "$wide_width")" || wide_frame=""
-if [ -z "$wide_frame" ]; then
+wide_frame="$(fixture_frame "$wide_width")"
+wide_status=$?
+if [ "$wide_status" -eq 3 ]; then
     skipmsg "wide-window click unavailable: the largest display is narrower than $((wide_width + 40)) points"
+elif [ "$wide_status" -ne 0 ] || [ -z "$wide_frame" ]; then
+    badmsg "wide window: plain click on primary-button is delivered once  [not attempted: the wide frame could not be computed from list-displays, status=$wide_status]"
 else
     "$bin" close-app "$app" --force >/dev/null 2>&1
     launch_fixture "$wide_width" || abort_suite "the fixture could not be relaunched at the wide frame"
