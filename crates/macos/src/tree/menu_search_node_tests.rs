@@ -26,6 +26,15 @@ fn numbers(count: usize) -> CFType {
     CFArray::from_CFTypes(&items).as_CFType()
 }
 
+fn elements(count: usize) -> CFType {
+    let pid = i32::try_from(std::process::id()).expect("pid fits");
+    let application = unsafe {
+        CFType::wrap_under_create_rule(accessibility_sys::AXUIElementCreateApplication(pid) as _)
+    };
+    let items: Vec<CFType> = (0..count).map(|_| application.clone()).collect();
+    CFArray::from_CFTypes(&items).as_CFType()
+}
+
 fn no_children() -> CFType {
     numbers(0)
 }
@@ -71,8 +80,13 @@ fn an_unsupported_child_list_is_no_children() {
 #[test]
 fn a_child_list_the_paged_read_must_judge_is_left_to_it() {
     let limit = agent_desktop_core::ObservationBudget::default().max_children_per_node;
+    let within = batch([role("AXGroup"), elements(limit)]).expect("a clean role");
+    assert_eq!(
+        search_node(within, false).expect("a node").children.len(),
+        limit
+    );
     for children in [
-        numbers(limit + 1),
+        elements(limit + 1),
         numbers(2),
         CFNumber::from(3_i32).as_CFType(),
         error(accessibility_sys::kAXErrorFailure),
