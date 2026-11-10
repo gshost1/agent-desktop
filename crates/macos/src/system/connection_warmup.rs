@@ -56,6 +56,14 @@ pub(crate) fn start_applications(pids: &[i32], deadline: Instant) {
     }
 }
 
+/// Starts the accessibility connection to one process a command named
+/// before its own deadline exists, bounded by the one-message limit.
+pub(crate) fn start_application(pid: u32) {
+    if let Ok(pid) = i32::try_from(pid) {
+        start_applications(&[pid], Instant::now() + APPLICATION_READ_LIMIT);
+    }
+}
+
 fn admit(warmed: &mut Vec<i32>, pid: i32) -> bool {
     if pid <= 0 || warmed.contains(&pid) || warmed.len() >= MAX_WARMED_APPLICATIONS {
         return false;

@@ -59,3 +59,8 @@ fn legacy_string_clipboard_methods_are_gone() {
         "set_clipboard_content must remain the write surface"
     );
 }
+
+#[test]
+fn default_keyboard_preparation_succeeds_without_work() {
+    assert!(DefaultOnly.prepare_keyboard_input().is_ok());
+}

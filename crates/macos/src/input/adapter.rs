@@ -6,6 +6,10 @@ use agent_desktop_core::{
 use crate::adapter::MacOSAdapter;
 
 impl InputOps for MacOSAdapter {
+    fn prepare_keyboard_input(&self) -> Result<(), AdapterError> {
+        crate::input::keyboard::prepare_keyboard_input()
+    }
+
     fn mouse_event(
         &self,
         event: MouseEvent,
