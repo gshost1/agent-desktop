@@ -176,6 +176,17 @@ pub(crate) fn map_error(attribute: &str, error: i32) -> AdapterError {
     .with_suggestion("Retry after the application finishes updating its accessibility surfaces")
 }
 
+/// Whether a surface read failed because the element it read no longer
+/// exists. Only the caller knows whose element that was: the ref's own element
+/// proves the ref stale, while a root or an element met mid-walk does not.
+pub(crate) fn reports_invalid_element(error: &AdapterError) -> bool {
+    error.details.as_ref().is_some_and(|details| {
+        details["kind"] == "surface_read"
+            && details["ax_error"].as_i64()
+                == Some(i64::from(accessibility_sys::kAXErrorInvalidUIElement))
+    })
+}
+
 fn deadline_error() -> AdapterError {
     AdapterError::timeout("Accessibility surface resolution exceeded its absolute deadline")
 }
@@ -206,6 +217,27 @@ mod tests {
         assert_eq!(details["complete"], false);
         assert_eq!(details["retryable"], false);
         assert_eq!(details["ax_error"], kAXErrorInvalidUIElement);
+    }
+
+    #[test]
+    fn only_an_invalid_element_read_reports_the_element_gone() {
+        assert!(reports_invalid_element(&map_error(
+            "AXRole",
+            kAXErrorInvalidUIElement
+        )));
+        assert!(!reports_invalid_element(&map_error(
+            "AXRole",
+            kAXErrorCannotComplete
+        )));
+        assert!(!reports_invalid_element(&map_error(
+            "AXRole",
+            kAXErrorAPIDisabled
+        )));
+        let unrelated = AdapterError::new(ErrorCode::AppUnresponsive, "busy").with_details(
+            serde_json::json!({ "kind": "resolution_ax_read", "ax_error": kAXErrorInvalidUIElement }),
+        );
+        assert!(!reports_invalid_element(&unrelated));
+        assert!(!reports_invalid_element(&AdapterError::timeout("late")));
     }
 
     #[test]
