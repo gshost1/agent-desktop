@@ -12,20 +12,24 @@ mod imp {
     /// `kAXErrorSuccess` to an action it never published and never ran. Only an
     /// uninformative code needs the settle poll to decide delivery at all; a
     /// reported success is already delivered, so observing it merely upgrades
-    /// the report to verified and must not cost the caller a wait.
+    /// the report to verified and must not cost the caller a wait. An `AXOpen`
+    /// that removes its own target can reply `kAXErrorInvalidUIElement`; a
+    /// closed sheet or a window retitled after the target then shows it ran.
     pub(crate) fn perform_observed_action(
         el: &AXElement,
         name: &str,
         deadline: agent_desktop_core::Deadline,
     ) -> Result<crate::actions::chain::chain_delivery::DeliveryOutcome, AdapterError> {
-        use crate::actions::activation_effect;
+        use crate::actions::activation::activation_effect;
         use crate::actions::chain::chain_delivery::DeliveryOutcome;
         use ax_mutation::PerformSignal;
 
         if advertises_action(el, name, deadline) == Some(false) {
             return Ok(DeliveryOutcome::NotDelivered);
         }
-        let before = activation_effect::focus_state(el, deadline);
+        let before = crate::actions::activation::activation_state::ActivationState::capture(
+            el, name, deadline,
+        );
         let action = CFString::new(name);
         let error = crate::tree::properties::ax_ipc::perform_action(
             el,
@@ -44,13 +48,21 @@ mod imp {
                 )
                 .map_err(|_| failure);
             }
+            Err(_)
+                if error == accessibility_sys::kAXErrorInvalidUIElement
+                    && before.surface_observable()
+                    && activation_effect::settled_change(&before, el, deadline) =>
+            {
+                return Ok(DeliveryOutcome::from_delivery(true, true));
+            }
             Err(failure) => return Err(failure),
         };
         match signal {
             PerformSignal::ReportedUnsupported => Ok(DeliveryOutcome::NotDelivered),
             PerformSignal::ReportedDelivered => Ok(DeliveryOutcome::from_delivery(
                 true,
-                activation_effect::changed_now(&before, el, deadline),
+                before.surface_changed(deadline)
+                    || activation_effect::changed_now(&before.focus, el, deadline),
             )),
             PerformSignal::Uninformative => ax_mutation::settle_uninformative_perform(
                 name,
