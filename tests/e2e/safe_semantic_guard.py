@@ -85,6 +85,21 @@ def non_fixture_frontmost_identity(data, fixture_pid):
     return identity
 
 
+def focus_summary(data):
+    if not isinstance(data, list):
+        raise SafetyError("list-windows data must be an array")
+    focused = sorted(
+        {
+            window["pid"]
+            for window in data
+            if window.get("is_focused") is True
+            and isinstance(window.get("pid"), int)
+            and not isinstance(window.get("pid"), bool)
+        }
+    )
+    return {"focused_pids": focused, "window_count": len(data)}
+
+
 def fixture_window_identity(windows_data, expected_app, expected_pid):
     if not isinstance(windows_data, list):
         raise SafetyError("list-windows data must be an array")
@@ -140,7 +155,7 @@ def validate_command(argv, fixture_app, window_id, mutation_armed):
     if "--headed" in argv:
         raise SafetyError("headed mode is forbidden in the safe semantic suite")
     command = argv[0]
-    if command in {"version", "permissions"}:
+    if command in {"version", "permissions", "list-displays"}:
         if len(argv) != 1:
             raise SafetyError(f"{command} accepts no arguments in this suite")
         return
@@ -268,6 +283,8 @@ def main():
         render_json(
             non_fixture_frontmost_identity(load_envelope_stream(sys.stdin), int(sys.argv[2]))
         )
+    elif command == "focus-summary":
+        render_json(focus_summary(load_envelope_stream(sys.stdin)))
     elif command == "fixture-window":
         windows = load_envelope_file(sys.argv[4])
         render_json(fixture_window_identity(windows, sys.argv[2], int(sys.argv[3])))

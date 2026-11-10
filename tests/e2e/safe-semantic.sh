@@ -2,8 +2,11 @@
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/e2e/python.sh
+source "$here/python.sh"
 if [ -z "${AGENT_DESKTOP_INTERACTION_LEASE_FD:-}" ]; then
-    exec python3 "$here/interaction_lock.py" run "$0" "$@"
+    require_e2e_python || exit 2
+    exec "$e2e_python" "$here/interaction_lock.py" run "$0" "$@"
 fi
 # shellcheck source=tests/e2e/harness.sh
 source "$here/harness.sh"
@@ -24,6 +27,8 @@ fixture_identity=""
 fixture_window_id=""
 fixture_started=0
 pass_count=0
+neutral_app="Calculator"
+neutral_pid=""
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
@@ -41,7 +46,7 @@ pass() {
 }
 
 json_field() {
-    printf '%s' "$1" | python3 "$json_tool" get "$2" 2>/dev/null
+    printf '%s' "$1" | "$e2e_python" "$json_tool" get "$2" 2>/dev/null
 }
 
 target_ref() {
@@ -62,7 +67,7 @@ verify_source_binary() {
 agent_exec() {
     local armed="$1"
     shift
-    python3 "$safety_guard" command "$app" "$fixture_window_id" "$armed" -- "$@" || return 97
+    "$e2e_python" "$safety_guard" command "$app" "$fixture_window_id" "$armed" -- "$@" || return 97
     guard_agent_wrapper_exec 8 2097152 "$bin" "$@"
 }
 
@@ -72,7 +77,7 @@ capture_frontmost() {
         guard_args=(non-fixture-frontmost "$1")
     fi
     output="$(agent_exec 0 list-windows 2>/dev/null)" || return 1
-    printf '%s' "$output" | python3 "$safety_guard" "${guard_args[@]}" 2>/dev/null
+    printf '%s' "$output" | "$e2e_python" "$safety_guard" "${guard_args[@]}" 2>/dev/null
 }
 
 wait_frontmost() {
@@ -93,7 +98,7 @@ capture_fixture_identity() {
     windows_file="$suite_root/fixture-windows.json"
     printf '%s' "$windows_output" > "$windows_file" || return 1
     chmod 600 "$windows_file" || return 1
-    python3 "$safety_guard" fixture-window "$app" "$fixture_pid" "$windows_file" 2>/dev/null
+    "$e2e_python" "$safety_guard" fixture-window "$app" "$fixture_pid" "$windows_file" 2>/dev/null
 }
 
 process_token() {
@@ -111,7 +116,7 @@ fixture_pids_are_exact() {
 }
 
 safety_checkpoint() {
-    local current_token current_parent current_fixture windows
+    local current_token current_parent current_fixture focus
     verify_immutable_binary "$bin" "$bin_sha" || {
         fail_checkpoint "frozen binary changed"; return 1;
     }
@@ -138,9 +143,9 @@ safety_checkpoint() {
         fail_checkpoint "fixture window details changed"; return 1;
     }
     fixture_is_not_frontmost || {
-        windows="$(agent_exec 0 list-windows 2>/dev/null)"
-        printf 'safety checkpoint failed: fixture became frontmost or focus was ambiguous output=%s\n' \
-            "$windows" >&2
+        focus="$(agent_exec 0 list-windows 2>/dev/null | "$e2e_python" "$safety_guard" focus-summary 2>/dev/null)"
+        printf 'safety checkpoint failed: fixture became frontmost or focus was ambiguous fixture_pid=%s focus=%s\n' \
+            "$fixture_pid" "${focus:-unreadable}" >&2
         return 1
     }
 }
@@ -157,7 +162,7 @@ find_target() {
         printf 'fixture-only target command diagnostic: %s\n' "$output" >&2
         return 1
     fi
-    if ! target="$(printf '%s' "$output" | python3 "$safety_guard" target "$role" "$name" 2>/dev/null)"; then
+    if ! target="$(printf '%s' "$output" | "$e2e_python" "$safety_guard" target "$role" "$name" 2>/dev/null)"; then
         printf 'fixture-only target diagnostic: %s\n' "$output" >&2
         return 1
     fi
@@ -171,7 +176,7 @@ read_status() {
         printf 'fixture status command failed: %s output=%s\n' "$name" "$output" >&2
         return 1
     }
-    status_value="$(printf '%s' "$output" | python3 "$safety_guard" value "$name")" || {
+    status_value="$(printf '%s' "$output" | "$e2e_python" "$safety_guard" value "$name")" || {
         printf 'fixture status validation failed: %s output=%s\n' "$name" "$output" >&2
         return 1
     }
@@ -186,7 +191,7 @@ run_mutation() {
         printf '%s\n' "$output" >&2
         fail "safe semantic action failed"
     fi
-    printf '%s' "$output" | python3 "$safety_guard" semantic-action "$action" "$expectation" \
+    printf '%s' "$output" | "$e2e_python" "$safety_guard" semantic-action "$action" "$expectation" \
         >/dev/null 2>&1 || fail "action result did not prove the expected semantic mechanism"
     sleep 0.2
     safety_checkpoint || fail "ownership or frontmost identity changed after mutation"
@@ -259,10 +264,38 @@ close_owned_fixture() {
     [ -z "$(pgrep -x "$app" 2>/dev/null || true)" ]
 }
 
+establish_neutral_front_window() {
+    local running_before
+    wait_frontmost && return 0
+    running_before="$(pgrep -x "$neutral_app" 2>/dev/null || true)"
+    guard_exec 10 1048576 open -a "$neutral_app" >/dev/null 2>&1 || return 1
+    if [ -z "$running_before" ]; then
+        for _ in $(seq 1 25); do
+            neutral_pid="$(pgrep -x "$neutral_app" 2>/dev/null || true)"
+            [ -n "$neutral_pid" ] && break
+            sleep 0.2
+        done
+    fi
+    for _ in $(seq 1 25); do
+        wait_frontmost && return 0
+        sleep 0.2
+    done
+    return 1
+}
+
+quit_neutral_app() {
+    case "$neutral_pid" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    kill -TERM "$neutral_pid" 2>/dev/null || true
+    neutral_pid=""
+}
+
 cleanup() {
     if [ "$fixture_started" -eq 1 ]; then
         close_owned_fixture || printf 'cleanup refused an ambiguous fixture process\n' >&2
     fi
+    quit_neutral_app
     cleanup_isolated_environment
 }
 
@@ -313,9 +346,13 @@ chmod 500 "$fixture_executable" || blocked "fixture executable cannot be frozen"
 [ -z "$(pgrep -x "$app" 2>/dev/null || true)" ] || \
     blocked "an unowned fixture process is already running"
 
-wait_frontmost || blocked "frontmost identity is missing or ambiguous"
+establish_neutral_front_window || blocked "frontmost identity is missing or ambiguous: no app has exactly one focused, visible, non-minimized window, and opening $neutral_app did not provide one. Click any window that is not minimized so it has focus, then rerun."
 
-AGENT_DESKTOP_FIXTURE_NO_ACTIVATE=1 "$fixture_executable" \
+fixture_frame="$(agent_exec 0 list-displays 2>/dev/null | fixture_frame_from_displays)"
+[ -n "$fixture_frame" ] || blocked "display bounds are unreadable, so the fixture window frame cannot be normalized"
+fixture_frame_meets_minimum "$fixture_frame" || \
+    blocked "the largest display leaves a fixture frame of $fixture_frame; the scenarios need at least ${fixture_min_width}x${fixture_min_height} points"
+AGENT_DESKTOP_FIXTURE_FRAME="$fixture_frame" AGENT_DESKTOP_FIXTURE_NO_ACTIVATE=1 "$fixture_executable" \
     >"$suite_root/fixture.stdout" 2>"$suite_root/fixture.stderr" &
 fixture_pid=$!
 fixture_started=1
