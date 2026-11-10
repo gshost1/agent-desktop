@@ -31,7 +31,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
-| #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | revision 2 ready (fixtures under $HOME/.agent-desktop-bench-target, resolution asserted, build outside the lock); needs `ADL_DESKTOP_LOCK` set by the Mac worker |
+| #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | **PASS** 2 runs, 6/6 each (2026-11-10). Carries over only if `git diff 46f397a7 <new head> -- crates/macos` is empty after the main merge-in |
 | #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
@@ -856,7 +856,9 @@ Expected: 6 PASS (every case prints its full envelope first). Before the fix, th
 with a dead pid and the LIFECYCLE-12 cases answer `AMBIGUOUS_TARGET`. INVALID means the precondition was not met: 2
 on-screen windows, none focused.
 
-Calculator observation from the last run, cause unconfirmed, on main and not part of #88: `narrow_to_real_windows`
+Run notes from the Mac worker: the harness has no ready `ADL_DESKTOP_LOCK` prefix, so the worker wrapped `lockq.sh` take/release itself. The fetch of `chore/speed-1.4-tasks` inside the script is a network dependency that halted one attempt; future scripts copy desktop_space.sh before building, or retry the fetch.
+
+Calculator observation from an earlier run, cause unconfirmed, on main and not part of #88: `narrow_to_real_windows`
 (`crates/macos/src/system/window/window_inventory.rs`) keeps a window whose `minimized` is known even when it is
 `visible: false`. So launch can report a window that is not yet on screen, with zero bounds; an early return can
 report none. Ledgered as LAUNCH-WIN-1.
