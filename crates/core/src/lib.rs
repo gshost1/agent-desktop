@@ -56,9 +56,7 @@ pub use cursor_overlay::{
 pub use input::clipboard_content::ClipboardContent;
 pub use input::clipboard_format::ClipboardFormat;
 pub use input::direction::Direction;
-pub use input::drag_params::{
-    DragParams, MAX_DRAG_DROP_DELAY_MS, MAX_DRAG_DURATION_MS, MAX_DRAG_STEPS,
-};
+pub use input::drag_params::{DragParams, MAX_DRAG_DROP_DELAY_MS, MAX_DRAG_DURATION_MS};
 pub use input::key_combo::KeyCombo;
 pub use input::modifier::Modifier;
 pub use input::mouse_button::MouseButton;

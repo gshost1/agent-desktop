@@ -15,6 +15,15 @@ pub(crate) fn window_op_command(
     adapter: &dyn PlatformAdapter,
     op: WindowOp,
 ) -> Result<Value, AppError> {
+    window_op_with_request(args, adapter, op, json!({}))
+}
+
+pub(crate) fn window_op_with_request(
+    args: AppArgs,
+    adapter: &dyn PlatformAdapter,
+    op: WindowOp,
+    request: Value,
+) -> Result<Value, AppError> {
     let deadline = crate::Deadline::standard()?;
     let win = resolve_window(
         args.app.as_deref(),
@@ -25,15 +34,7 @@ pub(crate) fn window_op_command(
     let lease = adapter.acquire_interaction_lease(deadline)?;
     let live = revalidate_window_for_mutation(adapter, &win, &lease)?;
     let report = adapter.window_op(&live, op, &lease)?;
-    super::operation_response::operation_response(&report, json!({}))
-}
-
-pub(crate) fn resolve_window_for_app(
-    app: Option<&str>,
-    window_id: Option<&str>,
-    adapter: &dyn PlatformAdapter,
-) -> Result<WindowInfo, AppError> {
-    resolve_window(app, window_id, adapter, crate::Deadline::standard()?)
+    super::operation_response::operation_response(&report, request)
 }
 
 fn resolve_window(
@@ -72,7 +73,7 @@ fn resolve_window(
     )
 }
 
-pub(crate) fn revalidate_window_for_mutation(
+fn revalidate_window_for_mutation(
     adapter: &dyn PlatformAdapter,
     expected: &WindowInfo,
     lease: &crate::InteractionLease,
