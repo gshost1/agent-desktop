@@ -1,6 +1,5 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo, WindowOp};
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use accessibility_sys::{
@@ -232,7 +231,6 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
 mod raise {
     use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics};
     use core_foundation::{base::TCFType, boolean::CFBoolean, string::CFString};
@@ -321,20 +319,6 @@ mod raise {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) use raise::raise_window;
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
-
-    pub fn execute(
-        _win: &WindowInfo,
-        _op: WindowOp,
-        _deadline: Deadline,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("window_op"))
-    }
-}
 
 pub(crate) use imp::execute;

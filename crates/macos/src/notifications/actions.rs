@@ -46,7 +46,6 @@ pub(crate) fn notification_action(
     close_session(session, result)
 }
 
-#[cfg(target_os = "macos")]
 fn dismiss_impl(
     index: usize,
     app_filter: Option<&str>,
@@ -70,7 +69,6 @@ fn dismiss_impl(
     Ok(info)
 }
 
-#[cfg(target_os = "macos")]
 fn dismiss_all_impl(
     app_filter: Option<&str>,
     policy: InteractionPolicy,
@@ -105,7 +103,6 @@ fn dismiss_all_impl(
     Ok((dismissed, failures))
 }
 
-#[cfg(target_os = "macos")]
 fn dismiss_entry(
     entry: &super::list::NotificationEntry,
     policy: InteractionPolicy,
@@ -162,7 +159,6 @@ fn dismiss_entry(
     Err(all_dismiss_strategies_failed())
 }
 
-#[cfg(target_os = "macos")]
 fn try_dismiss_button(
     children: &[crate::tree::AXElement],
     deadline: Deadline,
@@ -200,7 +196,6 @@ fn try_dismiss_button(
 }
 
 /// Presses a named action button on the notification at `index`.
-#[cfg(target_os = "macos")]
 fn action_impl(
     index: usize,
     identity: &NotificationIdentity,
@@ -257,7 +252,6 @@ fn action_impl(
     Ok(ActionResult::delivered_unverified(action_name))
 }
 
-#[cfg(target_os = "macos")]
 fn hover_over(el: &crate::tree::AXElement, deadline: Deadline) -> Result<(), AdapterError> {
     use agent_desktop_core::{MouseButton, MouseEvent, MouseEventKind, Point};
 
@@ -346,37 +340,4 @@ fn all_dismiss_strategies_failed() -> AdapterError {
         ErrorCode::ActionFailed,
         "All dismiss strategies failed (AXDismiss, AXRemoveFromParent, close button, hover+close)",
     )
-}
-
-#[cfg(not(target_os = "macos"))]
-fn dismiss_impl(
-    _index: usize,
-    _app_filter: Option<&str>,
-    _identity: &NotificationIdentity,
-    _policy: InteractionPolicy,
-    _pid: i32,
-    _deadline: Deadline,
-) -> Result<NotificationInfo, AdapterError> {
-    Err(AdapterError::not_supported("dismiss_notification"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn dismiss_all_impl(
-    _app_filter: Option<&str>,
-    _policy: InteractionPolicy,
-    _pid: i32,
-    _deadline: Deadline,
-) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
-    Err(AdapterError::not_supported("dismiss_all_notifications"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn action_impl(
-    _index: usize,
-    _identity: &NotificationIdentity,
-    _action_name: &str,
-    _pid: i32,
-    _deadline: Deadline,
-) -> Result<ActionResult, AdapterError> {
-    Err(AdapterError::not_supported("notification_action"))
 }

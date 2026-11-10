@@ -2,7 +2,6 @@ use agent_desktop_core::{AdapterError, ErrorCode};
 
 pub(crate) use super::ax_perform::{advertises_action, perform_observed_action};
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use crate::actions::ax_mutation;
@@ -314,62 +313,6 @@ mod imp {
                 assert!(classify_settable_read("AXSelected", error, false).is_err());
             }
         }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
-    use crate::tree::AXElement;
-
-    pub fn try_ax_action_or_err(
-        _el: &AXElement,
-        _name: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn set_ax_bool_or_err(
-        _el: &AXElement,
-        _attr: &str,
-        _value: bool,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn set_ax_string_or_err(
-        _el: &AXElement,
-        _attr: &str,
-        _value: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("set_ax_string_or_err"))
-    }
-    pub fn is_attr_settable(
-        _el: &AXElement,
-        _attr: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn ax_focus_or_err(
-        _el: &AXElement,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn set_ax_value_coerced(
-        _el: &AXElement,
-        _value: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("set_ax_value_coerced"))
-    }
-    pub fn element_role(
-        _el: &AXElement,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<Option<String>, AdapterError> {
-        Ok(None)
     }
 }
 

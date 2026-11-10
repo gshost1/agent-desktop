@@ -9,7 +9,6 @@ use agent_desktop_core::{
 use crate::adapter::MacOSAdapter;
 use crate::system::app::close_outcome::CloseOutcome;
 
-#[cfg(target_os = "macos")]
 #[path = "tcp_listener/mod.rs"]
 pub(crate) mod tcp_listener;
 

@@ -29,7 +29,6 @@ pub(crate) fn classify(
     })
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn process_state_impl(
     process: agent_desktop_core::ProcessIdentity,
     deadline: agent_desktop_core::Deadline,
@@ -52,7 +51,6 @@ pub(crate) fn process_state_impl(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn ax_probe(app: &crate::tree::AXElement, deadline: agent_desktop_core::Deadline) -> AxProbeResult {
     use accessibility_sys::{kAXErrorCannotComplete, kAXErrorSuccess, kAXRoleAttribute};
     use core_foundation::{
@@ -76,14 +74,6 @@ fn ax_probe(app: &crate::tree::AXElement, deadline: agent_desktop_core::Deadline
         unsafe { CFType::wrap_under_create_rule(value) };
     }
     AxProbeResult::Responsive
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn process_state_impl(
-    _process: agent_desktop_core::ProcessIdentity,
-    _deadline: agent_desktop_core::Deadline,
-) -> Result<ProcessState, AdapterError> {
-    Err(AdapterError::not_supported("process_state"))
 }
 
 #[cfg(test)]

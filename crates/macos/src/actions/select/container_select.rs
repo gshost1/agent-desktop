@@ -16,7 +16,6 @@ pub(crate) fn role_activates_by_selection(role: &str) -> bool {
     )
 }
 
-#[cfg(any(target_os = "macos", test))]
 fn verify_selection(
     delivered: bool,
     verify: impl FnOnce() -> bool,
@@ -35,7 +34,6 @@ fn verify_selection(
     .with_suggestion("Inspect the selection before deciding whether to act again."))
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::{AdapterError, Deadline};
     use core_foundation::{array::CFArray, base::TCFType};
@@ -246,28 +244,6 @@ mod imp {
                 })
             })
         })
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use agent_desktop_core::{AdapterError, Deadline};
-
-    use crate::actions::chain::chain_delivery::DeliveryOutcome;
-    use crate::tree::AXElement;
-
-    pub(crate) fn select_within_container(
-        _element: &AXElement,
-        _deadline: Deadline,
-    ) -> Result<DeliveryOutcome, AdapterError> {
-        Ok(DeliveryOutcome::NotDelivered)
-    }
-
-    pub(crate) fn element_activates_by_selection(
-        _element: &AXElement,
-        _deadline: Deadline,
-    ) -> bool {
-        false
     }
 }
 

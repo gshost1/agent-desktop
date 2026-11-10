@@ -67,7 +67,6 @@ fn immediately_responsive_pid_classifies_running_with_one_probe() {
     assert_eq!(calls.get(), 1);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn exited_child_process_is_classified_exited_with_no_code() {
     let mut child = std::process::Command::new("/bin/cat")

@@ -81,7 +81,6 @@ impl ChildRead {
     }
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::super::{child_read_budget::ChildReadBudget, child_read_telemetry as telemetry};
     use super::*;
@@ -328,46 +327,12 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::super::child_read_budget::ChildReadBudget;
-    use super::*;
-
-    pub(crate) fn read_children(
-        _element: &AXElement,
-        _role: Option<&str>,
-        _budget: ChildReadBudget,
-        _deadline: std::time::Instant,
-    ) -> ChildRead {
-        ChildRead::empty(true)
-    }
-
-    pub(crate) fn read_attribute_children(
-        _element: &AXElement,
-        _attribute: &str,
-        _budget: impl Into<ChildReadBudget>,
-        _deadline: std::time::Instant,
-    ) -> ChildRead {
-        ChildRead::empty(true)
-    }
-
-    pub(crate) fn read_child_at(
-        _element: &AXElement,
-        _role: Option<&str>,
-        _index: usize,
-        _deadline: std::time::Instant,
-    ) -> ChildRead {
-        ChildRead::empty(true)
-    }
-}
-
-#[cfg(target_os = "macos")]
 pub(in crate::tree::query) use imp::{
     CHILD_PAGE_SIZE, check_deadline, child_count, copy_page, is_absent_error, read_prefix,
     stable_count,
 };
 pub(crate) use imp::{read_attribute_children, read_child_at, read_children};
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "child_read_tests.rs"]
 mod tests;

@@ -2,10 +2,8 @@ use agent_desktop_core::{AdapterError, ErrorCode};
 
 use crate::tree::AXElement;
 
-#[cfg(target_os = "macos")]
 type WindowBridge = unsafe extern "C" fn(accessibility_sys::AXUIElementRef, *mut u32) -> i32;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn window_id(
     window: &AXElement,
     deadline: std::time::Instant,
@@ -17,7 +15,6 @@ pub(crate) fn window_id(
     classify(error).map(|present| present.then_some(i64::from(window_id)))
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn is_unavailable(error: &AdapterError) -> bool {
     error
         .details
@@ -27,7 +24,6 @@ pub(crate) fn is_unavailable(error: &AdapterError) -> bool {
         == Some("resolution_window_bridge_unavailable")
 }
 
-#[cfg(target_os = "macos")]
 fn bridge() -> Option<WindowBridge> {
     static BRIDGE: std::sync::OnceLock<Option<WindowBridge>> = std::sync::OnceLock::new();
     *BRIDGE.get_or_init(|| {
@@ -45,7 +41,6 @@ fn bridge() -> Option<WindowBridge> {
 /// spin the full resolve budget on a call that can never succeed, and made a
 /// window that simply has no CGWindowID look like an unresolved candidate
 /// rather than a settled non-match.
-#[cfg(target_os = "macos")]
 fn classify(error: i32) -> Result<bool, AdapterError> {
     use accessibility_sys::{
         kAXErrorAPIDisabled, kAXErrorAttributeUnsupported, kAXErrorCannotComplete,
@@ -91,7 +86,6 @@ fn classify(error: i32) -> Result<bool, AdapterError> {
     })))
 }
 
-#[cfg(target_os = "macos")]
 fn bridge_unavailable() -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionNotSupported,
@@ -106,20 +100,7 @@ fn bridge_unavailable() -> AdapterError {
     }))
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn window_id(
-    _window: &AXElement,
-    _deadline: std::time::Instant,
-) -> Result<Option<i64>, AdapterError> {
-    Ok(None)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn is_unavailable(_error: &AdapterError) -> bool {
-    false
-}
-
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use accessibility_sys::{
