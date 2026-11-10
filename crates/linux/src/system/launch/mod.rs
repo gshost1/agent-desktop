@@ -315,7 +315,7 @@ impl Launch<'_> {
                     Some((_, windows)) => self.window_of(&owner, true, windows),
                     None if before.processes.contains(&owner.identity()) => Ok(None),
                     None => {
-                        remember_launch(plan.desktop_id.as_deref(), &owner);
+                        remember_launch(plan.desktop_id.as_deref(), &owner, spawned_pid);
                         self.window_of(&owner, true, &HashSet::new())
                     }
                 }
