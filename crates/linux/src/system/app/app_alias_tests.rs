@@ -11,22 +11,7 @@ fn file(id: &str, name: &str, exec: &str) -> (String, String) {
 #[test]
 fn desktop_aliases_require_unique_verified_executable_identity() {
     let actual = ExecutableIdentity::read(std::process::id()).expect("own identity");
-    let command = actual
-        .argv
-        .as_ref()
-        .unwrap()
-        .iter()
-        .map(|word| {
-            format!(
-                "\"{}\"",
-                word.to_string_lossy()
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('%', "%%")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
+    let command = own_exec(&actual);
     let executable = command.as_str();
     let entry = file("owned", "Owned App", executable);
     let index = AliasIndex::build(std::slice::from_ref(&entry), &[]);
@@ -169,10 +154,8 @@ fn an_in_place_desktop_edit_invalidates_the_previous_executable_alias() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-#[test]
-fn a_lookup_resolves_only_the_entries_whose_words_can_run_the_process() {
-    let actual = ExecutableIdentity::read(std::process::id()).expect("own identity");
-    let own = actual
+fn own_exec(actual: &ExecutableIdentity) -> String {
+    actual
         .argv
         .as_ref()
         .unwrap()
@@ -187,7 +170,13 @@ fn a_lookup_resolves_only_the_entries_whose_words_can_run_the_process() {
             )
         })
         .collect::<Vec<_>>()
-        .join(" ");
+        .join(" ")
+}
+
+#[test]
+fn a_lookup_resolves_only_the_entries_whose_words_can_run_the_process() {
+    let actual = ExecutableIdentity::read(std::process::id()).expect("own identity");
+    let own = own_exec(&actual);
     let mut files = vec![file("owned", "Owned App", &own)];
     for index in 0..40 {
         files.push(file(
@@ -197,19 +186,20 @@ fn a_lookup_resolves_only_the_entries_whose_words_can_run_the_process() {
         ));
     }
     let index = AliasIndex::build(&files, &[]);
-    let before = crate::system::launch::indexed_entry::resolutions();
-    assert_eq!(index.names_for(&actual), ["Owned App"]);
-    assert_eq!(index.ids_for(&actual), ["owned"]);
+    let count = crate::system::launch::indexed_entry::resolutions;
+    let before = count();
     let (names, ids) = index.names_and_ids(&actual);
+    assert_eq!(names, ["Owned App"]);
+    assert_eq!(ids, ["owned"]);
+    let pair = count() - before;
     assert_eq!(
-        (names, ids),
-        (vec!["Owned App".to_owned()], vec!["owned".to_owned()])
-    );
-    let resolved = crate::system::launch::indexed_entry::resolutions() - before;
-    assert_eq!(
-        resolved,
+        pair,
         1,
-        "resolved {resolved} of {} entries",
+        "names and ids resolved {pair} of {} entries",
         files.len()
     );
+    let before = count();
+    assert_eq!(index.ids_for(&actual), ["owned"]);
+    let alone = count() - before;
+    assert_eq!(alone, 1, "ids resolved {alone} of {} entries", files.len());
 }

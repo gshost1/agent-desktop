@@ -54,7 +54,11 @@ impl AliasIndex {
     /// The desktop ids of the entries that run the verified process's
     /// command, in byte order.
     pub(crate) fn ids_for(&self, actual: &ExecutableIdentity) -> Vec<String> {
-        self.names_and_ids(actual).1
+        let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
+        self.matching_entries(actual, &path)
+            .into_iter()
+            .map(|entry| entry.id.clone())
+            .collect()
     }
 
     /// The names and desktop ids the verified process answers to, from one
@@ -72,7 +76,9 @@ impl AliasIndex {
             let shared_only_by_this_command = self
                 .entries
                 .iter()
-                .filter(|other| other.name.eq_ignore_ascii_case(&entry.name))
+                .filter(|other| {
+                    !std::ptr::eq(*other, *entry) && other.name.eq_ignore_ascii_case(&entry.name)
+                })
                 .all(|other| other.runs_same_command(entry, &path));
             if shared_only_by_this_command
                 && !names
@@ -98,7 +104,7 @@ impl AliasIndex {
             .entries
             .iter()
             .filter(|entry| {
-                entry.could_run(actual)
+                actual.could_be_run_by(&entry.argv)
                     && entry
                         .resolved(path)
                         .is_some_and(|wanted| wanted.matches(actual))

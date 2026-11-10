@@ -1,6 +1,4 @@
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use crate::system::process::executable_identity::ExecutableIdentity;
 
@@ -9,7 +7,6 @@ pub(in crate::system) struct IndexedEntry {
     pub(in crate::system) name: String,
     pub(in crate::system) argv: Vec<String>,
     pub(in crate::system) cwd: Option<String>,
-    resolved: OnceLock<Option<ExecutableIdentity>>,
 }
 
 #[cfg(test)]
@@ -36,39 +33,16 @@ impl IndexedEntry {
             name,
             argv,
             cwd,
-            resolved: OnceLock::new(),
         }
     }
 
-    /// The entry's command as an executable identity, resolved through PATH
-    /// and canonicalized once and kept with the entry.
-    pub(in crate::system) fn resolved(&self, path: &[PathBuf]) -> Option<&ExecutableIdentity> {
-        self.resolved
-            .get_or_init(|| {
-                #[cfg(test)]
-                RESOLUTIONS.with(|count| count.set(count.get() + 1));
-                ExecutableIdentity::requested(&self.argv, path)
-            })
-            .as_ref()
-    }
-
-    /// Whether this entry can run the process at all, decided from the words
-    /// alone: the process was invoked under the entry program's name with the
-    /// entry's arguments. Every entry `ExecutableIdentity::matches` accepts
-    /// passes, so the filter only spares resolving the ones it cannot accept.
-    pub(in crate::system) fn could_run(&self, actual: &ExecutableIdentity) -> bool {
-        let (Some((program, arguments)), Some((invocation, actual_arguments))) = (
-            self.argv.split_first(),
-            actual.argv.as_deref().and_then(<[_]>::split_first),
-        ) else {
-            return false;
-        };
-        Path::new(program).file_name() == Path::new(invocation).file_name()
-            && arguments.len() == actual_arguments.len()
-            && arguments
-                .iter()
-                .zip(actual_arguments)
-                .all(|(expected, actual)| OsStr::new(expected) == actual)
+    /// The entry's command as an executable identity, resolved through
+    /// `path` and canonicalized now; nothing is kept, so a lookup always sees
+    /// the current PATH and filesystem.
+    pub(in crate::system) fn resolved(&self, path: &[PathBuf]) -> Option<ExecutableIdentity> {
+        #[cfg(test)]
+        RESOLUTIONS.with(|count| count.set(count.get() + 1));
+        ExecutableIdentity::requested(&self.argv, path)
     }
 
     /// Whether two entries run the same command: one canonical executable
