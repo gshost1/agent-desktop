@@ -4,6 +4,7 @@
 
 ### BREAKING CHANGES
 
+* `find` match objects, and `AMBIGUOUS_TARGET` candidates from a locator, omit `ref_id`, `name`, `value`, `states` and `path` when absent or empty, as the JSON contract states, instead of printing `null`, `""` or `[]`. Part of envelope 2.7; a reader that indexed those keys must read a missing key as that value. ([#93](https://github.com/gshost1/agent-desktop/pull/93))
 * The response envelope moves to 2.7. On Windows and Linux, and on macOS for an element with no address, a ref whose snapshot could not read the window whole now fails `STALE_REF` with `details.kind: identity_unproven` and `details.reason: capture_incomplete` instead of `AMBIGUOUS_TARGET` `identity_not_unique`; retake the snapshot with a larger `--timeout-ms`. A ref whose capture left a recorded field unread, or that no capture judged, fails `STALE_REF` `identity_unproven` with `details.reason: capture_unknown`. `identity_not_unique` now means the capture saw an identical twin. Refmap entries record `capture` (`unique`, `ambiguous`, `incomplete`, `unknown`); refmaps from earlier versions still load. See the version 2.7 migration in `docs/json-output.md`. ([#14](https://github.com/gshost1/agent-desktop/pull/14))
 
 ### Bug Fixes
