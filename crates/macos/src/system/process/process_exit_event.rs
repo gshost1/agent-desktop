@@ -7,13 +7,28 @@
 //! proves nothing by itself: the caller checks the identity again, so a
 //! reused pid or a spurious wake reads the same as a timeout did.
 
-use std::time::Duration;
+//!
+//! An exited process stays readable until its parent collects it, and the
+//! kernel refuses to watch it during that time. A wake therefore never returns
+//! sooner than a short floor, so a caller that re-checks in a loop does not
+//! spin while it waits for the collection.
 
-/// Waits up to `pause` for `pid` to exit. Returns at once when the process is
-/// already gone, and sleeps the whole pause when the kernel cannot watch it.
+use std::time::{Duration, Instant};
+
+const SHORTEST_WAIT: Duration = Duration::from_millis(1);
+
+/// Waits up to `pause` for `pid` to exit. Returns after a short floor when the
+/// process is already gone, and sleeps the whole pause when the kernel cannot
+/// watch it.
 pub(crate) fn wait_for_exit_event(pid: i32, pause: Duration) {
+    let started = Instant::now();
     match watch_exit(pid, pause) {
-        Watch::Ended => {}
+        Watch::Ended => {
+            let floor = SHORTEST_WAIT.min(pause);
+            if let Some(short) = floor.checked_sub(started.elapsed()) {
+                std::thread::sleep(short);
+            }
+        }
         Watch::Unavailable => std::thread::sleep(pause),
     }
 }

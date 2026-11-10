@@ -40,3 +40,26 @@ fn a_pid_the_kernel_cannot_watch_sleeps_the_whole_pause() {
     wait_for_exit_event(-1, Duration::from_millis(60));
     assert!(started.elapsed() >= Duration::from_millis(60));
 }
+
+#[test]
+fn an_exited_process_nobody_collected_does_not_end_the_wait_instantly() {
+    let mut child = std::process::Command::new("/usr/bin/true")
+        .spawn()
+        .expect("spawn true");
+    let pid = i32::try_from(child.id()).expect("pid fits");
+    wait_for_exit_event(pid, Duration::from_secs(5));
+    let started = Instant::now();
+    for _ in 0..20 {
+        wait_for_exit_event(pid, Duration::from_secs(5));
+    }
+    let waited = started.elapsed();
+    let _ = child.wait();
+    assert!(
+        waited >= Duration::from_millis(20),
+        "the wait spun: {waited:?}"
+    );
+    assert!(
+        waited < Duration::from_secs(2),
+        "woke at the pause: {waited:?}"
+    );
+}
