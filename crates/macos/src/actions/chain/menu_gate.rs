@@ -78,7 +78,10 @@ fn gate_answer(
     match accessibility() {
         Ok(true) => MenuObservation::Open,
         Ok(false) => MenuObservation::Closed,
-        Err(error) if window_server_saw_none && searched_past_budget(&error) => {
+        Err(error)
+            if (window_server_saw_none || menu_windows.is_err())
+                && searched_past_budget(&error) =>
+        {
             MenuObservation::Closed
         }
         Err(_) => MenuObservation::Unreadable,
