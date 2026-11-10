@@ -22,9 +22,10 @@ pub fn evaluate_locator_tree(
 }
 
 /// `evaluate_locator_tree` over one complete observation, with the matches drawn
-/// from the subtree at `scope` alone. The observation comes back with the
-/// resolution, because a hydrated match is proven against the same read its
-/// query was answered from.
+/// from the subtree at `scope` alone. Each match carries the capture verdict of
+/// that read, which hydration keeps rather than judging the match again. The
+/// observation comes back with the resolution, because a hydrated match is
+/// named and published from the same read its query was answered from.
 pub(super) fn evaluate_locator_tree_in(
     mut tree: ObservedTree,
     scope: Option<&RefPath>,
@@ -109,7 +110,7 @@ pub(super) fn evaluate_locator_tree_in(
             .get(index)
             .ok_or_else(|| AdapterError::internal("selected locator node is out of bounds"))?;
         let mut entry = ref_entry(node, &tree.source, &normalized);
-        entry.identity.unique_at_capture = proof.proves_node(&entry, index);
+        entry.identity.capture = proof.verdict(&entry, index);
         selected_matches.push(LocatorMatch {
             data,
             document_order: node.document_order,

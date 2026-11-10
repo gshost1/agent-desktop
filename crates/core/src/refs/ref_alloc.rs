@@ -35,7 +35,7 @@ pub(crate) fn ref_entry_from_node(
                 .native_id
                 .clone()
                 .filter(|id| !id.value.trim().is_empty()),
-            unique_at_capture: false,
+            capture: crate::CaptureVerdict::Unknown,
         },
         geometry: crate::RefGeometry {
             bounds,
@@ -237,7 +237,12 @@ impl<'a> AllocationPlan<'a> {
             let offered = |boundary: &AccessibilityNode, path: &[usize]| {
                 carries_element_token(boundary)
                     || capture.is_some_and(|proof| {
-                        proof.proves(&skeleton_anchor_entry(boundary, &config.source, path), path)
+                        proof
+                            .verdict_at(
+                                &skeleton_anchor_entry(boundary, &config.source, path),
+                                path,
+                            )
+                            .is_unique()
                     })
             };
             plan_skeleton_anchors(node, &mut Vec::new(), &mut skeleton_anchors, &offered);
@@ -259,9 +264,11 @@ impl<'a> AllocationPlan<'a> {
         }
     }
 
-    fn proven(&self, entry: &RefEntry, path: &[usize]) -> bool {
+    fn verdict(&self, entry: &RefEntry, path: &[usize]) -> crate::CaptureVerdict {
         self.capture
-            .is_some_and(|capture| capture.proves(entry, path))
+            .map_or(crate::CaptureVerdict::Unknown, |capture| {
+                capture.verdict_at(entry, path)
+            })
     }
 }
 
@@ -292,7 +299,7 @@ fn allocate_refs_at_path(
             path,
         );
         entry.scope.path_is_absolute = config.scope.root_ref_id.is_some();
-        entry.identity.unique_at_capture = plan.proven(&entry, path);
+        entry.identity.capture = plan.verdict(&entry, path);
         entry.source.renderer_accessibility_forced = config.options.force_renderer_accessibility;
         if !config.options.include_bounds && has_meaningful_identity(&entry) {
             entry.geometry.bounds = None;
@@ -304,7 +311,7 @@ fn allocate_refs_at_path(
 
     if is_skeleton_anchor {
         let mut entry = skeleton_anchor_entry(&node, &config.source, path);
-        entry.identity.unique_at_capture = plan.proven(&entry, path);
+        entry.identity.capture = plan.verdict(&entry, path);
         entry.source.renderer_accessibility_forced = config.options.force_renderer_accessibility;
         if !config.options.include_bounds && has_meaningful_identity(&entry) {
             entry.geometry.bounds = None;

@@ -27,7 +27,7 @@ pub(crate) fn materialize_refmap(
                 continue;
             }
             let mut entry = ref_entry(node, &tree.source, query);
-            entry.identity.unique_at_capture = proof.proves_node(&entry, index);
+            entry.identity.capture = proof.verdict(&entry, index);
             planned.push((index, entry));
         }
     }
@@ -116,7 +116,7 @@ pub(crate) fn ref_entry(
             value: node.evidence.value.meaningful_string(),
             description: node.evidence.description.meaningful_string(),
             native_id: identifier,
-            unique_at_capture: false,
+            capture: crate::CaptureVerdict::Unknown,
         },
         geometry: crate::RefGeometry {
             bounds,
