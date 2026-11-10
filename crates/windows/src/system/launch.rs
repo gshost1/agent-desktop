@@ -11,6 +11,8 @@ use std::time::Duration;
 #[cfg(test)]
 use self::launch_attach::matching_processes;
 use self::launch_attach::prepare;
+use self::launch_child::LaunchedChild;
+use self::launch_observe::{exited_before_window, watch_window};
 use super::app_ops::ProcessRow;
 use super::launch_path::{
     child_environment_block, image_file_name, launch_identifier, validate_launch_options,
@@ -37,37 +39,24 @@ pub(crate) fn launch_app_impl(
     if let Some(attached) = attached {
         return Ok(attached);
     }
-    let (pid, token) = create_process(&executable, options, deadline)?;
-    let window = observe_window(pid, &token, options, deadline)?;
+    let (pid, token, child) = create_process(&executable, options, deadline)?;
+    let window = watch_window(
+        || observe_window_once(pid, &token, deadline),
+        || {
+            child
+                .exit_code()
+                .map(|code| exited_before_window(image_file_name(id), pid, code))
+        },
+        should_poll_after_first_observation(options.timeout_ms),
+        deadline,
+    )?;
     Ok(launch_result(id, pid, token, window))
 }
 
-/// The window a launch actually caused, or `None`. A process that presents no
-/// window is a fact the caller reads from `LaunchResult.window`, not a failure:
-/// a background or windowless process is a legitimate launch outcome, and
-/// erroring on it made every such launch spend its whole timeout first.
-fn observe_window(
-    pid: ProcessId,
-    process_instance: &str,
-    options: &LaunchOptions,
-    deadline: Deadline,
-) -> Result<Option<WindowInfo>, AdapterError> {
-    let mut poll_interval = Duration::from_millis(50);
-    loop {
-        if let Some(window) = observe_window_once(pid, process_instance, deadline)? {
-            return Ok(Some(window));
-        }
-        if !should_poll_after_first_observation(options.timeout_ms)
-            || deadline.remaining().is_zero()
-        {
-            return Ok(None);
-        }
-        let remaining = deadline.remaining();
-        std::thread::sleep(poll_interval.min(remaining));
-        poll_interval = (poll_interval * 3 / 2).min(Duration::from_millis(250));
-    }
-}
-
+/// A process that presents no window is a fact the caller reads from
+/// `LaunchResult.window`, not a failure: a background or windowless process
+/// is a legitimate launch outcome. A launched process that exits first is not
+/// a launch of a running program and is refused by `watch_window`.
 fn launch_result(
     id: &str,
     pid: ProcessId,
@@ -183,7 +172,7 @@ fn create_process(
     executable: &Path,
     options: &LaunchOptions,
     deadline: Deadline,
-) -> Result<(ProcessId, String), AdapterError> {
+) -> Result<(ProcessId, String, LaunchedChild), AdapterError> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         CREATE_UNICODE_ENVIRONMENT, CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW,
@@ -243,8 +232,8 @@ fn create_process(
     let pid = ProcessId::from(information.dwProcessId);
     unsafe {
         CloseHandle(information.hThread);
-        CloseHandle(information.hProcess);
     }
+    let child = LaunchedChild::new(information.hProcess);
     let token = process_identity::token_for_pid(pid)
         .map_err(after_launch)?
         .ok_or_else(|| {
@@ -256,7 +245,7 @@ fn create_process(
                 .with_details(serde_json::json!({ "pid": pid, "complete": false })),
             )
         })?;
-    Ok((pid, token))
+    Ok((pid, token, child))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -264,7 +253,7 @@ fn create_process(
     _executable: &Path,
     _options: &LaunchOptions,
     _deadline: Deadline,
-) -> Result<(ProcessId, String), AdapterError> {
+) -> Result<(ProcessId, String, LaunchedChild), AdapterError> {
     Err(AdapterError::not_supported("launch_app"))
 }
 
@@ -385,3 +374,9 @@ mod launch_lease_isolation_tests;
 
 #[path = "launch_attach.rs"]
 pub(crate) mod launch_attach;
+
+#[path = "launch_child.rs"]
+mod launch_child;
+
+#[path = "launch_observe.rs"]
+mod launch_observe;

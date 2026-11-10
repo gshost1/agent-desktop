@@ -192,7 +192,10 @@ fn cwd_is_honored_for_create_process() {
     let probe = copy_system_exe("cmd.exe", &temp, "launchprobe_cwd.exe");
     let marker = temp.join("cwd.txt");
     let options = LaunchOptions {
-        args: vec!["/C".into(), format!("cd > \"{}\"", marker.display())],
+        args: vec![
+            "/C".into(),
+            format!("cd > \"{}\" & ping -n 30 127.0.0.1 > nul", marker.display()),
+        ],
         cwd: Some(temp.clone()),
         attach_if_running: false,
         timeout_ms: 0,
@@ -308,4 +311,64 @@ fn bare_name_never_chooses_planted_binary_in_current_directory() {
         Some(std::ffi::OsString::from("notepad.exe"))
     );
     let _ = std::fs::remove_dir_all(&plant_dir);
+}
+
+#[test]
+fn a_launcher_that_exits_without_a_window_is_refused_before_the_timeout() {
+    let dir = scratch_dir("stub-exit");
+    let probe = copy_system_exe("cmd.exe", &dir, "launchprobe_stub.exe");
+    let started = std::time::Instant::now();
+    let error = launch_app_impl(
+        probe.to_str().expect("utf8 path"),
+        &LaunchOptions {
+            args: vec!["/C".into(), "exit 3".into()],
+            attach_if_running: false,
+            timeout_ms: 10_000,
+            ..Default::default()
+        },
+        deadline(15_000),
+    )
+    .expect_err("a program that exits before any window is not a running launch");
+    let waited = started.elapsed();
+    assert_eq!(error.code, ErrorCode::ActionFailed, "{error:?}");
+    assert_eq!(
+        error.disposition.delivery(),
+        DeliveryDisposition::DeliveredUnverified
+    );
+    let details = error.details.expect("details");
+    assert_eq!(details["kind"], "exited");
+    assert_eq!(details["status"], 3);
+    assert!(
+        waited < std::time::Duration::from_secs(5),
+        "the exit ended the wait after {waited:?} of a 10 s timeout"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn attaching_to_a_windowless_process_reads_its_windows_once() {
+    let dir = scratch_dir("attach-once");
+    let probe = copy_system_exe("ping.exe", &dir, "launchprobe_attach_once.exe");
+    let _ping = start_named_windowless(&probe, &["-n", "60", "127.0.0.1"]);
+    let running = matching_pids("launchprobe_attach_once.exe");
+    assert_eq!(running.len(), 1);
+    let started = std::time::Instant::now();
+    let result = launch_app_impl(
+        probe.to_str().expect("utf8 path"),
+        &LaunchOptions {
+            attach_if_running: true,
+            timeout_ms: 10_000,
+            ..Default::default()
+        },
+        deadline(15_000),
+    )
+    .expect("attaching to a windowless process is a launch");
+    let waited = started.elapsed();
+    assert_eq!(result.pid, running[0]);
+    assert!(result.window.is_none(), "{result:?}");
+    assert!(
+        waited < std::time::Duration::from_secs(5),
+        "an attach waited {waited:?} of a 10 s timeout for a window"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
