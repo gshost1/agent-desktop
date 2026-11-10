@@ -104,8 +104,11 @@ fn keyed(
     listed: &[&NotificationInfo],
 ) -> Result<usize, AdapterError> {
     let tokens = NotificationToken::assign(listed.iter().copied());
-    let found: Vec<usize> = (0..listed.len()).filter(|at| tokens[*at] == key).collect();
+    let found: Vec<usize> = (0..listed.len())
+        .filter(|at| key.names(&tokens[*at]))
+        .collect();
     match (found.as_slice(), index) {
+        ([at], _) if key.lost_a_twin_by(&tokens[*at]) => Err(twin_left(key)),
         ([at], None) => Ok(*at),
         ([at], Some(index)) if listed[*at].index == index => Ok(*at),
         ([_], Some(index)) => Err(notification_moved(index)),
@@ -117,6 +120,17 @@ fn keyed(
         .with_suggestion(RELIST)
         .with_disposition(DeliverySemantics::not_delivered())),
     }
+}
+
+fn twin_left(key: NotificationToken) -> AdapterError {
+    AdapterError::new(
+        ErrorCode::NotificationNotFound,
+        format!(
+            "A notification identical to the one keyed {key} left since it was listed, so the key may now name a different twin"
+        ),
+    )
+    .with_suggestion(RELIST)
+    .with_disposition(DeliverySemantics::not_delivered())
 }
 
 fn unaddressed() -> AdapterError {

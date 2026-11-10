@@ -4,7 +4,7 @@ use crate::{
 use serde_json::Value;
 
 pub struct NotificationActionArgs {
-    pub index: Option<usize>,
+    pub index: usize,
     pub key: Option<String>,
     pub action: String,
     pub expected_app: Option<String>,
@@ -20,7 +20,7 @@ pub fn execute(
         expected_app: args.expected_app,
         expected_title: args.expected_title,
     };
-    let target = NotificationTarget::new(args.index, args.key.as_deref(), identity)?;
+    let target = NotificationTarget::new(Some(args.index), args.key.as_deref(), identity)?;
     let policy = super::notification_policy::mutation_policy(context)?;
     let lease = crate::commands::helpers::acquire_interaction_lease(adapter)?;
     let result = adapter.notification_action(

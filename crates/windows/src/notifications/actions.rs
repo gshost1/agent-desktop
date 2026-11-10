@@ -151,7 +151,7 @@ fn dismiss_all_impl(
     hwnd: isize,
     deadline: Deadline,
 ) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
-    let filter = build_filter(app_filter);
+    let filter = NotificationFilter::for_app(app_filter);
     let entries = list_entries(&filter, hwnd, deadline)?;
     if entries.is_empty() {
         return Ok((Vec::new(), Vec::new()));
@@ -344,13 +344,6 @@ fn take_target<E>(
 ) -> Result<E, AdapterError> {
     let at = target.pick(entries.iter().map(&info))?;
     Ok(entries.swap_remove(at))
-}
-
-fn build_filter(app_filter: Option<&str>) -> NotificationFilter {
-    NotificationFilter {
-        app: app_filter.map(String::from),
-        ..Default::default()
-    }
 }
 
 fn missing_dismiss_error(index: usize) -> AdapterError {

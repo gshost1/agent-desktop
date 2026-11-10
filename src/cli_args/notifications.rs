@@ -16,7 +16,7 @@ pub(crate) struct ListNotificationsCliArgs {
 #[serde(deny_unknown_fields)]
 pub(crate) struct DismissNotificationCliArgs {
     #[arg(value_name = "INDEX", help = "1-based notification index from list-notifications; with --key the entry must still be at INDEX",
-          value_parser = clap::value_parser!(u64).range(1..))]
+          value_parser = clap::value_parser!(u64).range(1..), required_unless_present = "key")]
     #[serde(default)]
     pub index: Option<u64>,
     #[arg(
@@ -83,3 +83,7 @@ pub(crate) struct NotificationActionCliArgs {
     )]
     pub expected_title: Option<String>,
 }
+
+#[cfg(test)]
+#[path = "notifications_tests.rs"]
+mod tests;

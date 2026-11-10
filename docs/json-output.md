@@ -568,16 +568,23 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 
 `list-notifications` gives every entry a `key` beside `index`, `app_name`,
 `title`, `body` and `actions`. The key is opaque: a digest of the app, title
-and body, then `-` and the entry's occurrence among identical entries (for
-example `"370187c8c54966aa-1"`). Lists are newest first and occurrences count
-from the bottom, so the oldest twin is `-1` and an identical newcomer at the
-top gets the next number without changing the keys already listed. Keys are
-assigned over the whole list before `--app`, `--text` and `--limit` apply, so
-no filter changes a key.
+and body, then `-`, the entry's occurrence among identical entries, `of` and
+the number of identical entries listed (for example `"370187c8c54966aa-1of2"`).
+Lists are newest first and occurrences count from the bottom, so the oldest
+twin is `1`, and an identical newcomer at the top takes the next number while
+every key already printed keeps naming its entry. When an identical entry
+leaves, the newer twins are renumbered, so a key whose twins have dropped
+below its recorded count is refused. Identical entries are grouped by their
+full app, title and body, so two different entries whose digests collide
+carry the same key and are refused as ambiguous. Keys are assigned over the
+whole list before `--app`, `--text` and `--limit` apply, so no filter changes
+a key. Identical twins are told apart only by their order: one twin leaving
+and another arriving between the listing and the mutation is not detected.
 
 `dismiss-notification` and `notification-action` take it as `--key`. Core
 re-reads the whole list under the mutation, picks the one entry that carries
-the key (with an INDEX, it must also still sit there), and only then checks
+the key (with an INDEX, it must also still sit there; with fewer twins than
+the key records, it refuses), and only then checks
 `--app` and `--expected-app` / `--expected-title` against that entry.
 Otherwise the call returns `NOTIFICATION_NOT_FOUND` with `not_delivered` and
 presses nothing. `notification-action` still requires INDEX, and the C ABI

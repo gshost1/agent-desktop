@@ -47,13 +47,13 @@ agent-desktop list-notifications [--app NAME] [--text TEXT] [--limit N]
   "data": {
     "count": 1,
     "notifications": [
-      { "index": 1, "app_name": "Calendar", "title": "Standup in 10 minutes", "body": "Room 4", "actions": ["Snooze", "Open"], "key": "74622da481283846-1" }
+      { "index": 1, "app_name": "Calendar", "title": "Standup in 10 minutes", "body": "Room 4", "actions": ["Snooze", "Open"], "key": "74622da481283846-1of1" }
     ]
   }
 }
 ```
 
-`index` is 1-based and counts the unfiltered list, so a filtered result can start above 1. `body` and `actions` are omitted when empty. `key` is opaque and always present: a digest of app, title and body, then `-` and the entry's count among identical entries, counted from the oldest, so a new identical notification does not change existing keys. Keys are assigned before filters apply, so no filter changes one. Errors: `POLICY_DENIED` on macOS or Windows with the surface closed, and `PLATFORM_NOT_SUPPORTED` when there is no notification service (on Linux, an owner other than GNOME Shell).
+`index` is 1-based and counts the unfiltered list, so a filtered result can start above 1. `body` and `actions` are omitted when empty. `key` is opaque and always present: a digest of app, title and body, then the entry's number among identical entries (counted from the oldest) and how many there were. A new identical notification leaves existing keys valid. When an identical twin leaves, the keys of the others are refused until you list again, because identical entries cannot be told apart. Keys are assigned before filters apply, so no filter changes one. Errors: `POLICY_DENIED` on macOS or Windows with the surface closed, and `PLATFORM_NOT_SUPPORTED` when there is no notification service (on Linux, an owner other than GNOME Shell).
 
 ## dismiss-notification
 
@@ -61,7 +61,7 @@ Dismisses one notification, named by its key.
 
 ```bash
 agent-desktop --headed dismiss-notification INDEX --key KEY
-agent-desktop --headed dismiss-notification --key 74622da481283846-1
+agent-desktop --headed dismiss-notification --key 74622da481283846-1of1
 agent-desktop --headed dismiss-notification 2 --expected-title "Standup in 10 minutes"
 ```
 
@@ -77,7 +77,7 @@ agent-desktop --headed dismiss-notification 2 --expected-title "Standup in 10 mi
   </tbody>
 </table>
 
-`data.dismissed` is the removed notification, in the `list-notifications` row shape. Errors: `INVALID_ARGS` without `--key` and without an `--expected-*` flag beside `INDEX`, or for a malformed key; `POLICY_DENIED` without `--headed`; and `NOTIFICATION_NOT_FOUND` (`not_delivered`) when the key is gone or the entry no longer matches.
+`data.dismissed` is the removed notification, in the `list-notifications` row shape without `key`. Errors: `INVALID_ARGS` without `--key` and without an `--expected-*` flag beside `INDEX`, or for a malformed key; `POLICY_DENIED` without `--headed`; and `NOTIFICATION_NOT_FOUND` (`not_delivered`) when the key is gone, an identical twin left since the listing, or the entry no longer matches.
 
 ## dismiss-all-notifications
 

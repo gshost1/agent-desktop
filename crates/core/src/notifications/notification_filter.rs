@@ -8,6 +8,15 @@ pub struct NotificationFilter {
 }
 
 impl NotificationFilter {
+    /// The filter that admits only notifications from apps whose name
+    /// contains `app`, ignoring case, or every notification without one.
+    pub fn for_app(app: Option<&str>) -> Self {
+        Self {
+            app: app.map(String::from),
+            ..Self::default()
+        }
+    }
+
     /// Whether `info` passes the app and text predicates: the app name, or
     /// the title, body and app name together, contain the filter text,
     /// ignoring case. The limit is applied by the caller after this.

@@ -65,7 +65,7 @@ pub(super) fn action(
 ) -> Result<Value, AppError> {
     notification_action::execute(
         notification_action::NotificationActionArgs {
-            index: Some(notification_index(args.index)?),
+            index: notification_index(args.index)?,
             key: args.key,
             action: args.action,
             expected_app: args.expected_app,

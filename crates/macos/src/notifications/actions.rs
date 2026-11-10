@@ -68,7 +68,7 @@ fn dismiss_all_impl(
     pid: i32,
     deadline: Deadline,
 ) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
-    let filter = build_filter(app_filter);
+    let filter = NotificationFilter::for_app(app_filter);
     let entries = super::list::list_entries(&filter, pid, deadline)?;
 
     let mut dismissed = Vec::new();
@@ -273,13 +273,6 @@ fn require_foreground_policy(policy: InteractionPolicy) -> Result<(), AdapterErr
             "Notification Center interaction requires foreground access",
             policy,
         ))
-    }
-}
-
-fn build_filter(app_filter: Option<&str>) -> NotificationFilter {
-    NotificationFilter {
-        app: app_filter.map(String::from),
-        ..Default::default()
     }
 }
 

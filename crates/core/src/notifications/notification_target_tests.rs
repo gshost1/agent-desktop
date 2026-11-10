@@ -100,6 +100,26 @@ fn identical_twins_are_addressed_separately_by_occurrence() {
 }
 
 #[test]
+fn a_key_whose_older_twin_left_is_refused_instead_of_naming_the_newer_twin() {
+    let twins = vec![
+        info(1, "CI", "Build failed", "main"),
+        info(2, "CI", "Build failed", "main"),
+    ];
+    let oldest = NotificationTarget::new(
+        None,
+        Some(&key_of(&twins, 1)),
+        NotificationIdentity::default(),
+    )
+    .expect("target");
+    let error = oldest
+        .pick(&twins[..1])
+        .expect_err("the remaining twin now carries the oldest's number");
+    assert_eq!(error.code, ErrorCode::NotificationNotFound);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert!(error.message.contains("identical"), "{}", error.message);
+}
+
+#[test]
 fn expected_fields_beside_a_key_must_still_match() {
     let target =
         NotificationTarget::new(None, Some(&key_of(&seen(), 0)), app("Mail")).expect("target");
