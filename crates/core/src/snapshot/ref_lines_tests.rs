@@ -111,6 +111,24 @@ fn a_description_equal_to_the_name_is_left_out_and_a_different_one_kept() {
 }
 
 #[test]
+fn a_description_that_prints_like_the_name_is_left_out_and_the_value_keeps_its_place() {
+    let mut marked = with_ref(node("link", "\u{200e}Forecast"), "@s1:e6");
+    marked.identity.value = Some("72".into());
+    marked.identity.description = Some("Forecast \n".into());
+    let mut cased = node("link", "Forecast");
+    cased.identity.description = Some("FORECAST".into());
+
+    assert_eq!(
+        render_ref_lines(&marked),
+        vec!["@s1:e6 link \"Forecast\" value=\"72\""]
+    );
+    assert_eq!(
+        render_ref_lines(&cased),
+        vec!["link \"Forecast\" desc=\"FORECAST\""]
+    );
+}
+
+#[test]
 fn cut_branches_carry_their_markers() {
     let mut skeleton = node("group", "Sidebar");
     skeleton.children_count = Some(26);

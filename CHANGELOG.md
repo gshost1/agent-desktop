@@ -13,7 +13,7 @@
 
 ### Performance
 
-* `--lines` leaves out `desc=` when the description is the same as the name. weather.gov's home page, with 253 image-map links whose title repeats their text, prints 30% fewer bytes with `-i --lines` (19,310 → 12,801 tokens), with the same 326 refs. The JSON tree, `find` and the refmap keep the description. ([#84](https://github.com/gshost1/agent-desktop/pull/84))
+* `--lines` leaves out `desc=` when the description is the same as the name. weather.gov's home page, with 253 image-map links whose title repeats their text, prints 30% fewer bytes with `-i --lines` (39,237 → 27,569 bytes; 19,310 → 12,801 tokens, −34%), with the same 326 refs. The JSON tree, `find` and the refmap keep the description. ([#84](https://github.com/gshost1/agent-desktop/pull/84))
 * On macOS, wait the 2 s accessibility settle only for a Chromium process, recognized by a bundled framework that ships the V8 startup snapshot or is named `Electron Framework` or `Chromium Embedded Framework`. The first snapshot of a freshly launched native app no longer pays it, and `launch` now reports `renderer: "chromium"` for browsers and renamed Electron builds too. ([#5](https://github.com/gshost1/agent-desktop/pull/5))
 
 ### Documentation

@@ -73,11 +73,26 @@ fn node_line(node: &AccessibilityNode, depth: usize) -> String {
     line
 }
 
-/// The description when it says something the name does not: a description
-/// equal to the name, as on links whose title repeats their text, is left out.
+/// The description when it says something the name does not. A description
+/// that prints the same as the name, as on links whose title repeats their
+/// text, is left out; bidirectional marks and surrounding whitespace do not
+/// count as a difference, and letter case does.
 fn distinct_description(node: &AccessibilityNode) -> Option<&str> {
     let description = node.identity.description.as_deref()?;
-    (node.identity.name.as_deref() != Some(description)).then_some(description)
+    let repeats_name = node
+        .identity
+        .name
+        .as_deref()
+        .is_some_and(|name| printed_form(name) == printed_form(description));
+    (!repeats_name).then_some(description)
+}
+
+fn printed_form(text: &str) -> String {
+    text.chars()
+        .filter(|c| !is_bidirectional_control(*c))
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 fn push_field(line: &mut String, key: &str, text: Option<&str>) {

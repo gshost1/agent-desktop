@@ -121,7 +121,7 @@ Each line, in order:
 | The qualified ref (`@s8f3k2p9:e1`) and a space | The node has a ref |
 | The role | Always |
 | The quoted name | The node has a name; an empty name prints `""` |
-| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field; `desc=` only when the description differs from the name |
+| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field; `desc=` only when the description prints differently from the name (bidirectional marks and surrounding whitespace ignored) |
 | `bounds=x,y,WxH` | The tree carries bounds (`--include-bounds`) |
 | `[state, state]` | The node has states |
 | `children_count=N` | A skeleton cut container |
