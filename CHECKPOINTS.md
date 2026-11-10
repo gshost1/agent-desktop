@@ -4,7 +4,7 @@ Newest last. The laptop lead appends here when a send to the control thread fail
 
 ## Needs George
 
-- Laptop `/tmp` is a RAM-backed tmpfs at 76% (5.7 of 7.5 GB). 236 `/tmp/trace-input-*` dirs from 2026-11-07 (~1.2 GB, a test leak from before the trace-test fix) and `/tmp/frie-mini-sanitized` (563 MB) hold RAM while agents build. Delete them? (Nothing deleted; outside the repo.)
+- Laptop `/tmp` cleanup (George approved): checks passed (236 `/tmp/trace-input-*` dirs, 1.2 GB, all last written 2026-11-07 22:39 or earlier; `/tmp/frie-mini-sanitized` 563 MB, last written 2026-11-03 22:27; `lsof` and every process cwd/root: no user). The lead's `rm -rf` was **denied by the session's permission layer**, so nothing was deleted. George, on the laptop: `df -h /tmp; rm -rf /tmp/trace-input-* /tmp/frie-mini-sanitized; df -h /tmp`
 
 ## Log
 
@@ -59,3 +59,4 @@ Newest last. The laptop lead appends here when a send to the control thread fail
 | `crates/linux/src/system/launch/*` | 50 ms polls | launch | quantizes | **agent A owns these** |
 | notifications/* | 50–100 ms polls, 2.5–6 s settles | notification commands | partly | **PR #34 owns these** |
 
+- 2026-11-10: /tmp cleanup verified safe but not done: the session's permission layer denied the `rm -rf`. /tmp is at 5.7 of 7.5 GB (76%). The command for George is under Needs George.
