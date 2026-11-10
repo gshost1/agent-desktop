@@ -27,7 +27,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
-| #80 | SURFACE-10 | STALE (`2982cc00`; PR head moved to `db60af6e`, DIRTY) | do not run: being re-merged with main; the SHA below will be updated when the new head is green |
+| #80 | SURFACE-10 | `2711e496` | steps ready (revision 2, below); CI 13/13, gates GREEN, draft, CLEAN |
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
@@ -37,81 +37,215 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
-## #80 SURFACE-10: focused-surface ref resolves only in its capture window
+## #80 SURFACE-10: a focused-surface ref resolves only in the window it was captured from
 
-Head: `2982cc00c6f35b9227100a266be341dd9eafad3d`. Uses Script Editor (AppKit, two plain-text scripts under `/tmp`) and the
-repo's AgentDeskFixture (SwiftUI). Every line must read `PASS`; 1c and 2c must print `True`. On `main` 1a prints `FAIL`
-and `ran-b` appears (the click ran document b's script); 2a prints `FAIL` with `saved_ref_absent`.
+Head: `2711e49672e20c2752d802deffcf9ad46bcf8461`. Revision 2 (2026-11-10), replacing the stale `2982cc00` steps; the
+script is verbatim from the PR body. State: main `01ca88c9` merged in, CI 13/13 (macOS Test 1030/0, all 4
+resolve_focused tests), gates GREEN 5102/0, draft, CLEAN.
+
+New check: lines 1-0 and 2-0 print the stripped ref's capture verdict. Since #14, a ref whose capture was not unique is
+refused before the app is read. So if those lines do not say `"unique"`, the later refusals test the capture proof,
+not this PR: report those lines.
+
+Expected:
+- 1-0 and 2-0 read `tokens stripped: N>=1; ... capture="unique"`;
+- 1a, 1b, 1d, 1e, 2a, 2b and 2d read PASS;
+- 1c and 2c read True.
+
+On main, 1a FAILs and `ran-b` appears (the click ran document b's script); 2a FAILs.
+
+How it runs:
+- Script Editor holds two plain-text scripts under the mktemp dir. Part 1 is skipped, and says so, if Script Editor was
+  already running.
+- The AgentDeskFixture is launched by its executable.
+- It builds in a detached worktree under mktemp after cargo is idle, and copies desktop_space.sh with its `rm` replaced
+  by an echo.
+- A CGWindowList helper reads pid and layer only.
+
+What it leaves: the trap quits only the apps it launched and runs `lsregister -u`. The scratch dir stays for George.
+Laptop checks: `bash -n` is clean, and grep finds no `rm`, System Events, osascript, lsappinfo, Finder or TextEdit.
 
 ```bash
+#!/usr/bin/env bash
+SHA=2711e49672e20c2752d802deffcf9ad46bcf8461
+TAG=ad-s10
 set -u
-SHA=2982cc00c6f35b9227100a266be341dd9eafad3d
-R=/tmp/ad-s10; rm -rf "$R"; mkdir -p "$R/home"
-git -C ~/Projects/agent-desktop fetch -q origin
-git -C ~/Projects/agent-desktop worktree add -q --detach "$R/src" "$SHA" || { echo "FAIL-SETUP worktree"; exit 1; }
-( cd "$R/src" && cargo build -q --release -p agent-desktop ) || { echo "FAIL-SETUP build"; exit 1; }
-B="$R/src/target/release/agent-desktop"; export AGENT_DESKTOP_HOME="$R/home"
+REPO="$HOME/Projects/agent-desktop"
+R=$(mktemp -d "${TMPDIR:-/tmp}/$TAG.XXXXXX") || { echo "FAIL-SETUP mktemp"; exit 1; }
+mkdir "$R/home" && chmod 700 "$R/home"
+echo "scratch dir: $R (nothing is removed; leave it for George)"
+export AGENT_DESKTOP_HOME="$R/home"
+LAUNCHED_PIDS=""
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+cleanup() {
+  echo "== cleanup (trap EXIT)"
+  for entry in $LAUNCHED_PIDS; do
+    name=${entry%%=*}; name=${name//_/ }; pid=${entry##*=}
+    kill -0 "$pid" 2>/dev/null || { echo "cleanup: $name pid $pid already gone"; continue; }
+    [ -x "${B:-}" ] && "$B" close-app "$name" >/dev/null 2>&1
+    for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+    kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null
+    for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+    kill -0 "$pid" 2>/dev/null && echo "cleanup: $name pid $pid STILL RUNNING" || echo "cleanup: quit $name pid $pid (launched by this script)"
+  done
+  if [ -d "$R/fixture/AgentDeskFixture.app" ]; then
+    "$LSREG" -u "$R/fixture/AgentDeskFixture.app" 2>/dev/null
+    echo "cleanup: lsregister -u $R/fixture/AgentDeskFixture.app ran"
+  fi
+  echo "cleanup: done. Left for George: $R and the worktree $R/src"
+  echo "  (git -C ~/Projects/agent-desktop worktree remove --force $R/src)"
+}
+trap cleanup EXIT
+full() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d, indent=1)) if d.get("ok") is not True else None'; }
 jget() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
-refused() { python3 -c 'import json,sys; d=json.load(sys.stdin); e=d.get("error") or {}; print("PASS" if d.get("ok") is False and e.get("code")=="STALE_REF" and "focused_window_changed" in json.dumps(e) else "FAIL")'; }
-strip_tokens() { python3 - "$R/home/snapshots/$1/refmap.json" <<'PY'
-import json, sys
-p = sys.argv[1]; d = json.load(open(p)); n = 0
-def walk(x):
-    global n
-    if isinstance(x, dict):
-        if x.pop("retained_object", None) is not None: n += 1
-        for v in x.values(): walk(v)
-    elif isinstance(x, list):
-        for v in x: walk(v)
-walk(d); json.dump(d, open(p, "w")); print("tokens stripped:", n)
+ref_of() { jget '((d.get("data") or {}).get("match") or {}).get("ref_id","")'; }
+
+[ "$(pgrep -x AgentDeskFixture)" = "" ] || { echo "FAIL-SETUP AgentDeskFixture already running (pid $(pgrep -x AgentDeskFixture)); quit it first"; exit 1; }
+git -C "$REPO" fetch -q origin || { echo "FAIL-SETUP fetch"; exit 1; }
+[ "$(git -C "$REPO" rev-parse "$SHA^{commit}" 2>/dev/null)" = "$SHA" ] || { echo "FAIL-SETUP $SHA not in the repo"; exit 1; }
+DS="$R/desktop_space.sh"
+git -C "$REPO" show origin/chore/speed-1.4-tasks:bench-tools/desktop_space.sh \
+  | sed 's|^r[m] .*AGENT_DESKTOP_HOME.*$|echo "desktop-space home left at $AGENT_DESKTOP_HOME"|' > "$DS" \
+  || { echo "FAIL-SETUP desktop_space.sh copy"; exit 1; }
+if grep -nE '(^|[;&|[:space:]])r[m][[:space:]]' "$DS"; then echo "FAIL-SETUP desktop_space.sh still runs rm"; exit 1; fi
+for p in $(grep -oE '/(Users|private)/[^ "()]+' "$DS"); do
+  case "$p" in *XXXX) p=$(dirname "$p");; esac
+  [ -e "$p" ] || { echo "FAIL-SETUP desktop_space.sh path missing: $p"; exit 1; }
+done
+echo "desktop_space.sh copied to $DS"
+git -C "$REPO" worktree add -q --detach "$R/src" "$SHA" || { echo "FAIL-SETUP worktree"; exit 1; }
+while pgrep -x cargo >/dev/null; do sleep 5; done
+( cd "$R/src" && cargo build -q --release -p agent-desktop ) || { echo "FAIL-SETUP build"; exit 1; }
+B="$R/src/target/release/agent-desktop"
+echo "built $("$B" --version) at $(git -C "$R/src" rev-parse HEAD)"
+
+cat > "$R/cgfront.swift" <<'SWIFT'
+import CoreGraphics
+import Foundation
+guard CommandLine.arguments.count == 2, let pid = Int32(CommandLine.arguments[1]) else { exit(2) }
+let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+let list = (CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]) ?? []
+var own = 0
+var front: Int32 = -1
+for window in list {
+    let layer = window[kCGWindowLayer as String] as? Int ?? -1
+    let owner = (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? -1
+    let alpha = window[kCGWindowAlpha as String] as? Double ?? 0
+    let bounds = window[kCGWindowBounds as String] as? [String: Double] ?? [:]
+    guard layer == 0, alpha > 0, (bounds["Width"] ?? 0) > 50, (bounds["Height"] ?? 0) > 50 else { continue }
+    if front == -1 { front = owner }
+    if owner == pid { own += 1 }
+}
+print("windows=\(own) front=\(front == pid ? "yes" : "no")")
+SWIFT
+swiftc -O -o "$R/cgfront" "$R/cgfront.swift" 2>"$R/cgfront.log" || { echo "FAIL-SETUP cgfront build"; cat "$R/cgfront.log"; exit 1; }
+
+if pgrep -x Calculator >/dev/null; then
+  echo "desktop-space reset SKIPPED: Calculator was already running (pid $(pgrep -x Calculator)) and stays running; make sure no full-screen app is in front"
+else
+  bash "$DS"; echo "desktop-space reset ran ($DS)"
+fi
+
+focused_id() { "$B" list-windows --app "$1" | python3 -c 'import json,sys; print(" ".join(w["id"] for w in json.load(sys.stdin).get("data",[]) if w.get("is_focused")))'; }
+front_on() {
+  APP="$1"; PID="$2"; WID="$3"
+  "$B" focus-window --window-id "$WID" | full
+  for _ in $(seq 1 50); do
+    CG=$("$R/cgfront" "$PID"); F=$(focused_id "$APP")
+    [ "$CG" != "${CG%front=yes}" ] && [ "$F" = "$WID" ] && { echo "front: $APP pid $PID window $WID ($CG)"; return 0; }
+    sleep 0.2
+  done
+  echo "FAIL-SETUP $APP window $WID not front: cg='$CG' focused='$F'"; exit 1
+}
+
+refused() { python3 -c '
+import json,sys
+d=json.load(sys.stdin); e=d.get("error") or {}
+ok = d.get("ok") is False and e.get("code")=="STALE_REF" and "focused_window_changed" in json.dumps(e)
+print("PASS" if ok else "FAIL"); print(json.dumps(d, indent=1))'; }
+untokenize() { python3 - "$R/home/snapshots/$1/refmap.json" "$2" <<'PY'
+import json, os, sys
+path, ref = sys.argv[1], "@" + sys.argv[2].rsplit(":", 1)[-1]
+data = json.load(open(path)); stripped = 0; capture = "entry-not-found"
+def walk(node):
+    global stripped, capture
+    if isinstance(node, dict):
+        if ref in node and isinstance(node[ref], dict):
+            capture = node[ref].get("capture", "absent")
+        if node.pop("retained_object", None) is not None:
+            stripped += 1
+        for value in node.values():
+            walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            walk(value)
+walk(data)
+mode = os.stat(path).st_mode & 0o777
+with open(path, "w") as out:
+    json.dump(data, out)
+os.chmod(path, mode)
+print("tokens stripped: %d; %s capture=%s" % (stripped, ref, json.dumps(capture)))
 PY
 }
 win_ids() { "$B" list-windows --app "$1" | python3 -c 'import json,sys; t=sys.argv[1].split("|"); print(" ".join(w["id"] for w in json.load(sys.stdin).get("data",[]) if w.get("title") in t))' "$2"; }
 wait_ids() { for _ in $(seq 1 50); do v=$(win_ids "$1" "$2"); [ "$(echo $v | wc -w)" -ge "$3" ] && { echo $v; return; }; sleep 0.2; done; echo ""; }
 
-echo "== Part 1: Script Editor, two documents"
-printf 'do shell script "touch %s/ran-a"\n' "$R" > "$R/a.applescript"
-printf 'do shell script "touch %s/ran-b"\n' "$R" > "$R/b.applescript"
-open -a "Script Editor" "$R/a.applescript"; A=$(wait_ids "Script Editor" "a.applescript|a" 1)
-open -a "Script Editor" "$R/b.applescript"; W2=$(wait_ids "Script Editor" "b.applescript|b" 1)
-echo "A=$A B=$W2"; [ -n "$A" ] && [ -n "$W2" ] || { echo "FAIL-SETUP windows"; exit 1; }
-"$B" focus-window --window-id "$A" >/dev/null
-F=$("$B" find --app "Script Editor" --window-id "$A" --surface focused --role button --name Run --exact --first)
-REF=$(echo "$F" | jget 'd["data"]["match"]["ref_id"]'); SNAP=$(echo "$F" | jget 'd["data"]["snapshot_id"]')
-echo "ref=$REF snapshot=$SNAP"; strip_tokens "$SNAP"
-"$B" focus-window --window-id "$W2" >/dev/null
-echo "1a click after focus moved to b (expect PASS):"; "$B" click "$REF" | refused
-echo "1b focused find in a while b is focused (expect PASS):"; "$B" find --app "Script Editor" --window-id "$A" --surface focused --role button --name Run --exact --first | refused
-"$B" focus-window --window-id "$A" >/dev/null
-echo "1c click after a is focused again (expect ok true):"; "$B" click "$REF" | jget 'd["ok"]'
-for _ in $(seq 1 50); do [ -e "$R/ran-a" ] && break; sleep 0.2; done
-echo "1d ran-a exists (expect PASS): $([ -e "$R/ran-a" ] && echo PASS || echo FAIL)"
-echo "1e ran-b absent (expect PASS): $([ -e "$R/ran-b" ] && echo FAIL || echo PASS)"
+echo "== Part 1: Script Editor (AppKit), two documents"
+if pgrep -x "Script Editor" >/dev/null; then
+  echo "Part 1 SKIP: Script Editor was already running (pid $(pgrep -x "Script Editor")); it stays running and untouched"
+else
+  printf 'do shell script "touch %s/ran-a"\n' "$R" > "$R/a.applescript"
+  printf 'do shell script "touch %s/ran-b"\n' "$R" > "$R/b.applescript"
+  open -a "Script Editor" "$R/a.applescript"
+  for _ in $(seq 1 50); do SEPID=$(pgrep -x "Script Editor"); [ -n "$SEPID" ] && break; sleep 0.2; done
+  [ -n "$SEPID" ] || { echo "FAIL-SETUP Script Editor did not start"; exit 1; }
+  LAUNCHED_PIDS="$LAUNCHED_PIDS Script_Editor=$SEPID"
+  A=$(wait_ids "Script Editor" "a.applescript|a" 1)
+  open -a "Script Editor" "$R/b.applescript"; W2=$(wait_ids "Script Editor" "b.applescript|b" 1)
+  echo "Script Editor pid=$SEPID A=$A B=$W2"; [ -n "$A" ] && [ -n "$W2" ] || { echo "FAIL-SETUP windows"; exit 1; }
+  front_on "Script Editor" "$SEPID" "$A"
+  F=$("$B" find --app "Script Editor" --window-id "$A" --surface focused --role button --name Run --exact --first)
+  REF=$(echo "$F" | ref_of); SNAP=$(echo "$F" | jget '(d.get("data") or {}).get("snapshot_id","")')
+  echo "ref=$REF snapshot=$SNAP"; [ -n "$REF" ] || { echo "FAIL-SETUP no Run ref"; echo "$F"; exit 1; }
+  echo "1-0 token stripped and capture is unique (expect 'tokens stripped: N>=1; ... capture=\"unique\"'):"; untokenize "$SNAP" "$REF"
+  front_on "Script Editor" "$SEPID" "$W2"
+  echo "1a click after focus moved to b (expect PASS):"; "$B" click "$REF" | refused
+  echo "1b focused find in a while b is focused (expect PASS):"; "$B" find --app "Script Editor" --window-id "$A" --surface focused --role button --name Run --exact --first | refused
+  front_on "Script Editor" "$SEPID" "$A"
+  echo "1c click after a is focused again (expect True):"; OUT=$("$B" click "$REF"); echo "$OUT" | jget 'd["ok"]'; echo "$OUT" | full
+  for _ in $(seq 1 50); do [ -e "$R/ran-a" ] && break; sleep 0.2; done
+  echo "1d ran-a exists (expect PASS): $([ -e "$R/ran-a" ] && echo PASS || echo FAIL)"
+  echo "1e ran-b absent (expect PASS): $([ -e "$R/ran-b" ] && echo FAIL || echo PASS)"
+fi
 
 echo "== Part 2: AgentDeskFixture (SwiftUI)"
-bash "$R/src/tests/fixture-app/build.sh" "$R/fixture" >/dev/null || { echo "FAIL-SETUP fixture build"; exit 1; }
-open "$R/fixture/AgentDeskFixture.app"
-for _ in $(seq 1 50); do M=$("$B" list-windows --app AgentDeskFixture | jget '" ".join(w["id"] for w in d.get("data",[]))'); [ "$(echo $M | wc -w)" = 1 ] && break; sleep 0.2; done
-echo "M=$M"; "$B" focus-window --window-id "$M" >/dev/null
-status() { "$B" find --app AgentDeskFixture --window-id "$M" --name click-status --exact --first | jget 'd["data"]["match"].get("value")'; }
+bash "$R/src/tests/fixture-app/build.sh" "$R/fixture" >"$R/fixture-build.log" 2>&1 || { echo "FAIL-SETUP fixture build"; cat "$R/fixture-build.log"; exit 1; }
+"$R/fixture/AgentDeskFixture.app/Contents/MacOS/AgentDeskFixture" >"$R/fixture.log" 2>&1 &
+FPID=$!; LAUNCHED_PIDS="$LAUNCHED_PIDS AgentDeskFixture=$FPID"
+main_ids() { "$B" list-windows --app AgentDeskFixture | python3 -c 'import json,sys; print(" ".join(w["id"] for w in json.load(sys.stdin).get("data",[]) if w.get("title")!="Duplicate Window"))'; }
+for _ in $(seq 1 50); do M=$(main_ids); [ "$(echo $M | wc -w)" = 1 ] && break; sleep 0.2; done
+echo "fixture pid=$FPID M=$M"; [ "$(echo $M | wc -w)" = 1 ] || { echo "FAIL-SETUP fixture window"; exit 1; }
+front_on AgentDeskFixture "$FPID" "$M"
+status() { "$B" find --app AgentDeskFixture --window-id "$M" --name click-status --exact --first | jget '((d.get("data") or {}).get("match") or {}).get("value")'; }
 BEFORE=$(status); echo "click-status before: $BEFORE"
 F=$("$B" find --app AgentDeskFixture --window-id "$M" --surface focused --role button --name primary-button --exact --first)
-REF2=$(echo "$F" | jget 'd["data"]["match"]["ref_id"]'); strip_tokens "$(echo "$F" | jget 'd["data"]["snapshot_id"]')"
-O=$("$B" find --app AgentDeskFixture --window-id "$M" --role button --name open-duplicate-windows --exact --first | jget 'd["data"]["match"]["ref_id"]')
-"$B" click "$O" >/dev/null; D=$(wait_ids AgentDeskFixture "Duplicate Window" 2); D1=${D%% *}; echo "D1=$D1"
-"$B" focus-window --window-id "$D1" >/dev/null
+REF2=$(echo "$F" | ref_of); SNAP2=$(echo "$F" | jget '(d.get("data") or {}).get("snapshot_id","")')
+echo "ref=$REF2 snapshot=$SNAP2"; [ -n "$REF2" ] || { echo "FAIL-SETUP no primary-button ref"; echo "$F"; exit 1; }
+echo "2-0 token stripped and capture is unique (expect 'tokens stripped: N>=1; ... capture=\"unique\"'):"; untokenize "$SNAP2" "$REF2"
+O=$("$B" find --app AgentDeskFixture --window-id "$M" --role button --name open-duplicate-windows --exact --first | ref_of)
+"$B" click "$O" | full; D=$(wait_ids AgentDeskFixture "Duplicate Window" 2); D1=${D%% *}; echo "duplicates: $D"
+[ -n "$D1" ] || { echo "FAIL-SETUP duplicate windows"; exit 1; }
+front_on AgentDeskFixture "$FPID" "$D1"
 echo "2a click after focus moved to a duplicate window (expect PASS):"; "$B" click "$REF2" | refused
 echo "2b click-status unchanged (expect PASS): $([ "$(status)" = "$BEFORE" ] && echo PASS || echo FAIL)"
-"$B" focus-window --window-id "$M" >/dev/null
-echo "2c click after main window is focused again (expect ok true):"; "$B" click "$REF2" | jget 'd["ok"]'
+front_on AgentDeskFixture "$FPID" "$M"
+echo "2c click after main window is focused again (expect True):"; OUT=$("$B" click "$REF2"); echo "$OUT" | jget 'd["ok"]'; echo "$OUT" | full
 for _ in $(seq 1 25); do [ "$(status)" != "$BEFORE" ] && break; sleep 0.2; done
-echo "2d click-status changed (expect PASS): $([ "$(status)" != "$BEFORE" ] && echo PASS || echo FAIL)"
-C=$("$B" find --app AgentDeskFixture --window-id "$M" --role button --name close-duplicate-windows --exact --first | jget 'd["data"]["match"]["ref_id"]'); "$B" click "$C" >/dev/null
-"$B" close-app AgentDeskFixture >/dev/null; "$B" close-app "Script Editor" >/dev/null
-echo "== done; scratch worktree left at $R/src"
+echo "2d click-status changed (expect PASS): $([ "$(status)" != "$BEFORE" ] && echo PASS || echo FAIL) (now $(status))"
+C=$("$B" find --app AgentDeskFixture --window-id "$M" --role button --name close-duplicate-windows --exact --first | ref_of)
+"$B" click "$C" | full
+echo "== checks done"
 ```
-
-Cleanup: `git -C ~/Projects/agent-desktop worktree remove --force /tmp/ad-s10/src && rm -rf /tmp/ad-s10`.
 
 ## #58 ACTION-12: headed hover/drag stops after a raise that changed the front window
 
