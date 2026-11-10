@@ -94,6 +94,10 @@ impl TraceConfig {
             .emission
             .lock()
             .map_err(|_| AppError::Internal("trace emission lock poisoned".into()))?;
+        if !self.has_sink() {
+            return Ok(None);
+        }
+        let fields = fields();
         let mut budget = match &self.state.pending {
             TracePending::SegmentDir(dir) => match TraceWriteBudget::acquire(dir) {
                 Ok(budget) => Some(budget),
@@ -115,7 +119,7 @@ impl TraceConfig {
             .and_then(|mut file| {
                 with_exclusive_file(&mut file, |file| {
                     self.ensure_meta_if_needed(file, session_id, budget.as_mut())?;
-                    write_event_locked(file, event, session_id, fields(), budget.as_mut())
+                    write_event_locked(file, event, session_id, fields, budget.as_mut())
                 })
             }) {
             Ok(seq) => Ok(Some(seq)),
