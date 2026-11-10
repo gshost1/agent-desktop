@@ -10,6 +10,10 @@ mod parse_error_tests;
 #[path = "cli_launch_display_tests.rs"]
 mod launch_display_tests;
 
+#[cfg(target_os = "linux")]
+#[path = "cli_launch_atspi_display_tests.rs"]
+mod launch_atspi_display_tests;
+
 fn binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_agent-desktop"))
 }
