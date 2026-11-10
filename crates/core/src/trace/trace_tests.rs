@@ -269,6 +269,32 @@ fn failed_writer_reports_no_sink() {
 }
 
 #[test]
+fn a_failed_session_writer_does_not_wait_on_the_budget_lock() {
+    let _guard = HomeGuard::new();
+    let clock = VirtualClock::freeze();
+    let dir = crate::refs::refs_store::RefStore::for_session(Some("failed-writer"))
+        .unwrap()
+        .trace_dir();
+    ensure_trace_dir(&dir).unwrap();
+    let _held =
+        crate::refs::refs_lock::RefStoreLock::acquire(&dir.join(".trace-budget.lock")).unwrap();
+    let config = TraceConfig {
+        strict: false,
+        state: Arc::new(TraceState {
+            pending: TracePending::SegmentDir(dir),
+            emission: Mutex::new(()),
+            writer: Arc::new(Mutex::new(TraceWriterState::Failed)),
+            meta_written: AtomicBool::new(false),
+        }),
+    };
+    assert_eq!(
+        config.emit_recorded("event", None, || json!({})).unwrap(),
+        None
+    );
+    assert_eq!(clock.elapsed(), std::time::Duration::ZERO);
+}
+
+#[test]
 fn cross_process_writer_helper() {
     let Some(path) = std::env::var_os("AGENT_DESKTOP_TRACE_HELPER_PATH") else {
         return;
