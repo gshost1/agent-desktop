@@ -37,7 +37,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
-| #58 (a) cap-1 | ACTION-12 | `063d9229` | NOT RUN (script defect: refs taken outside the session, so the snapshot is not found inside it). Rev 2 pending: session-scoped refs, repeatable RUN plus a separate CLEANUP, session handling tested on Linux |
+| #58 (a) cap-1 | ACTION-12 | `063d9229` | revision 2 ready (session-scoped refs, repeatable RUN plus CLEANUP, session handling proven on Linux GTK4) |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` | revision 2 ready (full: Part 1, real 1e, Part 2, dense Part D, timing Part T); CI 13/13, CLEAN, draft |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
@@ -2698,51 +2698,37 @@ fi
 echo "== checks done"
 ```
 
-## #58 ACTION-12 (a) cap-1: a headed hover or drag raises its window at most once per command
+## #58 ACTION-12 (a) cap-1: a headed hover or drag raises its window at most once per command (revision 2)
 
-Head: `063d9229da4a488f6a47d0a2fad0f4734a27425f`. CI 13/13 (run 42807214725, macOS Test included), gates GREEN 5138/0
-(post-fix gates.sh). Draft and MERGEABLE. The canonical copy of this section is the PR body's "Mac check" section.
+Head: `063d9229da4a488f6a47d0a2fad0f4734a27425f` (code unchanged; CI 13/13, gates GREEN 5138/0). Only the script
+changed from revision 1, which HALTed because its refs were taken outside the session. The canonical copy is the PR
+body's "Mac check" section.
 
-What changed since the probe plan:
-- Main is merged up to `9132aa89`, including #99 and #102. Nothing in #58's files reads the front-window
-  classification.
-- One CommandFocus per command is shared by the pre-lease wait's scroll and the leased attempts, so a raise during the
-  wait is the command's one raise.
-- A focus call that failed after it may have raised ends the command. Every error before input carries
-  preparatory_focus.
+Changes:
+1. **Session scoping:** covered_run starts the session first, takes the ref with `--session <id> find ...`, and
+   hovers that ref with `--session <id>`. The liveness hover goes the same way. The uncovered timing runs use no
+   session for both find and hover.
+2. **Repeatable RUN:** it keeps the worktrees and binaries; a separate CLEANUP block removes them and unlinks
+   `/tmp/ad-58.last`.
+3. **Tested on Linux** with a debug build of 063d9229 against the GTK4 zoo app in a private Xvfb + bus + AT-SPI
+   session:
+   - revision 2's order gave a hover ok:true, `focused: true`, and exactly 1 `input.focus_window` trace event;
+   - revision 1's order reproduced SNAPSHOT_NOT_FOUND with 0 events.
 
-The per-app-hit invariant ("never a primary read") can only live in `hit_test.rs`, so it moves to (b)'s plan if (b) is
-ever built.
+   The stub dry run still reaches ALL PASS (18).
 
-How it runs:
-- **BUILD** (outside the lock) builds the head and its merge-base with main, each in its own detached worktree under
-  `mktemp -d /tmp/ad-58.XXXXXX` with its own target dir and a cargo wait. It also builds the fixture and two Swift
-  helpers (a floating panel, and a CGWindowList reader that prints pids only), copies desktop_space.sh pointed at the
-  check dir with its rm line removed, and records the dir in `/tmp/ad-58.last`.
-- **RUN** (inside the lock):
-  - skips the desktop reset if Calculator is running, and launches the fixture by its executable;
-  - gives each binary its own `AGENT_DESKTOP_HOME`;
-  - counts raises from the shipped session trace (`input.focus_window`) in a fresh session per covered hover;
-  - HALTs unless an uncovered head hover logs exactly 1 raise (the counter is live);
-  - its trap undoes everything with confirmation lines and leaves the dir for George.
-
-Expected:
-- **Uncovered hover**, fixture in front, warm-up plus 7 runs per binary alternating main and head: every run ok:true;
-  head min <= main min + 5 ms and head median <= main median + 5 ms.
-- **Covered hover with this head**, 2 runs with Calculator in front and 2 with the fixture in front: exactly 1
-  `input.focus_window` event; ok:false with TIMEOUT or ACTION_FAILED and "occluded"; details.preparatory_focus set;
-  delivery not_delivered.
-- **Covered hover with main**: logged for contrast (expect many raises).
+Expected (unchanged):
+- Uncovered hover: head min and median each <= main + 5 ms.
+- Covered hover with the head, Calculator in front and fixture in front, 2 runs each: exactly 1 raise; ok:false with
+  TIMEOUT or ACTION_FAILED and "occluded"; preparatory_focus; not_delivered.
 - Last line: `RESULT: ALL PASS (18 checks)`.
 
-Report that line, any FAIL or HALT line, and the `uncovered_stats` line verbatim.
+Report that line, any FAIL or HALT, and the `uncovered_stats` line.
 
-Laptop checks:
-- `bash -n` is clean on both blocks, and grep finds no rm, osascript, System Events, lsappinfo, Finder or TextEdit.
-- The agent's stub dry-run gave ALL PASS (18), and a stub that raises 18 times failed exactly the 4 raise checks.
-- It has not run on a Mac yet.
+Laptop checks: `bash -n` is clean on all three blocks, and grep finds no rm, osascript, System Events, lsappinfo,
+Finder or TextEdit. The only unlink is `/tmp/ad-58.last`, in CLEANUP.
 
-BUILD (outside the desktop lock):
+BUILD (outside the desktop lock; prints `BUILD_OK`, records the dir in `/tmp/ad-58.last`):
 
 ```bash
 #!/usr/bin/env bash
@@ -2906,10 +2892,11 @@ def wait_fixture_window():
     sys.exit(1)
 
 
-def find_ref(which, name):
+def find_ref(which, name, session_id=None):
+    scope = ["--session", session_id] if session_id else []
     body = {}
     for _ in range(100):
-        body, _ = ad(which, "find", "--app", APP, "--role", "button", "--name", name, "--exact", "--first")
+        body, _ = ad(which, *scope, "find", "--app", APP, "--role", "button", "--name", name, "--exact", "--first")
         match = (body.get("data") or {}).get("match") or {}
         if body.get("ok") is True and match.get("ref_id"):
             return match["ref_id"]
@@ -2918,14 +2905,15 @@ def find_ref(which, name):
     sys.exit(1)
 
 
-def covered_run(which, ref, front, index):
+def covered_run(which, front, index):
     wait_fixture_window()
-    bring_front(front)
-    session, _ = ad(which, "session", "start", "--name", f"proof-{which}-{index}")
+    session, _ = ad(which, "session", "start", "--name", f"proof-{which}-{front}-{index}")
     session_id = (session.get("data") or {}).get("session_id")
     if not session_id:
         log("setup_fail", reason="session start failed", last=session)
         sys.exit(1)
+    ref = find_ref(which, "hover-target", session_id)
+    bring_front(front)
     body, elapsed = ad(which, "--session", session_id, "--headed", "hover", ref, "--timeout-ms", "3000")
     trace, _ = ad(which, "--session", session_id, "trace", "show", "--event", "input.focus_window", "--limit", "0")
     raises = len((trace.get("data") or {}).get("events") or [])
@@ -2934,8 +2922,8 @@ def covered_run(which, ref, front, index):
     if trace.get("ok") is not True:
         log("halt", reason="trace show failed", envelope=trace)
         sys.exit(2)
-    log("covered_run", binary=which, front=front, index=index, elapsed_ms=elapsed, raises=raises,
-        envelope=body)
+    log("covered_run", binary=which, front=front, index=index, session=session_id, ref=ref,
+        elapsed_ms=elapsed, raises=raises, envelope=body)
     return body, error, raises, elapsed
 
 
@@ -2968,8 +2956,7 @@ def main():
         sys.exit(1)
     log("target", refs=refs, bounds=box)
 
-    refs["head"] = find_ref("head", "hover-target")
-    body, error, raises, elapsed = covered_run("head", refs["head"], OTHER, 0)
+    body, error, raises, elapsed = covered_run("head", OTHER, 0)
     if body.get("ok") is not True or raises != 1:
         log("halt", reason="raise counter is not live: an uncovered head hover with Calculator in front must log exactly one input.focus_window event",
             raises=raises, envelope=body)
@@ -3003,8 +2990,7 @@ def main():
 
     for front in (OTHER, APP):
         for index in range(1, 3):
-            refs["head"] = find_ref("head", "hover-target")
-            body, error, raises, elapsed = covered_run("head", refs["head"], front, index)
+            body, error, raises, elapsed = covered_run("head", front, index)
             text = json.dumps(error)
             record(f"head covered hover, {front} in front, run {index}: one raise", raises == 1, raises=raises)
             record(f"head covered hover, {front} in front, run {index}: refused as occluded",
@@ -3015,8 +3001,7 @@ def main():
             record(f"head covered hover, {front} in front, run {index}: not delivered",
                    (error.get("disposition") or {}).get("delivery") == "not_delivered",
                    disposition=error.get("disposition"))
-        refs["main"] = find_ref("main", "hover-target")
-        body, error, raises, elapsed = covered_run("main", refs["main"], front, 1)
+        body, error, raises, elapsed = covered_run("main", front, 1)
         log("main_covered_reference", front=front, raises=raises, code=error.get("code"))
 
     overlay.kill()
@@ -3038,16 +3023,16 @@ printf '%s\n' "$R" > /tmp/ad-58.last || halt "cannot record the check dir"
 echo "BUILD_OK R=$R (recorded in /tmp/ad-58.last for the RUN block)"
 ```
 
-RUN (inside the desktop lock, after BUILD printed BUILD_OK):
+RUN (inside the desktop lock, after BUILD_OK; repeatable):
 
 ```bash
 #!/usr/bin/env bash
 # #58 (a) Mac check, RUN block: run INSIDE the desktop lock, after BUILD printed BUILD_OK.
+# Repeatable: it leaves the worktrees and binaries in place; the CLEANUP block removes them.
 set -u
 R=$(cat /tmp/ad-58.last 2>/dev/null)
 [ -n "$R" ] && [ -d "$R" ] || { echo "HALT: no check dir in /tmp/ad-58.last; run the BUILD block first"; exit 2; }
 echo "check dir: $R"
-REPO="$HOME/Projects/agent-desktop"
 B="$R/head/target/release/agent-desktop"
 LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 halt() { echo "HALT: $*"; exit 2; }
@@ -3075,11 +3060,7 @@ cleanup() {
     else
         echo "cleanup: Calculator was running before the check and stays running"
     fi
-    for tree in head main; do
-        git -C "$REPO" worktree remove --force "$R/$tree" 2>/dev/null
-        [ -e "$R/$tree" ] && echo "cleanup: WARNING worktree $R/$tree still present" || echo "cleanup: worktree $R/$tree removed"
-    done
-    echo "cleanup: done; $R left for George (proof.log inside)"
+    echo "cleanup: done; the worktrees and binaries in $R stay for a rerun (remove them with the CLEANUP block)"
 }
 trap cleanup EXIT
 if [ "$calc_was_running" = 1 ]; then echo "NOTE desktop-space reset skipped (it would quit Calculator)"
@@ -3089,4 +3070,22 @@ fixture_pid=$!
 echo "fixture launched by its executable, pid $fixture_pid"
 python3 "$R/proof.py"
 echo "check exit $?; send $R/proof.log"
+```
+
+CLEANUP (once, after the last RUN):
+
+```bash
+#!/usr/bin/env bash
+# #58 (a) Mac check, CLEANUP block: run once, after the last RUN. Removes the two worktrees BUILD registered.
+set -u
+REPO="$HOME/Projects/agent-desktop"
+R=$(cat /tmp/ad-58.last 2>/dev/null)
+[ -n "$R" ] && [ -d "$R" ] || { echo "HALT: no check dir in /tmp/ad-58.last"; exit 2; }
+pgrep -f "$R/overlay" >/dev/null && { echo "HALT: the overlay of a RUN is still running; let RUN finish first"; exit 2; }
+for tree in head main; do
+    git -C "$REPO" worktree remove --force "$R/$tree" 2>/dev/null
+    [ -e "$R/$tree" ] && echo "cleanup: WARNING worktree $R/$tree still present" || echo "cleanup: worktree $R/$tree removed"
+done
+unlink /tmp/ad-58.last && echo "cleanup: /tmp/ad-58.last unlinked"
+echo "cleanup: done; $R (proof.log, fixture, homes) left for George"
 ```
