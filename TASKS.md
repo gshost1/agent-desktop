@@ -57,12 +57,16 @@ The fixed per-process floor, paid by every command and measured with an interpos
 
 ## Fixes (ranked by ms saved)
 
-- [ ] 1. Overlap the OS connection setups and the TCC checks on threads (`perf/macos-overlap-os-connections`). Expected 30–50 ms per observation command.
-- [ ] 2. Gate or batch the context-menu walk after click-like actions (`app_menu.rs`). Expected Weather about 300 ms, Settings about 110 and Fixture about 55 per click.
-- [ ] 3. Skip the second child count when the prefix read asked for nothing (`perf/macos-skip-empty-recount`). Expected 1 IPC per leaf.
-- [ ] 4. Stabilizer sleeps. Expected about 6 ms per command.
-- [ ] 5. Legacy host scan reorder. Expected about 1.8 ms.
-- [ ] 6. Launch polls. Expected 95–395 ms per launch; check #88 first, since it touched the launch poll.
+Measured by interleaved A/B against origin/main on 5 apps; medians.
+
+- [x] 1. Overlap OS connections and TCC checks (#95). Saves 25-38 ms on `list-windows`, 26-40 on `snapshot -i`, 28-42 on `find`, 19-37 on `press`, 9-13 on `get`/`set-value`/`click`. CI pending after review fixes.
+- [x] 3. Skip the second child count on leaves (#97, merged 272c08378). Saves 10-17 ms on the fixture and Weather, 2-4 elsewhere; trees identical.
+- [x] 5. Stabilizer recapture without the 5 ms pause (#98). Saves 3-7 ms on `list-windows`, 3-16 on `press`.
+- [x] 4. Legacy host scan reads identity first (#96). Saves 1.5 ms on every command (`--version` 7.72 to 6.19 ms).
+- [x] FRONT-READ-COLD-1 (#99). The first system-wide focus read failed -25204 in every fresh process because there was no window-server connection yet. Classification is now correct, at +6 ms (front) and +35 ms (behind) per headed pointer command on the probe branch.
+- [x] LAUNCH-WIN-1 (#100). `launch` now reports the window once it is placed: real bounds and visible in 16/16, at +56-160 ms per launch.
+- [ ] 2. Context-menu walk after click-like actions (`app_menu.rs`). Mostly app-busy time on Weather; fixture and Settings pay about 675-950 single-attribute IPCs per click. Batching needs the child-read guarantees (count stability, truncation) rebuilt for a one-call read.
+- [ ] 6. Launch poll granularity: the 250 ms cap leaves up to 250 ms between the window appearing and the launch seeing it.
 
 ## Found (for core / laptop)
 
@@ -71,3 +75,5 @@ The fixed per-process floor, paid by every command and measured with an interpos
 - Script Editor `set-value` fails APP_UNRESPONSIVE, "Accessibility surface read failed for AXRole" (-25202), 7 of 7.
 - With a full-screen app in front, `launch` took 2.25 s and the next `snapshot` failed WINDOW_NOT_FOUND in 0.18 s; AX sees only the current Space.
 - There are 4 F_FULLFSYNC per snapshot (`private_file.rs`, laptop-owned); see the snapshot-writes item above.
+- The FRONT-READ root cause also explains why later reads in the same process succeed: something had listed windows by then. `AXUIElementCopyElementAtPosition` works cold and opens the connection itself, so `hit_test.rs` is not affected.
+- Windows ARM64 CI flake, unrelated to macOS: `context::scope_tests::a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease` failed with `DirectoryNotEmpty` (os error 145) on #95's first run.
