@@ -26,24 +26,34 @@ pub(crate) fn read<T>(
 
 /// Applies [`read`] to a native call that hands back an owned value beside its
 /// error. A value returned with a failed attempt is released before the retry,
-/// so only the value of the attempt that is returned leaves this function.
+/// so only the value of the attempt that is returned leaves this function. A
+/// value that arrives after the deadline is released with the timeout.
 pub(crate) fn read_owned(
     deadline: Instant,
     mut observe: impl FnMut() -> (i32, core_foundation::base::CFTypeRef),
 ) -> (i32, core_foundation::base::CFTypeRef) {
+    let mut answered: core_foundation::base::CFTypeRef = std::ptr::null();
     let result = read(deadline, || {
         let (error, value) = observe();
         if error == accessibility_sys::kAXErrorSuccess {
-            return Ok(value);
+            answered = value;
+            return Ok(());
         }
-        if !value.is_null() {
-            unsafe { core_foundation::base::CFRelease(value) };
-        }
+        release(value);
         Err(error)
     });
     match result {
-        Ok(value) => (accessibility_sys::kAXErrorSuccess, value),
-        Err(error) => (error, std::ptr::null()),
+        Ok(()) => (accessibility_sys::kAXErrorSuccess, answered),
+        Err(error) => {
+            release(answered);
+            (error, std::ptr::null())
+        }
+    }
+}
+
+fn release(value: core_foundation::base::CFTypeRef) {
+    if !value.is_null() {
+        unsafe { core_foundation::base::CFRelease(value) };
     }
 }
 
@@ -52,6 +62,7 @@ mod tests {
     use super::*;
     use accessibility_sys::{
         kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorFailure, kAXErrorInvalidUIElement,
+        kAXErrorSuccess,
     };
 
     #[test]
@@ -116,5 +127,22 @@ mod tests {
         });
         assert_eq!(error, kAXErrorInvalidUIElement);
         assert_eq!(terminal_calls, 1);
+    }
+
+    #[test]
+    fn a_value_that_arrives_after_the_deadline_is_released() {
+        use core_foundation::base::{CFGetRetainCount, CFRetain, TCFType};
+        let held: core_foundation::dictionary::CFMutableDictionary =
+            core_foundation::dictionary::CFMutableDictionary::new();
+        let reference = held.as_CFTypeRef();
+        let before = unsafe { CFGetRetainCount(reference) };
+        let deadline = Instant::now() + Duration::from_millis(5);
+        let (error, value) = read_owned(deadline, || {
+            std::thread::sleep(Duration::from_millis(10));
+            (kAXErrorSuccess, unsafe { CFRetain(reference) })
+        });
+        assert_eq!(error, kAXErrorCannotComplete);
+        assert!(value.is_null());
+        assert_eq!(unsafe { CFGetRetainCount(reference) }, before);
     }
 }
