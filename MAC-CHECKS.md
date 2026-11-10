@@ -27,7 +27,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #80 | SURFACE-10 | STALE (`2982cc00`; PR head moved to `db60af6e`, DIRTY) | do not run: being re-merged with main; the SHA below will be updated when the new head is green |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
-| #88 | LIFECYCLE-2 + LIFECYCLE-12 | pending | DIRTY; being re-merged; steps pending |
+| #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | steps ready (below); CI 13/13 green incl. macOS Test |
 | #34 | SURFACE-3 | `e3818161` (old) | HELD: control asked for 5 changes (temp AGENT_DESKTOP_HOME, catch-all, --app on action, stop on first FAIL, close the NC panel) and George's go-ahead; do not run the script below |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
@@ -692,4 +692,100 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+```
+
+## #88 LIFECYCLE-2 + LIFECYCLE-12: macOS launch watches the launched process; several restored windows are not an error
+
+Head: `46f397a712f72d8f01b580c5b4054d1961c0e043`. Save the script as `/tmp/adl-check.sh` and run `bash /tmp/adl-check.sh` from a
+terminal with Accessibility permission. Needs Xcode command line tools (swiftc, osacompile) and rustup. It builds in a
+detached worktree under `/tmp/adl-check`, waits for running cargo, runs the desktop-space reset, and uses scratch apps in
+`/tmp/adl-check` (an AppKit Swift app and an AppleScript applet that quit after 0.5 s for LIFECYCLE-2; an AppKit Swift app
+and a JXA stay-open applet with two windows for LIFECYCLE-12) plus Calculator as a control. No Finder, no TextEdit.
+
+Expected after the fix: all 6 cases print PASS (each prints its full envelope first). Before the fix: the LIFECYCLE-2
+cases answer `ok: true` with a dead pid (the `--activate` ones after ~20 s), the LIFECYCLE-12 cases `AMBIGUOUS_TARGET`.
+INVALID means a fixture precondition was not met (2 windows, none focused); whether macOS makes a restored window key
+without activation was not verifiable off-Mac.
+
+Laptop lead's notes: the script registers its four scratch apps with `lsregister -f` and unregisters them with
+`lsregister -u` at the end (LaunchServices database, reversible); it counts windows read-only through System Events
+(`osascript ... count windows`) as an independent observation; it quits Calculator at the end (desktop_space.sh quits
+it at the start too). Delete `/tmp/adl-check` after the run.
+
+```bash
+#!/bin/bash
+set -u
+SHA=46f397a712f72d8f01b580c5b4054d1961c0e043
+W=/tmp/adl-check; R=~/Projects/agent-desktop
+git -C "$R" worktree remove --force "$W/src" 2>/dev/null; rm -rf "$W"; mkdir -p "$W"; cd "$W" || exit 1
+git -C "$R" fetch -q origin && git -C "$R" worktree add -q --detach "$W/src" "$SHA" || exit 1
+while pgrep -x cargo >/dev/null; do sleep 5; done
+CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR="$W/target" cargo build -q --release -p agent-desktop --manifest-path "$W/src/Cargo.toml" || exit 1
+git -C "$R" fetch -q origin chore/speed-1.4-tasks && git -C "$R" show origin/chore/speed-1.4-tasks:bench-tools/desktop_space.sh > "$W/desktop_space.sh"
+bash "$W/desktop_space.sh"
+AD="$W/target/release/agent-desktop"; export AGENT_DESKTOP_HOME="$W/home"
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+bundle() { # name bundle-id swift-source
+  mkdir -p "$W/$1.app/Contents/MacOS"; printf '%s\n' "$3" > "$W/$1.swift"
+  swiftc -O -o "$W/$1.app/Contents/MacOS/$1" "$W/$1.swift" -framework AppKit || exit 1
+  printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>%s</string><key>CFBundleExecutable</key><string>%s</string><key>CFBundleName</key><string>%s</string><key>CFBundlePackageType</key><string>APPL</string><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>\n' "$2" "$1" "$1" > "$W/$1.app/Contents/Info.plist"
+  "$LSREG" -f "$W/$1.app"
+}
+bundle AdlQuit dev.adl.check.quit 'import AppKit
+final class D: NSObject, NSApplicationDelegate { func applicationDidFinishLaunching(_ n: Notification) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) } } }
+let a = NSApplication.shared; let d = D(); a.delegate = d; a.setActivationPolicy(.regular); a.run()'
+bundle AdlTwo dev.adl.check.two 'import AppKit
+final class D: NSObject, NSApplicationDelegate { var w: [NSWindow] = []
+ func applicationDidFinishLaunching(_ n: Notification) { for i in 0..<2 { let x = NSWindow(contentRect: NSRect(x: 120 + i * 320, y: 300, width: 280, height: 160), styleMask: [.titled], backing: .buffered, defer: false); x.title = "adl-two-\(i)"; x.orderFrontRegardless(); w.append(x) } } }
+let a = NSApplication.shared; let d = D(); a.delegate = d; a.setActivationPolicy(.regular); a.run()'
+osacompile -o "$W/AdlAppletQuit.app" -e 'delay 0.5' && "$LSREG" -f "$W/AdlAppletQuit.app"
+APPLET_ID=$(defaults read "$W/AdlAppletQuit.app/Contents/Info" CFBundleIdentifier)
+cat > "$W/two.js" <<'JS'
+ObjC.import('Cocoa');
+var wins = [];
+function run() { for (var i = 0; i < 2; i++) { var x = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer($.NSMakeRect(120 + 320 * i, 520, 280, 160), $.NSWindowStyleMaskTitled, $.NSBackingStoreBuffered, false); x.title = 'adl-jxa-' + i; x.orderFrontRegardless; wins.push(x); } }
+function idle() { return 30; }
+JS
+osacompile -l JavaScript -s -o "$W/AdlJxaTwo.app" "$W/two.js" && "$LSREG" -f "$W/AdlJxaTwo.app"
+JXA_ID=$(defaults read "$W/AdlJxaTwo.app/Contents/Info" CFBundleIdentifier)
+field() { python3 -c 'import json,sys; e=json.load(sys.stdin); v=e
+for k in sys.argv[1].split("."):
+    v = v.get(k) if isinstance(v, dict) else None
+print("" if v is None else v)' "$1"; }
+quit_case() { # label bundle-id extra-flag
+  local t0 t1 out code pid secs
+  t0=$(date +%s); out=$("$AD" launch "$2" $3 --timeout 20000); t1=$(date +%s); secs=$(( t1 - t0 ))
+  code=$(printf '%s' "$out" | field error.code); pid=$(printf '%s' "$out" | field error.details.pid)
+  echo "== LIFECYCLE-2 $1 ($secs s): $out"
+  if [ "$code" = APP_UNRESPONSIVE ] && [ "$secs" -lt 10 ] && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then echo "PASS $1"
+  else echo "FAIL $1 (expected APP_UNRESPONSIVE in under 10 s with an exited details.pid; before the fix: ok:true with a dead pid)"; fi
+}
+two_case() { # label bundle-id app-dir-name
+  local out ok win sug n focused
+  out=$("$AD" launch "$2" --timeout 20000)
+  n=0; for _ in $(seq 1 20); do
+    n=$(osascript -e "tell application \"System Events\" to count windows of (first process whose bundle identifier is \"$2\")" 2>/dev/null)
+    [ "$n" = 2 ] && break; sleep 0.5
+  done
+  focused=$("$AD" list-windows --app "$3" | grep -o '"is_focused":true' | wc -l | tr -d ' ')
+  echo "list-windows --app $3: $("$AD" list-windows --app "$3")"
+  ok=$(printf '%s' "$out" | field ok); win=$(printf '%s' "$out" | field data.window.id); sug=$(printf '%s' "$out" | field data.suggestion)
+  echo "== LIFECYCLE-12 $1 (System Events windows: $n): $out"
+  if [ "$n" != 2 ] || [ "$focused" != 0 ]; then echo "INVALID $1 (precondition: 2 windows, none focused; got $n windows, $focused focused)"
+  elif [ "$ok" = True ] && [ -z "$win" ] && [ "$(printf '%s' "$sug" | grep -o 'w-[0-9]*' | sort -u | wc -l | tr -d ' ')" = 2 ]; then echo "PASS $1"
+  else echo "FAIL $1 (expected ok:true, no data.window, data.suggestion naming 2 window ids; before the fix: AMBIGUOUS_TARGET)"; fi
+  pkill -f "$W/$3.app" 2>/dev/null
+}
+quit_case swift-activate dev.adl.check.quit --activate
+quit_case swift-background dev.adl.check.quit ""
+quit_case applet-activate "$APPLET_ID" --activate
+two_case swift-two dev.adl.check.two AdlTwo
+two_case jxa-two "$JXA_ID" AdlJxaTwo
+out=$("$AD" launch Calculator --timeout 20000); echo "== control Calculator: $out"
+if [ -n "$(printf '%s' "$out" | field data.window.id)" ]; then echo "PASS control-calculator"; else echo "FAIL control-calculator (a one-window app must still report its window)"; fi
+"$AD" close-app Calculator >/dev/null 2>&1
+pkill -f "$W/Adl" 2>/dev/null
+for a in AdlQuit AdlTwo AdlAppletQuit AdlJxaTwo; do "$LSREG" -u "$W/$a.app"; done
+git -C "$R" worktree remove --force "$W/src"
+echo "done; delete $W when finished"
 ```
