@@ -1,6 +1,11 @@
 use agent_desktop_core::{Direction, Rect};
 
-use super::{direction_for_visibility, rect_has_area, scroll_effect_observed};
+use super::super::scroll_plan::{BlockedDirections, next_direction};
+use super::{rect_has_area, scroll_effect_observed};
+
+fn direction(target: Rect, viewport: Rect) -> Option<Direction> {
+    next_direction(target, viewport, BlockedDirections::default())
+}
 
 fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
     Rect {
@@ -25,14 +30,14 @@ fn offscreen_direction_uses_global_viewport_edges() {
     let viewport = rect(1496.0, 87.0, 1496.0, 937.0);
 
     assert!(matches!(
-        direction_for_visibility(rect(2030.0, 1026.0, 73.0, 24.0), viewport),
+        direction(rect(2030.0, 1026.0, 73.0, 24.0), viewport),
         Some(Direction::Down)
     ));
     assert!(matches!(
-        direction_for_visibility(rect(2030.0, 80.0, 73.0, 24.0), viewport),
+        direction(rect(2030.0, 80.0, 73.0, 24.0), viewport),
         Some(Direction::Up)
     ));
-    assert!(direction_for_visibility(rect(1500.0, 100.0, 73.0, 24.0), viewport).is_none());
+    assert!(direction(rect(1500.0, 100.0, 73.0, 24.0), viewport).is_none());
 }
 
 #[test]
@@ -41,31 +46,49 @@ fn nested_viewport_requires_scrolling_even_inside_window() {
     let window = rect(300.0, 135.0, 500.0, 632.0);
     let viewport = rect(350.0, 617.0, 300.0, 100.0);
 
-    assert!(direction_for_visibility(target, window).is_none());
+    assert!(direction(target, window).is_none());
+    assert!(matches!(direction(target, viewport), Some(Direction::Up)));
+}
+
+#[test]
+fn scroll_area_target_is_judged_against_its_enclosing_area() {
+    let target_bounds = rect(360.0, 700.0, 200.0, 150.0);
+    let enclosing_bounds = rect(350.0, 100.0, 500.0, 620.0);
+    assert!(direction(target_bounds, target_bounds).is_none());
     assert!(matches!(
-        direction_for_visibility(target, viewport),
-        Some(Direction::Up)
+        direction(target_bounds, enclosing_bounds),
+        Some(Direction::Down)
     ));
 }
 
 #[test]
-fn scroll_area_target_seeds_viewport_search_at_parent() {
-    assert!(matches!(
-        super::imp::viewport_seed(true),
-        super::imp::ViewportSeed::Parent
-    ));
-    assert!(matches!(
-        super::imp::viewport_seed(false),
-        super::imp::ViewportSeed::Target
-    ));
+fn only_a_definite_refusal_lets_scroll_into_view_try_another_direction() {
+    let declined = agent_desktop_core::AdapterError::new(
+        agent_desktop_core::ErrorCode::ActionNotSupported,
+        "unavailable",
+    )
+    .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered());
+    assert!(super::imp::declined_without_delivery(&declined));
 
-    let target_bounds = rect(360.0, 700.0, 200.0, 150.0);
-    let enclosing_bounds = rect(350.0, 100.0, 500.0, 620.0);
-    assert!(direction_for_visibility(target_bounds, target_bounds).is_none());
-    assert!(matches!(
-        direction_for_visibility(target_bounds, enclosing_bounds),
-        Some(Direction::Down)
-    ));
+    let inert = agent_desktop_core::AdapterError::new(
+        agent_desktop_core::ErrorCode::ActionNotSupported,
+        "inert",
+    );
+    assert!(super::imp::declined_without_delivery(&inert));
+
+    let uncertain = crate::actions::ax_mutation::classify_perform(
+        "AXScrollLeftByPage",
+        accessibility_sys::kAXErrorCannotComplete,
+    )
+    .unwrap_err();
+    assert!(!super::imp::declined_without_delivery(&uncertain));
+
+    let partial = agent_desktop_core::AdapterError::new(
+        agent_desktop_core::ErrorCode::ActionNotSupported,
+        "partial",
+    )
+    .with_disposition(agent_desktop_core::DeliverySemantics::delivered_unverified());
+    assert!(!super::imp::declined_without_delivery(&partial));
 }
 
 #[test]
