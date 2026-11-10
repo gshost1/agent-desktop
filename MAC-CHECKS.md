@@ -33,7 +33,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
-| #80 | SURFACE-10 | `321c63ef` | **RERUN rev 3** on the new head (PASSed on `4ef2c62a`; #110 changed the child walk). CI 13/13, CLEAN; all laptop merges held until #80 lands |
+| #80 | SURFACE-10 | `321c63ef` -> merged `c6469b05` | **DONE**: PASS rev 3 (2 runs @321c63ef) |
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
