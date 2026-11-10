@@ -82,21 +82,20 @@ fn aliases_with(index: &AliasIndex, facts: &ProcessFacts, launched: Option<Strin
         .unwrap_or_default();
     if let Some(entry) = launched.and_then(|desktop_id| index.entry(&desktop_id)) {
         let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
-        let name_is_unshared = index
-            .entries_named(&entry.name)
-            .iter()
-            .all(|other| other.runs_same_command(entry, &path));
-        let recorded = [name_is_unshared.then_some(&entry.name), Some(&entry.id)];
-        for alias in recorded.into_iter().flatten() {
-            if !aliases
-                .iter()
-                .any(|known| known.eq_ignore_ascii_case(alias))
-            {
-                aliases.push(alias.clone());
-            }
+        if !is_known(&aliases, &entry.name) && index.name_is_unshared(entry, &path) {
+            aliases.push(entry.name.clone());
+        }
+        if !is_known(&aliases, &entry.id) {
+            aliases.push(entry.id.clone());
         }
     }
     aliases
+}
+
+fn is_known(aliases: &[String], alias: &str) -> bool {
+    aliases
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(alias))
 }
 
 /// Exact listed executable name or an alias backed by executable evidence.

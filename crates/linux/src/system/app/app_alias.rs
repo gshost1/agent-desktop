@@ -73,22 +73,31 @@ impl AliasIndex {
         let ids = matching.iter().map(|entry| entry.id.clone()).collect();
         let mut names: Vec<String> = Vec::new();
         for entry in &matching {
-            let shared_only_by_this_command = self
-                .entries
+            if !names
                 .iter()
-                .filter(|other| {
-                    !std::ptr::eq(*other, *entry) && other.name.eq_ignore_ascii_case(&entry.name)
-                })
-                .all(|other| other.runs_same_command(entry, &path));
-            if shared_only_by_this_command
-                && !names
-                    .iter()
-                    .any(|name| name.eq_ignore_ascii_case(&entry.name))
+                .any(|name| name.eq_ignore_ascii_case(&entry.name))
+                && self.name_is_unshared(entry, &path)
             {
                 names.push(entry.name.clone());
             }
         }
         (names, ids)
+    }
+
+    /// Whether every other entry with this entry's `Name` runs the same
+    /// command, so the name can stand for the process. The entry itself is
+    /// not resolved against itself.
+    pub(in crate::system) fn name_is_unshared(
+        &self,
+        entry: &IndexedEntry,
+        path: &[PathBuf],
+    ) -> bool {
+        self.entries
+            .iter()
+            .filter(|other| {
+                !std::ptr::eq(*other, entry) && other.name.eq_ignore_ascii_case(&entry.name)
+            })
+            .all(|other| other.runs_same_command(entry, path))
     }
 
     /// The entries whose command is the verified process's, sorted by

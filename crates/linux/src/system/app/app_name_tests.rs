@@ -124,3 +124,15 @@ fn a_recorded_entry_whose_name_another_command_shares_gives_only_its_id() {
     );
     assert_eq!(aliases, ["com.example.Browser"]);
 }
+
+#[test]
+fn a_recorded_entry_with_an_unshared_name_is_not_resolved_against_itself() {
+    let index = launched_index();
+    let process = wrapped_process();
+    let count = crate::system::launch::indexed_entry::resolutions;
+    let before = count();
+    let aliases = aliases_with(&index, &process, Some("com.example.Browser".to_owned()));
+    let resolved = count() - before;
+    assert_eq!(aliases, ["Example Browser", "com.example.Browser"]);
+    assert_eq!(resolved, 0, "the alias lookup resolved {resolved} entries");
+}
