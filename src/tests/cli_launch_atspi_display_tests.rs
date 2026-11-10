@@ -20,10 +20,10 @@ fn unused_display() -> String {
         .expect("a free display number")
 }
 
-/// Runs one command with an unreachable display that its private session
-/// bus also inherits. The AT-SPI services that bus activates exit on the dead
+/// Runs one command with an unreachable display that a session bus of its
+/// own also inherits, inside the test's private session. The AT-SPI services that bus activates exit on the dead
 /// display, so their calls get no reply.
-fn on_dead_display(scratch: &Path, display: &str, args: &[&str]) -> serde_json::Value {
+fn run_on_dead_display(scratch: &Path, display: &str, args: &[&str]) -> serde_json::Value {
     let output = std::process::Command::new("dbus-run-session")
         .arg("--")
         .arg(env!("CARGO_BIN_EXE_agent-desktop"))
@@ -62,6 +62,9 @@ fn an_accessibility_bus_that_dies_with_the_display_is_reported_as_the_display() 
         eprintln!("skipped: needs dbus-run-session and an activatable AT-SPI bus (at-spi2-core)");
         return;
     }
+    if super::support::run_in_private_session() {
+        return;
+    }
     let guard =
         Scratch(std::env::temp_dir().join(format!("adl-atspi-display-{}", std::process::id())));
     let scratch = guard.0.clone();
@@ -76,8 +79,8 @@ fn an_accessibility_bus_that_dies_with_the_display_is_reported_as_the_display() 
     .expect("a program");
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("mode");
 
-    let listed = on_dead_display(&scratch, &display, &["list-apps"]);
-    let launched = on_dead_display(
+    let listed = run_on_dead_display(&scratch, &display, &["list-apps"]);
+    let launched = run_on_dead_display(
         &scratch,
         &display,
         &[
