@@ -22,8 +22,9 @@ pub fn execute(args: ScreenshotArgs, adapter: &dyn PlatformAdapter) -> Result<Va
     let buf = adapter.screenshot(target, deadline)?;
 
     if let Some(path) = args.output_path {
-        crate::refs::write_user_file(&path, &buf.data)
-            .map_err(|error| crate::refs::unwritable_output("the screenshot", &path, error))?;
+        crate::refs::write_user_file(&path, &buf.data).map_err(|error| {
+            crate::storage::unwritable_output::unwritable_output("the screenshot", &path, error)
+        })?;
         Ok(json!({
             "path": path.to_string_lossy(),
             "format": buf.format.as_str(),
