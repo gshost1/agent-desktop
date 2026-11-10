@@ -6,7 +6,7 @@ Commands that change UI state. Run `agent-desktop <command> --help` for flags.
 
 `--headed` is global (`agent-desktop --headed click @s8f3k2p9:e5`) and applies to every `batch` entry. A headed action may focus the exact source window first, and a pointer action needs a verified target point.
 
-`press` is always physical keyboard input. `hover`, `drag`, `mouse-move`, `mouse-click` and `mouse-wheel` are physical cursor input and need `--headed`. Raw coordinates carry no window identity, so they never focus an app. `key-down`, `key-up`, `mouse-down` and `mouse-up` are reserved and never deliver input. They return `ACTION_NOT_SUPPORTED`, except that a headless `mouse-down` or `mouse-up` returns `POLICY_DENIED` first. Use `press`, `mouse-click` or `drag`.
+`press` sends physical keyboard input, except that on macOS a `cmd` chord sent to one app can run the menu item that owns it (see Keyboard). `hover`, `drag`, `mouse-move`, `mouse-click` and `mouse-wheel` are physical cursor input and need `--headed`. Raw coordinates carry no window identity, so they never focus an app. `key-down`, `key-up`, `mouse-down` and `mouse-up` are reserved and never deliver input. They return `ACTION_NOT_SUPPORTED`, except that a headless `mouse-down` or `mouse-up` returns `POLICY_DENIED` first. Use `press`, `mouse-click` or `drag`.
 
 Which gestures have a headless path:
 
@@ -33,6 +33,7 @@ Stateful actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `e
 
 - Secure text is redacted. A delivered write can return `delivered_unverified` with `verification_reason: "secure_field"`. This never turns a native delivery error into success.
 - `set-value` and `type` verify the element value only (`verification_scope: element_value`, `application_commit: not_verified`). Confirm document-level effects, such as a table that should have resized, with an independent read.
+- `application_commit: pending` with `verification_scope: inline_editor` means the text went into an editor floating over the field, such as a list row being renamed. Nothing is committed yet: press `details.commit_key` (`press return --app <App>`), then confirm with an independent read, such as the file name on disk.
 - If `data.surfaces` lists a sheet, menu or alert, the app is waiting on it. Use `find --surface sheet` and answer it. A `delivered_unverified` result with an open surface usually means a confirmation is pending. A missing `data.surfaces`, or an entry whose `unclassified` names a kind, does not prove that kind is closed: snapshot that surface when you expect one.
 
 ## Errors
@@ -43,8 +44,8 @@ Exit codes: `0` success, `1` structured error, `2` argument error. The `error` o
 |------|---------|----------|
 | `PERM_DENIED` | A required OS permission is missing | Read the platform skill |
 | `ELEMENT_NOT_FOUND` | Ref is absent, or the requested surface is absent | Read `details.kind` and `details.surface`; open an absent menu or refresh only after checking the UI |
-| `STALE_REF` | Ref no longer matches the live UI | Snapshot again, use the new ref |
-| `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or it was not proven unique at capture | Act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
+| `STALE_REF` | Ref no longer matches the live UI, or no capture proved it (`identity_unproven`) | Snapshot again and use the new ref. With `details.process_state: exited` the app is gone: `list-apps`, `launch` it if needed, then snapshot. For `identity_unproven` raise `--timeout-ms` when `details.reason` is `capture_incomplete`, and use another selector or `--headed mouse-click --xy` when it is `capture_unknown` |
+| `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or its snapshot found an identical twin | A ref from a snapshot taken before version 2.7 may not be a twin: take a new snapshot first. Otherwise act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
 | `SNAPSHOT_NOT_FOUND` | Snapshot id missing or expired | Snapshot again |
 | `APP_NOT_FOUND` | App not running | `launch` it |
 | `WINDOW_NOT_FOUND` | No matching window | Check the name, use `list-windows` |
@@ -91,7 +92,7 @@ agent-desktop right-click @s8f3k2p9:e5
 - `click` is the primary activation. Headless uses the activation the element publishes. `--headed` clicks physically first where that is possible and reports `physical_synthetic` in `data.steps`. The app is observed to judge delivery, not the accessibility return code.
 - `double-click` and `triple-click` are physical gestures and fail closed headless. For raw coordinates use `--headed mouse-click --xy X,Y --count 2` (or `3`).
 - `right-click` opens the context menu. Then take `snapshot --surface menu`. Use `select` for combo boxes and menu buttons instead.
-- A right-click can return `APP_UNRESPONSIVE` with uncertain delivery after a modal menu opened. Look at the effect first. Do not retry.
+- A right-click can return `APP_UNRESPONSIVE` or `ACTION_FAILED` with uncertain delivery when the menu takes longer to appear than the adapter's check. Look at the effect first (`wait --menu`). Do not retry.
 
 ## Text input
 
@@ -148,11 +149,14 @@ agent-desktop scroll-to @s8f3k2p9:e8
 agent-desktop press return
 agent-desktop press ctrl+shift+z
 agent-desktop press cmd+s --app "TextEdit" --wait-for "button:Save" --wait-timeout 5000
+agent-desktop press return --ref @s8f3k2p9:e3
 ```
 
 - Key names: `return`, `escape`, `tab`, `space`, `delete`, `up`, `down`, `left`, `right`, `f1` to `f12`. Modifiers: `cmd`/`meta`, `ctrl`, `alt`, `shift`, joined with `+`. Modifier names and blocked combos differ by OS. Read the platform skill.
 - A bare uppercase letter adds Shift: `press H` sends `shift+h`.
 - `--app` or `--window-id` targets one app. Use `--window-id` when several instances share a name and `--app` alone is `AMBIGUOUS_TARGET`. Unscoped `press` goes to the foreground app.
+- On macOS, a chord that holds `cmd`, sent with `--app` or `--window-id`, first looks for the one enabled menu-bar item whose shortcut is that chord and presses it, which works while the app is in the background for commands the app keeps enabled there. The step label is then `AXPress menu shortcut`. Other chords, an unscoped `press`, and every chord on Windows and Linux send keys. The macOS skill lists the fallbacks.
+- `--ref` sends the keys to one element: it is focused first, without moving the pointer, so the key reaches that field and not whatever had focus. A web ref takes the key through the page. `--ref` cannot combine with `--app` or `--window-id`.
 - `press` reports `delivered_unverified`, because delivery does not prove the shortcut did its job. Wait for the expected effect once with `--wait-for` or `--wait-for-gone`. A timeout keeps the delivered result and is unsafe to retry blindly.
 - To open a window with a shortcut, keep the press and the wait in one `batch`, so the baseline is taken before delivery: `press`, then `wait --event window-opened`. A failed wait does not make the press safe to repeat.
 - Dangerous shortcuts are refused with `POLICY_DENIED` by the adapter. `--force` sends one anyway. Adding a modifier to a blocked shortcut usually gives another blocked one.

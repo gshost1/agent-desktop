@@ -48,7 +48,7 @@ pub(crate) fn close_app_impl(
             "Exact close requires a process instance token",
         )
     })?;
-    let identity = crate::system::process::process_identity::require_core(&ProcessIdentity {
+    let identity = crate::system::process::process_identity::parse_core(&ProcessIdentity {
         pid: app.pid,
         instance: instance.to_owned(),
     })?;

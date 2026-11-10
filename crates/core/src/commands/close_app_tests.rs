@@ -74,6 +74,7 @@ fn close_app_blocks_adapter_protected_process() {
         CloseAppArgs {
             app: "CriticalThing".into(),
             force: false,
+            timeout_ms: None,
         },
         &ProtectiveAdapter,
     )
@@ -102,6 +103,7 @@ fn graceful_close_reports_method_graceful_with_unverified_delivery() {
         CloseAppArgs {
             app: "TextEdit".into(),
             force: false,
+            timeout_ms: None,
         },
         &ProtectiveAdapter,
     )
@@ -120,6 +122,7 @@ fn close_app_propagates_adapter_errors() {
         CloseAppArgs {
             app: "Ghost".into(),
             force: false,
+            timeout_ms: None,
         },
         &FailingAdapter,
     )
@@ -134,6 +137,7 @@ fn forced_close_reports_method_force_with_unverified_delivery() {
         CloseAppArgs {
             app: "TextEdit".into(),
             force: true,
+            timeout_ms: None,
         },
         &ProtectiveAdapter,
     )

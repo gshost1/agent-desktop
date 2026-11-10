@@ -58,6 +58,8 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   command to forward them. `--no-attach` refuses any verified running match with
   `ACTION_FAILED` naming its pids; without it, several verified matches are
   `AMBIGUOUS_TARGET`.
+- `--reopen` returns `ACTION_NOT_SUPPORTED` before anything is spawned: Linux has no
+  reopen event, and `launch_path` is absent from the result.
 - `--arg` passes one argument and repeats; `--arg --info` works as written, and
   `--arg=-x` is the safe form for a value that starts with a hyphen. A handoff to
   a running instance applies the arguments but not `--env` or `--cwd`, and the

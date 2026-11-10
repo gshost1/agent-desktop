@@ -52,6 +52,11 @@ pub(crate) fn resolve_window_for_surface(
     if let (crate::SnapshotSurface::Window, Some(app)) = (surface, app_name) {
         return select_app_window(windows, app);
     }
+    if let (true, crate::SnapshotSurface::Web, Some(app)) = (windows.is_empty(), surface, app_name)
+        && let Some(owner) = crate::system::app_lookup::web_process_owner(adapter, app, deadline)
+    {
+        return Ok(owner);
+    }
     crate::system::window_lookup::select_surface_owner(
         windows,
         crate::AdapterError::new(
@@ -326,3 +331,7 @@ pub(crate) fn ref_observation_surface(
 pub(crate) fn is_confirmed_surface_absence(error: &AppError, surface: SnapshotSurface) -> bool {
     matches!(error, AppError::Adapter(error) if error.is_confirmed_surface_absence(surface))
 }
+
+#[cfg(test)]
+#[path = "surface_target_tests.rs"]
+mod tests;

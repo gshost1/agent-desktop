@@ -9,7 +9,7 @@ use crate::{
     refs::ref_identity::element_token,
     refs::ref_live_predicate::LivePredicate,
     refs::resolve_errors::{
-        absent, ambiguous_live_match, identity_not_unique, identity_unknown_error,
+        absent, ambiguous_live_match, identity_unknown_error, owner_gone, refused_before_reading,
     },
 };
 
@@ -63,7 +63,7 @@ pub(crate) fn land_saved_ref(
     deadline: Deadline,
 ) -> Result<NativeHandle, AdapterError> {
     if element_token(entry).is_none()
-        && entry.identity.unique_at_capture
+        && entry.identity.capture.is_unique()
         && let Ok(handle) = adapter.resolve_locator_anchor(entry, deadline)
     {
         let root = ObservationRoot::Element {
@@ -96,8 +96,8 @@ pub(crate) fn observe_saved_ref(
     identity_only: bool,
 ) -> Result<SavedRefMatch, AdapterError> {
     let token = element_token(entry);
-    if token.is_none() && !entry.identity.unique_at_capture {
-        return Err(identity_not_unique(entry));
+    if let Some(refusal) = refused_before_reading(entry) {
+        return Err(refusal);
     }
     let window = recorded_window(adapter, entry, deadline)?;
     let base = TreeOptions {
@@ -107,7 +107,8 @@ pub(crate) fn observe_saved_ref(
     };
     let mut request = whole_window_request(&base, deadline)?;
     request.observation_mode.identity_only = identity_only;
-    let observed = observe_window(adapter, &request, &window, lease)?;
+    let observed = observe_window(adapter, &request, &window, lease)
+        .map_err(|error| error.for_saved_ref_surface(entry.source.source_surface))?;
     let index = saved_ref_node(entry, token, &observed)?;
     let node = observed
         .nodes
@@ -195,18 +196,20 @@ pub(crate) fn recorded_window(
     match resolved {
         Ok(window) if belongs_to_entry(&window, entry) => return Ok(window),
         Ok(_) => {}
-        Err(error) => failure = Some(adapter_error(error)),
+        Err(error) => failure = Some(owner_gone(adapter, entry, adapter_error(error), deadline)),
     }
     if entry.source.source_window_id.is_some() {
         return Err(failure.unwrap_or_else(gone));
     }
-    let listed = adapter.list_windows(
-        &crate::adapter::WindowFilter {
-            focused_only: false,
-            app: entry.source.source_app.clone(),
-        },
-        deadline,
-    )?;
+    let listed = adapter
+        .list_windows(
+            &crate::adapter::WindowFilter {
+                focused_only: false,
+                app: entry.source.source_app.clone(),
+            },
+            deadline,
+        )
+        .map_err(|error| owner_gone(adapter, entry, error, deadline))?;
     listed
         .into_iter()
         .find(|window| belongs_to_entry(window, entry))
@@ -361,7 +364,7 @@ fn positional_anchor(
     );
     anchor.identity = crate::RefEntryIdentity {
         retained_object: entry.identity.retained_object.clone(),
-        unique_at_capture: false,
+        capture: crate::CaptureVerdict::Unknown,
         ..entry.identity.clone()
     };
     Ok(anchor)
@@ -388,4 +391,8 @@ mod context_tests;
 
 #[cfg(test)]
 #[path = "resolve_saved_ref_test_support.rs"]
-mod test_support;
+pub(crate) mod test_support;
+
+#[cfg(test)]
+#[path = "resolve_saved_ref_menu_tests.rs"]
+mod menu_tests;

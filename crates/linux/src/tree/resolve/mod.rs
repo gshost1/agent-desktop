@@ -178,10 +178,21 @@ pub(crate) fn resolve<S: Source>(
     entry: &RefEntry,
     deadline: Deadline,
 ) -> Result<AtspiElement, AdapterError> {
+    guarded(source, entry, |source| attempt(source, entry, deadline))
+}
+
+/// Runs one resolution attempt behind the check every entry point shares: a
+/// stopped process is `APP_UNRESPONSIVE` before anything is read, and the
+/// attempt's end is settled by [`settle_outcome`].
+pub(super) fn guarded<S: Source>(
+    source: &mut S,
+    entry: &RefEntry,
+    attempt: impl FnOnce(&mut S) -> Result<AtspiElement, AdapterError>,
+) -> Result<AtspiElement, AdapterError> {
     if let Some(name) = source.stopped_app(entry.process.pid.get()) {
         return Err(AdapterError::app_unresponsive(&name));
     }
-    let outcome = attempt(source, entry, deadline);
+    let outcome = attempt(source);
     settle_outcome(source, entry, outcome)
 }
 

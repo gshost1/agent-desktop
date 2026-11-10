@@ -244,3 +244,21 @@ fn a_multi_agent_desktop_action_needs_an_agent_id_on_every_platform() {
     assert!(!agent_id_missing(&click, false, None));
     assert!(!agent_id_missing(&Commands::Status, true, None));
 }
+
+#[test]
+fn only_permission_readers_pay_for_the_full_report() {
+    let click = Commands::Click(RefArgs {
+        ref_id: VALID_REF_ID.into(),
+        timeout_ms: 5000,
+    });
+    let batch = Commands::Batch(crate::cli_args::batch::BatchArgs {
+        commands_json: "[]".into(),
+        stop_on_error: false,
+        timeout_ms: 1,
+    });
+
+    assert!(requires_full_permission_report(&Commands::Status));
+    assert!(requires_full_permission_report(&batch));
+    assert!(requires_permission_report(&click));
+    assert!(!requires_full_permission_report(&click));
+}

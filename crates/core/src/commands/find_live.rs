@@ -1,3 +1,6 @@
+#[cfg(test)]
+use super::find_response::format_match;
+use super::find_response::format_response;
 use super::{DEFAULT_LIMIT, FindArgs};
 use crate::{
     AdapterError, AppError, LocatorQuery,
@@ -6,7 +9,7 @@ use crate::{
     locator::live_locator::{
         LocatorMaterialization, LocatorResolution, LocatorResolveRequest, LocatorSelection,
         ObservationRequest, ObservationRoot, ObservedObservation, resolve_query,
-        selects_tokenless_entry,
+        resolve_query_allowing_partial, selects_tokenless_entry,
     },
     refs::RefMap,
     refs::ref_root_read::{RootRead, read_saved_root},
@@ -39,7 +42,7 @@ pub(super) fn execute(
     let deadline = traversal_deadline(args)?;
     let request = resolve_request(args, deadline);
     let mut resolution = match args.root.as_deref() {
-        Some(root_ref) => rooted_resolution(adapter, query, root_ref, &request, context)?,
+        Some(root_ref) => rooted_resolution(args, query, root_ref, &request, (adapter, context))?,
         None => {
             let owners = snapshot::surface_target::resolve_owners(
                 adapter,
@@ -49,17 +52,19 @@ pub(super) fn execute(
                 deadline,
             )?;
             snapshot::window_capture::first_surface_owner(owners, |owner| {
-                resolve_query(
-                    adapter,
-                    query,
-                    owner.observation_root(args.surface),
-                    &request,
-                )
+                let root = owner.observation_root(args.surface);
+                if args.selection.allow_partial {
+                    resolve_query_allowing_partial(adapter, query, root, &request)
+                } else {
+                    resolve_query(adapter, query, root, &request)
+                }
             })?
             .1
         }
     };
-    require_complete(&resolution)?;
+    if !args.selection.allow_partial {
+        require_complete(&resolution)?;
+    }
     let ref_count = resolution.refmap.as_ref().map(RefMap::len);
     let snapshot_id = match resolution.refmap.take() {
         Some(refmap) => Some(persist_refmap(context, &refmap)?),
@@ -85,17 +90,18 @@ pub(super) fn execute(
 /// root is re-identified over one complete whole-window observation - through
 /// its predicate - and the query runs scoped to that node: the refs the find
 /// publishes are then proven by the one observation it took, never by counts
-/// joined from two reads.
+/// joined from two reads. It always reads list and table rows: a pass that
+/// left them unread could not re-identify a root by counting the window.
 fn rooted_resolution(
-    adapter: &dyn PlatformAdapter,
+    args: &FindArgs,
     query: &LocatorQuery,
     root_ref: &str,
     request: &LocatorResolveRequest,
-    context: &CommandContext,
+    (adapter, context): (&dyn PlatformAdapter, &CommandContext),
 ) -> Result<LocatorResolution, AppError> {
     let (_, local_root_ref) = crate::refs::ref_token::resolve_ref_target(root_ref)?;
     let entry = crate::commands::helpers::load_ref_entry(root_ref, context)?;
-    crate::locator::live_locator::resolve_query_from(adapter, query, request, |deadline| {
+    let observe = |deadline, _rows: crate::locator::live_locator::RowReading| {
         let read = read_saved_root(
             adapter,
             &entry,
@@ -120,7 +126,14 @@ fn rooted_resolution(
                 ObservedObservation::under(tree, index)
             }
         }
-    })
+    };
+    if args.selection.allow_partial {
+        crate::locator::live_locator::resolve_query_from_allowing_partial(
+            adapter, query, request, observe,
+        )
+    } else {
+        crate::locator::live_locator::resolve_query_from(adapter, query, request, observe)
+    }
 }
 
 fn resolve_request(args: &FindArgs, deadline: crate::Deadline) -> LocatorResolveRequest {
@@ -196,82 +209,6 @@ fn emit_resolution(
     })
 }
 
-fn format_response(
-    args: &FindArgs,
-    query: &LocatorQuery,
-    resolution: LocatorResolution,
-    snapshot_id: Option<&str>,
-) -> Result<Value, AppError> {
-    if args.selection.count {
-        return Ok(json!({ "count": resolution.meta.total_matches }));
-    }
-    let total_matches = resolution.meta.total_matches;
-    let truncated = resolution.meta.truncated;
-    let roles_present = resolution.meta.roles_present;
-    let matches = resolution
-        .matches
-        .into_iter()
-        .map(|found| format_match(found.data, found.screen_bounds))
-        .collect::<Result<Vec<_>, _>>()?;
-    if args.selection.first || args.selection.last || args.selection.nth.is_some() {
-        let mut response = single_match_response(matches.into_iter().next(), query, roles_present);
-        attach_snapshot_id(&mut response, snapshot_id);
-        return Ok(response);
-    }
-    let mut response = json!({
-        "matches": matches,
-        "total_matches": total_matches,
-        "truncated": truncated,
-    });
-    let is_empty = response["matches"].as_array().is_some_and(Vec::is_empty);
-    attach_roles_present(&mut response, is_empty, query, roles_present);
-    attach_snapshot_id(&mut response, snapshot_id);
-    Ok(response)
-}
-
-fn format_match(
-    data: crate::locator::live_locator::LocatorMatchData,
-    bounds: Option<crate::Rect>,
-) -> Result<Value, serde_json::Error> {
-    let needs_geometry = data.ref_id.is_none();
-    let mut value = serde_json::to_value(data)?;
-    if needs_geometry && let Some(bounds) = bounds {
-        value["bounds"] = serde_json::to_value(bounds)?;
-    }
-    Ok(value)
-}
-
-fn attach_snapshot_id(response: &mut Value, snapshot_id: Option<&str>) {
-    if let (Some(object), Some(snapshot_id)) = (response.as_object_mut(), snapshot_id) {
-        object.insert("snapshot_id".into(), json!(snapshot_id));
-    }
-}
-
-fn single_match_response(
-    found: Option<Value>,
-    query: &LocatorQuery,
-    roles_present: Vec<String>,
-) -> Value {
-    let is_empty = found.is_none();
-    let mut response = json!({ "match": found });
-    attach_roles_present(&mut response, is_empty, query, roles_present);
-    response
-}
-
-fn attach_roles_present(
-    response: &mut Value,
-    is_empty: bool,
-    query: &LocatorQuery,
-    roles_present: Vec<String>,
-) {
-    if !is_empty || query.identity.role.is_none() {
-        return;
-    }
-    if let Some(object) = response.as_object_mut() {
-        object.insert("roles_present".into(), json!(roles_present));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +237,7 @@ mod tests {
                 last: false,
                 nth: None,
                 limit,
+                allow_partial: false,
             },
         }
     }

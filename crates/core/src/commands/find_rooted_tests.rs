@@ -70,6 +70,7 @@ fn find_args(root: Option<String>, name: Option<&str>, role: Option<&str>) -> Fi
             last: false,
             nth: None,
             limit: None,
+            allow_partial: false,
         },
     }
 }
@@ -87,7 +88,7 @@ fn assert_proven_match(response: &serde_json::Value) {
         .get(&local_ref)
         .expect("the match's ref is in the snapshot it names");
     assert!(
-        entry.identity.unique_at_capture,
+        entry.identity.capture.is_unique(),
         "a find ref must carry the capture proof of the read that produced it"
     );
 }

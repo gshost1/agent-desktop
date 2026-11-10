@@ -35,7 +35,7 @@ pub(crate) fn match_data(
         .known()
         .cloned()
         .unwrap_or_else(|| "unknown".into());
-    let name = node.evidence.name.meaningful_string().unwrap_or_default();
+    let name = node.evidence.display_name().unwrap_or_default();
     let mut ancestor_indices = Vec::new();
     let mut parent = parents.get(index).copied().flatten();
     while let Some(parent_index) = parent {

@@ -4,8 +4,8 @@ Guidance for AI coding agents working in this repository.
 
 agent-desktop is a tool that AI agents invoke, not an agent. It is a Rust CLI and C library that reads native
 accessibility trees and returns structured JSON with ref-based element ids. The observe-act loop lives in the
-calling agent. It never embeds an LLM and has no GUI or interactive prompt. It does not automate web pages (use
-agent-browser). It cannot see UIs that expose no accessibility tree.
+calling agent. It never embeds an LLM and has no GUI or interactive prompt. It reads and drives a web page only through the
+browser's DevTools endpoint, as the `web` snapshot surface; general web automation belongs to agent-browser. It cannot see UIs that expose no accessibility tree.
 
 ## Critical: fixes must be application-agnostic
 
@@ -53,8 +53,8 @@ check. Bypass it only in an emergency: `git commit --no-verify` or `SKIP_PRECOMM
 ## Where the truth lives
 
 - **Shipped behavior** is the code and its tests. A doc that contradicts the code is a defect; fix it in the same change.
-- **Agent usage** is the skills under `skills/`. They compile into the binary: `agent-desktop skills get desktop` and
-  `agent-desktop skills get platform`.
+- **Agent usage** is the skills under `skills/`. They compile into the binary: `agent-desktop skills get desktop`,
+  `agent-desktop skills get platform` and, for web pages, `agent-desktop skills get web`.
 - **Vocabulary** is `CONCEPTS.md`. **The JSON contract** is `docs/json-output.md`. **Past lessons** are in
   `docs/solutions/`, with YAML frontmatter (`module`, `tags`, `problem_type`); search it before you work in a
   documented area.
@@ -131,7 +131,9 @@ JSON entries into the same `Commands` enum, runs the same `CommandPolicy` prefli
 each leaf command is one tool, its schema comes from the command's clap arguments and help, and a call rebuilds the
 argv and runs this binary as a child process. A command added to or removed from `Commands` appears in or disappears
 from the MCP tool list with no MCP change. `mcp` itself is attached to the root command in `main.rs`, outside
-`Commands`, so it is never a tool, a batch entry or a counted command.
+`Commands`, so it is never a tool, a batch entry or a counted command. A new global flag needs a scope in
+`src/mcp/global_scope.rs`: server-wide flags are forwarded to every call, server-only flags configure the server
+process, and per-command flags make `mcp` refuse to start with exit code 2.
 
 **Adding a command.**
 1. Create `crates/core/src/commands/<name>.rs` with an `execute()` function, its tests in `<name>_tests.rs`, and
@@ -144,8 +146,8 @@ from the MCP tool list with no MCP change. `mcp` itself is attached to the root 
 6. A new `Action` variant goes in `crates/core/src/actions/action.rs`. A new adapter method goes in the matching
    `PlatformAdapter` fragment with a `not_supported` default.
 7. Update the matching skill in the same change: `skills/agent-desktop/` for cross-platform behavior, the platform
-   skill for what differs, `skills/agent-desktop-ffi/` for the C ABI. The skills compile into the binary and are what
-   agents read.
+   skill for what differs, `skills/agent-desktop-web/` for the web surface, `skills/agent-desktop-ffi/` for the C ABI.
+   The skills compile into the binary and are what agents read.
 
 **Crate layout.** Core's root holds only `lib.rs` and domain folders named after `CONCEPTS.md` words: `actionability`,
 `actions`, `adapter`, `commands`, `context`, `cursor_overlay`, `input`, `locator`, `notifications`, `ref_action`,
@@ -206,12 +208,12 @@ remain the transitive check.
 Every command prints one envelope. `docs/json-output.md` holds the full contract.
 
 ```json
-{ "version": "2.6", "ok": true, "command": "snapshot",
+{ "version": "2.7", "ok": true, "command": "snapshot",
   "data": { "app": "Finder", "snapshot_id": "s8f3k2p9", "ref_count": 14, "complete": true, "tree": { } } }
 ```
 
 ```json
-{ "version": "2.6", "ok": false, "command": "click",
+{ "version": "2.7", "ok": false, "command": "click",
   "error": { "code": "STALE_REF", "message": "...", "suggestion": "...",
              "recovery": { "strategy": "refresh_snapshot_then_retry_original", "retryable": true,
                            "requires_fresh_snapshot": true },
@@ -219,10 +221,13 @@ Every command prints one envelope. `docs/json-output.md` holds the full contract
 ```
 
 - Omit `None` fields and empty arrays. Compact mode omits bounds. `ref_count` and `tree` live inside `data`.
+- The global `--lines` flag replaces `data.tree` with `data.lines`, one line per node with its ref first, and indents the envelope; nothing else changes.
 - Snapshot `data.window` is present for window-owned surfaces. macOS `menu` and `menubar` snapshots are application-owned and omit it.
 - Every snapshot carries `data.complete`. A snapshot that runs out of observation budget succeeds with
   `"complete": false`, `"truncated": true`, `"nodes_observed"` and the tree it saw; each cut node carries
-  `"subtree_truncated": true`. A `--root` drill-down returns `TIMEOUT` instead of a partial tree.
+  `"subtree_truncated": true`. A full snapshot whose refs would pass the 1 MB refmap cap is cut the same way after
+  the last ref that fits, in allocation order, and also carries `"refmap_capped": true`. A `--root` drill-down
+  returns `TIMEOUT` instead of a partial tree.
 - Pointer, drag, clipboard, close-app and window commands return the adapter's `OperationReport` as `data`.
   `delivered_verified` needs a postcondition read, `delivered_unverified` means a completed dispatch without one, and
   `not_delivered` is only for an operation already observed as satisfied. Core never adds an unconditional success
@@ -270,8 +275,8 @@ Every command prints one envelope. `docs/json-output.md` holds the full contract
 
 ## Command surface
 
-60 commands spanning App/Window, Observation, Interaction, Scroll, Keyboard, Mouse, Notifications, Clipboard, Wait,
-System (including `session`, `trace`, `skills`) and Batch. 56 of the 60 command names are operational on macOS; the
+61 commands spanning App/Window, Observation, Interaction, Scroll, Keyboard, Mouse, Notifications, Clipboard, Wait,
+System (including `session`, `trace`, `skills`) and Batch. 57 of the 61 command names are operational on macOS; the
 four held-input names (`key-down`, `key-up`, `mouse-down`, `mouse-up`) fail closed. Windows and Linux expose the same
 command names. Each platform's limits are in its skill (`skills/agent-desktop-macos/`, `skills/agent-desktop-windows/`,
 `skills/agent-desktop-linux/`).

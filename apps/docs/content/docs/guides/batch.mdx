@@ -35,7 +35,7 @@ The check does not reach the live desktop. Whether a ref still resolves, and whe
 
 ## Read every entry
 
-A batch returns `ok: true` and exit code `0` even when entries fail, so read each entry's `ok`. This batch clicked the calculator's C button, then a ref that does not exist, then C again, with `--stop-on-error` (fields abridged):
+A batch returns `ok: true` and exit code `0` even when entries fail, so read `failed_entries` and each entry's `ok`. `completed_entries` counts every entry that ran, failed or not. This batch clicked the calculator's C button, then a ref that does not exist, then C again, with `--stop-on-error` (fields abridged):
 
 ```json
 {
@@ -52,6 +52,7 @@ A batch returns `ok: true` and exit code `0` even when entries fail, so read eac
   ],
   "total_entries": 3,
   "completed_entries": 2,
+  "failed_entries": 1,
   "not_started_entries": 1,
   "stopped": { "index": 1, "reason": "stop_on_error" }
 }

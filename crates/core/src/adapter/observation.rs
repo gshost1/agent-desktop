@@ -51,6 +51,17 @@ pub trait ObservationOps: Send + Sync {
         Ok(self.is_nonspatial_target(handle))
     }
 
+    /// Whether the adapter delivers this action to this nonspatial target
+    /// through its own protocol, with no pointer and no screen position, so a
+    /// headless request needs no bounds and no hit test.
+    fn delivers_action_without_pointer(
+        &self,
+        _handle: &NativeHandle,
+        _action: &crate::Action,
+    ) -> bool {
+        false
+    }
+
     fn observe_tree(
         &self,
         _root: ObservationRoot<'_>,
@@ -182,6 +193,17 @@ pub trait ObservationOps: Send + Sync {
         _deadline: Deadline,
     ) -> Result<Vec<SurfaceInfo>, AdapterError> {
         Err(AdapterError::not_supported("list_surfaces"))
+    }
+
+    /// The surfaces an action can raise over an application: its sheets,
+    /// menus, popovers and alerts, without content pages an adapter also lists
+    /// as surfaces. An action reports these after it lands.
+    fn list_raised_surfaces(
+        &self,
+        process: crate::ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        self.list_surfaces(process, deadline)
     }
 
     /// Reads an already-open OS-chrome surface - the Start menu, the taskbar,

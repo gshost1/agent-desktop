@@ -15,7 +15,7 @@ use std::ptr;
 /// interactive elements, persists the refmap to disk, and writes the JSON envelope into `*out`.
 ///
 /// The JSON shape matches `agent-desktop snapshot`:
-/// `{"version":"2.6","ok":true,"command":"snapshot","data":{"app":"...","window":{...},"ref_count":N,"snapshot_id":"...","complete":true,"tree":{...}}}`.
+/// `{"version":"2.7","ok":true,"command":"snapshot","data":{"app":"...","window":{...},"ref_count":N,"snapshot_id":"...","complete":true,"tree":{...}}}`.
 /// On macOS, `window` is omitted for application-owned menu and menubar surfaces
 /// and when a background app with no window is read through its process.
 ///
@@ -82,8 +82,7 @@ pub unsafe extern "C" fn ad_snapshot(
         let core_surface = match snapshot_surface_from_c(surface, "surface") {
             Ok(s) => s,
             Err(e) => {
-                set_last_error(&e);
-                return AdResult::ErrInvalidArgs;
+                return set_last_error(&e);
             }
         };
         let adapter_ref = crate::adapter::acquire_adapter!(adapter);
@@ -91,8 +90,7 @@ pub unsafe extern "C" fn ad_snapshot(
             Ok(ctx) => ctx,
             Err(e) => {
                 let ae = app_error_to_adapter(e);
-                set_last_error(&ae);
-                return crate::error::last_error_code();
+                return set_last_error(&ae);
             }
         };
 

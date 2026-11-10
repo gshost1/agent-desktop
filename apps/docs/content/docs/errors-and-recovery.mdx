@@ -8,7 +8,7 @@ A failed command prints an envelope with `ok: false` and exits `1` (or `2` for a
 
 ```json
 {
-  "version": "2.6",
+  "version": "2.7",
   "ok": false,
   "command": "click",
   "error": {
@@ -55,7 +55,7 @@ A failed command prints an envelope with `ok: false` and exits `1` (or `2` for a
     <tr><td><code>ACTION_FAILED</code></td><td>The action was rejected or blocked, or its observed result contradicted the request.</td><td>Read <code>details</code> and <code>disposition.retry</code>. It never carries <code>recovery</code>.</td></tr>
     <tr><td><code>ACTION_NOT_SUPPORTED</code></td><td>The target, or this platform for this input, does not expose the requested action.</td><td>Use a different command or element. Repeating it fails the same way.</td></tr>
     <tr><td><code>STALE_REF</code></td><td>The ref no longer matches a live element.</td><td>Take a fresh snapshot and use the new ref. See <a href="/desktop/snapshots-and-refs">Snapshots and refs</a>.</td></tr>
-    <tr><td><code>AMBIGUOUS_TARGET</code></td><td>Several live elements, windows, or app instances match, or the ref was not unique when it was captured, and the command refuses to guess.</td><td>Take a fresh snapshot. When the matches are different elements, narrow the target with <code>find</code>, <code>--root</code>, or <code>--window-id</code>; off macOS, identical twins have no ref path. It never carries <code>recovery</code>.</td></tr>
+    <tr><td><code>AMBIGUOUS_TARGET</code></td><td>Several live elements, windows, or app instances match, or the ref's capture saw an identical twin, and the command refuses to guess.</td><td>Take a fresh snapshot. When the matches are different elements, narrow the target with <code>find</code>, <code>--root</code>, or <code>--window-id</code>; off macOS, identical twins have no ref path. It never carries <code>recovery</code>.</td></tr>
     <tr><td><code>WINDOW_NOT_FOUND</code></td><td>The requested window does not exist, including a <code>--window-id</code> that matches no window or a closed shell surface.</td><td>Run <code>list-windows --app &lt;name&gt;</code> and use an id it reports.</td></tr>
     <tr><td><code>PLATFORM_NOT_SUPPORTED</code></td><td>This platform's adapter does not implement the method. A surface kind this OS does not have is <code>INVALID_ARGS</code>.</td><td>Use another approach. The platform pages list what each OS supports.</td></tr>
     <tr><td><code>TIMEOUT</code></td><td>A wait expired, the target never became actionable, or a read stayed incomplete until the deadline.</td><td>Read <code>details.kind</code>. Retry only when <code>disposition.retry</code> is <code>safe</code>.</td></tr>
@@ -68,7 +68,7 @@ A failed command prints an envelope with `ok: false` and exits `1` (or `2` for a
   </tbody>
 </table>
 
-For <code>ELEMENT_NOT_FOUND</code>, read <code>details.kind</code>, <code>details.surface</code>, and <code>details.complete</code>. A macOS lookup with <code>kind: "surface_absent"</code> and <code>complete: true</code> has confirmed that the requested surface is absent. An absent <code>menubar</code> can mean the app exposes no menu bar. For <code>surface: "menu"</code>, open the application menu first: snapshot <code>menubar</code> when it exists, click its menu-bar item without <code>--headed</code>, then snapshot <code>--surface menu</code>. Missing <code>complete</code>, <code>complete: false</code>, a timeout, or an incomplete read is unknown. If the command followed an action with <code>disposition.retry: unsafe</code>, inspect the current UI before another action; do not repeat the action because the snapshot failed.
+For <code>ELEMENT_NOT_FOUND</code>, read <code>details.kind</code>, <code>details.surface</code>, and <code>details.complete</code>. A lookup with <code>kind: "surface_absent"</code> and <code>complete: true</code> (macOS <code>menu</code> and <code>menubar</code>, Linux <code>menu</code>) has confirmed that the requested surface is absent. A ref taken in a menu that has since closed returns <code>STALE_REF</code> with <code>details.kind: "menu_closed"</code> and <code>retryable: false</code>; reopen the menu and take new refs. An absent <code>menubar</code> can mean the app exposes no menu bar. For <code>surface: "menu"</code>, open the application menu first: snapshot <code>menubar</code> when it exists, click its menu-bar item without <code>--headed</code>, then snapshot <code>--surface menu</code>. Missing <code>complete</code>, <code>complete: false</code>, a timeout, or an incomplete read is unknown. If the command followed an action with <code>disposition.retry: unsafe</code>, inspect the current UI before another action; do not repeat the action because the snapshot failed.
 
 A macOS <code>TIMEOUT</code> with <code>details.kind: "focus_verification"</code> means the app never reported <code>AXFrontmost</code>, or the target window never reported <code>AXMain</code>, before the bounded focus readback ended. <code>details.physical_delivery_started: false</code> means target input had not started; it does not mean a prior focus or window-raise request was never dispatched. Read <code>disposition</code>, which can still be <code>delivered_unverified</code>.
 

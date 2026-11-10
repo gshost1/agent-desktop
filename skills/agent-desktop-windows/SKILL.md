@@ -73,7 +73,8 @@ observation, actions and capture there fail or return nothing.
   `delivered_unverified`.
 - **`launch` takes an absolute path or a bare name** under System32 or the
   Windows directory, with or without `.exe` (`notepad` or `notepad.exe`), not
-  a display name. Use `list-apps` to find a running app.
+  a display name. Use `list-apps` to find a running app. `launch --reopen` returns
+  `ACTION_NOT_SUPPORTED`: Windows has no reopen event, and `launch_path` is absent.
 - **Notifications:** `list-notifications` with the Action Center closed needs
   `--headed`. Single-item `dismiss-notification` and `notification-action` need
   `--headed` and the entry's `--key` from `list-notifications`.

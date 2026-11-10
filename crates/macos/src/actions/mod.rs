@@ -1,4 +1,4 @@
-pub(crate) mod activation_effect;
+pub(crate) mod activation;
 mod adapter;
 pub(crate) mod ax_helpers;
 #[cfg(target_os = "macos")]
@@ -8,6 +8,7 @@ pub(crate) mod chain;
 pub(crate) mod delivery_tracker;
 pub(crate) mod dispatch;
 pub(crate) mod extras;
+pub(crate) mod inline_editor_target;
 mod native_menu;
 mod physical_click;
 mod physical_keyboard;

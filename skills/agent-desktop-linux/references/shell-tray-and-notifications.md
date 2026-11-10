@@ -40,9 +40,11 @@ agent-desktop wait --menu-closed --app gnome-calculator --timeout 5000
   Wayland it has none: the ref is refused at resolution with `ACTION_FAILED`,
   `details.check` `geometry`.
 - An unreadable context or multiple matching targets is refused before delivery.
-- After closure the same ref returns `STALE_REF`, `details.kind: menu_closed`. A
-  snapshot of a closed menu returns `ELEMENT_NOT_FOUND`, "The window does not
-  present an open menu". Open again and take new refs.
+- After closure the same ref returns `STALE_REF`, `details.kind: menu_closed`,
+  `retryable: false`. A snapshot of a closed menu returns `ELEMENT_NOT_FOUND`,
+  "The window does not present an open menu", with `details.kind:
+  surface_absent` and `complete: true`, so `--wait-for` keeps waiting for a
+  menu that opens later. Open again and take new refs.
 - An open popup whose content changed returns `menu_context_changed`. An
   incomplete context read returns retryable `menu_context_unknown`. Keep it open
   and take a fresh menu snapshot before using a new ref.
