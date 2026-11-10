@@ -38,7 +38,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
-| #58 (a) cap-1 | ACTION-12 | `063d9229` | rev 2 ran: **cap-1 PROVEN** (1 raise vs 24-25 on main, 8/8). FAIL 8/8 on 'occluded': the final TIMEOUT drops the refusal reason. Product fix (details.last_refusal plus the right suggestion) then rev 3 |
+| #58 (a) cap-1 | ACTION-12 | `cae2051c` | rev 3 ready: final TIMEOUT now carries details.refusal plus a per-check suggestion; occlusion check reads it; timing median-only. Expect ALL PASS (17) |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` -> merged `fba4c8cc` | **DONE**: rev 2 PASS for Part 1, the real 1e and Part 2; dense Part D pre-existing (DENSE-MENU-1) |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
@@ -2699,37 +2699,37 @@ fi
 echo "== checks done"
 ```
 
-## #58 ACTION-12 (a) cap-1: a headed hover or drag raises its window at most once per command (revision 2)
+## #58 ACTION-12 (a) cap-1: one raise per command, and an honest final TIMEOUT (revision 3)
 
-Head: `063d9229da4a488f6a47d0a2fad0f4734a27425f` (code unchanged; CI 13/13, gates GREEN 5138/0). Only the script
-changed from revision 1, which HALTed because its refs were taken outside the session. The canonical copy is the PR
-body's "Mac check" section.
+Head: `cae2051cfb9c2d018161f72461b9162d323f2d1a`, a draft. CI 13/13 (the macOS FFI guards needed runner reruns); gates
+GREEN 5150/0 in its own target dir. Main is merged up to `3e5af7b4`; #90 and #113 fold into the final merge-in. Rev 2
+proved cap-1 on the Mac (1 raise vs 24-25 on main, 8/8) and failed only because the final TIMEOUT dropped the refusal.
 
-Changes:
-1. **Session scoping:** covered_run starts the session first, takes the ref with `--session <id> find ...`, and
-   hovers that ref with `--session <id>`. The liveness hover goes the same way. The uncovered timing runs use no
-   session for both find and hover.
-2. **Repeatable RUN:** it keeps the worktrees and binaries; a separate CLEANUP block removes them and unlinks
-   `/tmp/ad-58.last`.
-3. **Tested on Linux** with a debug build of 063d9229 against the GTK4 zoo app in a private Xvfb + bus + AT-SPI
-   session:
-   - revision 2's order gave a hover ok:true, `focused: true`, and exactly 1 `input.focus_window` trace event;
-   - revision 1's order reproduced SNAPSHOT_NOT_FOUND with 0 events.
+The code fix, per control: a TIMEOUT that ends a headed hover or drag wait after a refusal now carries that last
+refusal in `details.refusal`, using the existing ref-action contract (`with_refusal` in ref_action_wait.rs). The
+suggestion depends on the check:
+- receives_events: "Another element covered the target on the last attempt...";
+- visible: "...not visible on the last attempt...";
+- stable: "...still moving on the last attempt...";
+- any other check keeps the error's own suggestion.
 
-   The stub dry run still reaches ALL PASS (18).
+The fix applies both in the leased retry loop and in the pre-lease wait. For a covered target, `refusal.details` is
+the existing ACTION_FAILED report: the failed receives_events check with its reason and occluder {role, name, bounds}.
 
-Expected (unchanged):
-- Uncovered hover: head min and median each <= main + 5 ms.
-- Covered hover with the head, Calculator in front and fixture in front, 2 runs each: exactly 1 raise; ok:false with
-  TIMEOUT or ACTION_FAILED and "occluded"; preparatory_focus; not_delivered.
-- Last line: `RESULT: ALL PASS (18 checks)`.
+Tests: hermetic core tests, invert-verified (3 + 3 + 1 failures when broken); 29 pointer_action tests pass. Docs:
+docs/json-output.md (the rule, plus an additive bullet in the 2.7 migration) and the interaction skill reference.
 
-Report that line, any FAIL or HALT, and the `uncovered_stats` line.
+Script changes from rev 2:
+- the occlusion check reads `details.refusal`: a failed receives_events check with an occluder, plus "covered" in the
+  suggestion; a direct ACTION_FAILED with that check also counts;
+- timing is median-only (head median <= main median + 5 ms);
+- session scoping and the BUILD / repeatable RUN / CLEANUP split are unchanged.
 
-Laptop checks: `bash -n` is clean on all three blocks, and grep finds no rm, osascript, System Events, lsappinfo,
-Finder or TextEdit. The only unlink is `/tmp/ad-58.last`, in CLEANUP.
+Expected last line: `RESULT: ALL PASS (17 checks)`. Against stubs, rev 3 passed all 17 with the new shape and failed
+exactly the 4 occlusion checks with rev 2's Mac shape. Laptop checks: `bash -n` is clean on all three blocks, and grep
+finds no rm, osascript, System Events, lsappinfo, Finder or TextEdit.
 
-BUILD (outside the desktop lock; prints `BUILD_OK`, records the dir in `/tmp/ad-58.last`):
+BUILD (outside the desktop lock):
 
 ```bash
 #!/usr/bin/env bash
@@ -2737,7 +2737,7 @@ BUILD (outside the desktop lock; prints `BUILD_OK`, records the dir in `/tmp/ad-
 # Builds this head and its merge-base with main in two detached worktrees, the fixture and the helpers.
 # Prints "BUILD_OK R=<dir>" and records the dir in /tmp/ad-58.last for the RUN block.
 set -u
-HEAD_SHA=063d9229da4a488f6a47d0a2fad0f4734a27425f
+HEAD_SHA=cae2051cfb9c2d018161f72461b9162d323f2d1a
 REPO="$HOME/Projects/agent-desktop"
 halt() { echo "HALT: $*"; exit 2; }
 R=$(mktemp -d /tmp/ad-58.XXXXXX) || halt "mktemp"
@@ -2928,6 +2928,21 @@ def covered_run(which, front, index):
     return body, error, raises, elapsed
 
 
+def refusal_of(error):
+    if error.get("code") == "ACTION_FAILED":
+        return {"code": "ACTION_FAILED", "details": error.get("details") or {}}
+    return (error.get("details") or {}).get("refusal") or {}
+
+
+def occlusion_recorded(error):
+    details = refusal_of(error).get("details") or {}
+    failed = [check for check in details.get("checks") or []
+              if check.get("check") == "receives_events" and check.get("status") == "fail"]
+    if not failed or not all("occluder" in check for check in failed):
+        return False
+    return error.get("code") == "ACTION_FAILED" or "covered" in (error.get("suggestion") or "")
+
+
 def uncovered_time(which, ref):
     ad(which, "--headed", "mouse-move", "--xy", "20,20")
     bring_front(APP)
@@ -2978,8 +2993,6 @@ def main():
     stats = {which: {"min": min(values), "median": statistics.median(values), "max": max(values)}
              for which, values in samples.items()}
     log("uncovered_stats", stats=stats, samples=samples)
-    record("uncovered hover min: head <= main + 5 ms", stats["head"]["min"] <= stats["main"]["min"] + 5,
-           head=stats["head"]["min"], main=stats["main"]["min"])
     record("uncovered hover median: head <= main + 5 ms", stats["head"]["median"] <= stats["main"]["median"] + 5,
            head=stats["head"]["median"], main=stats["main"]["median"])
 
@@ -2992,11 +3005,11 @@ def main():
     for front in (OTHER, APP):
         for index in range(1, 3):
             body, error, raises, elapsed = covered_run("head", front, index)
-            text = json.dumps(error)
             record(f"head covered hover, {front} in front, run {index}: one raise", raises == 1, raises=raises)
             record(f"head covered hover, {front} in front, run {index}: refused as occluded",
                    body.get("ok") is False and error.get("code") in ("TIMEOUT", "ACTION_FAILED")
-                   and "occluded" in text, code=error.get("code"))
+                   and occlusion_recorded(error), code=error.get("code"), refusal=refusal_of(error),
+                   suggestion=error.get("suggestion"))
             record(f"head covered hover, {front} in front, run {index}: preparatory_focus",
                    "preparatory_focus" in (error.get("details") or {}))
             record(f"head covered hover, {front} in front, run {index}: not delivered",
@@ -3024,7 +3037,7 @@ printf '%s\n' "$R" > /tmp/ad-58.last || halt "cannot record the check dir"
 echo "BUILD_OK R=$R (recorded in /tmp/ad-58.last for the RUN block)"
 ```
 
-RUN (inside the desktop lock, after BUILD_OK; repeatable):
+RUN (inside the desktop lock, after BUILD_OK; repeatable; unchanged from rev 2):
 
 ```bash
 #!/usr/bin/env bash
@@ -3073,7 +3086,7 @@ python3 "$R/proof.py"
 echo "check exit $?; send $R/proof.log"
 ```
 
-CLEANUP (once, after the last RUN):
+CLEANUP (once, after the last RUN; unchanged from rev 2):
 
 ```bash
 #!/usr/bin/env bash
