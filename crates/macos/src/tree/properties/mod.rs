@@ -19,7 +19,6 @@ pub(crate) mod node_attribute_status;
 pub(crate) mod node_attrs;
 pub(crate) mod node_control_states;
 pub(crate) mod node_identifiers;
-pub(crate) mod node_scroll_attrs;
 pub(crate) mod node_semantic_states;
 pub(crate) mod readonly;
 #[cfg(target_os = "macos")]

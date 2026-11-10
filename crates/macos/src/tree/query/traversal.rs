@@ -165,7 +165,7 @@ impl LocatorTraversal {
                 viewport: crate::tree::element_bounds::clipped_viewport(
                     self.context.window_bounds,
                     read.attrs.role.as_deref().unwrap_or(""),
-                    clip_of(&read.attrs),
+                    self.clip_of(&element, &read.attrs),
                 ),
                 ancestors: self.arena.ancestor_path(),
             });
@@ -176,7 +176,7 @@ impl LocatorTraversal {
             self.context.window_bounds = crate::tree::element_bounds::clipped_viewport(
                 original_viewport,
                 read.attrs.role.as_deref().unwrap_or(""),
-                clip_of(&read.attrs),
+                self.clip_of(&element, &read.attrs),
             );
             let result =
                 self.visit_children(read.child_read, (child_logical_depth, raw_depth), path);
@@ -252,6 +252,19 @@ impl LocatorTraversal {
             .filter(|remaining| !remaining.is_zero())
     }
 
+    fn clip_of(
+        &self,
+        element: &AXElement,
+        attrs: &crate::tree::NodeAttrs,
+    ) -> Option<agent_desktop_core::Rect> {
+        crate::tree::element_bounds::clip_bounds(
+            element,
+            attrs.role.as_deref().unwrap_or(""),
+            attrs.bounds,
+            self.deadline,
+        )
+    }
+
     pub(super) fn note_deadline_exhausted(&mut self) {
         self.arena.stats.reads.health.deadline_exhausted += 1;
         self.arena.mark_incomplete();
@@ -288,14 +301,6 @@ fn boundary_label_elements(request: ObservationRequest, raw_depth: u8) -> usize 
     } else {
         0
     }
-}
-
-fn clip_of(attrs: &crate::tree::NodeAttrs) -> Option<agent_desktop_core::Rect> {
-    crate::tree::element_bounds::clip_from_attrs(
-        attrs.role.as_deref().unwrap_or(""),
-        attrs.bounds,
-        attrs.scroll.content_size,
-    )
 }
 
 #[cfg(test)]

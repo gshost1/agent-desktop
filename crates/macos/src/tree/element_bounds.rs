@@ -117,20 +117,6 @@ pub(crate) fn scroll_area_clip(bounds: Rect, content: Option<(f64, f64)>) -> Rec
     clip
 }
 
-/// The clip a `role` element applies, from its reported `bounds` and the
-/// `AXContentSize` already read with them.
-pub(crate) fn clip_from_attrs(
-    role: &str,
-    bounds: Option<Rect>,
-    content: Option<(f64, f64)>,
-) -> Option<Rect> {
-    let bounds = bounds?;
-    if role != "AXScrollArea" {
-        return Some(bounds);
-    }
-    Some(scroll_area_clip(bounds, content))
-}
-
 /// Whether `inner` lies wholly inside `outer`. A rectangle inside a scroll
 /// area's reported frame is clipped the same whatever its content size says,
 /// so the content size need not be read.

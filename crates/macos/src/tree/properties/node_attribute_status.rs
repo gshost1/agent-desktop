@@ -26,8 +26,7 @@ pub(crate) const SIZE: usize = 19;
 pub(crate) const VERTICAL_SCROLLBAR: usize = 20;
 pub(crate) const HORIZONTAL_SCROLLBAR: usize = 21;
 pub(crate) const SUBROLE: usize = 22;
-pub(crate) const CONTENT_SIZE: usize = 23;
-const READONLY_PROBE: usize = 24;
+const READONLY_PROBE: usize = 23;
 const ATTRIBUTE_COUNT: usize = 23;
 
 const ROLE_MASK: u32 = bit(ROLE) | bit(SUBROLE);
