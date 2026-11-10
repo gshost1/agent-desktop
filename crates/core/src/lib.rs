@@ -91,6 +91,7 @@ pub use notifications::notification_identity_check::verify_notification_identity
 pub use notifications::notification_info::NotificationInfo;
 pub use notifications::notification_seed::NotificationSeed;
 pub use refs::RefMap;
+pub use refs::capture_verdict::CaptureVerdict;
 pub use refs::ref_capabilities::RefCapabilities;
 pub use refs::ref_entry::RefEntry;
 pub use refs::ref_entry_identity::RefEntryIdentity;

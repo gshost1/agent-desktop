@@ -2,6 +2,20 @@
 
 Commands that change UI state. Run `agent-desktop <command> --help` for flags.
 
+## Command synopsis
+
+Each line is a runnable example. The comment after it is the command's full form, without the global flags such as `--lines`, `-w` and `--headed`. A test keeps each form in step with the command's flags.
+
+```
+agent-desktop press cmd+s --app "TextEdit"                   # COMBO [--ref REF | [--app NAME] [--window-id ID]] [--force]
+agent-desktop find --app "Finder" --role textfield --name "Name"   # [--app NAME] [--window-id ID] [--role R] [--name N] [--value V] [--text T] [--description D] [--native-id ID] [--state TOKEN[=BOOL]]... [--exact] [--root REF | --surface S] [--timeout-ms N] [--allow-partial] [--first | --last | --nth N | --limit N | --count]
+agent-desktop type @s8f3k2p9:e2 "hello"                      # REF (TEXT | --stdin) [--interval-ms N] [--timeout-ms N]
+agent-desktop select @s8f3k2p9:e4 "Option B"                 # REF VALUE [--timeout-ms N]
+agent-desktop set-value @s8f3k2p9:e2 "new value"             # REF (VALUE | --stdin) [--timeout-ms N]
+```
+
+`find --first`, `--last` and `--nth` return one `data.match`; without them the result is the `data.matches` array.
+
 ## Headless and headed
 
 `--headed` is global (`agent-desktop --headed click @s8f3k2p9:e5`) and applies to every `batch` entry. A headed action may focus the exact source window first, and a pointer action needs a verified target point.
@@ -44,8 +58,8 @@ Exit codes: `0` success, `1` structured error, `2` argument error. The `error` o
 |------|---------|----------|
 | `PERM_DENIED` | A required OS permission is missing, or `details.kind` is `state_directory_permission` | Read the platform skill; for the state directory, apply the suggested `chmod 700` |
 | `ELEMENT_NOT_FOUND` | Ref is absent, or the requested surface is absent | Read `details.kind` and `details.surface`; open an absent menu or refresh only after checking the UI |
-| `STALE_REF` | Ref no longer matches the live UI | Snapshot again, use the new ref. With `details.process_state: exited` the app is gone: `list-apps`, `launch` it if needed, then snapshot |
-| `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or it was not proven unique at capture | Act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
+| `STALE_REF` | Ref no longer matches the live UI, or no capture proved it (`identity_unproven`) | Snapshot again and use the new ref. With `details.process_state: exited` the app is gone: `list-apps`, `launch` it if needed, then snapshot. For `identity_unproven` raise `--timeout-ms` when `details.reason` is `capture_incomplete`, and use another selector or `--headed mouse-click --xy` when it is `capture_unknown` |
+| `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or its snapshot found an identical twin | A ref from a snapshot taken before version 2.7 may not be a twin: take a new snapshot first. Otherwise act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |
 | `SNAPSHOT_NOT_FOUND` | Snapshot id missing or expired | Snapshot again |
 | `APP_NOT_FOUND` | App not running | `launch` it |
 | `WINDOW_NOT_FOUND` | No matching window | Check the name, use `list-windows` |
