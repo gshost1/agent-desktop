@@ -18,8 +18,18 @@ New: `axattr.dylib` interposer counts every AX call per (function, attribute) an
 - [ ] D. #113 open (MERGE HOLD since 11:18Z): ref commands start the app's AX warm-up from the refmap pid before the TCC check; press --ref also warms the window server in the background.
   Medians: get −12 to −15 ms (5 apps), click −9 to −19 (Weather −3, settle-bound), press --ref −30 to −35 headless and headed (Calculator 159→126, Script Editor 161→131).
   Rejected: early keyboard-layout load before the preflight (stalls main 33 ms: window-server connection not yet open).
-- [ ] E. #101 follow-ups + #108 review follow-ups (live app-list tests tolerant; every_app closure JSON test; split workspace_apps.rs 397 / appkit_bridge.rs 390 first).
-- [ ] F. persistent-process sizing probe (measure only).
+- [ ] E. #114 open: #108 follow-ups (live app-list tests retry until the list is stable; JSON-driven every_app closure test; workspace_apps.rs / appkit_bridge.rs untouched, so no split needed).
+  #115 open: #101 follow-ups (batch asked once before the attribute fallback; read() error paths tested through an injected copy; child-limit test on real AXUIElements). Open: the `None => inspect_by_attribute` arm test needs app_menu.rs, which #112 changes: after #112 merges.
+- [x] F. Persistent-process sizing (measure only, main e9a42b7f0): one `batch` process runs 1 vs 11 entries; per request = (t11 - t1)/10. Process floor (`version`) 7.6 ms.
+  | App | get CLI / in-process | click CLI / in-process | list-windows CLI / in-process | snapshot -i CLI / in-process |
+  |---|---|---|---|---|
+  | Calculator | 40.3 / 1.7 | 56.5 / 7.1 | 68.9 / 23.2 | 95.9 / 38.1 |
+  | AgentDeskFixture | 45.1 / 2.3 | 86.5 / 35.1 | 71.5 / 23.1 | 159.7 / 110.5 |
+  | Script Editor | 41.1 / 0.9 | 243.7 / 138.7 | 69.9 / 23.1 | 95.7 / 39.6 |
+  | System Settings | 49.7 / 1.9 | 128.1 / 92.7 | 85.8 / 30.0 | 281.5 / 207.6 |
+  | Weather | 45.7 / 3.2 | (not idempotent) | 73.0 / 25.0 | 212.1 / 160.1 |
+  A persistent process saves 35-75 ms per command (process start, TCC, the app's first AX reply, window-server connection). Medians of 5 reps.
+  Found: in-process `list-windows` still costs 23-30 ms per call: inventory work, not process setup. Worth a profile next round.
 - [ ] G. close-app exit poll, launch settle polls, full-screen Space launch.
 
 ## Found
