@@ -17,7 +17,7 @@
 
 ### Documentation
 
-* Tell agents to walk a path the task names in one call: `find` each step by name, `click` it with `-w` naming the next step, and read at the end, with `jq -e` stopping the chain at the first miss. ([#PR](https://github.com/gshost1/agent-desktop/pull/PR))
+* Tell agents to take a path the task names, and the answer, in one call: `find` each step by name, `click` it with `-w` naming the next step, and end with a `grep`-filtered read, never `head`; `jq -e` stops the chain at the first miss. On the three macOS bench tasks (Opus 5.5, 8 runs per task per build, paired against main cce8fa1c) System Settings fell from 4 to 2 turns, 51.1K to 25.8K input tokens and 19.2 s to 12.4 s (medians); the summed medians went from 48.6 s to 43.2 s and 119.0K to 95.4K tokens, 24 of 24 passing on both. ([#PR](https://github.com/gshost1/agent-desktop/pull/PR))
 
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
