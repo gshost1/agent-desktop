@@ -521,3 +521,13 @@ Scope freeze 2026-11-10 ~17:35Z (George via control): 1.4 is the 19 PRs in the t
 - Web: find --text innermost-only matches. Not started, no branch. Next: build after the freeze. Breaking, so it ships in 2.7 or as an opt-in flag.
 - Web: 2.7 trims (auto_wait only when informative, drop batch limits/semantics). Not started, no branch. Next: build. Breaking, so 2.7 only, else 2.8.
 - Web: find --first -> matches. Not started, no branch. Next: after #118 lands. Breaking, 2.7 only.
+
+## Mac paused
+
+From 2026-11-10 18:36Z (George via control): no testing on the Mac until George himself says resume. That covers cargo test, E2E, benches, the perf compare, probes, Mac-check batches, dogfood, and any agent-desktop run against real apps. Laptop work and GitHub CI continue. A new Mac-check request goes into MAC-CHECKS.md, and its request line goes to control, which queues it and runs nothing.
+
+Queued Mac requests:
+- #34 SURFACE-3 rev 2 at head 670ebc04 (MAC-CHECKS.md). It was already waiting for George.
+- After 1.4, not yet written: #18 SURFACE-1, MAC-SE-1, DENSE-MENU-1, FULLSCREEN-LAUNCH-1.
+
+Needs no Mac check: laptop train #129 and #121. #58's rev 3 Mac PASS carries over, because its diff is unchanged. The other members and #121 are core, Linux or Windows code that macOS CI covers.
