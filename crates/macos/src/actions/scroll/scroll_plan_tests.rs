@@ -189,7 +189,7 @@ fn page_steps_that_overshoot_stop_instead_of_bouncing() {
 }
 
 #[test]
-fn partly_visible_target_is_revealed_once_the_area_has_moved() {
+fn partly_visible_target_keeps_scrolling_until_a_step_would_reverse() {
     let viewport = rect(0.0, 100.0, 400.0, 300.0);
     let clipped = rect(10.0, 390.0, 50.0, 20.0);
 
@@ -197,12 +197,21 @@ fn partly_visible_target_is_revealed_once_the_area_has_moved() {
         next_reveal_direction(clipped, viewport, BlockedDirections::default(), None),
         Some(Direction::Down)
     ));
-    assert!(
+    assert!(matches!(
         next_reveal_direction(
             clipped,
             viewport,
             BlockedDirections::default(),
             Some(&Direction::Down)
+        ),
+        Some(Direction::Down)
+    ));
+    assert!(
+        next_reveal_direction(
+            clipped,
+            viewport,
+            BlockedDirections::default(),
+            Some(&Direction::Up)
         )
         .is_none()
     );
