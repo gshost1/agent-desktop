@@ -128,7 +128,7 @@ An element gets a ref when either condition holds:
 - Its role is interactive: `button`, `cell`, `checkbox`, `colorwell`, `combobox`, `dockitem`, `incrementor`, `link`, `listbox`, `menubutton`, `menuitem`, `option`, `radiobutton`, `slider`, `switch`, `tab`, `textfield`, or `treeitem`.
 - It advertises a primary action. `scrollarea` (Scroll) and `disclosure` (Expand and Collapse) qualify this way, because `scroll`, `expand`, and `collapse` need a ref to target them. In the example above, the calculator's history pane is a `scrollarea` with a ref.
 
-`SetFocus`, `RightClick`, and `ScrollTo` do not count on their own. Web runtimes advertise them on nearly every node, so counting them would give every inert container a ref and overflow the [ref map size limit](#where-refs-are-stored). Static text and inert containers stay in the tree without a ref. `find` returns them as context matches with `"ref_id": null`.
+`SetFocus`, `RightClick`, and `ScrollTo` do not count on their own. Web runtimes advertise them on nearly every node, so counting them would give every inert container a ref and overflow the [ref map size limit](#where-refs-are-stored). Static text and inert containers stay in the tree without a ref. `find` returns them as context matches, without a `ref_id`.
 
 A container cut off by a skeleton can also receive a ref as a drill target. See [Find the drill target](/desktop/skeleton-and-drill-down#find-the-drill-target).
 
@@ -164,6 +164,8 @@ A command never reuses a live handle from the snapshot. Every command that takes
 6. A ref that was unique is counted again over the live window by role, native id, name and description. The count covers the whole window, which is the scope the capture proved the ref unique in. Exactly one match: the command acts on it. None: `STALE_REF`, `details.kind: saved_ref_absent`. Two or more: `AMBIGUOUS_TARGET`, `details.kind: saved_ref_ambiguous`. A field the live read could not answer leaves the count unproven, which returns `TIMEOUT` with `details.kind: resolution_identity_unknown` instead of a match.
 7. After `STALE_REF` or `AMBIGUOUS_TARGET`, take a fresh observation and use the new ref.
 
+On macOS, a ref without an address that was captured with `--surface focused` resolves only while the window it was captured from is still the app's focused window. After focus moves to another window, it fails with `STALE_REF`, `details.kind: focused_window_changed`, and nothing is sent, because a control with the same role and name in the other window belongs to another document. Focus the source window with `focus-window --window-id` and retry, or take a new snapshot.
+
 On macOS a ref carries the element's own address, so identical twins each keep their own ref. When the address could not be taken, macOS follows the rule below. Windows and Linux refs carry no address, so a ref that was not the only element matching its role and stable fields when it was captured is refused.
 
 The comparison is the identity fields and nothing else: role, native id, name, and description. Control values are volatile and never count. Bounds never count either, so a stored rectangle or a stored path cannot pick between two candidates. A ref that fails these checks is refused rather than guessed at.
@@ -194,6 +196,8 @@ An older snapshot stays on disk until it is pruned, and its refs keep resolving 
 ## Where refs are stored
 
 `RefStore` keeps one file per snapshot at `snapshots/<snapshot_id>/refmap.json` under the [state root](/desktop/configuration#state-root). Inside a [session](/desktop/sessions), the same layout sits under `sessions/<session_id>/`, and a lookup never searches another session's snapshots.
+
+Each ref map is written to a temporary file, synced and renamed into place, so another command, a killed process or a crashed system finds the old map or the new one whole. On macOS the sync is `fsync`, not a full drive-cache flush. A power loss before the drive empties its cache can lose the newest snapshot (`SNAPSHOT_NOT_FOUND`) or leave its ref map unreadable (`INTERNAL`). Take a new snapshot to recover.
 
 <table>
   <thead>

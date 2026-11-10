@@ -14,6 +14,10 @@ impl<P: PlatformAdapter> InputOps for WebChannelAdapter<P> {
         self.inner.keyboard_needs_window_activation()
     }
 
+    fn prepare_keyboard_input(&self) -> Result<(), AdapterError> {
+        self.inner.prepare_keyboard_input()
+    }
+
     fn mouse_event(
         &self,
         event: MouseEvent,
@@ -59,3 +63,7 @@ impl<P: PlatformAdapter> InputOps for WebChannelAdapter<P> {
         self.inner.set_clipboard_content(content, lease)
     }
 }
+
+#[cfg(test)]
+#[path = "input_ops_tests.rs"]
+mod tests;

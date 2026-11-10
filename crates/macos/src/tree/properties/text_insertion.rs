@@ -72,7 +72,7 @@ mod imp {
     ) -> Result<Option<Rect>, AdapterError> {
         let owner = match pid {
             Some(pid) => crate::tree::element_for_pid(pid),
-            None => AXElement(unsafe { accessibility_sys::AXUIElementCreateSystemWide() }),
+            None => crate::tree::system_wide::element(),
         };
         let focused = super::super::attributes::copy_element_attr_result(
             &owner,

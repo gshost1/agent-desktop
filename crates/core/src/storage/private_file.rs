@@ -126,7 +126,7 @@ fn write_atomic_with(
     ensure_parent(parent)?;
     validate_destination(path)?;
     let (temporary, mut file) = create_temporary(path)?;
-    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    let written = file.write_all(bytes).and_then(|()| sync_to_device(&file));
     drop(file);
     let result = written.and_then(|()| {
         #[cfg(test)]
@@ -242,7 +242,7 @@ fn sync_directory(path: &Path) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
     }
-    options.open(path)?.sync_all()
+    sync_to_device(&options.open(path)?)
 }
 
 #[cfg(windows)]
@@ -252,7 +252,30 @@ fn sync_user_directory(_path: &Path) -> std::io::Result<()> {
 
 #[cfg(not(windows))]
 fn sync_user_directory(path: &Path) -> std::io::Result<()> {
-    OpenOptions::new().read(true).open(path)?.sync_all()
+    sync_to_device(&OpenOptions::new().read(true).open(path)?)
+}
+
+/// `fsync(2)`, not the `F_FULLFSYNC` that `File::sync_all` issues on macOS, which flushes the whole
+/// drive cache and cost 6 ms per replaced file. The data still reaches the drive before the rename,
+/// so a killed process or a kernel panic leaves the old or the new file whole. A power loss before
+/// the drive empties its cache can lose the newest write or leave it unreadable.
+#[cfg(target_os = "macos")]
+fn sync_to_device(file: &File) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+    loop {
+        if unsafe { libc::fsync(file.as_raw_fd()) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn sync_to_device(file: &File) -> std::io::Result<()> {
+    file.sync_all()
 }
 
 fn replace_atomic(source: &Path, destination: &Path) -> std::io::Result<()> {

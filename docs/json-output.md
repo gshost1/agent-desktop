@@ -121,7 +121,7 @@ Each line, in order:
 | The qualified ref (`@s8f3k2p9:e1`) and a space | The node has a ref |
 | The role | Always |
 | The quoted name | The node has a name; an empty name prints `""` |
-| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field |
+| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field; `desc=` only when the description prints differently from the name (bidirectional marks and surrounding whitespace ignored) |
 | `bounds=x,y,WxH` | The tree carries bounds (`--include-bounds`) |
 | `[state, state]` | The node has states |
 | `children_count=N` | A skeleton cut container |
@@ -365,6 +365,7 @@ Version 2.7 changes the error code of ref refusals on Windows and Linux, and on 
 - `capture_unknown` carries `details.retryable: false` and no `recovery`, because a field that cannot be read may stay unreadable in every snapshot. Target the element through a different selector, or use an explicit `--headed` coordinate click where headed pointer input is available.
 - Both reasons keep the disposition `not_delivered` with `retry: "safe"`, because nothing is sent.
 - `AMBIGUOUS_TARGET` with `identity_not_unique` now means the capture saw two or more elements matching the ref, in a whole or a partial read. It can still come from a refmap written before 2.7, which recorded only that a ref was not unique and so reads every unproven ref as a twin; take a new snapshot to learn which case it is.
+- `find` match objects, and the `candidates` of an `AMBIGUOUS_TARGET` from a locator, omit what they do not have: a context match has no `ref_id`, an unnamed one no `name`, and `value`, `states` and `path` are left out when absent or empty. 2.6 printed `"ref_id": null`, `"value": null`, `"states": []`, `"path": []` and `"name": ""`. Read a missing key as that value.
 - Refmaps written before 2.7 still load. Every refmap entry now carries `capture` (`"unique"`, `"ambiguous"`, `"incomplete"` or `"unknown"`); an entry without it is read as an older refmap through its `unique_at_capture` flag. A proven entry also keeps `unique_at_capture: true`, so a 2.6 binary still resolves the refs a 2.7 snapshot proved and refuses the rest as `identity_not_unique`. A `capture` name this version does not know reads as `unknown`, and a `unique_at_capture` that contradicts `capture` makes the entry `unknown`; neither fails the refmap.
 
 ## Web channel
@@ -428,6 +429,8 @@ Errors carry `details.kind`:
 Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
 
 ## Find result shape
+
+A match object leaves out what it does not have, like every other object in the contract: a context match has no `ref_id`, and `value`, `states` and `path` are omitted when absent or empty (the window root has no `path`). `role` and `interactive` are always present. Earlier builds printed `"ref_id": null`, `"value": null`, `"states": []` and `"path": []`; a reader that indexed those keys must treat a missing key as that value. `tests/fixtures/find-matches.json` pins the shape.
 
 `find` match objects report the element's actual accessibility `name`. Elements
 without an accessible name omit `name` entirely; their content stays in `value`.
@@ -554,6 +557,8 @@ Every ref is re-identified from its stored entry or refused, and `details.kind` 
 | `saved_ref_ambiguous` | `AMBIGUOUS_TARGET` | An element identical to the captured one appeared, so two or more live elements match the stored role and stable fields. A fresh snapshot refuses both as twins; act on a control that is unique in the window. |
 | `identity_not_unique` | `AMBIGUOUS_TARGET` | The capture counted two or more elements matching the ref's role and stable fields, so nothing is searched. It is reached on Windows, on Linux, and on macOS when the element yields no address, and for every unproven ref of a refmap written before 2.7, which a new snapshot re-judges. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
 | `identity_unproven` | `STALE_REF` | No capture proved the ref, so nothing is searched and no twin was seen. Both reasons carry `details.retryable: false` and no `recovery`. `details.reason` is `capture_incomplete` when the capture was not a complete read of the whole window (the snapshot reports `data.identity_unproven`) or no longer holds the path a drill recorded: retake the snapshot with a larger `--timeout-ms`. It is `capture_unknown` when an element in the window left a field the ref records unread, the ref's fields match one other element and not its own, or no capture judged the ref: a new snapshot may read the same way, so use a different selector or an explicit `--headed` coordinate click. A twin seen in a partial read is `identity_not_unique`, not this kind. |
+
+On macOS, the `focused` surface of a named window is that window's focused surface only while it is the application's focused window. A ref captured with `--surface focused` that carries no element address therefore resolves only while its source window is still focused; a ref with an address resolves to that exact element. Once focus has moved to another window, the ref returns `STALE_REF` with `details.kind: "focused_window_changed"`, `details.source_window_id`, `details.focused_window_id` when the focused window's number could be read, `details.complete: true` and `details.retryable: false`, and nothing is sent. A focused window whose number reads as absent, or no focused window, counts as another window; a read that fails returns its own error. `snapshot --surface focused` fails the same way when the window it reads is not the focused one, as with `--window-id` of an unfocused window or when focus moves during the read. Focus the source window with `focus-window --window-id` and retry, or take a new snapshot.
 
 Two outcomes are retryable. `saved_ref_landing_moved` carries `STALE_REF` with `details.complete: false` and `details.retryable: true`: the whole-window count found the element exactly once, but a different element sat at its path when the resolver reached it, as when a list re-sorts during the read. The element was there and only the descent disagreed, so this is not `saved_ref_absent`; the next attempt counts again. A ref action retries it at most twice in a row and answers the third with `saved_ref_absent`. A landing with no count just before it, such as the C find entry point's first-match landing, reports `saved_ref_absent` instead.
 
