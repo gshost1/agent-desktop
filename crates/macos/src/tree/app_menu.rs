@@ -200,10 +200,35 @@ fn find_menu_descendant(
     deadline: Instant,
 ) -> Result<Option<(String, AXElement)>, AdapterError> {
     let names = super::menu_search_node::attribute_names();
-    find_menu_descendant_with(root, source, deadline, |element| {
-        let node = super::menu_search_node::read(element, &names, deadline)?;
-        Ok((node.is_menu, node.children))
-    })
+    find_menu_descendant_with(
+        root,
+        source,
+        deadline,
+        |element| match super::menu_search_node::read(element, &names, deadline)? {
+            Some(node) => Ok((node.is_menu, node.children)),
+            None => inspect_by_attribute(element, deadline),
+        },
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn inspect_by_attribute(
+    element: &AXElement,
+    deadline: Instant,
+) -> Result<(bool, Vec<AXElement>), AdapterError> {
+    let role = surface_read::string(element, "AXRole", deadline)?;
+    if role.as_deref() == Some("AXMenuBar") {
+        return Ok((false, Vec::new()));
+    }
+    if role.as_deref() == Some("AXMenu")
+        && surface_read::boolean(element, "AXVisible", deadline)? != Some(false)
+    {
+        return Ok((true, Vec::new()));
+    }
+    Ok((
+        false,
+        surface_read::elements(element, "AXChildren", deadline)?,
+    ))
 }
 
 fn find_menu_descendant_with<T>(

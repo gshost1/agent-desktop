@@ -1,29 +1,35 @@
 //! One element of the open-menu search, read in one accessibility round trip.
 //!
 //! The search walks the whole application looking for a displayed menu, and
-//! it needs only an element's role, its visibility and its children. Read one
+//! it needs an element's role and children, and a menu's visibility. Read one
 //! attribute at a time, that cost a role read, a child count, a child page and
 //! a second count per element: about 700 to 950 round trips after one click
-//! in a SwiftUI application. One batched read answers all three. The
+//! in a SwiftUI application. One batched read answers role and children. The
 //! application builds the child list inside that single answer, so the list
 //! cannot change between a count and a read the way it can across separate
-//! calls, and no second count is needed to prove it.
+//! calls, and no second count is needed to prove it. Visibility stays a
+//! separate read made only for a menu: some applications compute it slowly,
+//! and asking every element for it cost more than the round trips it saved.
+//!
+//! The batch is only a faster way to get a clean answer. When any value the
+//! search needs comes back as an error, in an unexpected shape or as a child
+//! list longer than one observation reads, the element is read again one
+//! attribute at a time, so busy, vanished and oversized elements fail or are
+//! skipped exactly as they were before.
 
-use agent_desktop_core::{AdapterError, ErrorCode};
+use agent_desktop_core::AdapterError;
 use core_foundation::{
     array::CFArray,
     base::{CFType, TCFType},
-    boolean::CFBoolean,
     string::CFString,
 };
 use std::time::Instant;
 
 use super::AXElement;
 
-const ATTRIBUTES: [&str; 3] = ["AXRole", "AXVisible", "AXChildren"];
+const ATTRIBUTES: [&str; 2] = ["AXRole", "AXChildren"];
 const ROLE: usize = 0;
-const VISIBLE: usize = 1;
-const CHILDREN: usize = 2;
+const CHILDREN: usize = 1;
 
 /// What the search learns from one element: whether it is a displayed menu,
 /// and the children to search next.
@@ -32,19 +38,33 @@ pub(crate) struct MenuSearchNode {
     pub(crate) children: Vec<AXElement>,
 }
 
+/// A clean batch answer: the role, and the child list unless it needs the
+/// paged read to judge it.
+struct Batch {
+    role: Option<String>,
+    children: Option<Vec<AXElement>>,
+}
+
+/// One answer slot of the batch.
+enum Slot {
+    Value(CFType),
+    Absent,
+    Unclear,
+}
+
 pub(crate) fn attribute_names() -> CFArray<CFString> {
     CFArray::from_CFTypes(&ATTRIBUTES.map(CFString::new))
 }
 
-/// Reads one element. A menu bar is not searched below, a menu that does not
-/// say it is hidden is the answer, and anything else hands back its children.
-/// A busy application, an element that went away and a child list longer than
-/// one observation reads fail the way the attribute-at-a-time reads failed.
+/// Reads one element in one round trip. A menu bar is not searched below, a
+/// menu that does not say it is hidden is the answer, and anything else hands
+/// back its children. `None` means the batch gave no clean answer and the
+/// caller reads the element one attribute at a time.
 pub(crate) fn read(
     element: &AXElement,
     names: &CFArray<CFString>,
     deadline: Instant,
-) -> Result<MenuSearchNode, AdapterError> {
+) -> Result<Option<MenuSearchNode>, AdapterError> {
     super::surface_read::ensure_before_deadline(deadline)?;
     let (error, values) = super::read_recovery::read_owned(deadline, || {
         super::properties::ax_ipc::copy_multiple_attribute_values(
@@ -55,51 +75,48 @@ pub(crate) fn read(
     });
     let values = super::properties::cf_type::created_cf_array(values);
     if error == accessibility_sys::kAXErrorAPIDisabled {
-        return Err(super::surface_read::map_error("AXChildren", error));
+        return Err(super::surface_read::map_error("AXRole", error));
     }
     super::surface_read::ensure_before_deadline(deadline)?;
-    answer(error, values)
-}
-
-/// An element that answers the whole batch with an absence code, as AppKit's
-/// synthetic elements do, has no role and no children to search, the same
-/// answer three separate reads gave it.
-fn answer(error: i32, values: Option<CFArray<CFType>>) -> Result<MenuSearchNode, AdapterError> {
-    if super::properties::ax_absence::is_absent_attribute_error(error) {
-        return Ok(leaf(false));
-    }
     if error != accessibility_sys::kAXErrorSuccess {
-        return Err(super::surface_read::map_error("AXChildren", error));
+        return Ok(None);
     }
-    let values = values
+    let Some(batch) = values
         .filter(|values| values.len() as usize == ATTRIBUTES.len())
-        .ok_or_else(|| {
-            super::surface_read::map_error("AXChildren", accessibility_sys::kAXErrorFailure)
-        })?;
-    let slots: Vec<Option<CFType>> = values
-        .iter()
-        .map(|item| present_slot(&item))
-        .collect::<Result<_, _>>()?;
-    decode(&slots)
+        .and_then(|values| decode(&values.iter().map(|item| item.clone()).collect::<Vec<_>>()))
+    else {
+        return Ok(None);
+    };
+    let displayed_menu = batch.role.as_deref() == Some("AXMenu")
+        && super::surface_read::boolean(element, "AXVisible", deadline)? != Some(false);
+    Ok(search_node(batch, displayed_menu))
 }
 
-fn decode(slots: &[Option<CFType>]) -> Result<MenuSearchNode, AdapterError> {
-    let slot = |index: usize| slots.get(index).and_then(Option::as_ref);
-    let role = slot(ROLE).and_then(|item| item.downcast::<CFString>().map(|role| role.to_string()));
-    let visible = slot(VISIBLE)
-        .and_then(|item| item.downcast::<CFBoolean>())
-        .map(bool::from);
-    match role.as_deref() {
-        Some("AXMenuBar") => Ok(leaf(false)),
-        Some("AXMenu") if visible != Some(false) => Ok(leaf(true)),
-        _ => Ok(MenuSearchNode {
-            is_menu: false,
-            children: slot(CHILDREN)
-                .map(children)
-                .transpose()?
-                .unwrap_or_default(),
-        }),
+fn search_node(batch: Batch, displayed_menu: bool) -> Option<MenuSearchNode> {
+    if batch.role.as_deref() == Some("AXMenuBar") {
+        return Some(leaf(false));
     }
+    if displayed_menu {
+        return Some(leaf(true));
+    }
+    batch.children.map(|children| MenuSearchNode {
+        is_menu: false,
+        children,
+    })
+}
+
+fn decode(values: &[CFType]) -> Option<Batch> {
+    let role = match slot(values.get(ROLE)?, is_absent_property_error) {
+        Slot::Value(item) => Some(item.downcast::<CFString>()?.to_string()),
+        Slot::Absent => None,
+        Slot::Unclear => return None,
+    };
+    let children = match slot(values.get(CHILDREN)?, is_absent_children_error) {
+        Slot::Value(item) => children(&item),
+        Slot::Absent => Some(Vec::new()),
+        Slot::Unclear => None,
+    };
+    Some(Batch { role, children })
 }
 
 fn leaf(is_menu: bool) -> MenuSearchNode {
@@ -109,60 +126,42 @@ fn leaf(is_menu: bool) -> MenuSearchNode {
     }
 }
 
-fn children(item: &CFType) -> Result<Vec<AXElement>, AdapterError> {
+/// A clean child list: an array of elements no longer than one observation
+/// reads. Anything else is left to the paged read, which reports it.
+fn children(item: &CFType) -> Option<Vec<AXElement>> {
     if item.type_of() != unsafe { core_foundation_sys::array::CFArrayGetTypeID() } {
-        return Ok(Vec::new());
+        return None;
     }
     let array = unsafe { CFArray::<CFType>::wrap_under_get_rule(item.as_CFTypeRef() as _) };
     let limit = agent_desktop_core::ObservationBudget::default().max_children_per_node;
-    let total = array.len() as usize;
-    if total > limit {
-        return Err(incomplete_children(total, limit));
+    if array.len() as usize > limit {
+        return None;
     }
-    let elements: Vec<AXElement> = array
+    array
         .iter()
-        .filter_map(|value| super::properties::ax_value::retained_ax_element(&value))
-        .collect();
-    if elements.len() != total {
-        return Err(super::surface_read::map_error(
-            "AXChildren",
-            accessibility_sys::kAXErrorFailure,
-        ));
-    }
-    Ok(elements)
+        .map(|value| super::properties::ax_value::retained_ax_element(&value))
+        .collect()
 }
 
-fn present_slot(item: &CFType) -> Result<Option<CFType>, AdapterError> {
+fn slot(item: &CFType, is_absent: fn(i32) -> bool) -> Slot {
     use super::properties::node_attribute_decode::{is_null, slot_error};
     if is_null(item) {
-        return Ok(None);
+        return Slot::Absent;
     }
     match slot_error(item) {
-        Some(error)
-            if error == accessibility_sys::kAXErrorCannotComplete
-                || error == accessibility_sys::kAXErrorInvalidUIElement =>
-        {
-            Err(super::surface_read::map_error("AXChildren", error))
-        }
-        Some(_) => Ok(None),
-        None => Ok(Some(item.clone())),
+        Some(error) if is_absent(error) => Slot::Absent,
+        Some(_) => Slot::Unclear,
+        None => Slot::Value(item.clone()),
     }
 }
 
-fn incomplete_children(total: usize, limit: usize) -> AdapterError {
-    AdapterError::new(
-        ErrorCode::AppUnresponsive,
-        "Accessibility surface read was incomplete for AXChildren",
-    )
-    .with_details(serde_json::json!({
-        "kind": "surface_array_incomplete",
-        "retryable": false,
-        "attribute": "AXChildren",
-        "complete": false,
-        "total_count": total,
-        "loaded_count": limit,
-        "count_changed": false,
-    }))
+fn is_absent_property_error(error: i32) -> bool {
+    super::properties::ax_absence::is_absent_attribute_error(error)
+}
+
+fn is_absent_children_error(error: i32) -> bool {
+    error == accessibility_sys::kAXErrorAttributeUnsupported
+        || error == accessibility_sys::kAXErrorNoValue
 }
 
 #[cfg(test)]
