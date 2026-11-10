@@ -81,11 +81,14 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   timeout, for an attach as well as a new launch. If no window is proven by then,
   `launch` answers `ACTION_NOT_SUPPORTED` with that kind: `not_delivered` when it
   spawned nothing, `delivered_unverified` after the spawn.
-- If the spawned process never registers on the accessibility bus, owner lookup
-  can consume the full timeout, and the result then has no `window`. A spawned
-  process still running outside the registry can be returned without a window,
-  and may be a wrapper. When no window appears the result can be `ok` with no
-  `window`.
+- A spawned process that is still running but has not joined the accessibility
+  bus after 5 s (never past `--timeout`) ends the owner wait: `launch` answers
+  `ok: true` with no `window`, the spawned pid, and a `data.suggestion` that
+  starts `The process is running but did not join the accessibility bus`. That
+  pid may be a wrapper of the application. Only a registry read that answered
+  counts toward the 5 s. An app that is slow to join the bus is still found
+  with `--activate`, which waits for it until `--timeout`. When no window
+  appears the result can be `ok` with no `window`.
 - A launcher that exits with no owner is `ACTION_FAILED`,
   `details.kind: exited` (`crashed` after a signal), `delivered_unverified`. An
   owner that exits before its window appears is `ACTION_FAILED`,
