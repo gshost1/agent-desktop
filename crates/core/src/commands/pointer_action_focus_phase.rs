@@ -1,9 +1,10 @@
 use super::{focus_point_under_lease, is_retryable_point_error, point_error_report};
 use crate::{
-    AppError, actionability::pointer_timeout::point_actionability_timeout,
+    AdapterError, AppError, ErrorCode, actionability::pointer_timeout::point_actionability_timeout,
     adapter::PlatformAdapter, commands::point_resolve::PointResolveArgs, context::CommandContext,
-    refs::ref_resolve_deadline::POLL_INTERVAL,
+    ref_action::ref_action_wait::with_refusal, refs::ref_resolve_deadline::POLL_INTERVAL,
 };
+use serde_json::Value;
 
 /// The headed focus of one pointer command, shared by its pre-lease wait and
 /// its leased attempts. The command raises its target's window at most once:
@@ -68,24 +69,82 @@ pub(crate) fn retry_leased_point_phase<T>(
     mut attempt: impl FnMut(&mut CommandFocus) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
     let auto_wait = timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
+    let mut refusal: Option<AdapterError> = None;
     loop {
         let error = match attempt(focus) {
             Ok(value) => return Ok(value),
             Err(error) => error,
         };
-        if focus.failed || !auto_wait || !is_retryable_point_error(&error) {
+        if focus.failed || !auto_wait {
             return Err(error);
+        }
+        if !is_retryable_point_error(&error) {
+            return Err(with_last_refusal(error, refusal.as_ref()));
         }
         let remaining = deadline.remaining();
         if remaining.is_zero() {
-            return Err(point_actionability_timeout(Some(point_error_report(
-                &error,
-            ))));
+            let timeout = point_actionability_timeout(Some(point_error_report(&error)));
+            return Err(with_last_refusal(
+                timeout,
+                Some(&error.into_adapter_error()),
+            ));
         }
+        refusal = Some(error.into_adapter_error());
         std::thread::sleep(POLL_INTERVAL.min(remaining));
     }
+}
+
+/// Carries the refusal that sent a pointer wait's last attempt back to the
+/// wait on the `TIMEOUT` that ends it, as `details.refusal`, the way a ref
+/// action's wait does, and replaces the generic suggestion with one for the
+/// check that refused. Any other error is returned unchanged.
+pub(crate) fn with_last_refusal(error: AppError, refusal: Option<&AdapterError>) -> AppError {
+    let Some(refusal) = refusal else {
+        return error;
+    };
+    if error.code() != ErrorCode::Timeout.as_str() {
+        return error;
+    }
+    let error = with_refusal(error.into_adapter_error(), Some(refusal));
+    AppError::Adapter(match refusal_suggestion(refusal) {
+        Some(suggestion) => error.with_suggestion(suggestion),
+        None => error,
+    })
+}
+
+fn refusal_suggestion(refusal: &AdapterError) -> Option<&'static str> {
+    let check = refused_check(refusal.details.as_ref()?)?;
+    match check {
+        "receives_events" => Some(
+            "Another element covered the target on the last attempt. Bring the target's window to the front or move what covers it, then retry.",
+        ),
+        "visible" => Some(
+            "The target was not visible on the last attempt. Scroll it into view or restore its window, then retry.",
+        ),
+        "stable" => Some(
+            "The target was still moving on the last attempt. Wait for it to settle, then retry.",
+        ),
+        _ => None,
+    }
+}
+
+fn refused_check(details: &Value) -> Option<&str> {
+    if let Some(check) = details.get("check").and_then(Value::as_str) {
+        return Some(check);
+    }
+    details
+        .get("checks")?
+        .as_array()?
+        .iter()
+        .find(|check| check.get("status").and_then(Value::as_str) == Some("fail"))?
+        .get("check")?
+        .as_str()
 }
 
 #[cfg(test)]
 #[path = "pointer_action_focus_phase_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pointer_action_focus_phase_refusal_tests.rs"]
+mod refusal_tests;

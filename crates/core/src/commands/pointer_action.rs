@@ -187,10 +187,15 @@ pub(crate) fn wait_for_point_with_focus<'a>(
     let entry = load_ref_entry(ref_id, context)?;
     let mut stability = Some(None);
     let mut last_report = None;
+    let mut last_refusal: Option<crate::AdapterError> = None;
     let mut last_scrolled_bounds_hash = None;
     loop {
         if deadline.is_expired() {
-            return Err(point_actionability_timeout(last_report));
+            let timeout = point_actionability_timeout(last_report);
+            return Err(focus_phase::with_last_refusal(
+                timeout,
+                last_refusal.as_ref(),
+            ));
         }
         match resolve_point_from_entry(
             EntryPointResolve {
@@ -212,15 +217,18 @@ pub(crate) fn wait_for_point_with_focus<'a>(
             Err(err) => {
                 let remaining = deadline.remaining();
                 if !is_retryable_point_error(&err) {
-                    return Err(err);
+                    return Err(focus_phase::with_last_refusal(err, last_refusal.as_ref()));
                 }
                 last_report = Some(point_error_report(&err));
-                if remaining.is_zero() {
-                    return Err(point_actionability_timeout(last_report));
-                }
                 let observed = point_observed_bounds_hash(&err);
-                if point_requires_scroll(&err)
-                    && !(observed.is_some() && observed == last_scrolled_bounds_hash)
+                let requires_scroll = point_requires_scroll(&err);
+                let refusal = err.into_adapter_error();
+                if remaining.is_zero() {
+                    let timeout = point_actionability_timeout(last_report);
+                    return Err(focus_phase::with_last_refusal(timeout, Some(&refusal)));
+                }
+                last_refusal = Some(refusal);
+                if requires_scroll && !(observed.is_some() && observed == last_scrolled_bounds_hash)
                 {
                     let lease = adapter.acquire_interaction_lease(deadline)?;
                     focus.run(args, &lease, adapter, context)?;

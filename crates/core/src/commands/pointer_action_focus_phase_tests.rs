@@ -237,6 +237,17 @@ fn a_covered_hover_raises_its_window_once_and_times_out_with_preparatory_focus()
     assert!(adapter.leases() >= 2, "the wait polled only once");
     assert_eq!(error.code(), "TIMEOUT");
     assert!(moved_focus(&error));
+    let AppError::Adapter(error) = error else {
+        panic!("expected an adapter error");
+    };
+    let refusal = &error.details.as_ref().unwrap()["refusal"];
+    assert!(refusal.to_string().contains("receives_events"));
+    assert!(
+        error
+            .suggestion
+            .unwrap_or_default()
+            .contains("covered the target")
+    );
 }
 
 #[test]
