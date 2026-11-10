@@ -233,7 +233,7 @@ fn entry() -> RefEntry {
             value: None,
             description: None,
             native_id: None,
-            unique_at_capture: true,
+            capture: crate::CaptureVerdict::Unique,
         },
         geometry: crate::RefGeometry {
             bounds_space: None,

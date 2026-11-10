@@ -8,13 +8,15 @@ use crate::refs::ref_alloc_options::RefAllocOptions;
 use crate::refs::ref_alloc_scope::RefAllocScope;
 use crate::refs::ref_alloc_source::RefAllocSource;
 use crate::refs::ref_capture_proof::CaptureProof;
-use crate::{AccessibilityNode, ElementIdentifier, IdentifierKind, RefMap, WindowInfo};
+use crate::{
+    AccessibilityNode, CaptureVerdict, ElementIdentifier, IdentifierKind, RefMap, WindowInfo,
+};
 
-fn named(role: &str, name: &str) -> AccessibilityNode {
+pub(super) fn named(role: &str, name: &str) -> AccessibilityNode {
     crate::adapter::minimal_accessibility_node(role, name)
 }
 
-fn window(children: Vec<AccessibilityNode>) -> AccessibilityNode {
+pub(super) fn window(children: Vec<AccessibilityNode>) -> AccessibilityNode {
     let mut root = named("window", "Fixture");
     root.children = children;
     root
@@ -57,17 +59,24 @@ fn config<'a>(capture: &'a CaptureProof<'a>) -> RefAllocConfig<'a> {
     }
 }
 
-fn flags(root: AccessibilityNode, observed: &ObservedTree) -> Vec<bool> {
+pub(super) fn verdicts(root: AccessibilityNode, observed: &ObservedTree) -> Vec<CaptureVerdict> {
     let proof = CaptureProof::new(observed);
     let mut refmap = RefMap::new();
     allocate_refs(root, &mut refmap, &config(&proof)).unwrap();
     (1..=refmap.len())
         .filter_map(|index| refmap.get(&format!("@e{index}")))
-        .map(|entry| entry.identity.unique_at_capture)
+        .map(|entry| entry.identity.capture)
         .collect()
 }
 
-fn observed_from(root: AccessibilityNode) -> ObservedTree {
+fn flags(root: AccessibilityNode, observed: &ObservedTree) -> Vec<bool> {
+    verdicts(root, observed)
+        .into_iter()
+        .map(CaptureVerdict::is_unique)
+        .collect()
+}
+
+pub(super) fn observed_from(root: AccessibilityNode) -> ObservedTree {
     let window = fixture_window();
     crate::adapter::observed_tree(&ObservationRoot::Window(&window), root)
         .expect("the fixture observes")
@@ -192,7 +201,7 @@ fn find_marks_only_a_whole_window_match_found_once() {
                 &observed.source,
                 &crate::locator::LocatorQuery::default(),
             );
-            proof.proves_node(&entry, *index)
+            proof.verdict(&entry, *index).is_unique()
         })
         .filter_map(|(_, node)| node.evidence.name.meaningful_string())
         .collect();
@@ -288,7 +297,7 @@ fn a_published_entry_is_proven_by_its_own_predicate_not_the_preferred_identifier
             Some("shared")
         );
         assert!(
-            !matched.entry.identity.unique_at_capture,
+            !matched.entry.identity.capture.is_unique(),
             "a predicate both twins carry was not found once"
         );
     }
@@ -300,7 +309,7 @@ fn a_published_entry_is_proven_by_its_own_predicate_not_the_preferred_identifier
     )
     .expect("the observation evaluates");
     assert_eq!(named.matches.len(), 1);
-    assert!(named.matches[0].entry.identity.unique_at_capture);
+    assert!(named.matches[0].entry.identity.capture.is_unique());
 }
 
 #[test]

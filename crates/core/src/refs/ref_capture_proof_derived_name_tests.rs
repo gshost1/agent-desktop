@@ -106,9 +106,10 @@ fn a_derived_name_is_displayed_and_located_but_never_recorded_as_identity() {
             entry.identity.name, None,
             "a derived name is never identity"
         );
-        assert!(
-            !entry.identity.unique_at_capture,
-            "two rows that differ only by a control value are not unique by identity"
+        assert_eq!(
+            entry.identity.capture,
+            crate::CaptureVerdict::Ambiguous,
+            "two rows that differ only by a control value are twins by identity"
         );
     }
 }
@@ -135,6 +136,9 @@ fn the_capture_proof_never_sees_a_derived_name() {
             0,
             "the predicate the proof counts carries no name for a derived-name row"
         );
-        assert!(!proof.proves_node(entry, index + 1));
+        assert_eq!(
+            proof.verdict(entry, index + 1),
+            crate::CaptureVerdict::Ambiguous
+        );
     }
 }
