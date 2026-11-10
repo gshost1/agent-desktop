@@ -195,6 +195,8 @@ An older snapshot stays on disk until it is pruned, and its refs keep resolving 
 
 `RefStore` keeps one file per snapshot at `snapshots/<snapshot_id>/refmap.json` under the [state root](/desktop/configuration#state-root). Inside a [session](/desktop/sessions), the same layout sits under `sessions/<session_id>/`, and a lookup never searches another session's snapshots.
 
+A ref map is written to a temporary file and renamed into place, so a reader never sees a partial file, even when a command is killed mid-write. It is not synced to disk: a power loss can drop the newest snapshots or leave one unreadable. That loses no live refs, because a ref names a running process and a restart ends it. A ref from a lost snapshot fails with `SNAPSHOT_NOT_FOUND`, and one from an unreadable snapshot fails with `INTERNAL`; take a new snapshot.
+
 <table>
   <thead>
     <tr><th>Limit</th><th>Value</th><th>What happens</th></tr>

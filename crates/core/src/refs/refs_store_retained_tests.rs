@@ -62,6 +62,6 @@ fn an_unreadable_snapshot_prevents_a_partial_prune() {
     let _home = HomeGuard::new();
     let store = RefStore::new().unwrap();
     let id = store.save_new_snapshot(&map("host:1")).unwrap();
-    write_private_file(&store.snapshot_path(&id), b"invalid json").unwrap();
+    crate::refs::write_private_file(&store.snapshot_path(&id), b"invalid json").unwrap();
     assert!(store.retained_object_tokens().is_err());
 }
