@@ -456,3 +456,10 @@ exists and also runs CI's core Win32-leakage check.
   the lock can outlive the parent (from STATE-9); belongs in core startup.
 
 - Upstream has many open PRs in areas this audit touches; rows above say "build on #N" where one covers a finding.
+
+## 1.4 queue additions (2026-11-10)
+
+| Row | Problem | Fix | Platform | Device | Size | Blocked by | Status |
+|---|---|---|---|---|---|---|---|
+| MAC-SE-1 | The macOS adapter opens a closed Notification Center with `osascript`, which tells System Events to click the menu-bar "Clock" item (`crates/macos/src/notifications/nc_session.rs:277`). The permission preflight in `crates/macos/src/system/permissions/` also depends on System Events Automation. George's Mac denies that Automation on purpose. | Open the center without System Events or osascript: an AX press on the menu-bar clock item through the system UI process, found by role and capability rather than by name. The preflight stops depending on System Events Automation. When the center cannot be opened, fail closed with a clear code. | mac | Mac check | M | #34 (notifications files) | queued; its own PR, needs-Mac-check |
+| LOCK-LABEL-1 | A deadline that expired before the interaction lease was taken is reported as `interaction_process_lock_timeout` with `contention_count: 0` (`crates/core/src/session/process_lease_guard.rs`), as if the lease were contended. Seen in the #58 Mac run. | Report a deadline expiry as a deadline (`kind: deadline`), and keep the lock-timeout kind for real contention. | all | – | S | – | queued |

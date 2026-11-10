@@ -30,7 +30,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | steps ready, revised per control (no System Events, EXIT trap, Calculator rule); CI 13/13 green |
-| #34 | SURFACE-3 | `e3818161` | HELD: revision 2 below has the five changes; needs control's decision on agent-desktop's own System Events use, and George's go-ahead |
+| #34 | SURFACE-3 | `e3818161` | rev 2 accepted by control (with the 1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
 ## #80 SURFACE-10: focused-surface ref resolves only in its capture window
@@ -339,19 +339,21 @@ pgrep -x Calculator || echo none        # expect: none
 
 Report the last line (`RESULT: ...`) and any `FAIL` or `SETUP FAIL` line verbatim on this PR or to the control thread.
 
-## #34 SURFACE-3: notification keys (HELD: needs control's decision below and George's go-ahead)
+## #34 SURFACE-3: notification keys (accepted; HELD for George's go-ahead)
 
 Head: `e3818161e6201c24989de964ad567aecb0056d95` (agent will not move it unless main conflicts). CI at write time: 23
 pass, 4 pending, none red. Revision 2 (2026-11-10), with control's five changes.
 
-**Decision needed: agent-desktop itself uses System Events.** On a closed Notification Center, every `--headed`
+**agent-desktop itself uses System Events (decided: accept the race for this check; product fix queued as MAC-SE-1).** On a closed Notification Center, every `--headed`
 notification command opens it through System Events UI scripting: `crates/macos/src/notifications/nc_session.rs:277`
 (on origin/main too) runs `osascript` → `tell application "System Events" ... click menu bar item ... "Clock"`. It skips
 that when the center is already open (`nc_session.rs:52-60`). The script works around it. It prints `ACTION open Notification
 Center by clicking the date and time in the menu bar` and waits up to 120 s. Every list runs headless, which never opens
 the center and answers `POLICY_DENIED` when it is closed. A `--headed` mutation is sent only right after a headless list
-proved the center open. **Residual race:** if the panel closes in the ~0.5 s between that check and the headed call,
-agent-desktop opens it through System Events (the agent's fake run shows exactly that, then the script stops). If that
+proved the center open. **Residual race (accepted by control 2026-11-10):** if the panel closes in the ~0.5 s between that check and the
+headed call, the adapter's osascript runs; System Events Automation is denied on that Mac on purpose, so it fails, and
+the script treats the failed call as HALT (error code only, no retry). The adapter change that removes this path is
+ledger row MAC-SE-1 in TASKS.md. If that
 is unacceptable, this check cannot run until the adapter opens the center another way (a product change; the macOS
 permission preflight in `crates/macos/src/system/permissions/` also depends on System Events Automation).
 
@@ -369,7 +371,8 @@ The five changes:
    and actions are refused, the script prints `STOP ...`, and cleanup dismisses only nonce entries by key with the title
    and app guards.
 5. **Close the panel.** agent-desktop's own `press escape` (headless, unscoped), the key its adapter's `close_nc` sends
-   (`nc_session.rs:304-318`), sent only when the center is verified open. Closure is verified by a headless list that
+   (`nc_session.rs:304-318`). It is sent only when the script's own headless list saw the center open less than 1 s
+   earlier (control's rule, 2026-11-10); otherwise the script sends nothing and prints the NOTE. Closure is verified by a headless list that
    must answer POLICY_DENIED within 5 s: `PASS notification center closed`, else `NOTE notification center left open`.
 
 Checked against the real macOS code path, not the fake center:
@@ -735,8 +738,12 @@ def cleanup():
 
 def close_center():
     """Closes the center with agent-desktop's own Escape, the key its adapter uses."""
+    seen_at = time.monotonic()
     if center_open() is not True:
         say("PASS notification center closed")
+        return
+    if time.monotonic() - seen_at > 1.0:
+        say("NOTE notification center left open (open state not confirmed within the last second; Escape not sent)")
         return
     pressed = run("press", "escape")
     if not pressed["ok"]:
