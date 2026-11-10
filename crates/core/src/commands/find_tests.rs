@@ -1,4 +1,5 @@
 use super::*;
+use crate::AccessibilityNode;
 use crate::AdapterError;
 use crate::LocatorQuery;
 use crate::context::CommandContext;
@@ -20,16 +21,6 @@ fn node(name: Option<&str>, value: Option<&str>, description: Option<&str>) -> A
         subtree_truncated: false,
         children: vec![],
     }
-}
-
-fn search_tree(
-    root: &AccessibilityNode,
-    query: &LocatorQuery,
-    path: &mut Vec<String>,
-    matches: &mut Vec<serde_json::Value>,
-    max_matches: Option<usize>,
-) {
-    collect_snapshot_matches(root, query, path, matches, max_matches);
 }
 
 fn query_from_args(args: &FindArgs) -> LocatorQuery {
@@ -103,32 +94,30 @@ fn text_query_matches_across_name_value_and_description() {
 
 #[test]
 fn default_limit_caps_materialized_matches() {
-    let root = AccessibilityNode {
-        ref_id: None,
-        role: "window".into(),
-        identity: Default::default(),
-        presentation: Default::default(),
-        children_count: None,
-        subtree_truncated: false,
-        children: (0..60)
-            .map(|i| node(Some(&format!("Button {i}")), None, None))
-            .collect(),
-    };
-    let query = LocatorQuery {
-        has_text: Some(search_text::normalize("button")),
-        ..LocatorQuery::default()
-    };
-    let mut matches = Vec::new();
+    let _guard = HomeGuard::new();
+    let adapter = super::test_support::LiveFindAdapter::with_button_count(60);
+    let response = execute(
+        FindArgs {
+            app: None,
+            window_id: Some("w-1".into()),
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+            filter: FindFilterArgs {
+                role: Some("button".into()),
+                ..no_filter()
+            },
+            states: vec![],
+            timeout_ms: None,
+            selection: no_selection(),
+        },
+        &adapter,
+        &CommandContext::default(),
+    )
+    .expect("find succeeds");
 
-    search_tree(
-        &root,
-        &query,
-        &mut Vec::new(),
-        &mut matches,
-        Some(DEFAULT_LIMIT),
-    );
-
-    assert_eq!(matches.len(), DEFAULT_LIMIT);
+    assert_eq!(response["matches"].as_array().unwrap().len(), DEFAULT_LIMIT);
+    assert_eq!(response["total_matches"], 60);
+    assert_eq!(response["truncated"], true);
 }
 
 #[test]

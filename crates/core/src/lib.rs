@@ -78,9 +78,7 @@ pub use locator::live_locator::{
     require_unique, resolve_query,
 };
 pub use locator::state_predicate::StatePredicate;
-pub use locator::{
-    LocatorQuery, accessibility_node_matches, node_context, node_matches, role_matches,
-};
+pub use locator::{LocatorQuery, accessibility_node_matches};
 pub use notifications::dismiss_all_notifications_request::DismissAllNotificationsRequest;
 pub use notifications::dismiss_notification_request::DismissNotificationRequest;
 pub use notifications::notification_action_request::NotificationActionRequest;
@@ -166,7 +164,6 @@ pub use tree::name_source::NameSource;
 pub use tree::node::AccessibilityNode;
 pub use tree::node_descriptor::NodeDescriptor;
 pub use tree::node_identity::NodeIdentity;
-pub use tree::node_match_context::NodeMatchContext;
 pub use tree::node_presentation::NodePresentation;
 pub use tree::point::Point;
 pub use tree::rect::Rect;
