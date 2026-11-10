@@ -31,24 +31,13 @@ pub(crate) fn is_unavailable(error: &AdapterError) -> bool {
 fn bridge() -> Option<WindowBridge> {
     static BRIDGE: std::sync::OnceLock<Option<WindowBridge>> = std::sync::OnceLock::new();
     *BRIDGE.get_or_init(|| {
-        let symbol = unsafe { dlsym(RTLD_DEFAULT, c"_AXUIElementGetWindow".as_ptr()) };
+        let symbol = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c"_AXUIElementGetWindow".as_ptr()) };
         if symbol.is_null() {
             None
         } else {
             Some(unsafe { std::mem::transmute::<*mut std::ffi::c_void, WindowBridge>(symbol) })
         }
     })
-}
-
-#[cfg(target_os = "macos")]
-const RTLD_DEFAULT: *mut std::ffi::c_void = -2_isize as *mut std::ffi::c_void;
-
-#[cfg(target_os = "macos")]
-unsafe extern "C" {
-    fn dlsym(
-        handle: *mut std::ffi::c_void,
-        symbol: *const std::ffi::c_char,
-    ) -> *mut std::ffi::c_void;
 }
 
 /// `kAXErrorIllegalArgument` is the bridge rejecting the element outright, not
