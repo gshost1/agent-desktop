@@ -35,6 +35,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
+| #58 (a) cap-1 | ACTION-12 | `063d9229` | READY: BUILD + RUN below; CI 13/13 (run 42807214725), gates GREEN 5138/0, draft. Run after #80's rerun (all laptop merges are held for #80) |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | `5dbbfcc9` | **-a..-d PASS 2/2 on both apps; 1e VACUOUS** (POLICY_DENIED before send; selection read None), so no merge yet. 1e-only rev 2 pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
@@ -2526,4 +2527,397 @@ else
   second_menu_check "Script Editor" "$SEPID" "$A" "$TV" 2
 fi
 echo "== checks done"
+```
+
+## #58 ACTION-12 (a) cap-1: a headed hover or drag raises its window at most once per command
+
+Head: `063d9229da4a488f6a47d0a2fad0f4734a27425f`. CI 13/13 (run 42807214725, macOS Test included), gates GREEN 5138/0
+(post-fix gates.sh). Draft and MERGEABLE. The canonical copy of this section is the PR body's "Mac check" section.
+
+What changed since the probe plan:
+- Main is merged up to `9132aa89`, including #99 and #102. Nothing in #58's files reads the front-window
+  classification.
+- One CommandFocus per command is shared by the pre-lease wait's scroll and the leased attempts, so a raise during the
+  wait is the command's one raise.
+- A focus call that failed after it may have raised ends the command. Every error before input carries
+  preparatory_focus.
+
+The per-app-hit invariant ("never a primary read") can only live in `hit_test.rs`, so it moves to (b)'s plan if (b) is
+ever built.
+
+How it runs:
+- **BUILD** (outside the lock) builds the head and its merge-base with main, each in its own detached worktree under
+  `mktemp -d /tmp/ad-58.XXXXXX` with its own target dir and a cargo wait. It also builds the fixture and two Swift
+  helpers (a floating panel, and a CGWindowList reader that prints pids only), copies desktop_space.sh pointed at the
+  check dir with its rm line removed, and records the dir in `/tmp/ad-58.last`.
+- **RUN** (inside the lock):
+  - skips the desktop reset if Calculator is running, and launches the fixture by its executable;
+  - gives each binary its own `AGENT_DESKTOP_HOME`;
+  - counts raises from the shipped session trace (`input.focus_window`) in a fresh session per covered hover;
+  - HALTs unless an uncovered head hover logs exactly 1 raise (the counter is live);
+  - its trap undoes everything with confirmation lines and leaves the dir for George.
+
+Expected:
+- **Uncovered hover**, fixture in front, warm-up plus 7 runs per binary alternating main and head: every run ok:true;
+  head min <= main min + 5 ms and head median <= main median + 5 ms.
+- **Covered hover with this head**, 2 runs with Calculator in front and 2 with the fixture in front: exactly 1
+  `input.focus_window` event; ok:false with TIMEOUT or ACTION_FAILED and "occluded"; details.preparatory_focus set;
+  delivery not_delivered.
+- **Covered hover with main**: logged for contrast (expect many raises).
+- Last line: `RESULT: ALL PASS (18 checks)`.
+
+Report that line, any FAIL or HALT line, and the `uncovered_stats` line verbatim.
+
+Laptop checks:
+- `bash -n` is clean on both blocks, and grep finds no rm, osascript, System Events, lsappinfo, Finder or TextEdit.
+- The agent's stub dry-run gave ALL PASS (18), and a stub that raises 18 times failed exactly the 4 raise checks.
+- It has not run on a Mac yet.
+
+BUILD (outside the desktop lock):
+
+```bash
+#!/usr/bin/env bash
+# #58 (a) Mac check, BUILD block: run OUTSIDE the desktop lock. Model-free.
+# Builds this head and its merge-base with main in two detached worktrees, the fixture and the helpers.
+# Prints "BUILD_OK R=<dir>" and records the dir in /tmp/ad-58.last for the RUN block.
+set -u
+HEAD_SHA=063d9229da4a488f6a47d0a2fad0f4734a27425f
+REPO="$HOME/Projects/agent-desktop"
+halt() { echo "HALT: $*"; exit 2; }
+R=$(mktemp -d /tmp/ad-58.XXXXXX) || halt "mktemp"
+echo "check dir: $R (left for George)"
+mkdir -p "$R/fixture" "$R/home-head" "$R/home-main" && chmod 700 "$R/home-head" "$R/home-main" || halt "mkdir"
+built=0
+cleanup() {
+    [ "$built" = 1 ] && { echo "build cleanup: worktrees kept for the RUN block"; return; }
+    for tree in head main; do
+        [ -e "$R/$tree" ] || continue
+        git -C "$REPO" worktree remove --force "$R/$tree" 2>/dev/null
+        [ -e "$R/$tree" ] && echo "build cleanup: WARNING worktree $R/$tree still present" || echo "build cleanup: worktree $R/$tree removed"
+    done
+}
+trap cleanup EXIT
+git -C "$REPO" fetch -q origin fix/pointer-focus-once main chore/speed-1.4-tasks || halt "fetch"
+[ "$(git -C "$REPO" rev-parse "$HEAD_SHA^{commit}" 2>/dev/null)" = "$HEAD_SHA" ] || halt "$HEAD_SHA not in the repo"
+MAIN_SHA=$(git -C "$REPO" merge-base origin/main "$HEAD_SHA") || halt "merge-base"
+echo "head $HEAD_SHA; main (merge-base) $MAIN_SHA"
+git -C "$REPO" show origin/chore/speed-1.4-tasks:bench-tools/desktop_space.sh \
+  | sed -e "s#mktemp -d [^)]*#mktemp -d $R/space.XXXX#" -e '/^rm -rf /d' > "$R/desktop_space.sh" || halt "desktop_space.sh copy"
+if grep -nE '(^|[;&|[:space:]])r[m][[:space:]]' "$R/desktop_space.sh"; then halt "desktop_space.sh still runs rm"; fi
+grep -q "mktemp -d $R/space.XXXX" "$R/desktop_space.sh" || halt "desktop_space.sh mktemp not pointed at $R"
+for p in $(grep -oE '/(Users|private)/[^ "()]+' "$R/desktop_space.sh"); do
+    [ -e "$p" ] || halt "desktop_space.sh path missing: $p"
+done
+git -C "$REPO" worktree add -q --detach "$R/head" "$HEAD_SHA" || halt "head worktree"
+git -C "$REPO" worktree add -q --detach "$R/main" "$MAIN_SHA" || halt "main worktree"
+[ "$(git -C "$R/head" rev-parse HEAD)" = "$HEAD_SHA" ] || halt "head worktree is not at $HEAD_SHA"
+for tree in head main; do
+    while pgrep -x cargo >/dev/null; do sleep 5; done
+    (cd "$R/$tree" && CARGO_TARGET_DIR="$R/$tree/target" CARGO_BUILD_JOBS=4 cargo build --release -p agent-desktop) || halt "cargo build $tree"
+    [ -x "$R/$tree/target/release/agent-desktop" ] || halt "no binary for $tree"
+done
+bash "$R/head/tests/fixture-app/build.sh" "$R/fixture" >/dev/null || halt "fixture build"
+cat > "$R/overlay.swift" <<'PFO_EOF'
+import AppKit
+
+let application = NSApplication.shared
+application.setActivationPolicy(.accessory)
+let numbers = CommandLine.arguments.dropFirst().compactMap { Double($0) }
+guard numbers.count == 4, let primary = NSScreen.screens.first else { exit(2) }
+let frame = NSRect(x: numbers[0], y: primary.frame.height - numbers[1] - numbers[3],
+                   width: numbers[2], height: numbers[3])
+let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                    backing: .buffered, defer: false)
+panel.level = .floating
+panel.hidesOnDeactivate = false
+panel.backgroundColor = .systemRed
+let cover = NSButton(title: "pfo-cover", target: nil, action: nil)
+cover.frame = NSRect(origin: .zero, size: frame.size)
+panel.contentView?.addSubview(cover)
+panel.orderFrontRegardless()
+application.run()
+PFO_EOF
+cat > "$R/windows.swift" <<'PFO_EOF'
+import AppKit
+
+let detailed = Set(CommandLine.arguments.dropFirst().compactMap { Int32($0) })
+let front = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
+let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
+var windows: [[String: Any]] = []
+for window in list.prefix(12) {
+    let pid = (window[kCGWindowOwnerPID as String] as? Int32) ?? -1
+    var entry: [String: Any] = ["pid": pid, "layer": window[kCGWindowLayer as String] ?? -1]
+    if detailed.contains(pid) {
+        entry["window_id"] = window[kCGWindowNumber as String] ?? -1
+        entry["bounds"] = window[kCGWindowBounds as String] ?? [:]
+    }
+    windows.append(entry)
+}
+let report: [String: Any] = ["front_pid": front, "z_order_front_to_back": windows]
+if let data = try? JSONSerialization.data(withJSONObject: report),
+   let text = String(data: data, encoding: .utf8) {
+    print(text)
+}
+PFO_EOF
+cat > "$R/proof.py" <<'PFO_EOF'
+import json, os, statistics, subprocess, sys, time
+
+ROOT = os.environ["PFO_ROOT"]
+BINS = {"main": ROOT + "/main/target/release/agent-desktop", "head": ROOT + "/head/target/release/agent-desktop"}
+APP = "AgentDeskFixture"
+OTHER = "Calculator"
+LOG = open(ROOT + "/proof.log", "a")
+T0 = time.monotonic()
+overlay = None
+results = []
+
+
+def log(event, **fields):
+    line = json.dumps({"event": event, "t_ms": round((time.monotonic() - T0) * 1000, 1), **fields})
+    print(line, flush=True)
+    LOG.write(line + "\n")
+    LOG.flush()
+
+
+def record(label, passed, **fields):
+    results.append((label, passed))
+    log("check", label=label, result="PASS" if passed else "FAIL", **fields)
+
+
+def pid_of(name):
+    out = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True).stdout.split()
+    return int(out[0]) if len(out) == 1 else None
+
+
+def front_pid():
+    out = subprocess.run([ROOT + "/pfo-windows"], capture_output=True, text=True).stdout
+    try:
+        return json.loads(out).get("front_pid")
+    except ValueError:
+        return None
+
+
+def ad(which, *args):
+    env = dict(os.environ)
+    env["AGENT_DESKTOP_HOME"] = ROOT + "/home-" + which
+    started = time.monotonic()
+    proc = subprocess.run([BINS[which], *args], capture_output=True, text=True, timeout=90, env=env)
+    elapsed = round((time.monotonic() - started) * 1000, 1)
+    try:
+        body = json.loads(proc.stdout)
+    except ValueError:
+        body = {"unparsed_stdout": proc.stdout, "stderr": proc.stderr}
+    return body, elapsed
+
+
+def bring_front(name):
+    if name == APP:
+        ad("head", "focus-window", "--app", APP)
+    else:
+        subprocess.run(["open", "-a", name])
+    for _ in range(50):
+        target = pid_of(name)
+        if target and front_pid() == target:
+            time.sleep(0.3)
+            return True
+        time.sleep(0.1)
+    log("setup_fail", reason=f"{name} did not come to the front")
+    sys.exit(1)
+
+
+def wait_fixture_window():
+    body = {}
+    for _ in range(60):
+        body, _ = ad("head", "list-windows", "--app", APP)
+        if body.get("ok") is True and body.get("data"):
+            return
+        time.sleep(0.5)
+    log("setup_fail", reason="fixture window missing", last=body)
+    sys.exit(1)
+
+
+def find_ref(which, name):
+    body = {}
+    for _ in range(100):
+        body, _ = ad(which, "find", "--app", APP, "--role", "button", "--name", name, "--exact", "--first")
+        match = (body.get("data") or {}).get("match") or {}
+        if body.get("ok") is True and match.get("ref_id"):
+            return match["ref_id"]
+        time.sleep(0.2)
+    log("setup_fail", reason=f"{which}: {name} not found", last=body)
+    sys.exit(1)
+
+
+def covered_run(which, ref, front, index):
+    wait_fixture_window()
+    bring_front(front)
+    session, _ = ad(which, "session", "start", "--name", f"proof-{which}-{index}")
+    session_id = (session.get("data") or {}).get("session_id")
+    if not session_id:
+        log("setup_fail", reason="session start failed", last=session)
+        sys.exit(1)
+    body, elapsed = ad(which, "--session", session_id, "--headed", "hover", ref, "--timeout-ms", "3000")
+    trace, _ = ad(which, "--session", session_id, "trace", "show", "--event", "input.focus_window", "--limit", "0")
+    raises = len((trace.get("data") or {}).get("events") or [])
+    ad(which, "session", "end", session_id)
+    error = body.get("error") or {}
+    if trace.get("ok") is not True:
+        log("halt", reason="trace show failed", envelope=trace)
+        sys.exit(2)
+    log("covered_run", binary=which, front=front, index=index, elapsed_ms=elapsed, raises=raises,
+        envelope=body)
+    return body, error, raises, elapsed
+
+
+def uncovered_time(which, ref):
+    ad(which, "--headed", "mouse-move", "--xy", "20,20")
+    bring_front(APP)
+    body, elapsed = ad(which, "--headed", "hover", ref, "--timeout-ms", "3000")
+    return body.get("ok") is True, elapsed, body.get("error")
+
+
+def main():
+    global overlay
+    log("start", bins=BINS)
+    wait_fixture_window()
+    ad("head", "focus-window", "--app", APP)
+    ad("head", "move-window", "--app", APP, "--x", "40", "--y", "60")
+    ad("head", "resize-window", "--app", APP, "--width", "1000", "--height", "700")
+    head_ref = find_ref("head", "hover-target")
+    for _ in range(3):
+        body, _ = ad("head", "scroll-to", head_ref)
+        if body.get("ok") is True:
+            break
+        time.sleep(0.5)
+    time.sleep(0.5)
+    refs = {"head": find_ref("head", "hover-target"), "main": find_ref("main", "hover-target")}
+    bounds, _ = ad("head", "get", refs["head"], "--property", "bounds")
+    box = (bounds.get("data") or {}).get("value")
+    if not box:
+        log("setup_fail", reason="bounds unavailable", last=bounds)
+        sys.exit(1)
+    log("target", refs=refs, bounds=box)
+
+    refs["head"] = find_ref("head", "hover-target")
+    body, error, raises, elapsed = covered_run("head", refs["head"], OTHER, 0)
+    if body.get("ok") is not True or raises != 1:
+        log("halt", reason="raise counter is not live: an uncovered head hover with Calculator in front must log exactly one input.focus_window event",
+            raises=raises, envelope=body)
+        sys.exit(2)
+    log("counter_live", raises=raises)
+
+    samples = {"main": [], "head": []}
+    for which in ("main", "head"):
+        uncovered_time(which, refs[which])
+    for round_index in range(7):
+        for which in ("main", "head"):
+            refs[which] = find_ref(which, "hover-target")
+            ok, elapsed, error = uncovered_time(which, refs[which])
+            log("uncovered_run", binary=which, round=round_index, ok=ok, elapsed_ms=elapsed, error=error)
+            if not ok:
+                record(f"uncovered hover ok ({which}, round {round_index})", False, error=error)
+            samples[which].append(elapsed)
+    stats = {which: {"min": min(values), "median": statistics.median(values), "max": max(values)}
+             for which, values in samples.items()}
+    log("uncovered_stats", stats=stats, samples=samples)
+    record("uncovered hover min: head <= main + 5 ms", stats["head"]["min"] <= stats["main"]["min"] + 5,
+           head=stats["head"]["min"], main=stats["main"]["min"])
+    record("uncovered hover median: head <= main + 5 ms", stats["head"]["median"] <= stats["main"]["median"] + 5,
+           head=stats["head"]["median"], main=stats["main"]["median"])
+
+    cover = [box["x"] - 6, box["y"] - 6, box["width"] + 12, box["height"] + 12]
+    overlay = subprocess.Popen([ROOT + "/overlay", *[str(value) for value in cover]])
+    open(ROOT + "/overlay.pid", "w").write(str(overlay.pid))
+    time.sleep(1.5)
+    log("overlay_started", pid=overlay.pid, running=overlay.poll() is None, cover=cover)
+
+    for front in (OTHER, APP):
+        for index in range(1, 3):
+            refs["head"] = find_ref("head", "hover-target")
+            body, error, raises, elapsed = covered_run("head", refs["head"], front, index)
+            text = json.dumps(error)
+            record(f"head covered hover, {front} in front, run {index}: one raise", raises == 1, raises=raises)
+            record(f"head covered hover, {front} in front, run {index}: refused as occluded",
+                   body.get("ok") is False and error.get("code") in ("TIMEOUT", "ACTION_FAILED")
+                   and "occluded" in text, code=error.get("code"))
+            record(f"head covered hover, {front} in front, run {index}: preparatory_focus",
+                   "preparatory_focus" in (error.get("details") or {}))
+            record(f"head covered hover, {front} in front, run {index}: not delivered",
+                   (error.get("disposition") or {}).get("delivery") == "not_delivered",
+                   disposition=error.get("disposition"))
+        refs["main"] = find_ref("main", "hover-target")
+        body, error, raises, elapsed = covered_run("main", refs["main"], front, 1)
+        log("main_covered_reference", front=front, raises=raises, code=error.get("code"))
+
+    overlay.kill()
+    overlay.wait()
+    os.remove(ROOT + "/overlay.pid")
+    overlay = None
+    failed = [label for label, passed in results if not passed]
+    print(f"RESULT: {'ALL PASS' if not failed else str(len(failed)) + ' FAIL'} ({len(results)} checks)", flush=True)
+    LOG.write(json.dumps({"event": "result", "failed": failed, "checks": len(results)}) + "\n")
+    sys.exit(0 if not failed else 1)
+
+
+main()
+PFO_EOF
+swiftc -O -o "$R/overlay" "$R/overlay.swift" -framework AppKit || halt "swiftc overlay"
+swiftc -O -o "$R/pfo-windows" "$R/windows.swift" -framework AppKit || halt "swiftc windows helper"
+built=1
+printf '%s\n' "$R" > /tmp/ad-58.last || halt "cannot record the check dir"
+echo "BUILD_OK R=$R (recorded in /tmp/ad-58.last for the RUN block)"
+```
+
+RUN (inside the desktop lock, after BUILD printed BUILD_OK):
+
+```bash
+#!/usr/bin/env bash
+# #58 (a) Mac check, RUN block: run INSIDE the desktop lock, after BUILD printed BUILD_OK.
+set -u
+R=$(cat /tmp/ad-58.last 2>/dev/null)
+[ -n "$R" ] && [ -d "$R" ] || { echo "HALT: no check dir in /tmp/ad-58.last; run the BUILD block first"; exit 2; }
+echo "check dir: $R"
+REPO="$HOME/Projects/agent-desktop"
+B="$R/head/target/release/agent-desktop"
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+halt() { echo "HALT: $*"; exit 2; }
+[ -x "$B" ] && [ -x "$R/main/target/release/agent-desktop" ] && [ -x "$R/pfo-windows" ] || halt "BUILD did not finish in $R"
+[ "$(pgrep -x AgentDeskFixture)" = "" ] || halt "AgentDeskFixture already running (pid $(pgrep -x AgentDeskFixture)); quit it first"
+calc_was_running=0
+pgrep -x Calculator >/dev/null && calc_was_running=1
+[ "$calc_was_running" = 1 ] && echo "NOTE Calculator was already running; the check uses it and leaves it running"
+export PFO_ROOT="$R"
+fixture_pid=""
+cleanup() {
+    echo "== cleanup (trap EXIT)"
+    if [ -f "$R/overlay.pid" ]; then kill "$(cat "$R/overlay.pid")" 2>/dev/null; fi
+    pgrep -f "$R/overlay" >/dev/null && echo "cleanup: WARNING overlay still running" || echo "cleanup: overlay not running"
+    if [ -n "$fixture_pid" ]; then
+        AGENT_DESKTOP_HOME="$R/home-head" "$B" close-app AgentDeskFixture --force >/dev/null 2>&1
+        for _ in $(seq 1 25); do kill -0 "$fixture_pid" 2>/dev/null || break; sleep 0.2; done
+        kill -0 "$fixture_pid" 2>/dev/null && kill "$fixture_pid" 2>/dev/null
+        kill -0 "$fixture_pid" 2>/dev/null && echo "cleanup: WARNING AgentDeskFixture pid $fixture_pid still running" || echo "cleanup: quit AgentDeskFixture pid $fixture_pid (launched by this check)"
+    fi
+    "$LSREG" -u "$R/fixture/AgentDeskFixture.app" 2>/dev/null; echo "cleanup: lsregister -u $R/fixture/AgentDeskFixture.app ran"
+    if [ "$calc_was_running" = 0 ]; then
+        AGENT_DESKTOP_HOME="$R/home-head" "$B" close-app Calculator >/dev/null 2>&1
+        pgrep -x Calculator >/dev/null && echo "cleanup: WARNING Calculator still running" || echo "cleanup: Calculator quit (this check launched it)"
+    else
+        echo "cleanup: Calculator was running before the check and stays running"
+    fi
+    for tree in head main; do
+        git -C "$REPO" worktree remove --force "$R/$tree" 2>/dev/null
+        [ -e "$R/$tree" ] && echo "cleanup: WARNING worktree $R/$tree still present" || echo "cleanup: worktree $R/$tree removed"
+    done
+    echo "cleanup: done; $R left for George (proof.log inside)"
+}
+trap cleanup EXIT
+if [ "$calc_was_running" = 1 ]; then echo "NOTE desktop-space reset skipped (it would quit Calculator)"
+else bash "$R/desktop_space.sh"; echo "desktop-space reset ran (exit $?)"; fi
+"$R/fixture/AgentDeskFixture.app/Contents/MacOS/AgentDeskFixture" >/dev/null 2>&1 &
+fixture_pid=$!
+echo "fixture launched by its executable, pid $fixture_pid"
+python3 "$R/proof.py"
+echo "check exit $?; send $R/proof.log"
 ```
