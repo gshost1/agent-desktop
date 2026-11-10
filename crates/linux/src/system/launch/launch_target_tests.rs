@@ -7,7 +7,7 @@ use crate::tree::live::live_launch::nonce;
 pub(super) struct Fixture {
     root: PathBuf,
     pub(super) search: Search,
-    index: std::sync::Arc<AliasIndex>,
+    pub(super) index: std::sync::Arc<AliasIndex>,
 }
 
 impl Drop for Fixture {
@@ -63,7 +63,7 @@ pub(super) fn argv_in(fixture: &Fixture, identifier: &str) -> Result<Vec<String>
         .map_err(|error| error.code)
 }
 
-fn code_of(result: Result<Vec<String>, ErrorCode>) -> ErrorCode {
+pub(super) fn code_of(result: Result<Vec<String>, ErrorCode>) -> ErrorCode {
     result.expect_err("an error")
 }
 
@@ -120,21 +120,6 @@ fn a_part_of_a_name_matches_nothing() {
     let fixture = fixture(&[CALCULATOR], &[]);
     assert_eq!(code_of(argv_in(&fixture, "Calc")), ErrorCode::AppNotFound);
     assert_eq!(code_of(argv_in(&fixture, "gnome")), ErrorCode::AppNotFound);
-}
-
-#[test]
-fn a_name_two_entries_share_is_ambiguous() {
-    let fixture = fixture(
-        &[
-            ("one", "Name=Files\nType=Application\nExec=a"),
-            ("two", "Name=Files\nType=Application\nExec=b"),
-        ],
-        &[],
-    );
-    assert_eq!(
-        code_of(argv_in(&fixture, "files")),
-        ErrorCode::AmbiguousTarget
-    );
 }
 
 #[test]
