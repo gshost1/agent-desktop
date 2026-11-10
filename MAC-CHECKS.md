@@ -30,7 +30,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 probe | ACTION-12 | `8959fc5c` (branch `probe/pointer-focus-once`) | READY: run it and send back `/tmp/pfo/probe.log` |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
-| #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | NOT RUN 2026-11-10 (fixture defects: /tmp bundles unresolvable by Launch Services, applets without CFBundleIdentifier); script being rewritten by agent A; do not run the section below |
+| #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | revision 2 ready (fixtures under $HOME/.agent-desktop-bench-target, resolution asserted, build outside the lock); needs `ADL_DESKTOP_LOCK` set by the Mac worker |
 | #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
@@ -832,75 +832,107 @@ AD="$W/target/release/agent-desktop" python3 -I "$PY"; echo "exit $?"
 
 ## #88 LIFECYCLE-2 + LIFECYCLE-12: macOS launch watches the launched process; several restored windows are not an error
 
-Head: `46f397a712f72d8f01b580c5b4054d1961c0e043`. Save the script as `/tmp/adl-check.sh` and run `bash /tmp/adl-check.sh` from a
-terminal with Accessibility permission. Needs Xcode command line tools (swiftc, osacompile) and rustup. It builds in a
-detached worktree under `/tmp/adl-check`, waits for running cargo, runs the desktop-space reset, and uses scratch apps in
-`/tmp/adl-check` (an AppKit Swift app and an AppleScript applet that quit after 0.5 s for LIFECYCLE-2; an AppKit Swift app
-and a JXA stay-open applet with two windows for LIFECYCLE-12) plus Calculator as a control. No Finder, no TextEdit.
+Head: `46f397a712f72d8f01b580c5b4054d1961c0e043` (unchanged). Revision 2 (2026-11-10) after the not-run verdict:
+- Fixtures and state live under `$HOME/.agent-desktop-bench-target/adl-check-<timestamp>`, nothing in /tmp.
+- The applets get `plutil -replace CFBundleIdentifier`. All four apps are `codesign -f -s -` signed, then `lsregister -f`.
+- A Swift `resolve` helper calls `NSWorkspace.shared.urlForApplication(withBundleIdentifier:)`, the product's call at
+  `launch_bridge.m:142-143`, for every id. If any is nil it prints `fixture unresolvable: <id>` and HALTs before any case.
+- The build runs before the lock, through the bench's `bench_build` (`perf-speed-cost/bench/cargo_env.sh`).
+  `origin/chore/speed-1.4-tasks` has no `bench/`, so `bench/serial_cargo.sh` was not usable.
+- The cases run as `$ADL_DESKTOP_LOCK bash -c cases`. **The Mac worker sets `ADL_DESKTOP_LOCK` to the bench's
+  desktop-lock command prefix**; the script HALTs if it is unset.
+- `desktop_space.sh` is copied with sed: its `mktemp -d` points at the check's own dir and its trailing `rm -rf` is
+  removed.
+- Window counts come from a Swift CGWindowList helper: on-screen, layer 0, pids of that bundle id. No System Events.
+- No `rm -rf` anywhere. The EXIT trap kills the fixtures, runs `lsregister -u` on each, prints `UNREGISTER ran for:
+  ...`, and prints the dir left for George with the exact `git worktree remove` command.
+- Laptop lead's patch: Calculator is quit only if the check launched it. If Calculator was already running, the
+  desktop-space reset is skipped and Calculator stays running, each with a NOTE line.
+- `launch` cannot take an app path: macOS `launch` refuses an identifier containing `/` with INVALID_ARGS
+  (`validate_app_identifier`, `crates/macos/src/system/launch.rs:275-285`). It takes a display name or a bundle id only.
 
-Expected after the fix: all 6 cases print PASS (each prints its full envelope first). Before the fix: the LIFECYCLE-2
-cases answer `ok: true` with a dead pid (the `--activate` ones after ~20 s), the LIFECYCLE-12 cases `AMBIGUOUS_TARGET`.
-INVALID means a fixture precondition was not met (2 windows, none focused); whether macOS makes a restored window key
-without activation was not verifiable off-Mac.
+Expected: 6 PASS (every case prints its full envelope first). Before the fix, the LIFECYCLE-2 cases answer `ok: true`
+with a dead pid and the LIFECYCLE-12 cases answer `AMBIGUOUS_TARGET`. INVALID means the precondition was not met: 2
+on-screen windows, none focused.
 
-Revised 2026-11-10 after control's review: the window count uses a CGWindowList helper (`/tmp/adl-check/wincount`, owner pid + layer 0 only, prints a number) instead of System Events; the four `lsregister -f` registrations are undone in an EXIT trap that prints `UNREGISTER ran for: ...`; if Calculator was already running at the start, the desktop-space reset (which quits Calculator) is skipped and Calculator is left running, with a NOTE line. Delete `/tmp/adl-check` after the run.
+Calculator observation from the last run, cause unconfirmed, on main and not part of #88: `narrow_to_real_windows`
+(`crates/macos/src/system/window/window_inventory.rs`) keeps a window whose `minimized` is known even when it is
+`visible: false`. So launch can report a window that is not yet on screen, with zero bounds; an early return can
+report none. Ledgered as LAUNCH-WIN-1.
 
 ```bash
+cat > "$HOME/.agent-desktop-bench-target/adl-check.sh" <<'ADLEOF'
 #!/bin/bash
+# Mac check for PR #88 (LIFECYCLE-2 + LIFECYCLE-12) at a fixed head. Model-free: each case prints its
+# full envelope, then PASS, FAIL or INVALID (fixture precondition not met). No System Events, no UI
+# scripting, no Finder or TextEdit. Fixtures live under $HOME/.agent-desktop-bench-target (bench-owned).
+# Run:  ADL_DESKTOP_LOCK='<the bench desktop-lock wrapper, a command prefix>' bash adl-check.sh
 set -u
 SHA=46f397a712f72d8f01b580c5b4054d1961c0e043
-W=/tmp/adl-check; R=~/Projects/agent-desktop
-git -C "$R" worktree remove --force "$W/src" 2>/dev/null; rm -rf "$W"; mkdir -p "$W"; cd "$W" || exit 1
-git -C "$R" fetch -q origin && git -C "$R" worktree add -q --detach "$W/src" "$SHA" || exit 1
-while pgrep -x cargo >/dev/null; do sleep 5; done
-CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR="$W/target" cargo build -q --release -p agent-desktop --manifest-path "$W/src/Cargo.toml" || exit 1
-git -C "$R" fetch -q origin chore/speed-1.4-tasks && git -C "$R" show origin/chore/speed-1.4-tasks:bench-tools/desktop_space.sh > "$W/desktop_space.sh"
-CALC_WAS_RUNNING=no; pgrep -x Calculator >/dev/null && CALC_WAS_RUNNING=yes
-if [ "$CALC_WAS_RUNNING" = yes ]; then echo "NOTE Calculator was already running: skipping the desktop-space reset (it quits Calculator) and leaving Calculator running"
-else bash "$W/desktop_space.sh"; fi
-AD="$W/target/release/agent-desktop"; export AGENT_DESKTOP_HOME="$W/home"
+R=$HOME/Projects/agent-desktop
+BENCH=$HOME/.t3/worktrees/agent-desktop/perf-speed-cost/bench
+W=$HOME/.agent-desktop-bench-target/adl-check-$(date +%Y%m%d-%H%M%S)
 LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-REGISTERED=""
-unregister_all() {
-  for a in $REGISTERED; do "$LSREG" -u "$W/$a.app"; done
-  echo "UNREGISTER ran for: ${REGISTERED:-none}"
-  REGISTERED=""
+APPS="AdlQuit AdlTwo AdlAppletQuit AdlJxaTwo"
+halt() { echo "HALT: $*"; exit 2; }
+[ -n "${ADL_DESKTOP_LOCK:-}" ] || halt "set ADL_DESKTOP_LOCK to the command prefix the bench uses to take the desktop lock"
+[ -f "$BENCH/cargo_env.sh" ] || halt "missing $BENCH/cargo_env.sh (bench_build)"
+mkdir -p "$W" || halt "cannot create $W"
+cleanup() {
+  for a in $APPS; do pkill -f "$W/$a.app" 2>/dev/null; [ -d "$W/$a.app" ] && "$LSREG" -u "$W/$a.app"; done
+  echo "UNREGISTER ran for: $APPS"
+  echo "left for George: $W (worktree $W/src: git -C $R worktree remove --force $W/src)"
 }
-trap 'pkill -f "$W/Adl" 2>/dev/null; unregister_all' EXIT
-cat > "$W/wincount.swift" <<'SWIFT'
-import CoreGraphics
-import Foundation
-guard CommandLine.arguments.count == 2, let pid = Int32(CommandLine.arguments[1]) else { exit(2) }
-let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
-let count = info.filter {
-    ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid && ($0[kCGWindowLayer as String] as? NSNumber)?.intValue == 0
-}.count
-print(count)
-SWIFT
-swiftc -O -o "$W/wincount" "$W/wincount.swift" || exit 1
-bundle() { # name bundle-id swift-source
+trap cleanup EXIT
+
+# 1. Build outside the desktop lock, through the bench's own serialized build.
+git -C "$R" fetch -q origin && git -C "$R" worktree add -q --detach "$W/src" "$SHA" || halt "worktree"
+( cd "$BENCH/.." && source bench/cargo_env.sh && bench_build "$W/src" ) || halt "bench_build failed"
+AD="$W/src/target/release/agent-desktop"; [ -x "$AD" ] || halt "no binary at $AD"
+export AGENT_DESKTOP_HOME="$W/home"; mkdir -p "$AGENT_DESKTOP_HOME"; chmod 700 "$AGENT_DESKTOP_HOME"
+
+# 2. Fixtures: two AppKit Swift apps, an AppleScript applet, a JXA stay-open applet; each gets a bundle id,
+#    an ad-hoc signature and a Launch Services registration. Two Swift helpers: id resolution and windows.
+plist() { # app-dir name bundle-id
+  printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>%s</string><key>CFBundleExecutable</key><string>%s</string><key>CFBundleName</key><string>%s</string><key>CFBundlePackageType</key><string>APPL</string><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>\n' "$3" "$2" "$2" > "$1/Contents/Info.plist"
+}
+swift_app() { # name bundle-id source
   mkdir -p "$W/$1.app/Contents/MacOS"; printf '%s\n' "$3" > "$W/$1.swift"
-  swiftc -O -o "$W/$1.app/Contents/MacOS/$1" "$W/$1.swift" -framework AppKit || exit 1
-  printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>%s</string><key>CFBundleExecutable</key><string>%s</string><key>CFBundleName</key><string>%s</string><key>CFBundlePackageType</key><string>APPL</string><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>\n' "$2" "$1" "$1" > "$W/$1.app/Contents/Info.plist"
-  "$LSREG" -f "$W/$1.app" && REGISTERED="$REGISTERED $1"
+  swiftc -O -o "$W/$1.app/Contents/MacOS/$1" "$W/$1.swift" -framework AppKit || halt "swiftc $1"
+  plist "$W/$1.app" "$1" "$2"
 }
-bundle AdlQuit dev.adl.check.quit 'import AppKit
+swift_app AdlQuit dev.adl.check.quit 'import AppKit
 final class D: NSObject, NSApplicationDelegate { func applicationDidFinishLaunching(_ n: Notification) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) } } }
 let a = NSApplication.shared; let d = D(); a.delegate = d; a.setActivationPolicy(.regular); a.run()'
-bundle AdlTwo dev.adl.check.two 'import AppKit
+swift_app AdlTwo dev.adl.check.two 'import AppKit
 final class D: NSObject, NSApplicationDelegate { var w: [NSWindow] = []
  func applicationDidFinishLaunching(_ n: Notification) { for i in 0..<2 { let x = NSWindow(contentRect: NSRect(x: 120 + i * 320, y: 300, width: 280, height: 160), styleMask: [.titled], backing: .buffered, defer: false); x.title = "adl-two-\(i)"; x.orderFrontRegardless(); w.append(x) } } }
 let a = NSApplication.shared; let d = D(); a.delegate = d; a.setActivationPolicy(.regular); a.run()'
-osacompile -o "$W/AdlAppletQuit.app" -e 'delay 0.5' && "$LSREG" -f "$W/AdlAppletQuit.app" && REGISTERED="$REGISTERED AdlAppletQuit"
-APPLET_ID=$(defaults read "$W/AdlAppletQuit.app/Contents/Info" CFBundleIdentifier)
-cat > "$W/two.js" <<'JS'
-ObjC.import('Cocoa');
-var wins = [];
-function run() { for (var i = 0; i < 2; i++) { var x = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer($.NSMakeRect(120 + 320 * i, 520, 280, 160), $.NSWindowStyleMaskTitled, $.NSBackingStoreBuffered, false); x.title = 'adl-jxa-' + i; x.orderFrontRegardless; wins.push(x); } }
-function idle() { return 30; }
-JS
-osacompile -l JavaScript -s -o "$W/AdlJxaTwo.app" "$W/two.js" && "$LSREG" -f "$W/AdlJxaTwo.app" && REGISTERED="$REGISTERED AdlJxaTwo"
-JXA_ID=$(defaults read "$W/AdlJxaTwo.app/Contents/Info" CFBundleIdentifier)
+osacompile -o "$W/AdlAppletQuit.app" -e 'delay 0.5' || halt "osacompile applet"
+printf '%s\n' "ObjC.import('Cocoa');" "var wins = [];" \
+ "function run() { for (var i = 0; i < 2; i++) { var x = \$.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(\$.NSMakeRect(120 + 320 * i, 520, 280, 160), \$.NSWindowStyleMaskTitled, \$.NSBackingStoreBuffered, false); x.title = 'adl-jxa-' + i; x.orderFrontRegardless; wins.push(x); } }" \
+ "function idle() { return 30; }" > "$W/two.js"
+osacompile -l JavaScript -s -o "$W/AdlJxaTwo.app" "$W/two.js" || halt "osacompile jxa"
+plutil -replace CFBundleIdentifier -string dev.adl.check.appletquit "$W/AdlAppletQuit.app/Contents/Info.plist"
+plutil -replace CFBundleIdentifier -string dev.adl.check.jxatwo "$W/AdlJxaTwo.app/Contents/Info.plist"
+for a in $APPS; do codesign -f -s - "$W/$a.app" 2>/dev/null || halt "codesign $a"; "$LSREG" -f "$W/$a.app"; done
+printf '%s\n' 'import AppKit' 'var bad = false' \
+ 'for id in CommandLine.arguments.dropFirst() { if NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) == nil { print("fixture unresolvable: \(id)"); bad = true } else { print("fixture resolves: \(id)") } }' \
+ 'exit(bad ? 1 : 0)' > "$W/resolve.swift"
+swiftc -O -o "$W/resolve" "$W/resolve.swift" -framework AppKit || halt "swiftc resolve"
+printf '%s\n' 'import AppKit' 'let id = CommandLine.arguments[1]' \
+ 'let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: id).map { Int($0.processIdentifier) })' \
+ 'let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []' \
+ 'print(list.filter { pids.contains(($0[kCGWindowOwnerPID as String] as? Int) ?? -1) && (($0[kCGWindowLayer as String] as? Int) ?? 1) == 0 }.count)' > "$W/winlist.swift"
+swiftc -O -o "$W/winlist" "$W/winlist.swift" -framework AppKit || halt "swiftc winlist"
+"$W/resolve" dev.adl.check.quit dev.adl.check.two dev.adl.check.appletquit dev.adl.check.jxatwo || halt "a fixture does not resolve through NSWorkspace; no case was run"
+
+# 3. Desktop Space prelude: the bench script, copied, with its mktemp pointed at this check's dir and
+#    its trailing rm -rf removed (the dir it makes is left under $W).
+git -C "$R" fetch -q origin chore/speed-1.4-tasks || halt "fetch chore/speed-1.4-tasks"
+git -C "$R" show origin/chore/speed-1.4-tasks:bench-tools/desktop_space.sh \
+ | sed -e "s#mktemp -d [^)]*#mktemp -d $W/space.XXXX#" -e '/^rm -rf /d' > "$W/desktop_space.sh"
+
 field() { python3 -c 'import json,sys; e=json.load(sys.stdin); v=e
 for k in sys.argv[1].split("."):
     v = v.get(k) if isinstance(v, dict) else None
@@ -913,35 +945,45 @@ quit_case() { # label bundle-id extra-flag
   if [ "$code" = APP_UNRESPONSIVE ] && [ "$secs" -lt 10 ] && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then echo "PASS $1"
   else echo "FAIL $1 (expected APP_UNRESPONSIVE in under 10 s with an exited details.pid; before the fix: ok:true with a dead pid)"; fi
 }
-two_case() { # label bundle-id app-dir-name
-  local out ok win sug n focused pid
+two_case() { # label bundle-id app-name
+  local out ok win sug n focused
   out=$("$AD" launch "$2" --timeout 20000)
-  n=0; for _ in $(seq 1 20); do
-    pid=$(pgrep -f "$W/$3.app/Contents/MacOS" | head -1)
-    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && n=$("$W/wincount" "$pid")
-    [ "$n" = 2 ] && break; sleep 0.5
-  done
-  focused=$("$AD" list-windows --app "$3" | grep -o '"is_focused":true' | wc -l | tr -d ' ')
+  n=0; for _ in $(seq 1 20); do n=$("$W/winlist" "$2"); [ "$n" = 2 ] && break; sleep 0.5; done
   echo "list-windows --app $3: $("$AD" list-windows --app "$3")"
+  focused=$("$AD" list-windows --app "$3" | grep -o '"is_focused":true' | wc -l | tr -d ' ')
   ok=$(printf '%s' "$out" | field ok); win=$(printf '%s' "$out" | field data.window.id); sug=$(printf '%s' "$out" | field data.suggestion)
-  echo "== LIFECYCLE-12 $1 (CGWindowList layer-0 windows of pid ${pid:-none}: $n): $out"
-  if [ "$n" != 2 ] || [ "$focused" != 0 ]; then echo "INVALID $1 (precondition: 2 windows, none focused; got $n windows, $focused focused)"
+  echo "== LIFECYCLE-12 $1 (on-screen windows: $n, focused: $focused): $out"
+  if [ "$n" != 2 ] || [ "$focused" != 0 ]; then echo "INVALID $1 (precondition: 2 on-screen windows, none focused)"
   elif [ "$ok" = True ] && [ -z "$win" ] && [ "$(printf '%s' "$sug" | grep -o 'w-[0-9]*' | sort -u | wc -l | tr -d ' ')" = 2 ]; then echo "PASS $1"
   else echo "FAIL $1 (expected ok:true, no data.window, data.suggestion naming 2 window ids; before the fix: AMBIGUOUS_TARGET)"; fi
   pkill -f "$W/$3.app" 2>/dev/null
 }
-quit_case swift-activate dev.adl.check.quit --activate
-quit_case swift-background dev.adl.check.quit ""
-quit_case applet-activate "$APPLET_ID" --activate
-two_case swift-two dev.adl.check.two AdlTwo
-two_case jxa-two "$JXA_ID" AdlJxaTwo
-out=$("$AD" launch Calculator --timeout 20000); echo "== control Calculator: $out"
-if [ -n "$(printf '%s' "$out" | field data.window.id)" ]; then echo "PASS control-calculator"; else echo "FAIL control-calculator (a one-window app must still report its window)"; fi
-if [ "$CALC_WAS_RUNNING" = no ]; then "$AD" close-app Calculator >/dev/null 2>&1; else echo "NOTE Calculator left running (it was running before the script)"; fi
-pkill -f "$W/Adl" 2>/dev/null
-unregister_all
-git -C "$R" worktree remove --force "$W/src"
-echo "done; delete $W when finished"
+control_case() {
+  local out
+  out=$("$AD" launch Calculator --timeout 20000); echo "== control Calculator: $out"
+  if [ -n "$(printf '%s' "$out" | field data.window.id)" ]; then echo "PASS control-calculator"
+  else echo "FAIL control-calculator (a one-window app must still report its window)"; fi
+  echo "list-windows --app Calculator: $("$AD" list-windows --app Calculator)"
+  if [ "$CALC_WAS_RUNNING" = 0 ]; then "$AD" close-app Calculator >/dev/null 2>&1; echo "Calculator quit (this check launched it)"
+  else echo "NOTE Calculator left running (it was running before the check)"; fi
+}
+cases() {
+  CALC_WAS_RUNNING=0; pgrep -x Calculator >/dev/null && CALC_WAS_RUNNING=1
+  if [ "$CALC_WAS_RUNNING" = 1 ]; then echo "NOTE Calculator already running: desktop-space reset skipped (it quits Calculator)"
+  else bash "$W/desktop_space.sh"; fi
+  quit_case swift-activate dev.adl.check.quit --activate
+  quit_case swift-background dev.adl.check.quit ""
+  quit_case applet-activate dev.adl.check.appletquit --activate
+  two_case swift-two dev.adl.check.two AdlTwo
+  two_case jxa-two dev.adl.check.jxatwo AdlJxaTwo
+  control_case
+}
+export -f cases quit_case two_case control_case field
+export W AD
+# 4. The cases run inside the desktop lock, after the build.
+$ADL_DESKTOP_LOCK bash -c cases
+ADLEOF
+ADL_DESKTOP_LOCK='<bench desktop-lock command prefix>' bash "$HOME/.agent-desktop-bench-target/adl-check.sh"
 ```
 
 ## #58 probe: ACTION-12 on a real Mac, timestamped (diagnostic, not a pass/fail check)
