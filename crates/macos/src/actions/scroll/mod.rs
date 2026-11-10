@@ -4,6 +4,12 @@ use agent_desktop_core::{
 
 use crate::tree::AXElement;
 
+pub(crate) mod scroll_into_view;
+mod scroll_page;
+mod scroll_plan;
+mod scroll_read;
+mod scroll_signals;
+
 const MAX_SCROLL_AMOUNT: u32 = 1_000;
 
 pub(crate) fn ax_scroll(
@@ -22,7 +28,7 @@ pub(crate) fn ax_scroll(
     }
     let (bar_attribute, increment_action) = scroll_bar_action(direction);
 
-    if let Some(bar) = crate::actions::scroll_read::element(target, bar_attribute, deadline)? {
+    if let Some(bar) = scroll_read::element(target, bar_attribute, deadline)? {
         if perform_repeated_action(&bar, increment_action, amount, deadline)? {
             return Ok((StepMechanism::SemanticApi, false));
         }
@@ -33,8 +39,18 @@ pub(crate) fn ax_scroll(
             return Ok((StepMechanism::SemanticApi, false));
         }
     }
-    if perform_repeated_action(target, page_action(direction), amount, deadline)? {
-        return Ok((StepMechanism::SemanticApi, false));
+    let page = page_action(direction);
+    let before = scroll_page::capture(target, direction, deadline);
+    match perform_repeated_action(target, page, amount, deadline) {
+        Ok(true) => return Ok((StepMechanism::SemanticApi, false)),
+        Ok(false) => {}
+        Err(error) => {
+            scroll_page::settle_refusal(target, direction, before, error, deadline)?;
+            if amount > 1 {
+                return Err(partial_scroll_error(page, 1, amount, None));
+            }
+            return Ok((StepMechanism::SemanticApi, true));
+        }
     }
     Err(AdapterError::new(
         ErrorCode::ActionNotSupported,
@@ -144,7 +160,7 @@ fn try_value_shift(
 ) -> Result<bool, AdapterError> {
     use core_foundation::{base::TCFType, number::CFNumber, string::CFString};
 
-    let Some(current) = crate::actions::scroll_read::number(bar, "AXValue", deadline)? else {
+    let Some(current) = scroll_read::number(bar, "AXValue", deadline)? else {
         return Ok(false);
     };
     let next = shifted_value(current, direction, amount);
@@ -170,7 +186,7 @@ fn try_value_shift(
     if !result? {
         return Ok(false);
     }
-    let observed = crate::actions::scroll_read::number(bar, "AXValue", deadline)
+    let observed = scroll_read::number(bar, "AXValue", deadline)
         .map_err(value_write_unverified)?
         .ok_or_else(|| value_write_unverified(missing_value_after_write()))?;
     if value_shift_verified(current, observed, direction) {
@@ -216,13 +232,13 @@ fn try_sub_elements(
     amount: u32,
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
-    let children = crate::actions::scroll_read::children(bar, deadline)?;
+    let children = scroll_read::children(bar, deadline)?;
     let subroles = match direction {
         Direction::Down | Direction::Right => &["AXIncrementPage", "AXIncrementArrow"],
         Direction::Up | Direction::Left => &["AXDecrementPage", "AXDecrementArrow"],
     };
     for child in children {
-        if crate::actions::scroll_read::string(&child, "AXSubrole", deadline)?
+        if scroll_read::string(&child, "AXSubrole", deadline)?
             .is_some_and(|subrole| subroles.contains(&subrole.as_str()))
             && perform_repeated_action(&child, "AXPress", amount, deadline)?
         {
@@ -241,12 +257,10 @@ pub(crate) fn find_scroll_area(
         let Some(candidate) = current else {
             return Ok(None);
         };
-        if crate::actions::scroll_read::string(&candidate, "AXRole", deadline)?.as_deref()
-            == Some("AXScrollArea")
-        {
+        if scroll_read::string(&candidate, "AXRole", deadline)?.as_deref() == Some("AXScrollArea") {
             return Ok(Some(candidate));
         }
-        current = crate::actions::scroll_read::element(&candidate, "AXParent", deadline)?;
+        current = scroll_read::element(&candidate, "AXParent", deadline)?;
     }
     Ok(None)
 }

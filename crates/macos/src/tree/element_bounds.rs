@@ -85,6 +85,78 @@ pub(crate) fn intersect_rects(left: Rect, right: Rect) -> Option<Rect> {
     })
 }
 
+/// Half the extent a scroll area clips to on an axis where it hides nothing,
+/// large enough that intersecting with it keeps the enclosing viewport.
+const UNCLIPPED_HALF_EXTENT: f64 = 1.0e9;
+
+/// The rectangle a scroll area clips its content to. A scroll area hides
+/// content only on an axis where that content can move: where `AXContentSize`
+/// is no larger than the area, everything fits, so the area clips nothing on
+/// that axis and the enclosing viewport decides. SwiftUI scroll views that
+/// centre narrower content report an origin that leaves the content outside
+/// the frame although it is drawn and hit-testable; the frame alone would call
+/// it offscreen. Without a content size the frame is used as reported, and a
+/// content size that is not positive and finite on both axes, such as the
+/// `{0, 0}` placeholder some areas answer before layout, counts as none.
+pub(crate) fn scroll_area_clip(bounds: Rect, content: Option<(f64, f64)>) -> Rect {
+    const SLACK: f64 = 0.5;
+    let Some((content_width, content_height)) = content.filter(|&(width, height)| {
+        width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0
+    }) else {
+        return bounds;
+    };
+    let mut clip = bounds;
+    if content_width <= bounds.width + SLACK {
+        clip.x = -UNCLIPPED_HALF_EXTENT;
+        clip.width = 2.0 * UNCLIPPED_HALF_EXTENT;
+    }
+    if content_height <= bounds.height + SLACK {
+        clip.y = -UNCLIPPED_HALF_EXTENT;
+        clip.height = 2.0 * UNCLIPPED_HALF_EXTENT;
+    }
+    clip
+}
+
+/// Whether `inner` lies wholly inside `outer`. A rectangle inside a scroll
+/// area's reported frame is clipped the same whatever its content size says,
+/// so the content size need not be read.
+pub(crate) fn contains_rect(outer: Rect, inner: Rect) -> bool {
+    inner.x >= outer.x
+        && inner.y >= outer.y
+        && inner.x + inner.width <= outer.x + outer.width
+        && inner.y + inner.height <= outer.y + outer.height
+}
+
+/// The clip a `role` element applies, from its reported `bounds`. Only a
+/// scroll area reads its content size; a read that fails keeps the frame.
+#[cfg(target_os = "macos")]
+pub(crate) fn clip_bounds(
+    element: &AXElement,
+    role: &str,
+    bounds: Option<Rect>,
+    deadline: std::time::Instant,
+) -> Option<Rect> {
+    let bounds = bounds?;
+    if role != "AXScrollArea" {
+        return Some(bounds);
+    }
+    let content = super::resolve::resolve_ax_read::read_size(element, "AXContentSize", deadline)
+        .ok()
+        .flatten()
+        .map(|size| (size.width, size.height));
+    Some(scroll_area_clip(bounds, content))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn clip_bounds(
+    _element: &AXElement,
+    _role: &str,
+    bounds: Option<Rect>,
+    _deadline: std::time::Instant,
+) -> Option<Rect> {
+    bounds
+}
+
 pub(crate) fn clipped_viewport(
     parent: Option<Rect>,
     role: &str,
@@ -138,7 +210,8 @@ fn clip_by_ancestors(
             return Ok(viewport_from_clips(window, &clips));
         }
         if clips_descendants(&role) {
-            clips.push((role.clone(), read_bounds_with_deadline(&parent, instant)?));
+            let bounds = read_bounds_with_deadline(&parent, instant)?;
+            clips.push((role.clone(), clip_bounds(&parent, &role, bounds, instant)));
         }
         if role == "AXWindow" || draws_own_surface(&role) {
             return Ok(viewport_from_clips(window, &clips));
