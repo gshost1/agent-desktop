@@ -39,6 +39,13 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
         self.inner.permission_report(deadline)
     }
 
+    fn preflight_permission_report(
+        &self,
+        deadline: Deadline,
+    ) -> Result<PermissionReport, AdapterError> {
+        self.inner.preflight_permission_report(deadline)
+    }
+
     fn unknown_accessibility_means_unsupported(&self) -> bool {
         self.inner.unknown_accessibility_means_unsupported()
     }
@@ -368,3 +375,7 @@ fn is_unsupported(error: &AdapterError) -> bool {
             | agent_desktop_core::ErrorCode::ActionNotSupported
     )
 }
+
+#[cfg(test)]
+#[path = "system_ops_tests.rs"]
+mod tests;
