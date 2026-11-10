@@ -6,6 +6,11 @@ use agent_desktop_core::WindowInfo;
 #[derive(Debug, Clone)]
 pub(crate) enum LaunchWindow {
     Shown(WindowInfo),
+    /// The window the launch would claim, read before the window server put
+    /// it on screen: not visible, not minimized and without a size. Its
+    /// bounds and visibility are not yet the window's, so the wait reads
+    /// again; a wait that ends on it still reports it.
+    Forming(WindowInfo),
     Absent,
     Several(Vec<String>),
 }
@@ -17,10 +22,10 @@ impl LaunchWindow {
     /// is not a failure of the launch.
     pub(crate) fn pick(mut windows: Vec<WindowInfo>) -> Self {
         if windows.len() == 1 {
-            return Self::Shown(windows.remove(0));
+            return Self::claim(windows.remove(0));
         }
         if let Some(focused) = windows.iter().position(|window| window.state.is_focused) {
-            return Self::Shown(windows.swap_remove(focused));
+            return Self::claim(windows.swap_remove(focused));
         }
         if windows.is_empty() {
             return Self::Absent;
@@ -28,11 +33,19 @@ impl LaunchWindow {
         Self::Several(windows.into_iter().map(|window| window.id).collect())
     }
 
+    fn claim(window: WindowInfo) -> Self {
+        if is_forming(&window) {
+            Self::Forming(window)
+        } else {
+            Self::Shown(window)
+        }
+    }
+
     /// The window the result reports and the note that explains a missing
     /// one.
     pub(crate) fn into_parts(self) -> (Option<WindowInfo>, Option<String>) {
         match self {
-            Self::Shown(window) => (Some(window), None),
+            Self::Shown(window) | Self::Forming(window) => (Some(window), None),
             Self::Absent => (None, None),
             Self::Several(ids) => (
                 None,
@@ -44,6 +57,18 @@ impl LaunchWindow {
             ),
         }
     }
+}
+
+/// A window the window server has not placed yet reads as not visible with
+/// a zero size. A real window that is off screen, such as one on another
+/// Space, keeps its size, and a minimized one says so.
+fn is_forming(window: &WindowInfo) -> bool {
+    window.state.visible != Some(true)
+        && window.state.minimized != Some(true)
+        && window
+            .bounds
+            .as_ref()
+            .is_none_or(|bounds| bounds.width <= 0.0 || bounds.height <= 0.0)
 }
 
 #[cfg(test)]

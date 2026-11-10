@@ -36,6 +36,14 @@ pub trait ObservationOps: Send + Sync {
         Err(AdapterError::not_supported("focused_app"))
     }
 
+    /// Starts opening what a window-inventory read needs, such as a
+    /// window-server connection, so its setup overlaps the permission
+    /// preflight. A best-effort hint: callers ignore the result and no
+    /// output depends on it.
+    fn prepare_window_inventory(&self) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
     /// Reports protocol targets that have no screen position without requiring a native read.
     fn is_nonspatial_target(&self, _handle: &NativeHandle) -> bool {
         false
