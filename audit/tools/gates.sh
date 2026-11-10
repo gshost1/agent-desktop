@@ -3,10 +3,10 @@ exec 9>/tmp/claude-1000/gates.serial.lock; flock 9
 # usage: gates.sh <worktree>   runs every AGENTS.md gate on the Linux host set
 set -uo pipefail
 export PATH=$HOME/.cargo/bin:$PATH
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/.cache/agent-desktop-target}
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 cd "$1" || exit 2
-git ls-files -z | xargs -0 touch --no-create
+export CARGO_TARGET_DIR="$HOME/.cache/agent-desktop-target/$(basename "$(git rev-parse --show-toplevel)")"
+echo "== target dir: $CARGO_TARGET_DIR"
 H=(-p agent-desktop-core -p agent-desktop-linux -p agent-desktop -p agent-desktop-ffi)
 [ -d crates/web ] && H+=(-p agent-desktop-web)
 echo "== host set: ${H[*]}"
