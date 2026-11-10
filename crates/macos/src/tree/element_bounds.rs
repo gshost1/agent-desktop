@@ -95,22 +95,50 @@ const UNCLIPPED_HALF_EXTENT: f64 = 1.0e9;
 /// that axis and the enclosing viewport decides. SwiftUI scroll views that
 /// centre narrower content report an origin that leaves the content outside
 /// the frame although it is drawn and hit-testable; the frame alone would call
-/// it offscreen. Without a content size the frame is used as reported.
+/// it offscreen. Without a content size the frame is used as reported, and a
+/// content size that is not positive and finite on both axes, such as the
+/// `{0, 0}` placeholder some areas answer before layout, counts as none.
 pub(crate) fn scroll_area_clip(bounds: Rect, content: Option<(f64, f64)>) -> Rect {
     const SLACK: f64 = 0.5;
-    let Some((content_width, content_height)) = content else {
+    let Some((content_width, content_height)) = content.filter(|&(width, height)| {
+        width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0
+    }) else {
         return bounds;
     };
     let mut clip = bounds;
-    if content_width.is_finite() && content_width <= bounds.width + SLACK {
+    if content_width <= bounds.width + SLACK {
         clip.x = -UNCLIPPED_HALF_EXTENT;
         clip.width = 2.0 * UNCLIPPED_HALF_EXTENT;
     }
-    if content_height.is_finite() && content_height <= bounds.height + SLACK {
+    if content_height <= bounds.height + SLACK {
         clip.y = -UNCLIPPED_HALF_EXTENT;
         clip.height = 2.0 * UNCLIPPED_HALF_EXTENT;
     }
     clip
+}
+
+/// The clip a `role` element applies, from its reported `bounds` and the
+/// `AXContentSize` already read with them.
+pub(crate) fn clip_from_attrs(
+    role: &str,
+    bounds: Option<Rect>,
+    content: Option<(f64, f64)>,
+) -> Option<Rect> {
+    let bounds = bounds?;
+    if role != "AXScrollArea" {
+        return Some(bounds);
+    }
+    Some(scroll_area_clip(bounds, content))
+}
+
+/// Whether `inner` lies wholly inside `outer`. A rectangle inside a scroll
+/// area's reported frame is clipped the same whatever its content size says,
+/// so the content size need not be read.
+pub(crate) fn contains_rect(outer: Rect, inner: Rect) -> bool {
+    inner.x >= outer.x
+        && inner.y >= outer.y
+        && inner.x + inner.width <= outer.x + outer.width
+        && inner.y + inner.height <= outer.y + outer.height
 }
 
 /// The clip a `role` element applies, from its reported `bounds`. Only a

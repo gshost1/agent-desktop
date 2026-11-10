@@ -72,6 +72,7 @@ mod imp {
         let mut position = None;
         let mut size = None;
         let mut has_scrollbars = false;
+        let mut content_size = None;
         let mut subrole = None;
         let mut status = NodeAttributeStatus::default();
         let mut deadline_exhausted = false;
@@ -79,6 +80,11 @@ mod imp {
             .zip(attributes.into_iter())
         {
             if node_attribute_decode::is_null(&item) {
+                continue;
+            }
+            if index == crate::tree::properties::node_attribute_status::CONTENT_SIZE {
+                content_size =
+                    node_attribute_decode::size(&item).map(|size| (size.width, size.height));
                 continue;
             }
             if let Some(error) = node_attribute_decode::slot_error(&item) {
@@ -278,7 +284,10 @@ mod imp {
                 bounds: position
                     .zip(size)
                     .and_then(|(position, size)| rect_from_parts(position, size)),
-                has_scrollbars,
+                scroll: crate::tree::properties::node_scroll_attrs::NodeScrollAttrs {
+                    has_scrollbars,
+                    content_size,
+                },
             },
             identifiers,
             metrics: crate::tree::properties::node_attribute_metrics::NodeAttributeMetrics {

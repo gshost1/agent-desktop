@@ -268,14 +268,21 @@ mod imp {
                 return Ok(Some(visible));
             }
             if let Some(clipping_role) = role.as_deref().filter(|role| clips_descendants(role)) {
-                let reported = read_bounds_with_deadline(&current, deadline)?;
-                let Some(bounds) = crate::tree::element_bounds::clip_bounds(
-                    &current,
-                    clipping_role,
-                    reported,
-                    deadline,
-                ) else {
+                let Some(reported) = read_bounds_with_deadline(&current, deadline)? else {
                     return Ok(None);
+                };
+                let bounds = if crate::tree::element_bounds::contains_rect(reported, visible) {
+                    reported
+                } else {
+                    match crate::tree::element_bounds::clip_bounds(
+                        &current,
+                        clipping_role,
+                        Some(reported),
+                        deadline,
+                    ) {
+                        Some(bounds) => bounds,
+                        None => return Ok(None),
+                    }
                 };
                 let Some(intersection) = intersect_rects(visible, bounds) else {
                     return Ok(None);

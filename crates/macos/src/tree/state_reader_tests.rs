@@ -17,7 +17,7 @@ fn sample_attrs() -> NodeAttrs {
             width: 10.0,
             height: 10.0,
         }),
-        has_scrollbars: false,
+        scroll: Default::default(),
     }
 }
 

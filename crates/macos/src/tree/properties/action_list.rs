@@ -89,7 +89,7 @@ pub(crate) fn read_platform_available_actions(
     if has("AXScrollToVisible") {
         push_unique(&mut read.actions, capability::SCROLL_TO);
     }
-    if has_scroll_mechanism(&has, attrs.has_scrollbars) {
+    if has_scroll_mechanism(&has, attrs.scroll.has_scrollbars) {
         push_unique(&mut read.actions, capability::SCROLL);
     }
     let value_settable = value_settable(role, attrs.states.control.readonly, || {

@@ -357,3 +357,29 @@ fn content_size_that_fits_frees_only_its_own_axis() {
         area
     );
 }
+
+#[test]
+fn placeholder_or_invalid_content_size_keeps_the_reported_frame() {
+    let area = frame(156.0, 88.0, 884.0, 720.0);
+    let window = frame(40.0, 60.0, 1000.0, 748.0);
+    let row_above_the_area = frame(160.0, 62.0, 300.0, 18.0);
+
+    for content in [
+        (0.0, 0.0),
+        (-10.0, -10.0),
+        (0.0, 1273.5),
+        (884.0, 0.0),
+        (-1.0, 1273.5),
+        (884.0, f64::NAN),
+    ] {
+        assert_eq!(
+            super::scroll_area_clip(area, Some(content)),
+            area,
+            "{content:?}"
+        );
+        assert!(
+            offscreen_in(row_above_the_area, window, area, Some(content)),
+            "{content:?}"
+        );
+    }
+}

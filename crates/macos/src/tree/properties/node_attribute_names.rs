@@ -14,7 +14,7 @@ mod imp {
         string::{CFString, CFStringRef},
     };
 
-    pub(crate) const NODE_ATTRIBUTE_COUNT: u64 = 23;
+    pub(crate) const NODE_ATTRIBUTE_COUNT: u64 = 24;
     const NAMES: [&str; NODE_ATTRIBUTE_COUNT as usize] = [
         kAXRoleAttribute,
         kAXTitleAttribute,
@@ -39,6 +39,7 @@ mod imp {
         "AXVerticalScrollBar",
         "AXHorizontalScrollBar",
         kAXSubroleAttribute,
+        "AXContentSize",
     ];
 
     struct AttributeNames {
@@ -98,10 +99,10 @@ mod imp {
 
     pub(crate) fn attribute_mask(requirements: EvidenceRequirements) -> u32 {
         use crate::tree::properties::node_attribute_status::{
-            AX_DOM_IDENTIFIER, AX_IDENTIFIER, BUSY, DESCRIPTION, DISCLOSING, ENABLED, EXPANDED,
-            FOCUSED, HIDDEN, HORIZONTAL_SCROLLBAR, LABEL, MODAL, PLACEHOLDER, POSITION, REQUIRED,
-            ROLE, SELECTED, SIZE, SUBROLE, TITLE, TITLE_ELEMENT, VALUE, VERTICAL_SCROLLBAR,
-            attribute_bit,
+            AX_DOM_IDENTIFIER, AX_IDENTIFIER, BUSY, CONTENT_SIZE, DESCRIPTION, DISCLOSING, ENABLED,
+            EXPANDED, FOCUSED, HIDDEN, HORIZONTAL_SCROLLBAR, LABEL, MODAL, PLACEHOLDER, POSITION,
+            REQUIRED, ROLE, SELECTED, SIZE, SUBROLE, TITLE, TITLE_ELEMENT, VALUE,
+            VERTICAL_SCROLLBAR, attribute_bit,
         };
         let mut mask = attribute_bit(ROLE) | attribute_bit(SUBROLE);
         if requirements.name || requirements.description {
@@ -117,8 +118,19 @@ mod imp {
         }
         if requirements.states {
             for index in [
-                VALUE, ENABLED, FOCUSED, EXPANDED, DISCLOSING, SELECTED, HIDDEN, BUSY, MODAL,
-                REQUIRED, POSITION, SIZE,
+                VALUE,
+                ENABLED,
+                FOCUSED,
+                EXPANDED,
+                DISCLOSING,
+                SELECTED,
+                HIDDEN,
+                BUSY,
+                MODAL,
+                REQUIRED,
+                POSITION,
+                SIZE,
+                CONTENT_SIZE,
             ] {
                 mask |= attribute_bit(index);
             }

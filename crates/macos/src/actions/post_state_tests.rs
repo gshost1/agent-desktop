@@ -73,7 +73,7 @@ fn attrs_with_bounds(bounds: Rect) -> NodeAttrs {
         },
         states: NodeAttrStates::default(),
         bounds: Some(bounds),
-        has_scrollbars: false,
+        scroll: Default::default(),
     }
 }
 

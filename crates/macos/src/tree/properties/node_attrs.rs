@@ -9,7 +9,7 @@ pub(crate) struct NodeAttrs {
     pub(crate) name_evidence: NameEvidence,
     pub(crate) states: NodeAttrStates,
     pub(crate) bounds: Option<Rect>,
-    pub(crate) has_scrollbars: bool,
+    pub(crate) scroll: super::node_scroll_attrs::NodeScrollAttrs,
 }
 
 pub(crate) fn parse_enabled(enabled: Option<String>) -> bool {
