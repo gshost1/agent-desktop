@@ -1,8 +1,10 @@
 use agent_desktop_core::{AdapterError, Deadline};
 
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
+use crate::actions::chain::menu_gate::closed_menu_pid;
 use crate::actions::chain::menu_observation::MenuObservation;
 use crate::actions::chain::menu_tracking::{self, observe_menu};
+use crate::actions::chain::selection_write::SelectionWrite;
 use crate::tree::AXElement;
 
 const MAX_MENU_SEARCH_NODES: usize = 2_048;
@@ -53,39 +55,78 @@ pub(crate) fn select_then_show_menu(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    if !select_containing_item(element, deadline)? {
+    if closed_menu_pid(element, deadline).is_none() {
         return Ok(DeliveryOutcome::NotDelivered);
     }
-    show_menu_on_element(element, deadline)
+    after_selection(select_containing_item(element, deadline)?, || {
+        show_menu_on_element(element, deadline)
+    })
 }
 
 pub(crate) fn select_then_selected_items_menu(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    if !select_containing_item(element, deadline)? {
+    if closed_menu_pid(element, deadline).is_none() {
         return Ok(DeliveryOutcome::NotDelivered);
     }
-    let Some(window) = window_ancestor(element, deadline)? else {
-        return Ok(DeliveryOutcome::NotDelivered);
-    };
-    let Some(menu_button) = selected_items_menu_button(&window, deadline)? else {
-        return Ok(DeliveryOutcome::NotDelivered);
-    };
-    show_menu_or_press(&menu_button, deadline)
+    after_selection(select_containing_item(element, deadline)?, || {
+        let Some(window) = window_ancestor(element, deadline)? else {
+            return Ok(DeliveryOutcome::NotDelivered);
+        };
+        let Some(menu_button) = selected_items_menu_button(&window, deadline)? else {
+            return Ok(DeliveryOutcome::NotDelivered);
+        };
+        show_menu_or_press(&menu_button, deadline)
+    })
+}
+
+/// A step that has written the selection has changed the application, so
+/// what it reports afterwards carries that delivery: a later "nothing
+/// delivered" is still an unverified delivery and a later failure is never a
+/// safe retry.
+fn after_selection(
+    selection: SelectionWrite,
+    then: impl FnOnce() -> Result<DeliveryOutcome, AdapterError>,
+) -> Result<DeliveryOutcome, AdapterError> {
+    match selection {
+        SelectionWrite::NotWritten => Ok(DeliveryOutcome::NotDelivered),
+        SelectionWrite::Unconfirmed => Ok(DeliveryOutcome::DeliveredUnverified),
+        SelectionWrite::Selected => match then() {
+            Ok(outcome) if outcome.was_delivered() => Ok(outcome),
+            Ok(_) => Ok(DeliveryOutcome::DeliveredUnverified),
+            Err(error) => Err(after_write(error)),
+        },
+    }
+}
+
+/// Reads the selection back after a write that the application accepted,
+/// with the settle every selection write gets, since the application applies
+/// it a moment after it answers. A read that keeps failing cannot undo the
+/// write, so it leaves the selection unconfirmed, not unwritten.
+fn selection_after_write(
+    deadline: Deadline,
+    mut read: impl FnMut() -> Result<bool, AdapterError>,
+) -> SelectionWrite {
+    if crate::actions::select::selection_settle::direct_selection_holds(deadline, || read().ok()) {
+        SelectionWrite::Selected
+    } else {
+        SelectionWrite::Unconfirmed
+    }
+}
+
+fn after_write(error: AdapterError) -> AdapterError {
+    crate::actions::DeliveryTracker::from_delivered_units(1).annotate(error)
 }
 
 fn show_menu_on_element(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    let Some(pid) = crate::system::app::app_ops::pid_from_element(element, deadline) else {
+    let Some(pid) = closed_menu_pid(element, deadline) else {
         return Ok(DeliveryOutcome::NotDelivered);
     };
-    let baseline = observe_menu(pid, deadline);
-    if baseline == MenuObservation::Open {
-        return Ok(DeliveryOutcome::NotDelivered);
-    }
+    let baseline = MenuObservation::Closed;
     perform_menu_action(
         element,
         "AXShowMenu",
@@ -98,13 +139,10 @@ fn show_menu_or_press(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<DeliveryOutcome, AdapterError> {
-    let Some(pid) = crate::system::app::app_ops::pid_from_element(element, deadline) else {
+    let Some(pid) = closed_menu_pid(element, deadline) else {
         return Ok(DeliveryOutcome::NotDelivered);
     };
-    let baseline = observe_menu(pid, deadline);
-    if baseline == MenuObservation::Open {
-        return Ok(DeliveryOutcome::NotDelivered);
-    }
+    let baseline = MenuObservation::Closed;
     for action in ["AXShowMenu", "AXPress"] {
         let outcome = perform_menu_action(element, action, MenuTarget { pid, baseline }, deadline)?;
         if outcome.was_delivered() {
@@ -135,7 +173,7 @@ fn perform_menu_action(
         Ok(false) => Ok(DeliveryOutcome::NotDelivered),
         Ok(true) => Ok(DeliveryOutcome::from_delivery(
             true,
-            wait_for_new_menu(target.pid, deadline)?,
+            wait_for_new_menu(target.pid, deadline),
         )),
         Err(failure) if menu_tracking::is_tracking_timeout(&failure) => {
             menu_tracking::settle_tracking_timeout(
@@ -148,17 +186,22 @@ fn perform_menu_action(
     }
 }
 
-fn wait_for_new_menu(pid: i32, deadline: Deadline) -> Result<bool, AdapterError> {
+/// Whether a new menu shows up after a posted menu action. The action is
+/// already delivered, so a spent deadline ends the wait unverified instead of
+/// turning the delivery into an error.
+fn wait_for_new_menu(pid: i32, deadline: Deadline) -> bool {
     let local_end =
         std::time::Instant::now() + std::time::Duration::from_millis(menu_tracking::MENU_SETTLE_MS);
     loop {
         if menu_probe(pid, deadline) {
-            return Ok(true);
+            return true;
         }
         if deadline.is_expired() || std::time::Instant::now() >= local_end {
-            return Ok(false);
+            return false;
         }
-        let pause = deadline.remaining_slice(std::time::Duration::from_millis(25))?;
+        let Ok(pause) = deadline.remaining_slice(std::time::Duration::from_millis(25)) else {
+            return false;
+        };
         std::thread::sleep(pause.min(std::time::Duration::from_millis(25)));
     }
 }
@@ -170,11 +213,14 @@ fn menu_probe(pid: i32, deadline: Deadline) -> bool {
     observe_menu(pid, deadline) == MenuObservation::Open
 }
 
-fn select_containing_item(element: &AXElement, deadline: Deadline) -> Result<bool, AdapterError> {
+fn select_containing_item(
+    element: &AXElement,
+    deadline: Deadline,
+) -> Result<SelectionWrite, AdapterError> {
     let mut current = Some(element.clone());
     for _ in 0..4 {
         let Some(candidate) = current else {
-            return Ok(false);
+            return Ok(SelectionWrite::NotWritten);
         };
         prepare(&candidate, deadline)?;
         if crate::actions::ax_helpers::is_attr_settable(&candidate, "AXSelected", deadline)? {
@@ -185,12 +231,14 @@ fn select_containing_item(element: &AXElement, deadline: Deadline) -> Result<boo
                 true,
                 deadline,
             )? {
-                return selected(&candidate, deadline);
+                return Ok(selection_after_write(deadline, || {
+                    selected(&candidate, deadline)
+                }));
             }
         }
         current = parent(&candidate, deadline)?;
     }
-    Ok(false)
+    Ok(SelectionWrite::NotWritten)
 }
 
 fn selected(element: &AXElement, deadline: Deadline) -> Result<bool, AdapterError> {
@@ -284,3 +332,7 @@ fn instant(deadline: Deadline) -> Result<std::time::Instant, AdapterError> {
 fn prepare(element: &AXElement, deadline: Deadline) -> Result<(), AdapterError> {
     crate::tree::properties::attributes::set_messaging_timeout(element, deadline)
 }
+
+#[cfg(test)]
+#[path = "chain_menu_steps_tests.rs"]
+mod tests;

@@ -44,6 +44,13 @@ pub trait ObservationOps: Send + Sync {
         Ok(())
     }
 
+    /// Starts opening the accessibility connection to one application process
+    /// a command is about to read, so its setup overlaps the permission
+    /// preflight. A best-effort hint like `prepare_window_inventory`.
+    fn prepare_application_connection(&self, _pid: crate::ProcessId) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
     /// Reports protocol targets that have no screen position without requiring a native read.
     fn is_nonspatial_target(&self, _handle: &NativeHandle) -> bool {
         false
