@@ -112,8 +112,9 @@ pub(crate) fn resolve_query_from_allowing_partial(
 }
 
 /// Resolves through every attempt. A `--first` answer that waited for the
-/// row pass to prove its ref is kept as the answer, without that ref, when
-/// the row pass fails, so the extra pass never costs a found match.
+/// row pass to prove its ref is kept, without that ref, when the row pass
+/// runs out of time, so the extra pass never turns a found match into a
+/// timeout. Any other failure of the row pass is returned as it is.
 fn resolve_attempts(
     attempt: &Attempt<'_>,
     observe: impl FnMut(crate::Deadline, RowReading) -> Result<ObservedObservation, AppError>,
@@ -121,13 +122,15 @@ fn resolve_attempts(
     let started = crate::wait::deadline::now();
     let mut answer_without_ref = None;
     match resolve_attempts_with(attempt, observe, &mut answer_without_ref) {
-        Err(error) => match answer_without_ref {
-            Some(resolution) => {
-                let aggregate = resolution.stats.clone();
-                finish_partial(resolution, aggregate, started)
+        Err(error) if error.code() == crate::ErrorCode::Timeout.as_str() => {
+            match answer_without_ref {
+                Some(resolution) => {
+                    let aggregate = resolution.stats.clone();
+                    finish_partial(resolution, aggregate, started)
+                }
+                None => Err(error),
             }
-            None => Err(error),
-        },
+        }
         resolved => resolved,
     }
 }
@@ -255,9 +258,7 @@ fn resolve_attempts_with(
 
 /// A `--first` resolution reads everything outside list and table rows
 /// first. Its first match there answers the query without the rows; with no
-/// match there, the next pass reads the rows too. So does a match whose ref
-/// would carry no element token, since only a count of the whole window
-/// proves such a ref.
+/// match there, the next pass reads the rows too.
 fn first_pass_rows(request: &LocatorResolveRequest) -> RowReading {
     if request.selection == super::LocatorSelection::First {
         RowReading::LeaveUnread
@@ -330,12 +331,13 @@ fn resolve_observed_attempt(
     )?;
     let rows_left_unread = tree.rows_unread();
     let unanswered = !resolution.meta.selection_complete;
-    let awaits_proof = rows_left_unread
-        && !unanswered
+    let unproven_first = request.selection == super::LocatorSelection::First
         && request.materialization == super::LocatorMaterialization::SelectedMatches
-        && super::row_proof::awaits_row_proof(&resolution, &tree);
+        && !unanswered
+        && super::row_proof::has_unproven_tokenless_match(&resolution, &tree);
+    let awaits_proof = unproven_first && rows_left_unread;
     let published_as_partial =
-        (attempt.allow_partial && unanswered && !rows_left_unread) || awaits_proof;
+        (attempt.allow_partial && unanswered && !rows_left_unread) || unproven_first;
     if published_as_partial {
         super::partial::publish_observed_matches(adapter, query, request, &mut resolution, &tree)?;
     } else if request.materialization == super::LocatorMaterialization::SelectedMatches

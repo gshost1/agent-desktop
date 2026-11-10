@@ -1,21 +1,20 @@
-//! The `--first` match that must wait for the row pass before it gets a ref.
+//! The `--first` match whose ref only a whole-window read can prove.
 
 use super::{LocatorResolution, ObservedTree};
 
-/// Whether a selected match would get a ref with no element token whose
-/// capture is incomplete only because the rows were left unread. A longer read
-/// can prove that ref unique; an ambiguous or unknown verdict stays as it is,
-/// so it gets no extra pass.
-pub(super) fn awaits_row_proof(resolution: &LocatorResolution, tree: &ObservedTree) -> bool {
+/// Whether a selected match would get a ref with no element token that its
+/// capture left incomplete. Only a read of the whole window can prove such a
+/// ref unique; an ambiguous or unknown verdict stays as it is with a longer
+/// read, so it does not qualify.
+pub(super) fn has_unproven_tokenless_match(
+    resolution: &LocatorResolution,
+    tree: &ObservedTree,
+) -> bool {
     resolution.matches.iter().any(|found| {
         found.entry.identity.capture == crate::CaptureVerdict::Incomplete
-            && crate::refs::ref_identity::element_token(&found.entry).is_none()
             && tree
                 .nodes
                 .get(found.document_order as usize)
-                .is_some_and(|node| {
-                    let (addressable, settled) = super::materialize::addressability(&node.evidence);
-                    addressable || !settled
-                })
+                .is_some_and(super::materialize::may_publish_tokenless_ref)
     })
 }

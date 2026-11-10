@@ -18,7 +18,8 @@ struct PanelAdapter {
     passes_with_rows: AtomicUsize,
     combobox_token: Option<&'static str>,
     pass_without_rows_takes: Option<std::time::Duration>,
-    pass_with_rows_fails: bool,
+    pass_with_rows_fails: Option<crate::ErrorCode>,
+    pass_with_rows_cut: bool,
 }
 
 impl PanelAdapter {
@@ -52,11 +53,11 @@ impl ObservationOps for PanelAdapter {
             return Ok(self.stamped(panel_without_rows()));
         }
         self.passes_with_rows.fetch_add(1, Ordering::SeqCst);
-        if self.pass_with_rows_fails {
-            return Err(AdapterError::new(
-                crate::ErrorCode::AppUnresponsive,
-                "row read failed",
-            ));
+        if let Some(code) = self.pass_with_rows_fails.clone() {
+            return Err(AdapterError::new(code, "row read failed"));
+        }
+        if self.pass_with_rows_cut {
+            return Ok(self.stamped(panel_cut_inside_rows()));
         }
         Ok(self.stamped(panel_with_rows()))
     }
@@ -95,6 +96,26 @@ fn panel_with_rows() -> ObservedTree {
         ],
         vec![0],
         true,
+    )
+}
+
+/// The combobox comes before the list, and the read stopped inside the
+/// rows: complete up to the match, not a whole window, and no rows left
+/// unread on purpose.
+fn panel_cut_inside_rows() -> ObservedTree {
+    let mut list = node(2, evidence("list", None), Vec::new(), &[1]);
+    list.completeness.subtree_complete = false;
+    list.children_count = Some(ROWS);
+    let mut root = node(0, evidence("sheet", None), vec![1, 2], &[]);
+    root.completeness.subtree_complete = false;
+    tree(
+        vec![
+            root,
+            node(1, evidence("combobox", Some("Where:")), Vec::new(), &[0]),
+            list,
+        ],
+        vec![0],
+        false,
     )
 }
 
@@ -256,9 +277,9 @@ fn a_tokenless_first_match_with_no_budget_left_for_the_rows_is_answered_without_
 }
 
 #[test]
-fn a_tokenless_first_match_whose_row_pass_fails_is_answered_without_a_ref() {
+fn a_tokenless_first_match_whose_row_pass_times_out_is_answered_without_a_ref() {
     let adapter = PanelAdapter {
-        pass_with_rows_fails: true,
+        pass_with_rows_fails: Some(crate::ErrorCode::Timeout),
         ..PanelAdapter::default()
     };
     let (query, request) = first_with_refs("combobox");
@@ -298,4 +319,43 @@ fn a_first_match_with_an_element_token_keeps_the_rows_unread() {
         0,
         "a ref that re-identifies itself by token needs no window-wide count"
     );
+}
+
+#[test]
+fn a_row_pass_that_fails_for_another_reason_returns_its_error() {
+    let adapter = PanelAdapter {
+        pass_with_rows_fails: Some(crate::ErrorCode::PermDenied),
+        ..PanelAdapter::default()
+    };
+    let (query, request) = first_with_refs("combobox");
+
+    let error = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .err()
+    .expect("a permission failure is not hidden behind the earlier answer");
+
+    assert_eq!(error.code(), "PERM_DENIED");
+}
+
+#[test]
+fn a_row_pass_cut_inside_the_rows_publishes_no_unproven_ref() {
+    let adapter = PanelAdapter {
+        pass_with_rows_cut: true,
+        ..PanelAdapter::default()
+    };
+    let (query, request) = first_with_refs("combobox");
+
+    let resolution = resolve_query(
+        &adapter,
+        &query,
+        ObservationRoot::Window(&window()),
+        &request,
+    )
+    .expect("the match outside the rows still answers --first");
+
+    assert_answered_without_a_ref(&resolution);
 }
