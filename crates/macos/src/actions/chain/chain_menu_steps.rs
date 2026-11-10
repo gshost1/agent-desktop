@@ -1,14 +1,13 @@
 use agent_desktop_core::{AdapterError, Deadline};
 
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
+use crate::actions::chain::menu_gate::closed_menu_pid;
 use crate::actions::chain::menu_observation::MenuObservation;
 use crate::actions::chain::menu_tracking::{self, observe_menu};
 use crate::actions::chain::selection_write::SelectionWrite;
 use crate::tree::AXElement;
 
 const MAX_MENU_SEARCH_NODES: usize = 2_048;
-const MENU_GATE_READS: usize = 3;
-const MENU_GATE_PAUSE_MS: u64 = 25;
 
 pub(crate) fn show_menu(
     element: &AXElement,
@@ -80,46 +79,6 @@ pub(crate) fn select_then_selected_items_menu(
         };
         show_menu_or_press(&menu_button, deadline)
     })
-}
-
-/// Only a menu read that positively answered "closed" lets a step open one:
-/// an open menu would be opened twice, and an unreadable read is what an
-/// application tracking a menu returns, so it is treated as one being up.
-fn may_open_menu(observation: MenuObservation) -> bool {
-    observation == MenuObservation::Closed
-}
-
-/// Reads the menu state again while it is unreadable, a few times within the
-/// deadline, so one failed read of a responsive application does not refuse
-/// the step; a read that keeps failing is the answer.
-fn settled_menu_observation(
-    mut observe: impl FnMut() -> MenuObservation,
-    deadline: Deadline,
-) -> MenuObservation {
-    let mut observation = observe();
-    for _ in 1..MENU_GATE_READS {
-        if observation != MenuObservation::Unreadable || deadline.is_expired() {
-            break;
-        }
-        std::thread::sleep(
-            deadline
-                .remaining()
-                .min(std::time::Duration::from_millis(MENU_GATE_PAUSE_MS)),
-        );
-        observation = observe();
-    }
-    observation
-}
-
-/// The target's pid when its menu state reads as closed, the one state from
-/// which a step may write the selection or open a menu.
-fn closed_menu_pid(element: &AXElement, deadline: Deadline) -> Option<i32> {
-    let pid = crate::system::app::app_ops::pid_from_element(element, deadline)?;
-    may_open_menu(settled_menu_observation(
-        || observe_menu(pid, deadline),
-        deadline,
-    ))
-    .then_some(pid)
 }
 
 /// A step that has written the selection has changed the application, so
