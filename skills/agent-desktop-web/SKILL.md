@@ -29,7 +29,7 @@ agent-desktop click @s8f3k2p9:e1
 agent-desktop snapshot --app "Google Chrome" --surface web -i --lines
 ```
 
-- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` and `[states]`. Copy the ref from the start of the line that names the control. Each snapshot gives new refs.
+- `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name) and `[states]`. Copy the ref from the start of the line that names the control. Each snapshot gives new refs.
 - Take the snapshot right after a click, with no `sleep`: it waits for the page the click opens. Its `data.url` and `data.title` name the page.
 - `-i` keeps interactive nodes only. To read text such as a total, a code or a sentence, search for it instead of reading the whole page:
 
