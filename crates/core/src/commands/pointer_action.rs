@@ -9,6 +9,10 @@ use serde_json::{Value, json};
 
 use crate::actionability::pointer_timeout::point_actionability_timeout;
 
+#[path = "pointer_action_focus_phase.rs"]
+mod focus_phase;
+pub(crate) use focus_phase::{CommandFocus, retry_leased_point_phase};
+
 struct EntryPointResolve<'a> {
     ref_id: &'a str,
     entry: &'a RefEntry,
@@ -164,11 +168,15 @@ pub(crate) fn point_deadline(timeout_ms: Option<u64>) -> Result<crate::Deadline,
         .map_err(AppError::Adapter)
 }
 
-pub(crate) fn wait_for_point_with_deadline<'a>(
+/// Waits before the lease for a ref's point to be visible and stable. When the
+/// target needs a scroll, the scroll is preceded by `focus`, so a raise made
+/// here is the command's one raise.
+pub(crate) fn wait_for_point_with_focus<'a>(
     args: crate::commands::point_resolve::PointResolveArgs<'a>,
     deadline: crate::Deadline,
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
+    focus: &mut CommandFocus,
 ) -> Result<crate::commands::point_resolve::ResolvedPoint, AppError> {
     use crate::commands::point_resolve::resolve_point_from_ref_or_xy_with_context;
 
@@ -179,10 +187,15 @@ pub(crate) fn wait_for_point_with_deadline<'a>(
     let entry = load_ref_entry(ref_id, context)?;
     let mut stability = Some(None);
     let mut last_report = None;
+    let mut last_refusal: Option<crate::AdapterError> = None;
     let mut last_scrolled_bounds_hash = None;
     loop {
         if deadline.is_expired() {
-            return Err(point_actionability_timeout(last_report));
+            let timeout = point_actionability_timeout(last_report);
+            return Err(focus_phase::with_last_refusal(
+                timeout,
+                last_refusal.as_ref(),
+            ));
         }
         match resolve_point_from_entry(
             EntryPointResolve {
@@ -204,17 +217,23 @@ pub(crate) fn wait_for_point_with_deadline<'a>(
             Err(err) => {
                 let remaining = deadline.remaining();
                 if !is_retryable_point_error(&err) {
-                    return Err(err);
+                    return Err(focus_phase::with_last_refusal(err, last_refusal.as_ref()));
                 }
                 last_report = Some(point_error_report(&err));
-                if remaining.is_zero() {
-                    return Err(point_actionability_timeout(last_report));
-                }
                 let observed = point_observed_bounds_hash(&err);
-                if point_requires_scroll(&err)
-                    && !(observed.is_some() && observed == last_scrolled_bounds_hash)
+                let requires_scroll = point_requires_scroll(&err);
+                let refusal = err.into_adapter_error();
+                if remaining.is_zero() {
+                    let timeout = point_actionability_timeout(last_report);
+                    return Err(focus_phase::with_last_refusal(timeout, Some(&refusal)));
+                }
+                last_refusal = Some(refusal);
+                if requires_scroll && !(observed.is_some() && observed == last_scrolled_bounds_hash)
                 {
-                    scroll_point_target(args, &entry, deadline, adapter, context)?;
+                    let lease = adapter.acquire_interaction_lease(deadline)?;
+                    focus.run(args, &lease, adapter, context)?;
+                    scroll_point_target(&entry, deadline, &lease, adapter)?;
+                    drop(lease);
                     last_scrolled_bounds_hash = observed;
                     std::thread::sleep(POLL_INTERVAL.min(deadline.remaining()));
                     continue;
@@ -233,7 +252,7 @@ pub(crate) fn wait_for_point_with_deadline<'a>(
     }
 }
 
-pub(crate) fn focus_point_under_lease(
+fn focus_point_under_lease(
     args: crate::commands::point_resolve::PointResolveArgs<'_>,
     lease: &crate::InteractionLease,
     adapter: &dyn PlatformAdapter,
@@ -282,40 +301,14 @@ pub(crate) fn resolve_point_under_lease<'a>(
     )
 }
 
-pub(crate) fn retry_leased_point_phase<T>(
-    timeout_ms: Option<u64>,
-    deadline: crate::Deadline,
-    mut attempt: impl FnMut() -> Result<T, AppError>,
-) -> Result<T, AppError> {
-    let auto_wait = timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
-    loop {
-        match attempt() {
-            Ok(value) => return Ok(value),
-            Err(error) if auto_wait && is_retryable_point_error(&error) => {
-                let remaining = deadline.remaining();
-                if remaining.is_zero() {
-                    return Err(point_actionability_timeout(Some(point_error_report(
-                        &error,
-                    ))));
-                }
-                std::thread::sleep(POLL_INTERVAL.min(remaining));
-            }
-            Err(error) => return Err(error),
-        }
-    }
-}
-
 fn scroll_point_target(
-    args: crate::commands::point_resolve::PointResolveArgs<'_>,
     entry: &RefEntry,
     deadline: crate::Deadline,
+    lease: &crate::InteractionLease,
     adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
 ) -> Result<(), AppError> {
-    let lease = adapter.acquire_interaction_lease(deadline)?;
-    focus_point_under_lease(args, &lease, adapter, context)?;
-    let handle = resolve_handle_within_deadline(adapter, entry, deadline, Some(&lease))?;
-    adapter.scroll_into_view(&handle, &lease)?;
+    let handle = resolve_handle_within_deadline(adapter, entry, deadline, Some(lease))?;
+    adapter.scroll_into_view(&handle, lease)?;
     Ok(())
 }
 

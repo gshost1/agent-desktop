@@ -4,6 +4,7 @@ import unittest
 from safe_semantic_guard import (
     SafetyError,
     fixture_window_identity,
+    focus_summary,
     frontmost_identity,
     non_fixture_frontmost_identity,
     unique_target,
@@ -82,6 +83,11 @@ class CommandPolicyTests(unittest.TestCase):
             WINDOW,
             False,
         )
+
+    def test_allows_list_displays_only_without_arguments(self):
+        validate_command(["list-displays"], APP, WINDOW, False)
+        with self.assertRaises(SafetyError):
+            validate_command(["list-displays", "--app", "Other"], APP, WINDOW, False)
 
     def test_rejects_unscoped_or_non_allowlisted_find(self):
         with self.assertRaises(SafetyError):
@@ -190,6 +196,22 @@ class IdentityGuardTests(unittest.TestCase):
             identity,
             {"pid": 99, "process_instance": "99:generation", "window_id": "private-window"},
         )
+
+    def test_focus_summary_reports_only_the_window_count_and_focused_pids(self):
+        windows = fixture_windows(
+            id="private-window",
+            title="Private Document Title",
+            app_name="Private App Name",
+            pid=99,
+            is_focused=True,
+        ) + fixture_windows() + fixture_windows(id="second", pid=77, is_focused=True)
+
+        summary = focus_summary(windows)
+
+        self.assertEqual(summary, {"focused_pids": [77, 99], "window_count": 3})
+        rendered = repr(summary)
+        self.assertNotIn("Private", rendered)
+        self.assertNotIn("AgentDesk Fixture", rendered)
 
     def test_frontmost_identity_fails_closed_on_ambiguity_or_missing_generation(self):
         base = fixture_windows(is_focused=True)

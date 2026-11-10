@@ -383,3 +383,7 @@ impl SignalSource for FakeSignals {
         Ok(Box::new(Heard(self.signals.clone())))
     }
 }
+
+impl crate::notifications::restore_report::RestoreReport for i32 {}
+
+impl crate::notifications::restore_report::RestoreReport for () {}
