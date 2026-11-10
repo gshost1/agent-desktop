@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased (1.4.0)
+
+### Features
+
+### Bug Fixes
+
+* Report a state directory that group or other users can reach (`AGENT_DESKTOP_HOME`, default `~/.agent-desktop`) as `PERM_DENIED` with `details.kind: "state_directory_permission"` and a `chmod 700` suggestion, instead of `INTERNAL`. This covers the state lock, the interaction runtime directory and `session start`. ([#41](https://github.com/gshost1/agent-desktop/pull/41))
+
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
 This fork release publishes GitHub release archives and checksums only. It does not publish to npm.
