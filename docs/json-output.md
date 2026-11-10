@@ -208,10 +208,14 @@ and reads the front window just before, comparing it with the window the
 focus call raises. An attempt whose focus brought the target in front of
 another window and still fails ends the command with its own error, which
 carries `details.preparatory_focus` and, when an earlier attempt went back to
-waiting, that attempt's error as `details.refusal`. When the target was
-already in front, no window is reported in front, or the front window cannot
-be read, a retryable failure goes back to waiting. Every error from an attempt
-whose focus call ran carries `details.preparatory_focus`.
+waiting, that attempt's error as `details.refusal`. A failed `visible` or
+`stable` check with nothing covering the target may come from the raise itself,
+such as a window still un-minimizing, and goes back to waiting. When the target
+was already in front, no window is reported in front, the front window cannot
+be read, or the front window is the target's with an unknown process instance,
+a retryable failure goes back to waiting. Every error from an attempt whose
+focus call ran, and the `TIMEOUT` that follows one, carries
+`details.preparatory_focus`.
 
 On macOS, `press --app` reports `data.details.keyboard_target` when the app's
 keyboard focus may belong to another process, such as a Save panel that a

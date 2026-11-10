@@ -305,6 +305,20 @@ fn a_front_window_of_another_process_instance_is_not_the_target() {
 }
 
 #[test]
+fn the_target_in_front_with_an_unknown_process_instance_retries_as_before() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = point_ref_snapshot();
+    let mut front = pool_window("w-42");
+    front.process_instance = None;
+    let adapter = FrontWindowAdapter::new(Some(Some(front)), 2);
+
+    let value = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap();
+
+    assert_eq!(adapter.focuses(), 3);
+    assert_eq!(value["focused"], true);
+}
+
+#[test]
 fn the_front_window_is_compared_with_the_window_the_focus_raises() {
     let _guard = HomeGuard::new();
     let snapshot_id = point_ref_snapshot();

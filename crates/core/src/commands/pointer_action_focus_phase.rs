@@ -1,4 +1,6 @@
-use super::{focus_point_under_lease, is_retryable_point_error, point_error_report};
+use super::{
+    focus_point_under_lease, is_retryable_point_error, point_error_report, point_failed_check,
+};
 use crate::{
     AdapterError, AppError, actionability::pointer_timeout::point_actionability_timeout,
     actions::headed_focus::same_window, adapter::PlatformAdapter,
@@ -20,8 +22,9 @@ pub(crate) enum AttemptFocus {
     AlreadyFront,
     /// Another window was in front, so the focus brought the target forward.
     FrontChanged,
-    /// The window in front could not be read, or no window was reported in
-    /// front, before the focus call.
+    /// The window in front could not be read, no window was reported in
+    /// front, or the window in front is the target's but its process instance
+    /// is unknown, before the focus call.
     Unknown,
 }
 
@@ -60,20 +63,61 @@ fn front_before_focus(
 ) -> AttemptFocus {
     match adapter.focused_window(lease.deadline()) {
         Ok(Some(front)) if same_window(&front, target) => AttemptFocus::AlreadyFront,
+        Ok(Some(front)) if instance_unknown_for_target(&front, target) => AttemptFocus::Unknown,
         Ok(Some(_)) => AttemptFocus::FrontChanged,
         Ok(None) | Err(_) => AttemptFocus::Unknown,
     }
+}
+
+fn instance_unknown_for_target(front: &crate::WindowInfo, target: &crate::WindowInfo) -> bool {
+    front.id == target.id
+        && front.pid == target.pid
+        && (front.process_instance.is_none() || target.process_instance.is_none())
+}
+
+/// Whether a refusal is one the raise itself may cause while the target's
+/// window settles, such as an un-minimize or a Space switch still moving it:
+/// a failed `visible` or `stable` check with nothing covering the target.
+fn may_settle_after_raise(error: &AppError) -> bool {
+    ["visible", "stable"]
+        .into_iter()
+        .any(|check| point_failed_check(error, check))
+        && !covered(error)
+}
+
+fn covered(error: &AppError) -> bool {
+    let AppError::Adapter(error) = error else {
+        return false;
+    };
+    let Some(details) = error.details.as_ref() else {
+        return false;
+    };
+    let is_occlusion = |check: &serde_json::Value| {
+        check.get("check").and_then(serde_json::Value::as_str) == Some("receives_events")
+    };
+    is_occlusion(details)
+        || details
+            .get("checks")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|checks| {
+                checks.iter().any(|check| {
+                    is_occlusion(check)
+                        && check.get("status").and_then(serde_json::Value::as_str) == Some("fail")
+                })
+            })
 }
 
 /// Runs a pointer command's leased attempts until one resolves. A refusal
 /// that may clear goes back to the wait while the budget lasts, unless the
 /// attempt's focus brought the target's window in front of another: that
 /// refusal is the command's result, with the refusal that sent the previous
-/// attempt back to the wait as `details.refusal`, so a command raises a window
-/// over another at most once, as a ref action does. A focus that found the
-/// target already in front, or could not read the window in front, retries as
-/// before. A refusal from an attempt whose focus ran carries
-/// `preparatory_focus`.
+/// attempt back to the wait as `details.refusal`, so a command does not raise
+/// a covered target over another window again on every attempt. A failed
+/// `visible` or `stable` check with nothing covering the target may come from
+/// the raise itself and goes back to the wait. A focus that found the target
+/// already in front, or could not read the window in front, retries as
+/// before. A refusal from an attempt whose focus ran, and the timeout that
+/// follows one, carries `preparatory_focus`.
 pub(crate) fn retry_leased_point_phase<T>(
     timeout_ms: Option<u64>,
     deadline: crate::Deadline,
@@ -88,7 +132,7 @@ pub(crate) fn retry_leased_point_phase<T>(
             Err(error) if focus == AttemptFocus::Unfocused => error,
             Err(error) => AppError::Adapter(error.into_adapter_error().after_focus_ran()),
         };
-        if focus == AttemptFocus::FrontChanged {
+        if focus == AttemptFocus::FrontChanged && !may_settle_after_raise(&error) {
             return Err(with_refusal(error.into_adapter_error(), refusal.as_ref()).into());
         }
         if !auto_wait || !is_retryable_point_error(&error) {
@@ -96,9 +140,13 @@ pub(crate) fn retry_leased_point_phase<T>(
         }
         let remaining = deadline.remaining();
         if remaining.is_zero() {
-            return Err(point_actionability_timeout(Some(point_error_report(
-                &error,
-            ))));
+            let timeout = point_actionability_timeout(Some(point_error_report(&error)));
+            if focus == AttemptFocus::Unfocused {
+                return Err(timeout);
+            }
+            return Err(AppError::Adapter(
+                timeout.into_adapter_error().after_focus_ran(),
+            ));
         }
         refusal = Some(error.into_adapter_error());
         std::thread::sleep(POLL_INTERVAL.min(remaining));
@@ -108,3 +156,7 @@ pub(crate) fn retry_leased_point_phase<T>(
 #[cfg(test)]
 #[path = "pointer_action_focus_phase_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pointer_action_focus_phase_settle_tests.rs"]
+mod settle_tests;
