@@ -8,9 +8,10 @@
 
 ### Bug Fixes
 
-* On macOS, a headless `right-click` fallback that selects the row before opening its menu now reports that selection as delivered: a later failure, or no menu, carries `retry: unsafe` instead of `not_delivered` and a safe retry. Each fallback also opens a menu only after the app's menu state reads as closed; a read that stays unreadable, as while an app tracks a menu, no longer lets a second `AXShowMenu` or `AXPress` through. ([#86](https://github.com/gshost1/agent-desktop/pull/86))
+* On Linux, a `launch` whose spawned process keeps running without joining the accessibility bus (a plain X11 program, an app started with `NO_AT_BRIDGE=1`, Chromium without its accessibility flags) now returns after 5 s instead of waiting the whole `--timeout` (30 s by default); `--activate` still waits until `--timeout`. The result is still `ok` with the spawned pid and no `window`, and its suggestion says the process did not join the bus. ([#81](https://github.com/gshost1/agent-desktop/pull/81))
 * On macOS, give the Automation permission probe a 3 s limit. While a consent prompt waits on screen the probe blocked until someone answered it, 175 s in one run, and every command hung with it. Command preflight and the FFI `ad_check_permissions` no longer probe Automation at all; `status` and `permissions` report it as unknown when the probe does not answer, and a notification command that needs it fails with `APP_UNRESPONSIVE` and says a prompt may be waiting. ([#7](https://github.com/gshost1/agent-desktop/pull/7))
 * On macOS, verify a headless `click` that opens a file or folder item through `AXOpen` by its effect: the sheet that held the item closes, or the window takes the item's name as its title. Such an open used to be reported as failed when the app answered with an uninformative code or reported the removed target as invalid. ([#9](https://github.com/gshost1/agent-desktop/pull/9))
+* On macOS, a headless `right-click` fallback that selects the row before opening its menu now reports that selection as delivered: a later failure, or no menu, carries `retry: unsafe` instead of `not_delivered` and a safe retry. Each fallback also opens a menu only after the app's menu state reads as closed; a read that stays unreadable, as while an app tracks a menu, no longer lets a second `AXShowMenu` or `AXPress` through. ([#86](https://github.com/gshost1/agent-desktop/pull/86))
 
 ### Performance
 
@@ -19,6 +20,7 @@
 ### Documentation
 
 * Add a synopsis of `press`, `find`, `type`, `select` and `set-value` to the interaction reference, loaded on demand, with tests that keep each form in step with the command's flags. Taken from [#48](https://github.com/gshost1/agent-desktop/pull/48) without its additions to the core skill, which in a paired run made the three bench tasks use 14% more input tokens. ([#82](https://github.com/gshost1/agent-desktop/pull/82))
+* Tell agents to take a path the task names, and the answer, in one call: `find` each step by name, `click` it with `-w` naming the next step, and end with a `grep`-filtered read, never `head`; `jq -e` stops the chain at the first miss. On the three macOS bench tasks (Opus 5.5, 8 runs per task per build, paired against main cce8fa1c) System Settings fell from 4 to 2 turns, 51.1K to 25.8K input tokens and 19.2 s to 12.4 s (medians); the summed medians went from 48.6 s to 43.2 s and 119.0K to 95.4K tokens, 24 of 24 passing on both. ([#85](https://github.com/gshost1/agent-desktop/pull/85))
 
 ## [1.3.0](https://github.com/gshost1/agent-desktop/compare/v1.2.0...v1.3.0) (2026-11-09)
 
