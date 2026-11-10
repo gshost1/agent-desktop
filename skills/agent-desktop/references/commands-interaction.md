@@ -56,7 +56,7 @@ Exit codes: `0` success, `1` structured error, `2` argument error. The `error` o
 
 | Code | Meaning | Recovery |
 |------|---------|----------|
-| `PERM_DENIED` | A required OS permission is missing, or `details.kind` is `state_directory_permission` | Read the platform skill; for the state directory, apply the suggested `chmod 700` |
+| `PERM_DENIED` | A required OS permission is missing, or `details.kind` is `state_directory_permission` | Read the platform skill; for the state directory, apply the suggested `chmod` to `details.path` |
 | `ELEMENT_NOT_FOUND` | Ref is absent, or the requested surface is absent | Read `details.kind` and `details.surface`; open an absent menu or refresh only after checking the UI |
 | `STALE_REF` | Ref no longer matches the live UI, or no capture proved it (`identity_unproven`) | Snapshot again and use the new ref. With `details.process_state: exited` the app is gone: `list-apps`, `launch` it if needed, then snapshot. For `identity_unproven` raise `--timeout-ms` when `details.reason` is `capture_incomplete`, and use another selector or `--headed mouse-click --xy` when it is `capture_unknown` |
 | `AMBIGUOUS_TARGET` | Several live elements match the ref's identity, or its snapshot found an identical twin | A ref from a snapshot taken before version 2.7 may not be a twin: take a new snapshot first. Otherwise act on a control unique in the window; identical twins need `--headed mouse-click --xy` (see `commands-observation.md`) |

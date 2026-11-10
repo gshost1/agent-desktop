@@ -22,7 +22,10 @@ fn a_session_does_not_start_in_a_state_root_that_group_users_can_write() {
     assert!(error.to_string().contains("accessible by group or other"));
     assert!(matches!(
         &error,
-        AppError::Adapter(adapter) if adapter.details.as_ref().is_some_and(|details| details["kind"] == "state_directory_permission")
+        AppError::Adapter(adapter) if adapter.details.as_ref().is_some_and(|details| {
+            details["kind"] == "state_directory_permission"
+                && details["path"] == root.display().to_string()
+        })
     ));
     assert!(!root.join("sessions").exists());
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();

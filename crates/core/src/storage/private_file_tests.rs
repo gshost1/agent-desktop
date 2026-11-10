@@ -297,3 +297,70 @@ fn ensure_private_creates_the_nested_parent_chain() {
     );
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[cfg(unix)]
+fn shared_directory(guard: &crate::refs::refs_test_support::HomeGuard) -> PathBuf {
+    let shared = guard.path().join("shared");
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o755)).unwrap();
+    shared
+}
+
+#[cfg(unix)]
+#[test]
+fn a_lock_in_a_directory_others_can_reach_names_that_directory() {
+    let guard = crate::refs::refs_test_support::HomeGuard::new();
+    let shared = shared_directory(&guard);
+    let deadline = crate::Deadline::after(2_000).unwrap();
+
+    let error = crate::FileLock::acquire(&shared.join("refs.lock"), deadline, "test")
+        .err()
+        .expect("a shared directory is refused");
+
+    assert_eq!(error.code, crate::ErrorCode::PermDenied);
+    assert!(error.suggestion.unwrap().contains("chmod 700"));
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "state_directory_permission");
+    assert_eq!(details["path"], shared.display().to_string());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_lock_file_others_can_read_names_that_file() {
+    let guard = crate::refs::refs_test_support::HomeGuard::new();
+    let private = guard.path().join("private");
+    std::fs::create_dir_all(&private).unwrap();
+    std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let lock = private.join("refs.lock");
+    std::fs::write(&lock, b"").unwrap();
+    std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let deadline = crate::Deadline::after(2_000).unwrap();
+
+    let error = crate::FileLock::acquire(&lock, deadline, "test")
+        .err()
+        .expect("a shared file is refused");
+
+    assert_eq!(error.code, crate::ErrorCode::PermDenied);
+    assert!(error.suggestion.unwrap().contains("chmod 600"));
+    assert_eq!(error.details.unwrap()["path"], lock.display().to_string());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_state_file_write_into_a_directory_others_can_reach_is_perm_denied() {
+    let _home = crate::refs::refs_test_support::HomeGuard::new();
+    let file = crate::storage::state_file::StateFile::under_state_root(&["web", "a.json"]).unwrap();
+    let directory = file.path().parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let error = file
+        .write(b"{}")
+        .expect_err("a shared directory is refused");
+
+    assert_eq!(error.code, crate::ErrorCode::PermDenied);
+    assert_eq!(
+        error.details.unwrap()["path"],
+        directory.display().to_string()
+    );
+}

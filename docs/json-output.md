@@ -567,7 +567,7 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 
 | Code | Meaning |
 |------|---------|
-| `PERM_DENIED` | Accessibility permission not granted, or agent-desktop's state directory is open to other users (`details.kind: "state_directory_permission"`; the suggestion names the `chmod 700` fix) |
+| `PERM_DENIED` | Accessibility permission not granted, or a directory or file in agent-desktop's state is open to other users (`details.kind: "state_directory_permission"`; `details.path` names it and the suggestion gives the `chmod` that closes it) |
 | `ELEMENT_NOT_FOUND` | No element matched the ref or query |
 | `APP_NOT_FOUND` | No matching application process; the lookup failed before anything was sent, so the disposition is `not_delivered` |
 | `STALE_REF` | Ref could not be re-identified in the live UI |

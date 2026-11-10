@@ -2,6 +2,7 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::storage::state_io_error::state_io_error;
 use crate::{AdapterError, Deadline, ErrorCode};
 
 /// A private state-file lock held until this guard is dropped.
@@ -74,7 +75,12 @@ impl FileLock {
         }
         let inherited = File::from(unsafe { OwnedFd::from_raw_fd(duplicated) });
         let inherited_meta = crate::storage::private_file::validate_private_regular(&inherited)
-            .map_err(state_io_error)?;
+            .map_err(|error| {
+                state_io_error(crate::storage::state_exposure::with_exposed_path(
+                    error,
+                    canonical_path,
+                ))
+            })?;
         let canonical = crate::storage::private_file::open_private_lock(canonical_path, false)
             .map_err(state_io_error)?;
         let canonical_meta = canonical.metadata().map_err(state_io_error)?;
@@ -145,27 +151,3 @@ fn lock_timeout(
         "contention_count": contention_count,
     }))
 }
-
-/// A permission refusal on agent-desktop's own state files keeps
-/// `PERM_DENIED` and names the fix. The caller can repair a state directory
-/// that other users can read, so `INTERNAL`, which offers no action, is the
-/// wrong answer for it.
-pub(crate) fn state_io_error(error: std::io::Error) -> AdapterError {
-    if error.kind() == std::io::ErrorKind::PermissionDenied {
-        return AdapterError::new(ErrorCode::PermDenied, error.to_string())
-            .with_suggestion(
-                "agent-desktop keeps its state private. Make the state directory \
-                 (AGENT_DESKTOP_HOME, default ~/.agent-desktop) and the folders inside it owned \
-                 by you and closed to other users: chmod 700 <dir>",
-            )
-            .with_details(serde_json::json!({
-                "kind": "state_directory_permission",
-                "retryable": false,
-            }));
-    }
-    AdapterError::new(ErrorCode::Internal, error.to_string())
-}
-
-#[cfg(test)]
-#[path = "file_lock_tests.rs"]
-mod tests;
