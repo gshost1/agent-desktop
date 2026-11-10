@@ -87,7 +87,7 @@ for mode in headless headed; do
 done
 
 note "AE2: native release FFI consumer preserves wait and namespace semantics"
-ffi_default="$(guard_agent_wrapper_exec 20 4194304 python3 "$here/ffi_live.py" default 2>/dev/null)"
+ffi_default="$(guard_agent_wrapper_exec 20 4194304 "$e2e_python" "$here/ffi_live.py" default 2>/dev/null)"
 ffi_default_exit=$?
 sleep 0.2
 require_value ffi_default_count delayed-action-status
@@ -95,7 +95,7 @@ assert "AE2 release FFI default wait dispatches exactly once" \
     "$([ "$ffi_default_exit" -eq 0 ] && [ "$(json_field "$ffi_default" ok)" = "True" ] && \
         [ "$ffi_default_count" = "1" ] && echo 1 || echo 0)" \
     "exit=$ffi_default_exit elapsed_ms=$(json_field "$ffi_default" elapsed_ms) count=$ffi_default_count error=$(json_field "$ffi_default" error)"
-ffi_zero="$(guard_agent_wrapper_exec 20 4194304 python3 "$here/ffi_live.py" zero 2>/dev/null)"
+ffi_zero="$(guard_agent_wrapper_exec 20 4194304 "$e2e_python" "$here/ffi_live.py" zero 2>/dev/null)"
 ffi_zero_exit=$?
 require_value ffi_zero_count delayed-action-status
 assert "AE2 release FFI timeout zero performs one check without a late effect" \
@@ -108,7 +108,7 @@ require_target open_duplicates button open-duplicate-windows
 open_output="$(act_target "$open_duplicates" click 2>/dev/null)"
 sleep 0.8
 windows_json="$("$bin" list-windows --app "$app" 2>/dev/null)"
-duplicate_ids="$(printf '%s' "$windows_json" | python3 "$json_tool" duplicate-ids "Duplicate Window" 2>/dev/null)" || duplicate_ids=""
+duplicate_ids="$(printf '%s' "$windows_json" | "$e2e_python" "$json_tool" duplicate-ids "Duplicate Window" 2>/dev/null)" || duplicate_ids=""
 if [ -z "$duplicate_ids" ]; then
     abort_suite "AE4 fixture did not expose exactly two distinct Duplicate Window ids"
 fi
@@ -117,7 +117,7 @@ second_duplicate="${duplicate_ids#*$'\t'}"
 focus_output="$("$bin" focus-window --window-id "$second_duplicate" 2>/dev/null)"
 sleep 0.3
 focused_windows="$("$bin" list-windows --app "$app" 2>/dev/null)"
-second_focused="$(printf '%s' "$focused_windows" | python3 "$json_tool" window-focused "$second_duplicate" 2>/dev/null)" || second_focused=""
+second_focused="$(printf '%s' "$focused_windows" | "$e2e_python" "$json_tool" window-focused "$second_duplicate" 2>/dev/null)" || second_focused=""
 assert "AE4 exact second window id is focused despite duplicate titles" \
     "$([ "$(json_field "$open_output" ok)" = "True" ] && \
         [ "$(json_field "$focus_output" ok)" = "True" ] && [ "$second_focused" = "True" ] && echo 1 || echo 0)" \
@@ -167,14 +167,14 @@ else
 fi
 
 note "AE6: post-action surface event uses a pre-action baseline"
-open_sheet_ref="$(printf '%s' "$snapshot_json" | python3 "$json_tool" tree open-sheet ref 2>/dev/null)" || open_sheet_ref=""
+open_sheet_ref="$(printf '%s' "$snapshot_json" | "$e2e_python" "$json_tool" tree open-sheet ref 2>/dev/null)" || open_sheet_ref=""
 open_sheet_snapshot="$(json_field "$snapshot_json" data.snapshot_id)"
 if [ -z "$open_sheet_ref" ] || [ -z "$open_sheet_snapshot" ]; then
     abort_suite "initial fixture snapshot omitted the open-sheet ref"
 fi
 open_sheet="${open_sheet_ref}"$'\t'"${open_sheet_snapshot}"
 sheet_scroll_output="$(act_target "$open_sheet" scroll-to 2>/dev/null)"
-batch_payload="$(python3 - "$(target_ref "$open_sheet")" <<'PY'
+batch_payload="$("$e2e_python" - "$(target_ref "$open_sheet")" <<'PY'
 import json, sys
 print(json.dumps([
     {"command": "click", "args": {"ref_id": sys.argv[1]}},

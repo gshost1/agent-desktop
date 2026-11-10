@@ -7,7 +7,7 @@ require_target remove_row button remove-row
 act_target "$remove_row" click >/dev/null 2>&1
 row_gone=0
 for _ in $(seq 1 25); do
-    removed_probe="$("$bin" find --app "$app" --role button --name removable-row --first 2>/dev/null | python3 "$json_tool" target 2>/dev/null || true)"
+    removed_probe="$("$bin" find --app "$app" --role button --name removable-row --first 2>/dev/null | "$e2e_python" "$json_tool" target 2>/dev/null || true)"
     if [ -z "$removed_probe" ]; then
         row_gone=1
         break
@@ -36,6 +36,11 @@ assert "wait enabled observes the asynchronous transition" \
     "elapsed_ms=$(json_field "$wait_enabled" data.elapsed_ms)"
 
 require_target primary button primary-button
+actionable_scroll="$("$bin" scroll-to "$(target_ref "$primary")" 2>/dev/null)"
+actionable_visible="$(is_target "$primary" visible 2>/dev/null)"
+assert "scroll-to brings the primary button into view before wait actionable" \
+    "$([ "$(json_field "$actionable_scroll" ok)" = "True" ] && [ "$(json_field "$actionable_visible" data.result)" = "True" ] && echo 1 || echo 0)" \
+    "ok=$(json_field "$actionable_scroll" ok) error=$(json_field "$actionable_scroll" error.code) visible=$(json_field "$actionable_visible" data.result)"
 require_value actionable_before click-status
 wait_actionable="$(wait_target "$primary" actionable 3000 --action click 2>/dev/null)"
 actionable_click="$(act_target "$primary" click 2>/dev/null)"
@@ -119,7 +124,7 @@ note "Skeleton traversal, drill-down, and session namespaces"
 skeleton="$("$bin" snapshot --app "$app" --skeleton 2>/dev/null)"
 skeleton_id="$(json_field "$skeleton" data.snapshot_id)"
 skeleton_refs="$(json_field "$skeleton" data.ref_count)"
-anchor="$(printf '%s' "$skeleton" | python3 "$json_tool" drill-anchor 2>/dev/null)" || anchor=""
+anchor="$(printf '%s' "$skeleton" | "$e2e_python" "$json_tool" drill-anchor 2>/dev/null)" || anchor=""
 if [ -z "$anchor" ] || [ -z "$skeleton_id" ]; then
     abort_suite "skeleton did not expose a drill-down anchor and snapshot_id"
 fi
@@ -136,7 +141,7 @@ session_b_id="$(json_field "$session_b" data.snapshot_id)"
 assert "sessions produce distinct latest snapshot ids" \
     "$([ -n "$session_a_id" ] && [ -n "$session_b_id" ] && [ "$session_a_id" != "$session_b_id" ] && echo 1 || echo 0)" \
     "run-a=$session_a_id run-b=$session_b_id"
-session_ref="$(printf '%s' "$session_a" | python3 "$json_tool" tree primary-button ref 2>/dev/null)" || session_ref=""
+session_ref="$(printf '%s' "$session_a" | "$e2e_python" "$json_tool" tree primary-button ref 2>/dev/null)" || session_ref=""
 if [ -z "$session_ref" ]; then
     abort_suite "session-a snapshot omitted primary-button ref"
 fi

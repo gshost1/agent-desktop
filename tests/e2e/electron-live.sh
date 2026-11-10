@@ -2,8 +2,11 @@
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/e2e/python.sh
+source "$here/python.sh"
 if [ -z "${AGENT_DESKTOP_INTERACTION_LEASE_FD:-}" ]; then
-    exec python3 "$here/interaction_lock.py" run "$0" "$@"
+    require_e2e_python || exit 2
+    exec "$e2e_python" "$here/interaction_lock.py" run "$0" "$@"
 fi
 # shellcheck source=tests/e2e/harness.sh
 source "$here/harness.sh"
@@ -75,7 +78,7 @@ fi
 
 expected_version="$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$repo/Cargo.toml")"
 version_json="$("$bin" version 2>/dev/null)" || exit 2
-current_version="$(printf '%s' "$version_json" | python3 "$json_tool" get data.version 2>/dev/null)"
+current_version="$(printf '%s' "$version_json" | "$e2e_python" "$json_tool" get data.version 2>/dev/null)"
 if [ -z "$expected_version" ] || [ "$current_version" != "$expected_version" ]; then
     echo "current binary version mismatch: Cargo='$expected_version' binary='$current_version'" >&2
     exit 2
@@ -94,14 +97,14 @@ if [ -z "$installed_path" ] && ! guard_exec 10 1048576 open -Ra "$app" >/dev/nul
 fi
 
 permission_json="$("$bin" permissions 2>/dev/null)"
-permission_state="$(printf '%s' "$permission_json" | python3 "$json_tool" get data.accessibility.state 2>/dev/null)"
+permission_state="$(printf '%s' "$permission_json" | "$e2e_python" "$json_tool" get data.accessibility.state 2>/dev/null)"
 if [ "$permission_state" != "granted" ]; then
     echo "Accessibility permission must be granted; current state is '${permission_state:-unknown}'" >&2
     exit 2
 fi
 
 app_json="$("$bin" list-apps --app "$app" 2>/dev/null)"
-app_running="$(printf '%s' "$app_json" | python3 -c '
+app_running="$(printf '%s' "$app_json" | "$e2e_python" -c '
 import json, sys
 data = json.load(sys.stdin)
 print(1 if any(item.get("name", "").casefold() == sys.argv[1].casefold()
@@ -113,7 +116,7 @@ if [ "$app_running" != "1" ]; then
 fi
 
 window_json="$("$bin" list-windows --app "$app" 2>/dev/null)"
-window_count="$(printf '%s' "$window_json" | python3 -c \
+window_count="$(printf '%s' "$window_json" | "$e2e_python" -c \
     'import json,sys; print(len(json.load(sys.stdin).get("data",[])))' 2>/dev/null)"
 if [ "${window_count:-0}" -lt 1 ]; then
     echo "'$app' has no accessibility window to measure" >&2
@@ -134,7 +137,7 @@ if [ -n "$baseline_binary" ]; then
     baseline_args=(--baseline-binary "$baseline_binary")
 fi
 report_started=1
-guard_agent_wrapper_exec 1800 4194304 python3 "$repo/tests/e2e/electron_metrics.py" \
+guard_agent_wrapper_exec 1800 4194304 "$e2e_python" "$repo/tests/e2e/electron_metrics.py" \
     --binary "$current_binary" ${baseline_args[@]+"${baseline_args[@]}"} --app "$app" --out "$out" \
     --work-root "$suite_root" --warmups 5 --samples 31 >/dev/null || exit 1
 
