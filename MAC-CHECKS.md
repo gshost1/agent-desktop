@@ -14,6 +14,7 @@ Rules learned from the #58 run (2026-11-10), binding for every section:
 - RUN never removes the BUILD's worktrees or binaries; removal goes in a separate CLEANUP block, so RUN can repeat without rebuilding.
 - `wc -w` pads its output on macOS: compare counts with `-eq`, never with `= 1`.
 - desktop_space.sh's mktemp must point at the check's own dir, never another session's scratchpad.
+- Inside timing loops, never send a setup failure or a trap's output to /dev/null; send them to stderr.
 - Ship each section as a BUILD block, run outside the desktop lock, and a RUN block, run inside it.
 - Every status read must assert that its before-value is non-empty, or HALT; a vacuous PASS is a FAIL.
 - No System Events and no UI scripting through osascript, in any section, not even read-only (Automation for System Events is denied on that Mac on purpose). Independent window observations use a CGWindowListCopyWindowInfo helper filtered by the test app's pid (owner pid and layer only; never print other processes' window titles) or agent-desktop's own `list-windows` cross-checked with `kill -0 <pid>`. AppleScript/JXA applets as test subjects are fine if they script no other app.
@@ -39,7 +40,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
 | #58 (a) cap-1 | ACTION-12 | `063d9229` | revision 2 ready (session-scoped refs, repeatable RUN plus CLEANUP, session handling proven on Linux GTK4) |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
-| #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` | revision 2 ready (full: Part 1, real 1e, Part 2, dense Part D, timing Part T); CI 13/13, CLEAN, draft |
+| #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` | **PASS** for Part 1, the real 1e and Part 2 (2 runs). Part D (dense) fails identically on main: pre-existing, ledgered DENSE-MENU-1. Control: merge allowed with Risks stated and an identical macOS diff |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
 | #34 | SURFACE-3 | `e3818161` | CI 27/27 green, CLEAN, ready; rev 2 accepted (1 s Escape rule); HELD for George's go-ahead + Script Editor notification settings |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
