@@ -4,6 +4,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use super::*;
+use crate::system::launch::launch_observe::Spawned;
 use crate::system::launch::launch_target::Plan;
 use agent_desktop_core::system::launch_presentation::LaunchPresentation;
 

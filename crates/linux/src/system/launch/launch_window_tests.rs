@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::*;
+use crate::system::process::process_facts;
 use crate::system::window::native_group::{is_unproven, unproven};
 
 fn this_process() -> Running {

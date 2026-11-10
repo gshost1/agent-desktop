@@ -8,14 +8,16 @@ are not used.
 
 - `--app` takes the process name `list-apps` prints, or a desktop entry's `Name`
   or id whose `Exec` resolves to the running executable (`/proc/<pid>/exe`) with
-  matching full arguments. A desktop name shared by several entries gets no
-  alias. Registry labels and truncated `comm` names are never aliases.
+  matching full arguments. Every entry that runs that same command names the
+  process; a desktop name that an entry running another command also uses gets
+  no alias. Registry labels and truncated `comm` names are never aliases.
 - Scoped matching is exact and case-insensitive, and the process must belong to
   this session. `list-windows --app` uses that exact rule. `list-apps --app`
   combines a substring match on the listed name with those exact adapter aliases.
 - Window ids are opaque addresses of 34 to 70 characters, valid for the life of
   the window's process.
-- `list-apps` rows carry `name`, `pid`, `bundle_id` (desktop id when known) and
+- `list-apps` rows carry `name`, `pid`, `bundle_id` (the desktop id, the first
+  in byte order when several entries run the process's command, when known) and
   `process_instance`. `list-windows` rows carry `id`, `title`, `app_name`, `pid`,
   `is_focused`, `minimized`, `visible`, `accessible` and `process_instance`, plus
   `bounds` when the display maps one.
@@ -43,6 +45,16 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   name with a separator or NUL, is `INVALID_ARGS`, `not_delivered`; an unknown name is
   `APP_NOT_FOUND`; an entry with `Terminal=true` or no `Exec` is
   `ACTION_NOT_SUPPORTED`.
+- A `Name` that several desktop entries share launches, when all of them run
+  the same command, the first entry in byte order of desktop id that can
+  start. The same command means one canonical executable reached under the
+  same name (a multi-call binary under another name is another command), the
+  same arguments and the same working directory, as a package that installs
+  one app under two desktop ids has. Entries that run different commands are
+  `AMBIGUOUS_TARGET`, `not_delivered`, with `details.candidates` (each
+  `desktop_id` with its resolved `argv`, or the `refusal` that keeps it from
+  starting). Rerun the launch with a startable desktop id in place of the name,
+  for example `agent-desktop launch google-chrome`, keeping the same options.
 - The app is spawned with null stdio in its own process group, so a caller that
   reads through a pipe sees end of file at exit. Every spawn adds
   `AGENT_DESKTOP_LAUNCHED=1` to the child's environment; `close-app` reads it to
@@ -81,11 +93,14 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   timeout, for an attach as well as a new launch. If no window is proven by then,
   `launch` answers `ACTION_NOT_SUPPORTED` with that kind: `not_delivered` when it
   spawned nothing, `delivered_unverified` after the spawn.
-- If the spawned process never registers on the accessibility bus, owner lookup
-  can consume the full timeout, and the result then has no `window`. A spawned
-  process still running outside the registry can be returned without a window,
-  and may be a wrapper. When no window appears the result can be `ok` with no
-  `window`.
+- A spawned process that is still running but has not joined the accessibility
+  bus after 5 s (never past `--timeout`) ends the owner wait: `launch` answers
+  `ok: true` with no `window`, the spawned pid, and a `data.suggestion` that
+  starts `The process is running but did not join the accessibility bus`. That
+  pid may be a wrapper of the application. Only a registry read that answered
+  counts toward the 5 s. An app that is slow to join the bus is still found
+  with `--activate`, which waits for it until `--timeout`. When no window
+  appears the result can be `ok` with no `window`.
 - A launcher that exits with no owner is `ACTION_FAILED`,
   `details.kind: exited` (`crashed` after a signal), `delivered_unverified`. An
   owner that exits before its window appears is `ACTION_FAILED`,
