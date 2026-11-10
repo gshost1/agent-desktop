@@ -125,6 +125,13 @@ fn live_an_app_that_exits_after_registering_and_before_a_window_is_not_a_launch(
     let error = launch("python3", &options(&[&script])).expect_err("a dead pid is not a launch");
     assert_eq!(error.code, ErrorCode::ActionFailed, "{error:?}");
     assert!(error.message.contains("exited before"), "{error:?}");
+    let spawned_pid = error.details.as_ref().expect("details")["spawned_pid"]
+        .as_u64()
+        .expect("the spawned pid");
+    assert!(
+        error.message.contains(&format!("pid {spawned_pid}")),
+        "{error:?}"
+    );
     assert!(
         started.elapsed() < Duration::from_secs(10),
         "the exit is noticed, not waited out: {:?}",

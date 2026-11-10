@@ -11,6 +11,7 @@ use agent_desktop_core::{
 use self::launch_attach::{Decision, decide};
 use self::launch_observe::{POLL_INTERVAL, find_owner, pids_of, running_of};
 use self::launch_owner_query::OwnerQuery;
+use self::launch_preflight::{require_display, with_spawned_pid};
 use self::launch_search::Search;
 use self::launch_spawn::{before_spawn, spawn, validate};
 use self::launch_target::{Plan, resolve};
@@ -291,6 +292,7 @@ impl Launch<'_> {
         identity: &Option<crate::system::process::executable_identity::ExecutableIdentity>,
         running: &[Running],
     ) -> Result<LaunchResult, AdapterError> {
+        require_display(self.deadline)?;
         let before = baseline::prepare(self.bus, identity, running, self.deadline);
         self.deadline.ensure_remaining().map_err(before_spawn)?;
         let mut spawned = spawn(self.id, plan, self.options)?;
@@ -300,20 +302,24 @@ impl Launch<'_> {
             self.deadline,
             self.options.presentation.activate,
         );
-        match find_owner(self.bus, &mut spawned, &query)? {
+        let spawned_pid = spawned.pid;
+        let owner = find_owner(self.bus, &mut spawned, &query)
+            .map_err(|error| with_spawned_pid(error, spawned_pid))?;
+        match owner {
             Some(owner) => {
                 let known = before
                     .residents
                     .iter()
                     .find(|(resident, _)| resident.identity() == owner.identity());
                 let window = match known {
-                    Some((_, windows)) => self.window_of(&owner, true, windows)?,
-                    None if before.processes.contains(&owner.identity()) => None,
+                    Some((_, windows)) => self.window_of(&owner, true, windows),
+                    None if before.processes.contains(&owner.identity()) => Ok(None),
                     None => {
                         remember_launch(plan.desktop_id.as_deref(), &owner);
-                        self.window_of(&owner, true, &HashSet::new())?
+                        self.window_of(&owner, true, &HashSet::new())
                     }
-                };
+                }
+                .map_err(|error| with_spawned_pid(error, spawned_pid))?;
                 Ok(self.conclude_with(&owner, window, owner.pid == spawned.pid))
             }
             None => Ok(report_unlisted(self.id, spawned.pid)),
@@ -385,6 +391,7 @@ mod launch_handoff;
 pub(super) mod launch_live_tests;
 pub(super) mod launch_observe;
 mod launch_owner_query;
+mod launch_preflight;
 pub(crate) mod launch_sample;
 pub(crate) mod launch_search;
 mod launch_spawn;
