@@ -199,20 +199,10 @@ fn find_menu_descendant(
     source: String,
     deadline: Instant,
 ) -> Result<Option<(String, AXElement)>, AdapterError> {
+    let names = super::menu_search_node::attribute_names();
     find_menu_descendant_with(root, source, deadline, |element| {
-        let role = surface_read::string(element, "AXRole", deadline)?;
-        if role.as_deref() == Some("AXMenuBar") {
-            return Ok((false, Vec::new()));
-        }
-        if role.as_deref() == Some("AXMenu")
-            && surface_read::boolean(element, "AXVisible", deadline)? != Some(false)
-        {
-            return Ok((true, Vec::new()));
-        }
-        Ok((
-            false,
-            surface_read::elements(element, "AXChildren", deadline)?,
-        ))
+        let node = super::menu_search_node::read(element, &names, deadline)?;
+        Ok((node.is_menu, node.children))
     })
 }
 
