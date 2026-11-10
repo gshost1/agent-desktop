@@ -31,7 +31,11 @@ pub(crate) struct SettleProbes<R, S, A> {
 /// that error instead of a pid for a process that is gone. Several windows
 /// with none focused keep the wait going, because focus is often unread in
 /// the first moments of a launch; they are the answer only when the wait
-/// ends on them.
+/// ends on them. A window the window server has not placed yet keeps the
+/// wait going too, so the result carries the window's real bounds and
+/// visibility; it ends the wait once the startup grace is over even when
+/// activating, because a window that is still unplaced by then is all the
+/// launch is going to show.
 pub(crate) fn settle_window<R, S, A>(
     probes: SettleProbes<R, S, A>,
     options: &LaunchOptions,
@@ -59,8 +63,11 @@ where
             Err(error) => return Err(error),
         };
         alive()?;
+        let grace_is_over = grace_over(grace_ends_at, Instant::now());
         if options.timeout_ms == 0
-            || (!options.presentation.activate && grace_over(grace_ends_at, Instant::now()))
+            || (grace_is_over
+                && (!options.presentation.activate
+                    || matches!(unclaimed, LaunchWindow::Forming(_))))
         {
             return last_read_failure.map_or(Ok(unclaimed), Err);
         }
