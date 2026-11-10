@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::runtime_store::{instance_stem, runtime_subdir, write_private_atomically};
-use crate::system::process::process_facts;
 use crate::system::process::running_app::Running;
+use crate::system::process::{proc_stat, process_facts};
 
 const ENTRIES_DIR: &str = "agent-desktop-launched-entries";
 const RECORD_EXTENSION: &str = "entry";
@@ -91,7 +91,8 @@ impl LaunchedEntries {
 }
 
 /// Whether the process a record names has exited: its pid answers no more,
-/// or a different process instance now holds it.
+/// or a different process instance now holds it. Only the start time is
+/// read, and a pid whose `/proc` entry cannot be read keeps its record.
 fn record_is_gone(path: &Path) -> bool {
     let Some(pid) = std::fs::read_to_string(path).ok().and_then(|text| {
         text.split_once('\n')
@@ -103,7 +104,18 @@ fn record_is_gone(path: &Path) -> bool {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or_default();
-    process_facts::read(pid).is_none_or(|facts| stem != instance_stem(pid, &facts.instance))
+    let start_time = proc_stat::read_stat(pid).map(|stat| stat.map(|stat| stat.start_time));
+    stat_says_gone(stem, pid, start_time)
+}
+
+fn stat_says_gone(stem: &str, pid: u32, start_time: Result<Option<u64>, ()>) -> bool {
+    match start_time {
+        Ok(Some(start_time)) => {
+            stem != instance_stem(pid, &process_facts::instance_token(start_time))
+        }
+        Ok(None) => true,
+        Err(()) => false,
+    }
 }
 
 /// Records the desktop entry a launch started its owner from when the owner

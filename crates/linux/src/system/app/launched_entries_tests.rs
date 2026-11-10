@@ -68,7 +68,13 @@ fn the_store_keeps_the_newest_records_when_it_is_full() {
         last = store.path(pid, &format!("{instance}-{index}"));
         let text = format!("{pid}\n/bin/app\napp");
         super::write_private_atomically(&store.dir, &last, text.as_bytes()).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        let written_at =
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000 + index as u64);
+        std::fs::File::options()
+            .write(true)
+            .open(&last)
+            .and_then(|file| file.set_modified(written_at))
+            .unwrap();
     }
     store.prune(&last, |_| false);
     let kept = std::fs::read_dir(&store.dir).unwrap().count();
@@ -78,4 +84,18 @@ fn the_store_keeps_the_newest_records_when_it_is_full() {
     assert!(store.recall(pid, &newest, Path::new("/bin/app")).is_some());
     assert!(store.recall(pid, &oldest, Path::new("/bin/app")).is_none());
     let _ = std::fs::remove_dir_all(&store.dir);
+}
+
+#[test]
+fn only_a_pid_that_has_gone_or_was_reused_drops_its_record() {
+    let (pid, instance) = this_instance();
+    let stem = super::instance_stem(pid, &instance);
+    let start_time = crate::system::process::proc_stat::read_stat(pid)
+        .expect("own stat")
+        .expect("own process")
+        .start_time;
+    assert!(!super::stat_says_gone(&stem, pid, Ok(Some(start_time))));
+    assert!(super::stat_says_gone(&stem, pid, Ok(Some(start_time + 1))));
+    assert!(super::stat_says_gone(&stem, pid, Ok(None)));
+    assert!(!super::stat_says_gone(&stem, pid, Err(())));
 }

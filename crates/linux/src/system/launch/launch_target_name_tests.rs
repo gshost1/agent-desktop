@@ -200,3 +200,24 @@ fn a_desktop_file_shadowed_by_an_earlier_data_dir_records_no_desktop_id() {
     assert_eq!(indexed_plan.desktop_id.as_deref(), Some("tool"));
     let _ = std::fs::remove_dir_all(&shadowed_dir);
 }
+
+#[test]
+fn a_desktop_file_reached_through_a_symlinked_data_dir_keeps_its_desktop_id() {
+    let fixture = fixture(
+        &[("tool", "Name=Tool\nType=Application\nExec=tool")],
+        &["tool"],
+    );
+    let real_dir = fixture.search.data_dirs[0].clone();
+    let linked_dir = real_dir.with_file_name("linked-apps");
+    let _ = std::fs::remove_file(&linked_dir);
+    std::os::unix::fs::symlink(&real_dir, &linked_dir).unwrap();
+    let search = Search {
+        data_dirs: vec![linked_dir.clone(), real_dir.clone()],
+        path_dirs: fixture.search.path_dirs.clone(),
+    };
+    let file = real_dir.join("tool.desktop");
+    let plan = resolve(file.to_str().unwrap(), &[], &search, &fixture.index)
+        .expect("a trusted desktop file");
+    assert_eq!(plan.desktop_id.as_deref(), Some("tool"));
+    let _ = std::fs::remove_file(&linked_dir);
+}
