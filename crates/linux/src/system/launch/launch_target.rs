@@ -137,7 +137,9 @@ fn plan_file(
         argv,
         cwd: entry.path.map(PathBuf::from),
         identity,
-        desktop_id: Some(id.to_owned()),
+        desktop_id: find(id, &search.data_dirs)
+            .is_some_and(|indexed| indexed.as_path() == file)
+            .then(|| id.to_owned()),
     })
 }
 
