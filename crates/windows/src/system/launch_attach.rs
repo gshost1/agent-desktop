@@ -52,7 +52,7 @@ pub(super) fn prepare(
         let window = super::launch_observe::watch_window(
             || super::observe_window_once(row.pid, &token, deadline),
             || None,
-            false,
+            options.timeout_ms > 0,
             deadline,
         )?;
         return Ok((
