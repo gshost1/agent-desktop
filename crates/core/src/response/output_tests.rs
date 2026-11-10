@@ -260,3 +260,22 @@ fn err_response_omits_optional_error_subfields_when_absent() {
         "absent details must be omitted from JSON"
     );
 }
+
+#[test]
+fn an_io_exposure_payload_carries_the_state_permission_details() {
+    let error = AppError::Io(crate::storage::state_exposure::exposed_directory(
+        std::path::Path::new("/state/liveness"),
+    ));
+
+    let payload = ErrorPayload::from_app_error(&error);
+
+    assert_eq!(payload.code, "PERM_DENIED");
+    assert!(payload.suggestion.unwrap().contains("chmod 700"));
+    let details = payload.details.unwrap();
+    assert_eq!(details["kind"], "state_directory_permission");
+    assert_eq!(details["path"], "/state/liveness");
+    assert_eq!(
+        error.into_adapter_error().details.unwrap()["kind"],
+        "state_directory_permission"
+    );
+}

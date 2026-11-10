@@ -16,7 +16,8 @@ pub(crate) fn open_private_lock_portable(path: &Path, create: bool) -> std::io::
     options.read(true).write(true).create(create);
     configure_unix(&mut options, 0o600);
     let file = options.open(path)?;
-    validate_private_regular(&file)?;
+    validate_private_regular(&file)
+        .map_err(|error| super::state_exposure::with_exposed_path(error, path))?;
     Ok(file)
 }
 
@@ -32,7 +33,8 @@ pub(crate) fn open_private_append_portable(path: &Path) -> std::io::Result<File>
     options.read(true).create(true).append(true);
     configure_unix(&mut options, 0o600);
     let file = options.open(path)?;
-    validate_private_regular(&file)?;
+    validate_private_regular(&file)
+        .map_err(|error| super::state_exposure::with_exposed_path(error, path))?;
     Ok(file)
 }
 
@@ -172,9 +174,7 @@ pub(crate) fn validate_private_regular(file: &File) -> std::io::Result<std::fs::
             ));
         }
         if metadata.mode() & 0o077 != 0 {
-            return Err(permission_denied(
-                "private file is accessible by group or other users",
-            ));
+            return Err(super::state_exposure::exposed_file());
         }
         if metadata.nlink() != 1 {
             return Err(permission_denied("private file must not be hard-linked"));
@@ -196,7 +196,8 @@ fn open_private_read(path: &Path) -> std::io::Result<File> {
     options.read(true);
     configure_unix(&mut options, 0);
     let file = options.open(path)?;
-    validate_private_regular(&file)?;
+    validate_private_regular(&file)
+        .map_err(|error| super::state_exposure::with_exposed_path(error, path))?;
     Ok(file)
 }
 

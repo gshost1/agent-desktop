@@ -2,6 +2,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(unix)]
+use crate::storage::state_io_error::state_io_error;
 use crate::{AdapterError, Deadline};
 #[cfg(unix)]
 use crate::{ErrorCode, storage::file_lock::FileLock};
@@ -212,10 +214,10 @@ fn ensure_unix_runtime_directory(
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     validate_unix_runtime_directory(directory, uid)
                 }
-                Err(error) => Err(runtime_io_error(error)),
+                Err(error) => Err(state_io_error(error)),
             }
         }
-        Err(error) => Err(runtime_io_error(error)),
+        Err(error) => Err(state_io_error(error)),
     }
 }
 
@@ -226,7 +228,7 @@ fn validate_unix_runtime_directory(
 ) -> Result<(), AdapterError> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-    let metadata = std::fs::symlink_metadata(directory).map_err(runtime_io_error)?;
+    let metadata = std::fs::symlink_metadata(directory).map_err(state_io_error)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() || metadata.uid() != uid {
         return Err(AdapterError::new(
             ErrorCode::Internal,
@@ -235,14 +237,9 @@ fn validate_unix_runtime_directory(
     }
     if metadata.permissions().mode() & 0o077 != 0 {
         std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))
-            .map_err(runtime_io_error)?;
+            .map_err(state_io_error)?;
     }
     Ok(())
-}
-
-#[cfg(unix)]
-fn runtime_io_error(error: std::io::Error) -> AdapterError {
-    crate::storage::file_lock::state_io_error(error)
 }
 
 #[cfg(test)]
