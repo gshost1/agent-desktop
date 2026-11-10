@@ -10,6 +10,8 @@ Rules learned from the #58 run (2026-11-10), binding for every section:
 - Start with the desktop-space reset (`bench-tools/desktop_space.sh` from `origin/chore/speed-1.4-tasks`; its paths are Mac-local) and wait for the app or fixture window to exist and be front before the first check. A full-screen T3 Code Space made the fixture vanish after ~12 s.
 - `find` on a shipped binary omits `bounds` when the match has a ref (`crates/core/src/commands/find_response.rs:61-70`); read bounds with `get <ref> --property bounds`.
 - Print full error envelopes, never truncated.
+- Snapshots and refs are session-scoped: take a ref inside the same `--session` you act in. Test a check's session handling on Linux before sending it.
+- RUN never removes the BUILD's worktrees or binaries; removal goes in a separate CLEANUP block, so RUN can repeat without rebuilding.
 - `wc -w` pads its output on macOS: compare counts with `-eq`, never with `= 1`.
 - desktop_space.sh's mktemp must point at the check's own dir, never another session's scratchpad.
 - Ship each section as a BUILD block, run outside the desktop lock, and a RUN block, run inside it.
@@ -35,7 +37,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 probe | ACTION-12 | `8959fc5c` | RAN 02:23Z: all 6 ok:true on attempt 1 (D1 did not reproduce); every hit test `unknown`, accepted as verified under the overlay (wrong success); front read AXFocusedApplication -25204. Agent analysing; no further Mac run until a plan is approved |
 | #58 (b) hit-test probe | HIT-UNKNOWN-1 | `7de03c99` | RAN 03:09Z: `unknown` did NOT reproduce. The hit test answered every call (uncovered ReachesTarget; covered intercepted_by pfo-cover → occluded refusals). Only unknown: the binary's first-attempt AXFocusedApplication -25204. Agent explaining the difference before any code |
 | #58 (b) hit-test repro | HIT-UNKNOWN-1 | `7de03c99` (same probe build) | READY: decides whether the window-list fallback is built; send back `$R/probe.log` + the cleanup lines |
-| #58 (a) cap-1 | ACTION-12 | `063d9229` | READY: BUILD + RUN below; CI 13/13 (run 42807214725), gates GREEN 5138/0, draft. Run after #80's rerun (all laptop merges are held for #80) |
+| #58 (a) cap-1 | ACTION-12 | `063d9229` | NOT RUN (script defect: refs taken outside the session, so the snapshot is not found inside it). Rev 2 pending: session-scoped refs, repeatable RUN plus a separate CLEANUP, session handling tested on Linux |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | `d448d781` | revision 2 ready (full: Part 1, real 1e, Part 2, dense Part D, timing Part T); CI 13/13, CLEAN, draft |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` → merged `e6dd96df` | **DONE**: PASS 2×6/6; macos diff vs the merged head 5ebb2548 empty |
