@@ -30,7 +30,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | steps ready, revised per control (no System Events, EXIT trap, Calculator rule); CI 13/13 green |
-| #34 | SURFACE-3 | `e3818161` (old) | HELD: control asked for 5 changes (temp AGENT_DESKTOP_HOME, catch-all, --app on action, stop on first FAIL, close the NC panel) and George's go-ahead; do not run the script below |
+| #34 | SURFACE-3 | `e3818161` | HELD: revision 2 below has the five changes; needs control's decision on agent-desktop's own System Events use, and George's go-ahead |
 | #18 | SURFACE-1 | pending | starts after #34 lands |
 
 ## #80 SURFACE-10: focused-surface ref resolves only in its capture window
@@ -339,54 +339,79 @@ pgrep -x Calculator || echo none        # expect: none
 
 Report the last line (`RESULT: ...`) and any `FAIL` or `SETUP FAIL` line verbatim on this PR or to the control thread.
 
-## #34 SURFACE-3: notification keys (HELD: control reviews this script before it runs)
+## #34 SURFACE-3: notification keys (HELD: needs control's decision below and George's go-ahead)
 
-Head: `e3818161e6201c24989de964ad567aecb0056d95` (CI was still running when this was written; check the PR head equals
-this SHA and CI is green before running).
+Head: `e3818161e6201c24989de964ad567aecb0056d95` (agent will not move it unless main conflicts). CI at write time: 23
+pass, 4 pending, none red. Revision 2 (2026-11-10), with control's five changes.
 
-Key format after review: `<16hex>-<n>of<m>` (m = identical twins listed). A key whose twin count dropped below m is
-refused; twins are grouped by full app/title/body, so a crafted digest collision is refused instead of acted on.
+**Decision needed: agent-desktop itself uses System Events.** On a closed Notification Center, every `--headed`
+notification command opens it through System Events UI scripting: `crates/macos/src/notifications/nc_session.rs:277`
+(on origin/main too) runs `osascript` → `tell application "System Events" ... click menu bar item ... "Clock"`. It skips
+that when the center is already open (`nc_session.rs:52-60`). The script works around it. It prints `ACTION open Notification
+Center by clicking the date and time in the menu bar` and waits up to 120 s. Every list runs headless, which never opens
+the center and answers `POLICY_DENIED` when it is closed. A `--headed` mutation is sent only right after a headless list
+proved the center open. **Residual race:** if the panel closes in the ~0.5 s between that check and the headed call,
+agent-desktop opens it through System Events (the agent's fake run shows exactly that, then the script stops). If that
+is unacceptable, this check cannot run until the adapter opens the center another way (a product change; the macOS
+permission preflight in `crates/macos/src/system/permissions/` also depends on System Events Automation).
 
-Privacy design:
-- Sender: `osascript display notification` (macOS attributes it to Script Editor). Ownership is a random nonce
-  `adbench-<12 hex>` in both title and body; an entry is "ours" only when its title is one of the three nonce titles
-  AND its body contains the nonce.
-- agent-desktop stdout stays in memory (json.loads, then the filter); stderr is discarded; nothing is written to disk.
-- Foreign entries: only a count and sha256[:12] of their sorted key stems are printed.
-- Error results print only `error.code` and `disposition.delivery`, never the message.
-- Every mutation passes the bench key, `--expected-title <bench nonce title>` and `--app <bench entry's app_name>`. A
-  stale-index call runs only when that index currently holds a bench entry. No dismiss-all. Cleanup dismisses bench
-  keys only. Foreign key stems before vs after: any missing = FAIL.
-- Caveat: `--headed` list/dismiss open the Notification Center panel, so real notifications are VISIBLE on the display
-  during the run (never printed). Don't screen-record; nobody needs to watch.
+The five changes:
+1. **State dir.** A fresh `mkdtemp` under `/tmp` is passed as `AGENT_DESKTOP_HOME`. Every inherited `AGENT_DESKTOP_*`
+   variable is stripped, AGENT_DESKTOP_SESSION included. The directory is removed in the outermost `finally`, with an
+   `UNDO ...` line. The agent's one-line answer: without `--trace` and without a trace-enabled session
+   (`crates/core/src/trace/mod.rs:26-52`), list, dismiss and action write no title, body or app_name under the state
+   root. Refmaps come only from snapshot, which the script never runs. The cursor overlay holds coordinates only.
+2. **Catch-all.** Any unexpected exception prints only `ERROR <TypeName>`, still cleans up, closes the center and removes
+   the state dir, then exits 1. Error envelopes print only code, delivery, retry, recovery.strategy, details.kind and
+   details.reason, each matched against `^[A-Za-z0-9_.:-]{1,64}$`. Messages are never printed.
+3. **`--app` on the stale-index `notification-action` call,** along with `--key` and `--expected-title`.
+4. **Stop on first failure.** The first FAIL, a wait timeout or a closed center raises Halt. All further posts, dismisses
+   and actions are refused, the script prints `STOP ...`, and cleanup dismisses only nonce entries by key with the title
+   and app guards.
+5. **Close the panel.** agent-desktop's own `press escape` (headless, unscoped), the key its adapter's `close_nc` sends
+   (`nc_session.rs:304-318`), sent only when the center is verified open. Closure is verified by a headless list that
+   must answer POLICY_DENIED within 5 s: `PASS notification center closed`, else `NOTE notification center left open`.
 
-Laptop lead's review notes:
-- No print path reaches foreign title/body/app_name: `run()` reduces every envelope to ok/code/delivery or `data`;
-  `bench_view()` keeps only bench entries' fields and foreign key stems; `show()` prints bench keys only.
-- Residual risk 1: an unexpected Python exception prints a traceback (code lines and exception text; no notification
-  fields are interpolated, but it isn't impossible). Optional hardening: wrap `main()` in `try/except Exception as e:
-  print("ERROR", type(e).__name__); sys.exit(1)`.
-- Minor: the stale-index `notification-action` call passes `--key` and `--expected-title` but not `--app` (the dismiss calls pass all three); its index is only used when it holds a bench entry.
-- Residual risk 2: the keyed dismiss without an index (`dismiss(oldest)`, cleanup) relies on the PR's key resolution;
-  the `--expected-title` + `--app` guards are what protect foreign entries if that code were wrong, and the
-  before/after foreign stem comparison detects it.
+Checked against the real macOS code path, not the fake center:
+- The list data is `{count, notifications:[{index, app_name, title, body?, actions?, key}]}`.
+- macOS takes app, title and body from the row's AXDescription (`crates/macos/src/notifications/scan.rs`
+  `parse_row_description`). With one text after the app name, the title becomes the app name.
+- So an entry is the bench's when the nonce is in its title OR its body. A nonce entry of unknown kind is still cleaned
+  up.
 
-Prereqs: System Settings > Notifications > Script Editor: Allow, style Banners, grouping Off (a collapsed stack reads
-as INCONCLUSIVE). Don't touch notifications during the run (about 3-4 min).
+Fake-center results, run by the agent with foreign PRIVATE-*/SecretApp entries, foreign text in error messages, and a
+log of every mutation:
+- fixed: PASS.
+- index-only addressing: one FAIL, then STOP; only bench cleanup follows.
+- exception injected: only `ERROR AttributeError`.
+- 0 foreign strings printed in every case.
 
-Save the script below as `/tmp/adbench-34-check.py`, then:
+Laptop lead's notes:
+- **Escape:** `press escape` is unscoped, so it reaches the frontmost app if the center is not what receives it. The
+  script sends it only when a headless list just saw the center open.
+- **desktop_space.sh:** it hard-codes Mac-local paths (the bench-v130 binary, macctl) and silently does nothing if they
+  are missing.
+- **Undo:** the run block's `trap undo EXIT` removes the worktree and both /tmp files. The Script Editor notification
+  settings (Allow, Banners, grouping Off) are George's to set and to undo; the script changes no settings.
+- **Syntax:** bash -n and py_compile are clean on the laptop.
+
+Operator: when the script prints ACTION, click the menu-bar clock once and touch nothing until it ends (3-4 min).
+Expected output:
+- every line PASS, then `PASS notification center closed`, `RESULT PASS`, `UNDO removed agent-desktop state dir ...`
+  and `exit 0`;
+- the trap's `UNDO removed worktree ...` and `UNDO removed /tmp/adbench-34-check.py /tmp/adbench-34-space.sh`.
+
+Exit 1 means FAIL or ERROR; exit 3 means INCONCLUSIVE.
+
+Run block (one paste):
 
 ```bash
-export CARGO_BUILD_JOBS=2
-D=/tmp/adbench-34 && rm -rf $D && git clone -q https://github.com/gshost1/agent-desktop.git $D && cd $D && git checkout -q e3818161e6201c24989de964ad567aecb0056d95 && cargo build --release -p agent-desktop && AD=$D/target/release/agent-desktop python3 -I /tmp/adbench-34-check.py; echo "exit $?"
-```
-
-Expected: every line PASS, ending `RESULT PASS`, exit 0. Exit 1 = FAIL; exit 3 = INCONCLUSIVE (permission, grouping,
-or the list did not shift). Known limits: which of two identical twins closed is not observable (counts and
-renumbering are checked); a foreign notification its app withdraws during the run reads as missing and FAILs (rerun).
-Cleanup after: `rm -rf /tmp/adbench-34 /tmp/adbench-34-check.py`.
-
-```python
+set -u
+SHA=e3818161e6201c24989de964ad567aecb0056d95
+R=~/Projects/agent-desktop; W=/tmp/adbench-34; PY=/tmp/adbench-34-check.py; SP=/tmp/adbench-34-space.sh
+undo() { [ -d "$W" ] && git -C "$R" worktree remove --force "$W" && echo "UNDO removed worktree $W"; rm -f "$PY" "$SP" && echo "UNDO removed $PY $SP"; }
+trap undo EXIT
+cat > "$PY" <<'ADBENCH_PY_EOF'
 #!/usr/bin/env python3
 """Mac check for agent-desktop notification keys (fork PR #34).
 
@@ -395,25 +420,41 @@ only on entries that carry that nonce. Raw agent-desktop output stays in memory
 and goes straight through bench_view(); nothing about another notification is
 printed or written anywhere except a count and a hash of its opaque key stems.
 
-Usage: AD=/path/to/agent-desktop python3 adbench_notification_keys.py
-Exit: 0 pass, 1 fail, 3 inconclusive (environment did not allow the check).
+agent-desktop opens a closed Notification Center through System Events, so the
+operator opens it by hand first. Lists run headless, which can never open it,
+and a --headed mutation is sent only right after a headless list proves the
+center is open, so agent-desktop's open path never runs.
+
+Usage: AD=/path/to/agent-desktop python3 -I adbench_notification_keys.py
+Exit: 0 pass, 1 fail or error, 3 inconclusive.
 """
 import hashlib
 import json
 import os
+import re
 import secrets
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 AD = os.environ.get("AD", "agent-desktop")
 NONCE = "adbench-" + secrets.token_hex(6)
-TWIN = (NONCE + "-twin", "twin body " + NONCE)
-SOLO = (NONCE + "-solo", "solo body " + NONCE)
-NEWER = (NONCE + "-newer", "newer body " + NONCE)
-KINDS = {TWIN[0]: "twin", SOLO[0]: "solo", NEWER[0]: "newer"}
+KIND_NAMES = ("twin", "solo", "newer")
 FAILS = []
 INCONCLUSIVE = []
+ENV = {name: value for name, value in os.environ.items() if not name.startswith("AGENT_DESKTOP_")}
+STATE = {"cleaning": False}
+WORD = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
+
+class Halt(Exception):
+    """A check failed or the center closed: no further scenario mutations."""
+
+
+def notification(kind):
+    return (f"{NONCE}-{kind}", f"{NONCE} {kind} body")
 
 
 def say(line):
@@ -424,15 +465,20 @@ def check(ok, label):
     say(("PASS " if ok else "FAIL ") + label)
     if not ok:
         FAILS.append(label)
+        if not STATE["cleaning"]:
+            raise Halt()
     return ok
 
 
-def run(*args):
+def word(value):
+    return value if isinstance(value, str) and WORD.match(value) else None
+
+
+def run(*args, headed=False):
     """Runs agent-desktop and returns only a sanitized summary of the envelope."""
+    argv = [AD, "--headed", *args] if headed else [AD, *args]
     try:
-        proc = subprocess.run(
-            [AD, "--headed", *args], capture_output=True, text=True, timeout=180
-        )
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=180, env=ENV)
     except subprocess.TimeoutExpired:
         return {"ok": False, "code": "SCRIPT_TIMEOUT"}
     try:
@@ -442,11 +488,26 @@ def run(*args):
     if envelope.get("ok"):
         return {"ok": True, "data": envelope.get("data") or {}}
     error = envelope.get("error") or {}
+    details = error.get("details") if isinstance(error.get("details"), dict) else {}
+    disposition = error.get("disposition") if isinstance(error.get("disposition"), dict) else {}
+    recovery = error.get("recovery") if isinstance(error.get("recovery"), dict) else {}
     return {
         "ok": False,
-        "code": error.get("code"),
-        "delivery": (error.get("disposition") or {}).get("delivery"),
+        "code": word(error.get("code")),
+        "delivery": word(disposition.get("delivery")),
+        "retry": word(disposition.get("retry")),
+        "recovery": word(recovery.get("strategy")),
+        "kind": word(details.get("kind")),
+        "reason": word(details.get("reason")),
+        "exit": proc.returncode,
     }
+
+
+def outcome(result):
+    if result["ok"]:
+        return "ok"
+    fields = ("code", "delivery", "retry", "recovery", "kind", "reason", "exit")
+    return " ".join(f"{name}={result.get(name)}" for name in fields if result.get(name) is not None)
 
 
 def parse_key(key):
@@ -465,8 +526,16 @@ def stem(key):
     return f"{parsed[0]}-{parsed[1]}" if parsed else "unparsed"
 
 
-def is_bench(entry):
-    return entry.get("title") in KINDS and NONCE in (entry.get("body") or "")
+def bench_kind(entry):
+    """The bench kind of an entry that carries the nonce, or None for any other entry."""
+    title = entry.get("title") if isinstance(entry.get("title"), str) else ""
+    body = entry.get("body") if isinstance(entry.get("body"), str) else ""
+    if NONCE not in title and NONCE not in body:
+        return None
+    for name in KIND_NAMES:
+        if title == f"{NONCE}-{name}" or body.startswith(f"{NONCE} {name} "):
+            return name
+    return "unknown"
 
 
 def keys_hash(keys):
@@ -474,25 +543,38 @@ def keys_hash(keys):
 
 
 def bench_view():
-    """Lists once; returns the bench's own entries and only counts for the rest."""
+    """Lists headless once: the bench's own entries, and only key stems for the rest.
+
+    A headless list never opens the center; it fails POLICY_DENIED when it is closed.
+    """
     result = run("list-notifications")
     if not result["ok"]:
         return None, result
     ours, foreign = [], []
     for entry in result["data"].get("notifications") or []:
-        if is_bench(entry):
-            ours.append(
-                {
-                    "index": entry.get("index"),
-                    "key": entry.get("key"),
-                    "kind": KINDS[entry["title"]],
-                    "title": entry["title"],
-                    "app": entry.get("app_name"),
-                }
-            )
-        else:
+        kind = bench_kind(entry)
+        if kind is None:
             foreign.append(stem(entry.get("key")))
+            continue
+        ours.append(
+            {
+                "index": entry.get("index"),
+                "key": entry.get("key"),
+                "kind": kind,
+                "title": entry.get("title"),
+                "app": entry.get("app_name"),
+            }
+        )
     return {"ours": ours, "foreign": foreign}, result
+
+
+def center_open():
+    view, result = bench_view()
+    if view is not None:
+        return True
+    if result.get("code") == "POLICY_DENIED":
+        return False
+    return None
 
 
 def kind(view, name):
@@ -504,19 +586,46 @@ def show(view, label):
     say(f"     {label}: bench [{shown}]; {len(view['foreign'])} other present (keys hash {keys_hash(view['foreign'])})")
 
 
-def post(pair):
+def guard_mutation():
+    if FAILS and not STATE["cleaning"]:
+        raise Halt()
+    if center_open() is not True:
+        say("NOTE notification center is not open; no headed call is sent, so agent-desktop does not open it")
+        INCONCLUSIVE.append("center closed during the run")
+        raise Halt()
+
+
+def post(kind_name):
+    guard_mutation()
+    title, body = notification(kind_name)
     subprocess.run(
-        [
-            "osascript",
-            "-e", "on run argv",
-            "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
-            "-e", "end run",
-            pair[0],
-            pair[1],
-        ],
+        ["osascript", "-e", "on run argv", "-e",
+         "display notification (item 2 of argv) with title (item 1 of argv)",
+         "-e", "end run", title, body],
         check=True,
         capture_output=True,
+        env=ENV,
     )
+
+
+def dismiss(entry, index=None):
+    guard_mutation()
+    args = ["dismiss-notification"]
+    if index is not None:
+        args.append(str(index))
+    args += ["--key", entry["key"], "--expected-title", entry["title"]]
+    if entry.get("app"):
+        args += ["--app", entry["app"]]
+    return run(*args, headed=True)
+
+
+def stale_action(entry, index):
+    guard_mutation()
+    args = ["notification-action", str(index), NONCE + "-no-such-action",
+            "--key", entry["key"], "--expected-title", entry["title"]]
+    if entry.get("app"):
+        args += ["--app", entry["app"]]
+    return run(*args, headed=True)
 
 
 def wait_for(predicate, label, timeout_s=40):
@@ -525,163 +634,153 @@ def wait_for(predicate, label, timeout_s=40):
     while time.monotonic() < deadline:
         view, result = bench_view()
         if view is None:
-            last = result.get("code")
+            last = outcome(result)
         elif predicate(view):
             return view
         time.sleep(2)
     say(f"INCONCLUSIVE {label} did not appear within {timeout_s}s (last list error: {last})")
     INCONCLUSIVE.append(label)
-    return None
+    raise Halt()
 
 
 def refusal(result):
     return (not result["ok"]) and result.get("code") == "NOTIFICATION_NOT_FOUND" and result.get("delivery") == "not_delivered"
 
 
-def outcome(result):
-    if result["ok"]:
-        return "ok"
-    return f"{result.get('code')} / {result.get('delivery')}"
-
-
-def dismiss(entry, index=None):
-    args = ["dismiss-notification"]
-    if index is not None:
-        args.append(str(index))
-    args += ["--key", entry["key"], "--expected-title", entry["title"]]
-    if entry.get("app"):
-        args += ["--app", entry["app"]]
-    return run(*args)
-
-
-def cleanup():
-    for _ in range(4):
-        view, _ = bench_view()
-        if view is None or not view["ours"]:
-            return view
-        for entry in view["ours"]:
-            dismiss(entry)
-    view, _ = bench_view()
-    return view
-
-
-def scenario(baseline):
-    post(TWIN)
+def scenario():
+    post("twin")
     time.sleep(1.5)
-    post(TWIN)
+    post("twin")
     first = wait_for(lambda v: len(kind(v, "twin")) >= 2, "two identical bench notifications")
-    if first is None:
-        return
     show(first, "after two twins")
     twins = kind(first, "twin")
-    if not check(len(twins) == 2, f"exactly two twins listed (saw {len(twins)}; >2 means the center keeps duplicates)"):
-        return
+    check(len(twins) == 2, f"exactly two twins listed (saw {len(twins)})")
     parsed = parse_key(twins[0]["key"])
-    if not check(parsed is not None, f"keys have the digest-NofM form ({twins[0]['key']})"):
-        return
+    check(parsed is not None, f"keys have the digest-NofM form ({twins[0]['key']})")
     digest = parsed[0]
     check({e["key"] for e in twins} == {f"{digest}-1of2", f"{digest}-2of2"}, "twins share one digest and are keyed 1of2 and 2of2")
-    oldest = next((e for e in twins if e["key"] == f"{digest}-1of2"), None)
-    if not check(oldest is not None, "the 1of2 twin is listed"):
-        return
+    oldest = next(e for e in twins if e["key"] == f"{digest}-1of2")
     check(oldest["index"] == max(e["index"] for e in twins), "the 1of2 twin is the lower (older) entry")
 
-    post(TWIN)
+    post("twin")
     second = wait_for(lambda v: len(kind(v, "twin")) >= 3, "third identical bench notification")
-    if second is None:
-        return
     show(second, "after third twin")
     twins3 = kind(second, "twin")
-    keys3 = {e["key"] for e in twins3}
-    check(keys3 == {f"{digest}-{n}of3" for n in (1, 2, 3)}, "the identical newcomer took 3of3; the older twins kept their numbers")
-    newest = next((e for e in twins3 if e["key"] == f"{digest}-3of3"), None)
-    check(newest is not None and newest["index"] == min(e["index"] for e in twins3), "the 3of3 twin is listed on top (newest first)")
-    oldest_now = next((e for e in twins3 if e["key"] == f"{digest}-1of3"), None)
-    shifted = oldest_now is not None and oldest_now["index"] != oldest["index"]
-    check(shifted, f"the oldest twin moved from index {oldest['index']} to {oldest_now and oldest_now['index']}")
-    second_oldest = next((e for e in twins3 if e["key"] == f"{digest}-2of3"), None)
-
+    check({e["key"] for e in twins3} == {f"{digest}-{n}of3" for n in (1, 2, 3)}, "the identical newcomer took 3of3; the older twins kept their numbers")
+    newest = next(e for e in twins3 if e["key"] == f"{digest}-3of3")
+    check(newest["index"] == min(e["index"] for e in twins3), "the 3of3 twin is listed on top (newest first)")
+    oldest_now = next(e for e in twins3 if e["key"] == f"{digest}-1of3")
+    check(oldest_now["index"] != oldest["index"], f"the oldest twin moved from index {oldest['index']} to {oldest_now['index']}")
+    second_oldest = next(e for e in twins3 if e["key"] == f"{digest}-2of3")
     occupant = next((e for e in second["ours"] if e["index"] == oldest["index"]), None)
-    if shifted and occupant is not None:
-        stale = dismiss(oldest, index=oldest["index"])
-        check(refusal(stale), f"stale index {oldest['index']} with key {oldest['key']} is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(stale)})")
-        after_stale, _ = bench_view()
-        if after_stale is not None:
-            check(len(kind(after_stale, "twin")) == 3, "the refused dismiss closed no twin (still 3)")
-    else:
-        say("INCONCLUSIVE stale-index refusal skipped: the old index does not hold a bench entry")
-        INCONCLUSIVE.append("stale twin index")
+    check(occupant is not None, f"index {oldest['index']} now holds a bench entry, so the stale-index call can only reach the bench's own")
+
+    stale = dismiss(oldest, index=oldest["index"])
+    check(refusal(stale), f"stale index {oldest['index']} with key {oldest['key']} is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(stale)})")
+    after_stale = wait_for(lambda v: True, "list after the refused dismiss")
+    check(len(kind(after_stale, "twin")) == 3, "the refused dismiss closed no twin (still 3)")
 
     keyed = dismiss(oldest)
     check(keyed["ok"], f"dismiss --key {oldest['key']} succeeds (got {outcome(keyed)})")
     third = wait_for(lambda v: len(kind(v, "twin")) <= 2, "twin count back to two")
-    if third is None:
-        return
     show(third, "after keyed dismiss")
     remaining = {e["key"] for e in kind(third, "twin")}
     check(remaining == {f"{digest}-1of2", f"{digest}-2of2"}, "two twins remain, renumbered 1of2 and 2of2 (which identical twin closed is not observable)")
 
-    if second_oldest is not None:
-        left = dismiss(second_oldest)
-        check(refusal(left), f"key {second_oldest['key']} from before a twin left is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(left)})")
-        after_left, _ = bench_view()
-        if after_left is not None:
-            check(len(kind(after_left, "twin")) == 2, "the refused twin-left dismiss closed no twin (still 2)")
+    left = dismiss(second_oldest)
+    check(refusal(left), f"key {second_oldest['key']} from before a twin left is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(left)})")
+    after_left = wait_for(lambda v: True, "list after the refused twin-left dismiss")
+    check(len(kind(after_left, "twin")) == 2, "the refused twin-left dismiss closed no twin (still 2)")
 
-    post(SOLO)
+    post("solo")
     with_solo = wait_for(lambda v: len(kind(v, "solo")) == 1, "distinct bench notification")
-    if with_solo is None:
-        return
     solo = kind(with_solo, "solo")[0]
-    post(NEWER)
+    post("newer")
     with_newer = wait_for(lambda v: len(kind(v, "newer")) == 1, "newer distinct bench notification")
-    if with_newer is None:
-        return
     show(with_newer, "after solo and newer")
     solo_now = next((e for e in kind(with_newer, "solo") if e["key"] == solo["key"]), None)
     check(solo_now is not None, "the solo entry kept its key after a newer arrival")
-    if solo_now is None:
-        return
+    check(solo_now["index"] != solo["index"], f"the solo entry moved from index {solo['index']} to {solo_now['index']}")
     occupant = next((e for e in with_newer["ours"] if e["index"] == solo["index"]), None)
-    if solo_now["index"] != solo["index"] and occupant is not None:
-        stale = dismiss(solo, index=solo["index"])
-        check(refusal(stale), f"stale solo index {solo['index']} is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(stale)})")
-        stale_action = run("notification-action", str(solo["index"]), NONCE + "-no-such-action", "--key", solo["key"], "--expected-title", solo["title"])
-        check(refusal(stale_action), f"stale-index notification-action is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(stale_action)})")
-    else:
-        say("INCONCLUSIVE stale solo index skipped: the solo entry did not shift onto another bench entry")
-        INCONCLUSIVE.append("stale solo index")
+    check(occupant is not None, f"index {solo['index']} now holds a bench entry")
+    stale = dismiss(solo, index=solo["index"])
+    check(refusal(stale), f"stale solo index {solo['index']} is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(stale)})")
+    stale_pressed = stale_action(solo, solo["index"])
+    check(refusal(stale_pressed), f"stale-index notification-action is refused NOTIFICATION_NOT_FOUND/not_delivered (got {outcome(stale_pressed)})")
     exact = dismiss(solo_now, index=solo_now["index"])
     check(exact["ok"], f"dismiss {solo_now['index']} --key {solo['key']} succeeds (got {outcome(exact)})")
     final = wait_for(lambda v: not kind(v, "solo"), "solo entry gone")
-    if final is None:
-        return
     show(final, "after solo dismiss")
     check(len(kind(final, "newer")) == 1 and len(kind(final, "twin")) == 2, "only the solo entry closed: newer and both twins remain")
 
 
+def cleanup():
+    """Dismisses only bench entries, each by its key with the title and app guards."""
+    STATE["cleaning"] = True
+    for _ in range(4):
+        view, result = bench_view()
+        if view is None:
+            say(f"NOTE cleanup cannot list ({outcome(result)}); bench notifications carry nonce {NONCE}")
+            return None
+        if not view["ours"]:
+            return view
+        for entry in view["ours"]:
+            try:
+                dismiss(entry)
+            except Halt:
+                return None
+    view, _ = bench_view()
+    return view
+
+
+def close_center():
+    """Closes the center with agent-desktop's own Escape, the key its adapter uses."""
+    if center_open() is not True:
+        say("PASS notification center closed")
+        return
+    pressed = run("press", "escape")
+    if not pressed["ok"]:
+        say(f"     press escape: {outcome(pressed)}")
+    for _ in range(5):
+        if center_open() is False:
+            say("PASS notification center closed")
+            return
+        time.sleep(1)
+    say("NOTE notification center left open")
+
+
 def main():
     say(f"bench nonce {NONCE}")
+    say("ACTION open Notification Center by clicking the date and time in the menu bar; waiting up to 120 s")
+    deadline = time.monotonic() + 120
+    while center_open() is not True:
+        if time.monotonic() > deadline:
+            say("INCONCLUSIVE Notification Center was not opened")
+            return 3
+        time.sleep(2)
     baseline, result = bench_view()
     if baseline is None:
         say(f"INCONCLUSIVE list-notifications failed before posting: {outcome(result)}")
         return 3
     say(f"     before: {len(baseline['foreign'])} other notifications present (keys hash {keys_hash(baseline['foreign'])})")
     try:
-        scenario(baseline)
+        scenario()
+    except Halt:
+        say("STOP no further scenario mutations; cleaning up bench notifications only")
     except subprocess.CalledProcessError:
         say("INCONCLUSIVE osascript could not post a notification")
         INCONCLUSIVE.append("post")
     finally:
         left = cleanup()
-    if left is None:
-        say("FAIL could not list after cleanup")
-        return 1
-    check(not left["ours"], f"cleanup removed every bench notification ({len(left['ours'])} left)")
-    before, after = set(baseline["foreign"]), set(left["foreign"])
-    missing, added = before - after, after - before
-    say(f"     after: {len(after)} other notifications present (keys hash {keys_hash(after)})")
-    check(not missing, f"{len(before)} other notifications untouched: {len(missing)} missing, {len(added)} arrived during the run")
+    if left is not None:
+        check(not left["ours"], f"cleanup removed every bench notification ({len(left['ours'])} left)")
+        before, after = set(baseline["foreign"]), set(left["foreign"])
+        missing, added = before - after, after - before
+        say(f"     after: {len(after)} other notifications present (keys hash {keys_hash(after)})")
+        check(not missing, f"{len(before)} other notifications untouched: {len(missing)} missing, {len(added)} arrived during the run")
+    else:
+        FAILS.append("cleanup could not finish")
+    close_center()
     if FAILS:
         say(f"RESULT FAIL ({len(FAILS)} failed checks)")
         return 1
@@ -692,8 +791,35 @@ def main():
     return 0
 
 
+def guarded():
+    home = tempfile.mkdtemp(prefix="adbench-34-home-", dir="/tmp")
+    ENV["AGENT_DESKTOP_HOME"] = home
+    code = 1
+    try:
+        code = main()
+    except BaseException as error:
+        say(f"ERROR {type(error).__name__}")
+        code = 1
+        try:
+            STATE["cleaning"] = True
+            cleanup()
+            close_center()
+        except BaseException as again:
+            say(f"ERROR {type(again).__name__}")
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+        say(f"UNDO removed agent-desktop state dir {home}")
+    return code
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(guarded())
+ADBENCH_PY_EOF
+cd "$R" && git fetch -q origin && git worktree prune && rm -rf "$W" && git worktree add -q --detach "$W" "$SHA" || exit 1
+while pgrep -x cargo >/dev/null; do sleep 5; done
+(cd "$W" && CARGO_BUILD_JOBS=2 cargo build --release -p agent-desktop) || exit 1
+if pgrep -x Calculator >/dev/null; then echo "NOTE Calculator already running; desktop-space reset skipped (it would quit Calculator)"; else git -C "$R" show origin/chore/speed-1.4-tasks:bench-tools/desktop_space.sh > "$SP" && bash "$SP"; echo "desktop-space reset ran (exit $?)"; fi
+AD="$W/target/release/agent-desktop" python3 -I "$PY"; echo "exit $?"
 ```
 
 ## #88 LIFECYCLE-2 + LIFECYCLE-12: macOS launch watches the launched process; several restored windows are not an error
