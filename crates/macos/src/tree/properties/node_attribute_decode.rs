@@ -89,6 +89,16 @@ mod imp {
         item.downcast::<CFNumber>().is_some()
     }
 
+    /// A slot whose value is a reference rather than text, so it reads as absent instead of failing:
+    /// a numeric label, or a value that is an element (the selected child of a tab or radio group).
+    pub(crate) fn carries_no_text(index: usize, item: &CFType) -> bool {
+        use crate::tree::properties::node_attribute_status::{LABEL, VALUE};
+        (index == LABEL && is_number(item))
+            || (index == VALUE
+                && unsafe { CFGetTypeID(item.as_CFTypeRef()) }
+                    == unsafe { accessibility_sys::AXUIElementGetTypeID() })
+    }
+
     pub(crate) fn point(item: &CFType) -> Option<CGPoint> {
         let mut point = CGPoint::new(0.0, 0.0);
         unsafe {
@@ -115,7 +125,7 @@ mod imp {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) use imp::{is_null, is_number, number_text, point, size, slot_error, text};
+pub(crate) use imp::{carries_no_text, is_null, number_text, point, size, slot_error, text};
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
@@ -194,7 +204,24 @@ mod tests {
             agent_desktop_core::ObservationBudget::default(),
         );
 
-        assert!(is_number(&item));
+        assert!(imp::is_number(&item));
         assert!(text(15, &item, &mut usage).is_none());
+        assert!(carries_no_text(15, &item));
+        assert!(!carries_no_text(3, &item));
+    }
+
+    #[test]
+    fn an_element_valued_value_reads_as_carrying_no_text() {
+        let element =
+            unsafe { accessibility_sys::AXUIElementCreateApplication(std::process::id() as i32) };
+        let item = unsafe { CFType::wrap_under_create_rule(element as _) };
+        let mut usage = crate::tree::observation_usage::ObservationUsage::new(
+            agent_desktop_core::ObservationBudget::default(),
+        );
+
+        assert!(text(3, &item, &mut usage).is_none());
+        assert!(carries_no_text(3, &item));
+        assert!(!carries_no_text(1, &item));
+        assert!(!carries_no_text(15, &item));
     }
 }

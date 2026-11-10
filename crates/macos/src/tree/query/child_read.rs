@@ -30,7 +30,7 @@ impl ChildRead {
         }
     }
 
-    fn failed(status: ChildReadStatus) -> Self {
+    pub(super) fn failed(status: ChildReadStatus) -> Self {
         Self {
             elements: Vec::new(),
             total_count: 0,
@@ -41,7 +41,7 @@ impl ChildRead {
         }
     }
 
-    fn unavailable(status: ChildReadStatus) -> Self {
+    pub(super) fn unavailable(status: ChildReadStatus) -> Self {
         Self {
             elements: Vec::new(),
             total_count: 0,
@@ -52,7 +52,7 @@ impl ChildRead {
         }
     }
 
-    fn indexed(
+    pub(super) fn indexed(
         mut elements: Vec<AXElement>,
         initial_count: usize,
         index: usize,
@@ -90,7 +90,7 @@ mod imp {
     use core_foundation::{base::TCFType, string::CFString};
     use core_foundation_sys::base::{CFIndex, CFTypeRef};
 
-    const CHILD_PAGE_SIZE: usize = 128;
+    pub(in crate::tree::query) const CHILD_PAGE_SIZE: usize = 128;
 
     pub(crate) fn read_children(
         element: &AXElement,
@@ -101,7 +101,15 @@ mod imp {
         super::super::child_source::read_resilient(
             crate::tree::properties::element::child_attributes(role),
             deadline,
-            |attribute| read_attribute_children(element, attribute, budget, deadline),
+            |attribute| {
+                read_attribute_children_with(
+                    element,
+                    attribute,
+                    budget,
+                    deadline,
+                    super::super::child_values_read::holds_children_by_role(role),
+                )
+            },
         )
     }
 
@@ -114,7 +122,11 @@ mod imp {
         super::super::child_source::read_resilient(
             crate::tree::properties::element::child_attributes(role),
             deadline,
-            |attribute| read_attribute_child_at(element, attribute, index, deadline),
+            |attribute| {
+                super::super::child_read_at::read_attribute_child_at(
+                    element, attribute, index, deadline,
+                )
+            },
         )
     }
 
@@ -124,13 +136,33 @@ mod imp {
         budget: impl Into<ChildReadBudget>,
         deadline: std::time::Instant,
     ) -> ChildRead {
-        let budget = budget.into();
+        read_attribute_children_with(element, attribute, budget.into(), deadline, false)
+    }
+
+    fn read_attribute_children_with(
+        element: &AXElement,
+        attribute: &str,
+        budget: ChildReadBudget,
+        deadline: std::time::Instant,
+        values_first: bool,
+    ) -> ChildRead {
         let (max_elements, boundary) = (budget.max_elements, budget.boundary);
-        let count_deadline = super::super::child_read_budget::count_deadline(boundary, deadline);
         let mut status = ChildReadStatus::default();
         if check_deadline(deadline, &mut status).is_err() {
             return ChildRead::failed(status);
         }
+        if values_first {
+            if let Some(read) = super::super::child_values_read::read_short_first_page(
+                element,
+                attribute,
+                max_elements,
+                deadline,
+                &mut status,
+            ) {
+                return read;
+            }
+        }
+        let count_deadline = super::super::child_read_budget::count_deadline(boundary, deadline);
         status.attempts += 1;
         let count = match child_count(element, attribute, count_deadline) {
             Ok(count) => count,
@@ -139,12 +171,31 @@ mod imp {
             }
             Err(error) => {
                 telemetry::record(&mut status, attribute, "initial_count", error, None);
-                return read_without_count(element, attribute, max_elements, deadline, status);
+                return super::super::child_values_read::read_without_count(
+                    element,
+                    attribute,
+                    max_elements,
+                    deadline,
+                    status,
+                );
             }
         };
         let requested = count.min(max_elements);
+        let whole_page =
+            super::super::child_read_budget::whole_list_page(count, max_elements, CHILD_PAGE_SIZE);
         let mut complete = true;
-        let mut elements = match read_prefix(element, attribute, requested, deadline, &mut status) {
+        let read = whole_page
+            .and_then(|page_len| {
+                super::super::child_values_read::read_whole_page(
+                    element,
+                    attribute,
+                    page_len,
+                    deadline,
+                    &mut status,
+                )
+            })
+            .unwrap_or_else(|| read_prefix(element, attribute, requested, deadline, &mut status));
+        let mut elements = match read {
             Ok(elements) => elements,
             Err(error) => {
                 telemetry::record(&mut status, attribute, "prefix", error, Some(count));
@@ -152,8 +203,12 @@ mod imp {
                 Vec::new()
             }
         };
+        let proven = whole_page.is_some() && elements.len() == count;
+        elements.truncate(requested);
         complete &= elements.len() == requested;
-        let final_count = match stable_count(element, attribute, deadline, &mut status) {
+        let recount = (super::super::child_read_budget::recount_after_prefix(requested) && !proven)
+            .then(|| stable_count(element, attribute, deadline, &mut status));
+        let final_count = match recount.unwrap_or(Ok(count)) {
             Ok(final_count) => final_count,
             Err(error) => {
                 telemetry::record(&mut status, attribute, "stable_count", error, Some(count));
@@ -176,92 +231,7 @@ mod imp {
         }
     }
 
-    fn read_attribute_child_at(
-        element: &AXElement,
-        attribute: &str,
-        index: usize,
-        deadline: std::time::Instant,
-    ) -> ChildRead {
-        let mut status = ChildReadStatus::default();
-        if check_deadline(deadline, &mut status).is_err() {
-            return ChildRead::failed(status);
-        }
-        status.attempts += 1;
-        let initial_count = match child_count(element, attribute, deadline) {
-            Ok(count) => count,
-            Err(error) if is_absent_error(error) => return ChildRead::unavailable(status),
-            Err(error) => {
-                telemetry::record(&mut status, attribute, "initial_count", error, None);
-                return ChildRead::failed(status);
-            }
-        };
-        let elements = if index < initial_count {
-            status.attempts += 1;
-            match copy_page(element, attribute, index, 1, deadline) {
-                Ok(elements) => elements,
-                Err(error) => {
-                    telemetry::record(
-                        &mut status,
-                        attribute,
-                        "indexed_child",
-                        error,
-                        Some(initial_count),
-                    );
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-        if index < initial_count && elements.is_empty() {
-            status.cursor_stalled = true;
-        }
-        let final_count = stable_count(element, attribute, deadline, &mut status);
-        if let Err(error) = final_count {
-            telemetry::record(
-                &mut status,
-                attribute,
-                "stable_count",
-                error,
-                Some(initial_count),
-            );
-        }
-        ChildRead::indexed(elements, initial_count, index, final_count, status)
-    }
-
-    /// A responder can serve the values of an attribute while failing to answer
-    /// its count inside the count budget — Xcode does this for `AXWindows`. The
-    /// count is only an optimisation, so a short read still proves the elements
-    /// it returned; only a full page leaves the tail unknown.
-    pub(super) fn read_without_count(
-        element: &AXElement,
-        attribute: &str,
-        max_elements: usize,
-        deadline: std::time::Instant,
-        mut status: ChildReadStatus,
-    ) -> ChildRead {
-        if max_elements == 0 {
-            return ChildRead::failed(status);
-        }
-        let elements = match read_prefix(element, attribute, max_elements, deadline, &mut status) {
-            Ok(elements) => elements,
-            Err(error) => {
-                telemetry::record(&mut status, attribute, "prefix", error, None);
-                return ChildRead::failed(status);
-            }
-        };
-        let saturated = elements.len() == max_elements;
-        ChildRead {
-            total_count: elements.len() + usize::from(saturated),
-            elements,
-            complete: !saturated,
-            source_availability: ChildSourceAvailability::Available,
-            prefix_certain: !saturated,
-            status,
-        }
-    }
-
-    fn child_count(
+    pub(in crate::tree::query) fn child_count(
         element: &AXElement,
         attribute: &str,
         deadline: std::time::Instant,
@@ -274,7 +244,7 @@ mod imp {
         )
     }
 
-    fn read_prefix(
+    pub(in crate::tree::query) fn read_prefix(
         element: &AXElement,
         attribute: &str,
         requested: usize,
@@ -291,7 +261,7 @@ mod imp {
         Ok(result.elements)
     }
 
-    fn stable_count(
+    pub(in crate::tree::query) fn stable_count(
         element: &AXElement,
         attribute: &str,
         deadline: std::time::Instant,
@@ -302,7 +272,7 @@ mod imp {
         child_count(element, attribute, deadline)
     }
 
-    fn copy_page(
+    pub(in crate::tree::query) fn copy_page(
         element: &AXElement,
         attribute: &str,
         index: usize,
@@ -342,7 +312,7 @@ mod imp {
         Ok(elements)
     }
 
-    fn check_deadline(
+    pub(in crate::tree::query) fn check_deadline(
         deadline: std::time::Instant,
         status: &mut ChildReadStatus,
     ) -> Result<(), ()> {
@@ -353,7 +323,7 @@ mod imp {
             })
     }
 
-    pub(super) fn is_absent_error(error: i32) -> bool {
+    pub(in crate::tree::query) fn is_absent_error(error: i32) -> bool {
         error == kAXErrorAttributeUnsupported || error == kAXErrorNoValue
     }
 }
@@ -391,6 +361,11 @@ mod imp {
     }
 }
 
+#[cfg(target_os = "macos")]
+pub(in crate::tree::query) use imp::{
+    CHILD_PAGE_SIZE, check_deadline, child_count, copy_page, is_absent_error, read_prefix,
+    stable_count,
+};
 pub(crate) use imp::{read_attribute_children, read_child_at, read_children};
 
 #[cfg(all(test, target_os = "macos"))]

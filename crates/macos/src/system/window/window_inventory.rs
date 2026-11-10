@@ -97,8 +97,7 @@ pub(crate) fn focused_window_until(deadline: Instant) -> Result<Option<WindowInf
 
 #[cfg(target_os = "macos")]
 fn focused_application_pid(deadline: Instant) -> Result<Option<i32>, AdapterError> {
-    let system =
-        crate::tree::AXElement(unsafe { accessibility_sys::AXUIElementCreateSystemWide() });
+    let system = crate::tree::system_wide::element();
     crate::tree::surface_read::element(&system, "AXFocusedApplication", deadline)?
         .map(|app| crate::tree::properties::ax_ipc::pid(&app, deadline))
         .transpose()
@@ -162,10 +161,13 @@ fn narrow_to_real_windows(windows: &mut Vec<WindowInfo>) {
     windows.retain(|window| window.state.visible == Some(true) || window.state.minimized.is_some());
 }
 
-pub(crate) fn exact_window_for_pid_until(
+/// The visible or minimized windows a process owns, read once, with their
+/// focus. Choosing among several is the caller's: a launch claims one only
+/// when it is the only window or the only focused one.
+pub(crate) fn real_windows_for_pid_until(
     pid: i32,
     deadline: Instant,
-) -> Result<WindowInfo, AdapterError> {
+) -> Result<Vec<WindowInfo>, AdapterError> {
     let records =
         cg_window::window_records_until(deadline, cg_window::WindowRecordScope::Pid(pid))?;
     let mut windows = windows_from_records_with_focus(
@@ -177,30 +179,7 @@ pub(crate) fn exact_window_for_pid_until(
         },
     )?;
     narrow_to_real_windows(&mut windows);
-    if windows.len() == 1 {
-        return Ok(windows.remove(0));
-    }
-    let mut focused = windows
-        .iter()
-        .filter(|window| window.state.is_focused)
-        .cloned()
-        .collect::<Vec<_>>();
-    if focused.len() == 1 {
-        return Ok(focused.remove(0));
-    }
-    if windows.is_empty() {
-        return Err(AdapterError::new(
-            agent_desktop_core::ErrorCode::WindowNotFound,
-            format!("Process {pid} has no visible window"),
-        ));
-    }
-    Err(AdapterError::ambiguous_target(format!(
-        "Process {pid} has multiple visible windows and no exact focused window"
-    ))
-    .with_details(serde_json::json!({
-        "candidate_count": windows.len(),
-        "candidate_window_ids": windows.iter().map(|window| &window.id).collect::<Vec<_>>(),
-    })))
+    Ok(windows)
 }
 
 fn windows_from_records_with_focus(

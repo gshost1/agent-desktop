@@ -89,7 +89,7 @@ mod imp {
                 0..=16 => match node_attribute_decode::text(index, &item, usage) {
                     Some(value) if value.complete => texts[index] = Some(value.value),
                     Some(_) => status.record_truncated(index),
-                    None if index == LABEL && node_attribute_decode::is_number(&item) => {}
+                    None if node_attribute_decode::carries_no_text(index, &item) => {}
                     None => status.record_slot_error(index, kAXErrorFailure),
                 },
                 17 => {
@@ -182,6 +182,9 @@ mod imp {
                                         texts[VALUE] = Some(value.value)
                                     }
                                     Some(_) => status.record_truncated(VALUE),
+                                    None if node_attribute_decode::carries_no_text(
+                                        VALUE, &item,
+                                    ) => {}
                                     None => status.record_slot_error(VALUE, kAXErrorFailure),
                                 }
                             }

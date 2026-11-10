@@ -34,6 +34,14 @@ impl LocatorQuery {
             && self.containment.has_not.is_none()
     }
 
+    /// Whether a node's verdict depends on what lies below it: text anywhere
+    /// in its subtree, or a nested `has` / `has_not` query.
+    pub(crate) fn reads_subtrees(&self) -> bool {
+        self.has_text.is_some()
+            || self.containment.has.is_some()
+            || self.containment.has_not.is_some()
+    }
+
     pub fn validate_states(&self) -> Result<(), AdapterError> {
         for predicate in &self.states {
             if !STATE_VOCABULARY.contains(&predicate.token.as_str()) {

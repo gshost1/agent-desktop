@@ -24,6 +24,13 @@ pub trait InputOps: Send + Sync {
         true
     }
 
+    /// Prepares keyboard synthesis ahead of the first key event. A command calls it once its
+    /// target is known and before it reads the target, so the work runs while the application's
+    /// accessibility connection opens. Best-effort: an error here never fails the command.
+    fn prepare_keyboard_input(&self) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
     fn mouse_event(
         &self,
         _event: MouseEvent,

@@ -1,7 +1,11 @@
 use agent_desktop_core::{AdapterError, AppInfo, ErrorCode, ProcessId, WindowFilter, WindowInfo};
 use std::time::Instant;
 
-use crate::system::{app::workspace_apps, process::process_apps, window::window_inventory};
+use crate::system::{
+    app::{workspace_apps, workspace_scoped_apps},
+    process::process_apps,
+    window::window_inventory,
+};
 
 pub(crate) fn list_apps_complete_until(deadline: Instant) -> Result<Vec<AppInfo>, AdapterError> {
     stabilize_apps_until(deadline, || capture_complete_apps(deadline))
@@ -28,7 +32,13 @@ pub(crate) fn list_apps_scoped_until(
     bundle_id: Option<&str>,
     deadline: Instant,
 ) -> Result<Vec<AppInfo>, AdapterError> {
-    stabilize_apps_until(deadline, || capture_scoped_apps(name, bundle_id, deadline))
+    let apps = stabilize_apps_until(deadline, || capture_scoped_apps(name, bundle_id, deadline))?;
+    let pids: Vec<i32> = apps
+        .iter()
+        .filter_map(|app| i32::try_from(app.pid.get()).ok())
+        .collect();
+    crate::system::connection_warmup::start_applications(&pids, deadline);
+    Ok(apps)
 }
 
 fn capture_complete_apps(deadline: Instant) -> Result<Vec<AppInfo>, AdapterError> {
@@ -53,7 +63,7 @@ fn capture_scoped_apps(
         Ok(Vec::new())
     };
     let apps = scoped_apps_from_sources(
-        workspace_apps::list_apps_scoped_until(name, bundle_id, deadline),
+        workspace_scoped_apps::list_apps_scoped_until(name, bundle_id, deadline),
         process,
     )?;
     ensure_before_deadline(deadline)?;
@@ -114,10 +124,11 @@ pub(in crate::system) fn stabilize_apps_until(
             }
             Err(error) => return Err(error),
         }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if !remaining.is_zero() {
-            std::thread::sleep(remaining.min(std::time::Duration::from_millis(5)));
-        }
+        crate::system::inventory_recapture::pause_before_next_capture(
+            attempts,
+            last_failure.is_some(),
+            deadline,
+        );
     }
 }
 

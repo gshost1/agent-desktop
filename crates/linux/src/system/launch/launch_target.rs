@@ -7,6 +7,7 @@ use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode};
 use super::desktop_entry::{DesktopEntry, parse};
 use super::desktop_exec::{ExecContext, expand, program_word};
 use super::desktop_lookup::{find, is_trusted};
+use super::indexed_entry::IndexedEntry;
 use crate::system::app::app_alias::AliasIndex;
 use crate::system::process::executable_identity::ExecutableIdentity;
 
@@ -15,6 +16,7 @@ pub(crate) struct Plan {
     pub(crate) argv: Vec<String>,
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) identity: Option<ExecutableIdentity>,
+    pub(crate) desktop_id: Option<String>,
 }
 
 fn refuse(code: ErrorCode, message: String) -> AdapterError {
@@ -135,6 +137,7 @@ fn plan_file(
         argv,
         cwd: entry.path.map(PathBuf::from),
         identity,
+        desktop_id: Some(id.to_owned()),
     })
 }
 
@@ -147,6 +150,7 @@ fn direct_plan(program: String, arguments: &[String]) -> Plan {
         argv,
         cwd: None,
         identity,
+        desktop_id: None,
     }
 }
 
@@ -196,16 +200,79 @@ pub(crate) fn resolve(
         let program = resolve_program(identifier, &search.path_dirs)?;
         return Ok(direct_plan(program, arguments));
     }
-    let mut ids = index.ids_named(identifier);
-    match ids.len() {
+    let mut entries = index.entries_named(identifier);
+    match entries.len() {
         0 => Err(not_found(identifier)),
-        1 => entry_plan(&ids.remove(0), arguments, search),
-        _ => Err(AdapterError::ambiguous_target(format!(
-            "'{identifier}' is the name of several desktop entries: {}",
-            ids.join(", ")
-        ))
-        .with_disposition(DeliverySemantics::not_delivered())),
+        1 => entry_plan(&entries.remove(0).id, arguments, search),
+        _ => named_plan(identifier, entries, arguments, search),
     }
+}
+
+/// The plan for a desktop `Name` that several entries share. When all of
+/// them run the same command (see [`IndexedEntry::runs_same_command`]), the
+/// choice cannot change what runs, so the first entry in desktop id order
+/// that can start is used, and when none can, the first one's refusal is
+/// the answer. Entries that run different commands are refused with each
+/// desktop id and what it runs or why it cannot start.
+fn named_plan(
+    identifier: &str,
+    mut entries: Vec<&IndexedEntry>,
+    arguments: &[String],
+    search: &Search,
+) -> Result<Plan, AdapterError> {
+    entries.sort_by(|left, right| left.id.cmp(&right.id));
+    let Some(first) = entries.first().copied() else {
+        return Err(not_found(identifier));
+    };
+    let same = entries
+        .iter()
+        .all(|entry| entry.runs_same_command(first, &search.path_dirs));
+    let plans: Vec<(&str, Result<Plan, AdapterError>)> = entries
+        .iter()
+        .map(|entry| (entry.id.as_str(), entry_plan(&entry.id, arguments, search)))
+        .collect();
+    if !same {
+        return Err(ambiguous_entries(identifier, &plans));
+    }
+    let mut refusal = None;
+    for (_, plan) in plans {
+        match plan {
+            Ok(plan) => return Ok(plan),
+            Err(error) => {
+                refusal.get_or_insert(error);
+            }
+        }
+    }
+    Err(refusal.unwrap_or_else(|| not_found(identifier)))
+}
+
+fn ambiguous_entries(
+    identifier: &str,
+    plans: &[(&str, Result<Plan, AdapterError>)],
+) -> AdapterError {
+    let ids: Vec<&str> = plans.iter().map(|(id, _)| *id).collect();
+    let candidates: Vec<serde_json::Value> = plans
+        .iter()
+        .map(|(id, plan)| match plan {
+            Ok(plan) => serde_json::json!({ "desktop_id": id, "argv": plan.argv }),
+            Err(error) => serde_json::json!({ "desktop_id": id, "refusal": error.message }),
+        })
+        .collect();
+    let example = plans
+        .iter()
+        .find(|(_, plan)| plan.is_ok())
+        .map_or(ids[0], |(id, _)| *id);
+    refuse(
+        ErrorCode::AmbiguousTarget,
+        format!(
+            "'{identifier}' is the name of several desktop entries that do not run the same command: {}",
+            ids.join(", ")
+        ),
+    )
+    .with_details(serde_json::json!({ "candidates": candidates }))
+    .with_suggestion(format!(
+        "Run the same launch with a desktop id in place of the name, for example 'agent-desktop launch {example}' followed by the same options; details.candidates lists what each entry runs or why it cannot start."
+    ))
 }
 
 #[cfg(test)]
@@ -215,3 +282,7 @@ mod tests;
 #[cfg(test)]
 #[path = "launch_identity_tests.rs"]
 mod identity_tests;
+
+#[cfg(test)]
+#[path = "launch_target_name_tests.rs"]
+mod name_tests;

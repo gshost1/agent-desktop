@@ -44,51 +44,78 @@ impl AliasIndex {
                     id: entry.id,
                     name: entry.name,
                     argv,
+                    cwd: entry.path,
                 }
             })
             .collect();
         Self { entries }
     }
 
-    /// Aliases require a single desktop entry whose resolved executable and
-    /// full argv match the verified process.
+    /// Aliases require desktop entries whose resolved executable and full
+    /// argv match the verified process. Several entries that run that same
+    /// command each name the process. A name is an alias only when no entry
+    /// with that name runs another command.
     pub(crate) fn names_for(&self, actual: &ExecutableIdentity) -> Vec<String> {
-        self.unique_entry(actual)
-            .filter(|entry| {
-                self.entries
-                    .iter()
-                    .filter(|other| other.name.eq_ignore_ascii_case(&entry.name))
-                    .count()
-                    == 1
-            })
-            .map(|entry| vec![entry.name.clone()])
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn ids_for(&self, actual: &ExecutableIdentity) -> Vec<String> {
-        self.unique_entry(actual)
-            .map(|entry| vec![entry.id.clone()])
-            .unwrap_or_default()
-    }
-
-    fn unique_entry(&self, actual: &ExecutableIdentity) -> Option<&IndexedEntry> {
         let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
-        let mut entries = self.entries.iter().filter(|entry| {
-            ExecutableIdentity::requested(&entry.argv, &path)
-                .is_some_and(|wanted| wanted.matches(actual))
-        });
-        match (entries.next(), entries.next()) {
-            (Some(entry), None) => Some(entry),
-            _ => None,
+        let matching = self.matching_entries(actual, &path);
+        let mut names: Vec<String> = Vec::new();
+        for entry in &matching {
+            let shared_only_by_this_command = self
+                .entries
+                .iter()
+                .filter(|other| other.name.eq_ignore_ascii_case(&entry.name))
+                .all(|other| other.runs_same_command(entry, &path));
+            if shared_only_by_this_command
+                && !names
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(&entry.name))
+            {
+                names.push(entry.name.clone());
+            }
         }
+        names
     }
 
-    /// The id of every entry whose `Name` equals `name`, ignoring case.
-    pub(crate) fn ids_named(&self, name: &str) -> Vec<String> {
+    /// The desktop ids of the entries that run the verified process's
+    /// command, in byte order.
+    pub(crate) fn ids_for(&self, actual: &ExecutableIdentity) -> Vec<String> {
+        let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
+        self.matching_entries(actual, &path)
+            .into_iter()
+            .map(|entry| entry.id.clone())
+            .collect()
+    }
+
+    /// The entries whose command is the verified process's, sorted by
+    /// desktop id. Each one runs the process's executable with its arguments,
+    /// so they all run one command.
+    fn matching_entries(
+        &self,
+        actual: &ExecutableIdentity,
+        path: &[PathBuf],
+    ) -> Vec<&IndexedEntry> {
+        let mut matching: Vec<&IndexedEntry> = self
+            .entries
+            .iter()
+            .filter(|entry| {
+                ExecutableIdentity::requested(&entry.argv, path)
+                    .is_some_and(|wanted| wanted.matches(actual))
+            })
+            .collect();
+        matching.sort_by(|left, right| left.id.cmp(&right.id));
+        matching
+    }
+
+    /// The entry with this desktop id.
+    pub(in crate::system) fn entry(&self, desktop_id: &str) -> Option<&IndexedEntry> {
+        self.entries.iter().find(|entry| entry.id == desktop_id)
+    }
+
+    /// Every entry whose `Name` equals `name`, ignoring case.
+    pub(in crate::system) fn entries_named(&self, name: &str) -> Vec<&IndexedEntry> {
         self.entries
             .iter()
             .filter(|entry| entry.name.eq_ignore_ascii_case(name))
-            .map(|entry| entry.id.clone())
             .collect()
     }
 }

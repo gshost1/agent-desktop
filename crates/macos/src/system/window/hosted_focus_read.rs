@@ -271,8 +271,7 @@ fn is_frontmost(app: &AXElement, deadline: Deadline) -> Result<bool, AdapterErro
 }
 
 fn system_attribute(attribute: &str, deadline: Deadline) -> Option<AXElement> {
-    let system =
-        crate::tree::AXElement(unsafe { accessibility_sys::AXUIElementCreateSystemWide() });
+    let system = crate::tree::system_wide::element();
     let instant = crate::tree::locator_deadline::from_operation(deadline).ok()?;
     crate::tree::surface_read::element(&system, attribute, instant)
         .ok()
