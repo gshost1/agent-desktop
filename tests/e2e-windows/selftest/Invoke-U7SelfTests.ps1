@@ -91,6 +91,17 @@ $script:FakeTarget = [pscustomobject]@{ RefId = '@stub-snap:e1'; SnapshotId = 's
 $OkClick = '{"version":"2.3","ok":true,"command":"click","data":{"action":"click","steps":[{"label":"InvokePattern.Invoke","outcome":"succeeded","mechanism":"semantic_api","verified":true}],"disposition":{"delivery":"delivered_verified","retry":"unsafe"}}}'
 $OkClickPhysical = '{"version":"2.3","ok":true,"command":"click","data":{"action":"click","steps":[{"label":"SendInput","outcome":"succeeded","mechanism":"physical_synthetic","verified":true}],"disposition":{"delivery":"delivered_verified","retry":"unsafe"}}}'
 
+<#
+    One stub spawn before the cases, under a budget a loaded runner meets.
+    Each case gives a stub call Invoke-AgentDesktop's 20 s guard, and the
+    first powershell.exe start on a busy runner can take longer than that:
+    the first case once timed out (ExitCode=124, TimedOut=True) while the
+    other sixteen passed. Paying the cold start here keeps it out of every
+    case's guard.
+#>
+New-StubConfig -Rules @(@{ Match = '*'; Responses = @('{"version":"2.3","ok":true,"command":"version","data":{}}') }) | Out-Null
+Invoke-AgentDesktop -Arguments @('version') -TimeoutSeconds 180 | Out-Null
+
 . (Join-Path $script:SelftestDir 'U7SelfTestCasesAssert.ps1')
 . (Join-Path $script:SelftestDir 'U7SelfTestCasesVerdict.ps1')
 

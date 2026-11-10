@@ -160,13 +160,16 @@ fn a_canceled_download_is_an_error_not_a_path() {
     assert_eq!(kind(&next), "cdp_download_not_started");
 }
 
+/// The wait calls a vanished partial file interrupted once it has been
+/// missing for the grace period, and returns then. The budget only has to
+/// outlast that grace on a stalled host, so it is far longer than the grace.
 #[test]
 fn a_partial_file_that_vanished_is_an_interrupted_download() {
     let fixture = Fixture::new();
     fixture.earlier(DownloadState::InProgress);
 
     let error = fixture
-        .wait(ScriptedTransport::new(), true, 4_000)
+        .wait(ScriptedTransport::new(), true, 30_000)
         .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ActionFailed);
