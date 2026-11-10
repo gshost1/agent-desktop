@@ -36,9 +36,25 @@ fn desktop_aliases_require_unique_verified_executable_identity() {
     let invocation = &mut path_launched.argv.as_mut().unwrap()[0];
     *invocation = std::path::Path::new(invocation).file_name().unwrap().into();
     assert_eq!(index.names_for(&path_launched), ["Owned App"]);
-    let index = AliasIndex::build(&[entry, file("duplicate", "Another App", executable)], &[]);
+    let index = AliasIndex::build(
+        &[entry.clone(), file("duplicate", "Another App", executable)],
+        &[],
+    );
+    assert_eq!(index.names_for(&actual), ["Another App", "Owned App"]);
+    assert_eq!(index.ids_for(&actual), ["duplicate", "owned"]);
+    let index = AliasIndex::build(
+        &[
+            entry.clone(),
+            file("twin", "Owned App", executable),
+            file("other", "Owned App", "/bin/true"),
+        ],
+        &[],
+    );
     assert!(index.names_for(&actual).is_empty());
-    assert!(index.ids_for(&actual).is_empty());
+    assert_eq!(index.ids_for(&actual), ["owned", "twin"]);
+    let index = AliasIndex::build(&[entry, file("twin", "Owned App", executable)], &[]);
+    assert_eq!(index.names_for(&actual), ["Owned App"]);
+    assert_eq!(index.ids_for(&actual), ["owned", "twin"]);
     let index = AliasIndex::build(&[file("wrong", "Wrong App", "/missing/elsewhere")], &[]);
     assert!(index.names_for(&actual).is_empty());
 }

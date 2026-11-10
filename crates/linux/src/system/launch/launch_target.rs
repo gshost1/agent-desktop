@@ -204,11 +204,13 @@ pub(crate) fn resolve(
     }
 }
 
-/// The plan for a desktop `Name` that several entries share. Entries that
-/// cannot be started are left out. When every remaining entry runs the same
-/// command line in the same working directory, the one whose desktop id
-/// sorts first is used, because the choice cannot change what runs. Entries
-/// that run different commands are refused with each desktop id and command.
+/// The plan for a desktop `Name` that several entries share. When every
+/// entry can be started and all run the same command (one canonical
+/// executable, the same arguments and the same working directory), the
+/// choice cannot change what runs, so the entry whose desktop id sorts first
+/// is used. When none can be started, the first one's refusal is the answer.
+/// Any other mix is refused with each desktop id and what it runs or why it
+/// cannot start.
 fn named_plan(
     identifier: &str,
     mut ids: Vec<String>,
@@ -216,43 +218,62 @@ fn named_plan(
     search: &Search,
 ) -> Result<Plan, AdapterError> {
     ids.sort();
-    ids.dedup();
-    let mut plans = Vec::new();
-    let mut refusal = None;
-    for id in ids {
-        match entry_plan(&id, arguments, search) {
-            Ok(plan) => plans.push((id, plan)),
-            Err(error) => {
-                refusal.get_or_insert(error);
-            }
-        }
+    let mut plans: Vec<(String, Result<Plan, AdapterError>)> = ids
+        .into_iter()
+        .map(|id| {
+            let plan = entry_plan(&id, arguments, search);
+            (id, plan)
+        })
+        .collect();
+    if plans.iter().all(|(_, plan)| plan.is_err()) {
+        return plans.remove(0).1;
     }
-    let same_command = plans
-        .windows(2)
-        .all(|pair| pair[0].1.argv == pair[1].1.argv && pair[0].1.cwd == pair[1].1.cwd);
-    if plans.is_empty() {
-        return Err(refusal.unwrap_or_else(|| not_found(identifier)));
+    let first = plans.iter().find_map(|(_, plan)| plan.as_ref().ok());
+    let same = plans.iter().all(|(_, plan)| {
+        plan.as_ref()
+            .ok()
+            .zip(first)
+            .is_some_and(|(plan, first)| runs_same_command(plan, first))
+    });
+    if same {
+        return plans.remove(0).1;
     }
-    if same_command {
-        return Ok(plans.remove(0).1);
-    }
+    Err(ambiguous_entries(identifier, &plans))
+}
+
+fn runs_same_command(left: &Plan, right: &Plan) -> bool {
+    left.cwd == right.cwd
+        && left
+            .identity
+            .as_ref()
+            .zip(right.identity.as_ref())
+            .is_some_and(|(left, right)| left.runs_same_command(right))
+}
+
+fn ambiguous_entries(
+    identifier: &str,
+    plans: &[(String, Result<Plan, AdapterError>)],
+) -> AdapterError {
     let ids: Vec<&str> = plans.iter().map(|(id, _)| id.as_str()).collect();
     let candidates: Vec<serde_json::Value> = plans
         .iter()
-        .map(|(id, plan)| serde_json::json!({ "desktop_id": id, "argv": plan.argv }))
+        .map(|(id, plan)| match plan {
+            Ok(plan) => serde_json::json!({ "desktop_id": id, "argv": plan.argv }),
+            Err(error) => serde_json::json!({ "desktop_id": id, "refusal": error.message }),
+        })
         .collect();
-    Err(refuse(
+    refuse(
         ErrorCode::AmbiguousTarget,
         format!(
-            "'{identifier}' is the name of several desktop entries that run different commands: {}",
+            "'{identifier}' is the name of several desktop entries that do not run the same command: {}",
             ids.join(", ")
         ),
     )
     .with_details(serde_json::json!({ "candidates": candidates }))
     .with_suggestion(format!(
-        "Launch one of them by its desktop id, for example 'agent-desktop launch {}'; details.candidates lists the command each one runs.",
+        "Run the same launch with a desktop id in place of the name, for example 'agent-desktop launch {}' followed by the same options; details.candidates lists what each entry runs or why it cannot start.",
         ids[0]
-    )))
+    ))
 }
 
 #[cfg(test)]

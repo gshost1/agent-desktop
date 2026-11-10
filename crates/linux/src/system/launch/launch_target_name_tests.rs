@@ -70,22 +70,28 @@ fn entries_that_differ_only_in_working_directory_are_still_ambiguous() {
 }
 
 #[test]
-fn an_entry_that_cannot_start_does_not_make_a_name_ambiguous() {
+fn an_entry_that_cannot_start_keeps_the_name_ambiguous_and_says_why() {
     let fixture = fixture(
         &[
             (
                 "one",
-                "Name=Tool\nType=Application\nExec=tool\nTryExec=missing-tool",
+                "Name=Tool\nType=Application\nExec=tool\nTerminal=true",
             ),
             ("two", "Name=Tool\nType=Application\nExec=other"),
         ],
         &["tool", "other"],
     );
-    let program = fixture.search.path_dirs[0].join("other");
-    assert_eq!(
-        argv_in(&fixture, "Tool").unwrap(),
-        [program.to_str().unwrap()]
+    let error = resolve("Tool", &[], &fixture.search, &fixture.index)
+        .err()
+        .expect("an ambiguity");
+    assert_eq!(error.code, ErrorCode::AmbiguousTarget);
+    let candidates = &error.details.as_ref().expect("details")["candidates"];
+    assert!(
+        candidates[0]["refusal"]
+            .as_str()
+            .is_some_and(|why| why.contains("terminal"))
     );
+    assert!(candidates[1]["argv"].is_array());
 }
 
 #[test]
@@ -93,11 +99,11 @@ fn a_name_none_of_whose_entries_can_start_reports_why_the_first_cannot() {
     let fixture = fixture(
         &[
             (
-                "one",
-                "Name=Tool\nType=Application\nExec=tool\nTerminal=true",
+                "two",
+                "Name=Tool\nType=Application\nExec=tool\nTryExec=missing-tool",
             ),
             (
-                "two",
+                "one",
                 "Name=Tool\nType=Application\nExec=tool\nTerminal=true",
             ),
         ],
@@ -107,4 +113,19 @@ fn a_name_none_of_whose_entries_can_start_reports_why_the_first_cannot() {
         code_of(argv_in(&fixture, "Tool")),
         ErrorCode::ActionNotSupported
     );
+}
+
+#[test]
+fn one_program_spelled_two_ways_is_the_same_command() {
+    let fixture = fixture(
+        &[
+            ("one", "Name=Tool\nType=Application\nExec=tool %U"),
+            ("two", "Name=Tool\nType=Application\nExec=tool-link %U"),
+        ],
+        &["tool"],
+    );
+    let program = fixture.search.path_dirs[0].join("tool");
+    std::os::unix::fs::symlink(&program, fixture.search.path_dirs[0].join("tool-link")).unwrap();
+    let plan = resolve("Tool", &[], &fixture.search, &fixture.index).expect("one command");
+    assert_eq!(plan.argv, [program.to_str().unwrap()]);
 }

@@ -8,14 +8,16 @@ are not used.
 
 - `--app` takes the process name `list-apps` prints, or a desktop entry's `Name`
   or id whose `Exec` resolves to the running executable (`/proc/<pid>/exe`) with
-  matching full arguments. A desktop name shared by several entries gets no
-  alias. Registry labels and truncated `comm` names are never aliases.
+  matching full arguments. Every entry that runs that same command names the
+  process; a desktop name that an entry running another command also uses gets
+  no alias. Registry labels and truncated `comm` names are never aliases.
 - Scoped matching is exact and case-insensitive, and the process must belong to
   this session. `list-windows --app` uses that exact rule. `list-apps --app`
   combines a substring match on the listed name with those exact adapter aliases.
 - Window ids are opaque addresses of 34 to 70 characters, valid for the life of
   the window's process.
-- `list-apps` rows carry `name`, `pid`, `bundle_id` (desktop id when known) and
+- `list-apps` rows carry `name`, `pid`, `bundle_id` (the desktop id, the first
+  in byte order when several entries run the process's command, when known) and
   `process_instance`. `list-windows` rows carry `id`, `title`, `app_name`, `pid`,
   `is_focused`, `minimized`, `visible`, `accessible` and `process_instance`, plus
   `bounds` when the display maps one.
@@ -43,13 +45,15 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   name with a separator or NUL, is `INVALID_ARGS`, `not_delivered`; an unknown name is
   `APP_NOT_FOUND`; an entry with `Terminal=true` or no `Exec` is
   `ACTION_NOT_SUPPORTED`.
-- A `Name` that several desktop entries share skips the entries that cannot be
-  started. When the rest run the same command line in the same working
-  directory, as a package that installs one app under two desktop ids does,
-  `launch` starts the one whose desktop id sorts first in byte order. Entries
-  that run different commands are `AMBIGUOUS_TARGET`, `not_delivered`, with
-  `details.candidates` (`desktop_id` and the resolved `argv` of each); launch one
-  by its desktop id, for example `agent-desktop launch google-chrome`.
+- A `Name` that several desktop entries share launches the entry whose desktop
+  id sorts first in byte order when every entry can be started and all run the
+  same command: one canonical executable, the same arguments and the same
+  working directory, as a package that installs one app under two desktop ids
+  does. Any other mix is `AMBIGUOUS_TARGET`, `not_delivered`, with
+  `details.candidates` (each `desktop_id` with its resolved `argv`, or the
+  `refusal` that keeps it from starting). Rerun the launch with a desktop id in
+  place of the name, for example `agent-desktop launch google-chrome`, keeping
+  the same options.
 - The app is spawned with null stdio in its own process group, so a caller that
   reads through a pipe sees end of file at exit. Every spawn adds
   `AGENT_DESKTOP_LAUNCHED=1` to the child's environment; `close-app` reads it to

@@ -63,7 +63,7 @@ pub(super) fn argv_in(fixture: &Fixture, identifier: &str) -> Result<Vec<String>
         .map_err(|error| error.code)
 }
 
-fn code_of(result: Result<Vec<String>, ErrorCode>) -> ErrorCode {
+pub(super) fn code_of(result: Result<Vec<String>, ErrorCode>) -> ErrorCode {
     result.expect_err("an error")
 }
 
