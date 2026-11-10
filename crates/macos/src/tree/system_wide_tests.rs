@@ -3,11 +3,16 @@ use core_foundation::base::TCFType;
 
 const CHILD: &str = "AGENT_DESKTOP_SYSTEM_WIDE_FRESH_PROCESS";
 const FIRST_READ: &str = "first-system-wide-read=";
+const UNTRUSTED: &str = "system-wide-read-skipped=untrusted";
 
 #[test]
 #[ignore = "runs only as the fresh process started by the test below"]
 fn fresh_process_reads_the_focused_application() {
     if std::env::var_os(CHILD).is_none() {
+        return;
+    }
+    if !unsafe { accessibility_sys::AXIsProcessTrusted() } {
+        println!("{UNTRUSTED}");
         return;
     }
     let system = element();
@@ -45,6 +50,10 @@ fn the_first_system_wide_read_of_a_fresh_process_is_not_refused() {
         panic!("the fresh test process did not start");
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.lines().any(|line| line.trim() == UNTRUSTED) {
+        eprintln!("skipped: the fresh test process is not trusted for accessibility");
+        return;
+    }
     let first_read = stdout
         .lines()
         .find_map(|line| line.split(FIRST_READ).nth(1))
@@ -52,5 +61,9 @@ fn the_first_system_wide_read_of_a_fresh_process_is_not_refused() {
     let Some(first_read) = first_read else {
         panic!("the fresh test process reported no read: {stdout}");
     };
-    assert_ne!(first_read, accessibility_sys::kAXErrorCannotComplete);
+    assert!(
+        first_read == accessibility_sys::kAXErrorSuccess
+            || first_read == accessibility_sys::kAXErrorNoValue,
+        "a trusted fresh process read AXFocusedApplication with error {first_read}"
+    );
 }
