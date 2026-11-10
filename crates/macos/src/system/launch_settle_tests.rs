@@ -208,3 +208,77 @@ fn every_other_error_code_ends_the_wait_immediately() {
         &AdapterError::permission_denied()
     ));
 }
+
+#[test]
+fn a_forming_window_keeps_the_wait_going_until_it_is_shown() {
+    let reads = Cell::new(0);
+    let found = settle_window(
+        SettleProbes {
+            read: || {
+                reads.set(reads.get() + 1);
+                if reads.get() == 1 {
+                    Ok(LaunchWindow::Forming(window("w-1")))
+                } else {
+                    Ok(LaunchWindow::Shown(window("w-1")))
+                }
+            },
+            startup_finished: || Ok(false),
+            alive: || Ok(()),
+        },
+        &activating(),
+        long_deadline(),
+    )
+    .expect("a window");
+    assert!(matches!(found, LaunchWindow::Shown(shown) if shown.id == "w-1"));
+    assert_eq!(reads.get(), 2);
+}
+
+#[test]
+fn a_wait_that_ends_on_a_forming_window_reports_it() {
+    let found = settle_window(
+        SettleProbes {
+            read: || Ok(LaunchWindow::Forming(window("w-1"))),
+            startup_finished: || Ok(false),
+            alive: || Ok(()),
+        },
+        &LaunchOptions {
+            timeout_ms: 0,
+            ..Default::default()
+        },
+        long_deadline(),
+    )
+    .expect("a window");
+    let (window, _) = found.into_parts();
+    assert!(window.is_some_and(|window| window.id == "w-1"));
+}
+
+#[test]
+fn an_activating_wait_ends_on_a_window_still_forming_after_the_grace() {
+    let reads = Cell::new(0);
+    let found = settle_window(
+        SettleProbes {
+            read: || {
+                reads.set(reads.get() + 1);
+                Ok(LaunchWindow::Forming(window("w-1")))
+            },
+            startup_finished: || Ok(true),
+            alive: || Ok(()),
+        },
+        &activating(),
+        long_deadline(),
+    )
+    .expect("a window");
+    assert!(matches!(found, LaunchWindow::Forming(forming) if forming.id == "w-1"));
+    assert!(reads.get() > 1, "the wait ended before the grace");
+}
+
+#[test]
+fn no_gap_between_window_reads_passes_fifty_milliseconds() {
+    let mut interval = FIRST_POLL;
+    let mut elapsed = Duration::ZERO;
+    while elapsed < Duration::from_secs(5) {
+        assert!(interval <= Duration::from_millis(50), "{interval:?}");
+        elapsed += interval;
+        interval = next_poll_interval(interval);
+    }
+}

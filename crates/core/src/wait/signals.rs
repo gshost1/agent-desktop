@@ -222,6 +222,28 @@ pub(crate) fn merge_signal_baseline(
     }
 }
 
+/// Drops from `floor` every surface that `current` no longer shows, so a
+/// surface that leaves and later returns under the same identity is diffed as
+/// new. A capture whose surface list is incomplete proves nothing has left,
+/// so it leaves `floor` as is; when `floor` itself started incomplete, the
+/// first complete list becomes its surfaces. Windows and apps keep their
+/// baseline entries. The counterpart of [`merge_signal_baseline`], which only
+/// grows.
+pub(crate) fn shrink_signal_floor(floor: &mut SignalBaseline, current: &SignalBaseline) {
+    if !current.completeness.surfaces {
+        return;
+    }
+    if !floor.completeness.surfaces {
+        floor.surfaces = current.surfaces.clone();
+        floor.completeness.surfaces = true;
+        return;
+    }
+    let present: HashSet<_> = current.surfaces.iter().map(surface_identity).collect();
+    floor
+        .surfaces
+        .retain(|surface| present.contains(&surface_identity(surface)));
+}
+
 #[cfg(test)]
 #[path = "signals_tests.rs"]
 mod tests;

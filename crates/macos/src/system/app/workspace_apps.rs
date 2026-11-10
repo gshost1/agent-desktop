@@ -1,3 +1,4 @@
+use crate::system::appkit_bridge::workspace_snapshot_json;
 use agent_desktop_core::{AdapterError, AppInfo, AppInventory, ErrorCode};
 use serde::Deserialize;
 use std::time::Instant;
@@ -109,7 +110,7 @@ pub(crate) fn list_apps_inventory_until(deadline: Instant) -> Result<AppInventor
     {
         return Ok(inventory);
     }
-    list_apps_with(deadline, |_| true, true)
+    list_apps_with(deadline, workspace_snapshot_json, |_| true, true)
 }
 
 pub(crate) fn require_complete(skipped: &[serde_json::Value]) -> Result<(), AdapterError> {
@@ -122,15 +123,15 @@ pub(crate) fn require_complete(skipped: &[serde_json::Value]) -> Result<(), Adap
     ))
 }
 
-/// Apps named `name`, optionally pinned to `bundle_id`. Without one, a bundle
-/// ID or executable name matches only when no app has that display name.
-pub(crate) fn list_apps_scoped_until(
+pub(super) fn scoped_apps_from(
+    snapshot: impl FnOnce() -> Result<Vec<u8>, AdapterError>,
     name: &str,
     bundle_id: Option<&str>,
     deadline: Instant,
 ) -> Result<AppInventory, AdapterError> {
-    let mut inventory = list_apps_with(
+    list_apps_with(
         deadline,
+        snapshot,
         |app| {
             (agent_desktop_core::app_name_matches(&app.name, name)
                 || (bundle_id.is_none() && has_alias(&app.bundle_id, &app.executable, name)))
@@ -141,12 +142,7 @@ pub(crate) fn list_apps_scoped_until(
                 })
         },
         false,
-    )?;
-    let named = |app: &AppInfo| agent_desktop_core::app_name_matches(&app.name, name);
-    if inventory.apps.iter().any(named) {
-        inventory.apps.retain(named);
-    }
-    Ok(inventory)
+    )
 }
 
 /// Whether `identifier` is the app's bundle ID or executable name.
@@ -179,12 +175,13 @@ pub(crate) fn window_owner_snapshot_until(
 
 fn list_apps_with(
     deadline: Instant,
+    snapshot: impl FnOnce() -> Result<Vec<u8>, AdapterError>,
     include: impl Fn(&BridgedApplication) -> bool,
     skip_cross_uid: bool,
 ) -> Result<AppInventory, AdapterError> {
     ensure_before_deadline(deadline)?;
     crate::system::cocoa_runtime::ensure_cocoa_multithreaded()?;
-    let bytes = crate::system::appkit_bridge::workspace_snapshot_json()?;
+    let bytes = snapshot()?;
     ensure_before_deadline(deadline)?;
     apps_inventory_from_json_with(
         &bytes,
