@@ -72,33 +72,12 @@ unsafe fn find_in_window(
             return set_last_error(&crate::commands::app_error_to_adapter(e));
         }
     };
-    let selected = if request.selection == LocatorSelection::Strict {
-        match agent_desktop_core::require_unique(resolution) {
-            Ok(selected) => selected,
-            Err(error) => {
-                return set_last_error(&crate::commands::app_error_to_adapter(error));
-            }
+    let entry = match select_entry(resolution, request.selection) {
+        Ok(entry) => entry,
+        Err(error) => {
+            return set_last_error(&error);
         }
-    } else {
-        if !resolution.meta.selection_complete {
-            return set_last_error(
-                &AdapterError::timeout("Locator traversal could not prove the selected result")
-                    .with_details(serde_json::json!({
-                        "kind": "locator_incomplete",
-                        "observed_matches": resolution.meta.total_matches,
-                        "query_stats": resolution.stats,
-                    })),
-            );
-        }
-        let Some(selected) = resolution.matches.into_iter().next() else {
-            return set_last_error(&AdapterError::new(
-                ErrorCode::ElementNotFound,
-                "Locator query matched no elements",
-            ));
-        };
-        selected
     };
-    let entry = selected.into_entry();
     let Some(process_instance) = entry.process.process_instance.clone() else {
         return set_last_error(&AdapterError::new(
             ErrorCode::InvalidArgs,
@@ -129,6 +108,38 @@ unsafe fn find_in_window(
         }
         Err(e) => set_last_error(&e),
     }
+}
+
+pub(super) fn select_entry(
+    resolution: agent_desktop_core::LocatorResolution,
+    selection: LocatorSelection,
+) -> Result<agent_desktop_core::RefEntry, AdapterError> {
+    if selection == LocatorSelection::Strict {
+        return agent_desktop_core::require_unique(resolution)
+            .map(|selected| selected.into_entry())
+            .map_err(crate::commands::app_error_to_adapter);
+    }
+    if !resolution.meta.selection_complete {
+        return Err(
+            AdapterError::timeout("Locator traversal could not prove the selected result")
+                .with_details(serde_json::json!({
+                    "kind": "locator_incomplete",
+                    "observed_matches": resolution.meta.total_matches,
+                    "query_stats": resolution.stats,
+                })),
+        );
+    }
+    resolution
+        .matches
+        .into_iter()
+        .next()
+        .map(|selected| selected.into_entry())
+        .ok_or_else(|| {
+            AdapterError::new(
+                ErrorCode::ElementNotFound,
+                "Locator query matched no elements",
+            )
+        })
 }
 
 pub(crate) unsafe fn decode_query(

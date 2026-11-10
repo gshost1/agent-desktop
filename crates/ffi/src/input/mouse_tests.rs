@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::AdPoint;
+use crate::types::{AdModifier, AdPoint};
 
 #[test]
 fn test_mouse_button_mapping() {
