@@ -111,7 +111,7 @@ fn default_store_does_not_discover_session_snapshots() {
         .save_snapshot("sdup2", &map_with("Session A"))
         .unwrap();
     let invalid_base = default_store.base_dir.join("sessions").join("bad.session");
-    let invalid_path = RefStore::snapshot_path_for_base(&invalid_base, "sdup2");
+    let invalid_path = invalid_base.join("snapshots/sdup2/refmap.json");
     std::fs::create_dir_all(invalid_path.parent().unwrap()).unwrap();
     std::fs::write(
         invalid_path,
