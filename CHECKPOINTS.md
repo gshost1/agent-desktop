@@ -91,3 +91,4 @@ Findings:
 - The fixed cost is 2–4 ms, far below the 100 ms bar. Process start is not where CLI time goes.
 - `click @e1` (bare ref, `INVALID_ARGS`) connects to two D-Bus buses before it rejects the argument. Validating the ref token before the permission preflight saves about 1.5 ms on that path only, an error path. Low value.
 
+- 2026-11-10: the #58 Mac check FAILED, 10/17 on d57dadfa. The PR stays a draft; its agent is writing a timestamped probe (raise result, front window before and after, hit-test classification, branch taken) for the Mac. New defect, not part of #58: a deadline expiry is reported as `interaction_process_lock_timeout` with `contention_count: 0` (`crates/core/src/session/process_lease_guard.rs`); it gets its own PR. Check-step rules from that run are now in the MAC-CHECKS.md preamble.

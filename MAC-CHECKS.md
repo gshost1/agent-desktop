@@ -4,6 +4,12 @@ Owner: laptop lead. Each section names the PR, the exact head SHA the steps appl
 observations. Run a section only if the PR's current head equals the SHA written here; if it differs, this file is stale
 for that PR: skip it and say so. Report per PR: head SHA, each check's PASS/FAIL line, and anything unexpected.
 
+Rules learned from the #58 run (2026-11-10), binding for every section:
+- Build from a detached worktree under `/tmp` at the SHA (`git -C ~/Projects/agent-desktop worktree add --detach /tmp/<name> <SHA>`); never `git switch` in `~/Projects/agent-desktop`. Wait `while pgrep -x cargo >/dev/null; do sleep 5; done` before building.
+- Start with the desktop-space reset (`bench-tools/desktop_space.sh` from `origin/chore/speed-1.4-tasks`; its paths are Mac-local) and wait for the app or fixture window to exist and be front before the first check. A full-screen T3 Code Space made the fixture vanish after ~12 s.
+- `find` on a shipped binary omits `bounds` when the match has a ref (`crates/core/src/commands/find_response.rs:61-70`); read bounds with `get <ref> --property bounds`.
+- Print full error envelopes, never truncated.
+
 Rules for every check: model-free (exact commands, expected output, no judgment calls); no Finder, no TextEdit, no
 personal folders (scratch dirs under `/tmp` only); one desktop, 8 GB, so close what you open; a fresh
 `AGENT_DESKTOP_HOME` under `/tmp`.
@@ -19,7 +25,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
 | #80 | SURFACE-10 | STALE (`2982cc00`; PR head moved to `db60af6e`, DIRTY) | do not run: being re-merged with main; the SHA below will be updated when the new head is green |
-| #58 | ACTION-12 | `d57dadfa` | running on the Mac (01:47Z); head frozen until the verdict |
+| #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | pending | DIRTY; being re-merged; steps pending |
 | #34 | SURFACE-3 | `e3818161` (old) | HELD: control asked for 5 changes (temp AGENT_DESKTOP_HOME, catch-all, --app on action, stop on first FAIL, close the NC panel) and George's go-ahead; do not run the script below |
