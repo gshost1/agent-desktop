@@ -10,8 +10,28 @@ pub(crate) fn focused_surface_for_pid(
     pid: i32,
     deadline: Instant,
 ) -> Result<Option<AXElement>, AdapterError> {
-    let app = element_for_pid(pid);
-    let window = surface_read::element(&app, "AXFocusedWindow", deadline)?.map(|window| {
+    let window = focused_window_for_pid(pid, deadline)?;
+    focused_surface_in_window(pid, window, deadline)
+}
+
+/// The window the application reports as focused, read once.
+#[cfg(target_os = "macos")]
+pub(crate) fn focused_window_for_pid(
+    pid: i32,
+    deadline: Instant,
+) -> Result<Option<AXElement>, AdapterError> {
+    surface_read::element(&element_for_pid(pid), "AXFocusedWindow", deadline)
+}
+
+/// The focused surface given the focused window already read: a floating
+/// in-place editor over it, otherwise the window itself.
+#[cfg(target_os = "macos")]
+pub(crate) fn focused_surface_in_window(
+    pid: i32,
+    window: Option<AXElement>,
+    deadline: Instant,
+) -> Result<Option<AXElement>, AdapterError> {
+    let window = window.map(|window| {
         let bounds = super::element_bounds::read_bounds_with_deadline(&window, deadline)
             .ok()
             .flatten();

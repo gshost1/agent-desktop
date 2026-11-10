@@ -18,6 +18,7 @@ pub(crate) mod read_error;
 mod traversal;
 
 use crate::tree::AXElement;
+use crate::tree::resolve::resolve_focused::focused_surface_of;
 use agent_desktop_core::{
     AdapterError, ErrorCode, ObservationRequest, ObservationRoot, ObservationSource, ObservedTree,
     SnapshotSurface,
@@ -258,8 +259,7 @@ fn resolve_window_surface(
                 window, deadline,
             )?
         }
-        SnapshotSurface::Focused => crate::tree::surfaces::focused_surface_for_pid(pid, deadline)?
-            .ok_or_else(|| AdapterError::element_not_found("No focused surface found"))?,
+        SnapshotSurface::Focused => focused_surface_of(window, pid, deadline)?,
         SnapshotSurface::Menu => crate::tree::app_menu::require_root(
             crate::tree::app_menu::root_for_pid(pid, SnapshotSurface::Menu, deadline),
             SnapshotSurface::Menu,
