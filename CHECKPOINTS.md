@@ -6,7 +6,7 @@ Newest last. The laptop lead appends here when a send to the control thread fail
 
 - **WIN-NC-ORDER-1 (release blocker?):** #34's notification keys assume the Windows Action Center lists newest first, which no real Windows desktop has confirmed. If it lists oldest first, a key-only dismiss or action on identical twins (same app, title and body) can hit a different identical twin after a newcomer arrives. Distinct notifications fail closed. Decide whether 1.4 ships with this stated in #34's Risks, or waits for a real-desktop Windows check.
 
-- Laptop `/tmp` cleanup (George approved): checks passed (236 `/tmp/trace-input-*` dirs, 1.2 GB, all last written 2026-11-07 22:39 or earlier; `/tmp/frie-mini-sanitized` 563 MB, last written 2026-11-03 22:27; `lsof` and every process cwd/root: no user). The lead's `rm -rf` was **denied by the session's permission layer**, so nothing was deleted. George, on the laptop: `df -h /tmp; rm -rf /tmp/trace-input-* /tmp/frie-mini-sanitized; df -h /tmp`
+- ~~Laptop `/tmp` cleanup~~: done (by George, 2026-11-10): `/tmp/trace-input-*` and `/tmp/frie-mini-sanitized` are gone; /tmp at 4.0 of 7.5 GB (54%), 9 GB RAM available.
 
 ## Log
 
