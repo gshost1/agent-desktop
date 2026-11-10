@@ -33,8 +33,9 @@ pub(crate) fn require_headed(policy: InteractionPolicy) -> Result<(), AdapterErr
 /// adopted and left showing; a list this session opened is closed on the way
 /// out, and the close is checked by reading `SHOWING` back. A close that
 /// cannot be shown never replaces the mutation's own answer: a delivered
-/// mutation keeps its result, and a failed one keeps its error, each naming
-/// the restore.
+/// mutation keeps its result and a failed one keeps its error. The restore is
+/// named on the error and on an action's result; a dismissed entry and a
+/// clear outcome keep their shape unchanged.
 pub(crate) struct Session<'a> {
     world: &'a dyn ShellWorld,
     lease: &'a InteractionLease,

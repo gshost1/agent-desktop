@@ -20,7 +20,8 @@ mod tests;
 /// error, and drop after a panic in the caller's own bookkeeping - so a raised
 /// center is never leaked behind a failed read. A teardown that fails never
 /// replaces a delivered mutation's result, and never displaces a failed
-/// call's own error; it is named beside either. The session carries no
+/// call's own error. It is named beside the error and beside an action's
+/// result; a dismissed entry and a clear outcome only log it. The session carries no
 /// lifecycle beyond its one call: every call that needs the surface opens its
 /// own session, so a poll loop opens and closes per poll.
 pub(crate) struct ActionCenterSession {
