@@ -330,8 +330,19 @@ fn locate(
     hwnd: isize,
     deadline: Deadline,
 ) -> Result<ListEntry, AdapterError> {
-    let mut entries = list_entries(filter, hwnd, deadline)?;
-    let at = target.pick(entries.iter().map(|entry| &entry.info))?;
+    take_target(target, list_entries(filter, hwnd, deadline)?, |entry| {
+        &entry.info
+    })
+}
+
+/// Takes the one entry core's addressing rule picks from a fresh read, so the
+/// entry acted on is the keyed one wherever the list has moved it.
+fn take_target<E>(
+    target: &NotificationTarget,
+    mut entries: Vec<E>,
+    info: impl Fn(&E) -> &NotificationInfo,
+) -> Result<E, AdapterError> {
+    let at = target.pick(entries.iter().map(&info))?;
     Ok(entries.swap_remove(at))
 }
 
