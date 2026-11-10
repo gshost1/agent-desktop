@@ -131,8 +131,9 @@ pub(crate) fn export_html_for_command(
             .join(format!("trace-{session_id}.html"))
     });
 
-    crate::refs::write_user_file(&path, html.as_bytes())
-        .map_err(|error| crate::refs::unwritable_output("the trace export", &path, error))?;
+    crate::refs::write_user_file(&path, html.as_bytes()).map_err(|error| {
+        crate::storage::unwritable_output::unwritable_output("the trace export", &path, error)
+    })?;
     let bytes = html.len();
 
     let warnings: Vec<Value> = merged
