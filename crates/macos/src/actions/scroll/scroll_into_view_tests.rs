@@ -113,3 +113,15 @@ fn acknowledged_scroll_without_geometry_change_is_not_delivery() {
         Some(rect(2622.0, 900.0, 177.0, 24.0))
     ));
 }
+
+#[test]
+fn scroll_area_whose_content_fits_horizontally_never_asks_for_a_horizontal_scroll() {
+    let reported = rect(156.0, 88.0, 884.0, 720.0);
+    let viewport = crate::tree::element_bounds::scroll_area_clip(reported, Some((884.0, 1273.5)));
+
+    assert!(matches!(
+        direction(rect(118.0, -227.0, 105.0, 20.0), viewport),
+        Some(Direction::Up)
+    ));
+    assert!(direction(rect(118.0, 120.0, 105.0, 20.0), viewport).is_none());
+}

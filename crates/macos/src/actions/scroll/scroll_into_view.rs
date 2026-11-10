@@ -115,7 +115,12 @@ mod imp {
             let target = element_bounds(element, deadline)?.ok_or_else(|| {
                 AdapterError::new(ErrorCode::ActionFailed, "Target has no bounds")
             })?;
-            let Some(viewport) = element_bounds(area, deadline)? else {
+            let Some(viewport) = crate::tree::element_bounds::clip_bounds(
+                area,
+                "AXScrollArea",
+                element_bounds(area, deadline)?,
+                crate::tree::locator_deadline::from_operation(deadline)?,
+            ) else {
                 return Ok(());
             };
             let Some(direction) = next_direction(target, viewport, blocked) else {
