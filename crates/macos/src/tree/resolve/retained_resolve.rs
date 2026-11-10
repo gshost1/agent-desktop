@@ -101,9 +101,13 @@ fn token_read_error(entry: &RefEntry, ax_error: i32) -> AdapterError {
     }
 }
 
+/// A read of the token's own element that finds it destroyed proves the ref
+/// stale; a busy, denied or otherwise failed read proves nothing about it.
 #[cfg(target_os = "macos")]
 fn destroyed_as_stale(entry: &RefEntry, error: AdapterError) -> AdapterError {
-    if error.code == agent_desktop_core::ErrorCode::ElementNotFound {
+    if error.code == agent_desktop_core::ErrorCode::ElementNotFound
+        || crate::tree::surface_read::reports_invalid_element(&error)
+    {
         stale_token_error(entry, RetainedMismatch::Dead)
     } else {
         error
