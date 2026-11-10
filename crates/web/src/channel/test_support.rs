@@ -259,7 +259,7 @@ pub(crate) fn web_entry(token: &str, role: &str, name: &str) -> RefEntry {
             retained_object: Some(token.into()),
             role: role.into(),
             name: Some(name.into()),
-            unique_at_capture: true,
+            capture: agent_desktop_core::CaptureVerdict::Unique,
             ..RefEntryIdentity::default()
         },
         geometry: RefGeometry {
