@@ -27,6 +27,7 @@ not post, and proves it with the foreign count and key-hash set before and after
 | PR | Row | Head for these steps | State |
 |---|---|---|---|
 | #80 | SURFACE-10 | STALE (`2982cc00`; PR head moved to `db60af6e`, DIRTY) | do not run: being re-merged with main; the SHA below will be updated when the new head is green |
+| #58 probe | ACTION-12 | `8959fc5c` (branch `probe/pointer-focus-once`) | READY: run it and send back `/tmp/pfo/probe.log` |
 | #58 | ACTION-12 | `d57dadfa` | **FAIL 10/17** (two runs, 2026-11-10): early stop never fires on a real Mac, no `occluded` refusal, lock-timeout label on a deadline expiry. Old steps below are superseded; a `#58 probe` section is coming |
 | #86 | ADAPTERS-4 + ADAPTERS-1 | pending | DIRTY; being re-merged; steps pending |
 | #88 | LIFECYCLE-2 + LIFECYCLE-12 | `46f397a7` | steps ready, revised per control (no System Events, EXIT trap, Calculator rule); CI 13/13 green |
@@ -941,4 +942,318 @@ pkill -f "$W/Adl" 2>/dev/null
 unregister_all
 git -C "$R" worktree remove --force "$W/src"
 echo "done; delete $W when finished"
+```
+
+## #58 probe: ACTION-12 on a real Mac, timestamped (diagnostic, not a pass/fail check)
+
+Builds branch `probe/pointer-focus-once` at `8959fc5c91f647e791a04863fec24de59399e9b9`: #58's `d57dadfa` plus logging only
+(8 files, +209/-15). #58's branch is untouched. Send back `/tmp/pfo/probe.log` (one JSON object per line).
+
+What the block does:
+- Fetches the branch into `~/Projects/agent-desktop` (no `git switch`) and builds a detached worktree at `/tmp/pfo/src`,
+  after any running cargo finishes (`CARGO_BUILD_JOBS=4`).
+- Builds the e2e fixture into `/tmp/pfo/fixture` and two Swift helpers:
+  - the floating-panel overlay;
+  - `pfo-windows`, which reports the NSWorkspace front pid and the CGWindowList z-order (top 12: owner pid and layer;
+    bounds only for the fixture, Calculator and overlay pids; never titles).
+- Uses no osascript, no System Events, no lsappinfo, no Finder and no TextEdit.
+- Runs its own desktop prelude with the probe binary: `launch Calculator --activate`, then quits Calculator only if the
+  probe launched it.
+- Opens the fixture and waits for its window before every scenario. Bounds come from `get <ref> --property bounds`.
+- `trap cleanup EXIT` stops the overlay, quits the fixture, quits Calculator only if the probe launched it (otherwise it
+  says Calculator stays running) and removes the worktree, printing one confirmation line for each.
+
+Logging uses the existing `tracing` channel, target `pfo` (`RUST_LOG=pfo=debug`). Each event carries a monotonic `t_us`,
+`wall_us` and `pid`. Events:
+- `lease.acquire`;
+- `point.resolve` and `point.observe`;
+- `front.before_raise` (with its classification), `raise.resolve_window`, `raise.call`, `raise.result` (the AXRaise code)
+  and `front.after_raise`;
+- `hit_test.single` and `hit_test.candidate` (reaches_target, unknown, intercepted_by or error);
+- `focus.outcome`;
+- `attempt.end`;
+- `loop.branch` (success, stop_front_changed, retry, front_changed_but_settling, return_not_retryable or timeout).
+
+With `PFO_POLL_FRONT=1` (CP1 only), the front window is also polled every 20 ms for up to 1 s after each raise, logging
+`front.poll_became_target` or `front.poll_never_target`. CP1's timing is therefore not representative.
+
+Scenarios, each run once:
+
+| Scenario | Front app | Target | Budget |
+|---|---|---|---|
+| B1 | Calculator | uncovered hover | 3 s |
+| overlay on | | z-order logged | |
+| D1 | fixture | covered hover | 3 s |
+| C1, C2 | Calculator | covered hover | 5 s |
+| CP1 | Calculator | as C, with the front poll | 5 s |
+| E1 | Calculator | drag from context-target onto the covered hover-target | 5 s |
+
+It takes about 1.5 min after the build. The laptop lead added the `pgrep -x cargo` wait. `bash -n` and py_compile are
+clean on the laptop; the Python was dry-run against stubs and has not run on a Mac.
+
+The agent's reading of the failed check, before the log:
+- D1's error comes only from `crates/core/src/commands/pointer_action.rs:128-132`, the deadline check after
+  `require_receives_events` passed. So on the real Mac the hit test returned ReachesTarget or Unknown under the floating
+  panel, not occluded, which is why "occluded" never appears.
+- A likely cause: the macOS hit test retries a hit outside the target's chain against the target's own application
+  (`crates/macos/src/tree/hit_test.rs`, `needs_application_retry` / `hit_test_in_application`), which does not see
+  another process's panel. The `hit_test.*` events settle it.
+
+```bash
+#!/usr/bin/env bash
+# #58 probe. Mac only, model-free. Builds probe/pointer-focus-once at 8959fc5c in a
+# detached worktree, runs the covered-target scenarios, writes /tmp/pfo/probe.log.
+set -u
+SHA=8959fc5c91f647e791a04863fec24de59399e9b9
+REPO="$HOME/Projects/agent-desktop"
+B=/tmp/pfo/src/target/release/agent-desktop
+if pgrep -x AgentDeskFixture >/dev/null; then echo "STOP: AgentDeskFixture is already running"; exit 1; fi
+calc_was_running=0
+pgrep -x Calculator >/dev/null && calc_was_running=1
+[ "$calc_was_running" = 1 ] && echo "note: Calculator was already running; the probe uses it and leaves it running"
+git -C "$REPO" worktree remove --force /tmp/pfo/src 2>/dev/null
+rm -rf /tmp/pfo && mkdir -p /tmp/pfo/fixture
+cleanup() {
+    if [ -f /tmp/pfo/overlay.pid ]; then kill "$(cat /tmp/pfo/overlay.pid)" 2>/dev/null; rm -f /tmp/pfo/overlay.pid; fi
+    pgrep -f /tmp/pfo/overlay >/dev/null && echo "cleanup: WARNING overlay still running" || echo "cleanup: overlay not running"
+    [ -x "$B" ] && "$B" close-app AgentDeskFixture --force >/dev/null 2>&1
+    pgrep -x AgentDeskFixture >/dev/null && echo "cleanup: WARNING AgentDeskFixture still running" || echo "cleanup: AgentDeskFixture not running"
+    if [ "$calc_was_running" = 0 ]; then
+        [ -x "$B" ] && "$B" close-app Calculator >/dev/null 2>&1
+        pgrep -x Calculator >/dev/null && echo "cleanup: WARNING Calculator still running" || echo "cleanup: Calculator quit (the probe launched it)"
+    else
+        echo "cleanup: Calculator was running before the probe and stays running"
+    fi
+    git -C "$REPO" worktree remove --force /tmp/pfo/src 2>/dev/null
+    [ -e /tmp/pfo/src ] && echo "cleanup: WARNING worktree /tmp/pfo/src still present" || echo "cleanup: worktree /tmp/pfo/src removed"
+    echo "cleanup: log kept at /tmp/pfo/probe.log ($(wc -l < /tmp/pfo/probe.log 2>/dev/null || echo 0) lines)"
+}
+trap cleanup EXIT
+git -C "$REPO" fetch origin probe/pointer-focus-once || exit 1
+git -C "$REPO" worktree add --force --detach /tmp/pfo/src "$SHA" || exit 1
+[ "$(git -C /tmp/pfo/src rev-parse HEAD)" = "$SHA" ] || { echo "STOP: worktree is not at $SHA"; exit 1; }
+while pgrep -x cargo >/dev/null; do sleep 5; done
+(cd /tmp/pfo/src && CARGO_BUILD_JOBS=4 cargo build --release -p agent-desktop) || exit 1
+bash /tmp/pfo/src/tests/fixture-app/build.sh /tmp/pfo/fixture >/dev/null || exit 1
+cat > /tmp/pfo/overlay.swift <<'PFO_EOF'
+import AppKit
+
+let application = NSApplication.shared
+application.setActivationPolicy(.accessory)
+let numbers = CommandLine.arguments.dropFirst().compactMap { Double($0) }
+guard numbers.count == 4, let primary = NSScreen.screens.first else { exit(2) }
+let frame = NSRect(x: numbers[0], y: primary.frame.height - numbers[1] - numbers[3],
+                   width: numbers[2], height: numbers[3])
+let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                    backing: .buffered, defer: false)
+panel.level = .floating
+panel.hidesOnDeactivate = false
+panel.backgroundColor = .systemRed
+let cover = NSButton(title: "pfo-cover", target: nil, action: nil)
+cover.frame = NSRect(origin: .zero, size: frame.size)
+panel.contentView?.addSubview(cover)
+panel.orderFrontRegardless()
+application.run()
+PFO_EOF
+cat > /tmp/pfo/windows.swift <<'PFO_EOF'
+import AppKit
+
+let detailed = Set(CommandLine.arguments.dropFirst().compactMap { Int32($0) })
+let front = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
+let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
+var windows: [[String: Any]] = []
+for window in list.prefix(12) {
+    let pid = (window[kCGWindowOwnerPID as String] as? Int32) ?? -1
+    var entry: [String: Any] = ["pid": pid, "layer": window[kCGWindowLayer as String] ?? -1]
+    if detailed.contains(pid) {
+        entry["window_id"] = window[kCGWindowNumber as String] ?? -1
+        entry["bounds"] = window[kCGWindowBounds as String] ?? [:]
+    }
+    windows.append(entry)
+}
+let report: [String: Any] = ["front_pid": front, "z_order_front_to_back": windows]
+if let data = try? JSONSerialization.data(withJSONObject: report),
+   let text = String(data: data, encoding: .utf8) {
+    print(text)
+}
+PFO_EOF
+cat > /tmp/pfo/probe.py <<'PFO_EOF'
+import json, os, subprocess, sys, time
+
+ROOT = os.environ.get("PFO_ROOT", "/tmp/pfo")
+BIN = ROOT + "/src/target/release/agent-desktop"
+APP = "AgentDeskFixture"
+OTHER = "Calculator"
+LOG = open(ROOT + "/probe.log", "a")
+T0 = time.monotonic()
+overlay = None
+
+
+def log(event, **fields):
+    line = json.dumps({"src": "probe", "event": event, "t_ms": round((time.monotonic() - T0) * 1000, 1),
+                       "wall_us": int(time.time() * 1e6), **fields})
+    print(line, flush=True)
+    LOG.write(line + "\n")
+    LOG.flush()
+
+
+def pid_of(name):
+    out = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True).stdout.split()
+    return int(out[0]) if len(out) == 1 else None
+
+
+def windows():
+    pids = [str(pid) for pid in (pid_of(APP), pid_of(OTHER), overlay.pid if overlay else None) if pid]
+    out = subprocess.run([ROOT + "/pfo-windows", *pids], capture_output=True, text=True).stdout
+    try:
+        return json.loads(out)
+    except ValueError:
+        return {"unparsed": out}
+
+
+def ad(*args, traced=False, poll_front=False):
+    env = dict(os.environ)
+    if traced:
+        env["RUST_LOG"] = "pfo=debug"
+    if poll_front:
+        env["PFO_POLL_FRONT"] = "1"
+    started = time.monotonic()
+    proc = subprocess.run([BIN, *args], capture_output=True, text=True, timeout=90, env=env)
+    elapsed = round((time.monotonic() - started) * 1000, 1)
+    try:
+        body = json.loads(proc.stdout)
+    except ValueError:
+        body = {"unparsed_stdout": proc.stdout}
+    events = []
+    for line in proc.stderr.splitlines():
+        marker = line.find(" pfo: ")
+        if marker < 0:
+            continue
+        try:
+            events.append(json.loads(line[marker + 6:]))
+        except ValueError:
+            events.append({"unparsed": line})
+    return body, elapsed, events
+
+
+def bring_front(name):
+    if name == APP:
+        ad("focus-window", "--app", APP)
+    else:
+        subprocess.run(["open", "-a", name])
+    target = None
+    for _ in range(50):
+        target = pid_of(name)
+        state = windows()
+        if target and state.get("front_pid") == target:
+            time.sleep(0.3)
+            log("front_reached", app=name, pid=target, windows=windows())
+            return True
+        time.sleep(0.1)
+    log("front_not_reached", app=name, pid=target, windows=windows())
+    return False
+
+
+def wait_fixture_window():
+    for _ in range(60):
+        body, _, _ = ad("list-windows", "--app", APP)
+        if body.get("ok") is True and body.get("data"):
+            log("fixture_window_present", count=len(body["data"]))
+            return True
+        time.sleep(0.5)
+    log("fixture_window_missing", last=body)
+    return False
+
+
+def find_ref(name):
+    body = {}
+    for _ in range(100):
+        body, _, _ = ad("find", "--app", APP, "--role", "button", "--name", name, "--exact", "--first")
+        match = (body.get("data") or {}).get("match") or {}
+        if body.get("ok") is True and match.get("ref_id"):
+            return match["ref_id"]
+        time.sleep(0.2)
+    log("setup_fail", reason=f"{name} not found", last=body)
+    sys.exit(1)
+
+
+def bounds_of(ref):
+    body, _, _ = ad("get", ref, "--property", "bounds")
+    return (body.get("data") or {}).get("value"), body
+
+
+def scenario(label, front, command, poll_front=False):
+    if not wait_fixture_window():
+        return
+    reached = bring_front(front)
+    log("scenario_start", label=label, front=front, front_reached=reached, command=command, poll_front=poll_front)
+    body, elapsed, events = ad("--headed", *command, traced=True, poll_front=poll_front)
+    for event in events:
+        line = json.dumps({"src": "binary", "label": label, **event})
+        print(line, flush=True)
+        LOG.write(line + "\n")
+    LOG.flush()
+    log("scenario_end", label=label, elapsed_ms=elapsed, ok=body.get("ok"), error=body.get("error"),
+        data=body.get("data"), windows_after=windows())
+
+
+def main():
+    global overlay
+    log("start", bin=BIN, fixture_pid=pid_of(APP), calculator_pid=pid_of(OTHER))
+    if not wait_fixture_window():
+        sys.exit(1)
+    ad("focus-window", "--app", APP)
+    ad("move-window", "--app", APP, "--x", "40", "--y", "60")
+    ad("resize-window", "--app", APP, "--width", "1000", "--height", "700")
+    hover = find_ref("hover-target")
+    for _ in range(3):
+        body, _, _ = ad("scroll-to", hover)
+        if body.get("ok") is True:
+            break
+        time.sleep(0.5)
+    time.sleep(0.5)
+    hover = find_ref("hover-target")
+    context = find_ref("context-target")
+    box, raw = bounds_of(hover)
+    cbox, craw = bounds_of(context)
+    log("targets", hover=hover, hover_bounds=box, context=context, context_bounds=cbox)
+    if not box or not cbox:
+        log("setup_fail", reason="bounds unavailable", hover_get=raw, context_get=craw)
+        sys.exit(1)
+    cover = [box["x"] - 6, box["y"] - 6, box["width"] + 12, box["height"] + 12]
+
+    scenario("B1 calculator-front uncovered hover", OTHER, ["hover", hover, "--timeout-ms", "3000"])
+
+    overlay = subprocess.Popen([ROOT + "/overlay", *[str(value) for value in cover]])
+    open(ROOT + "/overlay.pid", "w").write(str(overlay.pid))
+    time.sleep(1.5)
+    log("overlay_started", pid=overlay.pid, running=overlay.poll() is None, cover=cover, windows=windows())
+
+    scenario("D1 fixture-front covered hover", APP, ["hover", hover, "--timeout-ms", "3000"])
+    scenario("C1 calculator-front covered hover", OTHER, ["hover", hover, "--timeout-ms", "5000"])
+    scenario("C2 calculator-front covered hover", OTHER, ["hover", hover, "--timeout-ms", "5000"])
+    scenario("CP1 calculator-front covered hover, front polled 1 s after each raise", OTHER,
+             ["hover", hover, "--timeout-ms", "5000"], poll_front=True)
+    scenario("E1 calculator-front drag onto covered drop", OTHER,
+             ["drag", "--from", context, "--to", hover, "--timeout-ms", "5000"])
+
+    overlay.kill()
+    overlay.wait()
+    os.remove(ROOT + "/overlay.pid")
+    log("overlay_stopped", pid=overlay.pid)
+    log("done")
+
+
+main()
+PFO_EOF
+swiftc -O -o /tmp/pfo/overlay /tmp/pfo/overlay.swift -framework AppKit || exit 1
+swiftc -O -o /tmp/pfo/pfo-windows /tmp/pfo/windows.swift -framework AppKit || exit 1
+"$B" launch Calculator --activate >/dev/null 2>&1
+sleep 1
+[ "$calc_was_running" = 0 ] && "$B" close-app Calculator >/dev/null 2>&1
+sleep 1
+open /tmp/pfo/fixture/AgentDeskFixture.app
+python3 /tmp/pfo/probe.py
+echo "probe exit $? ; send /tmp/pfo/probe.log"
 ```
