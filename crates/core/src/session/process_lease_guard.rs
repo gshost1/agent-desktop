@@ -43,9 +43,6 @@ impl Drop for ProcessLeaseGuard {
     }
 }
 
-/// A lease taken without ever finding it held, after the deadline had already
-/// run out, is a deadline expiry, not lock contention: it reports the deadline
-/// shape so a caller does not go looking for another holder.
 fn expired_on_acquire(deadline: Deadline, contention_count: u64) -> AdapterError {
     if contention_count == 0 {
         deadline.timeout_error()
