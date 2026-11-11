@@ -60,7 +60,7 @@ shasum -a 256 $T/agent-browser-0.42.0/node_modules/agent-browser/bin/agent-brows
 | Playwright CLI | `NO_UPDATE_NOTIFIER=1` (its only phone-home is an `npm view` update check) | `@playwright/cli/playwright-cli.js` |
 | browser-harness | `BH_TELEMETRY=0 BH_UPDATE_CHECK=0 ANONYMIZED_TELEMETRY=false` | same as the 1110-evening wrapper |
 | Peekaboo | `PEEKABOO_AI_PROVIDERS=""` (no model calls), private `PEEKABOO_CONFIG_DIR` and daemon socket; no telemetry is documented | `docs/configuration.md`, `docs/security.md` at v4.9.8 |
-| agent-browser | `AGENT_BROWSER_NO_VERSION_CHECK=1` (its only automatic network call, an outdated-Chrome check against chromereleases.googleblog.com); `AGENT_BROWSER_SKILLS_DIR` set to the package's `skill-data`; the wrapper refuses `chat`, `upgrade`, `install`, `doctor`, `dashboard`, `-p`/`--provider` and `--auto-connect`, and unsets the AI gateway and Anthropic keys | `cli/src/browser_security.rs`, `native/actions.rs`, `chat.rs`, `doctor/network.rs` at v0.42.0; no telemetry code |
+| agent-browser | `AGENT_BROWSER_NO_VERSION_CHECK=1` (its only automatic network call, an outdated-Chrome check against chromereleases.googleblog.com); `AGENT_BROWSER_SKILLS_DIR` set to the package's `skill-data`; the wrapper refuses `chat`, `upgrade`, `install`, `doctor`, `dashboard`, `plugin`, `-p`/`--provider` and `--auto-connect`, and unsets the AI gateway and Anthropic keys | `cli/src/browser_security.rs`, `native/actions.rs`, `chat.rs`, `doctor/network.rs` at v0.42.0; no telemetry code |
 | agent-desktop | none needed | |
 
 ## Wrapper rules (the same kind for every arm)

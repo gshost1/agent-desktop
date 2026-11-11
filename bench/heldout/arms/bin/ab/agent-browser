@@ -2,7 +2,7 @@
 # Arm ab: vercel-labs agent-browser 0.42.0 (npm, --ignore-scripts; the package ships the native binary, its
 # sha256 matches the v0.42.0 GitHub release asset). It attaches to the run's Chrome over CDP (`--cdp <port>`).
 # Off: the outdated-Chrome CVE check (its only automatic network call). Refused: `chat` (a model inside the
-# tool), `upgrade`, `install` (Chrome download), `doctor` (network probes), `dashboard`, and cloud providers.
+# tool), `upgrade`, `install` (Chrome download), `doctor` (network probes), `dashboard`, `plugin`, and cloud providers.
 P=$HOME/.agent-desktop-bench-target/heldout-tools/agent-browser-0.42.0/node_modules/agent-browser
 case "$(uname -s) $(uname -m)" in
   "Darwin arm64") bin=$P/bin/agent-browser-darwin-arm64 ;;
@@ -31,6 +31,6 @@ for a in "$@"; do
 done
 case $cmd in
   chat) print -u2 "bench: agent-browser chat is disabled in this benchmark (it runs its own model)"; exit 64 ;;
-  upgrade|install|doctor|dashboard) print -u2 "bench: $cmd is disabled in this benchmark"; exit 64 ;;
+  upgrade|install|doctor|dashboard|plugin|plugins) print -u2 "bench: $cmd is disabled in this benchmark"; exit 64 ;;
 esac
 exec /bin/zsh "${0:A:h:h:h}/logwrap.zsh" "$bin" "$@"
