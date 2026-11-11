@@ -33,13 +33,14 @@ NATIVE_TOOL_TEXT = {
 NATIVE_TOOL = {"ad-up": "agent-desktop", "ad-14": "agent-desktop", "peekaboo": "peekaboo", "cua": "cua-driver"}
 NATIVE_GUIDE_DIR = {"peekaboo": SKILLS / "peekaboo", "cua": SKILLS / "cua-driver"}
 
-WEB_ARMS = {"ad-up": "ax", "ad-14": "ad-web", "bh": "cdp", "pw": "cdp", "ab": "cdp"}
-WEB_TOOL = {"ad-up": "agent-desktop", "ad-14": "agent-desktop", "bh": "browser-harness", "pw": "playwright-cli",
+WEB_ARMS = {"ad-up": "ax", "ad-14": "ad-web", "ad-137": "ad-web", "bh": "cdp", "pw": "cdp", "ab": "cdp"}
+WEB_TOOL = {"ad-up": "agent-desktop", "ad-14": "agent-desktop", "ad-137": "agent-desktop", "bh": "browser-harness", "pw": "playwright-cli",
             "ab": "agent-browser"}
 
 ARM_VERSIONS = {
     "ad-up": "agent-desktop upstream 8e8dd7cbe (bench-upstream release build)",
     "ad-14": "agent-desktop 1.4.0 (fork release v1.4.0, aarch64-apple-darwin)",
+    "ad-137": "agent-desktop 1.4.0 + fork PR #137 9e51c527d (release build, aarch64-apple-darwin)",
     "peekaboo": "Peekaboo 4.9.8 (openclaw/Peekaboo release tarball)",
     "cua": "Cua Driver 0.47.7 (trycua/cua cua-driver-rs-v0.47.7)",
     "bh": "browser-harness 0.1.13 (browser-use, bh-venv)",

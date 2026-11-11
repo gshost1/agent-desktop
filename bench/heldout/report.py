@@ -21,7 +21,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_RESULTS = [HERE / "runs" / "results-native.jsonl", HERE / "runs" / "results-web.jsonl"]
-ARM_ORDER = ["ad-14", "ad-up", "peekaboo", "cua", "bh", "pw", "ab"]
+ARM_ORDER = ["ad-14", "ad-137", "ad-up", "peekaboo", "cua", "bh", "pw", "ab"]
 METRICS = [("cli", "CLI s", True), ("wall", "wall s", True), ("tokens", "tokens", True), ("turns", "turns", True)]
 
 

@@ -1,0 +1,4 @@
+#!/bin/zsh
+# Arm ad-137: agent-desktop 1.4.0 plus fork PR #137 (9e51c527d, scoped window owners confirmed through libproc),
+# a local release build. Web only: it A/Bs the PR against ad-14 on the same tasks, seeds and harness.
+exec /bin/zsh "${0:A:h:h:h}/logwrap.zsh" "$HOME/.agent-desktop-bench-target/heldout-tools/agent-desktop-pr137/agent-desktop" "$@"
