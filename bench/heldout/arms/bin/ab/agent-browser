@@ -1,0 +1,36 @@
+#!/bin/zsh
+# Arm ab: vercel-labs agent-browser 0.42.0 (npm, --ignore-scripts; the package ships the native binary, its
+# sha256 matches the v0.42.0 GitHub release asset). It attaches to the run's Chrome over CDP (`--cdp <port>`).
+# Off: the outdated-Chrome CVE check (its only automatic network call). Refused: `chat` (a model inside the
+# tool), `upgrade`, `install` (Chrome download), `doctor` (network probes), `dashboard`, `plugin`, and cloud providers.
+P=$HOME/.agent-desktop-bench-target/heldout-tools/agent-browser-0.42.0/node_modules/agent-browser
+case "$(uname -s) $(uname -m)" in
+  "Darwin arm64") bin=$P/bin/agent-browser-darwin-arm64 ;;
+  "Darwin x86_64") bin=$P/bin/agent-browser-darwin-x64 ;;
+  "Linux aarch64") bin=$P/bin/agent-browser-linux-arm64 ;;
+  "Linux x86_64") bin=$P/bin/agent-browser-linux-x64 ;;
+  *) print -u2 "bench wrapper: no agent-browser binary for $(uname -sm)"; exit 2 ;;
+esac
+export AGENT_BROWSER_NO_VERSION_CHECK=1 AGENT_BROWSER_SKILLS_DIR="$P/skill-data"
+unset AI_GATEWAY_API_KEY AI_GATEWAY_URL ANTHROPIC_API_KEY AGENT_BROWSER_PROVIDER AGENT_BROWSER_AUTO_CONNECT
+value_flags=(--session --restore-save --restore-check-url --restore-check-text --restore-check-fn --namespace
+  --headers --executable-path --cdp --cdp-headers --extension --init-script --enable --profile --state --proxy
+  --proxy-bypass --args --user-agent -p --provider --device --session-name --color-scheme --download-path
+  --max-output --allowed-domains --capture --action-policy --confirm-actions --config --engine --input-mode
+  --screenshot-dir --screenshot-quality --screenshot-format --idle-timeout --ca-cert --model)
+skip=0 cmd=""
+for a in "$@"; do
+  if (( skip )); then skip=0; continue; fi
+  case $a in
+    -p|--provider|--provider=*) print -u2 "bench: cloud browser providers are disabled; use the run's Chrome over --cdp"; exit 64 ;;
+    --auto-connect) print -u2 "bench: --auto-connect is disabled; pass --cdp <port>"; exit 64 ;;
+    --) break ;;
+    -*) (( ${value_flags[(Ie)$a]} )) && skip=1 ;;
+    *) cmd=$a; break ;;
+  esac
+done
+case $cmd in
+  chat) print -u2 "bench: agent-browser chat is disabled in this benchmark (it runs its own model)"; exit 64 ;;
+  upgrade|install|doctor|dashboard|plugin|plugins) print -u2 "bench: $cmd is disabled in this benchmark"; exit 64 ;;
+esac
+exec /bin/zsh "${0:A:h:h:h}/logwrap.zsh" "$bin" "$@"

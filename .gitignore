@@ -92,3 +92,5 @@ npm/bin/.launcher-notice-*
 # bench: raw snapshots and model transcripts can hold private desktop content
 bench/out/
 bench/runs/
+bench/heldout/out/
+bench/heldout/runs/

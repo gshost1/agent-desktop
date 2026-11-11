@@ -1,0 +1,9 @@
+#!/bin/zsh
+# Arm bh: browser-use browser-harness 0.1.13 from ~/.agent-desktop-bench-target/bh-venv, pointed at the
+# run's throwaway Chrome only, telemetry and update checks off, state under a per-port folder.
+port=$(cat "${0:A:h:h:h:h}/out/web-current-port" 2>/dev/null)
+[[ -n $port ]] || { print -u2 "bench wrapper: no bench Chrome port recorded"; exit 2; }
+export BH_TELEMETRY=0 BH_UPDATE_CHECK=0 ANONYMIZED_TELEMETRY=false
+export BH_HOME="$HOME/.agent-desktop-bench-target/bh/$port" BU_CDP_URL="http://127.0.0.1:$port"
+unset BU_CDP_WS BU_BROWSER_ID BROWSER_USE_API_KEY
+exec /bin/zsh "${0:A:h:h:h}/logwrap.zsh" "$HOME/.agent-desktop-bench-target/bh-venv/bin/browser-harness" "$@"

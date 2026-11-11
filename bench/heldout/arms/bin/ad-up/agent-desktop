@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Arm ad-up: upstream agent-desktop, release build of bench-upstream (8e8dd7cbe).
+exec /bin/zsh "${0:A:h:h:h}/logwrap.zsh" "$HOME/.t3/worktrees/agent-desktop/bench-upstream/target/release/agent-desktop" "$@"

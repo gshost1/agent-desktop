@@ -1,0 +1,6 @@
+#!/bin/zsh
+# run.py calls `agent-browser close --all` after a cdp-channel run; for this arm it detaches the
+# playwright-cli session from the stopped Chrome. Real binary, so cleanup never counts as tool time.
+NO_UPDATE_NOTIFIER=1 PLAYWRIGHT_CLI_SESSION=heldout-pw \
+  "$HOME/.agent-desktop-bench-target/heldout-tools/playwright-cli-0.1.24/node_modules/.bin/playwright-cli" detach >/dev/null 2>&1
+exit 0
