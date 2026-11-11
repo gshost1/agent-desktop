@@ -359,3 +359,38 @@ fn a_whole_deadline_snapshot_still_fails_on_a_slow_iframe() {
 
     assert_eq!(error.code, ErrorCode::Timeout);
 }
+
+#[test]
+fn an_in_page_iframe_that_misses_its_budget_is_listed_and_the_page_returned() {
+    let transport = ScriptedTransport::new()
+        .expect("Page.getFrameTree", frame_tree())
+        .expect("DOMSnapshot.captureSnapshot", capture())
+        .expect("Accessibility.getFullAXTree", main_tree())
+        .expect_silence("Accessibility.getFullAXTree")
+        .expect("Accessibility.getFullAXTree", child_tree())
+        .expect_silence("DOM.getFrameOwner");
+    let transport = auto_attach(transport, Vec::new()).expect("Target.setAutoAttach", json!({}));
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page_within_budget(&mut connection, &session(), Deadline::after(1_000).unwrap())
+            .unwrap();
+
+    assert_eq!(snapshot.unreadable_frames, ["CHILD", "REMOTE"]);
+    assert_eq!(snapshot.preorder().len(), 3);
+}
+
+#[test]
+fn a_whole_deadline_snapshot_still_fails_on_a_slow_in_page_iframe() {
+    let transport = ScriptedTransport::new()
+        .expect("Page.getFrameTree", frame_tree())
+        .expect("DOMSnapshot.captureSnapshot", capture())
+        .expect("Accessibility.getFullAXTree", main_tree())
+        .expect_silence("Accessibility.getFullAXTree");
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let error =
+        snapshot_page(&mut connection, &session(), Deadline::after(1_000).unwrap()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::Timeout);
+}

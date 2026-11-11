@@ -31,7 +31,7 @@ impl FrameBudget {
         }
     }
 
-    /// Iframes get what remains of `deadline` after the main page, less a
+    /// Iframes get what remains of `deadline` when the read starts, less a
     /// fifth of it (at least 100 ms) kept for detaching the iframe sessions
     /// and building the tree.
     pub(crate) fn reserved(deadline: Deadline) -> Self {

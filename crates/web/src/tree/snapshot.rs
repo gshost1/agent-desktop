@@ -8,7 +8,7 @@ use super::child_targets::{attach_child_targets, stop_child_targets};
 use super::flatten::flatten;
 use super::frame_budget::FrameBudget;
 use super::frame_graft::{FrameNodes, graft_frames};
-use super::target_read::{frame_owner, read_target};
+use super::target_read::{TargetReads, frame_owner, read_target};
 use crate::cdp::protocol_error::{is_protocol_error, is_target_gone};
 use crate::{CdpConnection, PageSession, WebSnapshot};
 
@@ -70,7 +70,11 @@ fn read_page(
     budget: FrameBudget,
     auto_attached: &mut Vec<PageSession>,
 ) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
-    let (mut frames, mut unreadable) = read_target(connection, session, budget.snapshot())?;
+    let page_reads = TargetReads {
+        budget,
+        is_page: true,
+    };
+    let (mut frames, mut unreadable) = read_target(connection, session, page_reads)?;
     let mut parents = VecDeque::from([session.clone()]);
     while let Some(parent) = parents.pop_front() {
         let is_page = parent == *session;
@@ -97,7 +101,7 @@ fn read_page(
                 unreadable.push(child.session.target_id.clone());
                 continue;
             }
-            match read_child(connection, &parent, &child, budget.iframes()) {
+            match read_child(connection, &parent, &child, budget) {
                 Ok((child_frames, child_unreadable)) => {
                     frames.extend(child_frames);
                     unreadable.extend(child_unreadable);
@@ -122,9 +126,14 @@ fn read_child(
     connection: &mut CdpConnection,
     parent: &PageSession,
     child: &ChildTarget,
-    deadline: Deadline,
+    budget: FrameBudget,
 ) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
-    let (mut frames, unreadable) = read_target(connection, &child.session, deadline)?;
+    let iframe_reads = TargetReads {
+        budget,
+        is_page: false,
+    };
+    let deadline = budget.iframes();
+    let (mut frames, unreadable) = read_target(connection, &child.session, iframe_reads)?;
     if let Some(root) = frames.first_mut() {
         if root.parent_id.is_none() {
             root.parent_id.clone_from(&child.parent_frame_id);
