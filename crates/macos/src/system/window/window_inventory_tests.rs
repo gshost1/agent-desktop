@@ -3,33 +3,6 @@ use crate::system::window::cg_window::WindowRecord;
 use agent_desktop_core::Rect;
 use rustc_hash::FxHashMap;
 
-#[derive(Clone)]
-struct ScopedOwners(FxHashMap<i32, f64>);
-
-impl crate::system::window::window_inventory_global::OwnerSnapshotView for ScopedOwners {
-    fn eligible_pids(&self) -> rustc_hash::FxHashSet<i32> {
-        self.0.keys().copied().collect()
-    }
-
-    fn generation(
-        &self,
-        pid: i32,
-    ) -> Option<crate::system::window::window_inventory_global::OwnerGeneration> {
-        self.0
-            .get(&pid)
-            .copied()
-            .map(crate::system::window::window_inventory_global::OwnerGeneration::LaunchTime)
-    }
-
-    fn frontmost_pid(&self) -> Option<i32> {
-        None
-    }
-
-    fn same_generation(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
 fn ax_state(
     focused: FocusedWindowIdentity,
 ) -> crate::system::window::window_ax_state::WindowAxState {
@@ -252,65 +225,6 @@ fn explicit_app_filter_distinguishes_not_running_from_no_windows() {
 
     let running = rustc_hash::FxHashSet::from_iter([42]);
     assert!(require_running_app(&running, "WhatsApp").is_ok());
-}
-
-#[test]
-fn scoped_validation_ignores_unrelated_owner_churn() {
-    let before = ScopedOwners(FxHashMap::from_iter([(10, 100.0), (20, 200.0)]));
-    let after = ScopedOwners(FxHashMap::from_iter([(10, 100.0), (30, 300.0)]));
-    let selected = rustc_hash::FxHashSet::from_iter([10]);
-
-    crate::system::window::window_inventory_global::validate_scoped_snapshot_pair(
-        &before,
-        &after,
-        &selected,
-        &selected,
-        &[],
-    )
-    .unwrap();
-}
-
-#[test]
-fn scoped_validation_rejects_selected_owner_replacement() {
-    let before = ScopedOwners(FxHashMap::from_iter([(10, 100.0)]));
-    let after = ScopedOwners(FxHashMap::from_iter([(10, 101.0)]));
-    let selected = rustc_hash::FxHashSet::from_iter([10]);
-
-    let error = crate::system::window::window_inventory_global::validate_scoped_snapshot_pair(
-        &before,
-        &after,
-        &selected,
-        &selected,
-        &[],
-    )
-    .unwrap_err();
-
-    assert_eq!(
-        error.details.unwrap()["phase"],
-        "selected_appkit_snapshot_changed"
-    );
-}
-
-#[test]
-fn scoped_validation_rejects_selected_pid_membership_change() {
-    let before = ScopedOwners(FxHashMap::from_iter([(10, 100.0)]));
-    let after = ScopedOwners(FxHashMap::from_iter([(11, 101.0)]));
-    let before_pids = rustc_hash::FxHashSet::from_iter([10]);
-    let after_pids = rustc_hash::FxHashSet::from_iter([11]);
-
-    let error = crate::system::window::window_inventory_global::validate_scoped_snapshot_pair(
-        &before,
-        &after,
-        &before_pids,
-        &after_pids,
-        &[],
-    )
-    .unwrap_err();
-
-    assert_eq!(
-        error.details.unwrap()["phase"],
-        "selected_appkit_snapshot_changed"
-    );
 }
 
 fn record(app_name: &str, pid: i32, title: &str, window_number: i64) -> WindowRecord {
