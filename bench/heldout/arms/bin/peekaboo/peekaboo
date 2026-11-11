@@ -1,0 +1,19 @@
+#!/bin/zsh
+# Arm peekaboo: Peekaboo CLI 4.9.8 (release tarball, checksum-verified). No AI providers, no Bridge
+# from George's apps (per-run daemon socket and config dir), and no `agent` (a model inside the tool).
+T=$HOME/.agent-desktop-bench-target/heldout-tools
+arm_home=${HO_ARM_HOME:-${AGENT_DESKTOP_HOME:h}/arm-home}
+mkdir -p "$arm_home/peekaboo-config"
+export PEEKABOO_AI_PROVIDERS="" PEEKABOO_DISABLE_TOOLS="agent" PEEKABOO_CONFIG_DIR="$arm_home/peekaboo-config"
+export PEEKABOO_DAEMON_SOCKET="$arm_home/peekaboo-daemon.sock" PEEKABOO_DAEMON_IDLE_TIMEOUT_SECONDS=120
+case "$1" in
+  agent) print -u2 "bench: peekaboo agent is disabled in this benchmark (it runs its own model)"; exit 64 ;;
+esac
+prev=""
+for a in "$@"; do
+  if [[ $a == --mode=screen || $a == --mode=multi || ( $prev == --mode && ( $a == screen || $a == multi ) ) ]]; then
+    print -u2 "bench: whole-screen capture is disabled; target one app or window"; exit 64
+  fi
+  prev=$a
+done
+exec /bin/zsh "${0:A:h:h:h}/logwrap.zsh" "$T/peekaboo-4.9.8/peekaboo-macos-arm64/peekaboo" "$@"

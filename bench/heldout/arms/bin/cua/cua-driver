@@ -1,0 +1,11 @@
+#!/bin/zsh
+# Arm cua: Cua Driver 0.47.7 (cua-driver-rs release tarball, checksum-verified), telemetry off.
+T=$HOME/.agent-desktop-bench-target/heldout-tools
+export CUA_DRIVER_RS_TELEMETRY_ENABLED=0 CUA_TELEMETRY_ENABLED=false
+export CUA_DRIVER_RS_HOME="$T/cua-home" CUA_DRIVER_TELEMETRY_HOME="$T/cua-home/telemetry"
+mkdir -p "$T/cua-home/telemetry"
+case "$1 $2" in
+  "call get_desktop_state"|"call get_desktop_screenshot") print -u2 "bench: whole-desktop reads are disabled; target one app window"; exit 64 ;;
+  "update "*|"autostart "*|"telemetry "*) print -u2 "bench: $1 is disabled in this benchmark"; exit 64 ;;
+esac
+exec /bin/zsh "${0:A:h:h:h}/logwrap.zsh" "$T/cua-driver-0.47.7/cua-driver-rs-0.47.7-darwin-arm64/cua-driver" "$@"
