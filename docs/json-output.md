@@ -395,7 +395,7 @@ The web channel arrived with envelope version `2.6`. It adds fields and one comm
 | `channel` | `"cdp"`: the tree came from the page over the DevTools endpoint. |
 | `url` | The page's URL. |
 | `title` | The page's title. |
-| `suggestion` | Present only when cross-origin frames could not be read and are left out. |
+| `suggestion` | Present only when cross-origin frames are left out: they could not be read, or did not answer before a reserve of the snapshot's timeout (a fifth of what remained after the main page, at least 100 ms). The main page is still returned. |
 
 Without such an endpoint, the same command reads the browser window through the accessibility tree and `data` carries `"channel": "ax"` and a `suggestion` naming the `launch --cdp` command that enables the web channel. Snapshots of every other surface carry no `channel`. Refs from a CDP read carry an element token of the form `cdp:<targetId>:<frameId>:<loaderId>:<backendNodeId>`, are accepted by every ref command, and act through the page without focusing the window or moving the pointer. A web ref whose frame now shows another document (`details.kind: "cdp_document_replaced"`), whose node left the page, or whose role or name changed returns `STALE_REF`; a ref whose tab or frame closed returns `WINDOW_NOT_FOUND` with `details.kind: "cdp_target_gone"`. A click lands on the visible part of the element, on its first line that is not covered when it wraps; an element another element covers at every such point returns `ACTION_FAILED` with `details.kind: "cdp_click_intercepted"` and nothing delivered. Ref action results on web refs carry `details.channel: "cdp"`.
 

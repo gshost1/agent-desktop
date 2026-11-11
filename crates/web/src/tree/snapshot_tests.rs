@@ -260,3 +260,86 @@ fn an_iframe_target_that_vanishes_mid_read_is_listed_unreadable() {
     assert_eq!(snapshot.unreadable_frames, ["OOP"]);
     assert_eq!(snapshot.preorder().len(), 3);
 }
+
+fn main_page() -> ScriptedTransport {
+    ScriptedTransport::new()
+        .expect(
+            "Page.getFrameTree",
+            json!({ "frameTree": { "frame": { "id": "MAIN", "loaderId": "LM" } } }),
+        )
+        .expect("DOMSnapshot.captureSnapshot", json!({}))
+        .expect("Accessibility.getFullAXTree", main_tree())
+}
+
+fn iframe_read(transport: ScriptedTransport, frame_id: &str) -> ScriptedTransport {
+    let frames = json!({ "frameTree": {
+        "frame": { "id": frame_id, "parentId": "MAIN", "loaderId": "LO" },
+    } });
+    transport
+        .expect("Page.getFrameTree", frames)
+        .expect("DOMSnapshot.captureSnapshot", json!({}))
+        .expect("Accessibility.getFullAXTree", child_tree())
+        .expect("DOM.getFrameOwner", json!({ "backendNodeId": 30 }))
+}
+
+#[test]
+fn an_iframe_that_misses_its_budget_is_listed_and_the_next_one_still_read() {
+    let transport = auto_attach(
+        main_page(),
+        vec![attached("S2", "SLOW"), attached("S3", "FAST")],
+    )
+    .expect_silence("Page.getFrameTree");
+    let transport = auto_attach(iframe_read(transport, "FAST"), Vec::new())
+        .expect("Target.setAutoAttach", json!({}))
+        .expect("Target.setAutoAttach", json!({}));
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page(&mut connection, &session(), Deadline::after(1_000).unwrap()).unwrap();
+
+    assert_eq!(snapshot.unreadable_frames, ["SLOW"]);
+    assert_eq!(
+        snapshot.preorder()[3].0.identity.name.as_deref(),
+        Some("Inner")
+    );
+}
+
+#[test]
+fn iframes_past_the_budget_are_listed_without_being_asked() {
+    let transport = auto_attach(main_page(), vec![attached("S2", "OOP")])
+        .expect("Target.setAutoAttach", json!({}));
+    let sent = transport.sent_log();
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page(&mut connection, &session(), Deadline::after(50).unwrap()).unwrap();
+
+    assert_eq!(snapshot.unreadable_frames, ["OOP"]);
+    assert_eq!(snapshot.preorder().len(), 3);
+    let sent = sent.lock().unwrap();
+    assert!(sent.iter().all(|request| request["sessionId"] != "S2"));
+}
+
+#[test]
+fn an_iframe_whose_child_frames_cannot_be_listed_in_time_is_kept_and_listed() {
+    let transport = auto_attach(main_page(), vec![attached("S2", "OOP")]);
+    let transport = iframe_read(transport, "OOP")
+        .expect_silence("Target.setAutoAttach")
+        .expect("Target.setAutoAttach", json!({}))
+        .expect("Target.setAutoAttach", json!({}));
+    let sent = transport.sent_log();
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page(&mut connection, &session(), Deadline::after(1_000).unwrap()).unwrap();
+
+    assert_eq!(snapshot.unreadable_frames, ["OOP"]);
+    assert_eq!(snapshot.preorder().len(), 5);
+    let sent = sent.lock().unwrap();
+    let stops: Vec<&Value> = sent
+        .iter()
+        .filter(|request| request["params"]["autoAttach"] == false)
+        .map(|request| &request["sessionId"])
+        .collect();
+    assert_eq!(stops, [&json!("S2"), &json!("S")]);
+}

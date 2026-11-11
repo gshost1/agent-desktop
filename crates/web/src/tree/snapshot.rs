@@ -6,6 +6,7 @@ use serde_json::json;
 use super::child_target::ChildTarget;
 use super::child_targets::{attach_child_targets, stop_child_targets};
 use super::flatten::flatten;
+use super::frame_budget::{iframe_deadline, missed_budget};
 use super::frame_graft::{FrameNodes, graft_frames};
 use super::target_read::{frame_owner, read_target};
 use crate::cdp::protocol_error::{is_protocol_error, is_target_gone};
@@ -14,8 +15,11 @@ use crate::{CdpConnection, PageSession, WebSnapshot};
 /// Reads the full accessibility tree of every frame in the page, including
 /// out-of-process iframes, which are attached as their own targets, grafts
 /// each child frame beneath its owner element, and returns it in core form.
-/// Frames that cannot be read, and frames lost because an ancestor frame
-/// could not be read, are listed in `unreadable_frames`.
+/// Iframes are read within a budget that stops short of `deadline`, so a
+/// slow iframe cannot cost the page. Frames that cannot be read or miss that
+/// budget, frames lost because an ancestor frame could not be read, and
+/// iframes whose own child frames could not be listed in time are named in
+/// `unreadable_frames`.
 pub fn snapshot_page(
     connection: &mut CdpConnection,
     session: &PageSession,
@@ -49,21 +53,37 @@ fn read_page(
     auto_attached: &mut Vec<PageSession>,
 ) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
     let (mut frames, mut unreadable) = read_target(connection, session, deadline)?;
+    let iframe_deadline = iframe_deadline(deadline);
     let mut parents = VecDeque::from([session.clone()]);
     while let Some(parent) = parents.pop_front() {
-        let children = match attach_child_targets(connection, &parent, deadline) {
+        let is_page = parent == *session;
+        let attach_deadline = if is_page { deadline } else { iframe_deadline };
+        let children = match attach_child_targets(connection, &parent, attach_deadline) {
             Ok(children) => children,
-            Err(error) if parent != *session && is_target_gone(&error) => continue,
+            Err(error) if !is_page && is_target_gone(&error) => continue,
+            Err(error) if !is_page && missed_budget(&error, deadline) => {
+                auto_attached.push(parent.clone());
+                unreadable.push(parent.target_id.clone());
+                continue;
+            }
             Err(error) => return Err(error),
         };
         auto_attached.push(parent.clone());
         for child in children {
-            match read_child(connection, &parent, &child, deadline) {
+            if iframe_deadline.is_expired() {
+                unreadable.push(child.session.target_id.clone());
+                continue;
+            }
+            match read_child(connection, &parent, &child, iframe_deadline) {
                 Ok((child_frames, child_unreadable)) => {
                     frames.extend(child_frames);
                     unreadable.extend(child_unreadable);
                 }
-                Err(error) if is_protocol_error(&error) || is_target_gone(&error) => {
+                Err(error)
+                    if is_protocol_error(&error)
+                        || is_target_gone(&error)
+                        || missed_budget(&error, deadline) =>
+                {
                     unreadable.push(child.session.target_id.clone());
                     continue;
                 }
