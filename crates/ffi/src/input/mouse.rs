@@ -7,6 +7,7 @@ use agent_desktop_core::{
     MouseEventKind as CoreMouseEventKind, Point as CorePoint,
 };
 
+const MAX_MOUSE_MODIFIERS: u32 = 4;
 const ALL_MODIFIER_BITS: u32 = 0b1111;
 
 pub(crate) fn mouse_button_from_c(b: AdMouseButton) -> CoreMouseButton {
@@ -17,7 +18,21 @@ pub(crate) fn mouse_button_from_c(b: AdMouseButton) -> CoreMouseButton {
     }
 }
 
-pub(crate) use crate::actions::conversion::modifiers_from_c;
+/// Parses a mouse chord's `modifiers` array + count pair. The count check
+/// stays here so the error names the mouse limit, not the key-combo one.
+///
+/// # Safety
+/// `modifiers` must point to `count` valid `int32_t` values, or be null when
+/// `count` is 0.
+pub(crate) unsafe fn modifiers_from_c(
+    modifiers: *const i32,
+    count: u32,
+) -> Result<Vec<CoreModifier>, &'static str> {
+    if count > MAX_MOUSE_MODIFIERS {
+        return Err("modifier_count exceeds MAX_MOUSE_MODIFIERS (4)");
+    }
+    unsafe { crate::actions::conversion::modifiers_from_c(modifiers, count) }
+}
 
 fn modifiers_from_mask(mask: u32) -> Result<Vec<CoreModifier>, &'static str> {
     if mask & !ALL_MODIFIER_BITS != 0 {

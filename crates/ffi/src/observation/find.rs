@@ -110,7 +110,7 @@ unsafe fn find_in_window(
     }
 }
 
-pub(super) fn select_entry(
+fn select_entry(
     resolution: agent_desktop_core::LocatorResolution,
     selection: LocatorSelection,
 ) -> Result<agent_desktop_core::RefEntry, AdapterError> {

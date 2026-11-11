@@ -108,12 +108,28 @@ unsafe fn is_in_window(
             return set_last_error(&crate::commands::app_error_to_adapter(error));
         }
     };
-    let entry = match super::find::select_entry(resolution, request.selection) {
-        Ok(entry) => entry,
-        Err(error) => {
-            return set_last_error(&error);
+    let selected = if request.selection == agent_desktop_core::LocatorSelection::Strict {
+        match agent_desktop_core::require_unique(resolution) {
+            Ok(selected) => selected,
+            Err(error) => {
+                return set_last_error(&crate::commands::app_error_to_adapter(error));
+            }
         }
+    } else {
+        if !resolution.meta.selection_complete {
+            return set_last_error(&agent_desktop_core::AdapterError::timeout(
+                "Locator traversal could not prove the selected result",
+            ));
+        }
+        let Some(selected) = resolution.matches.into_iter().next() else {
+            return set_last_error(&agent_desktop_core::AdapterError::new(
+                agent_desktop_core::ErrorCode::ElementNotFound,
+                "Locator query matched no elements",
+            ));
+        };
+        selected
     };
+    let entry = selected.into_entry();
     unsafe { *out = property.evaluate(&entry.capabilities.states) };
     AdResult::Ok
 }
