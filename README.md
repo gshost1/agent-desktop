@@ -38,15 +38,15 @@ The fork was tuned on the tasks above. A second benchmark checks it on tasks it 
 | Suite | Tool time | Wall time | Runs passed |
 |---|---|---|---|
 | Mac, 8 native tasks | Cua Driver 52.4 s → 36.7 s | Cua Driver 277.7 s → 368.5 s | Peekaboo 31/40 → 32/40 |
-| Mac, 10 web tasks | browser-harness 17.6 s → 10.3 s | browser-harness 111.0 s → 132.2 s | browser-harness 50/50 → 47/50 |
+| Mac, 10 web tasks | agent-browser 7.7 s → 10.3 s | browser-harness 111.0 s → 132.2 s | browser-harness 50/50 → 47/50 |
 | Linux, 8 native tasks | upstream 102.1 s → 96.9 s | upstream 318.4 s → 371.4 s | upstream 36/40 → 38/40 |
-| Linux, 10 web tasks | browser-harness 17.0 s → 8.2 s | browser-harness 110.4 s → 121.9 s | browser-harness 50/50 → 46/50 |
+| Linux, 10 web tasks | agent-browser 5.5 s → 8.2 s | browser-harness 110.4 s → 121.9 s | browser-harness 50/50 → 46/50 |
 
-This fork had the lowest tool time in every suite and the lowest wall time in none. Its tool time was 7% to 26% of its wall time, and the model's turns took the rest, so a faster tool moves the total only a little. On the web it cut upstream's tool time by 77% on the Mac and 97% on Linux, and its wall time by 64% and 88%. On the Linux native tasks it was 17% slower than upstream end to end and used 12% more tokens.
+This fork had the lowest tool time in both native suites and the lowest wall time in none. On the web, agent-browser's tool time was lower on both machines, and this fork passed more runs on the Mac (47/50 against 43/50) and the same number on Linux (46/50). Against browser-harness, this fork's web tool time was 41% lower on the Mac and 52% lower on Linux. Its tool time was 7% to 26% of its wall time, and the model's turns took the rest, so a faster tool moves the total only a little. On the web it cut upstream's tool time by 77% on the Mac and 97% on Linux, and its wall time by 64% and 88%. On the Linux native tasks it was 17% slower than upstream end to end and used 12% more tokens.
 
 It fell short on two tasks. On the Mac it passed none of 5 runs of a TextEdit strike-through task, which upstream also failed and Peekaboo and Cua Driver passed 3 times out of 5. On both machines it miscounted the meanings of a Cambridge Dictionary entry, in 3 of 5 runs on the Mac and 4 of 5 on Linux.
 
-The other tools were upstream at `8e8dd7cbe`, Peekaboo 4.9.8, Cua Driver 0.47.7, browser-harness 0.1.13 and Playwright CLI 0.1.24 on the Mac. Linux has no Peekaboo, which runs only on macOS, and used Cua Driver 0.46.1. Compare tools within one machine, because the native tasks used different apps on each. On Linux the harness's command check also failed 2 correct runs of this fork, and the table counts them as failures.
+The other tools were upstream at `8e8dd7cbe`, Peekaboo 4.9.8, Cua Driver 0.47.7, browser-harness 0.1.13, agent-browser 0.42.0 and Playwright CLI 0.1.24 on the Mac. agent-browser ran on both machines after the other tools, on the same tasks with the same seeds. Linux has no Peekaboo, which runs only on macOS, and used Cua Driver 0.46.1. Compare tools within one machine, because the native tasks used different apps on each. On Linux the harness's command check also failed 2 correct runs of this fork, and the table counts them as failures.
 
 ## Install
 
