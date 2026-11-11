@@ -2,33 +2,55 @@
 
 Computer use for AI agents: see and operate desktop apps on macOS, Windows, and Linux through the OS accessibility tree.
 
-<p>
-  <a href="https://vercel.com/labs#labs-products"><img alt="Vercel Labs Product" src="https://img.shields.io/badge/LABS-PRODUCT-0a0a0a.svg?style=for-the-badge&amp;logo=Vercel&amp;labelColor=000000" height="28"></a>
-  <a href="https://www.npmjs.com/package/agent-desktop"><img alt="npm version: agent-desktop" src="https://img.shields.io/npm/v/agent-desktop.svg?style=for-the-badge&amp;labelColor=000000" height="28"></a>
-  <a href="https://github.com/vercel-labs/agent-desktop/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/vercel-labs/agent-desktop.svg?style=for-the-badge&amp;labelColor=000000" height="28"></a>
-  <a href="https://www.npmjs.com/package/agent-desktop"><img alt="npm downloads per month: agent-desktop" src="https://img.shields.io/npm/dm/agent-desktop.svg?style=for-the-badge&amp;labelColor=000000&amp;label=npm%20downloads" height="28"></a>
-</p>
+This repository is a fork of [vercel-labs/agent-desktop](https://github.com/vercel-labs/agent-desktop). It adds a web surface for pages in Chrome and makes macOS commands faster. It ships as [GitHub release archives](https://github.com/gshost1/agent-desktop/releases); the `agent-desktop` packages on npm and Homebrew are upstream's builds.
 
 agent-desktop gives an AI agent computer use without screenshots or pixel matching. It reads the accessibility tree of a desktop app and returns it as JSON, with a ref for every element the agent can act on. The agent clicks or types on a ref, reads the UI again to check the result, and repeats. The loop lives in your agent; agent-desktop has no model inside. It ships as a CLI and a C library.
 
 Snapshots, clipboard reads, screenshots, command output, and debug artifacts can contain private desktop content. Keep them out of public logs and uploads.
 
+## What this fork changes
+
+- **Web pages.** `snapshot --surface web` reads a page in Chrome through the browser's DevTools endpoint and gives its elements refs, so the same snapshot-and-ref loop drives a web page and a native app. Upstream has no web surface and reads Chrome through the accessibility tree. `agent-desktop skills get web` is the guide.
+- **Faster macOS commands.** Every command is a new process. 1.4.0 opens the window-server and accessibility connections while the permission checks run, and reads an element's children with one call instead of three. On System Settings, the median `find --text` fell from 992 ms to 296 ms.
+- **Fewer tokens per turn.** The global `--lines` flag prints one line per node in place of the JSON tree, about a third fewer tokens. The web guide an agent loads first is 1,818 tokens.
+
+The [changelog](CHANGELOG.md) lists every change with its measurement.
+
+## Benchmarks
+
+An agent ran the same tasks with each tool, and a script judged every run against the expected result. All runs used Claude Opus 5.5 through `claude -p` with Bash only and each tool's own skill, on one MacBook Air (M2, 8 GB), on 2026-11-10. Each figure is the sum of the per-task medians, shown as the other tool, then this fork.
+
+| Tasks | Compared with | Wall time | Input tokens | Runs passed |
+|---|---|---|---|---|
+| 3 native app tasks, 8 runs each | upstream | 68.6 s → 37.8 s (-45%) | 190K → 96K (-49%) | 24/24 → 24/24 |
+| 6 harder native app tasks, 4 runs each | upstream | 182.4 s → 101.8 s (-44%) | 474K → 292K (-38%) | 23/24 → 24/24 |
+| 9 web tasks, 3 runs each | upstream | 655.7 s → 232.3 s (-65%) | 1.96M → 475K (-76%) | 27/27 → 26/27 |
+| 9 web tasks, 3 runs each | browser-harness 0.1.13 | 224.0 s → 184.3 s (-18%) | 366K → 396K (+8%) | 27/27 → 27/27 |
+
+Upstream is its main branch at `8e8dd7cbe`. This fork is `697c618d6`, the code released as 1.4.0. The web comparison with upstream sets two paths to the same task side by side: upstream reads Chrome through the accessibility tree, and this fork uses `--surface web`. Against browser-harness, this fork is faster and uses about the same number of tokens.
+
+These results come from one model on one machine, with 3 to 8 runs per task. The [1.4.0 release pull request](https://github.com/gshost1/agent-desktop/pull/131) has the task list, the per-benchmark tables, and the limits.
+
 ## Install
 
+Download the archive for your OS and architecture from the [latest release](https://github.com/gshost1/agent-desktop/releases/latest), and extract the executable and its helper into one directory on your `PATH`. On macOS and Linux:
+
 ```bash
-npm install -g agent-desktop
+VERSION=1.4.0
+TARGET=aarch64-apple-darwin         # or x86_64-apple-darwin, aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu
+BASE="https://github.com/gshost1/agent-desktop/releases/download/v$VERSION"
+curl -fLO "$BASE/agent-desktop-v$VERSION-$TARGET.tar.gz"
+curl -fLO "$BASE/checksums.txt"
+shasum -a 256 -c checksums.txt --ignore-missing     # Linux: sha256sum -c checksums.txt --ignore-missing
+mkdir -p ~/.local/bin
+tar -xzf "agent-desktop-v$VERSION-$TARGET.tar.gz" -C ~/.local/bin
 agent-desktop status                # platform, permissions, supported surfaces
 agent-desktop permissions --guide   # macOS: walks you through the Accessibility grant
 ```
 
-Bun, Yarn and pnpm can install the same package. It includes native binaries and platform helpers for x64 and ARM64.
-For direct execution without a JavaScript launcher, download the matching native archive from
-[GitHub Releases](https://github.com/vercel-labs/agent-desktop/releases) and keep its helper beside the executable.
+If `~/.local/bin` is not on your `PATH`, add it or extract into a directory that is. On Windows, download the `x86_64-pc-windows-msvc` or `aarch64-pc-windows-msvc` archive from the release page and extract it with `tar -xzf`.
 
-On macOS and Linux, Homebrew also works: `brew install agent-desktop`. There is no official Scoop package yet.
-The repository no longer maintains a custom Homebrew tap or Scoop bucket.
-
-Release archives and building from source are covered in [Installation](https://agent-browser.dev/desktop/installation).
+This fork does not publish to npm or Homebrew. `npm install -g agent-desktop` and `brew install agent-desktop` install upstream's build, which has no web surface.
 
 ## Quick start
 
