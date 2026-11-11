@@ -58,6 +58,6 @@ pub use transport::websocket::WebSocketTransport;
 pub use tree::element_token::ElementToken;
 pub use tree::node_origin::NodeOrigin;
 pub use tree::node_read::read_node;
-pub use tree::snapshot::snapshot_page;
+pub use tree::snapshot::{snapshot_page, snapshot_page_within_budget};
 pub use tree::web_roles::map_cdp_role;
 pub use tree::web_snapshot::WebSnapshot;
