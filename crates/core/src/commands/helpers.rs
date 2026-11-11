@@ -18,7 +18,9 @@ pub(crate) use crate::system::app_lookup::{
 };
 
 pub use super::window_target::AppArgs;
-pub(crate) use super::window_target::window_op_command;
+pub(crate) use super::window_target::{
+    resolve_window_for_app, revalidate_window_for_mutation, window_op_command,
+};
 
 pub struct RefArgs {
     pub ref_id: String,

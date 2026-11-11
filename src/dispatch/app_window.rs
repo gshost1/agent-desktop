@@ -13,9 +13,9 @@ use agent_desktop_core::{
 use serde_json::Value;
 
 use crate::cli_args::{
-    ListSurfacesArgs, WindowScope,
+    ListSurfacesArgs,
     system::{
-        CloseAppArgs, FocusWindowArgs, LaunchArgs, ListAppsArgs, ListWindowsArgs,
+        AppRefArgs, CloseAppArgs, FocusWindowArgs, LaunchArgs, ListAppsArgs, ListWindowsArgs,
         MoveWindowCliArgs, OpenSystemSurfaceArgs, OpenUrlArgs, ResizeWindowCliArgs,
     },
 };
@@ -156,40 +156,31 @@ pub(super) fn move_window(
     )
 }
 
-pub(super) fn minimize(
-    scope: WindowScope,
-    adapter: &dyn PlatformAdapter,
-) -> Result<Value, AppError> {
+pub(super) fn minimize(args: AppRefArgs, adapter: &dyn PlatformAdapter) -> Result<Value, AppError> {
     minimize_command::execute(
         helpers::AppArgs {
-            app: scope.app,
-            window_id: scope.window_id,
+            app: args.scope.app,
+            window_id: args.scope.window_id,
         },
         adapter,
     )
 }
 
-pub(super) fn maximize(
-    scope: WindowScope,
-    adapter: &dyn PlatformAdapter,
-) -> Result<Value, AppError> {
+pub(super) fn maximize(args: AppRefArgs, adapter: &dyn PlatformAdapter) -> Result<Value, AppError> {
     maximize_command::execute(
         helpers::AppArgs {
-            app: scope.app,
-            window_id: scope.window_id,
+            app: args.scope.app,
+            window_id: args.scope.window_id,
         },
         adapter,
     )
 }
 
-pub(super) fn restore(
-    scope: WindowScope,
-    adapter: &dyn PlatformAdapter,
-) -> Result<Value, AppError> {
+pub(super) fn restore(args: AppRefArgs, adapter: &dyn PlatformAdapter) -> Result<Value, AppError> {
     restore_command::execute(
         helpers::AppArgs {
-            app: scope.app,
-            window_id: scope.window_id,
+            app: args.scope.app,
+            window_id: args.scope.window_id,
         },
         adapter,
     )

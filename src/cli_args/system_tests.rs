@@ -120,11 +120,11 @@ fn window_mutation_args_accept_window_ids() {
         "20",
     ])
     .unwrap();
-    let minimize = WindowScope::try_parse_from(["minimize", "--window-id", "w-42"]).unwrap();
+    let minimize = AppRefArgs::try_parse_from(["minimize", "--window-id", "w-42"]).unwrap();
 
     assert_eq!(resize.scope.window_id.as_deref(), Some("w-42"));
     assert_eq!(move_window.scope.window_id.as_deref(), Some("w-42"));
-    assert_eq!(minimize.window_id.as_deref(), Some("w-42"));
+    assert_eq!(minimize.scope.window_id.as_deref(), Some("w-42"));
 }
 
 #[test]

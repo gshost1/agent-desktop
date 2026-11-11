@@ -163,6 +163,14 @@ pub(crate) struct MoveWindowCliArgs {
 
 #[derive(Parser, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct AppRefArgs {
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub scope: WindowScope,
+}
+
+#[derive(Parser, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ClipboardGetArgs {
     #[arg(
         long,

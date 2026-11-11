@@ -80,13 +80,10 @@ fn snapshot_pruning_preserves_trace_segments_and_refmaps() {
     std::fs::create_dir(&refmaps).unwrap();
     let archived_refmap = refmaps.join("snap-0000.json");
     std::fs::write(&archived_refmap, b"saved refmap").unwrap();
-    store
-        .save_snapshot("snap-0000", &map_with("snap-0000"))
-        .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    for index in 0..MAX_SAVED_SNAPSHOTS {
+    for index in 0..=MAX_SAVED_SNAPSHOTS {
+        let snapshot_id = format!("snap-{index:04}");
         store
-            .save_new_snapshot(&map_with(&format!("snap-{index:04}")))
+            .save_snapshot(&snapshot_id, &map_with(&snapshot_id))
             .unwrap();
     }
     store
