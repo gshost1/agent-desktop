@@ -11,6 +11,7 @@ pub(crate) use root::Cli;
 
 use crate::cli_args::{
     FindArgs, GetArgs, IsArgs, ListSurfacesArgs, RefArgs, ScreenshotArgs, SnapshotArgs,
+    WindowScope,
     actions::{
         HoverArgs, KeyComboArgs, MouseClickArgs, MouseMoveArgs, MousePointArgs, PressArgs,
         ScrollArgs, SelectArgs, SetValueArgs, TypeArgs,
@@ -26,7 +27,7 @@ use crate::cli_args::{
     session::SessionArgs,
     skills::SkillsArgs,
     system::{
-        AppRefArgs, ClipboardGetArgs, ClipboardSetArgs, CloseAppArgs, FocusWindowArgs, LaunchArgs,
+        ClipboardGetArgs, ClipboardSetArgs, CloseAppArgs, FocusWindowArgs, LaunchArgs,
         ListAppsArgs, ListWindowsArgs, MoveWindowCliArgs, OpenSystemSurfaceArgs, OpenUrlArgs,
         PermissionsArgs, ResizeWindowCliArgs, WaitArgs,
     },
@@ -124,11 +125,11 @@ pub(crate) enum Commands {
     #[command(about = "Move application window to new position")]
     MoveWindow(MoveWindowCliArgs),
     #[command(about = "Minimize application window")]
-    Minimize(AppRefArgs),
+    Minimize(WindowScope),
     #[command(about = "Maximize or zoom application window")]
-    Maximize(AppRefArgs),
+    Maximize(WindowScope),
     #[command(about = "Restore minimized or maximized window")]
-    Restore(AppRefArgs),
+    Restore(WindowScope),
     #[command(about = "List accessibility surfaces for an app (window, menu, sheet ...)")]
     ListSurfaces(ListSurfacesArgs),
     #[command(

@@ -106,7 +106,7 @@ impl Surface {
 /// (`click`/`type`/`get`/`is`) deliberately omit it — a ref already carries its
 /// source window through its `RefEntry` — and keyboard input targets the focused
 /// window, so neither needs an explicit window selector.
-#[derive(Args, Debug, Deserialize, Default)]
+#[derive(Parser, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WindowScope {
     #[arg(long, help = "Filter to application by name")]
