@@ -33,8 +33,9 @@ NATIVE_TOOL_TEXT = {
 NATIVE_TOOL = {"ad-up": "agent-desktop", "ad-14": "agent-desktop", "peekaboo": "peekaboo", "cua": "cua-driver"}
 NATIVE_GUIDE_DIR = {"peekaboo": SKILLS / "peekaboo", "cua": SKILLS / "cua-driver"}
 
-WEB_ARMS = {"ad-up": "ax", "ad-14": "ad-web", "bh": "cdp", "pw": "cdp"}
-WEB_TOOL = {"ad-up": "agent-desktop", "ad-14": "agent-desktop", "bh": "browser-harness", "pw": "playwright-cli"}
+WEB_ARMS = {"ad-up": "ax", "ad-14": "ad-web", "bh": "cdp", "pw": "cdp", "ab": "cdp"}
+WEB_TOOL = {"ad-up": "agent-desktop", "ad-14": "agent-desktop", "bh": "browser-harness", "pw": "playwright-cli",
+            "ab": "agent-browser"}
 
 ARM_VERSIONS = {
     "ad-up": "agent-desktop upstream 8e8dd7cbe (bench-upstream release build)",
@@ -43,6 +44,7 @@ ARM_VERSIONS = {
     "cua": "Cua Driver 0.47.7 (trycua/cua cua-driver-rs-v0.47.7)",
     "bh": "browser-harness 0.1.13 (browser-use, bh-venv)",
     "pw": "@playwright/cli 0.1.24 (microsoft/playwright-cli)",
+    "ab": "agent-browser 0.42.0 (vercel-labs/agent-browser, npm)",
 }
 
 

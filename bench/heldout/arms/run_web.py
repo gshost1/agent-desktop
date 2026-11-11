@@ -7,6 +7,7 @@ replaced in memory, the way runs/1110-evening/run_web_bh.py plugs in browser-har
   ad-14  run.py channel `ad-web` agent-desktop 1.4.0 with its web channel
   bh     run.py channel `cdp`    browser-harness on the run's Chrome DevTools port
   pw     run.py channel `cdp`    playwright-cli attached to the run's Chrome DevTools port
+  ab     run.py channel `cdp`    agent-browser 0.42.0 with run.py's own agent-browser prompt (`--cdp <port>`)
 Every arm sees the same data per task and run index (tasks_heldout.web_seed). Each run's tool
 calls are timed by the arm's wrapper into <work>/tool.log; one row per run goes to
 heldout/runs/results-web.jsonl.
@@ -34,7 +35,8 @@ import run  # noqa: E402
 PORT_FILE = common.HELDOUT / "out" / "web-current-port"
 RESULTS = common.HELDOUT / "runs" / "results-web.jsonl"
 ORIGINAL = {"prompt": run.channel_prompt, "tools": run.allowed_tools, "http": run.http_json, "run_one": run.run_one,
-            "dialogs": run.bench_dialogs, "launch_cmd": run.ad_launch_command}
+            "dialogs": run.bench_dialogs, "launch_cmd": run.ad_launch_command,
+            "stop": run.stop_chrome}
 CURRENT = {}
 COMMON = (" Google Chrome is already open. Do not use any other program (no curl, osascript, open, python). "
           "When finished, reply with one line: DONE <answer if the task asks for one>.")
@@ -78,10 +80,20 @@ def ad_launch_command(ad, profile, downloads, extra):
     return ORIGINAL["launch_cmd"](str(common.VERIFY_AD), profile, downloads, extra)
 
 
-def tool_log_totals(path):
+def stop_chrome(chrome, profile):
+    """Marks the end of the model's tool calls. run.py's `agent-browser close --all` cleanup runs after this,
+    and for the ab arm that command is the logged tool itself, so it must not count as tool time. The first
+    stop wins: chrome_session stops Chrome again on exit, after that cleanup."""
+    log = Path(profile).parent / "tool.log"
+    if "cut" not in CURRENT:
+        CURRENT["cut"] = len(log.read_text(errors="replace").splitlines()) if log.exists() else 0
+    return ORIGINAL["stop"](chrome, profile)
+
+
+def tool_log_totals(path, limit=None):
     calls, seconds = 0, 0.0
     if path.exists():
-        for line in path.read_text(errors="replace").splitlines():
+        for line in path.read_text(errors="replace").splitlines()[:limit]:
             parts = line.split("\t")
             if len(parts) >= 5:
                 calls += 1
@@ -91,8 +103,10 @@ def tool_log_totals(path):
 
 def run_one(args, task, channel, run_idx, out):
     CURRENT["seed"] = th.web_seed(task["id"], run_idx)
+    CURRENT.pop("cut", None)
     row = ORIGINAL["run_one"](args, task, channel, run_idx, out)
-    calls, seconds = tool_log_totals(out / "work" / f"{task['id']}-{channel}-{run_idx}" / "tool.log")
+    calls, seconds = tool_log_totals(out / "work" / f"{task['id']}-{channel}-{run_idx}" / "tool.log",
+                                     CURRENT.pop("cut", None))
     why = row.get("why", "")
     invalid = why.startswith(("expected value unavailable", "bench launch failed"))
     record = {"suite": "web", "arm": CURRENT["arm"], "arm_version": common.ARM_VERSIONS[CURRENT["arm"]],
@@ -117,7 +131,8 @@ def main():
     ap.add_argument("--host", default="mac")
     a, rest = ap.parse_known_args()
     CURRENT.update({"arm": a.arm, "host": a.host})
-    for name in ("channel_prompt", "allowed_tools", "http_json", "run_one", "bench_dialogs", "ad_launch_command"):
+    for name in ("channel_prompt", "allowed_tools", "http_json", "run_one", "bench_dialogs", "ad_launch_command",
+                 "stop_chrome"):
         setattr(run, name, globals()[name])
     run.TASKS = th.WEB_TASKS
     run.verify = th.verify_web

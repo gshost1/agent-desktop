@@ -1,6 +1,6 @@
 # Held-out arms
 
-Every arm runs through `claude -p` on the subscription with Bash only. Each arm gets the same task prompt; only the tool paragraph of the system prompt differs (`common.py`, `run_web.py`). That paragraph tells the model where the tool's own guide is, and the model learns the tool from there. Every tool call goes through `bin/<arm>/<tool>`, which logs its wall time to the run's tool log (`logwrap.zsh`). Third-party tools are installed only under `~/.agent-desktop-bench-target/heldout-tools/`, at exact versions, from release artifacts whose checksums were verified on 2026-11-10.
+Every arm runs through `claude -p` on the subscription with Bash only. Each arm gets the same task prompt; only the tool paragraph of the system prompt differs (`common.py`, `run_web.py`). That paragraph tells the model where the tool's own guide is, and the model learns the tool from there. Every tool call goes through `bin/<arm>/<tool>`, which logs its wall time to the run's tool log (`logwrap.zsh`). Third-party tools are installed only under `~/.agent-desktop-bench-target/heldout-tools/`, at exact versions, from release artifacts whose checksums were verified on 2026-11-10 (agent-browser on 2026-11-11).
 
 | Arm | Suite | Tool and version | Guide the model reads | Status |
 |---|---|---|---|---|
@@ -8,6 +8,7 @@ Every arm runs through `claude -p` on the subscription with Bash only. Each arm 
 | `ad-up` | native, web (`ax` channel; upstream has no web channel) | agent-desktop upstream 8e8dd7cbe, the existing `bench-upstream` release build | `agent-desktop skills get desktop` / `platform` | ready |
 | `bh` | web (`cdp` channel) | browser-harness 0.1.13 (PyPI), the existing `bh-venv` | `browser-harness skill` | ready; the 1110-evening web runs already used this setup |
 | `pw` | web (`cdp` channel) | @playwright/cli 0.1.24 (microsoft/playwright-cli) | `cat …/skills/playwright-cli/SKILL.md` | ready; installed and `--help` checked; never driven yet, so the first round doubles as its smoke run |
+| `ab` | web (`cdp` channel) | agent-browser 0.42.0 (vercel-labs/agent-browser, npm) | `agent-browser skills get core`; the prompt is run.py's own `cdp` prompt, which has it pass `--cdp <port>` | added 2026-11-11 after the Sonnet pass; runs alone (`WEB_ARMS=ab`), same rounds, rotation, seeds and caps |
 | `peekaboo` | native | Peekaboo CLI 4.9.8 (openclaw/Peekaboo) | `cat …/skills/peekaboo/SKILL.md` (tag v4.9.8) | needs preflight, see below |
 | `cua` | native | Cua Driver 0.46.1 (trycua/cua `cua-driver-rs-v0.46.1`) | `cat …/skills/cua-driver/SKILL.md` and its other guides (tag `cua-driver-rs-v0.46.1`) | **blocked on the Mac**, see below; ready on AWS |
 
@@ -42,6 +43,11 @@ done
 mkdir -p $T/playwright-cli-0.1.24 && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
   npm install --prefix $T/playwright-cli-0.1.24 --ignore-scripts --no-audit --no-fund --save-exact @playwright/cli@0.1.24
 cp -R $T/playwright-cli-0.1.24/node_modules/@playwright/cli/skills/playwright-cli/{SKILL.md,references} $T/skills/playwright-cli/
+# agent-browser 0.42.0 (2026-11-11; no install scripts, no Chrome download). The package ships the native
+# binaries; only the postinstall chmod is skipped, so set it by hand.
+mkdir -p $T/agent-browser-0.42.0 && npm install --prefix $T/agent-browser-0.42.0 --ignore-scripts --no-audit --no-fund --save-exact agent-browser@0.42.0
+chmod +x $T/agent-browser-0.42.0/node_modules/agent-browser/bin/agent-browser-darwin-arm64
+shasum -a 256 $T/agent-browser-0.42.0/node_modules/agent-browser/bin/agent-browser-darwin-arm64   # b1b2946c…e29d8e72d, the v0.42.0 release asset's digest
 # browser-harness 0.1.13: reused, not reinstalled. Recreate elsewhere (AWS) with:
 #   uv venv --python 3.12 ~/.agent-desktop-bench-target/bh-venv && uv pip install --python ~/.agent-desktop-bench-target/bh-venv/bin/python browser-harness==0.1.13
 ```
@@ -54,11 +60,13 @@ cp -R $T/playwright-cli-0.1.24/node_modules/@playwright/cli/skills/playwright-cl
 | Playwright CLI | `NO_UPDATE_NOTIFIER=1` (its only phone-home is an `npm view` update check) | `@playwright/cli/playwright-cli.js` |
 | browser-harness | `BH_TELEMETRY=0 BH_UPDATE_CHECK=0 ANONYMIZED_TELEMETRY=false` | same as the 1110-evening wrapper |
 | Peekaboo | `PEEKABOO_AI_PROVIDERS=""` (no model calls), private `PEEKABOO_CONFIG_DIR` and daemon socket; no telemetry is documented | `docs/configuration.md`, `docs/security.md` at v4.9.8 |
+| agent-browser | `AGENT_BROWSER_NO_VERSION_CHECK=1` (its only automatic network call, an outdated-Chrome check against chromereleases.googleblog.com); `AGENT_BROWSER_SKILLS_DIR` set to the package's `skill-data`; the wrapper refuses `chat`, `upgrade`, `install`, `doctor`, `dashboard`, `-p`/`--provider` and `--auto-connect`, and unsets the AI gateway and Anthropic keys | `cli/src/browser_security.rs`, `native/actions.rs`, `chat.rs`, `doctor/network.rs` at v0.42.0; no telemetry code |
 | agent-desktop | none needed | |
 
 ## Wrapper rules (the same kind for every arm)
 
-- `peekaboo agent` is refused: it runs its own model, and the comparison is about the tool, not a second agent.
+- `peekaboo agent` and `agent-browser chat` are refused: they run their own model, and the comparison is about the tool, not a second agent.
+- run.py's `agent-browser close --all` cleanup runs through the bin folder after each `cdp` run. For `bh` and `pw` that name is an unlogged shim; for `ab` it is the logged tool, so `run_web.py` counts only the tool-log lines written before Chrome was stopped.
 - Whole-screen and whole-desktop reads are refused (`peekaboo … --mode screen|multi`, `cua-driver call get_desktop_state`). They would read windows outside the bench. agent-desktop has no whole-screen tree read, and screenshots fail for every arm on the Mac because Screen Recording is off.
 - `cat` is allowed only for the arm's own guide folder (native audit) and for `.playwright-cli/` snapshot files (web; `cat` is allowed for every web arm alike).
 - Any other GUI tool on PATH (agent-desktop, peekaboo, cua-driver, browser-harness, playwright-cli, agent-browser) fails the run if the arm calls it.
