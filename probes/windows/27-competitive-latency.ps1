@@ -163,10 +163,15 @@ function Invoke-ArmCommand {
     try { $envelope = $stdout | ConvertFrom-Json } catch { $envelope = $null }
     $ok = ($null -ne $envelope) -and ($envelope.PSObject.Properties.Name -contains 'ok') -and [bool]$envelope.ok
     $code = ''
+    $failure = $null
     if ($null -ne $envelope -and -not $ok -and ($envelope.PSObject.Properties.Name -contains 'error') -and $envelope.error) {
         $code = [string]$envelope.error.code
+        $failure = [ordered]@{ code = $code; message = [string]$envelope.error.message }
+        if (($envelope.error.PSObject.Properties.Name -contains 'details') -and $envelope.error.details -and ($envelope.error.details.PSObject.Properties.Name -contains 'kind')) {
+            $failure['kind'] = [string]$envelope.error.details.kind
+        }
     }
-    return [pscustomobject]@{ Ms = [double]$watch.Elapsed.TotalMilliseconds; Exit = $process.ExitCode; Ok = $ok; Code = $code; Envelope = $envelope }
+    return [pscustomobject]@{ Ms = [double]$watch.Elapsed.TotalMilliseconds; Exit = $process.ExitCode; Ok = $ok; Code = $code; Failure = $failure; Envelope = $envelope }
 }
 
 function Get-SampleSummary {
@@ -174,6 +179,7 @@ function Get-SampleSummary {
     $timed = @($Samples | Select-Object -Skip 1)
     $sorted = @($timed | ForEach-Object { $_.Ms } | Sort-Object)
     $codes = @($timed | Where-Object { -not $_.Ok -and $_.Code } | ForEach-Object { $_.Code } | Sort-Object -Unique)
+    $firstFailure = @($Samples | Where-Object { $null -ne $_.Failure } | Select-Object -First 1 | ForEach-Object { $_.Failure })
     return [ordered]@{
         timed_runs       = $sorted.Count
         warmup_discarded = 1
@@ -184,6 +190,7 @@ function Get-SampleSummary {
         ok_runs          = @($timed | Where-Object { $_.Ok }).Count
         ok_with_warmup   = @($Samples | Where-Object { $_.Ok }).Count
         error_codes      = $codes
+        first_failure    = $(if ($firstFailure.Count -gt 0) { $firstFailure[0] } else { $null })
     }
 }
 
@@ -239,23 +246,33 @@ function Initialize-UiaClient {
     Add-Type -AssemblyName UIAutomationTypes
 }
 
-<#
-    The managed UI Automation client reads WinForms controls through its own
-    client-side proxies, which do not surface Control.Name as AutomationId the
-    way the native UIA3 proxy agent-desktop reads does. A probe that reads a
-    WinForms control independently therefore finds it by its accessible name.
-#>
 function Get-UiaElement {
-    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$Key, [switch]$ByName)
+    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$Key)
     $root = [System.Windows.Automation.AutomationElement]::FromHandle($WindowHandle)
-    $property = $(if ($ByName) { [System.Windows.Automation.AutomationElement]::NameProperty } else { [System.Windows.Automation.AutomationElement]::AutomationIdProperty })
-    $condition = New-Object System.Windows.Automation.PropertyCondition $property, $Key
+    $condition = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::AutomationIdProperty), $Key
     return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
 }
 
+<#
+    The managed UI Automation client reads WinForms controls through its own
+    client-side proxies, which surface neither Control.Name as AutomationId
+    nor AccessibleName as Name the way the native UIA3 proxy does. A WinForms
+    readout is therefore read the way tests/e2e-windows reads it: a separate
+    find of the readout by native id, never the command being measured.
+#>
+function Get-ReadoutText {
+    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$Key, [switch]$ThroughFind)
+    if (-not $ThroughFind) { return (Get-UiaText -WindowHandle $WindowHandle -Key $Key) }
+    $found = Invoke-ArmCommand -Name $Arm[0] -Arguments @('find', '--first', '--window-id', ('w-' + [long]$WindowHandle), '--native-id', $Key)
+    if (-not $found.Ok -or -not ($found.Envelope.data.PSObject.Properties.Name -contains 'match') -or -not $found.Envelope.data.match) { return $null }
+    $match = $found.Envelope.data.match
+    if ($match.PSObject.Properties.Name -contains 'value') { return [string]$match.value }
+    return $null
+}
+
 function Get-UiaText {
-    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$Key, [switch]$ByName)
-    $element = Get-UiaElement -WindowHandle $WindowHandle -Key $Key -ByName:$ByName
+    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$Key)
+    $element = Get-UiaElement -WindowHandle $WindowHandle -Key $Key
     if ($null -eq $element) { return $null }
     $pattern = $null
     if ($element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) {
@@ -279,13 +296,13 @@ function Get-TotalOkRuns {
 
 <#
     Reads one of the fixture's own counters after a leg. Evidence names the
-    control (Key, ByName) and the text it shows after n deliveries (Format,
+    control (Key, and ThroughFind for a WinForms readout) and the text it shows after n deliveries (Format,
     with {0} for n). Both fixtures count every delivery: the WinForms status
     readouts append a per-write counter, and the WPF window counts clicks.
 #>
 function Get-CounterEvidence {
     param([Parameter(Mandatory = $true)]$Target, [Parameter(Mandatory = $true)]$Evidence, [Parameter(Mandatory = $true)][int]$Expected)
-    $observed = Get-UiaText -WindowHandle $Target.WindowHandle -Key $Evidence.Key -ByName:$Evidence.ByName
+    $observed = Get-ReadoutText -WindowHandle $Target.WindowHandle -Key $Evidence.Key -ThroughFind:$Evidence.ThroughFind
     $wanted = $Evidence.Format -f $Expected
     return [ordered]@{ verified = ($observed -eq $wanted); expected = $wanted; observed = $observed }
 }
@@ -345,8 +362,8 @@ function Start-Win32Target {
         WindowHandle  = $handle
         Button        = 'primary-button'
         TextBox       = 'text-input'
-        ClickEvidence = [pscustomobject]@{ Key = 'click-status-readout'; ByName = $true; Format = 'clicked#{0}' }
-        TypeEvidence  = [pscustomobject]@{ Key = 'text-status-readout'; ByName = $true; Format = 'changed#{0}' }
+        ClickEvidence = [pscustomobject]@{ Key = 'click-status'; ThroughFind = $true; Format = 'clicked#{0}' }
+        TypeEvidence  = [pscustomobject]@{ Key = 'text-status'; ThroughFind = $true; Format = 'changed#{0}' }
     }
 }
 
@@ -370,7 +387,7 @@ function Start-WpfTarget {
         WindowHandle  = $handle
         Button        = 'btnAction'
         TextBox       = 'txtValue'
-        ClickEvidence = [pscustomobject]@{ Key = 'txtStatusMirror'; ByName = $false; Format = 'action:{0}' }
+        ClickEvidence = [pscustomobject]@{ Key = 'txtStatusMirror'; ThroughFind = $false; Format = 'action:{0}' }
         TypeEvidence  = $null
     }
 }
