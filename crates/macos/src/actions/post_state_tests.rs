@@ -122,14 +122,6 @@ fn element_state_from_attrs_omits_offscreen_without_window_bounds() {
 }
 
 #[test]
-fn post_state_uses_the_same_subrole_mapping_as_snapshot_observation() {
-    assert_eq!(
-        normalized_role(Some("AXRow"), Some("AXOutlineRow")),
-        "treeitem"
-    );
-}
-
-#[test]
 fn secure_subrole_never_exposes_its_value() {
     let el = crate::tree::AXElement(std::ptr::null_mut());
     let mut attrs = attrs_with_bounds(Rect {

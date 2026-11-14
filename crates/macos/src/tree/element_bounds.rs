@@ -2,7 +2,6 @@ use agent_desktop_core::{AdapterError, Deadline, ErrorCode, Rect};
 
 use super::AXElement;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn rect_from_parts(
     point: core_graphics::geometry::CGPoint,
     size: core_graphics::geometry::CGSize,
@@ -17,7 +16,6 @@ pub(crate) fn rect_from_parts(
     .ok()
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn read_bounds_with_deadline(
     element: &AXElement,
     deadline: std::time::Instant,
@@ -27,14 +25,6 @@ pub(crate) fn read_bounds_with_deadline(
     Ok(point
         .zip(size)
         .and_then(|(point, size)| rect_from_parts(point, size)))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn read_bounds_with_deadline(
-    _element: &AXElement,
-    _deadline: std::time::Instant,
-) -> Result<Option<Rect>, agent_desktop_core::AdapterError> {
-    Ok(None)
 }
 
 pub(crate) fn owning_window_bounds(
@@ -129,7 +119,6 @@ pub(crate) fn contains_rect(outer: Rect, inner: Rect) -> bool {
 
 /// The clip a `role` element applies, from its reported `bounds`. Only a
 /// scroll area reads its content size; a read that fails keeps the frame.
-#[cfg(target_os = "macos")]
 pub(crate) fn clip_bounds(
     element: &AXElement,
     role: &str,
@@ -145,16 +134,6 @@ pub(crate) fn clip_bounds(
         .flatten()
         .map(|size| (size.width, size.height));
     Some(scroll_area_clip(bounds, content))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn clip_bounds(
-    _element: &AXElement,
-    _role: &str,
-    bounds: Option<Rect>,
-    _deadline: std::time::Instant,
-) -> Option<Rect> {
-    bounds
 }
 
 pub(crate) fn clipped_viewport(
