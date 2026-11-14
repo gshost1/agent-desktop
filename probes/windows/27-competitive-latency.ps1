@@ -24,7 +24,9 @@
       snapshot  snapshot --window-id <window> -i
       find      find --first --window-id <window> --native-id <button>
       click     click <ref>          (ref from the arm's own untimed find)
-      type      type <ref> q         (ref from the arm's own untimed find)
+      type      --headed type <ref> q  (ref from the arm's own untimed find;
+                                        Windows type is keystroke synthesis and
+                                        is refused headless)
 
     and once per host: list-apps, and launch <fixture exe> with every
     instance the launch started killed, untimed, before the next sample.
@@ -237,16 +239,23 @@ function Initialize-UiaClient {
     Add-Type -AssemblyName UIAutomationTypes
 }
 
+<#
+    The managed UI Automation client reads WinForms controls through its own
+    client-side proxies, which do not surface Control.Name as AutomationId the
+    way the native UIA3 proxy agent-desktop reads does. A probe that reads a
+    WinForms control independently therefore finds it by its accessible name.
+#>
 function Get-UiaElement {
-    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$NativeId)
+    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$Key, [switch]$ByName)
     $root = [System.Windows.Automation.AutomationElement]::FromHandle($WindowHandle)
-    $condition = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::AutomationIdProperty), $NativeId
+    $property = $(if ($ByName) { [System.Windows.Automation.AutomationElement]::NameProperty } else { [System.Windows.Automation.AutomationElement]::AutomationIdProperty })
+    $condition = New-Object System.Windows.Automation.PropertyCondition $property, $Key
     return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
 }
 
 function Get-UiaText {
-    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$NativeId)
-    $element = Get-UiaElement -WindowHandle $WindowHandle -NativeId $NativeId
+    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle, [Parameter(Mandatory = $true)][string]$Key, [switch]$ByName)
+    $element = Get-UiaElement -WindowHandle $WindowHandle -Key $Key -ByName:$ByName
     if ($null -eq $element) { return $null }
     $pattern = $null
     if ($element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) {
@@ -269,21 +278,24 @@ function Get-TotalOkRuns {
 }
 
 <#
-    Reads the fixture's own click state after the click leg. A target whose
-    ClickCounts is set reports 'action:<n>' after n clicks; any other reports
-    the fixed ClickedText once it has been clicked at all.
+    Reads one of the fixture's own counters after a leg. Evidence names the
+    control (Key, ByName) and the text it shows after n deliveries (Format,
+    with {0} for n). Both fixtures count every delivery: the WinForms status
+    readouts append a per-write counter, and the WPF window counts clicks.
 #>
-function Get-ClickEvidence {
-    param([Parameter(Mandatory = $true)]$Target, [Parameter(Mandatory = $true)][int]$Expected)
-    $observed = Get-UiaText -WindowHandle $Target.WindowHandle -NativeId $Target.StatusId
-    $wanted = $(if ($Target.ClickCounts) { 'action:' + $Expected } else { $Target.ClickedText })
-    return [ordered]@{ verified = ($observed -eq $wanted); expected = $wanted; observed = $observed; expected_clicks = $Expected }
+function Get-CounterEvidence {
+    param([Parameter(Mandatory = $true)]$Target, [Parameter(Mandatory = $true)]$Evidence, [Parameter(Mandatory = $true)][int]$Expected)
+    $observed = Get-UiaText -WindowHandle $Target.WindowHandle -Key $Evidence.Key -ByName:$Evidence.ByName
+    $wanted = $Evidence.Format -f $Expected
+    return [ordered]@{ verified = ($observed -eq $wanted); expected = $wanted; observed = $observed }
 }
 
 <#
     Measures the four ref legs against one target window. Target carries
-    Name, WindowHandle, the Button, TextBox and StatusId native ids, and how
-    its status reports a click (ClickCounts, ClickedText).
+    Name, WindowHandle, the Button and TextBox native ids, and the counters
+    that independently confirm the click and type legs (ClickEvidence and
+    TypeEvidence; a TypeEvidence of $null counts the typed character in the
+    text box's own value instead).
 #>
 function Measure-TargetLegs {
     param([Parameter(Mandatory = $true)][string[]]$Arms, [Parameter(Mandatory = $true)]$Target)
@@ -297,25 +309,27 @@ function Measure-TargetLegs {
         $text = Get-ArmReference -Name $name -WindowArgument $windowArgument -NativeId $Target.TextBox
         $references[$name] = [ordered]@{ button_resolved = [bool]$button; text_resolved = [bool]$text }
         $clickArgs[$name] = @('click', $(if ($button) { $button } else { '@unresolved:e1' }))
-        $typeArgs[$name] = @('type', $(if ($text) { $text } else { '@unresolved:e1' }), 'q')
+        $typeArgs[$name] = @('--headed', 'type', $(if ($text) { $text } else { '@unresolved:e1' }), 'q')
     }
     $legs = [ordered]@{}
     $legs['snapshot'] = Measure-Leg -Arms $Arms -ArgumentsByArm $snapshotArgs
     $legs['find'] = Measure-Leg -Arms $Arms -ArgumentsByArm $findArgs
     $legs['click'] = Measure-Leg -Arms $Arms -ArgumentsByArm $clickArgs
-    $clickEvidence = Get-ClickEvidence -Target $Target -Expected (Get-TotalOkRuns -Leg $legs['click'])
-    $before = Get-CharacterCount -Text (Get-UiaText -WindowHandle $Target.WindowHandle -NativeId $Target.TextBox) -Character 'q'
+    $clickEvidence = Get-CounterEvidence -Target $Target -Evidence $Target.ClickEvidence -Expected (Get-TotalOkRuns -Leg $legs['click'])
+    $before = Get-CharacterCount -Text (Get-UiaText -WindowHandle $Target.WindowHandle -Key $Target.TextBox) -Character 'q'
     $legs['type'] = Measure-Leg -Arms $Arms -ArgumentsByArm $typeArgs
-    $after = Get-CharacterCount -Text (Get-UiaText -WindowHandle $Target.WindowHandle -NativeId $Target.TextBox) -Character 'q'
     $expectedTyped = Get-TotalOkRuns -Leg $legs['type']
+    if ($Target.TypeEvidence) {
+        $typeEvidence = Get-CounterEvidence -Target $Target -Evidence $Target.TypeEvidence -Expected $expectedTyped
+    } else {
+        $after = Get-CharacterCount -Text (Get-UiaText -WindowHandle $Target.WindowHandle -Key $Target.TextBox) -Character 'q'
+        $typeEvidence = [ordered]@{ verified = (($after - $before) -eq $expectedTyped); expected = $expectedTyped; observed = ($after - $before) }
+    }
     return [ordered]@{
         target     = $Target.Name
         references = $references
         legs       = $legs
-        evidence   = [ordered]@{
-            click = $clickEvidence
-            type  = [ordered]@{ verified = (($after - $before) -eq $expectedTyped); expected_characters = $expectedTyped; observed_characters = ($after - $before) }
-        }
+        evidence   = [ordered]@{ click = $clickEvidence; type = $typeEvidence }
     }
 }
 
@@ -331,9 +345,8 @@ function Start-Win32Target {
         WindowHandle  = $handle
         Button        = 'primary-button'
         TextBox       = 'text-input'
-        StatusId      = 'click-status'
-        ClickCounts   = $false
-        ClickedText   = 'clicked'
+        ClickEvidence = [pscustomobject]@{ Key = 'click-status-readout'; ByName = $true; Format = 'clicked#{0}' }
+        TypeEvidence  = [pscustomobject]@{ Key = 'text-status-readout'; ByName = $true; Format = 'changed#{0}' }
     }
 }
 
@@ -350,16 +363,15 @@ function Start-WpfTarget {
     }
     if ($handle -eq [IntPtr]::Zero) { throw 'the WPF scratch window produced no main window' }
     $deadline = (Get-Date).AddSeconds(30)
-    while ((Get-Date) -lt $deadline -and $null -eq (Get-UiaElement -WindowHandle $handle -NativeId 'btnAction')) { Start-Sleep -Milliseconds 250 }
+    while ((Get-Date) -lt $deadline -and $null -eq (Get-UiaElement -WindowHandle $handle -Key 'btnAction')) { Start-Sleep -Milliseconds 250 }
     return [pscustomobject]@{
         Name          = 'wpf-scratch-window'
         ProcessId     = $process.Id
         WindowHandle  = $handle
         Button        = 'btnAction'
         TextBox       = 'txtValue'
-        StatusId      = 'txtStatusMirror'
-        ClickCounts   = $true
-        ClickedText   = ''
+        ClickEvidence = [pscustomobject]@{ Key = 'txtStatusMirror'; ByName = $false; Format = 'action:{0}' }
+        TypeEvidence  = $null
     }
 }
 
