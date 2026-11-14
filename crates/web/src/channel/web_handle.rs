@@ -7,14 +7,14 @@ use crate::ElementToken;
 /// method that takes a handle checks for this payload first, so a web handle
 /// is answered over CDP and never reaches the platform adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WebHandle {
-    pub process: ProcessIdentity,
-    pub token: ElementToken,
+pub(crate) struct WebHandle {
+    pub(crate) process: ProcessIdentity,
+    pub(crate) token: ElementToken,
 }
 
 impl WebHandle {
     /// The web payload of `handle`, if it carries one.
-    pub fn of(handle: &NativeHandle) -> Option<&Self> {
+    pub(crate) fn of(handle: &NativeHandle) -> Option<&Self> {
         handle.downcast_ref::<Self>()
     }
 }

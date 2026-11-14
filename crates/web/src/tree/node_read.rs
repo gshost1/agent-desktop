@@ -21,7 +21,7 @@ use crate::{CdpConnection, ElementToken, PageSession};
 /// is `STALE_REF`. A node the
 /// browser leaves out of its accessibility tree, such as one hidden by CSS,
 /// reads as hidden.
-pub fn read_node(
+pub(crate) fn read_node(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,

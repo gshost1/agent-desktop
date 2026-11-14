@@ -20,7 +20,6 @@ fn outcome_from_selection(pressed: DeliveryOutcome, selected: Option<bool>) -> D
     }
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::{AdapterError, Deadline};
 
@@ -76,21 +75,6 @@ mod imp {
                 crate::actions::select::selection_settle::SELECTION_POLL_MS,
             )));
         }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use agent_desktop_core::{AdapterError, Deadline};
-
-    use crate::actions::chain::chain_delivery::DeliveryOutcome;
-    use crate::tree::AXElement;
-
-    pub(crate) fn press_or_report_no_effect(
-        _element: &AXElement,
-        _deadline: Deadline,
-    ) -> Result<DeliveryOutcome, AdapterError> {
-        Ok(DeliveryOutcome::NotDelivered)
     }
 }
 
