@@ -93,6 +93,13 @@ pub fn execute(
             Ok((resolved, lease))
         })
     })?;
+    let baseline = resolved.source_entry.as_ref().and_then(|entry| {
+        crate::wait::window_baseline::WindowBaseline::before_action(
+            adapter,
+            entry,
+            context.wait_selector(),
+        )
+    });
     let result = crate::cursor_overlay::dispatch_mouse_event_with_cursor(
         adapter,
         context,
@@ -114,7 +121,13 @@ pub fn execute(
     }
     drop(lease);
     drop(cursor);
-    apply_post_action_wait(response, resolved.source_entry.as_ref(), adapter, context)
+    apply_post_action_wait(
+        response,
+        resolved.source_entry.as_ref(),
+        baseline.as_ref(),
+        adapter,
+        context,
+    )
 }
 
 fn confirm_receiver(

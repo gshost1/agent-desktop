@@ -6,6 +6,11 @@ use crate::{AdapterError, ErrorCode};
 
 pub const MAX_WAIT_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 
+/// The default budget of `--wait-for` and `--wait-for-gone`. A post-action
+/// wait that succeeds sees its effect within a few seconds of the action, so
+/// a longer default only lengthens the waits whose effect never comes.
+pub const DEFAULT_POST_ACTION_WAIT_MS: u64 = 10_000;
+
 pub fn wait_timeout_duration(timeout_ms: u64) -> Result<Duration, AdapterError> {
     if timeout_ms > MAX_WAIT_TIMEOUT_MS {
         return Err(AdapterError::new(

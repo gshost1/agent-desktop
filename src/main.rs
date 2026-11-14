@@ -210,7 +210,10 @@ fn build_wait_selector(cli: &Cli) -> Result<Option<WaitSelector>, AppError> {
     Ok(Some(WaitSelector {
         query_raw: query_raw.clone(),
         gone,
-        timeout_ms: cli.post_action_wait.wait_timeout.unwrap_or(30_000),
+        timeout_ms: cli
+            .post_action_wait
+            .wait_timeout
+            .unwrap_or(agent_desktop_core::DEFAULT_POST_ACTION_WAIT_MS),
     }))
 }
 

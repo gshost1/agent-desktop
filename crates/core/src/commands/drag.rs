@@ -143,6 +143,17 @@ pub fn execute(
             Ok((from, to, lease, params))
         })
     })?;
+    let wait_entry = match args.wait_for_scope {
+        WaitForScope::To => to.source_entry.as_ref().or(from.source_entry.as_ref()),
+        WaitForScope::From => from.source_entry.as_ref().or(to.source_entry.as_ref()),
+    };
+    let baseline = wait_entry.and_then(|entry| {
+        crate::wait::window_baseline::WindowBaseline::before_action(
+            adapter,
+            entry,
+            context.wait_selector(),
+        )
+    });
     crate::cursor_overlay::submit_travel(adapter, context, from.point.clone(), &lease, false);
     let drag_tracking = crate::cursor_overlay::submit_drag(
         adapter,
@@ -189,11 +200,7 @@ pub fn execute(
     }
     drop(lease);
     drop(cursor);
-    let wait_entry = match args.wait_for_scope {
-        WaitForScope::To => to.source_entry.as_ref().or(from.source_entry.as_ref()),
-        WaitForScope::From => from.source_entry.as_ref().or(to.source_entry.as_ref()),
-    };
-    apply_post_action_wait(response, wait_entry, adapter, context)
+    apply_post_action_wait(response, wait_entry, baseline.as_ref(), adapter, context)
 }
 
 #[cfg(test)]

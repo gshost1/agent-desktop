@@ -49,6 +49,18 @@ pub(crate) fn execute(
             "type --interval-ms needs text to type",
         ));
     };
+    let baseline = match context.wait_selector() {
+        Some(_) => crate::commands::helpers::load_ref_entry(&args.ref_id, context)
+            .ok()
+            .and_then(|entry| {
+                crate::wait::window_baseline::WindowBaseline::before_action(
+                    adapter,
+                    &entry,
+                    context.wait_selector(),
+                )
+            }),
+        None => None,
+    };
     let first_slot = clock.wait();
     let Landing {
         value: mut last,
@@ -84,7 +96,13 @@ pub(crate) fn execute(
     if context.wait_selector().is_none() {
         return Ok(value);
     }
-    crate::commands::helpers::apply_post_action_wait(value, Some(&burst.entry), adapter, context)
+    crate::commands::helpers::apply_post_action_wait(
+        value,
+        Some(&burst.entry),
+        baseline.as_ref(),
+        adapter,
+        context,
+    )
 }
 
 /// What the field should read once every keystroke has landed, when the first

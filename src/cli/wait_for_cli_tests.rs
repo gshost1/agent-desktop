@@ -65,7 +65,7 @@ fn short_w_flag_maps_to_wait_for() {
             .expect("selector is valid")
             .expect("selector is present")
             .timeout_ms,
-        30_000
+        10_000
     );
 }
 

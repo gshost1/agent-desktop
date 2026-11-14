@@ -1,18 +1,23 @@
+use crate::wait::{unresponsive_spell::UnresponsiveSpell, window_baseline::WindowBaseline};
 use crate::{
     AppError, ErrorCode,
     adapter::{PlatformAdapter, TreeOptions},
     commands::selector_observation::SelectorObservation,
-    commands::{query, snapshot as snapshot_cmd, wait_timeout},
+    commands::{query, snapshot as snapshot_cmd},
     context::CommandContext,
     refs::refs_store::RefStore,
     snapshot::{self, emit_snapshot_saved},
     system::process_state::ProcessState,
     trace::trace_artifacts,
 };
+use scope::RefWait;
 use serde_json::{Value, json};
-use std::time::{Duration, Instant};
 
-const DIAGNOSTIC_SNAPSHOT_BUDGET: Duration = Duration::from_millis(600);
+#[path = "wait_selector_scope.rs"]
+pub(crate) mod scope;
+#[path = "wait_selector_timeout.rs"]
+mod timeout;
+use timeout::timeout_response;
 
 pub struct WaitSelectorInput {
     pub query_raw: String,
@@ -32,20 +37,47 @@ pub fn execute(
 }
 
 pub(crate) fn execute_with_ref(
-    mut input: WaitSelectorInput,
+    input: WaitSelectorInput,
     entry: Option<&crate::RefEntry>,
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
+    let target = entry.map(|entry| RefWait {
+        entry,
+        baseline: None,
+    });
+    execute_for_target(input, target, adapter, context)
+}
+
+/// Waits after an action on a ref, following it into the windows its process
+/// opened since `baseline` was taken.
+pub(crate) fn execute_after_action(
+    input: WaitSelectorInput,
+    entry: &crate::RefEntry,
+    baseline: Option<&WindowBaseline>,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Result<Value, AppError> {
+    execute_for_target(input, Some(RefWait { entry, baseline }), adapter, context)
+}
+
+fn execute_for_target(
+    mut input: WaitSelectorInput,
+    target: Option<RefWait<'_>>,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Result<Value, AppError> {
     let query = query::validate_selector(&input.query_raw)?;
+    let entry = target.map(|target| target.entry);
     if let Some(entry) = entry {
         input.opts.surface = snapshot::surface_target::ref_observation_surface(adapter, entry);
     }
+    let following = target.filter(|target| target.follows(adapter, input.gone));
 
-    let start = Instant::now();
-    let deadline = crate::Deadline::at(start, input.timeout_ms)?;
+    let deadline = crate::Deadline::at(crate::wait::deadline::now(), input.timeout_ms)?;
     let mut last_error = None;
     let mut last_built = None;
+    let mut unresponsive = UnresponsiveSpell::default();
     let result = poll_selector(
         adapter,
         crate::SignalFilter {
@@ -54,10 +86,36 @@ pub(crate) fn execute_with_ref(
         },
         deadline,
         |poll_deadline| {
-            let completion = match observe_selector(adapter, &input, entry, &query, poll_deadline) {
-                Ok(Some(true)) if input.gone => None,
-                Ok(Some(true)) => {
-                    match build_materialization(adapter, &input, entry, &query, poll_deadline) {
+            let observed = match following {
+                Some(target) => scope::observe_followed(
+                    adapter,
+                    target,
+                    (&query, &input.query_raw),
+                    poll_deadline,
+                ),
+                None => observe_selector(adapter, &input, entry, &query, poll_deadline)
+                    .map(|matches| matches.map(|matches| (matches, None))),
+            };
+            if let Some(spell) = unresponsive.record(scope::observed_unresponsive(&observed))
+                && let Some(entry) = entry
+            {
+                return Err(scope::owner_unresponsive(
+                    entry,
+                    &input.query_raw,
+                    spell,
+                    deadline,
+                ));
+            }
+            let completion = match observed {
+                Ok(Some((true, _))) if input.gone => None,
+                Ok(Some((true, owner))) => {
+                    let owners = match owner {
+                        Some(owner) => Ok(vec![owner]),
+                        None => resolve_owners(adapter, &input, entry, poll_deadline),
+                    };
+                    match owners.and_then(|owners| {
+                        build_materialization(adapter, &input.opts, owners, &query, poll_deadline)
+                    }) {
                         Ok((true, result)) => {
                             Some(Ok(SelectorCompletion::Matched(Box::new(result))))
                         }
@@ -80,12 +138,13 @@ pub(crate) fn execute_with_ref(
                         Err(err) => Some(Err(err)),
                     }
                 }
-                Ok(Some(false)) if input.gone => Some(Ok(SelectorCompletion::Absent)),
-                Ok(Some(false)) => None,
+                Ok(Some((false, _))) if input.gone => Some(Ok(SelectorCompletion::Absent)),
+                Ok(Some((false, _))) => None,
                 Ok(None) => {
                     last_error = Some(json!({ "kind": "locator_incomplete" }));
                     None
                 }
+                Err(err) if scope::is_decided(&err) => Some(Err(err)),
                 Err(err) if is_target_gone_error(&err) && input.gone && entry.is_none() => {
                     Some(Ok(SelectorCompletion::Absent))
                 }
@@ -126,11 +185,11 @@ pub(crate) fn execute_with_ref(
             *result,
             context,
             (&input, &query),
-            start.elapsed().as_millis(),
+            deadline.elapsed().as_millis(),
         ),
         Ok(Some(SelectorCompletion::Absent)) => Ok(target_absent_response(
             &input.query_raw,
-            start.elapsed().as_millis(),
+            deadline.elapsed().as_millis(),
         )),
         Ok(None) => timeout_response(adapter, &input, entry, context, (last_built, last_error)),
         Err(err) if err.code() == ErrorCode::Timeout.as_str() && deadline.is_expired() => {
@@ -172,46 +231,6 @@ pub(crate) fn poll_selector<T>(
     }
 }
 
-fn timeout_response(
-    adapter: &dyn PlatformAdapter,
-    input: &WaitSelectorInput,
-    entry: Option<&crate::RefEntry>,
-    context: &CommandContext,
-    previous: (Option<snapshot::SnapshotResult>, Option<Value>),
-) -> Result<Value, AppError> {
-    let (mut last_built, mut last_error) = previous;
-    if last_built.is_none() {
-        let diagnostic_deadline =
-            crate::Deadline::detached_after(DIAGNOSTIC_SNAPSHOT_BUDGET.as_millis() as u64)?;
-        match build_snapshot(adapter, input, entry, diagnostic_deadline) {
-            Ok(result) => last_built = Some(result),
-            Err(error) if last_error.is_none() => last_error = Some(poll_error_json(&error)),
-            Err(_) => {}
-        }
-    }
-    let snapshot_id = persist_last_built(context, last_built.as_mut())?;
-    wait_timeout::selector(
-        &input.query_raw,
-        input.gone,
-        input.timeout_ms,
-        last_error,
-        snapshot_id,
-    )
-}
-
-fn persist_last_built(
-    context: &CommandContext,
-    last_built: Option<&mut snapshot::SnapshotResult>,
-) -> Result<Option<String>, AppError> {
-    let Some(result) = last_built else {
-        return Ok(None);
-    };
-    let store = RefStore::for_session(context.session_id())?;
-    let snapshot_id = result.save_refmap(&store)?;
-    trace_artifacts::copy_refmap_if_full(context, &store, &snapshot_id, &result.refmap)?;
-    Ok(Some(snapshot_id))
-}
-
 fn observe_selector(
     adapter: &dyn PlatformAdapter,
     input: &WaitSelectorInput,
@@ -241,12 +260,12 @@ fn observe_selector(
 
 fn build_materialization(
     adapter: &dyn PlatformAdapter,
-    input: &WaitSelectorInput,
-    entry: Option<&crate::RefEntry>,
+    opts: &TreeOptions,
+    owners: Vec<crate::SnapshotOwner>,
     query: &crate::LocatorQuery,
     deadline: crate::Deadline,
 ) -> Result<(bool, snapshot::SnapshotResult), AppError> {
-    let result = build_snapshot(adapter, input, entry, deadline)?;
+    let result = snapshot::build_for_owners(adapter, opts, owners, deadline)?;
     let matched = query::tree_has_match(&result.tree, query);
     Ok((matched, result))
 }
