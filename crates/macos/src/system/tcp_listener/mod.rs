@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use agent_desktop_core::{AdapterError, Deadline, ProcessIdentity};
 use std::mem::size_of;
 
@@ -7,7 +5,6 @@ pub(crate) mod in_sock_flow;
 pub(crate) mod in_sock_info;
 pub(crate) mod in_sock_ipv6;
 pub(crate) mod in_sock_ports;
-pub(crate) mod proc_fd_info;
 pub(crate) mod proc_file_info;
 pub(crate) mod sock_buf_info;
 pub(crate) mod socket_fd_info;
@@ -17,7 +14,6 @@ pub(crate) mod socket_protocol_info;
 pub(crate) mod tcp_sock_info;
 
 use in_sock_info::InSockInfo;
-use proc_fd_info::ProcFdInfo;
 use socket_fd_info::SocketFdInfo;
 use socket_info::SocketInfo;
 use tcp_sock_info::TcpSockInfo;
@@ -36,22 +32,31 @@ pub(crate) fn owns_listener(
     if !crate::system::process::process_identity::matches_instance(pid, &process.instance)? {
         return Ok(false);
     }
-    let mut fds = vec![ProcFdInfo { fd: 0, fd_type: 0 }; 8192];
+    let mut fds = vec![
+        libc::proc_fdinfo {
+            proc_fd: 0,
+            proc_fdtype: 0,
+        };
+        8192
+    ];
     let returned = unsafe {
         libc::proc_pidinfo(
             pid,
             libc::PROC_PIDLISTFDS,
             0,
             fds.as_mut_ptr().cast(),
-            (fds.len() * size_of::<ProcFdInfo>()) as i32,
+            (fds.len() * size_of::<libc::proc_fdinfo>()) as i32,
         )
     };
-    if returned < 0 || returned as usize >= fds.len() * size_of::<ProcFdInfo>() {
+    if returned < 0 || returned as usize >= fds.len() * size_of::<libc::proc_fdinfo>() {
         return Err(AdapterError::internal(
             "macOS could not read the process descriptor list",
         ));
     }
-    fds.truncate(returned as usize / size_of::<ProcFdInfo>());
+    fds.truncate(returned as usize / size_of::<libc::proc_fdinfo>());
+    let minimum = std::mem::offset_of!(SocketFdInfo, socket)
+        + std::mem::offset_of!(SocketInfo, protocol_info)
+        + size_of::<TcpSockInfo>();
     for fd in fds {
         if deadline.is_expired() {
             return Err(AdapterError::timeout(
@@ -62,15 +67,12 @@ pub(crate) fn owns_listener(
         let returned = unsafe {
             libc::proc_pidfdinfo(
                 pid,
-                fd.fd,
+                fd.proc_fd,
                 PROC_PIDFDSOCKETINFO,
                 info.as_mut_ptr().cast(),
                 size_of::<SocketFdInfo>() as i32,
             )
         };
-        let minimum = std::mem::offset_of!(SocketFdInfo, socket)
-            + std::mem::offset_of!(SocketInfo, protocol_info)
-            + size_of::<TcpSockInfo>();
         if returned < minimum as i32 {
             continue;
         }
