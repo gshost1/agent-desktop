@@ -15,6 +15,5 @@ pub fn endpoint_from_user_data_dir(user_data_dir: &Path) -> Result<BrowserEndpoi
     Ok(BrowserEndpoint {
         websocket_url: WebSocketUrl::loopback(active.port, &active.websocket_path)?,
         source: EndpointSource::DevToolsActivePort,
-        product: None,
     })
 }

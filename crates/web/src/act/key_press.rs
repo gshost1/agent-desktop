@@ -49,7 +49,7 @@ pub fn press_key(
 }
 
 /// The key names [`press_key`] accepts.
-pub fn supported_key_names() -> Vec<&'static str> {
+pub(crate) fn supported_key_names() -> Vec<&'static str> {
     KEYS.iter()
         .map(|definition| {
             if definition.key == " " {

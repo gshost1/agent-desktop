@@ -3,7 +3,6 @@ use agent_desktop_core::{
     actions::action_request::ActionRequest,
 };
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use crate::actions::{
@@ -256,20 +255,6 @@ mod imp {
             Err(error) if error.code == ErrorCode::AppUnresponsive => Ok(None),
             result => result,
         }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
-    use crate::tree::AXElement;
-
-    pub fn perform_action(
-        _el: &AXElement,
-        _request: &ActionRequest,
-        _deadline: Deadline,
-    ) -> Result<ActionResult, AdapterError> {
-        Err(AdapterError::not_supported("perform_action"))
     }
 }
 

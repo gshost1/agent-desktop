@@ -1,23 +1,16 @@
-#[cfg(target_os = "macos")]
 use agent_desktop_core::refs::ref_identity::element_token;
 use agent_desktop_core::{AdapterError, ErrorCode, NativeHandle, RefEntry, SnapshotSurface};
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
 use super::resolve::resolve_classify::identity_summary_for_message;
-#[cfg(target_os = "macos")]
 use super::resolve::resolve_errors::element_token_required;
-#[cfg(target_os = "macos")]
 use super::resolve::resolve_read_context::ResolveReadContext;
-#[cfg(target_os = "macos")]
 use super::resolve::resolve_roots::{candidate_roots, source_window_scope_required};
-#[cfg(target_os = "macos")]
 use super::resolve::resolve_search::find_entry_by_path;
 
 /// Re-identifies a saved ref by the element token captured with it, and refuses
 /// any ref that carries none: a token names the exact element, so no path or
 /// search can stand in for it.
-#[cfg(target_os = "macos")]
 pub(crate) fn resolve_element_with_deadline(
     entry: &RefEntry,
     operation_deadline: agent_desktop_core::Deadline,
@@ -38,7 +31,6 @@ pub(crate) fn resolve_element_with_deadline(
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn resolve_locator_anchor_with_deadline(
     entry: &RefEntry,
     operation_deadline: agent_desktop_core::Deadline,
@@ -56,7 +48,6 @@ pub(crate) fn resolve_locator_anchor_with_deadline(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn verify_process_instance(
     entry: &RefEntry,
 ) -> Result<crate::system::process::process_identity::ProcessIdentity, AdapterError> {
@@ -84,7 +75,6 @@ fn verify_process_instance(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn resolve_with_recovery<T>(
     entry: &RefEntry,
     identity: crate::system::process::process_identity::ProcessIdentity,
@@ -114,7 +104,6 @@ fn resolve_with_recovery<T>(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn resolve_token_once(entry: &RefEntry, deadline: Instant) -> Result<NativeHandle, AdapterError> {
     let started = Instant::now();
     crate::tree::locator_deadline::remaining(deadline)?;
@@ -125,7 +114,6 @@ fn resolve_token_once(entry: &RefEntry, deadline: Instant) -> Result<NativeHandl
     }
 }
 
-#[cfg(target_os = "macos")]
 fn resolve_locator_anchor_once(
     entry: &RefEntry,
     deadline: Instant,
@@ -142,7 +130,6 @@ fn resolve_locator_anchor_once(
             &mut read_context,
             started,
             "locator_anchor_insufficient",
-            true,
         );
     }
     let roots = match candidate_roots(entry, &mut read_context) {
@@ -153,24 +140,16 @@ fn resolve_locator_anchor_once(
                 &mut read_context,
                 started,
                 "locator_anchor_roots",
-                true,
             );
         }
     };
     let result = find_entry_by_path(&roots, entry, &mut read_context);
-    finish_resolution(
-        result,
-        &mut read_context,
-        started,
-        "locator_anchor_path",
-        true,
-    )
+    finish_resolution(result, &mut read_context, started, "locator_anchor_path")
 }
 
 /// The token answer a resolution pass shares: `Some` when the saved ref carries
 /// a retained object, whether it resolved or was refused, and `None` when the
 /// entry has no token, which only the locator-anchor pass answers with a path.
-#[cfg(target_os = "macos")]
 fn token_resolution(
     entry: &RefEntry,
     deadline: Instant,
@@ -183,7 +162,6 @@ fn token_resolution(
             context,
             started,
             "remote_token",
-            true,
         )),
         Ok(None) => None,
         Err(error) => Some(finish_resolution(
@@ -191,23 +169,20 @@ fn token_resolution(
             context,
             started,
             "remote_token",
-            true,
         )),
     }
 }
 
-#[cfg(target_os = "macos")]
 fn finish_resolution<T>(
     result: Result<T, AdapterError>,
     context: &mut ResolveReadContext,
     started: Instant,
     phase: &str,
-    path_fast: bool,
 ) -> Result<T, AdapterError> {
     context.stats.elapsed_us = started.elapsed().as_micros() as u64;
     match result {
         Ok(value) => {
-            tracing::debug!(phase, path_fast, stats = ?context.stats, "strict resolution completed");
+            tracing::debug!(phase, path_fast = true, stats = ?context.stats, "strict resolution completed");
             Ok(value)
         }
         Err(mut error) => {
@@ -217,16 +192,15 @@ fn finish_resolution<T>(
                 .unwrap_or_else(|| serde_json::json!({}));
             if let Some(object) = details.as_object_mut() {
                 object.insert("resolution_phase".into(), serde_json::json!(phase));
-                object.insert("path_fast".into(), serde_json::json!(path_fast));
+                object.insert("path_fast".into(), serde_json::json!(true));
                 object.insert("query_stats".into(), serde_json::json!(&context.stats));
             }
-            tracing::debug!(phase, path_fast, code = error.code.as_str(), stats = ?context.stats, "strict resolution failed");
+            tracing::debug!(phase, path_fast = true, code = error.code.as_str(), stats = ?context.stats, "strict resolution failed");
             Err(error.with_details(details))
         }
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn retry_incomplete_until<T>(
     deadline: Instant,
     mut operation: impl FnMut() -> Result<T, AdapterError>,
@@ -253,7 +227,6 @@ pub(super) fn retry_incomplete_until<T>(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn sleep_before_retry(deadline: Instant) {
     if let Ok(remaining) = crate::tree::locator_deadline::remaining(deadline) {
         std::thread::sleep(remaining.min(Duration::from_millis(25)));
@@ -262,10 +235,8 @@ fn sleep_before_retry(deadline: Instant) {
 
 /// Core owns the payload (`agent_desktop_core::refs::resolve_errors::mark_deadline_elapsed`)
 /// so both adapters share one definition.
-#[cfg(target_os = "macos")]
 use agent_desktop_core::refs::resolve_errors::mark_deadline_elapsed;
 
-#[cfg(target_os = "macos")]
 fn stale_ref_error(entry: &RefEntry, cause: &AdapterError) -> AdapterError {
     let retryable = cause.permits_retry_by_default();
     AdapterError::new(
@@ -283,14 +254,12 @@ fn stale_ref_error(entry: &RefEntry, cause: &AdapterError) -> AdapterError {
     }))
 }
 
-#[cfg(target_os = "macos")]
 fn is_retryable_resolution_error(error: &AdapterError) -> bool {
     error.is_transient_incomplete_read()
 }
 
 /// A tokenless anchor lands by position, so the gate asks only that its path be
 /// anchored to a recorded window or surface; core confirms identity after landing.
-#[cfg(target_os = "macos")]
 fn can_use_locator_anchor_path(entry: &RefEntry) -> bool {
     let source_scoped = if entry.source.source_surface == SnapshotSurface::Window {
         source_window_scope_required(entry) || entry.source.is_process_rooted()
@@ -317,13 +286,3 @@ mod tests;
 #[cfg(test)]
 #[path = "resolve_tests_more.rs"]
 mod tests_more;
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn resolve_element_with_deadline(
-    _entry: &RefEntry,
-    _deadline: agent_desktop_core::Deadline,
-) -> Result<NativeHandle, AdapterError> {
-    Err(AdapterError::not_supported(
-        "resolve_element_strict_with_timeout",
-    ))
-}

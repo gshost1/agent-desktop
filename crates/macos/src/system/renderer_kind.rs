@@ -23,7 +23,6 @@ const V8_SNAPSHOT_RESOURCES: [&str; 3] = [
 /// or reading `Contents/Frameworks` reports "not detected" rather than
 /// failing the launch that asked for it. Costs one `readdir` and up to three
 /// `stat` calls per bundled framework.
-#[cfg(target_os = "macos")]
 pub(crate) fn detect_chromium(pid: i32) -> Option<RendererKind> {
     let executable = executable_path(pid)?;
     let bundle_root = bundle_root_from_executable(&executable)?;
@@ -56,12 +55,6 @@ fn is_chromium_framework_marker(entry_name: &str) -> bool {
     CHROMIUM_FRAMEWORK_MARKERS.contains(&entry_name)
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn detect_chromium(_pid: i32) -> Option<RendererKind> {
-    None
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn executable_path(pid: i32) -> Option<PathBuf> {
     let mut buffer = [0_u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
     let capacity = u32::try_from(buffer.len()).ok()?;
