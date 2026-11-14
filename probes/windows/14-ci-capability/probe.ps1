@@ -33,6 +33,10 @@ param(
     [string]$UiAutomationVersion = '0.25.0'
 )
 
+& (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) '27-competitive-latency.ps1') -Label ci -Build -Arm @('fork', 'upstream')
+Write-Host ('competitive-latency dispatch: A/B exit ' + $LASTEXITCODE + '; the remaining capability probes are skipped on purpose on this dispatch-only branch')
+exit 1
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
