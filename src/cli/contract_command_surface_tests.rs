@@ -42,6 +42,8 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "wait_event_filter",
     "wait_event_input",
     "wait_selector",
+    "wait_selector_scope",
+    "wait_selector_timeout",
     "window_target",
 ];
 
