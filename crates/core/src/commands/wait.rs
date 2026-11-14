@@ -342,6 +342,10 @@ mod scenario_tests;
 mod element_tests;
 
 #[cfg(test)]
+#[path = "wait_element_landing_tests.rs"]
+mod element_landing_tests;
+
+#[cfg(test)]
 #[path = "wait_predicate_tests.rs"]
 mod predicate_tests;
 

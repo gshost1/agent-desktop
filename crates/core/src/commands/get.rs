@@ -1,7 +1,7 @@
 use crate::{
     AppError,
     adapter::{PlatformAdapter, optional_live_read},
-    commands::helpers::resolve_ref_with_context,
+    commands::helpers::resolve_ref_within_deadline,
     context::CommandContext,
 };
 use serde_json::{Value, json};
@@ -25,8 +25,8 @@ pub fn execute(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    let (entry, handle) = resolve_ref_with_context(&args.ref_id, adapter, context)?;
     let deadline = crate::Deadline::standard()?;
+    let (entry, handle) = resolve_ref_within_deadline(&args.ref_id, deadline, adapter, context)?;
 
     let (prop_name, value, bounds_live) = match args.property {
         GetProperty::Role => ("role", json!(entry.identity.role), None),
@@ -76,3 +76,7 @@ pub fn execute(
 #[cfg(test)]
 #[path = "get_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "get_deadline_tests.rs"]
+mod deadline_tests;

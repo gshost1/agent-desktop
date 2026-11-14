@@ -3,7 +3,8 @@ use crate::{
     adapter::PlatformAdapter,
     commands::{helpers::load_ref_entry, wait_predicate, wait_timeout},
     context::CommandContext,
-    refs::ref_resolve_deadline::{POLL_INTERVAL, resolve_within_deadline},
+    refs::RefEntry,
+    refs::ref_resolve_deadline::{POLL_INTERVAL, land_within_deadline, resolve_within_deadline},
     refs::resolve_attempt_outcome::ResolveAttemptOutcome,
 };
 use serde_json::{Value, json};
@@ -31,8 +32,15 @@ pub(crate) fn wait_for_element(
 
     let mut last_observed = json!(null);
     let mut expected_bounds_hash = None;
+    let lands = landing_counts_less(&entry);
+    let mut landing = false;
     loop {
-        match resolve_within_deadline(adapter, &entry, deadline, None) {
+        let attempt = if landing {
+            land_within_deadline(adapter, &entry, deadline)
+        } else {
+            resolve_within_deadline(adapter, &entry, deadline, None)
+        };
+        match attempt {
             ResolveAttemptOutcome::DeadlinePassed => {
                 return wait_timeout::element(ref_id, predicate, timeout_ms, last_observed);
             }
@@ -62,6 +70,10 @@ pub(crate) fn wait_for_element(
                             expected_bounds_hash = Some(observed);
                         }
                         if wait_predicate::satisfied(&predicate, &last_observed) {
+                            if landing {
+                                landing = false;
+                                continue;
+                            }
                             let elapsed = start.elapsed().as_millis();
                             return Ok(json!({
                                 "found": true,
@@ -71,8 +83,10 @@ pub(crate) fn wait_for_element(
                                 "elapsed_ms": elapsed
                             }));
                         }
+                        landing = lands;
                     }
                     Err(err) if is_retryable_observe_error(&err) => {
+                        landing = false;
                         last_observed = json!({
                             "error": err.code.as_str(),
                             "message": err.message,
@@ -83,6 +97,7 @@ pub(crate) fn wait_for_element(
                 }
             }
             ResolveAttemptOutcome::Failed(err) if is_retryable_wait_error(&err) => {
+                landing = false;
                 last_observed = json!({
                     "error": err.code.as_str(),
                     "message": err.message
@@ -97,6 +112,17 @@ pub(crate) fn wait_for_element(
         }
         std::thread::sleep(remaining.min(POLL_INTERVAL));
     }
+}
+
+/// A tokenless ref proven unique at capture resolves by counting its whole
+/// window, but can also land at its recorded path for the cost of the path
+/// and one node. After one full resolution found the element, the wait polls
+/// by landing, because an unmet predicate needs no uniqueness proof, and it
+/// runs the full resolution again before it reports the predicate met, so a
+/// twin that appeared meanwhile is still refused. A ref whose landing is the
+/// full resolution anyway gains nothing and keeps the full resolution.
+fn landing_counts_less(entry: &RefEntry) -> bool {
+    crate::refs::ref_identity::element_token(entry).is_none() && entry.identity.capture.is_unique()
 }
 
 fn is_retryable_observe_error(error: &crate::AdapterError) -> bool {

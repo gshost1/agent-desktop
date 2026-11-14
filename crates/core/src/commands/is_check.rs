@@ -1,7 +1,7 @@
 use crate::{
     AppError, Rect,
     adapter::{PlatformAdapter, optional_live_read},
-    commands::helpers::resolve_ref_with_context,
+    commands::helpers::resolve_ref_within_deadline,
     context::CommandContext,
     refs::RefEntry,
     tree::element_state::ElementState,
@@ -28,7 +28,8 @@ pub fn execute(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    let (entry, handle) = resolve_ref_with_context(&args.ref_id, adapter, context)?;
+    let deadline = crate::Deadline::standard()?;
+    let (entry, handle) = resolve_ref_within_deadline(&args.ref_id, deadline, adapter, context)?;
 
     let prop_name = match args.property {
         IsProperty::Visible => "visible",
@@ -39,7 +40,6 @@ pub fn execute(
         IsProperty::Selected => "selected",
     };
 
-    let deadline = crate::Deadline::standard()?;
     let live_state = optional_live_read(adapter.get_live_state(&handle, deadline))?;
     let state = live_state
         .clone()
@@ -117,3 +117,7 @@ fn state_from_ref_entry(entry: &RefEntry) -> ElementState {
 #[cfg(test)]
 #[path = "is_check_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "is_check_deadline_tests.rs"]
+mod deadline_tests;
