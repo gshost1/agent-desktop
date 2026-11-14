@@ -30,7 +30,7 @@ reasons unrelated to what they claimed to prove:
 1. **Tautology.** `accname_tests.rs` carried
    `the_uncertainty_aware_and_plain_entry_points_agree_on_every_input`, which
    asserted `resolve_name(&value, &NameSlotStatus::default()).known().cloned() ==
-   compute_name(&value)`. `compute_name` (`accname.rs:84-88`) is defined as
+   compute_name(&value)`. `compute_name`, since removed, was defined as
    exactly that call, so the assertion was `x == x` wearing an agreement claim.
    The test was dropped in `e549527c`, which removed tests that restate a
    stronger test; no `agree` test remains in `accname_tests.rs`.
@@ -116,9 +116,9 @@ production proved nothing, because the test's own mirror never moved.
 None of the fixes were "delete the test":
 
 1. **Remove it.** The delegation guard was not kept. `e549527c` dropped it as a
-   restatement of a stronger test, and `compute_name` (`accname.rs:84-88`)
-   still delegates, so the precedence tests in `accname_tests.rs` carry the
-   coverage on their own.
+   restatement of a stronger test, and `compute_name` itself was later removed
+   as unused, so the precedence tests in `accname_tests.rs` carry the coverage
+   on their own.
 2. **Cover the reachable shape, and keep the unreachable one as a named
    regression test.** `button_role_with_toggle_state_but_no_pressed_bit_emits_no_pressed`
    stays, with a doc comment stating its input is unreachable and pointing at

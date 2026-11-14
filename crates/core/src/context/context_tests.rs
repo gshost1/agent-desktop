@@ -1,7 +1,5 @@
 use super::*;
-use crate::session::{
-    SessionTraceMode, StartSessionOptions, start_session, trace_enabled_for_session,
-};
+use crate::session::{SessionTraceMode, StartSessionOptions, start_session};
 use serde_json::json;
 
 #[test]
@@ -285,7 +283,6 @@ fn no_trace_session_still_namespaces_snapshots() {
         ..Default::default()
     })
     .unwrap();
-    assert!(!trace_enabled_for_session(&manifest.id).unwrap());
     let context = CommandContext::new(Some(manifest.id.clone()), None, false).unwrap();
     assert!(!context.trace_enabled());
     assert_eq!(context.session_id(), Some(manifest.id.as_str()));
