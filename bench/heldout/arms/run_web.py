@@ -138,7 +138,7 @@ def main():
     run.verify = th.verify_web
     run.real_expectations = th.web_expectations
     out = common.HELDOUT / "runs" / "web" / f"{a.arm}-{a.model}"
-    sys.argv = [sys.argv[0], *rest, "--channels", common.WEB_ARMS[a.arm], "--bin-dir", str(HERE / "bin" / a.arm),
+    sys.argv = [sys.argv[0], *rest, "--channels", common.WEB_ARMS[a.arm], "--bin-dir", str(common.arm_bin_dir(a.arm)),
                 "--base", a.base, "--model", a.model, "--out", str(out), "--lock-title", "perf/speed-cost heldout web"]
     run.main()
 

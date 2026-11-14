@@ -30,6 +30,9 @@ sys.path.insert(0, str(common.BENCH))
 import driver  # noqa: E402
 import tasks  # noqa: E402
 import tasks_heldout as th  # noqa: E402
+import desktop  # noqa: E402
+
+desktop.install(th)
 
 RUNS = common.HELDOUT / "runs"
 
@@ -65,7 +68,7 @@ def run_once(a):
     home.mkdir(mode=0o700)
     (rdir / "arm-home").mkdir()
     env = dict(os.environ)
-    env.update({"PATH": f"{HERE / 'bin' / a.arm}:{env['PATH']}", "AD_LOG": str(rdir / "ad.log"),
+    env.update({"PATH": f"{common.arm_bin_dir(a.arm)}:{env['PATH']}", "AD_LOG": str(rdir / "ad.log"),
                 "AGENT_DESKTOP_HOME": str(home), "HO_ARM_HOME": str(rdir / "arm-home")})
     env.pop("AGENT_DESKTOP_SESSION", None)
     cmd = ["claude", "-p", common.TASK_PREFIX + task.prompt(), "--output-format", "stream-json", "--verbose",

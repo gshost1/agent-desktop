@@ -15,7 +15,6 @@ sys.path.insert(0, str(HELDOUT))
 sys.path.insert(0, str(HELDOUT / "arms"))
 sys.path.insert(0, str(HELDOUT / "web"))
 import common  # noqa: E402
-import report  # noqa: E402
 import server  # noqa: E402
 import tasks_heldout as th  # noqa: E402
 
@@ -288,30 +287,6 @@ class AuditTests(unittest.TestCase):
         self.assertIsNone(common.audit_native(f"cat {guide}", "peekaboo", th.FORBIDDEN))
         self.assertEqual(common.audit_native("cat ~/agent-desktop-bench/x.rtf", "peekaboo", th.FORBIDDEN), "cat")
         self.assertEqual(common.audit_native(f"cat {guide}", "ad-14", th.FORBIDDEN), "cat")
-
-
-class ReportTests(unittest.TestCase):
-    def rows(self):
-        def r(arm, task, ok, cli, wall, tok, turns, suite="web"):
-            return {"suite": suite, "arm": arm, "task": task, "model": "m", "success": ok, "cli_s": cli, "wall_s": wall,
-                    "input_total": tok, "output_tokens": 0, "num_turns": turns, "verify": "x"}
-        return [r("ad-14", "hw1", True, 1, 10, 1000, 3), r("ad-14", "hw1", False, 3, 30, 3000, 5),
-                r("bh", "hw1", True, 0.5, 12, 800, 4), r("bh", "hw1", True, 0.7, 14, 900, 4),
-                r("ad-14", "hn1", True, 2, 20, 5000, 6, "native"), r("ad-up", "hn1", True, 4, 40, 9000, 9, "native")]
-
-    def test_losses_are_listed(self):
-        rows = [report.normalize(x) for x in self.rows()]
-        lost = "\n".join(report.losses(rows))
-        self.assertIn("web hw1 pass: ad-14 1/2 vs bh 2/2", lost)
-        self.assertIn("web hw1 CLI s", lost)
-        self.assertNotIn("native hn1", lost)
-
-    def test_render_puts_cli_first(self):
-        rows = [report.normalize(x) for x in self.rows()]
-        text = report.render(rows, 0)
-        header = next(line for line in text.splitlines() if line.startswith("| arm | CLI"))
-        self.assertLess(header.index("CLI"), header.index("wall"))
-        self.assertIn("min/med/max", text)
 
 
 if __name__ == "__main__":

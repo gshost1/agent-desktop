@@ -5,6 +5,7 @@ Every arm runs through `claude -p` on the subscription with Bash only. Each arm 
 | Arm | Suite | Tool and version | Guide the model reads | Status |
 |---|---|---|---|---|
 | `ad-14` | native, web (`ad-web` channel) | agent-desktop 1.4.0, fork release `v1.4.0` (`chore: release 1.4.0`, e7c15ec6e; bench-main14 697c618d6 is its ancestor) | `agent-desktop skills get desktop` / `platform`; web: `skills get web` | ready |
+| `ad-main` and other candidate labels | native, web (`ad-web` channel) | any agent-desktop release build handed to the bench, registered from `heldout-tools/candidates/<label>/` (`common.register_candidates`); `ad-main` is fork main 95e0aec8e (2026-11-14) | as `ad-14` | `bench_candidate.sh <label> <binary> [tasks] [n]`, see `run_plan.md` |
 | `ad-137` | web (`ad-web` channel) | agent-desktop 1.4.0 plus fork PR #137 (9e51c527d), a local release build; the PR confirms scoped window owners through libproc instead of a second AppKit snapshot | `agent-desktop skills get web`, as ad-14; the PR leaves the skills unchanged | A/B of PR #137 against ad-14: same 10 web tasks, rounds 0-4, seeds and harness; Chrome is launched by the 1.4.0 binary for both |
 | `ad-up` | native, web (`ax` channel; upstream has no web channel) | agent-desktop upstream 8e8dd7cbe, the existing `bench-upstream` release build | `agent-desktop skills get desktop` / `platform` | ready |
 | `bh` | web (`cdp` channel) | browser-harness 0.1.13 (PyPI), the existing `bh-venv` | `browser-harness skill` | ready; the 1110-evening web runs already used this setup |

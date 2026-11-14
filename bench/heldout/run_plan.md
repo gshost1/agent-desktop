@@ -63,3 +63,22 @@ Resume after a limit reset with the next round: `run_all.sh <model> <next_round>
 ## Report
 
 `python3.11 -I heldout/report.py --model claude-opus-5-5 --host mac`, then again with `--model claude-sonnet-5-5`, and again with `--host aws` for AWS rows. The report puts CLI/tool time first, then wall time, tokens, turns and pass rate. It gives min/median/max per task and lists every task and metric where 1.4 loses.
+
+## Bench a candidate binary (remote bench Mac, one command)
+
+From the control Mac, with a release build of the candidate (`serial_cargo.sh cargo build --release -p agent-desktop -p agent-desktop-macos --bins` leaves `agent-desktop` and `agent-desktop-macos-helper` side by side in the checkout's target dir, `serial_cargo.sh --target-dir`):
+
+```bash
+bash ~/.t3/worktrees/agent-desktop/perf-speed-cost/bench/heldout/bench_candidate.sh <label> <path-to-agent-desktop> [task ids|all] [n]
+# e.g. NOTE="PR #140 abc1234" WAIT=1 bash .../bench_candidate.sh ad-pr140 <target>/release/agent-desktop hp3,hw3 5
+bash .../bench_candidate.sh --status <label>     # tail the remote log
+bash .../bench_candidate.sh --collect <label>    # fetch rows, write results/candidates/REPORT-<label>.md against every arm
+bash .../bench_candidate.sh --stop               # stop the running pass after its current run
+```
+
+- `<label>` becomes the arm name in every row (lowercase, digits, dots, dashes; not a built-in arm). One label holds one binary: the script refuses a label whose remote copy has another sha256. Use a fresh label per build.
+- Tasks: comma-separated ids (`hn1`..`hn8`, `hw1`..`hw7`, `hp1`..`hp3`) or `all`; `n` rounds (default 5). Every round runs each task once in the Sonnet pass's rotation, with the same seeds (web: `web_seed(task, round)`), prompts, caps and Chrome flags. The candidate is prompted exactly like `ad-14`.
+- Spend: the script prints an estimate (native $0.10, web $0.03 per run, Sonnet 5.5 list price) and refuses above `CAP_USD` (default 15). On the remote, `remote/cand_pass.sh` sums the pass's real list cost after every run and stops past `CAP_USD`.
+- It refuses while another pass runs. It syncs `bench/heldout` to the remote mirror (not `runs/`, `out/` or the Swift helpers, whose compiled copies are already there), copies the binary and its helper into `heldout-tools/candidates/<label>/` with a VERSION line, and starts the pass in the GUI session through benchrun.
+- Results land in `~/.agent-desktop-bench-target/remote/results/candidates/`: `<label>-results-native.jsonl`, `<label>-results-web.jsonl` and `REPORT-<label>.md` (focus arm = the candidate, compared with every Sonnet arm).
+- Time: about 11 minutes per round of all 18 tasks, so `all 5` is about an hour.

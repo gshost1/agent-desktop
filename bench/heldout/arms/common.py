@@ -4,8 +4,9 @@ Each arm is one tool at one pinned version, reached through its wrapper in arms/
 logs every call's wall time. Every arm gets the same task prompt; only the tool paragraph of the
 system prompt differs, and it points the model at that tool's own guide (its skill or help).
 """
-import re
 from pathlib import Path
+
+import shellwords
 
 HERE = Path(__file__).resolve().parent
 HELDOUT = HERE.parent
@@ -49,6 +50,53 @@ ARM_VERSIONS = {
 }
 
 
+CANDIDATES = TOOLS / "candidates"
+CANDIDATE_ARMS = set()
+CANDIDATE_WRAPPER = """#!/bin/zsh
+# Candidate arm {label}: an agent-desktop build handed to the bench (see its VERSION file).
+exec /bin/zsh "{logwrap}" "${{0:A:h:h}}/agent-desktop" "$@"
+"""
+
+
+def register_candidates(root=CANDIDATES):
+    """Arms for the agent-desktop builds under heldout-tools/candidates/<label>/ (agent-desktop, its helper and
+    a VERSION line). A candidate runs exactly like ad-14: same prompts, guide, web channel and audit. A label that
+    names a built-in arm is ignored."""
+    if not root.is_dir():
+        return []
+    labels = []
+    for d in sorted(root.iterdir()):
+        label = d.name
+        if not (d / "agent-desktop").is_file() or (label in ARM_VERSIONS and label not in CANDIDATE_ARMS):
+            continue
+        NATIVE_TOOL_TEXT[label] = NATIVE_TOOL_TEXT["ad-14"]
+        NATIVE_TOOL[label] = "agent-desktop"
+        WEB_ARMS[label] = "ad-web"
+        WEB_TOOL[label] = "agent-desktop"
+        version = d / "VERSION"
+        ARM_VERSIONS[label] = version.read_text().strip() if version.exists() else f"agent-desktop candidate {label}"
+        CANDIDATE_ARMS.add(label)
+        labels.append(label)
+    return labels
+
+
+def arm_bin_dir(arm, root=CANDIDATES):
+    """The folder put first on PATH for an arm: arms/bin/<arm>, or a candidate's own bin/ with a logging wrapper."""
+    if arm not in CANDIDATE_ARMS:
+        return HERE / "bin" / arm
+    bin_dir = root / arm / "bin"
+    wrapper = bin_dir / "agent-desktop"
+    text = CANDIDATE_WRAPPER.format(label=arm, logwrap=HERE / "logwrap.zsh")
+    if not wrapper.exists() or wrapper.read_text() != text:
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        wrapper.write_text(text)
+        wrapper.chmod(0o755)
+    return bin_dir
+
+
+register_candidates()
+
+
 def native_system_prompt(arm, screen_recording=False):
     rules = ("Use Bash only to run the tool named above; piping its output through jq, grep or head is fine. Do not use "
              "any other program to do the task or to read the answer (no open, osascript, defaults, mkdir, ls, cat other "
@@ -60,26 +108,23 @@ def native_system_prompt(arm, screen_recording=False):
 TASK_PREFIX = "Task: "
 
 
-def _segments(cmd):
-    for segment in re.split(r"&&|\|\||[;|\n`]|\$\(|\(", cmd):
-        words = [w for w in segment.strip().split() if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
-        if words:
-            yield words
-
-
-def audit_native(cmd, arm, forbidden):
+def audit_native(cmd, arm, forbidden, skills=None):
     """The first program a Bash command runs that the arm may not use, or None.
 
-    Forbidden: the bench's system-reading list, every other GUI tool, and `cat` outside the arm's guide folder."""
+    Forbidden: the bench's system-reading list, every other GUI tool, and `cat` outside the arm's guide folder.
+    Commands are read by shellwords, so a `|` or `;` inside a quoted pattern never starts a new command.
+    `skills` is the skills root the run saw (default: this host's), for re-auditing another host's rows."""
     own = NATIVE_TOOL[arm]
     guide = NATIVE_GUIDE_DIR.get(arm)
-    for words in _segments(cmd):
+    if guide is not None and skills is not None:
+        guide = Path(skills) / guide.name
+    for words in shellwords.commands(cmd):
         prog = words[0].split("/")[-1]
         if prog == own:
             continue
         if prog == "cat":
-            paths = [w.strip("'\"") for w in words[1:] if not w.startswith("-")]
-            if guide and paths and all(str(Path(p).expanduser()).startswith(str(guide)) for p in paths):
+            paths = [w for w in shellwords.drop_redirects(words[1:]) if not w.startswith("-")]
+            if guide and paths and all(str(Path(p).expanduser()).startswith(str(guide) + "/") for p in paths):
                 continue
             return "cat"
         if prog in TOOL_NAMES or prog in forbidden:
