@@ -60,6 +60,9 @@ if [ "$HAS_RUST_CHANGES" -eq 0 ] && [ "$HAS_FFI_CHANGES" -eq 0 ]; then
         echo "pre-commit: checking harness and script files"
         scripts/check-bash3-compat.sh
         scripts/check-no-phase-references.sh
+        if staged_matches '^scripts/cargo-test-isolated-home' "$staged_files"; then
+            bash scripts/cargo-test-isolated-home-selftest.sh
+        fi
         echo "pre-commit: harness and script checks passed"
     else
         echo "pre-commit: no Rust or FFI changes staged, skipping cargo checks"

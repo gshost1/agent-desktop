@@ -43,7 +43,10 @@ bash scripts/perf-baseline-compare.sh                          # macOS perf A/B 
 ```
 
 `scripts/cargo-test-isolated-home.sh test "${HOST_PKGS[@]}" --lib` runs tests with a throwaway `HOME`, which keeps them out
-of your real `~/.agent-desktop`. The pre-commit hook uses it.
+of your real `~/.agent-desktop`, and away from your desktop session: it unsets `WAYLAND_DISPLAY` and
+`AT_SPI_BUS_ADDRESS`, points the session bus at a socket that does not exist, and gives cargo a private
+`XDG_RUNTIME_DIR`. `AGENT_DESKTOP_TEST_SESSION=inherit` keeps the caller's session, for a run that already set up a
+private one. The pre-commit hook uses it.
 
 Enable the hook once per clone with `git config core.hooksPath .githooks`. For staged Rust or TOML changes it runs the
 source-rule scripts (`check-rust-file-size.sh`, `check-no-phase-references.sh`, `check-stale-ref-constructor-misuse.sh`),
