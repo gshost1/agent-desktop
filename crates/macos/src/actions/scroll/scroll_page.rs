@@ -6,11 +6,13 @@ use crate::tree::AXElement;
 
 const SETTLE_READS: usize = 11;
 const SETTLE_PAUSE: Duration = Duration::from_millis(25);
+const SAMPLED_CHILDREN: usize = 4;
 
 /// Reads every signal a page scroll on `direction`'s axis could move: that
-/// axis's scroll bar value, the frame of the area's first child that is not a
-/// scroll bar, and that child's first child. A signal that exists but cannot
-/// be read is recorded as unreadable, never as unchanged.
+/// axis's scroll bar value, the frames of the area's first children that are
+/// not scroll bars, and the frames of the first such child's first children.
+/// A signal that exists but cannot be read is recorded as unreadable, never
+/// as unchanged.
 pub(super) fn capture(
     area: &AXElement,
     direction: &Direction,
@@ -30,34 +32,62 @@ pub(super) fn capture(
         Ok(None) => None,
         Err(_) => Some(None),
     };
-    let content = content_child(area, deadline);
-    let descendant = match &content {
-        Some(Some(child)) => match super::scroll_read::children(child, deadline) {
-            Ok(children) => children.first().map(|first| frame_hash(first, deadline)),
-            Err(_) => Some(None),
-        },
+    let mut sampled = 0;
+    let content_children = content_children(area, deadline);
+    let descendant = match &content_children {
+        Some(Some(children)) => children.first().and_then(
+            |first| match super::scroll_read::children(first, deadline) {
+                Ok(inner) if inner.is_empty() => None,
+                Ok(inner) => Some(frames_hash(sample(&inner), &mut sampled, deadline)),
+                Err(_) => Some(None),
+            },
+        ),
         Some(None) => Some(None),
         None => None,
     };
+    let content = content_children.map(|children| {
+        children.and_then(|children| frames_hash(&children, &mut sampled, deadline))
+    });
     ScrollSignals {
         bar,
-        content: content.map(|child| child.and_then(|child| frame_hash(&child, deadline))),
+        content,
         descendant,
+        sampled,
     }
 }
 
-fn content_child(area: &AXElement, deadline: Deadline) -> Option<Option<AXElement>> {
+fn content_children(area: &AXElement, deadline: Deadline) -> Option<Option<Vec<AXElement>>> {
     let Ok(children) = super::scroll_read::children(area, deadline) else {
         return Some(None);
     };
+    let mut content = Vec::new();
     for child in children {
         match super::scroll_read::string(&child, "AXRole", deadline) {
             Ok(Some(role)) if role == "AXScrollBar" => continue,
-            Ok(_) => return Some(Some(child)),
+            Ok(_) => content.push(child),
             Err(_) => return Some(None),
         }
+        if content.len() == SAMPLED_CHILDREN {
+            break;
+        }
     }
-    None
+    (!content.is_empty()).then_some(Some(content))
+}
+
+fn sample(elements: &[AXElement]) -> &[AXElement] {
+    &elements[..elements.len().min(SAMPLED_CHILDREN)]
+}
+
+fn frames_hash(elements: &[AXElement], sampled: &mut usize, deadline: Deadline) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = rustc_hash::FxHasher::default();
+    elements.len().hash(&mut hasher);
+    for element in elements {
+        frame_hash(element, deadline)?.hash(&mut hasher);
+    }
+    *sampled += elements.len();
+    Some(hasher.finish())
 }
 
 fn frame_hash(element: &AXElement, deadline: Deadline) -> Option<u64> {
@@ -66,6 +96,20 @@ fn frame_hash(element: &AXElement, deadline: Deadline) -> Option<u64> {
         .ok()
         .flatten()
         .and_then(|frame| frame.bounds_hash())
+}
+
+/// How long a refusal may take and still count as the application's answer.
+/// `kAXErrorCannotComplete` also ends a call that ran into its messaging
+/// timeout while the application was still working on it, which may scroll
+/// after the settle window closes, so only an answer well inside that timeout
+/// is settled. SwiftUI scroll views refuse a page they cannot move to in a
+/// few milliseconds.
+pub(super) fn answer_window(deadline: Deadline) -> Duration {
+    crate::tree::properties::ax_ipc::mutation_timeout(deadline).unwrap_or(Duration::ZERO) / 2
+}
+
+pub(super) fn answered_in_time(elapsed: Duration, window: Duration) -> bool {
+    elapsed < window
 }
 
 /// Settles a page action that failed on its first step. `kAXErrorCannotComplete`

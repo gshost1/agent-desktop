@@ -1,9 +1,10 @@
 use std::cell::Cell;
+use std::time::Duration;
 
 use accessibility_sys::{kAXErrorCannotComplete, kAXErrorFailure};
 use agent_desktop_core::{AdapterError, DeliveryDisposition, ErrorCode, RetryDisposition};
 
-use super::settle_observed;
+use super::{answer_window, answered_in_time, settle_observed};
 use crate::actions::scroll::scroll_signals::ScrollSignals;
 
 fn signals(
@@ -11,10 +12,15 @@ fn signals(
     content: Option<Option<u64>>,
     descendant: Option<Option<u64>>,
 ) -> ScrollSignals {
+    let sampled = [content, descendant]
+        .iter()
+        .filter(|signal| matches!(signal, Some(Some(_))))
+        .count();
     ScrollSignals {
         bar,
         content,
         descendant,
+        sampled,
     }
 }
 
@@ -161,4 +167,54 @@ fn other_page_action_failures_and_expired_settling_are_not_reclassified() {
     )
     .unwrap_err();
     assert_uncertain(&error);
+}
+
+#[test]
+fn a_single_unchanged_frame_without_a_scroll_bar_is_no_proof() {
+    let lone_frame = signals(None, Some(Some(88)), None);
+    let (settled, reads) = settle(lone_frame, |_| lone_frame);
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(
+        reads, 1,
+        "a content frame sized to the viewport never moves, so one frame cannot show the \
+         scroll did not happen"
+    );
+
+    let two_frames = ScrollSignals {
+        sampled: 2,
+        ..lone_frame
+    };
+    let (settled, _) = settle(two_frames, |_| two_frames);
+    assert_eq!(settled.unwrap_err().code, ErrorCode::ActionNotSupported);
+}
+
+#[test]
+fn a_moved_row_behind_a_pinned_header_counts_as_the_scroll() {
+    let before = ScrollSignals {
+        sampled: 3,
+        ..signals(None, Some(Some(88)), Some(Some(120)))
+    };
+    let (settled, _) = settle(before, |read| ScrollSignals {
+        descendant: Some(Some(if read < 3 { 120 } else { 121 })),
+        ..before
+    });
+
+    assert!(
+        settled.is_ok(),
+        "the descendant signal hashes several children, so a row that moved under a fixed \
+         header changes it"
+    );
+}
+
+#[test]
+fn a_refusal_that_ran_into_its_messaging_timeout_is_not_settled() {
+    let window = answer_window(agent_desktop_core::Deadline::after(2_000).unwrap());
+
+    assert!(window > Duration::from_millis(400) && window <= Duration::from_millis(500));
+    assert!(answered_in_time(Duration::from_millis(3), window));
+    assert!(
+        !answered_in_time(Duration::from_millis(1_000), window),
+        "a call that waited out its messaging timeout reached the application, which may \
+         still scroll after the settle window, so its delivery stays unknown"
+    );
 }

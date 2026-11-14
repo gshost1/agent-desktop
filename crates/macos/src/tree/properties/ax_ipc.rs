@@ -54,6 +54,16 @@ fn mutation_slice(remaining: Duration) -> Duration {
     (remaining / 2).max(MAX_IPC_SLICE).min(remaining)
 }
 
+/// The messaging timeout a mutation started now installs for `deadline`, so a
+/// caller can tell an answer from a call that ran into that timeout.
+pub(crate) fn mutation_timeout(deadline: impl AxDeadline) -> Result<Duration, AdapterError> {
+    Ok(mutation_slice(
+        deadline
+            .absolute()?
+            .saturating_duration_since(Instant::now()),
+    ))
+}
+
 pub(crate) fn prepare(
     element: &crate::tree::AXElement,
     deadline: impl AxDeadline,
