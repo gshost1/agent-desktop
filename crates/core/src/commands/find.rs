@@ -1,7 +1,3 @@
-#[cfg(test)]
-use crate::AccessibilityNode;
-#[cfg(test)]
-use crate::commands::query;
 use crate::{
     AppError, IdentityPredicate, LocatorQuery, StatePredicate, adapter::PlatformAdapter,
     context::CommandContext, tree::search_text,
@@ -138,56 +134,6 @@ fn validate_find_mode(args: &FindArgs) -> Result<(), AppError> {
         ));
     }
     Ok(())
-}
-
-#[cfg(test)]
-fn collect_snapshot_matches(
-    node: &AccessibilityNode,
-    query: &LocatorQuery,
-    path: &mut Vec<String>,
-    matches: &mut Vec<Value>,
-    max_matches: Option<usize>,
-) -> bool {
-    if max_matches.is_some_and(|limit| matches.len() >= limit) {
-        return true;
-    }
-    if query::node_matches(node, query) {
-        let interactive = node.ref_id.is_some();
-        matches.push(
-            serde_json::to_value(crate::locator::live_locator::LocatorMatchData {
-                ref_id: node.ref_id.clone(),
-                role: node.role.clone(),
-                name: node.identity.name.clone().unwrap_or_default(),
-                value: node.identity.value.clone(),
-                states: node.presentation.states.clone(),
-                interactive,
-                path: path.clone(),
-            })
-            .unwrap(),
-        );
-        if max_matches.is_some_and(|limit| matches.len() >= limit) {
-            return true;
-        }
-    }
-
-    let label = node
-        .identity
-        .name
-        .as_deref()
-        .or(node.identity.value.as_deref())
-        .map(|label| format!("{}:{label}", node.role))
-        .unwrap_or_else(|| node.role.clone());
-    path.push(label);
-
-    for child in &node.children {
-        if collect_snapshot_matches(child, query, path, matches, max_matches) {
-            path.pop();
-            return true;
-        }
-    }
-
-    path.pop();
-    false
 }
 
 #[path = "find_live.rs"]

@@ -111,14 +111,19 @@ fn list_reports_manifest_fields_only() {
 #[test]
 fn trace_enabled_requires_manifest_on() {
     let _guard = HomeGuard::new();
-    assert!(!trace_enabled_for_session("missing").unwrap());
+    assert!(read_manifest("missing").unwrap().is_none());
     let manifest = start_session(StartSessionOptions {
         name: None,
         trace: SessionTraceMode::Off,
         ..Default::default()
     })
     .unwrap();
-    assert!(!trace_enabled_for_session(&manifest.id).unwrap());
+    assert!(
+        !read_manifest(&manifest.id)
+            .unwrap()
+            .unwrap()
+            .trace_enabled()
+    );
 }
 
 #[test]
@@ -141,7 +146,7 @@ fn corrupt_manifest_is_ignored_not_fatal() {
     fs::create_dir_all(&bad_dir).unwrap();
     fs::write(bad_dir.join("session.json"), b"{ not valid json").unwrap();
 
-    assert!(!trace_enabled_for_session("corruptsess").unwrap());
+    assert!(read_manifest("corruptsess").unwrap().is_none());
     let listed: Vec<String> = list_sessions().unwrap().into_iter().map(|m| m.id).collect();
     assert!(listed.contains(&good.id));
     assert!(!listed.iter().any(|id| id == "corruptsess"));
@@ -156,9 +161,19 @@ fn trace_enabled_false_once_session_ended() {
         ..Default::default()
     })
     .unwrap();
-    assert!(trace_enabled_for_session(&manifest.id).unwrap());
+    assert!(
+        read_manifest(&manifest.id)
+            .unwrap()
+            .unwrap()
+            .trace_enabled()
+    );
     end_session(&manifest.id).unwrap();
-    assert!(!trace_enabled_for_session(&manifest.id).unwrap());
+    assert!(
+        !read_manifest(&manifest.id)
+            .unwrap()
+            .unwrap()
+            .trace_enabled()
+    );
 }
 
 #[test]
@@ -245,7 +260,7 @@ fn symlinked_manifest_is_ignored_not_fatal() {
     fs::write(&target, b"{}").unwrap();
     std::os::unix::fs::symlink(&target, dir.join("session.json")).unwrap();
 
-    assert!(!trace_enabled_for_session("symsess").unwrap());
+    assert!(read_manifest("symsess").unwrap().is_none());
     let ids: Vec<String> = list_sessions().unwrap().into_iter().map(|m| m.id).collect();
     assert!(ids.contains(&good.id));
     assert!(!ids.iter().any(|id| id == "symsess"));

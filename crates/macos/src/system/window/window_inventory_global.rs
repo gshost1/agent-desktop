@@ -225,7 +225,7 @@ pub(in crate::system) fn stabilize_global_with(
     }
 }
 
-fn validate_record_generations<S: OwnerSnapshotView>(
+pub(in crate::system) fn validate_record_generations<S: OwnerSnapshotView>(
     records: &[WindowRecord],
     owners: &S,
 ) -> Result<(), AdapterError> {
@@ -359,7 +359,7 @@ fn focus_join_error(pid: Option<i32>, match_count: usize) -> AdapterError {
     }))
 }
 
-fn owner_churn_error(pid: Option<i32>, phase: &str) -> AdapterError {
+pub(in crate::system) fn owner_churn_error(pid: Option<i32>, phase: &str) -> AdapterError {
     AdapterError::new(
         ErrorCode::AppUnresponsive,
         "Window owner identity changed during global inventory",

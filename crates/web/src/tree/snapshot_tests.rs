@@ -1,7 +1,7 @@
 use agent_desktop_core::{Deadline, ErrorCode};
 use serde_json::{Value, json};
 
-use super::snapshot_page;
+use super::{snapshot_page, snapshot_page_within_budget};
 use crate::transport::scripted_transport::ScriptedTransport;
 use crate::{CdpConnection, PageSession};
 
@@ -259,4 +259,138 @@ fn an_iframe_target_that_vanishes_mid_read_is_listed_unreadable() {
 
     assert_eq!(snapshot.unreadable_frames, ["OOP"]);
     assert_eq!(snapshot.preorder().len(), 3);
+}
+
+fn main_page() -> ScriptedTransport {
+    ScriptedTransport::new()
+        .expect(
+            "Page.getFrameTree",
+            json!({ "frameTree": { "frame": { "id": "MAIN", "loaderId": "LM" } } }),
+        )
+        .expect("DOMSnapshot.captureSnapshot", json!({}))
+        .expect("Accessibility.getFullAXTree", main_tree())
+}
+
+fn iframe_read(transport: ScriptedTransport, frame_id: &str) -> ScriptedTransport {
+    let frames = json!({ "frameTree": {
+        "frame": { "id": frame_id, "parentId": "MAIN", "loaderId": "LO" },
+    } });
+    transport
+        .expect("Page.getFrameTree", frames)
+        .expect("DOMSnapshot.captureSnapshot", json!({}))
+        .expect("Accessibility.getFullAXTree", child_tree())
+        .expect("DOM.getFrameOwner", json!({ "backendNodeId": 30 }))
+}
+
+#[test]
+fn an_iframe_that_misses_its_budget_is_listed_and_the_next_one_still_read() {
+    let transport = auto_attach(
+        main_page(),
+        vec![attached("S2", "SLOW"), attached("S3", "FAST")],
+    )
+    .expect_silence("Page.getFrameTree");
+    let transport = auto_attach(iframe_read(transport, "FAST"), Vec::new())
+        .expect("Target.setAutoAttach", json!({}))
+        .expect("Target.setAutoAttach", json!({}));
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page_within_budget(&mut connection, &session(), Deadline::after(1_000).unwrap())
+            .unwrap();
+
+    assert_eq!(snapshot.unreadable_frames, ["SLOW"]);
+    assert_eq!(
+        snapshot.preorder()[3].0.identity.name.as_deref(),
+        Some("Inner")
+    );
+}
+
+#[test]
+fn iframes_past_the_budget_are_listed_without_being_asked() {
+    let transport = auto_attach(main_page(), vec![attached("S2", "OOP")])
+        .expect("Target.setAutoAttach", json!({}));
+    let sent = transport.sent_log();
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page_within_budget(&mut connection, &session(), Deadline::after(50).unwrap())
+            .unwrap();
+
+    assert_eq!(snapshot.unreadable_frames, ["OOP"]);
+    assert_eq!(snapshot.preorder().len(), 3);
+    let sent = sent.lock().unwrap();
+    assert!(sent.iter().all(|request| request["sessionId"] != "S2"));
+}
+
+#[test]
+fn an_iframe_whose_child_frames_cannot_be_listed_in_time_is_kept() {
+    let transport = auto_attach(main_page(), vec![attached("S2", "OOP")]);
+    let transport = iframe_read(transport, "OOP")
+        .expect_silence("Target.setAutoAttach")
+        .expect("Target.setAutoAttach", json!({}))
+        .expect("Target.setAutoAttach", json!({}));
+    let sent = transport.sent_log();
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page_within_budget(&mut connection, &session(), Deadline::after(1_000).unwrap())
+            .unwrap();
+
+    assert!(snapshot.unreadable_frames.is_empty());
+    assert_eq!(snapshot.preorder().len(), 5);
+    let sent = sent.lock().unwrap();
+    let stops: Vec<&Value> = sent
+        .iter()
+        .filter(|request| request["params"]["autoAttach"] == false)
+        .map(|request| &request["sessionId"])
+        .collect();
+    assert_eq!(stops, [&json!("S2"), &json!("S")]);
+}
+
+#[test]
+fn a_whole_deadline_snapshot_still_fails_on_a_slow_iframe() {
+    let transport = auto_attach(main_page(), vec![attached("S2", "SLOW")])
+        .expect_silence("Page.getFrameTree")
+        .expect("Target.setAutoAttach", json!({}));
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let error =
+        snapshot_page(&mut connection, &session(), Deadline::after(1_000).unwrap()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::Timeout);
+}
+
+#[test]
+fn an_in_page_iframe_that_misses_its_budget_is_listed_and_the_page_returned() {
+    let transport = ScriptedTransport::new()
+        .expect("Page.getFrameTree", frame_tree())
+        .expect("DOMSnapshot.captureSnapshot", capture())
+        .expect("Accessibility.getFullAXTree", main_tree())
+        .expect_silence("Accessibility.getFullAXTree")
+        .expect("Accessibility.getFullAXTree", child_tree())
+        .expect_silence("DOM.getFrameOwner");
+    let transport = auto_attach(transport, Vec::new()).expect("Target.setAutoAttach", json!({}));
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let snapshot =
+        snapshot_page_within_budget(&mut connection, &session(), Deadline::after(1_000).unwrap())
+            .unwrap();
+
+    assert_eq!(snapshot.unreadable_frames, ["CHILD", "REMOTE"]);
+    assert_eq!(snapshot.preorder().len(), 3);
+}
+
+#[test]
+fn a_whole_deadline_snapshot_still_fails_on_a_slow_in_page_iframe() {
+    let transport = ScriptedTransport::new()
+        .expect("Page.getFrameTree", frame_tree())
+        .expect("DOMSnapshot.captureSnapshot", capture())
+        .expect("Accessibility.getFullAXTree", main_tree())
+        .expect_silence("Accessibility.getFullAXTree");
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let error =
+        snapshot_page(&mut connection, &session(), Deadline::after(1_000).unwrap()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::Timeout);
 }

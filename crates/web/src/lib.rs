@@ -58,3 +58,4 @@ pub(crate) use target::browser_window::BrowserWindow;
 pub(crate) use target::page_visibility::page_visibility;
 pub(crate) use transport::websocket::WebSocketTransport;
 pub(crate) use tree::node_read::read_node;
+pub(crate) use tree::snapshot::snapshot_page_within_budget;

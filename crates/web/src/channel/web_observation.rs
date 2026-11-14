@@ -10,7 +10,7 @@ use super::page_choice::choose_page;
 use super::ref_routing::window_process;
 use super::web_channel_adapter::WebChannelAdapter;
 use super::web_handle::WebHandle;
-use crate::{PageTarget, snapshot_page};
+use crate::{PageTarget, snapshot_page, snapshot_page_within_budget};
 
 impl<P: PlatformAdapter> WebChannelAdapter<P> {
     /// Reads the web surface of a browser window: the page the window shows,
@@ -97,7 +97,7 @@ fn read_page(
     request: &ObservationRequest,
 ) -> Result<ObservedTree, AdapterError> {
     let session = link.session(&page.target_id, request.deadline)?;
-    let snapshot = snapshot_page(&mut link.connection, &session, request.deadline)?;
+    let snapshot = snapshot_page_within_budget(&mut link.connection, &session, request.deadline)?;
     Ok(observed_page(root, snapshot.tree, request.max_raw_depth)?
         .with_channel(cdp_channel(Some(page), snapshot.unreadable_frames)))
 }
