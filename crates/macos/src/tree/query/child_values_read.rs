@@ -1,6 +1,4 @@
 //! Child value reads that replace, finish or stand in for a count.
-#![cfg(target_os = "macos")]
-
 use super::{
     child_read::{CHILD_PAGE_SIZE, ChildRead, check_deadline, copy_page, read_prefix},
     child_read_status::ChildReadStatus,

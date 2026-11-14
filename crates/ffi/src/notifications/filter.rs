@@ -1,7 +1,7 @@
-use crate::convert::string::try_c_to_string;
+use crate::convert::string::optional_adapter_string;
 use crate::types::AdNotificationFilter;
+use agent_desktop_core::AdapterError;
 use agent_desktop_core::NotificationFilter;
-use agent_desktop_core::{AdapterError, ErrorCode};
 
 /// Converts a C `AdNotificationFilter` into the core filter type.
 ///
@@ -22,10 +22,8 @@ pub(crate) unsafe fn filter_from_c(
         return Ok(NotificationFilter::default());
     }
     let f: &AdNotificationFilter = unsafe { &*filter };
-    let app = unsafe { try_c_to_string(f.app) }
-        .map_err(|err| AdapterError::new(ErrorCode::InvalidArgs, err.describe("filter.app")))?;
-    let text = unsafe { try_c_to_string(f.text) }
-        .map_err(|err| AdapterError::new(ErrorCode::InvalidArgs, err.describe("filter.text")))?;
+    let app = optional_adapter_string(f.app, "filter.app")?;
+    let text = optional_adapter_string(f.text, "filter.text")?;
     Ok(NotificationFilter {
         app,
         text,

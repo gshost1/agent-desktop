@@ -1,9 +1,7 @@
-#[cfg(target_os = "macos")]
 pub(crate) fn eligible(role: Option<&str>, subrole: Option<&str>) -> bool {
     matches!(role, Some("AXTextField" | "AXTextArea")) && subrole != Some("AXSecureTextField")
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn read(
     element: &crate::tree::AXElement,
     deadline: impl super::ax_ipc::AxDeadline,
@@ -19,7 +17,6 @@ pub(crate) fn read(
     decode(error, owned.as_ref())
 }
 
-#[cfg(target_os = "macos")]
 fn decode(
     error: i32,
     value: Option<&core_foundation::base::CFType>,
@@ -39,7 +36,6 @@ fn decode(
         .map(|_| String::new()))
 }
 
-#[cfg(target_os = "macos")]
 fn zero_count(value: &core_foundation::base::CFType) -> bool {
     value
         .downcast::<core_foundation::number::CFNumber>()
@@ -47,7 +43,7 @@ fn zero_count(value: &core_foundation::base::CFType) -> bool {
         == Some(0.0)
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use core_foundation::{base::TCFType, boolean::CFBoolean, number::CFNumber, string::CFString};

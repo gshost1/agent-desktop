@@ -5,7 +5,6 @@ pub(super) enum LaunchTarget {
     New { baseline_instances: Vec<String> },
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn launch_target(
     options: &LaunchOptions,
     mut initial: Vec<AppInfo>,
@@ -29,7 +28,6 @@ pub(super) fn launch_target(
     Ok(LaunchTarget::New { baseline_instances })
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn validate_launched_target(
     target: &LaunchTarget,
     launched: &(i32, String),
@@ -70,7 +68,6 @@ pub(super) fn validate_launched_target(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn ambiguous_apps(apps: &[AppInfo]) -> AdapterError {
     AdapterError::ambiguous_process_target(
         "More than one application instance matches the launch target",
@@ -78,7 +75,6 @@ fn ambiguous_apps(apps: &[AppInfo]) -> AdapterError {
     )
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn required_instance(app: &AppInfo) -> Result<String, AdapterError> {
     app.process_instance.clone().ok_or_else(|| {
         AdapterError::new(

@@ -24,18 +24,11 @@ core-graphics      = { version = "0.25.0", features = ["elcapitan", "highsierra"
 foreign-types      = "0.5.0"
 
 [features]
-dev-tools = []
 interactive-tests = []
 
 [[bin]]
 name = "agent-desktop-macos-helper"
 path = "src/bin/agent-desktop-macos-helper.rs"
-
-[[example]]
-name = "ax_probe"
-required-features = ["dev-tools"]
-
-[build-dependencies]
 
 [lints]
 workspace = true

@@ -19,7 +19,6 @@ impl<T> NativeRead<T> {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn read_with_recovery<T>(
     deadline: std::time::Instant,
     mut read: impl FnMut() -> NativeRead<T>,
@@ -34,7 +33,6 @@ fn read_with_recovery<T>(
     .unwrap_or_else(NativeRead::failure)
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::NativeRead;
     use crate::{tree::AXElement, tree::properties::cf_type::created_cf_array};
@@ -114,32 +112,6 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::NativeRead;
-    use crate::tree::AXElement;
-
-    pub(crate) fn is_attr_settable_with_status(
-        _el: &AXElement,
-        _attr: &str,
-        _deadline: std::time::Instant,
-    ) -> NativeRead<bool> {
-        NativeRead::failure(i32::MIN)
-    }
-
-    pub(crate) fn copy_action_names_with_status(
-        _el: &AXElement,
-        _deadline: std::time::Instant,
-        _usage: &mut crate::tree::observation_usage::ObservationUsage,
-    ) -> NativeRead<Vec<String>> {
-        NativeRead::failure(i32::MIN)
-    }
-
-    pub fn same_element(_a: &AXElement, _b: &AXElement) -> bool {
-        false
-    }
-}
-
 pub(crate) use imp::same_element;
 pub(crate) use imp::{copy_action_names_with_status, is_attr_settable_with_status};
 
@@ -159,7 +131,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn capability_read_recovers_only_transient_failures_within_a_fixed_attempt_bound() {
         use accessibility_sys::{
             kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorFailure, kAXErrorInvalidUIElement,
@@ -195,7 +166,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn expired_capability_budget_never_calls_native_reader() {
         let result =
             super::read_with_recovery::<bool>(std::time::Instant::now(), || panic!("expired read"));
