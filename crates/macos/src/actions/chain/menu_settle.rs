@@ -124,7 +124,6 @@ pub(crate) fn poll_within(
     }
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::actions::interaction_policy::InteractionPolicy;
     use agent_desktop_core::{ActionStep, AdapterError, Deadline};
@@ -183,7 +182,6 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) use imp::execute_menu_chain;
 
 #[cfg(test)]

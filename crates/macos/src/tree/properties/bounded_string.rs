@@ -6,7 +6,6 @@ pub(crate) struct BoundedString {
 }
 
 impl BoundedString {
-    #[cfg(target_os = "macos")]
     pub(crate) fn from_cf(
         value: &core_foundation::string::CFString,
         usage: &mut ObservationUsage,
@@ -60,7 +59,6 @@ impl BoundedString {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn utf8_allocation_size(
     length: core_foundation_sys::base::CFIndex,
     capacity: usize,
@@ -93,7 +91,6 @@ mod tests {
         assert!(!read.complete);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn short_cf_strings_do_not_allocate_the_full_field_budget() {
         let allocation = utf8_allocation_size(4, 64 * 1024).unwrap();
@@ -101,7 +98,6 @@ mod tests {
         assert!(allocation <= 12);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn exhausted_text_budget_never_reports_a_complete_cf_read() {
         let value = core_foundation::string::CFString::new("content");

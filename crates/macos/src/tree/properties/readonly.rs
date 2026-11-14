@@ -5,7 +5,6 @@ pub(crate) struct ReadonlyRead {
     pub(crate) deadline_exhausted: bool,
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn read_readonly(
     element: &crate::tree::AXElement,
     role: Option<&str>,
@@ -36,7 +35,6 @@ pub(crate) fn read_readonly(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn editable_ax_role(role: Option<&str>) -> bool {
     matches!(
         role,

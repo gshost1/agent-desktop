@@ -1,10 +1,7 @@
-#[cfg(not(target_os = "macos"))]
-use agent_desktop_core::DragParams;
 use agent_desktop_core::{
     AdapterError, Deadline, ErrorCode, Modifier, MouseButton, MouseEvent, MouseEventKind, Point,
 };
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use core_graphics::event::{
@@ -286,53 +283,21 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
-
-    pub fn synthesize_mouse(_event: MouseEvent, _deadline: Deadline) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("mouse_event"))
-    }
-
-    pub(crate) fn synthesize_mouse_after(
-        _event: MouseEvent,
-        _deadline: Deadline,
-        _verify_target: &mut dyn FnMut() -> Result<(), AdapterError>,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("mouse_event"))
-    }
-
-    pub fn synthesize_drag(_params: DragParams, _deadline: Deadline) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("drag"))
-    }
-}
-
-pub(crate) use imp::{synthesize_mouse, synthesize_mouse_after};
-
-#[cfg(target_os = "macos")]
 pub(crate) use crate::input::mouse::mouse_drag::synthesize_drag;
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) use imp::synthesize_drag;
-
-#[cfg(target_os = "macos")]
 pub(crate) use imp::{
     create_event_with_source, ensure_budget, event_flags, event_source, post_event_with_source,
-    sleep_bounded, validate_point,
+    sleep_bounded, synthesize_mouse, synthesize_mouse_after, validate_point,
 };
 
-#[cfg(all(test, target_os = "macos", feature = "interactive-tests"))]
-pub(crate) use imp::{create_event, standalone_state_error, wheel_lines_to_i32};
-
-#[cfg(all(test, target_os = "macos", not(feature = "interactive-tests")))]
+#[cfg(all(test, feature = "interactive-tests"))]
+pub(crate) use imp::create_event;
+#[cfg(test)]
 pub(crate) use imp::{standalone_state_error, wheel_lines_to_i32};
 
-#[cfg(target_os = "macos")]
 pub(super) mod mouse_drag;
-#[cfg(target_os = "macos")]
 pub(super) mod mouse_drag_state;
 pub(crate) mod mouse_move;
 pub(crate) mod mouse_scroll;
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "mouse_tests.rs"]
 mod tests;

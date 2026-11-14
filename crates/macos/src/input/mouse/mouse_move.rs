@@ -1,12 +1,9 @@
-#[cfg(target_os = "macos")]
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, Modifier, Point};
-#[cfg(target_os = "macos")]
 use core_graphics::{
     event::{CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton},
     geometry::CGPoint,
 };
 
-#[cfg(target_os = "macos")]
 pub(crate) fn post_move_events(
     point: CGPoint,
     button: CGMouseButton,
@@ -36,7 +33,6 @@ pub(crate) fn post_move_events(
     verify_position(source, point, deadline, delivery)
 }
 
-#[cfg(target_os = "macos")]
 fn verify_position(
     source: core_graphics::event_source::CGEventSource,
     requested: CGPoint,
@@ -63,7 +59,6 @@ fn verify_position(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn pointer_position_error(
     observed: CGPoint,
     requested: CGPoint,
@@ -81,7 +76,6 @@ fn pointer_position_error(
     )
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn preposition_pointer(
     point: &Point,
     modifiers: &[Modifier],
@@ -97,7 +91,6 @@ pub(crate) fn preposition_pointer(
     )
 }
 
-#[cfg(target_os = "macos")]
 fn approach_point(point: CGPoint) -> CGPoint {
     CGPoint::new(
         if point.x > -999_999.0 {
@@ -109,12 +102,11 @@ fn approach_point(point: CGPoint) -> CGPoint {
     )
 }
 
-#[cfg(target_os = "macos")]
 fn pointer_position_matches(observed: CGPoint, requested: CGPoint) -> bool {
     (observed.x - requested.x).abs() <= 0.5 && (observed.y - requested.y).abs() <= 0.5
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::{approach_point, pointer_position_matches};
     use core_graphics::geometry::CGPoint;

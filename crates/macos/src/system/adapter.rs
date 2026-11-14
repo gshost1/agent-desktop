@@ -9,7 +9,6 @@ use agent_desktop_core::{
 use crate::adapter::MacOSAdapter;
 use crate::system::app::close_outcome::CloseOutcome;
 
-#[cfg(target_os = "macos")]
 #[path = "tcp_listener/mod.rs"]
 pub(crate) mod tcp_listener;
 
@@ -282,40 +281,40 @@ impl SystemOps for MacOSAdapter {
     fn dismiss_notification(
         &self,
         request: DismissNotificationRequest<'_>,
-        _lease: &InteractionLease,
+        lease: &InteractionLease,
     ) -> Result<NotificationInfo, AdapterError> {
         crate::notifications::actions::dismiss_notification(
             request.index,
             request.app_filter,
-            Some(request.identity),
+            request.identity,
             request.policy,
-            _lease.deadline(),
+            lease.deadline(),
         )
     }
 
     fn dismiss_all_notifications(
         &self,
         request: DismissAllNotificationsRequest<'_>,
-        _lease: &InteractionLease,
+        lease: &InteractionLease,
     ) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
         crate::notifications::actions::dismiss_all(
             request.app_filter,
             request.policy,
-            _lease.deadline(),
+            lease.deadline(),
         )
     }
 
     fn notification_action(
         &self,
         request: NotificationActionRequest<'_>,
-        _lease: &InteractionLease,
+        lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
         crate::notifications::actions::notification_action(
             request.index,
-            Some(request.identity),
+            request.identity,
             request.action_name,
             request.policy,
-            _lease.deadline(),
+            lease.deadline(),
         )
     }
 }
