@@ -38,6 +38,7 @@ Every form prints the JSON envelope. A skill's Markdown is in `data.content`.
     <tr><td><code>agent-desktop skills list</code></td><td>List every bundled skill with its aliases and references</td></tr>
     <tr><td><code>agent-desktop skills get &lt;name&gt;</code></td><td>Print one skill's main guide</td></tr>
     <tr><td><code>agent-desktop skills get &lt;name&gt; &lt;reference&gt;</code></td><td>Print one reference file of that skill</td></tr>
+    <tr><td><code>agent-desktop skills get &lt;topic&gt;</code></td><td>Print a reference of the core skill or of this OS's platform skill by its stem, with no skill name</td></tr>
     <tr><td><code>agent-desktop skills get &lt;name&gt; --full</code></td><td>Print the main guide followed by every reference, each introduced by a <code>--- references/&lt;file&gt;.md ---</code> line</td></tr>
     <tr><td><code>agent-desktop skills path</code></td><td>Report that skills are embedded, and list the available names</td></tr>
   </tbody>
@@ -73,7 +74,7 @@ agent-desktop skills get desktop | jq -r '.data.content'
     <tr><th>Name</th><th>Alias</th><th>Covers</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>agent-desktop</code></td><td><code>desktop</code></td><td>The core guide for every OS: the snapshot and ref loop, verification and retry rules, and when to open each reference. Load it first.</td></tr>
+    <tr><td><code>agent-desktop</code></td><td><code>desktop</code></td><td>The core guide for every OS: the snapshot and ref loop, when to read again, the retry rule, and which topic holds the detail. Load it first.</td></tr>
     <tr><td><code>agent-desktop-macos</code></td><td><code>macos</code></td><td>What differs on macOS: permissions, Notification Center, troubleshooting.</td></tr>
     <tr><td><code>agent-desktop-windows</code></td><td><code>windows</code></td><td>What differs on Windows: PowerShell quoting, elevation, shell surfaces, Chromium and Electron, troubleshooting.</td></tr>
     <tr><td><code>agent-desktop-linux</code></td><td><code>linux</code></td><td>What differs on Linux: the AT-SPI bus, X11 and Wayland, window lifecycle, capture and clipboard, shell and notifications, troubleshooting.</td></tr>
@@ -92,6 +93,7 @@ agent-desktop skills get desktop | jq -r '.data.content'
   "name": "agent-desktop-linux",
   "platform": "linux",
   "references": [
+    "references/capabilities.md",
     "references/bus-and-permissions.md",
     "references/display-servers-and-input.md",
     "references/windows-and-lifecycle.md",
@@ -113,22 +115,25 @@ An unknown name returns `INVALID_ARGS` and lists every alias:
 
 ## References
 
-Load a reference only when you need it. Name it by path (`references/workflows.md`), file name (`workflows.md`), or stem (`workflows`):
+The core and platform guides are short, because an agent reads them before its first action and every later model call reads them again. The detail lives in references, also called topics. Load one only when you need it. Name it by path (`references/workflows.md`), file name (`workflows.md`), or stem (`workflows`):
 
 ```bash
 agent-desktop skills get desktop workflows
 agent-desktop skills get linux troubleshooting
+agent-desktop skills get round-trips          # a topic of the core skill, no skill name
 ```
+
+A name that is no skill is looked up as a topic of the core skill, then of the platform skill for this OS. A skill name always wins over a topic of the same name.
 
 <table>
   <thead>
     <tr><th>Skill</th><th>References</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>desktop</code></td><td><code>commands-observation</code>, <code>commands-interaction</code>, <code>commands-system</code>, <code>workflows</code></td></tr>
+    <tr><td><code>desktop</code></td><td><code>refs-and-retry</code>, <code>round-trips</code>, <code>commands-observation</code>, <code>commands-interaction</code>, <code>commands-system</code>, <code>workflows</code></td></tr>
     <tr><td><code>macos</code></td><td><code>troubleshooting</code></td></tr>
-    <tr><td><code>windows</code></td><td><code>permissions-and-elevation</code>, <code>chromium-and-electron</code>, <code>troubleshooting</code>, <code>shell-and-overlay</code></td></tr>
-    <tr><td><code>linux</code></td><td><code>bus-and-permissions</code>, <code>display-servers-and-input</code>, <code>windows-and-lifecycle</code>, <code>capture-and-clipboard</code>, <code>shell-tray-and-notifications</code>, <code>troubleshooting</code></td></tr>
+    <tr><td><code>windows</code></td><td><code>first-contact</code>, <code>permissions-and-elevation</code>, <code>chromium-and-electron</code>, <code>troubleshooting</code>, <code>shell-and-overlay</code></td></tr>
+    <tr><td><code>linux</code></td><td><code>capabilities</code>, <code>bus-and-permissions</code>, <code>display-servers-and-input</code>, <code>windows-and-lifecycle</code>, <code>capture-and-clipboard</code>, <code>shell-tray-and-notifications</code>, <code>troubleshooting</code></td></tr>
     <tr><td><code>ffi</code></td><td><code>build-and-link</code>, <code>error-handling</code>, <code>ownership</code>, <code>threading</code></td></tr>
   </tbody>
 </table>

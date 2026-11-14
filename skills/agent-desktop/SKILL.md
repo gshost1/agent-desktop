@@ -4,108 +4,51 @@ tags: computer-use, desktop-automation, accessibility, ai-agent, gui-automation,
 requirements:
   - agent-desktop
 description: >
-  Operate desktop applications on macOS, Windows and Linux through native accessibility trees,
-  using the agent-desktop CLI. Use when an AI agent must see or act on a desktop GUI:
-  click buttons, fill forms, read UI state, navigate menus, toggle checkboxes, scroll,
-  drag, type text, press shortcuts, take screenshots, manage windows, use the clipboard,
-  launch or close apps, read notifications.
-  Triggers on: "click button", "fill form", "open app", "read UI", "computer use",
-  "operate desktop", "accessibility tree", "snapshot app", "type into field", "navigate menu",
-  "toggle checkbox", "take screenshot", "desktop automation", "agent-desktop",
-  or any desktop GUI task on macOS, Windows or Linux.
+  Operate desktop apps on macOS, Windows and Linux through their accessibility trees with the
+  agent-desktop CLI: read UI state, click, type, fill forms, navigate menus, press shortcuts,
+  manage apps and windows. Use for any desktop GUI task ("click button", "open app", "computer
+  use", "snapshot app", "desktop automation").
 ---
 
 # agent-desktop
 
-agent-desktop is a CLI that reads and operates desktop apps through the OS accessibility tree. Every command prints one JSON envelope (`ok`, `data` or `error`). It is a tool, not an agent: the observe, act and verify loop runs in you.
-
-## Shell syntax
-
-Examples use a POSIX shell. When a ref is built from a variable, brace it and keep the `e` in each part you list: `for r in e7 e8; do agent-desktop click "${S}:${r}"; done`. In zsh, `$S:e1` applies the `:e` modifier and passes `1`, even inside double quotes. A list of bare numbers (`for n in 7 8` with `"${S}:e${n}"`) is easy to mix up with the digits or values you are typing. In PowerShell, quote every ref (`'@s8f3k2p9:e1'`), because a bare `@token` is the splatting operator. Use `$env:NAME = 'value'` instead of `export`, and `| ConvertFrom-Json` instead of `$(...)` and `jq`. The Windows skill has the PowerShell forms.
-
-## First run
-
-1. Run `agent-desktop status`. It reports the platform, permissions and `supported_surfaces`.
-2. Run `agent-desktop skills get platform`. It loads the skill for the OS the binary runs on (macOS, Windows or Linux).
-3. For flags and syntax, run `agent-desktop <command> --help`. This skill does not repeat flag lists.
+A CLI that reads and drives desktop apps through the OS accessibility tree. Every command prints one JSON envelope: `ok`, then `data` or `error`. You run the observe and act loop. Next, read `agent-desktop skills get platform`: what differs on this OS. Flags: `agent-desktop <command> --help`.
 
 ## The loop
 
-Use `find` when you know the role or exact name. Otherwise map the app first and drill into one region.
-
-```
-agent-desktop snapshot --skeleton --app "Notes" -i --compact --lines   # shallow map, children_count on cut branches
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact --lines        # drill into one region
-agent-desktop click @s8f3k2p9:e12                                      # act on a qualified ref
-agent-desktop snapshot --root @s8f3k2p9:e3 -i --compact --lines        # verify: re-read the same region
-```
-
-- Make the first look `agent-desktop snapshot --app "Font Book" -i --compact --lines`. Each line of `data.lines` is one node, indented by depth: its ref first, then role and quoted name. `--lines` also applies to the snapshot `-w` returns.
-- A small app needs no skeleton. Take a full `snapshot -i`.
-- `-i` keeps interactive nodes only, so a row's static-text label is dropped. To tell which row a repeated button belongs to, drill that row's container with `--root` and leave out `-i`. On Windows and Linux that reads the row but does not make its button actionable: a button repeated in other rows is a twin in the window and its ref is refused (see Refs).
-- A `--root` drill adds its refs to the same snapshot id. Refs outside the drilled subtree, and the drilled root itself, stay valid; refs that were already inside it are replaced, so an old ref there returns `STALE_REF`.
-- Never skeleton a surface (`--surface menu`, `sheet`, `alert`). A surface is already focused.
-- An action that opens a menu, sheet or alert lists it in `data.surfaces`. Target that overlay next. The report gets at most one second, so in an app with a large tree it can be missing or carry `unclassified`; when you expect a dialog, snapshot `--surface sheet` or `--surface alert`.
-- After an async step, use `wait` (see `commands-system.md`). A fixed sleep is a race.
-
-## Fewer round trips
-
-Each call is a turn. These forms each save one:
-
-```
-agent-desktop launch "Font Book" && agent-desktop snapshot --app "Font Book" -i --compact
-R=$(agent-desktop find --app "Font Book" --role button --name "Hide Sidebar" | jq -r '.data.matches[0].ref_id')
-agent-desktop click "${R}" -w "button:Show Sidebar"
-agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
+```bash
+agent-desktop snapshot --app "Font Book" -i --compact --lines     # one node per line: ref, role, "name"
+agent-desktop find --app "Font Book" --role button --name "Hide Sidebar"   # ref in .data.matches[0].ref_id
+agent-desktop click @s8f3k2p9:e12                                 # act on a ref as printed
+agent-desktop type @s8f3k2p9:e4 "hello"                           # set-value replaces, clear empties
+agent-desktop press ctrl+s --app "Font Book"                      # key combo to the app
+agent-desktop wait --app "Font Book" --text "Saved" --timeout 5000
 ```
 
-- Chain `launch` and the first snapshot in one call.
-- `find` the element you will act on, by its own name. The pane that holds it is often open already, so finding the parent first costs a turn.
-- Never cut a snapshot or a `-w` result with `head` or `head -c`: the cut drops refs and the text you need, which is often near the end, and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, `grep`, or `jq` over the whole output.
-- After an action, `-w "role:text"` (or `-w ":text"`) polls until the effect shows and returns the snapshot, so the read is not a separate call. A separate `wait` takes `--timeout` in ms.
-- When the task names the path (English, then Arial), take the whole path and the answer in one call: `find` each step by its name, `click` it with `-w` naming the next step, and end with a read filtered by `grep` for what the task asks. Do not stop between steps to read refs: each step's ref comes from its own `find`, and `jq -e` stops the `&&` chain at the first missing match or failed step:
+- `--app` takes the name `list-apps` prints. Take the ref from the start of the line that names the control.
+- Big tree: `snapshot --skeleton` maps it, `snapshot --root <ref>` drills one region. Filter output with `grep` or `jq`; never cut it with `head`.
+- Refs (`@<snapshot_id>:e<N>`) belong to their snapshot. After the UI changes, snapshot again before you use refs inside the changed part.
+- An action's result proves its delivery: `data.disposition.delivery` is `delivered_verified` (effect read back) or `delivered_unverified`. Do not snapshot just to confirm it. Snapshot when the next step needs new refs or text; `-w "role:text"` on the action waits for that text and returns the snapshot in the same call.
+- A menu, sheet or alert the action opened is listed in `data.surfaces`: read it with `snapshot --surface menu` (or `sheet`, `alert`).
+- Chain dependent commands in one shell call with `&&`. Wait with `wait`, never a fixed `sleep`.
 
-```
-R=$(agent-desktop find --app "Font Book" --role cell --name "English" --exact | jq -er '.data.matches[0].ref_id') &&
-agent-desktop click "${R}" -w ":Show Arial" | jq -e '.ok' >/dev/null &&
-R=$(agent-desktop find --app "Font Book" --name "Show Arial" --exact | jq -er '.data.matches[0].ref_id') &&
-agent-desktop click "${R}" -w "button:Go back" --lines | jq -r '.data.lines[]' | grep -i "arial"
-```
+## Errors
 
-- Pick refs from `--lines` output: take the ref at the start of the line that names the control, never from a neighbouring line. Without `--lines`, check each ref against its node's `name`. A wrong ref costs a corrected rerun, and a rerun is safe only when `disposition.retry` is `safe`.
+Branch on `error.code`. Retry or substitute an action only when `disposition.retry` is `safe`; otherwise it may have landed, so read the state first.
 
-## Refs
+- `STALE_REF`, `SNAPSHOT_NOT_FOUND`: snapshot again and use the new ref.
+- `AMBIGUOUS_TARGET`: identical controls; act on one that is unique in the window.
+- `POLICY_DENIED`, `ACTION_NOT_SUPPORTED`: no headless path. Ref actions are headless (no focus, cursor or keys); the global `--headed` flag allows physical input. Use it only when the user permits that, never as a retry.
 
-- Output refs are qualified: `@<snapshot_id>:e<N>`, for example `@s8f3k2p9:e1`. Pass them to later commands as they are.
-- Refs are valid for one snapshot. After any UI change, re-drill the affected region or take a new snapshot.
-- Only addressable elements get refs. Static text and inert containers do not.
-- A command re-identifies the element before it acts. On macOS the ref carries the element's own address, so identical twins each keep their ref. On Windows and Linux a ref resolves only when it was the only element in the window its snapshot captured with its role, native id, name and description, counted even below a skeleton or depth cut, and exactly one live element still matches. Identical twins there have no ref path: only `--headed mouse-click --xy X,Y` can choose one, it takes the foreground, and a Linux Wayland session refuses it.
-- `STALE_REF`: the element is gone or no longer matches. `details.kind` is `saved_ref_absent`, or `retained_object_stale` on macOS. Take a fresh snapshot and use the new ref. `identity_unproven` means no capture proved the ref: with `details.reason: capture_incomplete` the snapshot could not read the whole window, so retake it with a larger `--timeout-ms` (the same timeout falls short again); with `capture_unknown` the element's identity could not be read, so use a different selector or `--headed mouse-click --xy`.
-- `AMBIGUOUS_TARGET`: an identical element appeared (`saved_ref_ambiguous`), or the snapshot found an identical twin (`identity_not_unique`). Repeating the ref or re-snapshotting identical twins gives the same refusal; act on a control that is unique in the window. `identity_not_unique` on a ref from a snapshot taken before version 2.7 may not be a twin: take a new snapshot first.
-- `TIMEOUT` with `details.kind: resolution_identity_unknown`: a live read did not answer, so identity is unproven. Nothing was sent; retry.
-- `SNAPSHOT_NOT_FOUND`: the snapshot id expired. Snapshot again.
+## Topics
 
-## Delivery and retry
+Load one when you need it: `agent-desktop skills get desktop <topic>`.
 
-Action results carry `data.disposition` and errors carry `error.disposition`, each with `delivery` and `retry`. Observation commands such as `snapshot` have none on success; their errors, and every `INVALID_ARGS` refusal, carry `not_delivered` and `retry: safe`.
-
-- Retry or substitute an action only when `disposition.retry` is `safe`. Only `not_delivered` is safe.
-- Any other delivery value means the action may have landed. A repeat can click, type or submit twice, and `toggle` can undo itself.
-- On a result that is not safe, read the live state (`get`, `is`, or a fresh snapshot) and decide from that. `details.post_state` helps when present.
-- Branch on `error.code` and `error.disposition`. Message and suggestion text can change.
-- `details.retryable: false` means waiting cannot change the outcome. Try a different approach.
-
-## Headless and headed
-
-Ref actions are headless by default. They use semantic accessibility calls and do not take focus, move the cursor, synthesize keys or use the clipboard. If no semantic path exists, the action fails closed. Use the global `--headed` flag only when the user explicitly permits physical input, such as double-click, hover, drag, or focus. Never switch to headed mode to recover from a headless failure. Raw coordinates (`--xy`) never imply focus. Which actions need `--headed` differs by OS: read the platform skill.
-
-## References
-
-Load one only when you need it: `agent-desktop skills get desktop <reference>`.
-
-| Reference | Open it when |
-|-----------|--------------|
-| `commands-observation` | You need `snapshot`, `find`, `get`, `is`, `screenshot`, `list-surfaces` semantics, partial trees, or the `--root` rules |
-| `commands-interaction` | You choose between click, type, set-value, select, toggle, scroll, press and mouse commands, or you debug an action error |
-| `commands-system` | You launch or close apps, manage windows, use the clipboard, `wait`, `batch`, sessions, multi-agent cursors, tracing, or load skills |
-| `workflows` | You want worked patterns (forms, menus, dialogs, waiting for a new window, scroll-find, drag) and the anti-patterns list |
+| Topic | Open it for |
+|-------|-------------|
+| `refs-and-retry` | Every ref error kind, delivery and retry rules, headed mode, drilling rules |
+| `round-trips` | Shell quoting (zsh, PowerShell) and find, click and wait chains in one call |
+| `commands-observation` | `snapshot`, `find`, `get`, `is`, `screenshot`, `list-surfaces`, partial trees |
+| `commands-interaction` | Choosing an action, `-w`, keys, mouse, action errors |
+| `commands-system` | Launch and close, windows, clipboard, `wait`, `batch`, sessions, tracing |
+| `workflows` | Forms, menus, dialogs, new windows, scroll-find, drag, anti-patterns |

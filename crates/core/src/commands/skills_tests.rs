@@ -1,3 +1,4 @@
+use super::catalog::SKILL_DESKTOP_REF_WORKFLOWS;
 use super::*;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -344,4 +345,31 @@ fn first_time_setup_section(document: &str) -> String {
         .map(|offset| offset + 1)
         .unwrap_or(rest.len());
     rest[..end].to_owned()
+}
+
+#[test]
+fn a_bare_topic_resolves_against_the_core_skill_then_this_platform() {
+    let bare = |name: &str| {
+        get(GetArgs {
+            name: name.into(),
+            full: false,
+            reference: None,
+        })
+    };
+    let core = bare("round-trips").expect("core topic");
+    assert_eq!(core["skill"], "agent-desktop");
+    assert_eq!(core["reference"], "references/round-trips.md");
+    assert_eq!(
+        bare("linux").expect("skill name")["skill"],
+        "agent-desktop-linux"
+    );
+    let platform = bare("capabilities");
+    if cfg!(target_os = "linux") {
+        assert_eq!(
+            platform.expect("linux topic")["skill"],
+            "agent-desktop-linux"
+        );
+    } else {
+        assert!(format!("{}", platform.expect_err("no such topic here")).contains("Unknown skill"));
+    }
 }

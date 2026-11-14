@@ -4,26 +4,15 @@ tags: windows-automation, accessibility, uia, ai-agent, gui-automation, cli
 requirements:
   - agent-desktop
 description: >
-  Windows platform guide for the agent-desktop CLI. Lists per command group
-  what works on Windows and what refuses, the first-contact gotchas
-  (PowerShell ref quoting, minimized windows, headed-only input), and where
-  to find shell surfaces, notifications, the cursor overlay, UIPI elevation,
-  Chromium/Electron settle behavior and troubleshooting.
-  Triggers on: "windows desktop automation", "UIA tree", "automate Windows app",
-  "agent-desktop on Windows", "elevated window input blocked", "E_ACCESSDENIED",
-  or any Windows GUI interaction task.
+  Windows platform guide for the agent-desktop CLI: what works and what refuses per command
+  group, PowerShell ref quoting, minimized windows, headed-only input, and where the shell
+  surface, notification, elevation, Chromium and troubleshooting details are. Use for any
+  Windows GUI task ("automate Windows app", "UIA tree", "elevated window input blocked").
 ---
 
 # agent-desktop-windows
 
-This file covers only what differs on Windows. The observe-act loop, refs, JSON
-envelope, sessions and tracing are the same on every platform.
-
-Requires Windows 10 1809+ / Windows Server 2019+ (x64 or ARM64). Run it in the
-interactive desktop session of the signed-in user. Session 0 (services and
-SYSTEM tasks), Server Core, the secure desktop (UAC prompts, the sign-in
-screen), a locked desktop and another user's session are not supported:
-observation, actions and capture there fail or return nothing.
+Only what differs on Windows; the core skill has the loop. Run it in the interactive desktop session of the signed-in user (Windows 10 1809+ or Server 2019+); Session 0, the secure desktop and a locked desktop are not supported.
 
 ## Capability Table
 
@@ -46,74 +35,23 @@ observation, actions and capture there fail or return nothing.
 
 ## First Contact
 
-- **Quote every ref in PowerShell.** PowerShell reads a bare `@token` as its
-  splatting operator and deletes the argument before the binary sees it, so
-  `set-value @s8f3k2p9:e1 hi` fails `INVALID_ARGS`. Write
-  `set-value '@s8f3k2p9:e1' hi`. cmd.exe and bash need no quoting.
-- **A window behind another window is drivable. A minimized one is not.**
-  Every element of a minimized window reports `offscreen` and ref actions
-  fail. Run `restore --app <image>` and snapshot again. Do not use
-  `focus-window` by reflex: it steals the user's foreground.
-- **No permission dialog exists.** `permissions` reports `automation` as
-  `not_required`. Elevation boundaries are the only access control.
-- **Chromium and Electron apps read thin before they settle.** Pass a longer
-  `--timeout-ms` to `snapshot` instead of concluding the tree is empty.
-- **Blocked shortcuts.** `alt+f4`, `win+l`, `win+d`, `alt+tab`, `win+r`,
-  `win+x`, `win+e`, `ctrl+shift+esc` and their modifier supersets are refused
-  without `--force`. In combos, `cmd` and `meta` are the Windows key, so
-  `meta+c` is a shell shortcut. Write `ctrl+c` to copy.
-- **`type` needs `--headed`.** It is keystroke synthesis through `SendInput`,
-  so a strict-headless `type` returns `POLICY_DENIED`. Use `set-value`, or pass
-  `--headed`. It ends `delivered_unverified` (`verification_scope:
-  "unavailable"`) when the field exposes no readable Text selection, and can
-  verify when one is readable: confirm with a fresh `get`.
-- **`press --app` writes to the foreground queue** with no per-process
-  targeting. A headless press to a non-frontmost app fails closed. A
-  non-interactive caller (service, scheduled task, CI job) gets
-  `delivered_unverified`.
-- **`launch` takes an absolute path or a bare name** under System32 or the
-  Windows directory, with or without `.exe` (`notepad` or `notepad.exe`), not
-  a display name. Use `list-apps` to find a running app. `launch --reopen` returns
-  `ACTION_NOT_SUPPORTED`: Windows has no reopen event, and `launch_path` is absent.
-- **A launched program that exits before its process shows a window** ends the
-  wait on the next poll with `APP_UNRESPONSIVE`, `details.kind: exited` (`crashed`
-  for an NTSTATUS crash code), `details.status` and `details.pid`,
-  `delivered_unverified`. A System32 stub that starts a packaged app and exits
-  (such as `calc` on Windows 11) ends this way, because the window it caused belongs to a
-  process the launch cannot attribute: run `list-windows` before you launch
-  again. An attach to a running instance reads its windows once and returns
-  with no `window` when it shows none, instead of waiting out `--timeout`.
-- **Notifications:** `list-notifications` with the Action Center closed needs
-  `--headed`. Single-item `dismiss-notification` and `notification-action` need
-  `--headed` and `--expected-app` or `--expected-title` for the entry at INDEX.
-- **Surfaces:** an open or context menu is the `menu` surface. Windows does
-  not advertise a `menubar` surface.
-- **Commands that raise shell chrome take the foreground.** Strict headless
-  refuses them with `POLICY_DENIED` before anything is raised.
-- **Stateful actions run once, then verify by re-reading.** `delivered_verified`
-  means the readback matched. `ACTION_FAILED` with
-  `details.kind: "post_action_verification"` means the action landed but the
-  readback differs: read `details.post_state` and do not retry. A `set-value`
-  the app reformats reads as failed. See `references/troubleshooting.md`.
-- **Unsigned binary warnings are expected.** See `references/troubleshooting.md`.
+- **Quote every ref in PowerShell.** A bare `@token` is PowerShell's splatting operator, so `set-value @s8f3k2p9:e1 hi` fails `INVALID_ARGS`. Write `set-value '@s8f3k2p9:e1' hi`.
+- **A minimized window is not drivable**; one behind another window is. Run `restore --app <image>` and snapshot again. `focus-window` steals the user's foreground.
+- **`type` and `right-click` need `--headed`**; use `set-value` to write a field headless.
+- **`press --app` writes to the foreground queue**: a headless press to an app that is not frontmost fails closed.
+- **`launch` takes an absolute path or a bare System32 name** (`notepad`), not a display name.
+- **Chromium and Electron apps read thin before they settle**: raise `--timeout-ms`.
+- **Blocked shortcuts** (`alt+f4`, `win+l`, `alt+tab` and others) refuse without `--force`. `cmd` and `meta` are the Windows key: write `ctrl+c` to copy.
+- **Identical controls** refuse with `AMBIGUOUS_TARGET`, `identity_not_unique`; use `--headed mouse-click --xy` to pick one.
 
-## What differs on Windows
+## Topics
 
-- Ref actions are semantic UI Automation calls in headless and `--headed` mode, except `right-click`, `double-click`, `triple-click`, `type` and `focus`, which are physical or take focus and need `--headed`.
-- A ref resolves only when it was the only element in the window its snapshot captured with its role, native id, name and description, and exactly one live element still matches. Uniqueness counts the whole window, not the shallow tree a `--skeleton` or `--max-depth` snapshot presents, so a twin below the cut still refuses the ref. Identical twins, such as several identical `Delete` buttons, are refused with `AMBIGUOUS_TARGET`, `details.kind: identity_not_unique`, before anything reaches the app; a live second match is `saved_ref_ambiguous`, and a removed element is `STALE_REF`, `saved_ref_absent`. Take a fresh snapshot after a list changes, and use `--headed mouse-click --xy` when you must pick one of two identical controls.
-- The cursor overlay plays its per-action travel only for headless semantic actions. A `--headed` action moves the real cursor instead.
+`agent-desktop skills get windows <topic>`:
 
-## References
-
-- `references/shell-and-overlay.md`: open it for `open-system-surface`, tray
-  and taskbar surfaces, notifications, the cursor overlay, hosted (UWP) window
-  identity and menu detection coverage.
-- `references/permissions-and-elevation.md`: integrity levels, UIPI, blocked
-  combos, protected processes, the cross-process interaction lease.
-- `references/chromium-and-electron.md`: settle timing, covered-window hazard,
-  WPF wrong-provider trap, unnamed web content.
-- `references/troubleshooting.md`: symptom-to-cause map, action verification
-  outcomes, saving a document headless, install warnings.
-
-Read any file from the binary:
-`agent-desktop skills get agent-desktop-windows references/troubleshooting.md`.
+| Topic | Open it for |
+|-------|-------------|
+| `first-contact` | Every first-contact note in full: `type` verification, `launch` exits, notifications, stateful readback |
+| `shell-and-overlay` | `open-system-surface`, tray and taskbar, notifications, cursor overlay, menu detection |
+| `permissions-and-elevation` | Integrity levels, UIPI, blocked combos, protected processes, the interaction lease |
+| `chromium-and-electron` | Settle timing, covered windows, WPF provider trap, unnamed web content |
+| `troubleshooting` | Symptom to cause, action verification outcomes, saving headless, install warnings |
