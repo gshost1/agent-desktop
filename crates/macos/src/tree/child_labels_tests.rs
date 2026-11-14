@@ -142,7 +142,6 @@ fn direct_names_skip_child_label_reads_for_every_role() {
     }
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn transient_child_label_error_degrades_name_to_unknown_and_incomplete() {
     let mut stats = agent_desktop_core::LocatorStats::default();
@@ -167,7 +166,6 @@ fn transient_child_label_error_degrades_name_to_unknown_and_incomplete() {
     assert!(!complete);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn api_disabled_child_label_reads_still_fail_closed() {
     let mut stats = agent_desktop_core::LocatorStats::default();
@@ -182,7 +180,6 @@ fn api_disabled_child_label_reads_still_fail_closed() {
     assert_eq!(error.code, agent_desktop_core::ErrorCode::PermDenied);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn transient_child_label_errors_are_recorded_in_read_health() {
     let mut stats = agent_desktop_core::LocatorStats::default();
@@ -202,7 +199,6 @@ fn transient_child_label_errors_are_recorded_in_read_health() {
     assert_eq!(stats.reads.health.native_read_failures, 1);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn invalid_child_list_degrades_instead_of_aborting() {
     let mut stats = agent_desktop_core::LocatorStats::default();

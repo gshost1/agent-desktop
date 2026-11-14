@@ -1,6 +1,5 @@
 use agent_desktop_core::{AdapterError, Deadline, ProcessIdentity};
 
-#[cfg(target_os = "macos")]
 pub(crate) fn wait_for_menu(
     process: ProcessIdentity,
     open: bool,
@@ -27,13 +26,4 @@ pub(crate) fn wait_for_menu(
         let pause = deadline.remaining_slice(Duration::from_millis(50))?;
         std::thread::sleep(pause);
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn wait_for_menu(
-    _process: ProcessIdentity,
-    _open: bool,
-    _deadline: Deadline,
-) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("wait_for_menu"))
 }
