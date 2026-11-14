@@ -12,6 +12,7 @@ const WRITER_ENTRY_LIMIT: usize = MAX_DIRECTORY_ENTRIES - ARTIFACT_AND_LEDGER_EN
 const LEDGER: &str = ".trace-usage.json";
 const LEDGER_MAX_BYTES: u64 = 256;
 const LEDGER_FIELD_WIDTH: usize = 20;
+const LEDGER_RECORD_LEN: usize = 3 * LEDGER_FIELD_WIDTH + 4;
 
 /// The shortest lock wait one trace event gets, measured from that event, so
 /// the closing record of an action that spent its deadline is not dropped, or
@@ -20,7 +21,6 @@ const TRACE_LOCK_FLOOR_MS: u64 = 250;
 
 pub(crate) struct TraceWriteBudget {
     ledger: File,
-    ledger_len: u64,
     usage: (usize, usize, usize),
     _lock: RefStoreLock,
 }
@@ -33,7 +33,7 @@ impl TraceWriteBudget {
             trace_lock_deadline()?,
         )?;
         let ledger_path = directory.join(LEDGER);
-        let (ledger, ledger_len, usage) = match open_private_lock(&ledger_path, false) {
+        let (ledger, usage) = match open_private_lock(&ledger_path, false) {
             Ok(mut ledger) => {
                 let bytes = read_ledger(&mut ledger)?;
                 let usage = if bytes.is_empty() {
@@ -41,17 +41,21 @@ impl TraceWriteBudget {
                 } else {
                     parse_ledger(&bytes)?
                 };
-                (ledger, bytes.len() as u64, usage)
+                if bytes.len() == LEDGER_RECORD_LEN {
+                    (ledger, usage)
+                } else {
+                    drop(ledger);
+                    (replace_ledger(&ledger_path, usage)?, usage)
+                }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let usage = initial_usage(directory, false)?;
-                (open_private_lock(&ledger_path, true)?, 0, usage)
+                (replace_ledger(&ledger_path, usage)?, usage)
             }
             Err(error) => return Err(error.into()),
         };
         let mut budget = Self {
             ledger,
-            ledger_len,
             usage,
             _lock: lock,
         };
@@ -74,11 +78,12 @@ impl TraceWriteBudget {
     }
 
     /// Rewrites the ledger in place with one fixed-width write and no sync.
-    /// Every encoding has the same length, so a killed writer leaves either
-    /// the old record or the new one, never a torn mix; a longer file is
-    /// emptied first, which reads as a ledger to rebuild. The trace segments
-    /// are not synced either, so a sync here bought no durability the trace
-    /// has, while it held the cross-process lock for the whole flush.
+    /// [`TraceWriteBudget::acquire`] leaves the file holding exactly one
+    /// fixed-width record and every encoding has that length, so a killed
+    /// writer leaves either the old record or the new one, never a torn mix.
+    /// The trace segments are not synced either, so a sync here bought no
+    /// durability the trace has, while it held the cross-process lock for the
+    /// whole flush.
     fn persist(&mut self) -> Result<(), AppError> {
         if self.usage.0 > MAX_SESSION_BYTES
             || self.usage.1 > MAX_SESSION_EVENTS
@@ -89,14 +94,9 @@ impl TraceWriteBudget {
                 "Start a new session to continue recording; the existing trace remains readable.",
             ));
         }
-        let record = encode_ledger(self.usage);
-        let record_len = record.len() as u64;
-        if self.ledger_len > record_len {
-            self.ledger.set_len(0)?;
-        }
         self.ledger.seek(SeekFrom::Start(0))?;
-        self.ledger.write_all(record.as_bytes())?;
-        self.ledger_len = record_len;
+        self.ledger
+            .write_all(encode_ledger(self.usage).as_bytes())?;
         Ok(())
     }
 }
@@ -113,6 +113,17 @@ fn trace_lock_deadline() -> Result<Deadline, AppError> {
     } else {
         Ok(floor)
     }
+}
+
+/// Writes a fixed-width record to a temporary file and renames it over the
+/// ledger. A compact ledger from an older writer, an empty one left by a
+/// killed writer, or a missing one differs in length from the record, so an
+/// in-place rewrite could stop after a short write and leave bytes no reader
+/// parses, which stops recording for the session. The rename leaves the old
+/// ledger or the new one.
+fn replace_ledger(path: &Path, usage: (usize, usize, usize)) -> Result<File, AppError> {
+    crate::storage::private_file::write_atomic(path, encode_ledger(usage).as_bytes())?;
+    Ok(open_private_lock(path, false)?)
 }
 
 fn read_ledger(ledger: &mut File) -> Result<Vec<u8>, AppError> {
