@@ -31,7 +31,6 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
- "thiserror",
  "tracing",
  "tracing-subscriber",
  "windows-sys",

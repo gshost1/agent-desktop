@@ -6,7 +6,7 @@ use super::preflight_deadline;
 
 fn remaining(args: &[&str]) -> Duration {
     let cli = crate::Cli::try_parse_from(args).expect("parses");
-    preflight_deadline(&cli.command.expect("a command"), None)
+    preflight_deadline(&cli.command.expect("a command"))
         .expect("a deadline builds")
         .remaining()
 }

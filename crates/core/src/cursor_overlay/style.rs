@@ -29,10 +29,6 @@ pub struct CursorOverlayStyle {
 }
 
 impl CursorOverlayStyle {
-    pub fn take(&mut self) -> Self {
-        std::mem::take(self)
-    }
-
     pub fn validated(mut self) -> Result<Self, AdapterError> {
         for color in [self.fill.as_ref(), Some(&self.rim), Some(&self.accent)]
             .into_iter()

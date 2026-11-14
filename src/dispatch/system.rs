@@ -67,7 +67,7 @@ pub(super) fn permissions(
     )
 }
 
-pub(super) fn skills(args: SkillsArgs) -> Result<Value, AppError> {
+pub(crate) fn skills(args: SkillsArgs) -> Result<Value, AppError> {
     match args.action.unwrap_or(SkillsAction::List) {
         SkillsAction::List => skills_command::list(),
         SkillsAction::Path => skills_command::path(),
