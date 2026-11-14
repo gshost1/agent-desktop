@@ -33,7 +33,7 @@ pub(in crate::system) fn menu_numbers_from(
         .collect()
 }
 
-fn on_screen_dictionaries() -> Result<Vec<WindowDictionary>, AdapterError> {
+pub(in crate::system) fn on_screen_dictionaries() -> Result<Vec<WindowDictionary>, AdapterError> {
     use crate::tree::properties::cf_type::borrowed_cf_dictionary;
     use core_graphics::display::CGDisplay;
     use core_graphics::window::{
