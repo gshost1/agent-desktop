@@ -10,7 +10,7 @@ Examples use a POSIX shell. When a ref is built from a variable, brace it and ke
 
 ```bash
 agent-desktop launch "Font Book" && agent-desktop snapshot --app "Font Book" -i --compact --lines
-R=$(agent-desktop find --app "Font Book" --role button --name "Hide Sidebar" | jq -r '.data.matches[0].ref_id')
+R=$(agent-desktop find --app "Font Book" --role button --name "Hide Sidebar" | jq -er '.data.matches[0].ref_id // error(.error.message // "no match")') &&
 agent-desktop click "${R}" -w "button:Show Sidebar"
 agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
 ```
@@ -19,11 +19,14 @@ agent-desktop wait --app "Font Book" --text "Show Sidebar" --timeout 5000
 - `find` the element you will act on, by its own name. The pane that holds it is often open already, so finding the parent first costs a turn.
 - Never cut a snapshot or a `-w` result with `head` or `head -c`: the cut drops refs and the text you need, which is often near the end, and you read it again. Narrow it with `-i`, `--root <ref>`, `find`, `grep`, or `jq` over the whole output.
 - After an action, `-w "role:text"` (or `-w ":text"`) polls until the effect shows and returns the snapshot, so the read is not a separate call. A separate `wait` takes `--timeout` in ms.
-- When the task names the path (English, then Arial), take the whole path and the answer in one call: `find` each step by its name, `click` it with `-w` naming the next step, and end with a read filtered by `grep` for what the task asks. Do not stop between steps to read refs: each step's ref comes from its own `find`, and `jq -e` stops the `&&` chain at the first missing match or failed step:
+- When the task names the path (English, then Arial), take the whole path and the answer in one call: `find` each step by its name, `click` it with `-w` naming the next step, and end with a read filtered by `grep` for what the task asks. Do not stop between steps to read refs: each step's ref comes from its own `find`. Join the steps with `&&`, never `;`, so a missing match or a refused click stops the chain before a later step saves or submits. `ref` below prints the ref, or the error message on stderr and a failing exit status, so the chain stops where the error shows:
 
 ```bash
-R=$(agent-desktop find --app "Font Book" --role cell --name "English" --exact | jq -er '.data.matches[0].ref_id') &&
+ref() { jq -er '.data.matches[0].ref_id // error(.error.message // "no match")'; }
+R=$(agent-desktop find --app "Font Book" --role cell --name "English" --exact | ref) &&
 agent-desktop click "${R}" -w ":Show Arial" | jq -e '.ok' >/dev/null &&
-R=$(agent-desktop find --app "Font Book" --name "Show Arial" --exact | jq -er '.data.matches[0].ref_id') &&
-agent-desktop click "${R}" -w "button:Go back" --lines | jq -r '.data.lines[]' | grep -i "arial"
+R=$(agent-desktop find --app "Font Book" --name "Show Arial" --exact | ref) &&
+agent-desktop click "${R}" -w "button:Go back" --lines | jq -r '.data.lines[]? // .error' | grep -i "arial"
 ```
+
+`jq -e '.ok'` exits non-zero on an error envelope, so it stops the chain; print the envelope (drop `>/dev/null`) when you need to see why. A `jq` path over `data` alone prints `null` or `Cannot iterate over null` for an error envelope and hides the error code: add `// .error`.

@@ -83,6 +83,10 @@ fn the_core_guide_keeps_the_rules_an_agent_needs_before_its_first_action() {
         "AMBIGUOUS_TARGET",
         "--headed",
         "never a fixed `sleep`",
+        "with `&&`, never `;`",
+        "`find` it",
+        "children_count=N",
+        "// .error",
         "skills get platform",
     ] {
         assert!(guide.contains(rule), "the core guide lost: {rule}");
@@ -132,6 +136,22 @@ fn detail_moved_out_of_the_short_guides_is_still_served() {
         let body = reference(name, topic);
         for phrase in *phrases {
             assert!(body.contains(phrase), "{name} {topic} lost: {phrase}");
+        }
+    }
+}
+
+#[test]
+fn no_shipped_example_pipes_snapshot_lines_into_jq_without_an_error_fallback() {
+    for skill in SKILLS {
+        let bodies = std::iter::once(("SKILL.md", skill.main))
+            .chain(skill.refs.iter().map(|r| (r.rel_path, r.body)));
+        for (path, body) in bodies {
+            assert!(
+                !body.contains(".data.lines[]'"),
+                "{}/{path} pipes `.data.lines[]` into jq with no `?` and no `// .error`: an error \
+                 envelope then prints only `Cannot iterate over null` and the agent never sees its code",
+                skill.canonical
+            );
         }
     }
 }
