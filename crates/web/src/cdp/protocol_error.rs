@@ -92,7 +92,7 @@ pub(crate) fn is_node_gone(error: &AdapterError) -> bool {
         })
 }
 
-fn error_kind(error: &AdapterError) -> Option<&str> {
+pub(crate) fn error_kind(error: &AdapterError) -> Option<&str> {
     error
         .details
         .as_ref()

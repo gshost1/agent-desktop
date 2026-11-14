@@ -1,3 +1,8 @@
+use crate::tree::ax_element::AXElement;
+use accessibility_sys::AXUIElementCreateApplication;
+
+pub(crate) use crate::tree::properties::node_attribute_fetch::fetch_node_attrs_with_status_for;
+
 pub const ABSOLUTE_MAX_DEPTH: u8 = 50;
 
 pub(crate) fn child_attributes(ax_role: Option<&str>) -> &'static [&'static str] {
@@ -10,27 +15,9 @@ pub(crate) fn child_attributes(ax_role: Option<&str>) -> &'static [&'static str]
     }
 }
 
-#[cfg(target_os = "macos")]
-mod imp {
-    use crate::tree::ax_element::AXElement;
-    use accessibility_sys::AXUIElementCreateApplication;
-
-    pub fn element_for_pid(pid: i32) -> AXElement {
-        AXElement(unsafe { AXUIElementCreateApplication(pid) })
-    }
+pub(crate) fn element_for_pid(pid: i32) -> AXElement {
+    AXElement(unsafe { AXUIElementCreateApplication(pid) })
 }
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use crate::tree::ax_element::AXElement;
-
-    pub fn element_for_pid(_pid: i32) -> AXElement {
-        AXElement(std::ptr::null())
-    }
-}
-
-pub(crate) use crate::tree::properties::node_attribute_fetch::fetch_node_attrs_with_status_for;
-pub(crate) use imp::element_for_pid;
 
 #[cfg(test)]
 #[path = "element_tests.rs"]

@@ -1,7 +1,6 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
 use accessibility_sys::{
     AXUIElementCopyActionNames, AXUIElementCopyAttributeValue, AXUIElementCopyAttributeValues,
     AXUIElementCopyElementAtPosition, AXUIElementCopyMultipleAttributeValues,
@@ -10,7 +9,6 @@ use accessibility_sys::{
     AXUIElementSetAttributeValue, AXUIElementSetMessagingTimeout, kAXErrorAPIDisabled,
     kAXErrorCannotComplete, kAXErrorFailure, kAXErrorInvalidUIElement, kAXErrorSuccess,
 };
-#[cfg(target_os = "macos")]
 use core_foundation_sys::{
     array::CFArrayRef,
     base::{CFIndex, CFTypeRef},
@@ -66,7 +64,6 @@ pub(crate) fn mutation_timeout(deadline: impl AxDeadline) -> Result<Duration, Ad
     ))
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn prepare(
     element: &crate::tree::AXElement,
     deadline: impl AxDeadline,
@@ -74,7 +71,6 @@ pub(crate) fn prepare(
     install_messaging_timeout(element, deadline, read_slice)
 }
 
-#[cfg(target_os = "macos")]
 fn prepare_mutation(
     element: &crate::tree::AXElement,
     deadline: impl AxDeadline,
@@ -82,7 +78,6 @@ fn prepare_mutation(
     install_messaging_timeout(element, deadline, mutation_slice)
 }
 
-#[cfg(target_os = "macos")]
 fn install_messaging_timeout(
     element: &crate::tree::AXElement,
     deadline: impl AxDeadline,
@@ -112,7 +107,6 @@ fn install_messaging_timeout(
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn copy_attribute_value(
     element: &crate::tree::AXElement,
     attribute: CFStringRef,
@@ -126,7 +120,6 @@ pub(crate) fn copy_attribute_value(
     (error, value)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn copy_parameterized_attribute_value(
     element: &crate::tree::AXElement,
     attribute: CFStringRef,
@@ -143,7 +136,6 @@ pub(crate) fn copy_parameterized_attribute_value(
     (error, value)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn copy_attribute_values(
     element: &crate::tree::AXElement,
     attribute: CFStringRef,
@@ -161,7 +153,6 @@ pub(crate) fn copy_attribute_values(
     (error, values)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn copy_multiple_attribute_values(
     element: &crate::tree::AXElement,
     attributes: CFArrayRef,
@@ -182,7 +173,6 @@ pub(crate) fn copy_multiple_attribute_values(
     (error, values)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn attribute_value_count(
     element: &crate::tree::AXElement,
     attribute: CFStringRef,
@@ -199,7 +189,6 @@ pub(crate) fn attribute_value_count(
     usize::try_from(count).map_err(|_| i32::MIN)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn copy_action_names(
     element: &crate::tree::AXElement,
     deadline: impl AxDeadline,
@@ -212,7 +201,6 @@ pub(crate) fn copy_action_names(
     (error, actions)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn is_attribute_settable(
     element: &crate::tree::AXElement,
     attribute: CFStringRef,
@@ -226,7 +214,6 @@ pub(crate) fn is_attribute_settable(
     (error, settable != 0)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn perform_action(
     element: &crate::tree::AXElement,
     action: CFStringRef,
@@ -236,7 +223,6 @@ pub(crate) fn perform_action(
     Ok(unsafe { AXUIElementPerformAction(element.0, action) })
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn set_attribute_value(
     element: &crate::tree::AXElement,
     attribute: CFStringRef,
@@ -247,7 +233,6 @@ pub(crate) fn set_attribute_value(
     Ok(unsafe { AXUIElementSetAttributeValue(element.0, attribute, value) })
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn element_at_position(
     system: &crate::tree::AXElement,
     point: (f32, f32),
@@ -263,7 +248,6 @@ pub(crate) fn element_at_position(
     (error, element)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn pid(element: &crate::tree::AXElement, deadline: impl AxDeadline) -> Result<i32, i32> {
     let mut pid = 0_i32;
     let error = match prepare(element, deadline) {
@@ -277,7 +261,6 @@ pub(crate) fn pid(element: &crate::tree::AXElement, deadline: impl AxDeadline) -
     }
 }
 
-#[cfg(target_os = "macos")]
 fn timeout_install_error(error: i32) -> AdapterError {
     let code = if error == kAXErrorAPIDisabled {
         ErrorCode::PermDenied
@@ -299,7 +282,6 @@ fn timeout_install_error(error: i32) -> AdapterError {
     .with_suggestion("Refresh the target and retry before issuing another accessibility call")
 }
 
-#[cfg(target_os = "macos")]
 fn adapter_error_to_ax(error: &AdapterError) -> i32 {
     match error.code {
         ErrorCode::PermDenied => kAXErrorAPIDisabled,

@@ -4,7 +4,6 @@ use agent_desktop_core::{
 };
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
 pub(crate) fn supported_surfaces_impl() -> Vec<SnapshotSurface> {
     vec![
         SnapshotSurface::Window,
@@ -19,12 +18,6 @@ pub(crate) fn supported_surfaces_impl() -> Vec<SnapshotSurface> {
     ]
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn supported_surfaces_impl() -> Vec<SnapshotSurface> {
-    vec![SnapshotSurface::Window]
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn capture_signal_baseline_impl(
     filter: &SignalFilter,
     deadline: Instant,
@@ -54,15 +47,6 @@ pub(crate) fn capture_signal_baseline_impl(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn capture_signal_baseline_impl(
-    _filter: &SignalFilter,
-    _deadline: Instant,
-) -> Result<SignalBaseline, AdapterError> {
-    Err(AdapterError::not_supported("capture_signal_baseline"))
-}
-
-#[cfg(target_os = "macos")]
 fn matching_apps(filter: &SignalFilter, deadline: Instant) -> Result<Vec<AppInfo>, AdapterError> {
     if let Some(name) = &filter.app {
         return crate::system::app::app_inventory::list_apps_scoped_until(name, None, deadline);
@@ -82,7 +66,6 @@ fn matching_apps(filter: &SignalFilter, deadline: Instant) -> Result<Vec<AppInfo
     Ok(filter_apps(filter, all))
 }
 
-#[cfg(target_os = "macos")]
 fn filter_apps(filter: &SignalFilter, all: Vec<AppInfo>) -> Vec<AppInfo> {
     if let Some(name) = &filter.app {
         return all
@@ -102,7 +85,6 @@ fn filter_apps(filter: &SignalFilter, all: Vec<AppInfo>) -> Vec<AppInfo> {
     all
 }
 
-#[cfg(target_os = "macos")]
 fn cap_ax_messaging(apps: &[AppInfo], deadline: Instant) -> Result<(), AdapterError> {
     for app in apps {
         remaining_before_deadline(deadline)?;
@@ -113,7 +95,6 @@ fn cap_ax_messaging(apps: &[AppInfo], deadline: Instant) -> Result<(), AdapterEr
     ensure_before_deadline(deadline)
 }
 
-#[cfg(target_os = "macos")]
 fn surfaces_for_apps(
     filter: &SignalFilter,
     apps: &[AppInfo],
@@ -147,7 +128,6 @@ fn surfaces_for_apps(
     Ok(surfaces)
 }
 
-#[cfg(target_os = "macos")]
 fn map_surface_kind(raw: &str) -> Option<SnapshotSurface> {
     match raw {
         "sheet" => Some(SnapshotSurface::Sheet),
@@ -158,7 +138,6 @@ fn map_surface_kind(raw: &str) -> Option<SnapshotSurface> {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn remaining_before_deadline(deadline: Instant) -> Result<Duration, AdapterError> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
@@ -167,7 +146,6 @@ fn remaining_before_deadline(deadline: Instant) -> Result<Duration, AdapterError
     Ok(remaining)
 }
 
-#[cfg(target_os = "macos")]
 fn ensure_before_deadline(deadline: Instant) -> Result<(), AdapterError> {
     remaining_before_deadline(deadline).map(|_| ())
 }

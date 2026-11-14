@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::Deadline;
 
@@ -365,36 +364,4 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use agent_desktop_core::Deadline;
-
-    use crate::tree::AXElement;
-
-    #[derive(Default, PartialEq)]
-    pub(crate) struct FocusState;
-
-    pub(crate) fn focus_state(_element: &AXElement, _deadline: Deadline) -> FocusState {
-        FocusState
-    }
-
-    pub(crate) fn changed_now(
-        _before: &FocusState,
-        _element: &AXElement,
-        _deadline: Deadline,
-    ) -> bool {
-        false
-    }
-
-    pub(crate) fn settled_change(
-        _before: &FocusState,
-        _element: &AXElement,
-        _deadline: Deadline,
-    ) -> bool {
-        false
-    }
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) use imp::focus_reached;
-pub(crate) use imp::{FocusState, changed_now, focus_state, settled_change};
+pub(crate) use imp::{FocusState, changed_now, focus_reached, focus_state, settled_change};

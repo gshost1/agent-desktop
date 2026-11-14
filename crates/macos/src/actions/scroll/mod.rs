@@ -183,7 +183,6 @@ fn try_value_shift(
         deadline,
     )?;
     let result = crate::actions::ax_mutation::classify_result(
-        bar,
         "AXValue",
         "AXUIElementSetAttributeValue",
         error,
