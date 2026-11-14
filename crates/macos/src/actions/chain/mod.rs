@@ -9,7 +9,6 @@ pub(crate) use super::chain::chain_context::ChainContext;
 pub(crate) use super::chain::chain_def::ChainDef;
 pub(crate) use super::chain::chain_step::ChainStep;
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use crate::actions::chain::chain_step_exec::execute_step;
@@ -155,7 +154,7 @@ mod imp {
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 pub(crate) use imp::{
     after_steps, build_step, exhaustion_disposition, record_step_outcome, step_allowed,
     step_mechanism,
@@ -189,24 +188,4 @@ mod tests;
 #[path = "chain_outcome_tests.rs"]
 mod outcome_tests;
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
-
-    pub fn execute_chain(
-        _el: &AXElement,
-        def: &ChainDef,
-        _ctx: &ChainContext,
-        _policy: InteractionPolicy,
-    ) -> Result<Vec<ActionStep>, AdapterError> {
-        Err(AdapterError::new(
-            ErrorCode::ActionFailed,
-            "Chain execution not supported on this platform",
-        )
-        .with_suggestion(def.suggestion))
-    }
-}
-
-pub(crate) use imp::execute_chain;
-#[cfg(target_os = "macos")]
-pub(crate) use imp::{exhaustion_error, run_steps};
+pub(crate) use imp::{execute_chain, exhaustion_error, run_steps};

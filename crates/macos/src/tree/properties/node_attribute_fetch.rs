@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use crate::{
         tree::properties::cf_type::created_cf_array,
@@ -359,29 +358,6 @@ mod imp {
             deadline,
             usage,
         )
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use crate::tree::{
-        NodeAttrs, ax_element::AXElement, properties::node_attribute_read::NodeAttributeRead,
-        properties::node_identifiers::NodeIdentifiers,
-    };
-
-    pub(crate) fn fetch_node_attrs_with_status_for(
-        _element: &AXElement,
-        _requirements: agent_desktop_core::EvidenceRequirements,
-        _deadline: std::time::Instant,
-        _usage: &mut crate::tree::observation_usage::ObservationUsage,
-    ) -> NodeAttributeRead {
-        NodeAttributeRead {
-            attrs: NodeAttrs::default(),
-            identifiers: NodeIdentifiers::default(),
-            metrics: crate::tree::properties::node_attribute_metrics::NodeAttributeMetrics::default(
-            ),
-            status: crate::tree::properties::node_attribute_status::NodeAttributeStatus::default(),
-        }
     }
 }
 

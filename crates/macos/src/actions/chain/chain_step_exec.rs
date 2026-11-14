@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::AdapterError;
     use agent_desktop_core::actions::interaction_policy::InteractionPolicy;
@@ -114,5 +113,4 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) use imp::execute_step;

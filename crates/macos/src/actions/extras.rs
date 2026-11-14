@@ -1,10 +1,7 @@
-#[cfg(target_os = "macos")]
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 
-#[cfg(target_os = "macos")]
 use crate::tree::AXElement;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn select_value(
     element: &AXElement,
     value: &str,
@@ -32,7 +29,6 @@ pub(crate) fn select_value(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn select_combobox(
     element: &AXElement,
     value: &str,
@@ -79,7 +75,6 @@ fn select_role_family(role: Option<&str>) -> Option<&'static str> {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn verify_value(
     element: &AXElement,
     expected: &str,
@@ -110,14 +105,12 @@ fn verify_value(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn after_delivery(error: AdapterError) -> AdapterError {
     let mut delivery = crate::actions::DeliveryTracker::default();
     delivery.mark_delivered();
     delivery.annotate(error)
 }
 
-#[cfg(target_os = "macos")]
 fn prepare(element: &AXElement, deadline: Deadline) -> Result<(), AdapterError> {
     crate::tree::properties::attributes::set_messaging_timeout(element, deadline)
 }

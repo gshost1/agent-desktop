@@ -119,7 +119,6 @@ fn write_range(
         deadline,
     )?;
     let delivered = crate::actions::ax_mutation::classify_result(
-        element,
         SELECTED_RANGE,
         "AXUIElementSetAttributeValue",
         error,

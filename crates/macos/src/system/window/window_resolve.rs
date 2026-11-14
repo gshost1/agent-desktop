@@ -307,23 +307,10 @@ fn window_element_by_title(
 
 fn windows_for_pid(pid: i32, deadline: std::time::Instant) -> Result<Vec<AXElement>, AdapterError> {
     let app = element_for_pid(pid);
-    #[cfg(target_os = "macos")]
-    {
-        Ok(
-            crate::tree::resolve::resolve_ax_read::read_array(&app, "AXWindows", deadline)?
-                .unwrap_or_default(),
-        )
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        prepare_for_read(&app, deadline)?;
-        let windows = crate::tree::properties::attributes::copy_ax_array_result(&app, "AXWindows")
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        crate::tree::locator_deadline::remaining(deadline)?;
-        Ok(windows)
-    }
+    Ok(
+        crate::tree::resolve::resolve_ax_read::read_array(&app, "AXWindows", deadline)?
+            .unwrap_or_default(),
+    )
 }
 
 fn prepare_for_read(element: &AXElement, deadline: std::time::Instant) -> Result<(), AdapterError> {
@@ -332,7 +319,6 @@ fn prepare_for_read(element: &AXElement, deadline: std::time::Instant) -> Result
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn ax_window_id_with_deadline(
     window: &AXElement,
     deadline: std::time::Instant,
@@ -341,14 +327,6 @@ pub(crate) fn ax_window_id_with_deadline(
     let window_id = crate::system::window::window_bridge::window_id(window, deadline)?;
     crate::tree::locator_deadline::remaining(deadline)?;
     Ok(window_id)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn ax_window_id_with_deadline(
-    _window: &AXElement,
-    _deadline: std::time::Instant,
-) -> Result<Option<i64>, AdapterError> {
-    Ok(None)
 }
 
 fn invalid_window_id(id: &str) -> AdapterError {
