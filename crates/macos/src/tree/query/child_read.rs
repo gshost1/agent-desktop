@@ -184,17 +184,17 @@ mod imp {
         let whole_page =
             super::super::child_read_budget::whole_list_page(count, max_elements, CHILD_PAGE_SIZE);
         let mut complete = true;
-        let read = whole_page
-            .and_then(|page_len| {
+        let (read, proven) = super::super::child_read_budget::read_counted_list(
+            &mut status,
+            count,
+            whole_page,
+            |status, page_len| {
                 super::super::child_values_read::read_whole_page(
-                    element,
-                    attribute,
-                    page_len,
-                    deadline,
-                    &mut status,
+                    element, attribute, page_len, deadline, status,
                 )
-            })
-            .unwrap_or_else(|| read_prefix(element, attribute, requested, deadline, &mut status));
+            },
+            |status| read_prefix(element, attribute, requested, deadline, status),
+        );
         let mut elements = match read {
             Ok(elements) => elements,
             Err(error) => {
@@ -203,7 +203,6 @@ mod imp {
                 Vec::new()
             }
         };
-        let proven = whole_page.is_some() && elements.len() == count;
         elements.truncate(requested);
         complete &= elements.len() == requested;
         let recount = (super::super::child_read_budget::recount_after_prefix(requested) && !proven)
