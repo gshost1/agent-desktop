@@ -1,6 +1,6 @@
 use agent_desktop_core::{
     ActionResult, AdapterError, Deadline, ErrorCode, InteractionPolicy, NotificationFilter,
-    NotificationIdentity, NotificationInfo, verify_notification_identity,
+    NotificationInfo, NotificationTarget,
 };
 
 use super::nc_session::{NcSession, close_session};
@@ -10,15 +10,13 @@ use super::nc_session::{NcSession, close_session};
 mod tests;
 
 pub fn dismiss_notification(
-    index: usize,
-    app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
     require_foreground_policy(policy)?;
     let session = NcSession::open(policy, deadline)?;
-    let result = dismiss_impl(index, app_filter, identity, policy, session.pid(), deadline);
+    let result = dismiss_impl(target, policy, session.pid(), deadline);
     close_session(session, result)
 }
 
@@ -34,35 +32,28 @@ pub fn dismiss_all(
 }
 
 pub fn notification_action(
-    index: usize,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     action_name: &str,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<ActionResult, AdapterError> {
     require_foreground_policy(policy)?;
     let session = NcSession::open(policy, deadline)?;
-    let result = action_impl(index, identity, action_name, session.pid(), deadline);
+    let result = action_impl(target, action_name, session.pid(), deadline);
     close_session(session, result)
 }
 
 #[cfg(target_os = "macos")]
 fn dismiss_impl(
-    index: usize,
-    app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     policy: InteractionPolicy,
     pid: i32,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
-    let filter = build_filter(app_filter);
+    let filter = NotificationFilter::default();
     let entries = super::list::list_entries(&filter, pid, deadline)?;
 
-    let entry = entries
-        .iter()
-        .find(|e| e.info.index == index)
-        .ok_or_else(|| AdapterError::notification_not_found(index))?;
-    verify_notification_identity(index, identity, &entry.info)?;
+    let entry = &entries[target.pick(entries.iter().map(|e| &e.info))?];
 
     let info = entry.info.clone();
     let matching_before = super::dismiss_verify::matching_count(&entries, entry);
@@ -77,7 +68,7 @@ fn dismiss_all_impl(
     pid: i32,
     deadline: Deadline,
 ) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
-    let filter = build_filter(app_filter);
+    let filter = NotificationFilter::for_app(app_filter);
     let entries = super::list::list_entries(&filter, pid, deadline)?;
 
     let mut dismissed = Vec::new();
@@ -199,13 +190,11 @@ fn try_dismiss_button(
     Ok(false)
 }
 
-/// Presses a named action button on the notification at `index`.
-///
-/// When `identity` is provided, rejects rows whose fingerprint no longer matches after NC reordering.
+/// Presses a named action button on the notification core picks from a
+/// fresh read of the Notification Center.
 #[cfg(target_os = "macos")]
 fn action_impl(
-    index: usize,
-    identity: Option<&NotificationIdentity>,
+    target: &NotificationTarget,
     action_name: &str,
     pid: i32,
     deadline: Deadline,
@@ -213,12 +202,8 @@ fn action_impl(
     let filter = NotificationFilter::default();
     let entries = super::list::list_entries(&filter, pid, deadline)?;
 
-    let entry = entries
-        .into_iter()
-        .find(|e| e.info.index == index)
-        .ok_or_else(|| AdapterError::notification_not_found(index))?;
-
-    verify_notification_identity(index, identity, &entry.info)?;
+    let entry = &entries[target.pick(entries.iter().map(|e| &e.info))?];
+    let index = entry.info.index;
 
     let children = crate::notifications::read::children(&entry.element, deadline)?;
     let action_lower = action_name.to_lowercase();
@@ -291,13 +276,6 @@ fn require_foreground_policy(policy: InteractionPolicy) -> Result<(), AdapterErr
     }
 }
 
-fn build_filter(app_filter: Option<&str>) -> NotificationFilter {
-    NotificationFilter {
-        app: app_filter.map(String::from),
-        ..Default::default()
-    }
-}
-
 fn strategy_succeeded(
     outcome: Result<bool, AdapterError>,
     deadline: Deadline,
@@ -352,9 +330,7 @@ fn all_dismiss_strategies_failed() -> AdapterError {
 
 #[cfg(not(target_os = "macos"))]
 fn dismiss_impl(
-    _index: usize,
-    _app_filter: Option<&str>,
-    _identity: Option<&NotificationIdentity>,
+    _target: &NotificationTarget,
     _policy: InteractionPolicy,
     _pid: i32,
     _deadline: Deadline,
@@ -374,8 +350,7 @@ fn dismiss_all_impl(
 
 #[cfg(not(target_os = "macos"))]
 fn action_impl(
-    _index: usize,
-    _identity: Option<&NotificationIdentity>,
+    _target: &NotificationTarget,
     _action_name: &str,
     _pid: i32,
     _deadline: Deadline,

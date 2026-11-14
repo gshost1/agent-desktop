@@ -285,9 +285,7 @@ impl SystemOps for MacOSAdapter {
         _lease: &InteractionLease,
     ) -> Result<NotificationInfo, AdapterError> {
         crate::notifications::actions::dismiss_notification(
-            request.index,
-            request.app_filter,
-            Some(request.identity),
+            request.target,
             request.policy,
             _lease.deadline(),
         )
@@ -311,8 +309,7 @@ impl SystemOps for MacOSAdapter {
         _lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
         crate::notifications::actions::notification_action(
-            request.index,
-            Some(request.identity),
+            request.target,
             request.action_name,
             request.policy,
             _lease.deadline(),

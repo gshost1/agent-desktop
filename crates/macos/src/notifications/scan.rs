@@ -7,8 +7,7 @@ use super::list::NotificationEntry;
 mod tests;
 
 pub(super) struct NotificationScan {
-    app_filter: Option<String>,
-    text_filter: Option<String>,
+    filter: NotificationFilter,
     limit: usize,
     index: usize,
     entries: Vec<NotificationEntry>,
@@ -18,8 +17,7 @@ pub(super) struct NotificationScan {
 impl NotificationScan {
     pub(super) fn new(filter: &NotificationFilter, deadline: Deadline) -> Self {
         Self {
-            app_filter: filter.app.as_deref().map(str::to_lowercase),
-            text_filter: filter.text.as_deref().map(str::to_lowercase),
+            filter: filter.clone(),
             limit: filter.limit.unwrap_or(usize::MAX),
             index: 1,
             entries: Vec::new(),
@@ -63,7 +61,7 @@ impl NotificationScan {
                         }
                     };
                 if let Some(info) = extracted {
-                    if super::list::matches_filters(&info, &self.app_filter, &self.text_filter) {
+                    if self.filter.admits(&info) {
                         self.entries.push(NotificationEntry {
                             info,
                             element: element.clone(),

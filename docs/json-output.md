@@ -383,6 +383,7 @@ Version 2.7 changes the error code of ref refusals on Windows and Linux, and on 
 - `find` match objects, and the `candidates` of an `AMBIGUOUS_TARGET` from a locator, omit what they do not have: a context match has no `ref_id`, an unnamed one no `name`, and `value`, `states` and `path` are left out when absent or empty. 2.6 printed `"ref_id": null`, `"value": null`, `"states": []`, `"path": []` and `"name": ""`. Read a missing key as that value.
 - A `TIMEOUT` that ends a headed `hover` or `drag` wait after a refusal now carries that refusal in `details.refusal`, the same shape a ref action's wait uses, and a suggestion for the check that refused instead of the generic one. The field is additive.
 - Refmaps written before 2.7 still load. Every refmap entry now carries `capture` (`"unique"`, `"ambiguous"`, `"incomplete"` or `"unknown"`); an entry without it is read as an older refmap through its `unique_at_capture` flag. A proven entry also keeps `unique_at_capture: true`, so a 2.6 binary still resolves the refs a 2.7 snapshot proved and refuses the rest as `identity_not_unique`. A `capture` name this version does not know reads as `unknown`, and a `unique_at_capture` that contradicts `capture` makes the entry `unknown`; neither fails the refmap.
+- Additive: every `list-notifications` entry carries a `key`, and `dismiss-notification` and `notification-action` take it as `--key`, so a list that shifted between the two calls cannot redirect the mutation. See "Notification keys".
 
 ## Web channel
 
@@ -584,6 +585,38 @@ After the core resolver chooses the element, the platform adapter lands it, and 
 
 A refusal without `details.retryable: true` ends every wait at once. With it, what happens next depends on the caller. A ref action (its auto-wait, its retry under the interaction lease, and the pointer actions' waits) treats a known complete absence, a `STALE_REF` with `details.complete: true` and kind `resolve_no_candidate`, `resolution_complete_absence` or `saved_ref_absent`, as final and answers at once, whatever its `retryable` stamp, because the recovery is a new snapshot. That includes a list rebuilt under the lease while the action resolved it. It polls any other retryable resolution refusal within its budget; when the budget runs out on a retryable `STALE_REF` or `AMBIGUOUS_TARGET` read over complete evidence, it reports that refusal with `details.elapsed_ms` instead of the actionability `TIMEOUT`. `wait --element` waits for an element to appear, so it keeps polling every retryable refusal, a complete absence included, until its deadline.
 
+## Notification keys
+
+`list-notifications` gives every entry a `key` beside `index`, `app_name`,
+`title`, `body` and `actions`. The key is opaque: a digest of the app, title
+and body, then `-`, the entry's occurrence among identical entries, `of` and
+the number of identical entries listed (for example `"370187c8c54966aa-1of2"`).
+Lists are newest first and occurrences count from the bottom, so the oldest
+twin is `1`, and an identical newcomer at the top takes the next number while
+every key already printed keeps naming its entry. When an identical entry
+leaves, the newer twins are renumbered, so a key whose twins have dropped
+below its recorded count is refused. Identical entries are grouped by their
+full app, title and body, so two different entries whose digests collide
+carry the same key and are refused as ambiguous. Keys are assigned over the
+whole list before `--app`, `--text` and `--limit` apply, so no filter changes
+a key. Identical twins are told apart only by their order: one twin leaving
+and another arriving between the listing and the mutation is not detected.
+
+`dismiss-notification` and `notification-action` take it as `--key`. Core
+re-reads the whole list under the mutation, picks the one entry that carries
+the key (with an INDEX, it must also still sit there; with fewer twins than
+the key records, it refuses), and only then checks
+`--app` and `--expected-app` / `--expected-title` against that entry.
+Otherwise the call returns `NOTIFICATION_NOT_FOUND` with `not_delivered` and
+presses nothing. `notification-action` still requires INDEX, and the C ABI
+does not take a key yet. `dismiss-notification --key` without INDEX acts on the keyed
+entry wherever it now sits. An index with only `--expected-app` or
+`--expected-title` checks just those fields, so it cannot tell two entries
+with the same app and title apart. A bare index is `INVALID_ARGS`.
+
+The `key` field and the `--key` flag are additive and belong to the 2.7
+contract; a consumer that ignores `key` reads the list as before.
+
 ## Error codes
 
 | Code | Meaning |
@@ -602,7 +635,7 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 | `TIMEOUT` | Wait condition expired, or a live identity read stayed incomplete until the deadline |
 | `INVALID_ARGS` | Invalid argument values |
 | `WINDOW_NOT_FOUND` | The requested window does not exist, including a `screenshot --window-id` that matches no window; the disposition is `not_delivered` |
-| `NOTIFICATION_NOT_FOUND` | The notification ID was not found |
+| `NOTIFICATION_NOT_FOUND` | No listed notification carries the requested key, or the entry at the index no longer carries the key or the expected app/title; the disposition is `not_delivered` |
 | `INTERNAL` | Unexpected error or caught panic |
 
 ## Exit codes

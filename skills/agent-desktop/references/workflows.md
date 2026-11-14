@@ -169,11 +169,11 @@ agent-desktop wait --download --app "Google Chrome" --timeout 60000
 
 ```bash
 agent-desktop --headed list-notifications --app "Slack"
-agent-desktop --headed notification-action 1 "Reply" --expected-app Slack --expected-title "#general"
-agent-desktop --headed dismiss-notification 1 --expected-app Slack
+agent-desktop --headed notification-action 1 "Reply" --key "<key of entry 1>"
+agent-desktop --headed dismiss-notification --key "<key of the entry>"
 ```
 
-macOS (Notification Center), Windows (Action Center) and Linux (GNOME Shell) support these commands. List first and copy the fingerprint from the listing. Notifications reorder, so a stale index fails with `NOTIFICATION_NOT_FOUND` instead of pressing the wrong row.
+macOS (Notification Center), Windows (Action Center) and Linux (GNOME Shell) support these commands. List first and copy the entry's `key` from the listing. Notifications reorder, so a key that no longer names the entry at the index, or names no entry, fails with `NOTIFICATION_NOT_FOUND` instead of pressing the wrong row.
 
 ## Batch
 

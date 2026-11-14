@@ -98,27 +98,9 @@ pub(crate) fn apply_filter(
 ) -> Vec<NotificationInfo> {
     entries
         .into_iter()
-        .filter(|info| matches_filters(info, filter))
+        .filter(|info| filter.admits(info))
         .take(filter.limit.unwrap_or(usize::MAX))
         .collect()
-}
-
-pub(crate) fn matches_app(info: &NotificationInfo, app: &str) -> bool {
-    info.app_name.to_lowercase().contains(&app.to_lowercase())
-}
-
-fn matches_filters(info: &NotificationInfo, filter: &NotificationFilter) -> bool {
-    let words = |text: &str| {
-        let body = info.body.as_deref().unwrap_or("");
-        format!("{} {body} {}", info.title, info.app_name)
-            .to_lowercase()
-            .contains(&text.to_lowercase())
-    };
-    filter
-        .app
-        .as_deref()
-        .is_none_or(|app| matches_app(info, app))
-        && filter.text.as_deref().is_none_or(words)
 }
 
 #[cfg(test)]

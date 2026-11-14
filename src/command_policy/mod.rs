@@ -211,21 +211,19 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
                 validate_ref_id(ref_id)?;
             }
         }
-        Commands::DismissNotification(args)
-            if args.expected_app.as_deref().is_none_or(str::is_empty)
-                && args.expected_title.as_deref().is_none_or(str::is_empty) =>
-        {
-            return Err(AppError::invalid_input(
-                "dismiss-notification requires --expected-app or --expected-title",
-            ));
+        Commands::DismissNotification(args) => {
+            notification_addressing(
+                args.index.is_some(),
+                args.key.as_deref(),
+                [&args.expected_app, &args.expected_title],
+            )?;
         }
-        Commands::NotificationAction(args)
-            if args.expected_app.as_deref().is_none_or(str::is_empty)
-                && args.expected_title.as_deref().is_none_or(str::is_empty) =>
-        {
-            return Err(AppError::invalid_input(
-                "notification-action requires --expected-app or --expected-title",
-            ));
+        Commands::NotificationAction(args) => {
+            notification_addressing(
+                true,
+                args.key.as_deref(),
+                [&args.expected_app, &args.expected_title],
+            )?;
         }
         Commands::Find(_)
         | Commands::Screenshot(_)
@@ -252,9 +250,7 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
         | Commands::Restore(_)
         | Commands::ListSurfaces(_)
         | Commands::ListNotifications(_)
-        | Commands::DismissNotification(_)
         | Commands::DismissAllNotifications(_)
-        | Commands::NotificationAction(_)
         | Commands::ClipboardGet(_)
         | Commands::ClipboardSet(_)
         | Commands::ClipboardClear
@@ -268,6 +264,22 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
         | Commands::Trace(_) => {}
     }
     Ok(())
+}
+
+/// Core's notification addressing rule, checked before any permission
+/// preflight so a malformed request is refused without touching the desktop.
+fn notification_addressing(
+    has_index: bool,
+    key: Option<&str>,
+    [app, title]: [&Option<String>; 2],
+) -> Result<(), AppError> {
+    let identity = agent_desktop_core::NotificationIdentity {
+        expected_app: app.clone(),
+        expected_title: title.clone(),
+    };
+    Ok(agent_desktop_core::NotificationTarget::check(
+        has_index, key, &identity,
+    )?)
 }
 
 fn requires_accessibility(permission: PermissionNeed) -> bool {

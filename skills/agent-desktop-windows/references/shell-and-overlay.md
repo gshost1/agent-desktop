@@ -54,8 +54,9 @@ shape when none are, and a top-level `ClearAllButton`.
   `PLATFORM_NOT_SUPPORTED` with a `platform_detail` that names the missing
   landmark. An unrecognized tree is an error, never an empty answer.
 - **The index is not the identity.** Every mutation re-reads the center and
-  compares the entry at the index with `--expected-app` and
-  `--expected-title`. A mismatch is `NOTIFICATION_NOT_FOUND`. An action name the
+  acts only on the entry that carries `--key` (or, without a key, whose app
+  and title match `--expected-app` / `--expected-title`). A mismatch is
+  `NOTIFICATION_NOT_FOUND`. An action name the
   entry does not offer is `ACTION_NOT_SUPPORTED`.
 - **A dismiss that does nothing fails.** The shell can accept an entry's
   `DismissButton` without acting on it. When the target is the only entry, the

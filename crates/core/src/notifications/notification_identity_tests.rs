@@ -25,6 +25,7 @@ fn empty_string_fields_do_not_form_an_identity() {
         expected_title: None,
     };
     assert!(identity.is_empty());
+    assert!(identity.matches(&sample_info("Slack", "New")));
 }
 
 #[test]
