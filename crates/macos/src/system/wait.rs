@@ -5,13 +5,15 @@ pub(crate) fn wait_for_menu(
     open: bool,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
+    use crate::system::window::popup_menu_window::menu_shown;
     use crate::tree::surfaces::is_menu_open;
     use std::time::Duration;
 
     loop {
         let identity = crate::system::process::process_identity::require_core(&process)?;
         let instant = crate::tree::locator_deadline::from_operation(deadline)?;
-        if is_menu_open(identity.pid(), instant)? == open {
+        let pid = identity.pid();
+        if menu_shown(pid, || is_menu_open(pid, instant))? == open {
             crate::system::process::process_identity::require_core(&process)?;
             return Ok(());
         }

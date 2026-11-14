@@ -246,3 +246,41 @@ fn every_read_is_capped_to_the_settle_window() {
     assert!(longest > std::time::Duration::ZERO);
     assert!(longest <= settle);
 }
+
+fn search_past_budget() -> AdapterError {
+    AdapterError::new(
+        agent_desktop_core::ErrorCode::AppUnresponsive,
+        "Accessibility surface search exceeded its node budget",
+    )
+    .with_details(serde_json::json!({ "kind": "surface_search_limit", "limit": 2048 }))
+}
+
+#[test]
+fn a_menu_search_past_its_budget_still_takes_a_window_server_baseline() {
+    assert_eq!(
+        baseline_from(Err(search_past_budget()), || Ok(vec![5])),
+        Some(MenuBaseline {
+            menu_windows: vec![5]
+        })
+    );
+    assert_eq!(
+        baseline_from(Err(search_past_budget()), || Err(unreadable())),
+        None
+    );
+}
+
+#[test]
+fn a_dense_window_right_click_is_verified_by_the_new_menu_window() {
+    let baseline = baseline_from(Err(search_past_budget()), || Ok(Vec::new()));
+    let mut reads = vec![MenuRead::Absent, MenuRead::Appeared].into_iter();
+
+    let steps = settle_exhausted(
+        delivered_unverified_steps(),
+        baseline,
+        |_| reads.next().unwrap_or(MenuRead::Exhausted),
+        SUGGESTION,
+    )
+    .unwrap();
+
+    assert_eq!(steps.last().unwrap().verified, Some(true));
+}
