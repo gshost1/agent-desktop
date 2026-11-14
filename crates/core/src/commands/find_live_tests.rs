@@ -111,6 +111,30 @@ fn a_context_match_shows_the_screen_rectangle_not_the_window_rectangle_a_ref_sto
     );
 }
 
+/// A find whose matches carry no ref has nothing to qualify, so it saves no
+/// snapshot and reports no snapshot_id: an empty snapshot would only take a
+/// slot the store prunes real snapshots to keep.
+#[test]
+fn a_find_that_publishes_no_ref_saves_no_snapshot() {
+    let _guard = HomeGuard::new();
+    let adapter = LiveFindAdapter::with_framed_label();
+
+    let response = execute(
+        named_find("w-1", FRAMED_LABEL),
+        &adapter,
+        &CommandContext::default(),
+    )
+    .expect("live find should succeed");
+
+    assert_eq!(response["matches"][0]["name"], FRAMED_LABEL);
+    assert!(response["matches"][0].get("ref_id").is_none());
+    assert!(response.get("snapshot_id").is_none());
+    assert_eq!(
+        RefStore::new().unwrap().load_latest().unwrap_err().code(),
+        "SNAPSHOT_NOT_FOUND"
+    );
+}
+
 #[test]
 fn sequential_window_finds_return_distinct_ref_namespaces() {
     let _guard = HomeGuard::new();
