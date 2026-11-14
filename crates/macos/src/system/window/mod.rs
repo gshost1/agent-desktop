@@ -16,3 +16,4 @@ pub(crate) mod window_ops;
 pub(crate) mod window_postcondition;
 pub(crate) mod window_report;
 pub(crate) mod window_resolve;
+pub(crate) mod window_stack_occluder;

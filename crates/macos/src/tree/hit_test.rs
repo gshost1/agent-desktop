@@ -46,27 +46,45 @@ mod imp {
         point: Point,
         deadline: std::time::Instant,
     ) -> Result<HitTestResult, AdapterError> {
+        let result = accessibility_hit(target, &point, deadline)?;
+        if result != HitTestResult::Unknown {
+            return Ok(result);
+        }
+        let Ok(pid) = crate::tree::properties::ax_ipc::pid(target, deadline) else {
+            return Ok(result);
+        };
+        Ok(
+            crate::system::window::window_stack_occluder::intercepting_window(&point, pid)
+                .unwrap_or(result),
+        )
+    }
+
+    fn accessibility_hit(
+        target: &AXElement,
+        point: &Point,
+        deadline: std::time::Instant,
+    ) -> Result<HitTestResult, AdapterError> {
         let Some(bounds) = read_bounds_with_deadline(target, deadline)? else {
             return Ok(HitTestResult::Unknown);
         };
         if bounds.width <= 0.0 || bounds.height <= 0.0 {
             return Ok(HitTestResult::Unknown);
         }
-        if !clipping_is_complete(target, &point, deadline)? {
+        if !clipping_is_complete(target, point, deadline)? {
             return Ok(HitTestResult::Unknown);
         }
         let system = crate::tree::system_wide::element();
         if system.0.is_null() {
             return Ok(HitTestResult::Unknown);
         }
-        let Some(hit) = hit_at_position(&system, &point, deadline) else {
+        let Some(hit) = hit_at_position(&system, point, deadline) else {
             return Ok(HitTestResult::Unknown);
         };
         let Some(classification) = classify_hit(target, &hit, deadline) else {
             return Ok(HitTestResult::Unknown);
         };
         if needs_application_retry(classification) {
-            return Ok(hit_test_in_application(target, &point, deadline));
+            return Ok(hit_test_in_application(target, point, deadline));
         }
         Ok(classification_result(classification, &hit, deadline))
     }
