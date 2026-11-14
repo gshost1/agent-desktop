@@ -92,3 +92,40 @@ fn an_unreadable_tree_keeps_the_result_and_names_why_lines_are_missing() {
     assert!(reason.is_some_and(|reason| !reason.is_empty()));
     assert_eq!(shown, data);
 }
+
+fn diff_data() -> Value {
+    json!({
+        "snapshot_id": "s9",
+        "complete": true,
+        "diff": { "since": "s8", "status": "changed",
+            "added": [{ "ref_id": "@s9:e2", "role": "button", "name": "Close" }],
+            "focused": { "ref_id": "@s9:e1", "role": "textfield", "name": "To", "states": ["focused"] } }
+    })
+}
+
+#[test]
+fn lines_replace_diff_rows_in_a_snapshot_and_in_a_batch_entry() {
+    let (result, pretty) = present_lines("snapshot", Ok(diff_data()), true);
+    let data = result.unwrap();
+    assert!(pretty);
+    assert_eq!(
+        data["lines"],
+        json!([
+            "+ @s9:e2 button \"Close\"",
+            "focused @s9:e1 textfield \"To\" [focused]"
+        ])
+    );
+    assert_eq!(data["diff"], json!({ "since": "s8", "status": "changed" }));
+
+    let mut batch = json!({ "results": [{ "ok": true, "data": diff_data() }] });
+    assert!(apply_lines_output("batch", &mut batch));
+    assert_eq!(batch["results"][0]["data"]["lines"][0], "+ @s9:e2 button \"Close\"");
+}
+
+#[test]
+fn a_diff_row_that_cannot_be_rendered_keeps_its_rows_and_says_why() {
+    let mut data = json!({ "diff": { "since": "s8", "status": "changed", "added": [{ "name": "x" }] } });
+    assert!(!apply_lines_output("snapshot", &mut data));
+    assert!(data["diff"]["added"].is_array());
+    assert!(data["lines_error"].is_string());
+}

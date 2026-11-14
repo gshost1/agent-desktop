@@ -40,6 +40,29 @@ Choose the scope:
 - With `--app` and no `--window-id`, `snapshot` and `find` take the app's only visible window, else its only focused window, and answer `AMBIGUOUS_TARGET` with the candidates when neither settles it. Pass `--window-id` when an app has several windows.
 - On macOS, `menu` and `menubar` are application-owned and skip window selection. If you pass `--window-id`, it selects the owning app for that surface.
 
+### Only what changed (`--since`)
+
+After an action, `snapshot --since <snapshot_id>` re-reads the window and prints only what differs from that earlier snapshot, not the whole tree. It is a full snapshot: it gets its own `snapshot_id`, saves its refs, and can be the `--since` of the next one. Pass the same `--app`, `--window-id`, `--surface`, `-i`, `--compact`, `--skeleton` and `--max-depth` as the snapshot you compare against.
+
+```bash
+agent-desktop snapshot --app "Text Editor" -i --compact             # prints snapshot_id s8f3k2p9
+agent-desktop click @s8f3k2p9:e4
+agent-desktop snapshot --app "Text Editor" -i --compact --since s8f3k2p9 --lines
+```
+
+`data.diff` replaces `data.tree`. `status` is `changed`, `unchanged` (both reads were whole and nothing differs), `incomplete` (one side was cut short, named in `incomplete`; rows past a cut may be missing, and it never claims no change) or `not_comparable`. Rows:
+
+- `added`: elements that appeared, with fresh refs of the new snapshot.
+- `changed`: the same element with a different name, value, description, placeholder, hint, states or focus. `changed` lists the fields and `was` holds the earlier values (`null` when there was none; `states` for a state or focus change).
+- `removed`: elements that are gone, without a ref.
+- `focused`: the element with keyboard focus now, also when nothing changed.
+
+Elements pair by the identity refs use: role plus native id, stable name and description. A value change is `changed`; a renamed button, or an element with an identical twin, shows as removed plus added, never as changed. A container with no ref, no text and no state is not reported. Elements that did not change keep working through the refs you already hold.
+
+With `--lines`, `data.lines` holds `+` added, `~` changed (with `(was ...)`), `-` removed lines, `no change` when unchanged, and a last `focused` line.
+
+`not_comparable` returns the whole tree in `data.tree` with `diff.reason`: `owner_changed` when the snapshot read another window or process (a dialog that opened as its own window, say), or `presentation_changed` when the flags shaping the tree differ. An unknown, pruned or other-session id, or a snapshot saved by `find`, `wait` or a `--wait-for` rather than a plain `snapshot`, fails `SNAPSHOT_NOT_FOUND` before anything is read, with `details.kind` `since_snapshot_not_found` or `diff_baseline_missing`: take a full snapshot without `--since`. `--since` cannot combine with `--root` or `--wait-for`.
+
 ### Partial trees
 
 `data.complete` is on every snapshot. When the observation budget runs out, the command still succeeds with `"complete": false`, `"truncated": true`, `"nodes_observed"`, and the tree it saw. Each node with cut descendants carries `"subtree_truncated": true`. Read `complete`; do not wait for a `TIMEOUT`. Raise `--timeout-ms` (default 3000) or drill with `--root` to finish the tree. A `--root` drill is all or nothing: an incomplete read returns `TIMEOUT`.
