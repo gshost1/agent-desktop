@@ -55,6 +55,38 @@ else
     HAS_FFI_CHANGES=0
 fi
 
+if staged_matches '^CHANGELOG\.md$' "$staged_files" && ! staged_matches '^Cargo\.toml$' "$staged_files"; then
+    echo "pre-commit: CHANGELOG.md is staged outside a release pull request" >&2
+    echo "pre-commit: add a fragment under changelog.d/ instead; scripts/changelog_fragments.py assemble writes CHANGELOG.md at release." >&2
+    exit 1
+fi
+
+if staged_matches '^(changelog\.d/|scripts/changelog_fragments|scripts/fixtures/changelog-fragments/)' "$staged_files"; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "pre-commit: python3 not found; it checks the staged changelog fragments" >&2
+        exit 1
+    fi
+    echo "pre-commit: checking changelog fragments"
+    PYTHONDONTWRITEBYTECODE=1 python3 scripts/changelog_fragments_test.py >/dev/null 2>&1 || {
+        echo "pre-commit: the changelog fragment self-test fails; rerun python3 scripts/changelog_fragments_test.py" >&2
+        exit 1
+    }
+    fragment_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-desktop-fragments.XXXXXX")"
+    trap 'rm -rf -- "$fragment_dir"' EXIT
+    staged_fragments=()
+    while IFS= read -r fragment; do
+        if [ -n "$fragment" ] && [ "$(basename "$fragment")" != ".gitkeep" ]; then
+            git show ":$fragment" >"$fragment_dir/$(basename "$fragment")"
+            staged_fragments+=("$fragment_dir/$(basename "$fragment")")
+        fi
+    done <<EOF
+$(printf '%s\n' "$staged_files" | grep -E '^changelog\.d/' || true)
+EOF
+    if [ "${#staged_fragments[@]}" -gt 0 ]; then
+        python3 scripts/changelog_fragments.py check "${staged_fragments[@]}"
+    fi
+fi
+
 if [ "$HAS_RUST_CHANGES" -eq 0 ] && [ "$HAS_FFI_CHANGES" -eq 0 ]; then
     if staged_matches '^(tests/e2e-linux/|scripts/|\.githooks/|\.github/workflows/)' "$staged_files"; then
         echo "pre-commit: checking harness and script files"
