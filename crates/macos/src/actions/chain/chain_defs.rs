@@ -149,7 +149,7 @@ mod imp {
     pub(crate) static SCROLL_TO_CHAIN: ChainDef = ChainDef {
         steps: &[ChainStep::CustomWithDeadline {
             label: "scroll_to_visible_verified",
-            func: crate::actions::scroll_into_view::scroll_into_view_outcome,
+            func: crate::actions::scroll::scroll_into_view::scroll_into_view_outcome,
         }],
         suggestion: "Target an element that advertises AXScrollToVisible.",
         continue_after_unverified_delivery: false,

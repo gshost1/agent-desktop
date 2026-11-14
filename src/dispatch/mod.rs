@@ -79,22 +79,46 @@ fn dispatch_command(
         Commands::Screenshot(args) => observation::screenshot(args, adapter),
         Commands::Get(args) => observation::get(args, adapter, context),
         Commands::Is(args) => observation::is(args, adapter, context),
-        Commands::Click(args) => interaction::click(args, adapter, context),
-        Commands::DoubleClick(args) => interaction::double_click(args, adapter, context),
-        Commands::TripleClick(args) => interaction::triple_click(args, adapter, context),
-        Commands::RightClick(args) => interaction::right_click(args, adapter, context),
+        Commands::Click(args) => {
+            commands::click::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::DoubleClick(args) => {
+            commands::double_click::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::TripleClick(args) => {
+            commands::triple_click::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::RightClick(args) => {
+            commands::right_click::execute(interaction::ref_args(args), adapter, context)
+        }
         Commands::Type(args) => interaction::type_text(args, adapter, context),
         Commands::SetValue(args) => interaction::set_value(args, adapter, context),
-        Commands::Clear(args) => interaction::clear(args, adapter, context),
-        Commands::Focus(args) => interaction::focus(args, adapter, context),
+        Commands::Clear(args) => {
+            commands::clear::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::Focus(args) => {
+            commands::focus::execute(interaction::ref_args(args), adapter, context)
+        }
         Commands::Select(args) => interaction::select(args, adapter, context),
-        Commands::Toggle(args) => interaction::toggle(args, adapter, context),
-        Commands::Check(args) => interaction::check(args, adapter, context),
-        Commands::Uncheck(args) => interaction::uncheck(args, adapter, context),
-        Commands::Expand(args) => interaction::expand(args, adapter, context),
-        Commands::Collapse(args) => interaction::collapse(args, adapter, context),
+        Commands::Toggle(args) => {
+            commands::toggle::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::Check(args) => {
+            commands::check::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::Uncheck(args) => {
+            commands::uncheck::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::Expand(args) => {
+            commands::expand::execute(interaction::ref_args(args), adapter, context)
+        }
+        Commands::Collapse(args) => {
+            commands::collapse::execute(interaction::ref_args(args), adapter, context)
+        }
         Commands::Scroll(args) => interaction::scroll(args, adapter, context),
-        Commands::ScrollTo(args) => interaction::scroll_to(args, adapter, context),
+        Commands::ScrollTo(args) => {
+            commands::scroll_to::execute(interaction::ref_args(args), adapter, context)
+        }
         Commands::Press(args) => keyboard_mouse::press(args, adapter, context),
         Commands::KeyDown(args) => keyboard_mouse::key_down(args, adapter),
         Commands::KeyUp(args) => keyboard_mouse::key_up(args, adapter),

@@ -167,13 +167,6 @@ impl ObservationRequest {
         self.evidence_plan.for_raw_depth(raw_depth)
     }
 
-    /// Sets the observation-mode sub-struct the adapter reads for
-    /// renderer-accessibility handling on web-wrapped targets.
-    pub fn with_observation_mode(mut self, mode: ObservationMode) -> Self {
-        self.observation_mode = mode;
-        self
-    }
-
     pub fn descendant_evidence(self) -> EvidenceRequirements {
         self.evidence_plan.descendants()
     }
