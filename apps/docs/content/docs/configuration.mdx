@@ -22,7 +22,7 @@ Global flags work before or after the command name, so `agent-desktop --headed c
     <tr><td><code>--trace-strict</code></td><td>off</td><td>Fail when trace setup or a pre-action write fails. Requires <code>--trace</code> or a tracing session.</td></tr>
     <tr><td><code>--wait-for SELECTOR</code>, <code>-w</code></td><td>none</td><td>After the command, poll until an element matches. See <a href="#post-action-wait-flags">Post-action wait flags</a>.</td></tr>
     <tr><td><code>--wait-for-gone SELECTOR</code></td><td>none</td><td>After the command, poll until no element matches.</td></tr>
-    <tr><td><code>--wait-timeout MS</code></td><td><code>30000</code></td><td>Longest wait for the two flags above.</td></tr>
+    <tr><td><code>--wait-timeout MS</code></td><td><code>10000</code></td><td>Longest wait for the two flags above.</td></tr>
     <tr><td><code>--verbose</code>, <code>-v</code></td><td>off</td><td>Write debug logs to stderr. Stdout stays one JSON envelope.</td></tr>
     <tr><td><code>--debug</code>, <code>--screenshot PATH.html</code></td><td>off</td><td>Write a visual debug HTML file for <code>snapshot</code> or <code>click</code>. Each requires the other. See <a href="/desktop/guides/traces#make-a-visual-debug-file">Traces</a>.</td></tr>
     <tr><td><code>--help</code>, <code>-h</code>; <code>--version</code>, <code>-V</code></td><td></td><td>Print help or the version as text. The <code>version</code> command prints it as JSON.</td></tr>

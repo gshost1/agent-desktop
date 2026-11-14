@@ -347,6 +347,8 @@ A complete menu lookup with no surface returns `ELEMENT_NOT_FOUND` with `details
 
 When a ref action returns `delivery_uncertain` with a post-action wait selector, `error.details.post_action_observation` records a read-only observation of the original process. Application-owned refs keep their source surface. Window-owned refs observe their original pinned window, including refs captured from `sheet`, `alert`, `popover`, `focused`, or a window-owned `menu` such as a Linux menu. This lets a closed overlay be observed without treating the parent window as absent. The action is never repeated, and its original error and unsafe retry disposition stay unchanged. Even `expected_state_observed` does not prove that the action caused the state. Observation uses `--wait-timeout` separately from the action timeout.
 
+A post-action `--wait-for` that cannot succeed ends before its budget: `APP_NOT_FOUND` with `details.kind: "wait_target_gone"` and `details.process_state` (`exited` or `crashed`) when the ref's process is gone, and `APP_UNRESPONSIVE` with `details.kind: "wait_owner_unresponsive"` and `details.unresponsive_ms` after 5 s without an answer. Both carry `predicate`, `selector`, `elapsed_ms`, `timeout_ms` and `details.after_action`, and keep the action's delivery disposition. On success the snapshot may be of a window the action opened, named by `data.window`.
+
 | Field | Meaning |
 | --- | --- |
 | `kind` | Always `post_action_observation`. |
