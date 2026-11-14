@@ -35,9 +35,19 @@ ancestor_paths() {
     done
 }
 
+run_sql() {
+    local prefix="$1"
+    shift
+    if [ "$prefix" = "sudo" ]; then
+        sudo sqlite3 "$@"
+    else
+        sqlite3 "$@"
+    fi
+}
+
 tcc_rows() {
     local db="$1" prefix="$2"
-    $prefix sqlite3 "$db" "SELECT service, client, client_type, auth_value FROM access WHERE service IN ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServicePostEvent','kTCCServiceAppleEvents') ORDER BY service, client;" 2>&1
+    run_sql "$prefix" "$db" "SELECT service, client, client_type, auth_value FROM access WHERE service IN ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServicePostEvent','kTCCServiceAppleEvents') ORDER BY service, client;" 2>&1
 }
 
 report_env() {
@@ -48,7 +58,7 @@ report_env() {
     section "gui domain"; launchctl print "gui/$(id -u)" 2>&1 | head -40
     section "loginwindow and WindowServer"; pgrep -lx loginwindow; pgrep -lx WindowServer
     section "ancestor chain"; ancestor_paths
-    section "process tree"; ps -axo pid,ppid,user,comm | grep -Ei 'runner|provisioner|launchd|ankarun|bash|login' | head -40
+    section "process tree"; ps -axo pid,ppid,user,comm | awk 'tolower($0) ~ /runner|provisioner|launchd|ankarun|bash|login/' | head -40
     section "user TCC.db"; tcc_rows "$USER_TCC" ""
     section "system TCC.db"; tcc_rows "$SYSTEM_TCC" "sudo"
     section "system TCC schema"; sudo sqlite3 "$SYSTEM_TCC" ".schema access" 2>&1
@@ -71,8 +81,11 @@ insert_rows() {
     local db="$1" prefix="$2" client="$3" service now
     now="$(date +%s)"
     for service in $SERVICES; do
-        $prefix sqlite3 "$db" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, flags, last_modified) VALUES ('$service', '$client', 1, 2, 4, 1, 'UNUSED', 0, $now);" 2>&1 \
-            && echo "inserted $service for $client" || echo "insert failed: $service for $client"
+        if run_sql "$prefix" "$db" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, flags, last_modified) VALUES ('$service', '$client', 1, 2, 4, 1, 'UNUSED', 0, $now);" 2>&1; then
+            echo "inserted $service for $client"
+        else
+            echo "insert failed: $service for $client"
+        fi
     done
 }
 
