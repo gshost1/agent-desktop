@@ -7,8 +7,8 @@ use crate::{
         point_resolve::{PointResolveArgs, require_cursor_policy, require_pointer_capability},
         pointer_action::{
             CommandFocus, PointResolveAttempt, before_first_event, ensure_point_deadline,
-            point_deadline, resolve_point_under_lease, retry_leased_point_phase,
-            wait_for_point_with_focus,
+            point_deadline, refuse_unproven_refs, resolve_point_under_lease,
+            retry_leased_point_phase, wait_for_point_with_focus,
         },
     },
     context::CommandContext,
@@ -65,6 +65,7 @@ pub fn execute(
         missing_input_message: "Provide --to <ref> or --to-xy x,y",
         headed_requirement: crate::HeadedRequirement::None,
     };
+    before_first_event(|| refuse_unproven_refs(&[from_args, to_args], context))?;
     let auto_wait = args.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let cursor = crate::cursor_overlay::hold_cursor(context, deadline);
     let mut focus = CommandFocus::default();

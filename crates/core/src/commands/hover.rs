@@ -9,8 +9,8 @@ use crate::{
         },
         pointer_action::{
             CommandFocus, PointResolveAttempt, before_first_event, ensure_point_deadline,
-            point_deadline, resolve_point_under_lease, retry_leased_point_phase,
-            wait_for_point_with_focus,
+            point_deadline, refuse_unproven_refs, resolve_point_under_lease,
+            retry_leased_point_phase, wait_for_point_with_focus,
         },
     },
     context::CommandContext,
@@ -45,6 +45,7 @@ pub fn execute(
         missing_input_message: "Provide a ref (@<snapshot_id>:e1) or --xy x,y",
         headed_requirement: crate::HeadedRequirement::FocusedWindowAndCursor,
     };
+    before_first_event(|| refuse_unproven_refs(&[point_args], context))?;
     let auto_wait = args.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let cursor = crate::cursor_overlay::hold_cursor(context, deadline);
     let mut focus = CommandFocus::default();

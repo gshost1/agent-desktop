@@ -49,6 +49,15 @@ impl crate::SystemOps for RefWindowAdapter {
         }
         Ok(())
     }
+
+    fn focus_app(
+        &self,
+        _: crate::ProcessIdentity,
+        _: &crate::InteractionLease,
+    ) -> Result<(), AdapterError> {
+        self.events.lock().unwrap().push("focus_app");
+        Ok(())
+    }
 }
 
 #[test]
@@ -145,4 +154,38 @@ fn an_application_target_without_identity_is_refused_like_a_window_target() {
     assert_eq!(error.message, MISSING_PROCESS_IDENTITY);
     assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
     assert!(!error.moved_focus());
+}
+
+#[test]
+fn an_unproven_capture_is_refused_before_its_window_or_app_is_read_or_raised() {
+    for capture in [
+        crate::CaptureVerdict::Ambiguous,
+        crate::CaptureVerdict::Incomplete,
+        crate::CaptureVerdict::Unknown,
+    ] {
+        let adapter = RefWindowAdapter {
+            events: Mutex::new(Vec::new()),
+            mismatch: false,
+            focus_fails: false,
+        };
+        let mut entry = crate::adapter::minimal_ref_entry("menuitem", None);
+        entry.source.source_surface = crate::SnapshotSurface::Menu;
+        entry.identity.capture = capture;
+        let expected = crate::refs::resolve_errors::refused_before_reading(&entry).unwrap();
+        let lease =
+            crate::InteractionLease::guarded(crate::Deadline::standard().unwrap(), ()).unwrap();
+
+        let window =
+            focus_entry_window(&entry, &adapter, &crate::CommandContext::default(), &lease)
+                .unwrap_err();
+        let app = focus_entry_app(&entry, &adapter, &lease).unwrap_err();
+
+        for error in [window, app] {
+            assert_eq!(error.code, expected.code, "{capture:?}");
+            assert_eq!(error.details, expected.details, "{capture:?}");
+            assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
+            assert!(!error.moved_focus());
+        }
+        assert!(adapter.events.lock().unwrap().is_empty(), "{capture:?}");
+    }
 }

@@ -4,9 +4,11 @@ use crate::{AdapterError, ErrorCode, PlatformAdapter, ProcessIdentity, WindowInf
 
 /// Focuses the window a ref came from and returns whether it did. A ref
 /// captured through a process owner has no window to raise, so it returns
-/// `false`; any other ref without a window id is refused. Every refusal is
-/// `not_delivered`, because focus always comes before the input it serves,
-/// and one raised after the focus call also carries `preparatory_focus`.
+/// `false`; any other ref without a window id is refused, and so is a ref its
+/// capture did not prove unique, with the refusal resolution gives, before
+/// anything is read or raised. Every refusal is `not_delivered`, because
+/// focus always comes before the input it serves, and one raised after the
+/// focus call also carries `preparatory_focus`.
 pub(crate) fn focus_entry_window(
     entry: &crate::RefEntry,
     adapter: &dyn PlatformAdapter,
@@ -17,6 +19,7 @@ pub(crate) fn focus_entry_window(
         .process
         .identity()
         .ok_or_else(|| headed_refusal(MISSING_PROCESS_IDENTITY))?;
+    refuse_unproven_capture(entry)?;
     if entry.source.is_process_owned() {
         return Ok(false);
     }
@@ -38,6 +41,7 @@ pub(crate) fn focus_entry_app(
         .process
         .identity()
         .ok_or_else(|| headed_refusal(MISSING_PROCESS_IDENTITY))?;
+    refuse_unproven_capture(entry)?;
     adapter
         .focus_app(process, lease)
         .map_err(AdapterError::after_focus)?;
@@ -109,6 +113,10 @@ fn required_text<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str, A
     value
         .filter(|value| !value.is_empty())
         .ok_or_else(|| headed_refusal(message))
+}
+
+fn refuse_unproven_capture(entry: &crate::RefEntry) -> Result<(), AdapterError> {
+    crate::refs::resolve_errors::refused_before_reading(entry).map_or(Ok(()), Err)
 }
 
 const MISSING_PROCESS_IDENTITY: &str = "Headed input requires target process-instance identity";
