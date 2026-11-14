@@ -193,6 +193,9 @@ pub fn run_with_context(
     )?;
     let store = RefStore::for_session(context.session_id())?;
     let snapshot_id = result.save_refmap(&store)?;
+    if let Err(err) = diff::diff_baseline::save_baseline(&store, &snapshot_id, &result, opts) {
+        tracing::debug!(%err, snapshot_id, "snapshot: diff baseline not saved");
+    }
     trace_artifacts::copy_refmap_if_full(context, &store, &snapshot_id, &result.refmap)?;
     result.bind_snapshot_id(snapshot_id);
     emit_snapshot_saved(context, &result)?;
@@ -218,6 +221,7 @@ pub(crate) fn emit_snapshot_saved(
     })
 }
 
+pub mod diff;
 pub mod hints;
 pub mod ref_lines;
 pub(crate) mod ref_owner_observation;

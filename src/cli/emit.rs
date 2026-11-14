@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use agent_desktop_core::{
     AppError,
     response::output::{ErrorPayload, Response},
-    snapshot::ref_lines::replace_tree_with_lines,
+    snapshot::{diff::diff_lines::replace_diff_with_lines, ref_lines::replace_tree_with_lines},
 };
 use serde_json::Value;
 
@@ -73,8 +73,8 @@ fn present_lines(
     }
 }
 
-/// Replaces the snapshot tree in `data`, and in each completed entry of a
-/// batch, with its lines. A tree that cannot be rendered stays a tree and
+/// Replaces the snapshot tree or `snapshot --since` diff rows in `data`, and
+/// in each completed entry of a batch, with their lines. A tree that cannot be rendered stays a tree and
 /// gains `lines_error`, so a delivered action's report is never turned into
 /// an error and the caller can tell why `lines` is missing.
 pub(crate) fn apply_lines_output(cmd_name: &str, data: &mut Value) -> bool {
@@ -90,7 +90,9 @@ pub(crate) fn apply_lines_output(cmd_name: &str, data: &mut Value) -> bool {
 }
 
 fn replace_or_mark(data: &mut Value) -> bool {
-    match replace_tree_with_lines(data) {
+    match replace_tree_with_lines(data)
+        .and_then(|tree| Ok(replace_diff_with_lines(data)? || tree))
+    {
         Ok(replaced) => replaced,
         Err(error) => {
             if let Some(body) = data.as_object_mut() {

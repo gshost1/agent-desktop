@@ -3,6 +3,7 @@ use agent_desktop_core::{
     commands::{
         find as find_command, get as get_command, is_check as is_command,
         screenshot as screenshot_command, snapshot as snapshot_command,
+        snapshot_since as snapshot_since_command,
     },
     context::CommandContext,
 };
@@ -16,8 +17,8 @@ pub(super) fn snapshot(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    snapshot_command::execute(
-        snapshot_command::SnapshotArgs {
+    let since = args.since;
+    let args = snapshot_command::SnapshotArgs {
             app: args.scope.app,
             window_id: args.scope.window_id,
             max_depth: args.tree.max_depth,
@@ -29,10 +30,11 @@ pub(super) fn snapshot(
             root_ref: args.root,
             timeout_ms: args.timeout_ms,
             force_electron_a11y: args.force_electron_a11y,
-        },
-        adapter,
-        context,
-    )
+    };
+    match since {
+        Some(since) => snapshot_since_command::execute_since(args, &since, adapter, context),
+        None => snapshot_command::execute(args, adapter, context),
+    }
 }
 
 pub(super) fn find(

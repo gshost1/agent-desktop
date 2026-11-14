@@ -31,7 +31,7 @@ pub struct SnapshotArgs {
     pub force_electron_a11y: bool,
 }
 
-fn tree_options(args: &SnapshotArgs) -> crate::adapter::TreeOptions {
+pub(crate) fn tree_options(args: &SnapshotArgs) -> crate::adapter::TreeOptions {
     let skeleton_applies = args.skeleton && args.root_ref.is_none();
     let effective_depth = if skeleton_applies {
         args.max_depth.min(3)
