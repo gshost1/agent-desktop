@@ -87,8 +87,9 @@ check. Bypass it only in an emergency: `git commit --no-verify` or `SKIP_PRECOMM
 - Use Conventional Commits: `feat:`, `fix:`, `feat!:` or a `BREAKING CHANGE:` footer, `docs:`, `style:`, `refactor:`,
   `perf:`, `chore:`, `ci:`, `test:`. Write `type: imperative summary` in lowercase after the colon, and say why.
 - Every PR with a user-visible change, except the release PR, adds one changelog fragment,
-  `changelog.d/<branch with / replaced by ->.md`, and leaves `CHANGELOG.md` alone. A fragment holds `### BREAKING CHANGES`, `### Features`, `### Bug Fixes` or `### Performance`
-  sections (also `Documentation`, `Testing`, `Known issues`) of single-line `* ` bullets in the existing style;
+  `changelog.d/<branch with / replaced by ->.md`, and leaves `CHANGELOG.md` alone. A fragment holds
+  `### BREAKING CHANGES`, `### Features`, `### Bug Fixes` or `### Performance` sections (also `Documentation`,
+  `Testing`, `Known issues`) of single-line `* ` bullets in the existing style;
   `python3 scripts/changelog_fragments.py check` checks them, the pre-commit hook checks staged ones and CI's Format
   job checks them on every PR.
 - Versions follow semver from 1.0.0. A release is one PR that bumps the workspace version in `Cargo.toml`,
