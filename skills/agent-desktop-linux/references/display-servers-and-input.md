@@ -42,10 +42,13 @@ synthetic pointer path moves the user's real cursor.
   first. Physical success is `physical_synthetic` with `verified: false` (XTEST
   has no read-back).
 - The adapter falls back to the semantic action only when the physical attempt
-  returns `ACTION_NOT_SUPPORTED` or a geometry refusal (`check: geometry`) with
-  `not_delivered`; `details.physical_fallback` records the skipped
-  `physical_input` step and refusal. Focus, policy, timeout, uncertain and
-  partial-delivery refusals never fall back.
+  returns `ACTION_NOT_SUPPORTED`, a geometry refusal (`check: geometry`) or an
+  aim point it could not prove inside the target's visible area (`kind:
+  pointer_target_not_visible` before any press) with `not_delivered`;
+  `details.physical_fallback` records the skipped `physical_input` step and
+  refusal. When the element has no semantic action either, the pointer refusal
+  is returned unchanged. Focus, policy, timeout, uncertain and partial-delivery
+  refusals never fall back.
 - On Wayland the CLI's pointer gate runs before that fallback: ordinary-app
   headed pointer commands are refused at once with `ACTION_NOT_SUPPORTED`, cause
   `wayland_session` and `physical_delivery_started: false` (`click`, `hover`,

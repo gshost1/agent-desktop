@@ -227,3 +227,65 @@ fn a_focus_has_no_verb_to_fall_back_from_because_it_calls_the_component() {
     use super::reaches_physical_without_verb;
     assert!(!reaches_physical_without_verb(&Action::SetFocus));
 }
+
+fn hidden_point(delivery_started: bool) -> agent_desktop_core::AdapterError {
+    agent_desktop_core::AdapterError::new(
+        ErrorCode::StaleRef,
+        "The pointer point is outside the target's proven visible area",
+    )
+    .with_details(serde_json::json!({
+        "kind": "pointer_target_not_visible",
+        "physical_delivery_started": delivery_started,
+    }))
+    .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
+}
+
+#[test]
+fn a_headed_click_whose_aim_point_is_unproven_falls_back_to_the_semantic_call() {
+    let result = super::physical_first(|| Err(hidden_point(false)), || Ok(done("Action.DoAction")))
+        .expect("the element's own action still runs");
+    assert_eq!(result.steps.len(), 2);
+    assert_eq!(result.steps[1].label(), "Action.DoAction");
+    let details = result.details.expect("fallback evidence");
+    assert_eq!(
+        details["physical_fallback"]["details"]["kind"],
+        "pointer_target_not_visible"
+    );
+}
+
+#[test]
+fn an_unproven_aim_point_with_no_semantic_verb_keeps_the_pointer_refusal() {
+    use crate::actions::click::no_semantic_verb;
+    let error = super::physical_first(
+        || Err(hidden_point(false)),
+        || Err(no_semantic_verb(&Action::Click)),
+    )
+    .expect_err("nothing could act");
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(
+        error.details.expect("details")["kind"],
+        "pointer_target_not_visible"
+    );
+}
+
+#[test]
+fn an_aim_refusal_after_pointer_events_left_does_not_fall_back() {
+    let error = super::physical_first(
+        || Err(hidden_point(true)),
+        || panic!("the semantic call must not run after pointer events"),
+    )
+    .expect_err("refused");
+    assert_eq!(error.code, ErrorCode::StaleRef);
+}
+
+#[test]
+fn an_aim_refusal_after_a_delivered_press_does_not_fall_back() {
+    let mut refused = hidden_point(false);
+    refused.details.as_mut().expect("details")["delivered_clicks"] = 1.into();
+    let error = super::physical_first(
+        || Err(refused),
+        || panic!("the semantic call must not repeat a delivered press"),
+    )
+    .expect_err("refused");
+    assert_eq!(error.code, ErrorCode::StaleRef);
+}
