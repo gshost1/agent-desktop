@@ -20,6 +20,7 @@ import desktop  # noqa: E402
 import reaudit  # noqa: E402
 import report  # noqa: E402
 import shellwords  # noqa: E402
+import skillread  # noqa: E402
 import tasks_heldout as th  # noqa: E402
 
 
@@ -303,6 +304,28 @@ class CandidateArmTests(unittest.TestCase):
                 for table in (common.NATIVE_TOOL_TEXT, common.NATIVE_TOOL, common.WEB_ARMS, common.WEB_TOOL,
                               common.ARM_VERSIONS):
                     table.pop("ad-x", None)
+
+
+class SkillReadTests(unittest.TestCase):
+    def row(self, skill_bytes, later_cmd="agent-desktop snapshot --app TextEdit"):
+        steps = [{"call": 0, "input_total": 1200, "tools": [{"cmd": "agent-desktop skills get desktop; agent-desktop "
+                                                                     "skills get platform", "class": "skills",
+                                                                     "result_bytes": skill_bytes}]},
+                 {"call": 1, "input_total": 7200, "tools": [{"cmd": later_cmd, "class": "snapshot"}]},
+                 {"call": 2, "input_total": 8000, "tools": []}]
+        return {"arm": "x", "task": "hn3", "input_total": 16400, "output_tokens": 40, "steps": steps}
+
+    def test_full_read_counts_skill_tokens(self):
+        f = skillread.run_facts(self.row(17205))
+        self.assertEqual((f["spilled"], f["read_spill"], f["skill_tokens"], f["tokens"]), (False, False, 6000, 16440))
+
+    def test_spill_preview_and_spill_read(self):
+        f = skillread.run_facts(self.row(2347, "cat /h/.claude/projects/p/s/tool-results/b1.txt"))
+        self.assertEqual((f["spilled"], f["read_spill"]), (True, True))
+
+    def test_run_without_skill_read(self):
+        row = {"input_total": 10, "output_tokens": 1, "steps": [{"call": 0, "input_total": 10, "tools": []}]}
+        self.assertEqual(skillread.run_facts(row), {"tokens": 11, "skill": False})
 
 
 if __name__ == "__main__":

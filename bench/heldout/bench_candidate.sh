@@ -2,7 +2,7 @@
 # Bench a candidate agent-desktop binary on the remote bench Mac, from the control Mac, in one command.
 #
 #   bash bench/heldout/bench_candidate.sh <label> <path-to-agent-desktop> [task ids|all] [n]
-#   bash bench/heldout/bench_candidate.sh --status <label>      tail the remote log
+#   bash bench/heldout/bench_candidate.sh --status <label>      tail the remote log of the latest pass
 #   bash bench/heldout/bench_candidate.sh --collect <label>     fetch the rows, print the report against every arm
 #   bash bench/heldout/bench_candidate.sh --stop                ask the running pass to stop after its current run
 #
@@ -88,7 +88,8 @@ PY
 }
 
 case "${1:-}" in
-  --status) check_label "$2"; r "tail -n 25 $LOGS/cand-$2.log"; exit 0 ;;
+  --status) check_label "$2"
+    r "L=$LOGS/cand-$2.log; tail -n +\$(grep -n 'CAND START' \$L | tail -1 | cut -d: -f1) \$L | tail -n 25"; exit 0 ;;
   --collect) check_label "$2"; collect "$2"; exit 0 ;;
   --stop) r "touch bench-tools/STOP && echo STOP written"; exit 0 ;;
   ""|-h|--help) sed -n 2,21p "$0"; exit 2 ;;
