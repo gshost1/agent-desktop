@@ -90,6 +90,7 @@ Before a ref action dispatches, core checks the target under one bounded budget.
 - `receives_events` runs only when the action reaches the target by pointer: a headed action, `hover`, `drag`, or a click with no semantic delivery. A headless click that dispatches by a semantic action skips it.
 - `receives_events` fails with `reason: "occluded by <role>"` and an `occluder` of `{ role, name, bounds }` when another element is on top. Bring the target window to the front or dismiss the occluder, then retry. A blind retry fails the same way.
 - `receives_events` fails open. An inconclusive hit test reports `unknown` and the action dispatches. A passing check is not proof that nothing covered the target.
+- On macOS, when accessibility cannot name what sits under the point, the window server's window list decides: a normal, floating or panel window of another process in front of the target's window refuses with an `occluder` of role `window`, its bounds and no name. The Dock, the menu bar and other system windows at the Dock level or above never count, and neither do agent-desktop's own cursor windows.
 - `details.kind: "live_read_incomplete"` with `retryable: false` means native reads failed on every poll. Take a fresh snapshot and use a fresh ref.
 - Pick recovery from the failing check's `reason`: `wait --element <ref> --predicate actionable`, a fresh snapshot, or `--headed` when `policy` failed and physical input is intended.
 
