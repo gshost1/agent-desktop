@@ -31,12 +31,7 @@ fn focus_core_window(
     adapter: *const AdAdapter,
     window: &agent_desktop_core::WindowInfo,
 ) -> AdResult {
-    let adapter = match crate::adapter::lookup_adapter(adapter) {
-        Ok(adapter) => adapter,
-        Err(error) => {
-            return set_last_error(&error);
-        }
-    };
+    let adapter = crate::adapter::acquire_adapter!(adapter);
     let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
     match adapter.inner.focus_window(window, &lease) {
         Ok(()) => AdResult::Ok,

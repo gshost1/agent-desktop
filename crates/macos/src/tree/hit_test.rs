@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use crate::tree::{
         AXElement, element_bounds::read_bounds_with_deadline,
@@ -349,26 +348,8 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use agent_desktop_core::{
-        AdapterError, Point, adapter::hit_test::HitTestResult, adapter::native_handle::NativeHandle,
-    };
+pub(crate) use imp::{hit_test_ax_element, hit_test_impl, visible_bounds_ax_element};
 
-    pub fn hit_test_impl(
-        _handle: &NativeHandle,
-        _point: Point,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<HitTestResult, AdapterError> {
-        Err(AdapterError::not_supported("hit_test"))
-    }
-}
-
-pub(crate) use imp::hit_test_impl;
-
-#[cfg(target_os = "macos")]
-pub(crate) use imp::{hit_test_ax_element, visible_bounds_ax_element};
-
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "hit_test_tests.rs"]
 mod tests;

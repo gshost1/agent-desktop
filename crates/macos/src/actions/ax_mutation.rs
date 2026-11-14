@@ -8,15 +8,10 @@ use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode};
 pub(crate) const PERFORM_API: &str = "AXUIElementPerformAction";
 
 pub(crate) fn classify_result(
-    _element: &crate::tree::AXElement,
     operation: &str,
     api: &str,
     error: i32,
 ) -> Result<bool, AdapterError> {
-    classify(operation, api, error)
-}
-
-fn classify(operation: &str, api: &str, error: i32) -> Result<bool, AdapterError> {
     let signal = signal_or_error(operation, api, error)?;
     if signal == PerformSignal::Uninformative && api == PERFORM_API {
         return settle_uninformative_perform(operation, error, false)
@@ -144,7 +139,7 @@ mod tests {
     };
     use agent_desktop_core::{DeliveryDisposition, ErrorCode, RetryDisposition};
 
-    use super::classify;
+    use super::classify_result as classify;
 
     #[test]
     fn success_is_delivered() {
