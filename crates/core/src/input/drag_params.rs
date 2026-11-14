@@ -4,7 +4,6 @@ use crate::Point;
 
 pub const MAX_DRAG_DURATION_MS: u64 = 60_000;
 pub const MAX_DRAG_DROP_DELAY_MS: u64 = 10_000;
-pub const MAX_DRAG_STEPS: u64 = 4_096;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DragParams {
@@ -40,16 +39,7 @@ impl DragParams {
                 "Drag timing exceeds the supported maximum",
             ));
         }
-        let total = duration.checked_add(drop_delay).ok_or_else(|| {
-            crate::AdapterError::new(crate::ErrorCode::InvalidArgs, "Drag timing overflows")
-        })?;
-        let steps = duration.div_ceil(16).max(1);
-        if steps > MAX_DRAG_STEPS {
-            return Err(crate::AdapterError::new(
-                crate::ErrorCode::InvalidArgs,
-                "Drag would exceed the maximum synthesized step count",
-            ));
-        }
+        let total = duration + drop_delay;
         if total > 0 && total >= deadline.timeout_ms() {
             return Err(crate::AdapterError::new(
                 crate::ErrorCode::InvalidArgs,

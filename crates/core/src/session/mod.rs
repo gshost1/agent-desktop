@@ -217,17 +217,6 @@ pub fn validate_agent_id(id: &str) -> Result<(), AppError> {
     ))
 }
 
-/// Whether a session should still be accumulating trace.
-///
-/// The ended-session check is not visible here: `SessionManifest::trace_enabled`
-/// owns it, so this and the trace-directory resolution in `CommandContext` can
-/// never disagree about when a session stops recording. A reader looking only at
-/// this line has concluded the check is missing and gone hunting for a leak that
-/// does not exist.
-pub fn trace_enabled_for_session(session_id: &str) -> Result<bool, AppError> {
-    Ok(read_manifest(session_id)?.is_some_and(|manifest| manifest.trace_enabled()))
-}
-
 pub fn new_session_id() -> String {
     let n = SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();

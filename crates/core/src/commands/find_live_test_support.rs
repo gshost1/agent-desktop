@@ -35,6 +35,7 @@ pub(crate) struct LiveFindAdapter {
     token_root: bool,
     token_matches: bool,
     unread_member: bool,
+    extra_buttons: usize,
     window_reads: std::sync::atomic::AtomicUsize,
 }
 
@@ -46,7 +47,15 @@ impl LiveFindAdapter {
             token_root: false,
             token_matches: false,
             unread_member: false,
+            extra_buttons: 0,
             window_reads: Default::default(),
+        }
+    }
+
+    pub(crate) fn with_button_count(total_buttons: usize) -> Self {
+        Self {
+            extra_buttons: total_buttons.saturating_sub(1),
+            ..Self::complete()
         }
     }
 
@@ -164,6 +173,9 @@ impl ObservationOps for LiveFindAdapter {
             "OnlyInWindowOne"
         };
         let mut children = vec![self.node(self.button(marker), Vec::new())];
+        for index in 0..self.extra_buttons {
+            children.push(self.node(self.button(&format!("Extra {index}")), Vec::new()));
+        }
         if self.framed_label {
             let mut label = Self::evidence("statictext", Some(FRAMED_LABEL));
             label.ref_evidence.bounds = LocatorField::Known(framed_label_screen_bounds());

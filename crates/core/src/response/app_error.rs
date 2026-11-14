@@ -35,6 +35,9 @@ impl AppError {
     pub fn into_adapter_error(self) -> AdapterError {
         match self {
             Self::Adapter(error) => error,
+            Self::Io(error) if crate::storage::state_exposure::find(&error).is_some() => {
+                crate::storage::state_io_error::state_io_error(error)
+            }
             other if other.is_permission_denied() => {
                 AdapterError::new(ErrorCode::PermDenied, other.to_string())
             }

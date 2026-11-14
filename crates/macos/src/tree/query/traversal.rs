@@ -165,7 +165,7 @@ impl LocatorTraversal {
                 viewport: crate::tree::element_bounds::clipped_viewport(
                     self.context.window_bounds,
                     read.attrs.role.as_deref().unwrap_or(""),
-                    read.attrs.bounds,
+                    self.clip_of(&element, &read.attrs),
                 ),
                 ancestors: self.arena.ancestor_path(),
             });
@@ -176,7 +176,7 @@ impl LocatorTraversal {
             self.context.window_bounds = crate::tree::element_bounds::clipped_viewport(
                 original_viewport,
                 read.attrs.role.as_deref().unwrap_or(""),
-                read.attrs.bounds,
+                self.clip_of(&element, &read.attrs),
             );
             let result =
                 self.visit_children(read.child_read, (child_logical_depth, raw_depth), path);
@@ -250,6 +250,19 @@ impl LocatorTraversal {
             .checked_duration_since(Instant::now())
             .map(|remaining| remaining.min(crate::tree::locator_deadline::MAX_IPC_SLICE))
             .filter(|remaining| !remaining.is_zero())
+    }
+
+    fn clip_of(
+        &self,
+        element: &AXElement,
+        attrs: &crate::tree::NodeAttrs,
+    ) -> Option<agent_desktop_core::Rect> {
+        crate::tree::element_bounds::clip_bounds(
+            element,
+            attrs.role.as_deref().unwrap_or(""),
+            attrs.bounds,
+            self.deadline,
+        )
     }
 
     pub(super) fn note_deadline_exhausted(&mut self) {

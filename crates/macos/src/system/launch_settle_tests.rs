@@ -273,11 +273,11 @@ fn an_activating_wait_ends_on_a_window_still_forming_after_the_grace() {
 }
 
 #[test]
-fn no_gap_between_window_reads_passes_fifty_milliseconds() {
+fn no_gap_between_window_reads_passes_twenty_five_milliseconds() {
     let mut interval = FIRST_POLL;
     let mut elapsed = Duration::ZERO;
     while elapsed < Duration::from_secs(5) {
-        assert!(interval <= Duration::from_millis(50), "{interval:?}");
+        assert!(interval <= Duration::from_millis(25), "{interval:?}");
         elapsed += interval;
         interval = next_poll_interval(interval);
     }

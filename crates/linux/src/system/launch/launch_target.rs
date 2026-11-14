@@ -141,6 +141,19 @@ fn plan_file(
     })
 }
 
+/// Whether `<id>.desktop` resolves to this file through the data
+/// directories, either spelled the same way or reaching the same file
+/// through a symlink, so an earlier directory does not shadow it.
+fn id_resolves_to(id: &str, file: &Path, data_dirs: &[PathBuf]) -> bool {
+    find(id, data_dirs).is_some_and(|indexed| {
+        indexed == file
+            || matches!(
+                (std::fs::canonicalize(&indexed), std::fs::canonicalize(file)),
+                (Ok(indexed), Ok(file)) if indexed == file
+            )
+    })
+}
+
 fn direct_plan(program: String, arguments: &[String]) -> Plan {
     let argv: Vec<String> = std::iter::once(program)
         .chain(arguments.iter().cloned())
@@ -180,7 +193,11 @@ pub(crate) fn resolve(
                     "'{identifier}' is a desktop file outside the XDG data directories and is not launched"
                 )));
             }
-            return plan_file(&file, id, arguments, search);
+            let mut plan = plan_file(&file, id, arguments, search)?;
+            if !id_resolves_to(id, &file, &search.data_dirs) {
+                plan.desktop_id = None;
+            }
+            return Ok(plan);
         }
         if file.is_file() {
             return Ok(direct_plan(identifier.to_owned(), arguments));
