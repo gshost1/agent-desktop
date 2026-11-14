@@ -22,7 +22,7 @@ sys.path.insert(0, str(HERE / "arms"))
 import common  # noqa: E402
 import tasks_heldout as th  # noqa: E402
 
-FORBIDDEN_PREFIX = re.compile(r"^forbidden command (\S+); ")
+FORBIDDEN_PREFIX = re.compile(r"forbidden command (\S+); ")
 
 
 def commands_of(row):
@@ -30,6 +30,8 @@ def commands_of(row):
 
 
 def new_audit(row, skills):
+    if row["arm"] not in common.NATIVE_TOOL and " candidate " in str(row.get("arm_version", "")):
+        common.NATIVE_TOOL[row["arm"]] = "agent-desktop"
     for cmd in commands_of(row):
         hit = common.audit_native(cmd, row["arm"], th.FORBIDDEN, skills)
         if hit:
@@ -53,17 +55,18 @@ def reaudit(rows, skills):
         if r.get("suite") != "native":
             continue
         why = r.get("verify", "")
-        m = FORBIDDEN_PREFIX.match(why)
+        m = FORBIDDEN_PREFIX.search(why)
         old_hit = m.group(1) if m else None
         verifier_why = why[m.end():] if m else why
+        if old_hit and r.get("timed_out"):
+            continue
         hit, cmd = new_audit(r, skills)
         if (old_hit is None) == (hit is None):
             continue
         if hit:
             changes.append((r, old_hit, hit, cmd, False, f"forbidden command {hit}; {verifier_why}"))
         else:
-            capped = r.get("timed_out")
-            ok = verifier_why in good[r["task"]] and not capped
+            ok = verifier_why in good[r["task"]] and not r.get("timed_out")
             changes.append((r, old_hit, None, None, ok, verifier_why))
     return changes
 
@@ -78,7 +81,7 @@ def main():
     skills = Path(a.home) / ".agent-desktop-bench-target" / "heldout-tools" / "skills" if a.home else None
     changes = reaudit(rows, skills)
     native = sum(r.get("suite") == "native" for r in rows)
-    old_fails = sum(bool(FORBIDDEN_PREFIX.match(r.get("verify", ""))) for r in rows)
+    old_fails = sum(bool(FORBIDDEN_PREFIX.search(r.get("verify", ""))) for r in rows)
     print(f"{native} native rows; {old_fails} failed the old audit; {len(changes)} audit verdicts change")
     print("| arm | task | round | run | old audit | new audit | success old -> new | command |")
     print("|---|---|---|---|---|---|---|---|")

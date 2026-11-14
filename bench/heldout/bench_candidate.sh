@@ -115,7 +115,7 @@ r "cd $CAND && LC_ALL=C shasum -a 256 agent-desktop | cut -c1-16 && ./agent-desk
 r "zsh $MIRROR/heldout/remote/cand_start.sh cand-$LABEL.log $LABEL $TASKS $N $MODEL"
 echo "started: $LABEL on $TASKS, n=$N, model $MODEL. Watch: bash $0 --status $LABEL; collect: bash $0 --collect $LABEL"
 if [ "${WAIT:-0}" = 1 ]; then
-  until r "grep -E 'CAND COMPLETE|ending the pass|SPEND CAP|API REFUSED|no candidate|does not match' $LOGS/cand-$LABEL.log" > /dev/null; do
+  until r "L=$LOGS/cand-$LABEL.log; tail -n +\$(grep -n 'CAND START' \$L | tail -1 | cut -d: -f1) \$L | grep -E 'CAND COMPLETE|ending the pass|SPEND CAP|API REFUSED|no candidate|does not match'" > /dev/null; do
     sleep 120
   done
   r "tail -n 3 $LOGS/cand-$LABEL.log"

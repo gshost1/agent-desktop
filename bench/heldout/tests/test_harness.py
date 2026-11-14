@@ -75,6 +75,12 @@ class AuditTests(unittest.TestCase):
         self.assertIsNone(audit(f"cat '{guide}'", "peekaboo"))
         self.assertEqual(audit(f"cat {guide.parent}-evil/SKILL.md", "peekaboo"), "cat")
 
+    def test_cat_of_claude_codes_own_spilled_tool_result(self):
+        spill = "/Users/x/bench-tools/home/.claude/projects/*/*/tool-results/bt1yakgi6.txt"
+        self.assertIsNone(audit(f"cat {spill} | grep -i subscript"))
+        self.assertEqual(audit("cat /Users/x/.claude/projects/a/b/settings.json"), "cat")
+        self.assertEqual(audit(f"cat {spill} /etc/hosts"), "cat")
+
     def test_skills_root_of_another_host(self):
         root = Path("/Users/someone/bench-tools/home/.agent-desktop-bench-target/heldout-tools/skills")
         self.assertIsNone(audit(f"cat {root}/peekaboo/SKILL.md", "peekaboo", root))
@@ -249,7 +255,9 @@ class ReauditTests(unittest.TestCase):
                   ["agent-desktop snapshot | grep -E 'strike| ls '"]),
                 r("ad-14", "hn2", False, "forbidden command cat; the document was not saved",
                   ["agent-desktop click $(cat /tmp/r)"]),
-                r("ad-up", "hn1", False, "wrong subscript", ["mk(){ python3 -c 1; }; mk"])]
+                r("ad-up", "hn1", False, "wrong subscript", ["mk(){ python3 -c 1; }; mk"]),
+                dict(r("ad-14", "hn2", False, "timed out at the 300 s cap; forbidden command cat; not saved",
+                       ["cat > /tmp/u.sh <<'E'\nE"]), timed_out=True)]
 
     def test_changes_are_listed_and_rejudged(self):
         changes = reaudit.reaudit(self.rows(), None)
@@ -264,7 +272,7 @@ class ReauditTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 reaudit.main()
             out = [json.loads(line) for line in dst.read_text().splitlines()]
-        self.assertEqual(len(out), 4)
+        self.assertEqual(len(out), 5)
         self.assertTrue(out[1]["success"])
         self.assertEqual(out[1]["verify"], "every paragraph struck")
 

@@ -4,6 +4,7 @@ Each arm is one tool at one pinned version, reached through its wrapper in arms/
 logs every call's wall time. Every arm gets the same task prompt; only the tool paragraph of the
 system prompt differs, and it points the model at that tool's own guide (its skill or help).
 """
+import re
 from pathlib import Path
 
 import shellwords
@@ -108,6 +109,16 @@ def native_system_prompt(arm, screen_recording=False):
 TASK_PREFIX = "Task: "
 
 
+SPILL = re.compile(r"/\.claude/projects/[^/]+/[^/]+/tool-results/[^/]+$")
+
+
+def _guide_or_spill(path, guide):
+    """`cat` may read the arm's guide, or a file where Claude Code saved one of the model's own oversized tool
+    results (it tells the model that path): that is the tool's output, not system state."""
+    full = str(Path(path).expanduser())
+    return bool(guide and full.startswith(str(guide) + "/")) or bool(SPILL.search(full))
+
+
 def audit_native(cmd, arm, forbidden, skills=None):
     """The first program a Bash command runs that the arm may not use, or None.
 
@@ -124,7 +135,7 @@ def audit_native(cmd, arm, forbidden, skills=None):
             continue
         if prog == "cat":
             paths = [w for w in shellwords.drop_redirects(words[1:]) if not w.startswith("-")]
-            if guide and paths and all(str(Path(p).expanduser()).startswith(str(guide) + "/") for p in paths):
+            if paths and all(_guide_or_spill(p, guide) for p in paths):
                 continue
             return "cat"
         if prog in TOOL_NAMES or prog in forbidden:
