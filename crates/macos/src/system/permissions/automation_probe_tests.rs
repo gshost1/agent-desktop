@@ -1,7 +1,9 @@
 use super::*;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 static STARTED: AtomicU32 = AtomicU32::new(0);
+static CONCURRENT_STARTED: AtomicU32 = AtomicU32::new(0);
+static PROMPT_ANSWERED: AtomicBool = AtomicBool::new(false);
 
 fn granted() -> i32 {
     0
@@ -13,7 +15,15 @@ fn stuck_behind_a_prompt() -> i32 {
     0
 }
 
-fn slot() -> Mutex<Option<Receiver<i32>>> {
+fn waits_for_the_prompt() -> i32 {
+    CONCURRENT_STARTED.fetch_add(1, Ordering::SeqCst);
+    while !PROMPT_ANSWERED.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    0
+}
+
+fn slot() -> Mutex<Option<SharedProbe>> {
     Mutex::new(None)
 }
 
@@ -62,5 +72,39 @@ fn an_unanswered_probe_is_an_unknown_permission_and_names_the_prompt() {
             .suggestion
             .as_deref()
             .is_some_and(|text| text.contains("prompt"))
+    );
+}
+
+#[test]
+fn concurrent_callers_during_a_pending_prompt_share_one_probe() {
+    let slot = Arc::new(slot());
+    let mut callers = Vec::new();
+    for _ in 0..8 {
+        let slot = Arc::clone(&slot);
+        callers.push(std::thread::spawn(move || {
+            probe_with(&slot, Duration::from_millis(150), waits_for_the_prompt).unwrap()
+        }));
+    }
+    let statuses = callers
+        .into_iter()
+        .map(|caller| caller.join().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(statuses, [PROBE_UNANSWERED; 8]);
+    assert_eq!(
+        CONCURRENT_STARTED.load(Ordering::SeqCst),
+        1,
+        "callers that overlap while a consent prompt blocks the probe must wait on the same \
+         probe instead of each leaving a blocked thread behind"
+    );
+
+    PROMPT_ANSWERED.store(true, Ordering::SeqCst);
+    let answered = probe_with(&slot, Duration::from_secs(5), waits_for_the_prompt).unwrap();
+
+    assert_eq!(answered, 0);
+    assert_eq!(CONCURRENT_STARTED.load(Ordering::SeqCst), 1);
+    assert!(
+        slot.lock().unwrap().is_none(),
+        "an answered probe is cleared so the next call asks again"
     );
 }
