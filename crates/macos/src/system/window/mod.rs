@@ -1,5 +1,6 @@
 pub(crate) mod cg_window;
 pub(crate) mod cg_window_exact;
+pub(crate) mod cg_window_signature;
 pub(crate) mod hosted_focus;
 pub(crate) mod hosted_focus_effect;
 pub(crate) mod hosted_focus_process;
@@ -14,5 +15,6 @@ pub(crate) mod window_inventory;
 pub(crate) mod window_inventory_global;
 pub(crate) mod window_ops;
 pub(crate) mod window_postcondition;
+pub(crate) mod window_presence;
 pub(crate) mod window_report;
 pub(crate) mod window_resolve;

@@ -13,7 +13,7 @@ fn record(title: Option<&str>, window_number: i64) -> WindowRecord {
             width: 10.0,
             height: 10.0,
         },
-        visible: true,
+        presence: crate::system::window::window_presence::WindowPresence::Onscreen,
         process_instance: Some("instance-10".into()),
     }
 }

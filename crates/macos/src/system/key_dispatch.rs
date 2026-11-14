@@ -57,6 +57,15 @@ fn press_for_app(
     if matches!(menu, MenuShortcutOutcome::Pressed(_)) {
         return post_delivery_process_result(&process, menu_shortcut_report(&menu));
     }
+    if host_owns_keys
+        && !policy.allow_focus_steal
+        && crate::system::menu_shortcut::background_chord::runs_only_through_menu(combo)
+        && crate::system::menu_shortcut::background_chord::reads_background(&app, deadline)?
+    {
+        return Err(
+            crate::system::menu_shortcut::background_chord::unrouted_in_background(combo, &menu),
+        );
+    }
     if let Some(action) = host_key_action(host_owns_keys, combo) {
         if let Some(modal) = modal::ModalWatch::capture(&app, action, deadline)? {
             return modal_route::press_on_modal(&target, (combo, policy), &modal, deadline)
