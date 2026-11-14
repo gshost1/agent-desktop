@@ -5,7 +5,7 @@
 /// items and generic containers are groups, `<select>` is a combobox, and a
 /// role with no closer core equivalent is a group that wrapper collapsing
 /// may remove.
-pub fn map_cdp_role(role: &str) -> &'static str {
+pub(crate) fn map_cdp_role(role: &str) -> &'static str {
     match role.to_ascii_lowercase().as_str() {
         "rootwebarea" | "webarea" => "webarea",
         "button" | "togglebutton" => "button",

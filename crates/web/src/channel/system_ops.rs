@@ -360,12 +360,7 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
 }
 
 fn is_endpoint_missing(error: &AdapterError) -> bool {
-    error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(serde_json::Value::as_str)
-        == Some("cdp_endpoint_missing")
+    crate::cdp::protocol_error::error_kind(error) == Some("cdp_endpoint_missing")
 }
 
 fn is_unsupported(error: &AdapterError) -> bool {

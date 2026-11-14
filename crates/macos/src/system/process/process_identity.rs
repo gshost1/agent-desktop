@@ -1,5 +1,4 @@
 use agent_desktop_core::{AdapterError, ErrorCode, ProcessId};
-#[cfg(target_os = "macos")]
 use std::mem::{MaybeUninit, size_of};
 
 const TOKEN_PREFIX: &str = "macos-proc-v1";
@@ -13,7 +12,6 @@ pub(crate) struct ProcessIdentity {
 }
 
 impl ProcessIdentity {
-    #[cfg(target_os = "macos")]
     pub(crate) fn capture(pid: i32) -> Result<Option<Self>, AdapterError> {
         if pid <= 0 {
             return Err(AdapterError::new(
@@ -62,12 +60,6 @@ impl ProcessIdentity {
             start_seconds: info.pbi_start_tvsec,
             start_microseconds: info.pbi_start_tvusec,
         }))
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    pub(crate) fn capture(pid: i32) -> Result<Option<Self>, AdapterError> {
-        let _ = pid;
-        Err(AdapterError::not_supported("macos_process_identity"))
     }
 
     pub(crate) fn pid(self) -> i32 {
@@ -203,7 +195,6 @@ fn parse_token(pid: i32, token: &str) -> Result<ProcessIdentity, AdapterError> {
     })
 }
 
-#[cfg(target_os = "macos")]
 fn classify_missing_or_inaccessible(
     pid: i32,
     process_error: std::io::Error,
@@ -233,7 +224,6 @@ fn classify_missing_or_inaccessible(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn process_identity_permission_error(pid: i32, error: std::io::Error) -> AdapterError {
     AdapterError::new(
         ErrorCode::PermDenied,
@@ -250,7 +240,7 @@ fn process_identity_permission_error(pid: i32, error: std::io::Error) -> Adapter
     }))
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

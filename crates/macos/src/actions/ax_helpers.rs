@@ -2,7 +2,6 @@ use agent_desktop_core::{AdapterError, ErrorCode};
 
 pub(crate) use super::ax_perform::{advertises_action, perform_observed_action};
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use crate::actions::ax_mutation;
@@ -24,7 +23,7 @@ mod imp {
             return Ok(false);
         }
         let action = CFString::new(name);
-        run_mutation(el, name, ax_mutation::PERFORM_API, deadline, |deadline| {
+        run_mutation(name, ax_mutation::PERFORM_API, deadline, |deadline| {
             crate::tree::properties::ax_ipc::perform_action(
                 el,
                 action.as_concrete_TypeRef(),
@@ -45,20 +44,14 @@ mod imp {
         } else {
             CFBoolean::false_value()
         };
-        run_mutation(
-            el,
-            attr,
-            "AXUIElementSetAttributeValue",
-            deadline,
-            |deadline| {
-                crate::tree::properties::ax_ipc::set_attribute_value(
-                    el,
-                    cf_attr.as_concrete_TypeRef(),
-                    cf_val.as_CFTypeRef(),
-                    deadline,
-                )
-            },
-        )
+        run_mutation(attr, "AXUIElementSetAttributeValue", deadline, |deadline| {
+            crate::tree::properties::ax_ipc::set_attribute_value(
+                el,
+                cf_attr.as_concrete_TypeRef(),
+                cf_val.as_CFTypeRef(),
+                deadline,
+            )
+        })
     }
 
     pub(crate) fn set_ax_string_or_err(
@@ -69,20 +62,14 @@ mod imp {
     ) -> Result<(), AdapterError> {
         let cf_attr = CFString::new(attr);
         let cf_val = CFString::new(value);
-        let delivered = run_mutation(
-            el,
-            attr,
-            "AXUIElementSetAttributeValue",
-            deadline,
-            |deadline| {
-                crate::tree::properties::ax_ipc::set_attribute_value(
-                    el,
-                    cf_attr.as_concrete_TypeRef(),
-                    cf_val.as_CFTypeRef(),
-                    deadline,
-                )
-            },
-        )?;
+        let delivered = run_mutation(attr, "AXUIElementSetAttributeValue", deadline, |deadline| {
+            crate::tree::properties::ax_ipc::set_attribute_value(
+                el,
+                cf_attr.as_concrete_TypeRef(),
+                cf_val.as_CFTypeRef(),
+                deadline,
+            )
+        })?;
         if !delivered {
             return Err(AdapterError::new(
                 ErrorCode::ActionFailed,
@@ -159,7 +146,6 @@ mod imp {
         match coerced {
             Some(cf_value) => {
                 let delivered = run_mutation(
-                    el,
                     kAXValueAttribute,
                     "AXUIElementSetAttributeValue",
                     deadline,
@@ -196,14 +182,13 @@ mod imp {
     }
 
     fn run_mutation(
-        element: &AXElement,
         operation: &str,
         api: &str,
         deadline: agent_desktop_core::Deadline,
         mutate: impl FnOnce(agent_desktop_core::Deadline) -> Result<i32, AdapterError>,
     ) -> Result<bool, AdapterError> {
         let error = mutate(deadline)?;
-        let delivered = ax_mutation::classify_result(element, operation, api, error)?;
+        let delivered = ax_mutation::classify_result(operation, api, error)?;
         if deadline.is_expired() {
             let disposition = if delivered {
                 agent_desktop_core::DeliverySemantics::delivered_unverified()
@@ -328,62 +313,6 @@ mod imp {
                 assert!(classify_settable_read("AXSelected", error, false).is_err());
             }
         }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
-    use crate::tree::AXElement;
-
-    pub fn try_ax_action_or_err(
-        _el: &AXElement,
-        _name: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn set_ax_bool_or_err(
-        _el: &AXElement,
-        _attr: &str,
-        _value: bool,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn set_ax_string_or_err(
-        _el: &AXElement,
-        _attr: &str,
-        _value: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("set_ax_string_or_err"))
-    }
-    pub fn is_attr_settable(
-        _el: &AXElement,
-        _attr: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn ax_focus_or_err(
-        _el: &AXElement,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<bool, AdapterError> {
-        Ok(false)
-    }
-    pub fn set_ax_value_coerced(
-        _el: &AXElement,
-        _value: &str,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("set_ax_value_coerced"))
-    }
-    pub fn element_role(
-        _el: &AXElement,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<Option<String>, AdapterError> {
-        Ok(None)
     }
 }
 

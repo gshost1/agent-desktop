@@ -16,8 +16,6 @@ use crate::types::{
 macro_rules! try_from_c_enum {
     ($ty:ty { $($variant:ident = $val:expr),+ $(,)? }) => {
         impl $ty {
-            /// Converts a raw C discriminant; not every enum is read from C today.
-            #[allow(dead_code)]
             pub(crate) fn from_c(raw: i32) -> Option<Self> {
                 match raw {
                     $($val => Some(<$ty>::$variant),)+

@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, WindowInfo};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::browser_link::BrowserLink;
+use crate::cdp::protocol_error::error_kind;
 use crate::{BrowserWindow, PageTarget, list_page_targets, page_visibility};
 
 #[path = "bounds_fit.rs"]
@@ -194,14 +195,6 @@ fn only(pool: Vec<Placed>) -> Result<PageTarget, AdapterError> {
         .next()
         .map(|(target, _)| target)
         .ok_or_else(|| no_page("The browser has no open page"))
-}
-
-fn error_kind(error: &AdapterError) -> Option<&str> {
-    error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(Value::as_str)
 }
 
 fn ambiguous(message: &str) -> AdapterError {

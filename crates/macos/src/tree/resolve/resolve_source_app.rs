@@ -5,7 +5,6 @@ use crate::tree::resolve::resolve_read_context::ResolveReadContext;
 
 /// Window-owned sources are checked by application name. A process-owned source is already
 /// identified by its saved pid and process instance, which resolution verifies first.
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn verify_source_application(
     application: &AXElement,
     entry: &RefEntry,

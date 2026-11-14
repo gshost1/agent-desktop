@@ -14,13 +14,9 @@ fn fake_env(name: &str) -> Option<OsString> {
 #[test]
 fn every_browser_has_one_location_under_the_os_base() {
     let dirs = user_data_dirs_with(fake_env);
-    let names: Vec<&str> = dirs.iter().map(|entry| entry.browser).collect();
-    assert_eq!(
-        names,
-        ["chrome", "chrome-canary", "chromium", "edge", "brave"]
-    );
-    for entry in &dirs {
-        assert!(entry.path.starts_with(expected_base()), "{entry:?}");
+    assert_eq!(dirs.len(), 5);
+    for path in &dirs {
+        assert!(path.starts_with(expected_base()), "{path:?}");
     }
 }
 
@@ -42,12 +38,8 @@ fn expected_base() -> PathBuf {
 #[cfg(target_os = "macos")]
 #[test]
 fn chrome_resolves_to_the_application_support_profile() {
-    let chrome = user_data_dirs_with(fake_env)
-        .into_iter()
-        .find(|entry| entry.browser == "chrome")
-        .unwrap();
     assert_eq!(
-        chrome.path,
+        user_data_dirs_with(fake_env)[0],
         PathBuf::from("/home/tester/Library/Application Support/Google/Chrome")
     );
 }

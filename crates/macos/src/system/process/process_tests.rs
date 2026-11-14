@@ -3,10 +3,7 @@ use super::*;
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(1);
 
 fn process_exists(process: i32) -> bool {
-    unsafe extern "C" {
-        fn kill(pid: i32, signal: i32) -> i32;
-    }
-    unsafe { kill(process, 0) == 0 }
+    unsafe { libc::kill(process, 0) == 0 }
 }
 
 #[test]
@@ -85,17 +82,17 @@ fn zombie_only_group_does_not_turn_sigkill_eperm_into_cleanup_failure() {
         terminate_process_group_with(&mut child, process_group, deadline, |group, signal| {
             signals.push(signal);
             match signal {
-                15 => Ok(true),
-                9 => {
+                libc::SIGTERM => Ok(true),
+                libc::SIGKILL => {
                     assert!(process_exists(group));
-                    Err(std::io::Error::from_raw_os_error(POSIX_EPERM))
+                    Err(std::io::Error::from_raw_os_error(libc::EPERM))
                 }
                 0 => Ok(false),
                 _ => unreachable!(),
             }
         });
 
-    assert_eq!(signals, [15, 9, 0]);
+    assert_eq!(signals, [libc::SIGTERM, libc::SIGKILL, 0]);
     assert!(failures.is_empty());
     assert!(child.try_wait().unwrap().is_some());
 }

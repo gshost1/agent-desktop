@@ -67,7 +67,6 @@ fn immediately_responsive_pid_classifies_running_with_one_probe() {
     assert_eq!(calls.get(), 1);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn exited_child_process_is_classified_exited_with_no_code() {
     let mut child = std::process::Command::new("/bin/cat")
@@ -91,18 +90,4 @@ fn exited_child_process_is_classified_exited_with_no_code() {
     )
     .expect("process_state_impl should not error");
     assert_eq!(state, ProcessState::Exited { code: None });
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn nonpositive_pid_is_never_alive() {
-    assert!(!pid_is_alive(0));
-    assert!(!pid_is_alive(-1));
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn currently_running_pid_is_alive() {
-    let pid = i32::try_from(std::process::id()).expect("test pid fits macOS pid_t");
-    assert!(pid_is_alive(pid));
 }

@@ -156,15 +156,7 @@ impl ObservationOps for MacOSAdapter {
         handle: &NativeHandle,
         deadline: Deadline,
     ) -> Result<Option<String>, AdapterError> {
-        #[cfg(target_os = "macos")]
-        {
-            Ok(
-                crate::actions::post_state::read_element_state(ax_element(handle)?, deadline)?
-                    .value,
-            )
-        }
-        #[cfg(not(target_os = "macos"))]
-        Err(AdapterError::not_supported("get_live_value"))
+        Ok(crate::actions::post_state::read_element_state(ax_element(handle)?, deadline)?.value)
     }
 
     fn get_live_state(
@@ -172,15 +164,10 @@ impl ObservationOps for MacOSAdapter {
         handle: &NativeHandle,
         deadline: Deadline,
     ) -> Result<Option<ElementState>, AdapterError> {
-        #[cfg(target_os = "macos")]
-        {
-            Ok(Some(crate::actions::post_state::read_element_state(
-                ax_element(handle)?,
-                deadline,
-            )?))
-        }
-        #[cfg(not(target_os = "macos"))]
-        Err(AdapterError::not_supported("get_live_state"))
+        Ok(Some(crate::actions::post_state::read_element_state(
+            ax_element(handle)?,
+            deadline,
+        )?))
     }
 
     fn get_text_selection(
@@ -188,15 +175,10 @@ impl ObservationOps for MacOSAdapter {
         handle: &NativeHandle,
         deadline: Deadline,
     ) -> Result<Option<std::ops::Range<usize>>, AdapterError> {
-        #[cfg(target_os = "macos")]
-        {
-            Ok(crate::tree::properties::attributes::selected_text_range(
-                ax_element(handle)?,
-                deadline,
-            ))
-        }
-        #[cfg(not(target_os = "macos"))]
-        Ok(None)
+        Ok(crate::tree::properties::attributes::selected_text_range(
+            ax_element(handle)?,
+            deadline,
+        ))
     }
 
     fn get_live_actions(
@@ -204,15 +186,10 @@ impl ObservationOps for MacOSAdapter {
         handle: &NativeHandle,
         deadline: Deadline,
     ) -> Result<Option<Vec<String>>, AdapterError> {
-        #[cfg(target_os = "macos")]
-        {
-            Ok(Some(crate::actions::post_state::read_live_actions(
-                ax_element(handle)?,
-                deadline,
-            )?))
-        }
-        #[cfg(not(target_os = "macos"))]
-        Err(AdapterError::not_supported("get_live_actions"))
+        Ok(Some(crate::actions::post_state::read_live_actions(
+            ax_element(handle)?,
+            deadline,
+        )?))
     }
 
     fn get_insertion_caret(
@@ -248,12 +225,7 @@ impl ObservationOps for MacOSAdapter {
         handle: &NativeHandle,
         deadline: Deadline,
     ) -> Result<LiveElement, AdapterError> {
-        #[cfg(target_os = "macos")]
-        {
-            crate::actions::post_state::read_live_element(ax_element(handle)?, deadline)
-        }
-        #[cfg(not(target_os = "macos"))]
-        Err(AdapterError::not_supported("get_live_element"))
+        crate::actions::post_state::read_live_element(ax_element(handle)?, deadline)
     }
 
     fn get_element_bounds(
@@ -261,17 +233,9 @@ impl ObservationOps for MacOSAdapter {
         handle: &NativeHandle,
         deadline: Deadline,
     ) -> Result<Option<Rect>, AdapterError> {
-        #[cfg(target_os = "macos")]
-        {
-            crate::tree::element_bounds::read_bounds_with_deadline(
-                ax_element(handle)?,
-                crate::tree::locator_deadline::from_operation(deadline)?,
-            )
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = handle;
-            Err(AdapterError::not_supported("get_element_bounds"))
-        }
+        crate::tree::element_bounds::read_bounds_with_deadline(
+            ax_element(handle)?,
+            crate::tree::locator_deadline::from_operation(deadline)?,
+        )
     }
 }

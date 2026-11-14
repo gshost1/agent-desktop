@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::{AdapterError, Deadline};
 
@@ -243,10 +242,9 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) use imp::{increment_to_value, set_bool_verified, set_dynamic_verified};
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 use imp::{finite_target, increment_action, increment_target_reached};
 
 #[cfg(test)]

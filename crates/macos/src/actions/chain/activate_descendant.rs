@@ -1,9 +1,6 @@
-#[cfg(any(target_os = "macos", test))]
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
-#[cfg(any(target_os = "macos", test))]
 use agent_desktop_core::AdapterError;
 
-#[cfg(any(target_os = "macos", test))]
 fn activate_candidates<T>(
     children: &[T],
     mut perform: impl FnMut(&T, &str) -> Result<DeliveryOutcome, AdapterError>,
@@ -19,7 +16,6 @@ fn activate_candidates<T>(
     Ok(DeliveryOutcome::NotDelivered)
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::{AdapterError, Deadline};
 
@@ -64,21 +60,6 @@ mod imp {
         super::activate_candidates(&children, |child, action| {
             crate::actions::ax_helpers::perform_observed_action(child, action, deadline)
         })
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use agent_desktop_core::{AdapterError, Deadline};
-
-    use crate::actions::chain::chain_delivery::DeliveryOutcome;
-    use crate::tree::AXElement;
-
-    pub(crate) fn activate_descendant(
-        _element: &AXElement,
-        _deadline: Deadline,
-    ) -> Result<DeliveryOutcome, AdapterError> {
-        Ok(DeliveryOutcome::NotDelivered)
     }
 }
 

@@ -2,7 +2,6 @@ use agent_desktop_core::{AdapterError, AppInfo, Deadline, ErrorCode, ProcessIden
 
 pub(crate) use crate::system::app::close_outcome::CloseOutcome;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn pid_from_element(
     element: &crate::tree::AXElement,
     deadline: Deadline,
@@ -32,7 +31,6 @@ fn ensure_not_protected(id: &str) -> Result<(), AdapterError> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn close_app_impl(
     app: &AppInfo,
     force: bool,
@@ -55,7 +53,6 @@ pub(crate) fn close_app_impl(
     terminate_running_application(&app.name, identity, force, deadline)
 }
 
-#[cfg(target_os = "macos")]
 fn terminate_running_application(
     id: &str,
     identity: crate::system::process::process_identity::ProcessIdentity,
@@ -114,7 +111,6 @@ fn terminate_running_application(
     wait_for_exit(id, identity, force, deadline)
 }
 
-#[cfg(target_os = "macos")]
 fn termination_request_not_accepted(id: &str, pid: i32, force: bool) -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionFailed,
@@ -127,7 +123,6 @@ fn termination_request_not_accepted(id: &str, pid: i32, force: bool) -> AdapterE
     .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
 }
 
-#[cfg(target_os = "macos")]
 fn wait_for_exit(
     id: &str,
     identity: crate::system::process::process_identity::ProcessIdentity,
@@ -161,23 +156,12 @@ fn wait_for_exit(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn after_termination_request(error: AdapterError) -> AdapterError {
     error.with_disposition(agent_desktop_core::DeliverySemantics::delivered_unverified())
 }
 
-#[cfg(target_os = "macos")]
 fn before_termination_request(error: AdapterError) -> AdapterError {
     error.with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn close_app_impl(
-    _app: &AppInfo,
-    _force: bool,
-    _deadline: Deadline,
-) -> Result<CloseOutcome, AdapterError> {
-    Err(AdapterError::not_supported("close_app"))
 }
 
 #[cfg(test)]

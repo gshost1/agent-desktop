@@ -83,12 +83,7 @@ fn perform_window_op(
     window: &agent_desktop_core::WindowInfo,
     op: WindowOp,
 ) -> AdResult {
-    let adapter = match crate::adapter::lookup_adapter(adapter) {
-        Ok(adapter) => adapter,
-        Err(error) => {
-            return set_last_error(&error);
-        }
-    };
+    let adapter = crate::adapter::acquire_adapter!(adapter);
     let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
     match adapter.inner.window_op(window, op, &lease) {
         Ok(_) => AdResult::Ok,

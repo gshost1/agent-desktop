@@ -14,7 +14,6 @@ pub fn list_notifications(
     close_session(session, result)
 }
 
-#[cfg(target_os = "macos")]
 fn list_from_nc(
     filter: &NotificationFilter,
     pid: i32,
@@ -24,13 +23,11 @@ fn list_from_nc(
     Ok(entries.into_iter().map(|e| e.info).collect())
 }
 
-#[cfg(target_os = "macos")]
 pub(super) struct NotificationEntry {
     pub info: NotificationInfo,
     pub element: crate::tree::AXElement,
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn list_entries(
     filter: &NotificationFilter,
     pid: i32,
@@ -78,15 +75,6 @@ pub(super) fn matches_filters(
         }
     }
     true
-}
-
-#[cfg(not(target_os = "macos"))]
-fn list_from_nc(
-    _filter: &NotificationFilter,
-    _pid: i32,
-    _deadline: Deadline,
-) -> Result<Vec<NotificationInfo>, AdapterError> {
-    Err(AdapterError::not_supported("list_notifications"))
 }
 
 #[cfg(test)]

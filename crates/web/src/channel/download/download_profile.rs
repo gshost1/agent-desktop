@@ -22,10 +22,7 @@ pub(crate) fn save_in_profile(
     args: &[String],
     download_dir: &Path,
 ) -> Result<DownloadScope, AdapterError> {
-    let defaults: Vec<PathBuf> = default_user_data_dirs()
-        .into_iter()
-        .map(|entry| entry.path)
-        .collect();
+    let defaults = default_user_data_dirs();
     let Some(preferences) = preferences_path(args, &defaults) else {
         return Ok(DownloadScope::Connection);
     };
