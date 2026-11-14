@@ -1,7 +1,7 @@
 use super::*;
 
 const FIRST_READ_BYTE_BUDGETS: &[(&str, usize)] =
-    &[("desktop", 4096), ("linux", 4096), ("windows", 5120)];
+    &[("desktop", 4608), ("linux", 4096), ("windows", 5120)];
 
 fn main_guide(name: &str) -> String {
     get(GetArgs {
@@ -32,9 +32,13 @@ fn topics_named_in(guide: &str) -> Vec<String> {
         .split("\n## Topics\n")
         .nth(1)
         .expect("the guide has a Topics section");
+    let section = section.split("\n## ").next().unwrap_or(section);
     section
         .lines()
-        .filter_map(|line| line.strip_prefix("| `"))
+        .filter_map(|line| {
+            line.strip_prefix("| `")
+                .or_else(|| line.strip_prefix("- `"))
+        })
         .filter_map(|rest| rest.split('`').next())
         .map(str::to_owned)
         .collect()
@@ -153,5 +157,48 @@ fn no_shipped_example_pipes_snapshot_lines_into_jq_without_an_error_fallback() {
                 skill.canonical
             );
         }
+    }
+}
+
+const BASH_TOOL_SAFE_BYTES: usize = 28_000;
+
+fn printed_bytes(name: &str) -> usize {
+    let data = get(GetArgs {
+        name: name.into(),
+        full: false,
+        reference: None,
+    })
+    .expect("skill is served");
+    let envelope = crate::response::output::Response::ok("skills", data);
+    serde_json::to_string(&envelope)
+        .expect("envelope serializes")
+        .len()
+        + 1
+}
+
+#[test]
+fn desktop_and_platform_together_fit_one_bash_tool_result_on_every_os() {
+    let desktop = printed_bytes("desktop");
+    let platforms: Vec<&Skill> = SKILLS.iter().filter(|s| s.platform.is_some()).collect();
+    assert!(platforms.len() >= 3, "every OS has a platform skill");
+    for platform in platforms {
+        let total = desktop + printed_bytes(platform.canonical);
+        assert!(
+            total <= BASH_TOOL_SAFE_BYTES,
+            "`skills get desktop; skills get platform` prints {total} bytes on {}, over \
+             {BASH_TOOL_SAFE_BYTES}: near 30,000 characters the agent's Bash tool replaces the output \
+             with a short preview and the agent never reads most of the guide",
+            platform.platform.unwrap_or_default()
+        );
+    }
+}
+
+#[test]
+fn each_short_guide_names_its_topics_before_any_other_section() {
+    for (name, _) in FIRST_READ_BYTE_BUDGETS {
+        let guide = main_guide(name);
+        let topics = guide.find("\n## Topics\n").expect("Topics section");
+        let first_section = guide.find("\n## ").expect("a section");
+        assert_eq!(topics, first_section, "{name} must list its topics first");
     }
 }

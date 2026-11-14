@@ -11,7 +11,20 @@ description: >
 
 # agent-desktop
 
-Reads and drives desktop apps through the accessibility tree. Every command prints one JSON envelope: `ok`, then `data` or `error`. Also run `agent-desktop skills get platform`: it is short and says what differs on this OS. Flags: `agent-desktop <command> --help`.
+Reads and drives desktop apps through the accessibility tree. Every command prints one JSON envelope: `ok`, then `data` or `error`. Also run `agent-desktop skills get platform`: it is short and says what differs on this OS. Flags: `agent-desktop <command> --help`. Write flags out in full, never in a shell variable (`A="--app X"; agent-desktop press $A` does not split in zsh), and never discard stderr (`2>/dev/null`).
+
+## Topics
+
+`agent-desktop skills get desktop <topic>`:
+
+| Topic | Open it for |
+|-------|-------------|
+| `refs-and-retry` | Every ref error kind, delivery and retry, headed mode, drilling |
+| `round-trips` | Shell quoting (zsh, PowerShell), find, click and wait chains in one call |
+| `commands-observation` | `snapshot`, `find`, `get`, `is`, `screenshot`, `list-surfaces`, partial trees |
+| `commands-interaction` | Choosing an action, `-w`, keys, mouse, action errors |
+| `commands-system` | Launch and close, windows, clipboard, `wait`, `batch`, sessions, tracing |
+| `workflows` | Forms, menus, dialogs, new windows, scroll-find, drag, anti-patterns |
 
 ## The loop
 
@@ -46,16 +59,3 @@ Branch on `error.code`. Retry or substitute an action only when `disposition.ret
 - `STALE_REF`, `SNAPSHOT_NOT_FOUND`: snapshot again and use the new ref.
 - `AMBIGUOUS_TARGET`: identical controls; act on one that is unique in the window.
 - `POLICY_DENIED`, `ACTION_NOT_SUPPORTED`: no headless path. Ref actions are headless (no focus, cursor or keys); global `--headed` allows physical input, only when the user permits it, never as a retry.
-
-## Topics
-
-`agent-desktop skills get desktop <topic>`:
-
-| Topic | Open it for |
-|-------|-------------|
-| `refs-and-retry` | Every ref error kind, delivery and retry, headed mode, drilling |
-| `round-trips` | Shell quoting (zsh, PowerShell), find, click and wait chains in one call |
-| `commands-observation` | `snapshot`, `find`, `get`, `is`, `screenshot`, `list-surfaces`, partial trees |
-| `commands-interaction` | Choosing an action, `-w`, keys, mouse, action errors |
-| `commands-system` | Launch and close, windows, clipboard, `wait`, `batch`, sessions, tracing |
-| `workflows` | Forms, menus, dialogs, new windows, scroll-find, drag, anti-patterns |

@@ -14,6 +14,16 @@ description: >
 
 Only what differs on Windows; the core skill has the loop. Run it in the interactive desktop session of the signed-in user (Windows 10 1809+ or Server 2019+); Session 0, the secure desktop and a locked desktop are not supported.
 
+## Topics
+
+`agent-desktop skills get windows <topic>`:
+
+- `first-contact`: Every first-contact note in full: `type` verification, `launch` exits, notifications, stateful readback
+- `shell-and-overlay`: `open-system-surface`, tray and taskbar, notifications, cursor overlay, menu detection
+- `permissions-and-elevation`: Integrity levels, UIPI, blocked combos, protected processes, the interaction lease
+- `chromium-and-electron`: Settle timing, covered windows, WPF provider trap, unnamed web content
+- `troubleshooting`: Symptom to cause, action verification outcomes, saving headless, install warnings
+
 ## Capability Table
 
 | Group | Commands | Status on Windows |
@@ -43,15 +53,3 @@ Only what differs on Windows; the core skill has the loop. Run it in the interac
 - **Chromium and Electron apps read thin before they settle**: raise `--timeout-ms`.
 - **Blocked shortcuts** (`alt+f4`, `win+l`, `alt+tab` and others) refuse without `--force`. `cmd` and `meta` are the Windows key: write `ctrl+c` to copy.
 - **Identical controls** refuse with `AMBIGUOUS_TARGET`, `identity_not_unique`; use `--headed mouse-click --xy` to pick one.
-
-## Topics
-
-`agent-desktop skills get windows <topic>`:
-
-| Topic | Open it for |
-|-------|-------------|
-| `first-contact` | Every first-contact note in full: `type` verification, `launch` exits, notifications, stateful readback |
-| `shell-and-overlay` | `open-system-surface`, tray and taskbar, notifications, cursor overlay, menu detection |
-| `permissions-and-elevation` | Integrity levels, UIPI, blocked combos, protected processes, the interaction lease |
-| `chromium-and-electron` | Settle timing, covered windows, WPF provider trap, unnamed web content |
-| `troubleshooting` | Symptom to cause, action verification outcomes, saving headless, install warnings |

@@ -14,6 +14,22 @@ description: >
 
 Only what differs on Linux; the core skill has the loop. Run the CLI inside the target apps' desktop session (Ubuntu 24.04+, GNOME measured, X11 or Wayland): the session bus and display come from its environment.
 
+## Topics
+
+`agent-desktop skills get linux <topic>`:
+
+| Topic | Open it for |
+|-------|-------------|
+| `capabilities` | Per command group, what works on X11 and Wayland; `select`, `focus` and toolkit limits |
+| `bus-and-permissions` | Bus states, `status` and `permissions` output, state-root rules |
+| `display-servers-and-input` | `press`, `type`, pointer, wheel, drag, blocked combos, key names |
+| `windows-and-lifecycle` | `launch`, `close-app`, window ops, waits for a window or close, workspaces |
+| `capture-and-clipboard` | `screenshot` and the Wayland consent dialog, clipboard |
+| `shell-tray-and-notifications` | Menus and popovers, GNOME shell, tray, notifications, cursor overlay |
+| `troubleshooting` | Symptom to cause, Chromium, Electron and Qt flags, error codes |
+
+## First contact
+
 ```bash
 agent-desktop list-apps                                                  # names --app takes
 agent-desktop wait --window "Text Editor" --app gnome-text-editor --timeout 10000
@@ -32,17 +48,3 @@ agent-desktop snapshot --app gnome-text-editor -i --compact --lines
 - **Menus:** after opening one, read `data.surfaces`, then `snapshot --surface menu --app <name> -i`. A list-backed dropdown is part of the window, not a menu.
 - **Chromium and Qt apps need a launch flag** to appear on the bus; open `troubleshooting`.
 - **The state root must be private.** A group- or world-accessible `~/.agent-desktop` makes `snapshot` fail with `INTERNAL`: `chmod 700` it.
-
-## Topics
-
-`agent-desktop skills get linux <topic>`:
-
-| Topic | Open it for |
-|-------|-------------|
-| `capabilities` | Per command group, what works on X11 and Wayland; `select`, `focus` and toolkit limits |
-| `bus-and-permissions` | Bus states, `status` and `permissions` output, state-root rules |
-| `display-servers-and-input` | `press`, `type`, pointer, wheel, drag, blocked combos, key names |
-| `windows-and-lifecycle` | `launch`, `close-app`, window ops, waits for a window or close, workspaces |
-| `capture-and-clipboard` | `screenshot` and the Wayland consent dialog, clipboard |
-| `shell-tray-and-notifications` | Menus and popovers, GNOME shell, tray, notifications, cursor overlay |
-| `troubleshooting` | Symptom to cause, Chromium, Electron and Qt flags, error codes |
