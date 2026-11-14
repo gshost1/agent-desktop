@@ -12,7 +12,6 @@ use std::time::Instant;
 const TITLE: &str = "AXTitle";
 const MINIMIZED: &str = "AXMinimized";
 
-#[cfg(target_os = "macos")]
 pub(crate) fn read_title_and_minimized(
     window: &crate::tree::AXElement,
     deadline: Instant,
@@ -45,15 +44,6 @@ pub(crate) fn read_title_and_minimized(
     decode(&values)
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn read_title_and_minimized(
-    _window: &crate::tree::AXElement,
-    _deadline: Instant,
-) -> Result<(Option<String>, Option<bool>), AdapterError> {
-    Ok((None, None))
-}
-
-#[cfg(target_os = "macos")]
 fn decode(
     values: &core_foundation::array::CFArray<core_foundation::base::CFType>,
 ) -> Result<(Option<String>, Option<bool>), AdapterError> {
@@ -81,6 +71,6 @@ fn decode(
     Ok((title, minimized))
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "window_ax_attributes_tests.rs"]
 mod tests;

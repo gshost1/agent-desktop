@@ -1,0 +1,72 @@
+name: Hosted macOS E2E
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-macos-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  e2e:
+    name: Hosted macOS E2E (${{ matrix.image }})
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [macos-15, macos-26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ matrix.image }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ matrix.image }}-cargo-
+
+      - name: Cache build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/
+          key: ${{ matrix.image }}-hosted-e2e-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'src/Cargo.toml') }}-${{ hashFiles('crates/**/*.rs', 'src/**/*.rs') }}
+          restore-keys: |
+            ${{ matrix.image }}-hosted-e2e-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'src/Cargo.toml') }}-
+            ${{ matrix.image }}-hosted-e2e-
+
+      - name: Raise the display to fit the fixture and the wide-window scenario
+        run: |
+          if [ "${RUNNER_ENVIRONMENT:-}" != "github-hosted" ]; then
+            echo "refusing to change the display mode outside a GitHub-hosted runner" >&2
+            exit 1
+          fi
+          swift scripts/hosted-macos-display-mode.swift 1400 900
+
+      - name: Run the native E2E suite
+        env:
+          AGENT_DESKTOP_E2E_SKIP_PRIVATE: "1"
+          AGENT_DESKTOP_E2E_EXCLUSIVE: "1"
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-logs"
+          bash tests/e2e/run.sh 2>&1 | tee "$RUNNER_TEMP/e2e-logs/e2e.log"
+
+      - name: Upload the E2E log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hosted-macos-e2e-${{ matrix.image }}
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: warn

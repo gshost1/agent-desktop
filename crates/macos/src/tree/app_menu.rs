@@ -92,7 +92,6 @@ pub(super) fn require_root<T>(
     read?.ok_or_else(|| AdapterError::surface_absent(surface, message))
 }
 
-#[cfg(target_os = "macos")]
 fn menubar_for_pid(pid: i32, deadline: Instant) -> Result<Option<AXElement>, AdapterError> {
     let app = element_for_pid(pid);
     let Some(menubar) = surface_read::element(&app, "AXMenuBar", deadline)? else {
@@ -104,7 +103,6 @@ fn menubar_for_pid(pid: i32, deadline: Instant) -> Result<Option<AXElement>, Ada
     Ok(Some(menubar))
 }
 
-#[cfg(target_os = "macos")]
 fn menu_element_for_pid(pid: i32, deadline: Instant) -> Result<Option<AXElement>, AdapterError> {
     Ok(open_menus_for_pid(pid, deadline)?
         .into_iter()
@@ -163,7 +161,6 @@ fn open_menubar_menus_with<T>(
     Ok(menus)
 }
 
-#[cfg(target_os = "macos")]
 fn context_menu_from_app(
     pid: i32,
     deadline: Instant,
@@ -200,7 +197,6 @@ fn context_menu_from_app(
     Ok(None)
 }
 
-#[cfg(target_os = "macos")]
 fn find_menu_descendant(
     root: AXElement,
     source: String,
@@ -224,7 +220,6 @@ fn find_menu_descendant(
     )
 }
 
-#[cfg(target_os = "macos")]
 fn inspect_by_attribute(
     element: &AXElement,
     deadline: Instant,
@@ -244,13 +239,11 @@ fn inspect_by_attribute(
     ))
 }
 
-#[cfg(target_os = "macos")]
 fn displayed_menu(element: &AXElement, deadline: Instant) -> Result<bool, AdapterError> {
     Ok(has_role(element, "AXMenu", deadline)?
         && surface_read::boolean(element, "AXVisible", deadline)? != Some(false))
 }
 
-#[cfg(target_os = "macos")]
 fn has_role(element: &AXElement, expected: &str, deadline: Instant) -> Result<bool, AdapterError> {
     Ok(surface_read::string(element, "AXRole", deadline)?.as_deref() == Some(expected))
 }

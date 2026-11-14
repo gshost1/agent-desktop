@@ -3,7 +3,6 @@ use agent_desktop_core::{AdapterError, Deadline, ErrorCode, Modifier, Point};
 const MAX_LINES_PER_EVENT: i32 = 10;
 const MAX_TOTAL_LINES: i32 = 1_000;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn synthesize_scroll_at(
     point: Point,
     delta: (i32, i32),
@@ -44,16 +43,6 @@ pub(crate) fn synthesize_scroll_at(
         }
     }
     crate::input::mouse::ensure_budget(deadline, delivery)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn synthesize_scroll_at(
-    _point: Point,
-    _delta: (i32, i32),
-    _modifiers: &[Modifier],
-    _deadline: Deadline,
-) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("scroll"))
 }
 
 fn scroll_chunks(delta: (i32, i32)) -> Result<Vec<(i32, i32)>, AdapterError> {

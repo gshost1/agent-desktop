@@ -19,6 +19,20 @@ fn header_include_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("include")
 }
 
+#[cfg(target_os = "macos")]
+fn macos_sdk_cxx_include_dir() -> Option<PathBuf> {
+    let output = Command::new("xcrun")
+        .args(["--sdk", "macosx", "--show-sdk-path"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let sdk = String::from_utf8(output.stdout).ok()?;
+    let include = PathBuf::from(sdk.trim()).join("usr/include/c++/v1");
+    include.is_dir().then_some(include)
+}
+
 #[test]
 fn committed_header_compiles_as_cpp17_with_portable_abi_types() {
     let Some(cxx) = system_cxx() else {
@@ -119,12 +133,18 @@ int main() {
 "#;
     std::fs::write(&tmp, src).expect("write C++17 test translation unit");
 
-    let output = Command::new(cxx)
+    let mut command = Command::new(cxx);
+    command
         .arg("-std=c++17")
         .arg("-pedantic-errors")
         .arg("-Wall")
         .arg("-Wextra")
-        .arg("-Werror")
+        .arg("-Werror");
+    #[cfg(target_os = "macos")]
+    if let Some(cxx_include) = macos_sdk_cxx_include_dir() {
+        command.arg("-isystem").arg(cxx_include);
+    }
+    let output = command
         .arg("-I")
         .arg(header_include_dir())
         .arg("-c")

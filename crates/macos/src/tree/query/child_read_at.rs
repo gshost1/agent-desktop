@@ -1,6 +1,4 @@
 //! The read of one child by position, bracketed by two counts.
-#![cfg(target_os = "macos")]
-
 use super::{
     child_read::{
         ChildRead, check_deadline, child_count, copy_page, is_absent_error, stable_count,

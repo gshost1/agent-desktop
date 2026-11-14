@@ -93,7 +93,6 @@ fn responsive_without_menu(failure: AdapterError) -> AdapterError {
     error
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use agent_desktop_core::Deadline;
 
@@ -139,7 +138,6 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) use imp::{observe_menu, poll_menu};
 
 #[cfg(test)]

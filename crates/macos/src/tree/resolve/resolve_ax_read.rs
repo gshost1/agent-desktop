@@ -2,7 +2,6 @@ use agent_desktop_core::{AdapterError, ErrorCode};
 
 use crate::tree::AXElement;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn read_string_with_usage(
     element: &AXElement,
     attribute: &str,
@@ -47,7 +46,6 @@ pub(crate) fn read_array(
         .map(|elements| (!elements.is_empty()).then_some(elements))
 }
 
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn read_element(
     element: &AXElement,
     attribute: &str,
@@ -58,7 +56,6 @@ pub(in crate::tree) fn read_element(
     })
 }
 
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn read_point(
     element: &AXElement,
     attribute: &str,
@@ -81,7 +78,6 @@ pub(in crate::tree) fn read_point(
     })
 }
 
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn read_size(
     element: &AXElement,
     attribute: &str,
@@ -104,7 +100,6 @@ pub(in crate::tree) fn read_size(
     })
 }
 
-#[cfg(target_os = "macos")]
 fn read_value<T>(
     element: &AXElement,
     attribute: &str,
@@ -146,7 +141,6 @@ fn read_value<T>(
     })
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn classify_ax_read(error: i32, attribute: &str) -> Result<bool, AdapterError> {
     use accessibility_sys::{
         kAXErrorAPIDisabled, kAXErrorAttributeUnsupported, kAXErrorCannotComplete,
@@ -183,7 +177,6 @@ pub(crate) fn classify_ax_read(error: i32, attribute: &str) -> Result<bool, Adap
     Err(incomplete_read_error(attribute, label, error))
 }
 
-#[cfg(target_os = "macos")]
 fn incomplete_read_error(attribute: &str, reason: &str, error: i32) -> AdapterError {
     AdapterError::new(
         ErrorCode::AppUnresponsive,
@@ -200,7 +193,6 @@ fn incomplete_read_error(attribute: &str, reason: &str, error: i32) -> AdapterEr
     }))
 }
 
-#[cfg(target_os = "macos")]
 fn release_if_present(value: core_foundation::base::CFTypeRef) {
     if !value.is_null() {
         unsafe { core_foundation::base::CFRelease(value) };

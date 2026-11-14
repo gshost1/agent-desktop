@@ -24,7 +24,6 @@ mod tests {
         assert_eq!(elements.len(), 2);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn same_ax_element_collapses_to_one_candidate() {
         let mut elements = Vec::new();
@@ -36,22 +35,15 @@ mod tests {
         assert_eq!(elements.len(), 1);
     }
 
-    #[cfg(target_os = "macos")]
     fn null_element() -> AXElement {
         AXElement(std::ptr::null_mut())
     }
 
-    #[cfg(target_os = "macos")]
     fn current_process_element() -> AXElement {
         AXElement(unsafe {
             accessibility_sys::AXUIElementCreateApplication(
                 i32::try_from(std::process::id()).expect("test pid fits macOS pid_t"),
             )
         })
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    fn null_element() -> AXElement {
-        AXElement(std::ptr::null())
     }
 }

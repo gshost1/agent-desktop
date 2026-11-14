@@ -4,30 +4,6 @@ use std::time::Instant;
 use crate::system::window::cg_window;
 use crate::system::window::window_inventory_global::{OwnerGeneration, OwnerSnapshotView};
 
-#[cfg(test)]
-fn apps_from_window_records(
-    records: &[cg_window::WindowRecord],
-) -> Vec<agent_desktop_core::AppInfo> {
-    let mut seen_pids = rustc_hash::FxHashSet::default();
-    let mut apps = Vec::new();
-
-    for record in records {
-        if !seen_pids.insert(record.pid) {
-            continue;
-        }
-        apps.push(agent_desktop_core::AppInfo {
-            name: record.app_name.clone(),
-            pid: agent_desktop_core::ProcessId::try_from(record.pid)
-                .expect("fixture pid must be positive"),
-            bundle_id: None,
-            process_instance: record.process_instance.clone(),
-            presentation: None,
-        });
-    }
-
-    apps
-}
-
 pub(crate) fn list_windows_until(
     filter: &WindowFilter,
     deadline: Instant,
@@ -142,7 +118,6 @@ fn owner_still_running(pid: i32, generation: OwnerGeneration) -> Result<bool, Ad
     }))
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn focused_window_until(deadline: Instant) -> Result<Option<WindowInfo>, AdapterError> {
     let Some(pid) = focused_application_pid(deadline)? else {
         return Ok(None);
@@ -163,18 +138,12 @@ pub(crate) fn focused_window_until(deadline: Instant) -> Result<Option<WindowInf
     Ok(windows.into_iter().next())
 }
 
-#[cfg(target_os = "macos")]
 fn focused_application_pid(deadline: Instant) -> Result<Option<i32>, AdapterError> {
     let system = crate::tree::system_wide::element();
     crate::tree::surface_read::element(&system, "AXFocusedApplication", deadline)?
         .map(|app| crate::tree::properties::ax_ipc::pid(&app, deadline))
         .transpose()
         .map_err(|error| crate::system::focus::map_ax_read_error(error, "read focused application"))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn focused_window_until(_deadline: Instant) -> Result<Option<WindowInfo>, AdapterError> {
-    Err(AdapterError::not_supported("focused_window"))
 }
 
 fn require_running_app(

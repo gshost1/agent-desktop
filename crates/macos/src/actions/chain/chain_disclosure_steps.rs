@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use crate::actions::chain::chain_delivery::DeliveryOutcome;
     use crate::tree::AXElement;
@@ -202,5 +201,4 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) use imp::{press_to_collapse, press_to_expand};

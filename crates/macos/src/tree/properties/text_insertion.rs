@@ -58,7 +58,6 @@ fn new_line_caret(
     Some(caret(first.x, &line))
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::{PARAGRAPH_WINDOW, caret, new_line_caret, paragraph_start};
     use crate::tree::AXElement;
@@ -200,23 +199,6 @@ mod imp {
         }
         let value = unsafe { CFType::wrap_under_create_rule(raw) };
         (error == kAXErrorSuccess).then_some(value)
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use crate::tree::AXElement;
-    use agent_desktop_core::{AdapterError, Deadline, Rect};
-
-    pub(crate) fn insertion_caret(_element: &AXElement, _deadline: Deadline) -> Option<Rect> {
-        None
-    }
-
-    pub(crate) fn focused_insertion_caret(
-        _pid: Option<i32>,
-        _deadline: Deadline,
-    ) -> Result<Option<Rect>, AdapterError> {
-        Err(AdapterError::not_supported("get_focused_insertion_caret"))
     }
 }
 

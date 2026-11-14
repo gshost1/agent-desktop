@@ -1,11 +1,9 @@
-#[cfg(target_os = "macos")]
 pub(super) mod keyboard_event;
 pub(crate) mod keyboard_layout;
 pub(crate) mod keyboard_map;
 
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, KeyCombo};
 
-#[cfg(target_os = "macos")]
 pub(crate) fn synthesize_key(
     combo: &KeyCombo,
     target_pid: Option<i32>,
@@ -22,17 +20,10 @@ pub(crate) fn synthesize_key(
     )
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn prepare_keyboard_input() -> Result<(), AdapterError> {
     crate::input::keyboard::keyboard_event::prepare_key_events()
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn prepare_keyboard_input() -> Result<(), AdapterError> {
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn reject_standalone_key_state(
     _combo: &KeyCombo,
     _down: bool,
@@ -50,7 +41,6 @@ pub(crate) fn reject_standalone_key_state(
     ))
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn synthesize_text(
     text: &str,
     target_pid: i32,
@@ -65,41 +55,8 @@ pub(crate) fn synthesize_text(
     crate::input::keyboard::keyboard_event::post_text(text, target_pid, deadline, verify_target)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn preflight_text(text: &str, deadline: Deadline) -> Result<(), AdapterError> {
     crate::input::keyboard::keyboard_event::preflight_text(text, deadline)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn synthesize_key(
-    _combo: &KeyCombo,
-    _target_pid: Option<i32>,
-    _deadline: Deadline,
-) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("synthesize_key"))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn reject_standalone_key_state(
-    _combo: &KeyCombo,
-    _down: bool,
-) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("key_state"))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn synthesize_text(
-    _text: &str,
-    _target_pid: i32,
-    _deadline: Deadline,
-    _verify_target: impl FnMut(Deadline) -> Result<(), AdapterError>,
-) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("synthesize_text"))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn preflight_text(_text: &str, _deadline: Deadline) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("synthesize_text"))
 }
 
 #[cfg(test)]

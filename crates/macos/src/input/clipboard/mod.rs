@@ -1,51 +1,39 @@
 use agent_desktop_core::{AdapterError, ErrorCode};
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_runtime.rs"]
 mod clipboard_runtime;
 pub(super) mod owned_object;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_file_urls.rs"]
 mod clipboard_file_urls;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_rich.rs"]
 mod clipboard_rich;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_image_io.rs"]
 mod clipboard_image_io;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_transaction.rs"]
 mod clipboard_transaction;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_helper_client.rs"]
 mod clipboard_helper_client;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_helper_protocol.rs"]
 mod clipboard_helper_protocol;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_helper_entry.rs"]
 mod clipboard_helper_entry;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_helper_dl.rs"]
 mod clipboard_helper_dl;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_helper_identity.rs"]
 mod clipboard_helper_identity;
 
-#[cfg(target_os = "macos")]
 #[path = "clipboard_helper_process.rs"]
 mod clipboard_helper_process;
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::clipboard_runtime::{
         AutoreleasePool, Pasteboard as Id, change_count, ensure_read_access, pasteboard,
@@ -319,35 +307,10 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
-
-    pub fn clear(_deadline: agent_desktop_core::Deadline) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("clipboard_clear"))
-    }
-
-    pub fn get_content(
-        _format: agent_desktop_core::ClipboardFormat,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<Option<agent_desktop_core::ClipboardContent>, AdapterError> {
-        Err(AdapterError::not_supported("get_clipboard_content"))
-    }
-
-    pub fn set_content(
-        _content: &agent_desktop_core::ClipboardContent,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("set_clipboard_content"))
-    }
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn clear(deadline: agent_desktop_core::Deadline) -> Result<(), AdapterError> {
     clipboard_helper_client::clear(deadline)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn get_content(
     format: agent_desktop_core::ClipboardFormat,
     deadline: agent_desktop_core::Deadline,
@@ -355,7 +318,6 @@ pub(crate) fn get_content(
     clipboard_helper_client::read(format, deadline)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn set_content(
     content: &agent_desktop_core::ClipboardContent,
     deadline: agent_desktop_core::Deadline,
@@ -363,13 +325,7 @@ pub(crate) fn set_content(
     clipboard_helper_client::write(content, deadline)
 }
 
-#[cfg(target_os = "macos")]
 pub use clipboard_helper_entry::entry_from_env as helper_entry_from_env;
-
-#[cfg(target_os = "macos")]
 pub(crate) use imp::{clear_direct, get_content_direct, set_content_direct};
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) use imp::{clear, get_content, set_content};
 
 pub(crate) mod directory_identity;

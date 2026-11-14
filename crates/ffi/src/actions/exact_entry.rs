@@ -39,13 +39,13 @@ pub(crate) unsafe fn core_ref_entry_from_exact(
             "AdExactRefEntry version or size does not match this library",
         ));
     }
-    let process_instance = unsafe { optional_string(exact.process_instance, "process_instance") }?
+    let process_instance = optional_adapter_string(exact.process_instance, "process_instance")?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
             AdapterError::new(ErrorCode::InvalidArgs, "process_instance is null or empty")
         })?;
     let native_id =
-        match unsafe { optional_string(exact.entry.identity.native_id, "identity.native_id") }? {
+        match optional_adapter_string(exact.entry.identity.native_id, "identity.native_id")? {
             Some(value) if value.trim().is_empty() => {
                 return Err(AdapterError::new(
                     ErrorCode::InvalidArgs,
@@ -80,7 +80,7 @@ unsafe fn decode_core_ref_entry(
             "identity.pid must be positive",
         ));
     }
-    let role = unsafe { optional_string(entry.identity.role, "identity.role") }?
+    let role = optional_adapter_string(entry.identity.role, "identity.role")?
         .ok_or_else(|| AdapterError::new(ErrorCode::InvalidArgs, "role is null"))?;
     if !agent_desktop_core::Role::is_canonical(&role) || role == "unknown" {
         return Err(AdapterError::new(
@@ -88,10 +88,9 @@ unsafe fn decode_core_ref_entry(
             "identity.role is not canonical",
         ));
     }
-    let name = unsafe { optional_string(entry.identity.name, "identity.name") }?;
-    let value = unsafe { optional_string(entry.identity.value, "identity.value") }?;
-    let description =
-        unsafe { optional_string(entry.identity.description, "identity.description") }?;
+    let name = optional_adapter_string(entry.identity.name, "identity.name")?;
+    let value = optional_adapter_string(entry.identity.value, "identity.value")?;
+    let description = optional_adapter_string(entry.identity.description, "identity.description")?;
     let states = unsafe {
         string_array(
             entry.capabilities.states.items,
@@ -140,15 +139,15 @@ unsafe fn decode_core_ref_entry(
         ));
     }
     let bounds_hash = supplied_bounds_hash.or(derived_bounds_hash);
-    let source_app = unsafe { optional_string(entry.source.app, "source.app") }?;
-    let source_window_id = unsafe { optional_string(entry.source.window_id, "source.window_id") }?;
+    let source_app = optional_adapter_string(entry.source.app, "source.app")?;
+    let source_window_id = optional_adapter_string(entry.source.window_id, "source.window_id")?;
     let source_window_title =
-        unsafe { optional_string(entry.source.window_title, "source.window_title") }?;
+        optional_adapter_string(entry.source.window_title, "source.window_title")?;
     let source_window_bounds_hash = entry
         .source
         .has_window_bounds_hash
         .then_some(entry.source.window_bounds_hash);
-    let root_ref = unsafe { optional_string(entry.scope.root_ref, "scope.root_ref") }?;
+    let root_ref = optional_adapter_string(entry.scope.root_ref, "scope.root_ref")?;
     for field in [
         Some(role.as_str()),
         Some(process_instance.as_str()),
@@ -259,13 +258,6 @@ unsafe fn decode_core_ref_entry(
     Ok(decoded)
 }
 
-unsafe fn optional_string(
-    ptr: *const std::os::raw::c_char,
-    field: &str,
-) -> Result<Option<String>, AdapterError> {
-    optional_adapter_string(ptr, field)
-}
-
 fn check_array_len(
     len: usize,
     is_null: bool,
@@ -305,7 +297,7 @@ unsafe fn string_array(
         .enumerate()
         .map(|(index, item)| {
             let element = format!("{field}[{index}]");
-            unsafe { optional_string(*item, &element) }?.ok_or_else(|| {
+            optional_adapter_string(*item, &element)?.ok_or_else(|| {
                 AdapterError::new(ErrorCode::InvalidArgs, format!("{element} is null"))
             })
         })

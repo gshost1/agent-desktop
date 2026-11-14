@@ -1,8 +1,8 @@
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct InSockIpv6 {
-    pub(crate) hop_limit: u8,
-    pub(crate) checksum: i32,
-    pub(crate) interface_index: u16,
-    pub(crate) hops: i16,
+    _hop_limit: u8,
+    _checksum: i32,
+    _interface_index: u16,
+    _hops: i16,
 }

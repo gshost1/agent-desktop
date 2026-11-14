@@ -175,7 +175,6 @@ impl Drop for NcSession {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn frontmost_app(deadline: Deadline) -> Result<Option<ProcessIdentity>, AdapterError> {
     let snapshot = crate::system::app::workspace_apps::window_owner_snapshot_until(
         operation_deadline(deadline, std::time::Duration::from_secs(2))?,
@@ -192,23 +191,12 @@ fn frontmost_app(deadline: Deadline) -> Result<Option<ProcessIdentity>, AdapterE
     )))
 }
 
-#[cfg(not(target_os = "macos"))]
-fn frontmost_app(_deadline: Deadline) -> Result<Option<ProcessIdentity>, AdapterError> {
-    Ok(None)
-}
-
-#[cfg(target_os = "macos")]
 fn reactivate_app(app: &ProcessIdentity, deadline: Deadline) -> Result<(), AdapterError> {
     let pid = crate::system::process::process_identity::to_pid_t(app.pid)?;
     if !crate::system::process::process_identity::matches_instance(pid, &app.instance)? {
         return Ok(());
     }
     crate::system::focus::ensure_app_focused(pid, deadline)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn reactivate_app(_app: &ProcessIdentity, _deadline: Deadline) -> Result<(), AdapterError> {
-    Ok(())
 }
 
 fn merge_cleanup_results(
@@ -225,7 +213,6 @@ fn merge_cleanup_results(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn nc_pid(deadline: Deadline) -> Result<Option<i32>, AdapterError> {
     let mut command = std::process::Command::new("/usr/bin/pgrep");
     command.arg("-x").arg("NotificationCenter");
@@ -237,7 +224,6 @@ fn nc_pid(deadline: Deadline) -> Result<Option<i32>, AdapterError> {
     nc_pid_from_output(output)
 }
 
-#[cfg(target_os = "macos")]
 fn nc_pid_from_output(
     output: Result<std::process::Output, AdapterError>,
 ) -> Result<Option<i32>, AdapterError> {
@@ -252,7 +238,6 @@ fn nc_pid_from_output(
         .and_then(|line| line.trim().parse::<i32>().ok()))
 }
 
-#[cfg(target_os = "macos")]
 fn is_nc_open(pid: i32, deadline: Deadline) -> bool {
     use crate::tree::element_for_pid;
 
@@ -262,17 +247,6 @@ fn is_nc_open(pid: i32, deadline: Deadline) -> bool {
     !windows.is_empty()
 }
 
-#[cfg(not(target_os = "macos"))]
-fn nc_pid(_deadline: Deadline) -> Result<Option<i32>, AdapterError> {
-    Ok(None)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn is_nc_open(_pid: i32, _deadline: Deadline) -> bool {
-    false
-}
-
-#[cfg(target_os = "macos")]
 fn open_nc(deadline: Deadline) -> Result<(), AdapterError> {
     let script = r#"tell application "System Events" to tell its application process "ControlCenter"
         click (first menu bar item of menu bar 1 whose description is "Clock")
@@ -295,12 +269,6 @@ fn open_nc(deadline: Deadline) -> Result<(), AdapterError> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
-fn open_nc(_deadline: Deadline) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("open_nc"))
-}
-
-#[cfg(target_os = "macos")]
 fn close_nc(deadline: Deadline) -> Result<(), AdapterError> {
     use crate::input::keyboard;
 
@@ -319,16 +287,10 @@ fn close_nc(deadline: Deadline) -> Result<(), AdapterError> {
     Ok(())
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "nc_session_tests.rs"]
 mod tests;
 
-#[cfg(not(target_os = "macos"))]
-fn close_nc(_deadline: Deadline) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("close_nc"))
-}
-
-#[cfg(target_os = "macos")]
 fn wait_for_nc_ready(deadline: Deadline) -> Result<i32, AdapterError> {
     let poll = std::time::Duration::from_millis(50);
 
@@ -345,11 +307,6 @@ fn wait_for_nc_ready(deadline: Deadline) -> Result<i32, AdapterError> {
         }
         std::thread::sleep(poll.min(deadline.remaining()));
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn wait_for_nc_ready(_deadline: Deadline) -> Result<i32, AdapterError> {
-    Err(AdapterError::not_supported("wait_for_nc_ready"))
 }
 
 fn operation_deadline(

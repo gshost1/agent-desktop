@@ -1,6 +1,5 @@
 use super::*;
 
-#[cfg(target_os = "macos")]
 #[test]
 fn native_bounds_decoder_rejects_invalid_geometry_before_live_or_snapshot_use() {
     use core_graphics::geometry::{CGPoint, CGSize};

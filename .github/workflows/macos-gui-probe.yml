@@ -1,0 +1,89 @@
+name: Hosted macOS GUI probe
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    name: GUI probe (${{ matrix.image }})
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [macos-15, macos-26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Report the session, SIP and TCC state
+        run: bash scripts/hosted-macos-gui-probe.sh env
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ matrix.image }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ matrix.image }}-cargo-
+
+      - name: Build the release CLI
+        run: cargo build --locked --release -p agent-desktop
+
+      - name: Try each Accessibility grant method
+        id: grant
+        continue-on-error: true
+        run: bash scripts/hosted-macos-gui-probe.sh grant
+
+      - name: Raise the display mode
+        id: display
+        continue-on-error: true
+        run: bash scripts/hosted-macos-gui-probe.sh display
+
+      - name: Drive Calculator through one ref
+        id: tiny
+        continue-on-error: true
+        run: bash scripts/hosted-macos-gui-probe.sh tiny
+
+      - name: Run the native E2E suite
+        id: e2e
+        if: steps.tiny.outcome == 'success'
+        continue-on-error: true
+        env:
+          AGENT_DESKTOP_E2E_SKIP_PRIVATE: "1"
+          AGENT_DESKTOP_E2E_EXCLUSIVE: "1"
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          status=0
+          bash tests/e2e/run.sh 2>&1 | tee "$RUNNER_TEMP/gui-probe-logs/e2e.log" || status=$?
+          echo "E2E exit $status after $(( $(date +%s) - start ))s"
+          exit "$status"
+
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.image }}"
+            echo "- grant: ${{ steps.grant.outcome }}"
+            echo "- display: ${{ steps.display.outcome }}"
+            echo "- tiny check: ${{ steps.tiny.outcome }}"
+            echo "- e2e: ${{ steps.e2e.outcome }}"
+            grep -h 'RESULT\|TINY\|E2E exit\|passed\|failed' "$RUNNER_TEMP"/gui-probe-logs/*.log 2>/dev/null | tail -20 | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload probe logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gui-probe-${{ matrix.image }}
+          path: ${{ runner.temp }}/gui-probe-logs
+          if-no-files-found: warn

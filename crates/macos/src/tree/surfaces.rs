@@ -5,7 +5,6 @@ use std::time::Instant;
 /// Where keyboard focus is: the windowless editor of an in-place edit when
 /// one floats over the focused window or no window reports focus, otherwise
 /// the focused window.
-#[cfg(target_os = "macos")]
 pub(crate) fn focused_surface_for_pid(
     pid: i32,
     deadline: Instant,
@@ -15,7 +14,6 @@ pub(crate) fn focused_surface_for_pid(
 }
 
 /// The window the application reports as focused, read once.
-#[cfg(target_os = "macos")]
 pub(crate) fn focused_window_for_pid(
     pid: i32,
     deadline: Instant,
@@ -25,7 +23,6 @@ pub(crate) fn focused_window_for_pid(
 
 /// The focused surface given the focused window already read: a floating
 /// in-place editor over it, otherwise the window itself.
-#[cfg(target_os = "macos")]
 pub(crate) fn focused_surface_in_window(
     pid: i32,
     window: Option<AXElement>,
@@ -61,7 +58,6 @@ pub(crate) fn choose_focused_root<T>(
     })
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn menu_element_for_pid(
     pid: i32,
     deadline: Instant,
@@ -73,7 +69,6 @@ pub(crate) fn menu_element_for_pid(
     })
 }
 
-#[cfg(target_os = "macos")]
 fn first_child_with_role_or_subrole(
     pid: i32,
     target: &str,
@@ -88,7 +83,6 @@ fn first_child_with_role_or_subrole(
 }
 
 /// Finds a sheet, popover or alert on this window or its direct children only.
-#[cfg(target_os = "macos")]
 pub(crate) fn surface_in_window(
     window: &AXElement,
     surface: SnapshotSurface,
@@ -107,7 +101,6 @@ pub(crate) fn surface_in_window(
     })
 }
 
-#[cfg(target_os = "macos")]
 fn first_in_window(
     window: &AXElement,
     deadline: Instant,
@@ -124,7 +117,6 @@ fn first_in_window(
     Ok(None)
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn role_or_subrole_matches(
     element: &AXElement,
     target: &str,
@@ -136,7 +128,6 @@ pub(super) fn role_or_subrole_matches(
     Ok(surface_read::string(element, "AXSubrole", deadline)?.as_deref() == Some(target))
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn sheet_for_pid(
     pid: i32,
     deadline: Instant,
@@ -144,7 +135,6 @@ pub(crate) fn sheet_for_pid(
     first_child_with_role_or_subrole(pid, "AXSheet", deadline)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn popover_for_pid(
     pid: i32,
     deadline: Instant,
@@ -152,7 +142,6 @@ pub(crate) fn popover_for_pid(
     first_child_with_role_or_subrole(pid, "AXPopover", deadline)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn alert_for_pid(
     pid: i32,
     deadline: Instant,
@@ -175,7 +164,6 @@ pub(crate) fn alert_for_pid(
     Ok(None)
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn is_alert(element: &AXElement, deadline: Instant) -> Result<bool, AdapterError> {
     let role = surface_read::string(element, "AXRole", deadline)?;
     let subrole = surface_read::string(element, "AXSubrole", deadline)?;
@@ -186,39 +174,10 @@ pub(super) fn is_alert(element: &AXElement, deadline: Instant) -> Result<bool, A
         ))
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn is_menu_open(pid: i32, deadline: Instant) -> Result<bool, AdapterError> {
     Ok(menu_element_for_pid(pid, deadline)?.is_some())
 }
 
-#[cfg(not(target_os = "macos"))]
-macro_rules! unsupported_surface {
-    ($name:ident) => {
-        pub(crate) fn $name(
-            _pid: i32,
-            _deadline: Instant,
-        ) -> Result<Option<AXElement>, AdapterError> {
-            Ok(None)
-        }
-    };
-}
-
-#[cfg(not(target_os = "macos"))]
-unsupported_surface!(focused_surface_for_pid);
-#[cfg(not(target_os = "macos"))]
-unsupported_surface!(menu_element_for_pid);
-#[cfg(not(target_os = "macos"))]
-unsupported_surface!(sheet_for_pid);
-#[cfg(not(target_os = "macos"))]
-unsupported_surface!(popover_for_pid);
-#[cfg(not(target_os = "macos"))]
-unsupported_surface!(alert_for_pid);
-
 #[cfg(test)]
 #[path = "surfaces_tests.rs"]
 mod tests;
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn is_menu_open(_pid: i32, _deadline: Instant) -> Result<bool, AdapterError> {
-    Ok(false)
-}
