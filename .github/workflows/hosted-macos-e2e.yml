@@ -58,6 +58,7 @@ jobs:
         env:
           AGENT_DESKTOP_E2E_SKIP_PRIVATE: "1"
           AGENT_DESKTOP_E2E_EXCLUSIVE: "1"
+        shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-logs"
           bash tests/e2e/run.sh 2>&1 | tee "$RUNNER_TEMP/e2e-logs/e2e.log"
