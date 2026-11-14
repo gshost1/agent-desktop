@@ -101,7 +101,6 @@ fn covers(field: Rect, editor: Rect) -> bool {
 /// The editor a text write to `target` must reach during an in-place edit:
 /// `target` itself when it is that editor, the focused editor when it edits
 /// `target` in place, or `None` when no in-place edit can be proven.
-#[cfg(target_os = "macos")]
 pub(crate) fn live_editor_for(
     target: &AXElement,
     deadline: Instant,
@@ -132,7 +131,6 @@ pub(crate) fn live_editor_for(
 
 /// The process's focused element and its bounds when it is a windowless
 /// text editor.
-#[cfg(target_os = "macos")]
 pub(crate) fn focused_editor_for_pid(
     pid: i32,
     deadline: Instant,
@@ -146,13 +144,11 @@ pub(crate) fn focused_editor_for_pid(
     Ok((facts.pid == pid && is_windowless_editor(&facts)).then_some((focused, facts.bounds)))
 }
 
-#[cfg(target_os = "macos")]
 fn focused_element(pid: i32, deadline: Instant) -> Result<Option<AXElement>, AdapterError> {
     let app = super::element_for_pid(pid);
     super::surface_read::element(&app, "AXFocusedUIElement", deadline)
 }
 
-#[cfg(target_os = "macos")]
 fn read_facts(element: &AXElement, deadline: Instant) -> Result<Option<EditorFacts>, AdapterError> {
     let Ok(pid) = super::properties::ax_ipc::pid(element, deadline) else {
         return Ok(None);
@@ -166,22 +162,6 @@ fn read_facts(element: &AXElement, deadline: Instant) -> Result<Option<EditorFac
         bounds,
         has_window,
     }))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn live_editor_for(
-    _field: &AXElement,
-    _deadline: Instant,
-) -> Result<Option<AXElement>, AdapterError> {
-    Ok(None)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn focused_editor_for_pid(
-    _pid: i32,
-    _deadline: Instant,
-) -> Result<Option<(AXElement, Option<Rect>)>, AdapterError> {
-    Ok(None)
 }
 
 #[cfg(test)]

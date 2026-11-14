@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use accessibility_sys::{
         AXValueGetType, AXValueGetTypeID, AXValueGetValue, kAXValueTypeAXError,
@@ -124,10 +123,9 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) use imp::{carries_no_text, is_null, number_text, point, size, slot_error, text};
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use accessibility_sys::{AXValueCreate, kAXErrorCannotComplete, kAXValueTypeAXError};

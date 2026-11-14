@@ -30,7 +30,7 @@ fn libproc_attributes_a_tcp_listener_to_the_current_process_generation() {
 #[test]
 fn socket_info_layout_matches_the_macos_proc_info_abi() {
     assert_eq!(size_of::<SocketInfo>(), 768);
-    assert_eq!(std::mem::offset_of!(SocketInfo, receive), 184);
+    assert_eq!(std::mem::offset_of!(SocketInfo, _receive), 184);
     assert_eq!(std::mem::offset_of!(SocketInfo, kind), 232);
     assert_eq!(std::mem::offset_of!(SocketInfo, protocol_info), 240);
 }

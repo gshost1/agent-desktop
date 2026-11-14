@@ -5,7 +5,6 @@ use crate::tree::element_dedupe::push_unique;
 use crate::tree::properties::element::element_for_pid;
 use crate::tree::{AXElement, shell_surface::extras_menu_bar};
 
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn candidate_roots(
     entry: &RefEntry,
     context: &mut ResolveReadContext,
@@ -55,7 +54,6 @@ pub(in crate::tree) fn candidate_roots(
     Ok(roots)
 }
 
-#[cfg(target_os = "macos")]
 fn source_surface_scoped_roots(
     application: &AXElement,
     entry: &RefEntry,
@@ -131,7 +129,6 @@ fn source_surface_scoped_roots(
     Ok(vec![root])
 }
 
-#[cfg(target_os = "macos")]
 fn source_window_scoped_roots(
     application: &AXElement,
     entry: &RefEntry,
@@ -176,7 +173,6 @@ fn source_window_scoped_roots(
     Ok(window.into_iter().collect())
 }
 
-#[cfg(target_os = "macos")]
 fn window_by_number(
     windows: &[AXElement],
     entry: &RefEntry,
@@ -215,7 +211,6 @@ fn window_by_number(
         .ok_or_else(|| window_bridge_miss_error(entry))
 }
 
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn require_unique_window_number_match(
     match_count: usize,
     window_number: i64,
@@ -233,7 +228,6 @@ pub(in crate::tree) fn require_unique_window_number_match(
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 fn window_by_title(
     windows: &[AXElement],
     source_window_title: Option<&str>,
@@ -271,7 +265,6 @@ fn window_by_title(
     Ok(found)
 }
 
-#[cfg(target_os = "macos")]
 fn window_bridge_miss_error(entry: &RefEntry) -> AdapterError {
     AdapterError::new(
         agent_desktop_core::ErrorCode::AppUnresponsive,
@@ -286,21 +279,18 @@ fn window_bridge_miss_error(entry: &RefEntry) -> AdapterError {
     }))
 }
 
-#[cfg(target_os = "macos")]
 fn add_optional_element(roots: &mut Vec<AXElement>, element: Option<AXElement>) {
     if let Some(element) = element {
         push_unique(roots, element);
     }
 }
 
-#[cfg(target_os = "macos")]
 fn add_array(roots: &mut Vec<AXElement>, elements: Option<Vec<AXElement>>) {
     for element in elements.unwrap_or_default() {
         push_unique(roots, element);
     }
 }
 
-#[cfg(target_os = "macos")]
 fn read_root_array(
     element: &AXElement,
     attribute: &str,
@@ -343,7 +333,6 @@ fn read_root_array(
     Ok((read.total_count > 0).then_some(read.elements))
 }
 
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn source_window_scope_required(entry: &RefEntry) -> bool {
     matches!(entry.source.source_surface, SnapshotSurface::Window)
         && (entry.source.source_window_id.is_some()

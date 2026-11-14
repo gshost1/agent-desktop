@@ -1,6 +1,5 @@
 use agent_desktop_core::AdapterError;
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use crate::actions::{
@@ -213,10 +212,6 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {}
-
-#[cfg(target_os = "macos")]
 pub(crate) use imp::{
     CLEAR_CHAIN, COLLAPSE_CHAIN, EXPAND_CHAIN, FOCUS_CHAIN, RIGHT_CLICK_CHAIN, SCROLL_TO_CHAIN,
     SEMANTIC_CLICK_CHAIN, SET_VALUE_CHAIN, click_chain, double_click, triple_click,

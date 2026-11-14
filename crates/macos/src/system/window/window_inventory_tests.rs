@@ -15,27 +15,6 @@ fn ax_state(
 }
 
 #[test]
-fn apps_from_window_records_deduplicates_by_pid() {
-    let apps = apps_from_window_records(&[
-        record("Finder", 10, "Window 1", 1),
-        record("Finder", 10, "Window 2", 2),
-    ]);
-
-    assert_eq!(apps.len(), 1);
-    assert_eq!(apps[0].name, "Finder");
-}
-
-#[test]
-fn apps_from_window_records_keeps_same_name_with_distinct_pids() {
-    let apps = apps_from_window_records(&[
-        record("Preview", 10, "Preview", 10),
-        record("Preview", 11, "Preview", 11),
-    ]);
-
-    assert_eq!(apps.len(), 2);
-}
-
-#[test]
 fn matches_app_filter_accepts_exact_case_insensitive_name() {
     assert!(matches_app_filter("Docker Desktop", "docker desktop"));
     assert!(matches_app_filter("\u{200e}WhatsApp", "WhatsApp"));

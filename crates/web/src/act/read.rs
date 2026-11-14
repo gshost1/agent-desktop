@@ -8,15 +8,13 @@ use crate::{CdpConnection, ElementReading, ElementToken, PageSession};
 pub(crate) const READ_STATE: &str = r"function() {
   const checkable = this.localName === 'input' && (this.type === 'checkbox' || this.type === 'radio');
   const aria = this.getAttribute ? this.getAttribute('aria-checked') : null;
-  const raw = this.innerText !== undefined ? this.innerText : this.textContent;
   return {
     value: ('value' in this && this.value !== undefined && this.value !== null) ? String(this.value) : null,
-    text: raw ? String(raw).slice(0, 10000) : null,
     checked: checkable ? this.checked : (aria === null ? null : aria === 'true'),
   };
 }";
 
-/// Reads the node's live value, text and checked state.
+/// Reads the node's live value and checked state.
 pub fn read_element(
     connection: &mut CdpConnection,
     session: &PageSession,
@@ -32,7 +30,7 @@ pub fn read_element(
     )
 }
 
-/// Reads an already resolved node's value, text and checked state.
+/// Reads an already resolved node's value and checked state.
 pub(crate) fn read_object(
     connection: &mut CdpConnection,
     session: &PageSession,

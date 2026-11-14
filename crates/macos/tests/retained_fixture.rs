@@ -1,5 +1,3 @@
-#![cfg(target_os = "macos")]
-
 use agent_desktop_core::{
     Deadline, IdentityPredicate, LocatorMaterialization, LocatorQuery, LocatorResolveRequest,
     LocatorSelection, ObservationOps, ObservationRoot, RefEntry, WindowFilter, resolve_query,

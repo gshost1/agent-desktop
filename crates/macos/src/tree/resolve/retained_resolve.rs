@@ -1,10 +1,7 @@
 use agent_desktop_core::{AdapterError, NativeHandle, RefEntry};
 
-#[cfg(target_os = "macos")]
 use super::resolve_classify::identity_summary_for_message;
-#[cfg(target_os = "macos")]
 use super::retained::{TokenLookup, resolve_token};
-#[cfg(target_os = "macos")]
 use crate::tree::AXElement;
 
 /// Why a saved retained object no longer designates the element it was captured from.
@@ -38,7 +35,6 @@ pub(in crate::tree) struct RetainedFacts<'a> {
 
 /// Resolves a saved token to its element without a tree search, or reports why
 /// the token can no longer stand for that element.
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn resolve_saved_token(
     entry: &RefEntry,
     deadline: std::time::Instant,
@@ -57,7 +53,6 @@ pub(in crate::tree) fn resolve_saved_token(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn verify_token_element(
     entry: &RefEntry,
     element: &AXElement,
@@ -92,7 +87,6 @@ fn verify_token_element(
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 fn token_read_error(entry: &RefEntry, ax_error: i32) -> AdapterError {
     if ax_error == accessibility_sys::kAXErrorInvalidUIElement {
         stale_token_error(entry, RetainedMismatch::Dead)
@@ -103,7 +97,6 @@ fn token_read_error(entry: &RefEntry, ax_error: i32) -> AdapterError {
 
 /// A read of the token's own element that finds it destroyed proves the ref
 /// stale; a busy, denied or otherwise failed read proves nothing about it.
-#[cfg(target_os = "macos")]
 fn destroyed_as_stale(entry: &RefEntry, error: AdapterError) -> AdapterError {
     if error.code == agent_desktop_core::ErrorCode::ElementNotFound
         || crate::tree::surface_read::reports_invalid_element(&error)
@@ -156,7 +149,6 @@ pub(in crate::tree) fn native_identifier_attribute(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn stale_token_error(entry: &RefEntry, mismatch: RetainedMismatch) -> AdapterError {
     AdapterError::stale_ref_because(format!(
         "The saved element no longer exists or no longer matches: {}",
@@ -169,6 +161,6 @@ fn stale_token_error(entry: &RefEntry, mismatch: RetainedMismatch) -> AdapterErr
     }))
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "retained_resolve_tests.rs"]
 mod tests;

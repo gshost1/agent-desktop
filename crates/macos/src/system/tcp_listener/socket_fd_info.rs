@@ -3,6 +3,6 @@ use super::socket_info::SocketInfo;
 
 #[repr(C)]
 pub(crate) struct SocketFdInfo {
-    pub(crate) file: ProcFileInfo,
+    _file: ProcFileInfo,
     pub(crate) socket: SocketInfo,
 }

@@ -1,11 +1,9 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-/// A live read of a DOM node: its form value, its rendered text (capped at
-/// 10,000 characters) and its checked state, each absent when the node has
-/// none.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// A live read of a DOM node: its form value and its checked state, each
+/// absent when the node has none.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct ElementReading {
     pub value: Option<String>,
-    pub text: Option<String>,
     pub checked: Option<bool>,
 }

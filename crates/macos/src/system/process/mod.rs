@@ -9,8 +9,6 @@ const MAX_CAPTURED_STREAM_BYTES: usize = 8 * 1024 * 1024;
 const OUTPUT_CONTEXT_BYTES: usize = 4 * 1024;
 const MAX_CLEANUP_RESERVE: Duration = Duration::from_millis(250);
 const TERM_GRACE: Duration = Duration::from_millis(25);
-const POSIX_EPERM: i32 = 1;
-const POSIX_ESRCH: i32 = 3;
 
 struct DrainResult {
     bytes: Vec<u8>,
@@ -169,18 +167,18 @@ fn terminate_process_group_with(
     mut signal: impl FnMut(i32, i32) -> std::io::Result<bool>,
 ) -> Vec<String> {
     let mut failures = Vec::new();
-    if let Err(error) = signal(process_group, 15) {
+    if let Err(error) = signal(process_group, libc::SIGTERM) {
         failures.push(format!("SIGTERM process group {process_group}: {error}"));
     }
     let grace_deadline = Instant::now()
         .checked_add(TERM_GRACE)
         .map_or(deadline, |grace| grace.min(deadline));
     std::thread::sleep(grace_deadline.saturating_duration_since(Instant::now()));
-    let kill_error = signal(process_group, 9).err();
+    let kill_error = signal(process_group, libc::SIGKILL).err();
     let reaped = poll_reap(child, deadline);
     if let Some(error) = kill_error {
         let group_is_gone = reaped
-            && error.raw_os_error() == Some(POSIX_EPERM)
+            && error.raw_os_error() == Some(libc::EPERM)
             && matches!(signal(process_group, 0), Ok(false));
         if !group_is_gone {
             failures.push(format!("SIGKILL process group {process_group}: {error}"));
@@ -193,14 +191,11 @@ fn terminate_process_group_with(
 }
 
 fn signal_group(process_group: i32, signal: i32) -> std::io::Result<bool> {
-    unsafe extern "C" {
-        fn kill(pid: i32, signal: i32) -> i32;
-    }
-    if unsafe { kill(-process_group, signal) } == 0 {
+    if unsafe { libc::kill(-process_group, signal) } == 0 {
         return Ok(true);
     }
     let error = std::io::Error::last_os_error();
-    if error.raw_os_error() == Some(POSIX_ESRCH) {
+    if error.raw_os_error() == Some(libc::ESRCH) {
         Ok(false)
     } else {
         Err(error)

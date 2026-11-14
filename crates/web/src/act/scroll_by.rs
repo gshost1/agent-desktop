@@ -24,7 +24,7 @@ const SCROLL_BY: &str = r"function(dx, dy) {
 
 /// Scrolls the node's nearest scrollable container, or the document, by
 /// `(dx, dy)` CSS pixels. Returns whether the scroll position changed.
-pub fn scroll_by(
+pub(crate) fn scroll_by(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,

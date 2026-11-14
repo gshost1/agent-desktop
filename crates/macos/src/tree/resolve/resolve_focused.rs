@@ -1,13 +1,11 @@
 use agent_desktop_core::AdapterError;
 
-#[cfg(target_os = "macos")]
 use crate::tree::AXElement;
 
 /// The application's focused surface as seen from the window a snapshot or a
 /// saved ref names. With no window it is the live focused surface. With a
 /// window it is that surface only while the window is the focused one, so a
 /// snapshot or a ref never reads or acts in another window that took focus.
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn focused_surface_for_source(
     pid: i32,
     source_window_id: Option<&str>,
@@ -32,7 +30,6 @@ pub(in crate::tree) fn focused_surface_for_source(
 
 /// The focused surface an observation of `window` reads: a process owner has
 /// no window of its own, so it reads the live focused surface.
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn focused_surface_of(
     window: &agent_desktop_core::WindowInfo,
     pid: i32,

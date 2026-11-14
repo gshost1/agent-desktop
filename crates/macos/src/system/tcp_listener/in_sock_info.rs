@@ -6,9 +6,9 @@ use super::in_sock_ports::InSockPorts;
 #[derive(Clone, Copy)]
 pub(crate) struct InSockInfo {
     pub(crate) ports: InSockPorts,
-    pub(crate) generation: u64,
+    _generation: u64,
     pub(crate) flow: InSockFlow,
     pub(crate) addresses: [[u64; 2]; 2],
-    pub(crate) ipv4_tos: u8,
-    pub(crate) ipv6: InSockIpv6,
+    _ipv4_tos: u8,
+    _ipv6: InSockIpv6,
 }

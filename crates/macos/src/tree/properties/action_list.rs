@@ -2,7 +2,6 @@ use super::capabilities::{copy_action_names_with_status, is_attr_settable_with_s
 use crate::tree::AXElement;
 use agent_desktop_core::actions::capability;
 
-#[cfg(target_os = "macos")]
 use accessibility_sys::{kAXFocusedAttribute, kAXValueAttribute};
 
 /// AppKit controls publish `AXPress`; document-shell rows publish `AXOpen` or
@@ -36,7 +35,6 @@ impl Default for AvailableActionsRead {
 /// Reads the capabilities `el` publishes. The flag is true when the only
 /// reason it is clickable is an enabled container that selects it, which
 /// makes it enabled whatever its own `AXEnabled` says.
-#[cfg(target_os = "macos")]
 pub(crate) fn read_platform_available_actions(
     el: &AXElement,
     role: &str,
@@ -122,7 +120,6 @@ pub(crate) fn read_platform_available_actions(
     (read, enabled_by_container)
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn read_settable(
     element: &AXElement,
     attribute: &str,
@@ -142,7 +139,6 @@ pub(super) fn read_settable(
     result.value
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn record_error(read: &mut AvailableActionsRead, error: i32) {
     if is_definitive_absence(error) {
         return;
@@ -153,7 +149,6 @@ pub(super) fn record_error(read: &mut AvailableActionsRead, error: i32) {
     read.api_disabled |= error == accessibility_sys::kAXErrorAPIDisabled;
 }
 
-#[cfg(target_os = "macos")]
 fn is_definitive_absence(error: i32) -> bool {
     crate::tree::properties::ax_absence::is_absent_action_error(error)
 }
@@ -208,23 +203,6 @@ fn role_may_insert_text(role: &str) -> bool {
     matches!(role, "textfield" | "combobox")
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn read_platform_available_actions(
-    _el: &AXElement,
-    _role: &str,
-    _attrs: &crate::tree::NodeAttrs,
-    _deadline: std::time::Instant,
-    _usage: &mut crate::tree::observation_usage::ObservationUsage,
-) -> (AvailableActionsRead, bool) {
-    (
-        AvailableActionsRead {
-            complete: false,
-            ..AvailableActionsRead::default()
-        },
-        false,
-    )
-}
-
 fn push_unique(actions: &mut Vec<String>, action: &str) {
     if !actions.iter().any(|a| a == action) {
         actions.push(action.to_string());
@@ -269,7 +247,6 @@ mod tests {
         assert!(!super::value_settable("textfield", None, || None));
     }
 
-    #[cfg(target_os = "macos")]
     use super::{AvailableActionsRead, record_error};
     use super::{
         has_scroll_mechanism, role_allows_context_menu_action, role_may_accept_focus,
@@ -334,7 +311,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn failed_native_action_reads_remain_incomplete() {
         let mut read = AvailableActionsRead::default();
 
@@ -346,7 +322,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn definitive_absence_codes_are_complete_empty_answers() {
         for error in [
             accessibility_sys::kAXErrorAttributeUnsupported,
@@ -364,7 +339,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn transport_failures_are_never_classified_as_absence() {
         for error in [
             accessibility_sys::kAXErrorCannotComplete,

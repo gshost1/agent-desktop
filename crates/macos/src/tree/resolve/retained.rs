@@ -8,8 +8,6 @@ use std::ffi::{CStr, c_void};
 use std::sync::OnceLock;
 
 const TOKEN_PREFIX: &str = "axtok1:";
-const RTLD_DEFAULT: *mut c_void = -2_isize as *mut c_void;
-const RTLD_LAZY: i32 = 0x1;
 const APPLICATION_SERVICES: &CStr =
     c"/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
 
@@ -85,8 +83,8 @@ fn symbols() -> Option<&'static Symbols> {
 }
 
 fn load_symbols() -> Option<Symbols> {
-    lookup_symbols(RTLD_DEFAULT).or_else(|| {
-        let handle = unsafe { dlopen(APPLICATION_SERVICES.as_ptr(), RTLD_LAZY) };
+    lookup_symbols(libc::RTLD_DEFAULT).or_else(|| {
+        let handle = unsafe { libc::dlopen(APPLICATION_SERVICES.as_ptr(), libc::RTLD_LAZY) };
         if handle.is_null() {
             None
         } else {
@@ -105,7 +103,7 @@ fn lookup_symbols(handle: *mut c_void) -> Option<Symbols> {
 }
 
 fn symbol(handle: *mut c_void, name: &CStr) -> Option<*mut c_void> {
-    let symbol = unsafe { dlsym(handle, name.as_ptr()) };
+    let symbol = unsafe { libc::dlsym(handle, name.as_ptr()) };
     (!symbol.is_null()).then_some(symbol)
 }
 
@@ -126,9 +124,4 @@ fn decode_hex(hex: &str) -> Option<Vec<u8>> {
         bytes.push(u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?);
     }
     Some(bytes)
-}
-
-unsafe extern "C" {
-    fn dlsym(handle: *mut c_void, symbol: *const std::ffi::c_char) -> *mut c_void;
-    fn dlopen(path: *const std::ffi::c_char, mode: i32) -> *mut c_void;
 }

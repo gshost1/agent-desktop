@@ -24,7 +24,6 @@ pub(crate) fn find_code(symbol: char, translate: impl Fn(u16) -> Option<char>) -
     (0..128).find(|&code| translate(code) == Some(symbol))
 }
 
-#[cfg(target_os = "macos")]
 mod platform {
     use core_foundation_sys::{
         base::CFRelease,
@@ -106,15 +105,6 @@ mod platform {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod platform {
-    pub(super) fn with_translator<T>(
-        _run: impl FnOnce(&dyn Fn(u16) -> Option<char>) -> T,
-    ) -> Option<T> {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{accepted_character, find_code};
@@ -151,7 +141,6 @@ mod tests {
         assert_eq!(accepted_character(0, 0, &[]), None);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn the_layout_is_never_read_off_the_main_thread() {
         let lookup = std::thread::spawn(|| super::code_for_symbol(','))

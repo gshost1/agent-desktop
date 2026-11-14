@@ -1,28 +1,17 @@
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{CStr, c_void};
+use std::mem::MaybeUninit;
+use std::path::PathBuf;
 
-#[repr(C)]
-struct DlInfo {
-    filename: *const c_char,
-    base: *mut c_void,
-    symbol_name: *const c_char,
-    symbol_address: *mut c_void,
-}
-
-pub(crate) fn containing_image() -> Option<std::path::PathBuf> {
-    let mut info = DlInfo {
-        filename: std::ptr::null(),
-        base: std::ptr::null_mut(),
-        symbol_name: std::ptr::null(),
-        symbol_address: std::ptr::null_mut(),
-    };
+pub(crate) fn containing_image() -> Option<PathBuf> {
+    let mut info = MaybeUninit::<libc::Dl_info>::zeroed();
     let address = containing_image as *const () as *const c_void;
-    if unsafe { dladdr(address, &mut info) } == 0 || info.filename.is_null() {
+    if unsafe { libc::dladdr(address, info.as_mut_ptr()) } == 0 {
         return None;
     }
-    let bytes = unsafe { std::ffi::CStr::from_ptr(info.filename) };
-    Some(std::path::PathBuf::from(bytes.to_string_lossy().as_ref()))
-}
-
-unsafe extern "C" {
-    fn dladdr(address: *const c_void, info: *mut DlInfo) -> c_int;
+    let filename = unsafe { info.assume_init().dli_fname };
+    if filename.is_null() {
+        return None;
+    }
+    let bytes = unsafe { CStr::from_ptr(filename) };
+    Some(PathBuf::from(bytes.to_string_lossy().as_ref()))
 }

@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use std::{cell::RefCell, collections::HashMap};
 
@@ -171,14 +170,13 @@ mod imp {
 
 #[cfg(test)]
 pub(crate) use imp::NODE_ATTRIBUTE_COUNT;
-#[cfg(target_os = "macos")]
 #[cfg(test)]
 pub(crate) use imp::attribute_mask;
 pub(crate) use imp::{
     copy_node_attribute_values, requested_indices, safe_attribute_mask, should_read_value,
 };
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::tree::properties::node_attribute_status::{
