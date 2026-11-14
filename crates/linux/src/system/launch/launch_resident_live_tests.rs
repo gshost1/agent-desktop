@@ -188,3 +188,46 @@ fn live_a_process_that_never_joins_the_bus_is_reported_after_the_grace_not_the_t
         result.pid.get()
     );
 }
+
+#[test]
+#[ignore = "drives real applications; run through scripts/private-session.sh --wm"]
+fn live_a_process_started_through_an_exec_wrapper_entry_answers_to_that_entry() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::var("AGENT_DESKTOP_PRIVATE_SESSION").expect("a private session");
+    let data = std::env::var("XDG_DATA_HOME").expect("private data");
+    let app = format!("{dir}/adl-wrapped-app");
+    let wrapper = format!("{dir}/adl-wrapper");
+    std::fs::write(&app, RESIDENT_APP).expect("an app");
+    std::fs::write(
+        &wrapper,
+        format!("#!/bin/bash\nexec -a \"$0\" /usr/bin/python3 {app} \"$@\"\n"),
+    )
+    .expect("a wrapper");
+    for file in [&app, &wrapper] {
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).expect("modes");
+    }
+    let entries = std::path::Path::new(&data).join("applications");
+    std::fs::create_dir_all(&entries).expect("entries");
+    std::fs::write(
+        entries.join("adl-wrapped.desktop"),
+        format!("[Desktop Entry]\nType=Application\nName=Adl Wrapped\nExec={wrapper} %U\n"),
+    )
+    .expect("an entry");
+    let mut owned = Owned(Vec::new());
+    let result = launch("adl-wrapped", &options(&["extra-argument"])).expect("a launch");
+    let pid = owned.keep(result.pid.get());
+    let facts = process_facts::read(pid).expect("the launched process");
+    let aliases = crate::system::app::app_name::aliases_of(pid, &facts);
+    assert!(
+        aliases.iter().any(|alias| alias == "Adl Wrapped"),
+        "{aliases:?} for {facts:?}"
+    );
+    assert!(
+        aliases.iter().any(|alias| alias == "adl-wrapped"),
+        "{aliases:?}"
+    );
+    assert_eq!(
+        crate::system::app::app_name::desktop_id(pid, &facts).as_deref(),
+        Some("adl-wrapped")
+    );
+}

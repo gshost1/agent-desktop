@@ -1,4 +1,5 @@
 use super::app_alias::{AliasIndex, current_index};
+use super::launched_entries::LaunchedEntries;
 use crate::system::process::process_facts::ProcessFacts;
 
 fn non_blank(text: Option<&str>) -> Option<&str> {
@@ -29,27 +30,72 @@ pub(crate) fn app_name(facts: &ProcessFacts) -> String {
 
 /// The desktop entry names and ids the process's executable answers to. The
 /// listed name never follows them.
-pub(crate) fn aliases_of(facts: &ProcessFacts) -> Vec<String> {
-    aliases_in(&current_index(), facts)
+pub(crate) fn aliases_of(pid: u32, facts: &ProcessFacts) -> Vec<String> {
+    aliases_in(&current_index(), pid, facts)
 }
 
-pub(crate) fn desktop_id_in(index: &AliasIndex, facts: &ProcessFacts) -> Option<String> {
-    index.ids_for(facts.executable.as_ref()?).into_iter().next()
+/// The desktop entry `launch` recorded for this pid, process instance and
+/// executable, when there is one.
+fn launched_entry(pid: u32, facts: &ProcessFacts) -> Option<String> {
+    let executable = &facts.executable.as_ref()?.executable;
+    LaunchedEntries::in_runtime_dir()?.recall(pid, &facts.instance, executable)
 }
 
-pub(crate) fn desktop_id(facts: &ProcessFacts) -> Option<String> {
-    desktop_id_in(&current_index(), facts)
+pub(crate) fn desktop_id_in(index: &AliasIndex, pid: u32, facts: &ProcessFacts) -> Option<String> {
+    desktop_id_with(index, facts, launched_entry(pid, facts))
+}
+
+/// The entry `launch` recorded for the process, else the first entry whose
+/// command the process runs.
+fn desktop_id_with(
+    index: &AliasIndex,
+    facts: &ProcessFacts,
+    launched: Option<String>,
+) -> Option<String> {
+    launched
+        .filter(|desktop_id| index.entry(desktop_id).is_some())
+        .or_else(|| index.ids_for(facts.executable.as_ref()?).into_iter().next())
+}
+
+pub(crate) fn desktop_id(pid: u32, facts: &ProcessFacts) -> Option<String> {
+    desktop_id_in(&current_index(), pid, facts)
 }
 
 /// As [`aliases_of`] over an index the caller already holds, for a caller that
 /// asks about many processes.
-pub(crate) fn aliases_in(index: &AliasIndex, facts: &ProcessFacts) -> Vec<String> {
-    let Some(actual) = facts.executable.as_ref() else {
-        return Vec::new();
-    };
-    let mut aliases = index.names_for(actual);
-    aliases.extend(index.ids_for(actual));
+pub(crate) fn aliases_in(index: &AliasIndex, pid: u32, facts: &ProcessFacts) -> Vec<String> {
+    aliases_with(index, facts, launched_entry(pid, facts))
+}
+
+/// The names and ids of the entries whose command the process runs, then
+/// the id of the entry `launch` started it from and its name, unless an
+/// entry running another command shares that name.
+fn aliases_with(index: &AliasIndex, facts: &ProcessFacts, launched: Option<String>) -> Vec<String> {
+    let mut aliases = facts
+        .executable
+        .as_ref()
+        .map(|actual| {
+            let (mut aliases, ids) = index.names_and_ids(actual);
+            aliases.extend(ids);
+            aliases
+        })
+        .unwrap_or_default();
+    if let Some(entry) = launched.and_then(|desktop_id| index.entry(&desktop_id)) {
+        let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
+        if !is_known(&aliases, &entry.name) && index.name_is_unshared(entry, &path) {
+            aliases.push(entry.name.clone());
+        }
+        if !is_known(&aliases, &entry.id) {
+            aliases.push(entry.id.clone());
+        }
+    }
     aliases
+}
+
+fn is_known(aliases: &[String], alias: &str) -> bool {
+    aliases
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(alias))
 }
 
 /// Exact listed executable name or an alias backed by executable evidence.

@@ -154,7 +154,10 @@ fn wait_for_exit(
         let pause = deadline
             .remaining_slice(std::time::Duration::from_millis(25))
             .map_err(after_termination_request)?;
-        std::thread::sleep(pause.min(std::time::Duration::from_millis(25)));
+        crate::system::process::process_exit_event::wait_for_exit_event(
+            identity.pid(),
+            pause.min(std::time::Duration::from_millis(25)),
+        );
     }
 }
 

@@ -18,7 +18,8 @@ pub(crate) fn open_private_lock_portable(path: &Path, create: bool) -> std::io::
     options.read(true).write(true).create(create);
     configure_unix(&mut options, 0o600);
     let file = options.open(path)?;
-    validate_private_regular(&file)?;
+    validate_private_regular(&file)
+        .map_err(|error| super::state_exposure::with_exposed_path(error, path))?;
     Ok(file)
 }
 
@@ -34,7 +35,8 @@ pub(crate) fn open_private_append_portable(path: &Path) -> std::io::Result<File>
     options.read(true).create(true).append(true);
     configure_unix(&mut options, 0o600);
     let file = options.open(path)?;
-    validate_private_regular(&file)?;
+    validate_private_regular(&file)
+        .map_err(|error| super::state_exposure::with_exposed_path(error, path))?;
     Ok(file)
 }
 
@@ -192,9 +194,7 @@ pub(crate) fn validate_private_regular(file: &File) -> std::io::Result<std::fs::
             ));
         }
         if metadata.mode() & 0o077 != 0 {
-            return Err(permission_denied(
-                "private file is accessible by group or other users",
-            ));
+            return Err(super::state_exposure::exposed(None, false));
         }
         if metadata.nlink() != 1 {
             return Err(permission_denied("private file must not be hard-linked"));
@@ -216,7 +216,8 @@ fn open_private_read(path: &Path) -> std::io::Result<File> {
     options.read(true);
     configure_unix(&mut options, 0);
     let file = options.open(path)?;
-    validate_private_regular(&file)?;
+    validate_private_regular(&file)
+        .map_err(|error| super::state_exposure::with_exposed_path(error, path))?;
     Ok(file)
 }
 
@@ -261,7 +262,7 @@ fn sync_directory(path: &Path) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
     }
-    options.open(path)?.sync_all()
+    sync_to_device(&options.open(path)?)
 }
 
 #[cfg(windows)]
@@ -271,7 +272,30 @@ fn sync_user_directory(_path: &Path) -> std::io::Result<()> {
 
 #[cfg(not(windows))]
 fn sync_user_directory(path: &Path) -> std::io::Result<()> {
-    OpenOptions::new().read(true).open(path)?.sync_all()
+    sync_to_device(&OpenOptions::new().read(true).open(path)?)
+}
+
+/// `fsync(2)`, not the `F_FULLFSYNC` that `File::sync_all` issues on macOS, which flushes the whole
+/// drive cache and cost 6 ms per replaced file. The data still reaches the drive before the rename,
+/// so a killed process or a kernel panic leaves the old or the new file whole. A power loss before
+/// the drive empties its cache can lose the newest write or leave it unreadable.
+#[cfg(target_os = "macos")]
+pub(crate) fn sync_to_device(file: &File) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+    loop {
+        if unsafe { libc::fsync(file.as_raw_fd()) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn sync_to_device(file: &File) -> std::io::Result<()> {
+    file.sync_all()
 }
 
 fn replace_atomic(source: &Path, destination: &Path) -> std::io::Result<()> {

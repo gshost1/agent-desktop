@@ -75,7 +75,7 @@ fn find_with_environ(
                 return None;
             }
             let facts = process_facts::read(pid)?;
-            let matched = name_matches(query, &app_name(&facts), &aliases_in(&index, &facts));
+            let matched = name_matches(query, &app_name(&facts), &aliases_in(&index, pid, &facts));
             matched.then(|| (pid, facts.comm.clone()))
         })
 }

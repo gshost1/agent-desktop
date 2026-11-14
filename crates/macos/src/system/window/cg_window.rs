@@ -63,6 +63,16 @@ pub(crate) fn window_records_until(
     deadline: Instant,
     scope: WindowRecordScope<'_>,
 ) -> Result<Vec<WindowRecord>, AdapterError> {
+    match scope {
+        WindowRecordScope::Pid(pid) => {
+            crate::system::connection_warmup::start_applications(&[pid], deadline)
+        }
+        WindowRecordScope::Pids(pids) => crate::system::connection_warmup::start_applications(
+            &pids.iter().copied().collect::<Vec<_>>(),
+            deadline,
+        ),
+        WindowRecordScope::Window(_) => {}
+    }
     stabilize_records_until(deadline, || capture_once(deadline, scope))
 }
 
@@ -111,10 +121,11 @@ fn stabilize_records_until(
             }
             Err(error) => return Err(error),
         }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if !remaining.is_zero() {
-            std::thread::sleep(remaining.min(std::time::Duration::from_millis(5)));
-        }
+        crate::system::inventory_recapture::pause_before_next_capture(
+            attempts,
+            last_failure.is_some(),
+            deadline,
+        );
     }
 }
 

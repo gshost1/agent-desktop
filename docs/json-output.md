@@ -121,7 +121,7 @@ Each line, in order:
 | The qualified ref (`@s8f3k2p9:e1`) and a space | The node has a ref |
 | The role | Always |
 | The quoted name | The node has a name; an empty name prints `""` |
-| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field |
+| `value=`, `desc=`, `placeholder=`, `hint=`, each quoted, in this order | The node has that field; `desc=` only when the description prints differently from the name (bidirectional marks and surrounding whitespace ignored) |
 | `bounds=x,y,WxH` | The tree carries bounds (`--include-bounds`) |
 | `[state, state]` | The node has states |
 | `children_count=N` | A skeleton cut container |
@@ -203,6 +203,21 @@ carries no such detail, and neither does a failure in a step after the action,
 such as a `--wait-for` condition or writing the result. A ref action makes at
 most one focus attempt: once a focus call has run it does not go back to
 waiting, even when the error is retryable.
+A headed `hover` or `drag` is a pointer command, not a ref action, and waits
+on after its focus call. It raises its target's window at most once. The
+first step that needs focus makes the focus call, whether that is the scroll
+of the wait or the first attempt; later steps skip it and go straight to
+their checks. A target that another window still covers keeps failing the
+`receives_events` check until the budget ends, without the window being
+raised again on every poll. A focus call that failed after it may have raised
+the window ends the command with its error, because trying again would raise
+the window a second time. Once the focus call has run, every error before the
+input is sent, including the `TIMEOUT` that ends the wait, carries
+`details.preparatory_focus`. A `TIMEOUT` that ends a `hover` or `drag` wait
+after a refusal carries that last refusal in `details.refusal` (its `code`,
+`message`, and `details` when it had any, as a ref action's does), and its
+suggestion names the check that refused: another element covering the target
+(`receives_events`), a target that was not visible, or one still moving.
 
 On macOS, `press --app` reports `data.details.keyboard_target` when the app's
 keyboard focus may belong to another process, such as a Save panel that a
@@ -269,7 +284,7 @@ owner was reported. A late report never replaces an earlier one:
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.
 
-macOS mutation errors that do not prove non-delivery stop fallback chains with an unsafe retry disposition. This affects activation, selection, disclosure, scrolling, and window operations; an unchanged or unreadable state is not proof that a mutation was never delivered. Value-writing chains also stop after unverified delivery instead of applying a second mechanism. Failures after preparatory scrolling carry `details.preparatory_scroll`, which records that the view may have changed. Their retry disposition follows the failure: a refusal that sent nothing is `not_delivered` and safe to retry, and any other failure keeps its own disposition.
+macOS mutation errors that do not prove non-delivery stop fallback chains with an unsafe retry disposition. This affects activation, selection, disclosure, scrolling, and window operations; an unchanged or unreadable state is not proof that a mutation was never delivered. One exception applies: a page scroll refused with `kAXErrorCannotComplete` is `not_delivered` (`ACTION_NOT_SUPPORTED`, `details.kind: "scroll_action_unavailable"`) only when every movement signal the scroll area has stays readable and unchanged for 250 ms: the scroll bar value on its axis, the scroll area's content frame, and the content's first child. Any change counts as the scroll. A signal that becomes unreadable, or an area with none of the three, keeps the uncertain disposition. Value-writing chains also stop after unverified delivery instead of applying a second mechanism. Failures after preparatory scrolling carry `details.preparatory_scroll`, which records that the view may have changed. Their retry disposition follows the failure: a refusal that sent nothing is `not_delivered` and safe to retry, and any other failure keeps its own disposition.
 
 Inspect `disposition.retry` before retrying or choosing an alternative action, regardless of `error.code`. An error may include `post_state` and `postcondition_satisfied` without erasing the original execution failure. The same verification rules apply to FFI ref actions; the C ABI is unchanged. The Rust `ActionResult::from_execution` constructor now takes only action and steps and returns an infallible result; live verification belongs to `execute_verified_action`.
 
@@ -365,6 +380,8 @@ Version 2.7 changes the error code of ref refusals on Windows and Linux, and on 
 - `capture_unknown` carries `details.retryable: false` and no `recovery`, because a field that cannot be read may stay unreadable in every snapshot. Target the element through a different selector, or use an explicit `--headed` coordinate click where headed pointer input is available.
 - Both reasons keep the disposition `not_delivered` with `retry: "safe"`, because nothing is sent.
 - `AMBIGUOUS_TARGET` with `identity_not_unique` now means the capture saw two or more elements matching the ref, in a whole or a partial read. It can still come from a refmap written before 2.7, which recorded only that a ref was not unique and so reads every unproven ref as a twin; take a new snapshot to learn which case it is.
+- `find` match objects, and the `candidates` of an `AMBIGUOUS_TARGET` from a locator, omit what they do not have: a context match has no `ref_id`, an unnamed one no `name`, and `value`, `states` and `path` are left out when absent or empty. 2.6 printed `"ref_id": null`, `"value": null`, `"states": []`, `"path": []` and `"name": ""`. Read a missing key as that value.
+- A `TIMEOUT` that ends a headed `hover` or `drag` wait after a refusal now carries that refusal in `details.refusal`, the same shape a ref action's wait uses, and a suggestion for the check that refused instead of the generic one. The field is additive.
 - Refmaps written before 2.7 still load. Every refmap entry now carries `capture` (`"unique"`, `"ambiguous"`, `"incomplete"` or `"unknown"`); an entry without it is read as an older refmap through its `unique_at_capture` flag. A proven entry also keeps `unique_at_capture: true`, so a 2.6 binary still resolves the refs a 2.7 snapshot proved and refuses the rest as `identity_not_unique`. A `capture` name this version does not know reads as `unknown`, and a `unique_at_capture` that contradicts `capture` makes the entry `unknown`; neither fails the refmap.
 
 ## Web channel
@@ -378,7 +395,7 @@ The web channel arrived with envelope version `2.6`. It adds fields and one comm
 | `channel` | `"cdp"`: the tree came from the page over the DevTools endpoint. |
 | `url` | The page's URL. |
 | `title` | The page's title. |
-| `suggestion` | Present only when cross-origin frames could not be read and are left out. |
+| `suggestion` | Present only when cross-origin frames are left out: they could not be read, or did not answer before a reserve of the snapshot's timeout (a fifth of the time left when the read starts, at least 100 ms). The main page is still returned. A `--root` drill-down on a web ref reads every frame within the full timeout and returns `TIMEOUT` instead. |
 
 Without such an endpoint, the same command reads the browser window through the accessibility tree and `data` carries `"channel": "ax"` and a `suggestion` naming the `launch --cdp` command that enables the web channel. Snapshots of every other surface carry no `channel`. Refs from a CDP read carry an element token of the form `cdp:<targetId>:<frameId>:<loaderId>:<backendNodeId>`, are accepted by every ref command, and act through the page without focusing the window or moving the pointer. A web ref whose frame now shows another document (`details.kind: "cdp_document_replaced"`), whose node left the page, or whose role or name changed returns `STALE_REF`; a ref whose tab or frame closed returns `WINDOW_NOT_FOUND` with `details.kind: "cdp_target_gone"`. A click lands on the visible part of the element, on its first line that is not covered when it wraps; an element another element covers at every such point returns `ACTION_FAILED` with `details.kind: "cdp_click_intercepted"` and nothing delivered. Ref action results on web refs carry `details.channel: "cdp"`.
 
@@ -428,6 +445,8 @@ Errors carry `details.kind`:
 Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
 
 ## Find result shape
+
+A match object leaves out what it does not have, like every other object in the contract: a context match has no `ref_id`, and `value`, `states` and `path` are omitted when absent or empty (the window root has no `path`). `role` and `interactive` are always present. Earlier builds printed `"ref_id": null`, `"value": null`, `"states": []` and `"path": []`; a reader that indexed those keys must treat a missing key as that value. `tests/fixtures/find-matches.json` pins the shape.
 
 `find` match objects report the element's actual accessibility `name`. Elements
 without an accessible name omit `name` entirely; their content stays in `value`.
@@ -555,6 +574,8 @@ Every ref is re-identified from its stored entry or refused, and `details.kind` 
 | `identity_not_unique` | `AMBIGUOUS_TARGET` | The capture counted two or more elements matching the ref's role and stable fields, so nothing is searched. It is reached on Windows, on Linux, and on macOS when the element yields no address, and for every unproven ref of a refmap written before 2.7, which a new snapshot re-judges. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
 | `identity_unproven` | `STALE_REF` | No capture proved the ref, so nothing is searched and no twin was seen. Both reasons carry `details.retryable: false` and no `recovery`. `details.reason` is `capture_incomplete` when the capture was not a complete read of the whole window (the snapshot reports `data.identity_unproven`) or no longer holds the path a drill recorded: retake the snapshot with a larger `--timeout-ms`. It is `capture_unknown` when an element in the window left a field the ref records unread, the ref's fields match one other element and not its own, or no capture judged the ref: a new snapshot may read the same way, so use a different selector or an explicit `--headed` coordinate click. A twin seen in a partial read is `identity_not_unique`, not this kind. |
 
+On macOS, the `focused` surface of a named window is that window's focused surface only while it is the application's focused window. A ref captured with `--surface focused` that carries no element address therefore resolves only while its source window is still focused; a ref with an address resolves to that exact element. Once focus has moved to another window, the ref returns `STALE_REF` with `details.kind: "focused_window_changed"`, `details.source_window_id`, `details.focused_window_id` when the focused window's number could be read, `details.complete: true` and `details.retryable: false`, and nothing is sent. A focused window whose number reads as absent, or no focused window, counts as another window; a read that fails returns its own error. `snapshot --surface focused` fails the same way when the window it reads is not the focused one, as with `--window-id` of an unfocused window or when focus moves during the read. Focus the source window with `focus-window --window-id` and retry, or take a new snapshot.
+
 Two outcomes are retryable. `saved_ref_landing_moved` carries `STALE_REF` with `details.complete: false` and `details.retryable: true`: the whole-window count found the element exactly once, but a different element sat at its path when the resolver reached it, as when a list re-sorts during the read. The element was there and only the descent disagreed, so this is not `saved_ref_absent`; the next attempt counts again. A ref action retries it at most twice in a row and answers the third with `saved_ref_absent`. A landing with no count just before it, such as the C find entry point's first-match landing, reports `saved_ref_absent` instead.
 
 The other is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
@@ -567,7 +588,7 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 
 | Code | Meaning |
 |------|---------|
-| `PERM_DENIED` | Accessibility permission not granted |
+| `PERM_DENIED` | Accessibility permission not granted, or a directory or file in agent-desktop's state is open to other users (`details.kind: "state_directory_permission"`; `details.path` names it and the suggestion gives the `chmod` that closes it) |
 | `ELEMENT_NOT_FOUND` | No element matched the ref or query |
 | `APP_NOT_FOUND` | No matching application process; the lookup failed before anything was sent, so the disposition is `not_delivered` |
 | `STALE_REF` | Ref could not be re-identified in the live UI |

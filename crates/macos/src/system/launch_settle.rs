@@ -7,8 +7,14 @@ use agent_desktop_core::{
 use super::launch_window::LaunchWindow;
 
 pub(crate) const STARTUP_GRACE: Duration = Duration::from_millis(1500);
-const FIRST_POLL: Duration = Duration::from_millis(25);
-const POLL_LIMIT: Duration = Duration::from_millis(250);
+const FIRST_POLL: Duration = Duration::from_millis(10);
+/// The longest gap between two reads of a launching application's windows.
+/// The launch returns at the first read that shows its window placed, so the
+/// gap is latency added after the window appears; one read costs a window
+/// list and an accessibility state read of a few milliseconds, and a cold
+/// launch takes hundreds, so reading twice as often costs little next to
+/// the wait it shortens.
+const POLL_LIMIT: Duration = Duration::from_millis(25);
 
 /// The probes one launch wait reads on every poll.
 pub(crate) struct SettleProbes<R, S, A> {
@@ -31,7 +37,11 @@ pub(crate) struct SettleProbes<R, S, A> {
 /// that error instead of a pid for a process that is gone. Several windows
 /// with none focused keep the wait going, because focus is often unread in
 /// the first moments of a launch; they are the answer only when the wait
-/// ends on them.
+/// ends on them. A window the window server has not placed yet keeps the
+/// wait going too, so the result carries the window's real bounds and
+/// visibility; it ends the wait once the startup grace is over even when
+/// activating, because a window that is still unplaced by then is all the
+/// launch is going to show.
 pub(crate) fn settle_window<R, S, A>(
     probes: SettleProbes<R, S, A>,
     options: &LaunchOptions,
@@ -59,8 +69,11 @@ where
             Err(error) => return Err(error),
         };
         alive()?;
+        let grace_is_over = grace_over(grace_ends_at, Instant::now());
         if options.timeout_ms == 0
-            || (!options.presentation.activate && grace_over(grace_ends_at, Instant::now()))
+            || (grace_is_over
+                && (!options.presentation.activate
+                    || matches!(unclaimed, LaunchWindow::Forming(_))))
         {
             return last_read_failure.map_or(Ok(unclaimed), Err);
         }
@@ -72,8 +85,12 @@ where
             return last_read_failure.map_or(Ok(unclaimed), Err);
         }
         std::thread::sleep(poll_interval.min(remaining));
-        poll_interval = (poll_interval * 3 / 2).min(POLL_LIMIT);
+        poll_interval = next_poll_interval(poll_interval);
     }
+}
+
+fn next_poll_interval(interval: Duration) -> Duration {
+    (interval * 3 / 2).min(POLL_LIMIT)
 }
 
 pub(crate) fn window_read_is_not_ready_yet(error: &AdapterError) -> bool {

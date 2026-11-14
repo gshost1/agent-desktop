@@ -22,7 +22,7 @@ impl WriteDurability {
         match self {
             Self::Durable(_) => {
                 count_sync();
-                file.sync_all()
+                crate::storage::private_file::sync_to_device(file)
             }
             Self::CacheOnly => Ok(()),
         }

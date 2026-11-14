@@ -51,3 +51,88 @@ fn an_alias_matches_exactly_ignoring_case_and_never_renames_the_app() {
     assert!(!aliased("Files Helper", &files, &["Files"]));
     assert_eq!(app_name(&files), "nautilus");
 }
+
+fn launched_index() -> AliasIndex {
+    AliasIndex::build(
+        &[(
+            "com.example.Browser".to_owned(),
+            "[Desktop Entry]\nType=Application\nName=Example Browser\nExec=/opt/example/launcher %U\n"
+                .to_owned(),
+        )],
+        &[],
+    )
+}
+
+fn wrapped_process() -> ProcessFacts {
+    ProcessFacts {
+        executable: Some(
+            crate::system::process::executable_identity::ExecutableIdentity {
+                executable: std::path::PathBuf::from("/opt/example/browser-binary"),
+                argv: Some(vec!["/opt/example/launcher".into(), "--flag".into()]),
+            },
+        ),
+        ..facts("browser-binary", Some("browser-binary"))
+    }
+}
+
+#[test]
+fn a_process_launch_started_from_an_entry_answers_to_that_entry() {
+    let index = launched_index();
+    let process = wrapped_process();
+    assert!(aliases_with(&index, &process, None).is_empty());
+    let aliases = aliases_with(&index, &process, Some("com.example.Browser".to_owned()));
+    assert_eq!(aliases, ["Example Browser", "com.example.Browser"]);
+    assert_eq!(
+        desktop_id_with(&index, &process, Some("com.example.Browser".to_owned())).as_deref(),
+        Some("com.example.Browser")
+    );
+    assert_eq!(desktop_id_with(&index, &process, None), None);
+}
+
+#[test]
+fn a_recorded_entry_that_no_longer_exists_names_nothing() {
+    let index = launched_index();
+    let process = wrapped_process();
+    assert!(aliases_with(&index, &process, Some("gone.desktop.id".to_owned())).is_empty());
+    assert_eq!(
+        desktop_id_with(&index, &process, Some("gone.desktop.id".to_owned())),
+        None
+    );
+}
+
+#[test]
+fn a_recorded_entry_whose_name_another_command_shares_gives_only_its_id() {
+    let index = AliasIndex::build(
+        &[
+            (
+                "com.example.Browser".to_owned(),
+                "[Desktop Entry]\nType=Application\nName=Example Browser\nExec=/opt/example/launcher %U\n"
+                    .to_owned(),
+            ),
+            (
+                "other.Browser".to_owned(),
+                "[Desktop Entry]\nType=Application\nName=Example Browser\nExec=/opt/other/browser %U\n"
+                    .to_owned(),
+            ),
+        ],
+        &[],
+    );
+    let aliases = aliases_with(
+        &index,
+        &wrapped_process(),
+        Some("com.example.Browser".to_owned()),
+    );
+    assert_eq!(aliases, ["com.example.Browser"]);
+}
+
+#[test]
+fn a_recorded_entry_with_an_unshared_name_is_not_resolved_against_itself() {
+    let index = launched_index();
+    let process = wrapped_process();
+    let count = crate::system::launch::indexed_entry::resolutions;
+    let before = count();
+    let aliases = aliases_with(&index, &process, Some("com.example.Browser".to_owned()));
+    let resolved = count() - before;
+    assert_eq!(aliases, ["Example Browser", "com.example.Browser"]);
+    assert_eq!(resolved, 0, "the alias lookup resolved {resolved} entries");
+}

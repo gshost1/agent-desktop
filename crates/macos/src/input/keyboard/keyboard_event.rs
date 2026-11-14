@@ -120,6 +120,13 @@ fn create_key_event(
     Ok(event)
 }
 
+/// Builds and drops one key event. The first key event a process builds on its main thread
+/// loads the keyboard layout its characters come from, 9-10 ms. An event built on another
+/// thread carries no characters, so this runs on the calling thread.
+pub(crate) fn prepare_key_events() -> Result<(), AdapterError> {
+    unattributed_key_event(0, true).map(drop)
+}
+
 /// Key events carry no event source, as a key event an application builds
 /// for itself does. An event built from the HID system state source differs
 /// from it only in being stamped as hardware input (source state 1), and a

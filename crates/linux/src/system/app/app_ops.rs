@@ -13,7 +13,7 @@ pub(crate) fn info(app: &RegistryApp, foreground: bool) -> AppInfo {
     AppInfo {
         name: app.name.clone(),
         pid: app.root.pid().into(),
-        bundle_id: super::app_name::desktop_id(&app.facts),
+        bundle_id: super::app_name::desktop_id(app.root.pid(), &app.facts),
         process_instance: Some(app.facts.instance.clone()),
         presentation: Some(if foreground {
             AppPresentation::Foreground

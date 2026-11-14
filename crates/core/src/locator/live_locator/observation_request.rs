@@ -140,9 +140,7 @@ impl ObservationRequest {
         root: super::ObservationRoot<'_>,
         deadline: Deadline,
     ) -> Self {
-        let subtree_query = query.has_text.is_some()
-            || query.containment.has.is_some()
-            || query.containment.has_not.is_some();
+        let subtree_query = query.reads_subtrees();
         Self {
             deadline,
             max_raw_depth: if subtree_query {
@@ -167,13 +165,6 @@ impl ObservationRequest {
 
     pub fn evidence_for_raw_depth(self, raw_depth: u8) -> EvidenceRequirements {
         self.evidence_plan.for_raw_depth(raw_depth)
-    }
-
-    /// Sets the observation-mode sub-struct the adapter reads for
-    /// renderer-accessibility handling on web-wrapped targets.
-    pub fn with_observation_mode(mut self, mode: ObservationMode) -> Self {
-        self.observation_mode = mode;
-        self
     }
 
     pub fn descendant_evidence(self) -> EvidenceRequirements {

@@ -288,3 +288,98 @@ fn snapshot_traversal_entering_a_sheet_takes_the_sheet_frame() {
         Some(sheet)
     );
 }
+
+fn frame(x: f64, y: f64, width: f64, height: f64) -> Rect {
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+fn offscreen_in(target: Rect, window: Rect, area: Rect, content: Option<(f64, f64)>) -> bool {
+    let clip = super::scroll_area_clip(area, content);
+    let viewport = super::viewport_from_clips(window, &[("AXScrollArea".to_string(), Some(clip))]);
+    crate::tree::state_reader::offscreen(Some(target), viewport).unwrap_or(false)
+}
+
+#[test]
+fn content_narrower_than_its_scroll_area_is_not_clipped_by_a_misplaced_frame() {
+    let window = frame(20.0, 64.0, 1430.0, 795.0);
+    let area = frame(566.0, 92.0, 884.0, 767.0);
+    let centred_button = frame(313.0, 164.5, 105.0, 20.0);
+
+    assert!(offscreen_in(centred_button, window, area, None));
+    assert!(!offscreen_in(
+        centred_button,
+        window,
+        area,
+        Some((884.0, 1273.5))
+    ));
+}
+
+#[test]
+fn scroll_area_still_clips_the_axis_its_content_overflows() {
+    let window = frame(20.0, 64.0, 1430.0, 795.0);
+    let area = frame(566.0, 92.0, 884.0, 767.0);
+    let below_the_fold = frame(313.0, 1133.0, 116.0, 28.0);
+
+    assert!(offscreen_in(
+        below_the_fold,
+        window,
+        area,
+        Some((884.0, 1273.5))
+    ));
+    assert!(offscreen_in(
+        frame(300.0, 300.0, 50.0, 20.0),
+        window,
+        frame(566.0, 92.0, 884.0, 767.0),
+        Some((2400.0, 1273.5))
+    ));
+}
+
+#[test]
+fn content_size_that_fits_frees_only_its_own_axis() {
+    let area = frame(156.0, 88.0, 884.0, 720.0);
+
+    let wide = super::scroll_area_clip(area, Some((884.0, 1273.5)));
+    assert!(wide.x < -1.0e6 && wide.width > 1.0e6);
+    assert_eq!((wide.y, wide.height), (88.0, 720.0));
+
+    let tall = super::scroll_area_clip(area, Some((2000.0, 700.0)));
+    assert_eq!((tall.x, tall.width), (156.0, 884.0));
+    assert!(tall.y < -1.0e6 && tall.height > 1.0e6);
+
+    assert_eq!(super::scroll_area_clip(area, None), area);
+    assert_eq!(
+        super::scroll_area_clip(area, Some((f64::NAN, f64::INFINITY))),
+        area
+    );
+}
+
+#[test]
+fn placeholder_or_invalid_content_size_keeps_the_reported_frame() {
+    let area = frame(156.0, 88.0, 884.0, 720.0);
+    let window = frame(40.0, 60.0, 1000.0, 748.0);
+    let row_above_the_area = frame(160.0, 62.0, 300.0, 18.0);
+
+    for content in [
+        (0.0, 0.0),
+        (-10.0, -10.0),
+        (0.0, 1273.5),
+        (884.0, 0.0),
+        (-1.0, 1273.5),
+        (884.0, f64::NAN),
+    ] {
+        assert_eq!(
+            super::scroll_area_clip(area, Some(content)),
+            area,
+            "{content:?}"
+        );
+        assert!(
+            offscreen_in(row_above_the_area, window, area, Some(content)),
+            "{content:?}"
+        );
+    }
+}

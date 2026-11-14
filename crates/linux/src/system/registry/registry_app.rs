@@ -33,7 +33,7 @@ pub(crate) fn assemble(
     app.answered = root_name.is_some();
     app.registry_name = root_name.flatten().filter(|text| !text.trim().is_empty());
     app.toolkit = toolkit;
-    app.aliases = aliases_of(&app.facts);
+    app.aliases = aliases_of(app.root.pid(), &app.facts);
     app
 }
 

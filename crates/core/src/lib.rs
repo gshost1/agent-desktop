@@ -56,9 +56,7 @@ pub use cursor_overlay::{
 pub use input::clipboard_content::ClipboardContent;
 pub use input::clipboard_format::ClipboardFormat;
 pub use input::direction::Direction;
-pub use input::drag_params::{
-    DragParams, MAX_DRAG_DROP_DELAY_MS, MAX_DRAG_DURATION_MS, MAX_DRAG_STEPS,
-};
+pub use input::drag_params::{DragParams, MAX_DRAG_DROP_DELAY_MS, MAX_DRAG_DURATION_MS};
 pub use input::key_combo::KeyCombo;
 pub use input::modifier::Modifier;
 pub use input::mouse_button::MouseButton;
@@ -78,9 +76,7 @@ pub use locator::live_locator::{
     require_unique, resolve_query,
 };
 pub use locator::state_predicate::StatePredicate;
-pub use locator::{
-    LocatorQuery, accessibility_node_matches, node_context, node_matches, role_matches,
-};
+pub use locator::{LocatorQuery, accessibility_node_matches};
 pub use notifications::dismiss_all_notifications_request::DismissAllNotificationsRequest;
 pub use notifications::dismiss_notification_request::DismissNotificationRequest;
 pub use notifications::notification_action_request::NotificationActionRequest;
@@ -155,7 +151,7 @@ pub use system::window_op::WindowOp;
 pub use system::window_readback::WindowReadback;
 pub use system::window_state::WindowState;
 pub use trace::trace_sanitize::sanitize_trace_value;
-pub use tree::accname::{compute_description, compute_name, resolve_description, resolve_name};
+pub use tree::accname::{resolve_description, resolve_name};
 pub use tree::bounds_space::BoundsSpace;
 pub use tree::element_identifier::ElementIdentifier;
 pub use tree::element_state::ElementState;
@@ -166,7 +162,6 @@ pub use tree::name_source::NameSource;
 pub use tree::node::AccessibilityNode;
 pub use tree::node_descriptor::NodeDescriptor;
 pub use tree::node_identity::NodeIdentity;
-pub use tree::node_match_context::NodeMatchContext;
 pub use tree::node_presentation::NodePresentation;
 pub use tree::point::Point;
 pub use tree::rect::Rect;

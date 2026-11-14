@@ -75,6 +75,14 @@ observation, actions and capture there fail or return nothing.
   Windows directory, with or without `.exe` (`notepad` or `notepad.exe`), not
   a display name. Use `list-apps` to find a running app. `launch --reopen` returns
   `ACTION_NOT_SUPPORTED`: Windows has no reopen event, and `launch_path` is absent.
+- **A launched program that exits before its process shows a window** ends the
+  wait on the next poll with `APP_UNRESPONSIVE`, `details.kind: exited` (`crashed`
+  for an NTSTATUS crash code), `details.status` and `details.pid`,
+  `delivered_unverified`. A System32 stub that starts a packaged app and exits
+  (such as `calc` on Windows 11) ends this way, because the window it caused belongs to a
+  process the launch cannot attribute: run `list-windows` before you launch
+  again. An attach to a running instance reads its windows once and returns
+  with no `window` when it shows none, instead of waiting out `--timeout`.
 - **Notifications:** `list-notifications` with the Action Center closed needs
   `--headed`. Single-item `dismiss-notification` and `notification-action` need
   `--headed` and `--expected-app` or `--expected-title` for the entry at INDEX.

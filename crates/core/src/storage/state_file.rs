@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::storage::state_io_error::exposure_or;
 use crate::{AdapterError, AppError, Deadline, ErrorCode, FileLock};
 
 /// A small private file under the agent-desktop state root, such as a
@@ -46,14 +47,16 @@ impl StateFile {
         match crate::storage::private_file::read_private_bounded(&self.path, max_bytes) {
             Ok(bytes) => Ok(Some(bytes)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(io_failure("read", &self.path, &error)),
+            Err(error) => Err(exposure_or(error, |error| {
+                io_failure("read", &self.path, &error)
+            })),
         }
     }
 
     /// Replaces the file with `bytes`, creating its private parent first.
     pub fn write(&self, bytes: &[u8]) -> Result<(), AdapterError> {
         crate::storage::private_file::write_atomic(&self.path, bytes)
-            .map_err(|error| io_failure("write", &self.path, &error))
+            .map_err(|error| exposure_or(error, |error| io_failure("write", &self.path, &error)))
     }
 
     /// Holds the file's sibling `.lock` until the guard drops, so a

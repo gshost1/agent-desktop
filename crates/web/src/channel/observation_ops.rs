@@ -86,6 +86,17 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         }
     }
 
+    fn prepare_window_inventory(&self) -> Result<(), AdapterError> {
+        self.inner.prepare_window_inventory()
+    }
+
+    fn prepare_application_connection(
+        &self,
+        pid: agent_desktop_core::ProcessId,
+    ) -> Result<(), AdapterError> {
+        self.inner.prepare_application_connection(pid)
+    }
+
     fn list_windows(
         &self,
         filter: &WindowFilter,
@@ -333,3 +344,7 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "observation_ops_tests.rs"]
+mod tests;

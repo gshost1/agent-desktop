@@ -10,14 +10,22 @@ are not used.
   or id whose `Exec` resolves to the running executable (`/proc/<pid>/exe`) with
   matching full arguments. Every entry that runs that same command names the
   process; a desktop name that an entry running another command also uses gets
-  no alias. Registry labels and truncated `comm` names are never aliases.
+  no alias. A process that `launch` spawned from a desktop entry, itself or
+  through a wrapper that `exec`s the application, also answers to that entry's
+  id, and to its `Name` unless an entry running another command shares it,
+  even when the launch passed arguments (`launch google-chrome --cdp`, then
+  `--app "Google Chrome"`). The launch records the entry for that pid, process
+  instance and executable in a private file under `$XDG_RUNTIME_DIR`; a
+  process the launch only handed off to gets no record. Registry
+  labels and truncated `comm` names are never aliases.
 - Scoped matching is exact and case-insensitive, and the process must belong to
   this session. `list-windows --app` uses that exact rule. `list-apps --app`
   combines a substring match on the listed name with those exact adapter aliases.
 - Window ids are opaque addresses of 34 to 70 characters, valid for the life of
   the window's process.
-- `list-apps` rows carry `name`, `pid`, `bundle_id` (the desktop id, the first
-  in byte order when several entries run the process's command, when known) and
+- `list-apps` rows carry `name`, `pid`, `bundle_id` (the desktop id: the entry
+  `launch` started the process from, else the first in byte order of the
+  entries that run the process's command, when known) and
   `process_instance`. `list-windows` rows carry `id`, `title`, `app_name`, `pid`,
   `is_focused`, `minimized`, `visible`, `accessible` and `process_instance`, plus
   `bounds` when the display maps one.
@@ -45,6 +53,15 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   name with a separator or NUL, is `INVALID_ARGS`, `not_delivered`; an unknown name is
   `APP_NOT_FOUND`; an entry with `Terminal=true` or no `Exec` is
   `ACTION_NOT_SUPPORTED`.
+- `launch` spawns only when a display server answers. The check reads
+  agent-desktop's own `DISPLAY` and `WAYLAND_DISPLAY`, not `--env`. With
+  neither set, or one that is not running or refuses this client, it answers
+  `PLATFORM_NOT_SUPPORTED` with `details.display_unavailable`, `not_delivered`,
+  before the spawn; an X server that does not answer is `TIMEOUT` and one whose
+  reply cannot be used is `INTERNAL`, both `not_delivered`. An attach to a
+  running instance that shows a window does not reach this check; one with no
+  window is started again and does. A failure after
+  the spawn carries the spawned process in `details.spawned_pid`.
 - A `Name` that several desktop entries share launches, when all of them run
   the same command, the first entry in byte order of desktop id that can
   start. The same command means one canonical executable reached under the

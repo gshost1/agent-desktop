@@ -84,12 +84,6 @@ impl RefMap {
         self.inner.is_empty()
     }
 
-    pub(crate) fn retained_object_tokens(&self) -> impl Iterator<Item = &str> {
-        self.inner
-            .values()
-            .filter_map(|entry| entry.identity.retained_object.as_deref())
-    }
-
     /// Removes the refs a drill-down replaces: the entries rooted at `root`, the
     /// entries the same capture recorded below the root's own path, and -
     /// transitively - everything those entries rooted, so a re-drill of an
@@ -385,6 +379,7 @@ pub(crate) mod resolve_attempt_outcome;
 pub mod resolve_errors;
 pub mod resolve_saved_ref;
 pub(crate) mod resolve_verdict;
+pub mod saved_ref_process;
 #[cfg(test)]
 #[path = "refs_serde_tests.rs"]
 mod serde_tests;

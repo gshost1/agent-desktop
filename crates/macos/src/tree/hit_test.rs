@@ -4,9 +4,7 @@ mod imp {
         AXElement, element_bounds::read_bounds_with_deadline,
         properties::capabilities::same_element, properties::element::ABSOLUTE_MAX_DEPTH,
     };
-    use accessibility_sys::{
-        AXUIElementCreateSystemWide, kAXApplicationRole, kAXErrorSuccess, kAXRoleAttribute,
-    };
+    use accessibility_sys::{kAXApplicationRole, kAXErrorSuccess, kAXRoleAttribute};
     use agent_desktop_core::{
         AdapterError, Point, Rect, adapter::hit_test::HitTestResult,
         adapter::native_handle::NativeHandle,
@@ -57,7 +55,7 @@ mod imp {
         if !clipping_is_complete(target, &point, deadline)? {
             return Ok(HitTestResult::Unknown);
         }
-        let system = AXElement(unsafe { AXUIElementCreateSystemWide() });
+        let system = crate::tree::system_wide::element();
         if system.0.is_null() {
             return Ok(HitTestResult::Unknown);
         }
@@ -269,9 +267,22 @@ mod imp {
             if ends_clipping_walk(role.as_deref()) {
                 return Ok(Some(visible));
             }
-            if role.as_deref().is_some_and(clips_descendants) {
-                let Some(bounds) = read_bounds_with_deadline(&current, deadline)? else {
+            if let Some(clipping_role) = role.as_deref().filter(|role| clips_descendants(role)) {
+                let Some(reported) = read_bounds_with_deadline(&current, deadline)? else {
                     return Ok(None);
+                };
+                let bounds = if crate::tree::element_bounds::contains_rect(reported, visible) {
+                    reported
+                } else {
+                    match crate::tree::element_bounds::clip_bounds(
+                        &current,
+                        clipping_role,
+                        Some(reported),
+                        deadline,
+                    ) {
+                        Some(bounds) => bounds,
+                        None => return Ok(None),
+                    }
                 };
                 let Some(intersection) = intersect_rects(visible, bounds) else {
                     return Ok(None);

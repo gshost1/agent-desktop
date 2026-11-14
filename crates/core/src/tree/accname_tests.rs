@@ -27,19 +27,41 @@ fn uncertain(slot: SlotStatus) -> NameSlotStatus {
 #[test]
 fn name_precedence_is_the_shipped_order_and_is_complete() {
     let mut value = evidence();
-    assert_eq!(compute_name(&value).as_deref(), Some("explicit"));
+    let default = NameSlotStatus::default();
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("explicit".into())
+    );
     value.explicit_label = None;
-    assert_eq!(compute_name(&value).as_deref(), Some("labelled"));
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("labelled".into())
+    );
     value.labelled_by_text = None;
-    assert_eq!(compute_name(&value).as_deref(), Some("title"));
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("title".into())
+    );
     value.native_title = None;
-    assert_eq!(compute_name(&value).as_deref(), Some("value"));
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("value".into())
+    );
     value.static_value = None;
-    assert_eq!(compute_name(&value).as_deref(), Some("description"));
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("description".into())
+    );
     value.description = None;
-    assert_eq!(compute_name(&value).as_deref(), Some("child"));
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("child".into())
+    );
     value.child_label = None;
-    assert_eq!(compute_name(&value).as_deref(), Some("placeholder"));
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("placeholder".into())
+    );
 }
 
 /// The behaviour an `Option`-returning precedence structurally cannot express.
@@ -164,7 +186,10 @@ fn blank_evidence_is_ignored_without_rewriting_content() {
         ..NameEvidence::default()
     };
 
-    assert_eq!(compute_name(&value).as_deref(), Some("  Save  "));
+    assert_eq!(
+        resolve_name(&value, &NameSlotStatus::default()),
+        LocatorField::Known("  Save  ".into())
+    );
 }
 
 #[test]
@@ -173,9 +198,13 @@ fn description_is_not_duplicated_when_it_supplies_the_name() {
         description: Some("Only description".into()),
         ..NameEvidence::default()
     };
+    let default = NameSlotStatus::default();
 
-    assert_eq!(compute_name(&value).as_deref(), Some("Only description"));
-    assert_eq!(compute_description(&value), None);
+    assert_eq!(
+        resolve_name(&value, &default),
+        LocatorField::Known("Only description".into())
+    );
+    assert_eq!(resolve_description(&value, &default), LocatorField::Absent);
 }
 
 #[test]
@@ -185,11 +214,15 @@ fn description_remains_separate_when_a_stronger_name_exists() {
         description: Some("Filters all messages".into()),
         ..NameEvidence::default()
     };
+    let default = NameSlotStatus::default();
 
-    assert_eq!(compute_name(&value).as_deref(), Some("Search"));
     assert_eq!(
-        compute_description(&value).as_deref(),
-        Some("Filters all messages")
+        resolve_name(&value, &default),
+        LocatorField::Known("Search".into())
+    );
+    assert_eq!(
+        resolve_description(&value, &default),
+        LocatorField::Known("Filters all messages".into())
     );
 }
 
@@ -202,10 +235,11 @@ fn a_placeholder_does_not_outrank_a_description() {
         description: Some("Filters all messages".into()),
         ..NameEvidence::default()
     };
+    let default = NameSlotStatus::default();
 
     assert_eq!(
-        compute_name(&value).as_deref(),
-        Some("Filters all messages")
+        resolve_name(&value, &default),
+        LocatorField::Known("Filters all messages".into())
     );
-    assert_eq!(compute_description(&value), None);
+    assert_eq!(resolve_description(&value, &default), LocatorField::Absent);
 }
