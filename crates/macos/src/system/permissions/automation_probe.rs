@@ -7,8 +7,7 @@
 //! collects a full permission report would hang with it, past its own timeout.
 
 use agent_desktop_core::{AdapterError, Deadline};
-use std::sync::Mutex;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 /// The probe status reported when the probe did not answer in time. It is no
@@ -17,10 +16,15 @@ pub(crate) const PROBE_UNANSWERED: i32 = i32::MIN;
 
 const AUTOMATION_PROBE_BUDGET: Duration = Duration::from_secs(3);
 
-/// A probe that did not answer keeps running on its thread. The next caller
-/// waits on that same probe instead of starting another, so a host that keeps
-/// asking while a prompt waits holds one blocked thread, not one per call.
-static IN_FLIGHT: Mutex<Option<Receiver<i32>>> = Mutex::new(None);
+/// One probe's answer, set once by its thread and read by every caller that
+/// waits on it.
+pub(crate) type SharedProbe = Arc<(Mutex<Option<i32>>, Condvar)>;
+
+/// The probe in flight. Every caller, concurrent or later, waits on this one
+/// probe while it has not answered, so a host that keeps asking while a
+/// prompt waits holds one blocked thread, not one per call. The first caller
+/// to read the answer clears the slot, so the next call asks again.
+static IN_FLIGHT: Mutex<Option<SharedProbe>> = Mutex::new(None);
 
 pub(crate) fn probe_within(deadline: Deadline, probe: fn() -> i32) -> Result<i32, AdapterError> {
     probe_with(
@@ -31,41 +35,60 @@ pub(crate) fn probe_within(deadline: Deadline, probe: fn() -> i32) -> Result<i32
 }
 
 pub(crate) fn probe_with(
-    slot: &Mutex<Option<Receiver<i32>>>,
+    slot: &Mutex<Option<SharedProbe>>,
     wait: Duration,
     probe: fn() -> i32,
 ) -> Result<i32, AdapterError> {
-    let pending = slot.lock().ok().and_then(|mut held| held.take());
-    let receiver = match pending {
-        Some(receiver) => receiver,
-        None => match spawn(probe) {
-            Some(receiver) => receiver,
-            None => return Ok(PROBE_UNANSWERED),
-        },
+    let Some(shared) = join_or_start(slot, probe) else {
+        return Ok(PROBE_UNANSWERED);
     };
-    match receiver.recv_timeout(wait) {
-        Ok(status) => Ok(status),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            if let Ok(mut held) = slot.lock()
-                && held.is_none()
-            {
-                *held = Some(receiver);
-            }
-            Ok(PROBE_UNANSWERED)
-        }
-        Err(mpsc::RecvTimeoutError::Disconnected) => Ok(PROBE_UNANSWERED),
+    let Some(status) = wait_for(&shared, wait) else {
+        return Ok(PROBE_UNANSWERED);
+    };
+    if let Ok(mut held) = slot.lock()
+        && held
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, &shared))
+    {
+        *held = None;
     }
+    Ok(status)
 }
 
-fn spawn(probe: fn() -> i32) -> Option<Receiver<i32>> {
-    let (sender, receiver) = mpsc::channel();
+fn join_or_start(slot: &Mutex<Option<SharedProbe>>, probe: fn() -> i32) -> Option<SharedProbe> {
+    let mut held = slot.lock().ok()?;
+    if let Some(shared) = held.as_ref() {
+        return Some(Arc::clone(shared));
+    }
+    let shared = spawn(probe)?;
+    *held = Some(Arc::clone(&shared));
+    Some(shared)
+}
+
+fn wait_for(shared: &SharedProbe, wait: Duration) -> Option<i32> {
+    let (status, answered) = &**shared;
+    let guard = status.lock().ok()?;
+    let (guard, _) = answered
+        .wait_timeout_while(guard, wait, |status| status.is_none())
+        .ok()?;
+    *guard
+}
+
+fn spawn(probe: fn() -> i32) -> Option<SharedProbe> {
+    let shared: SharedProbe = Arc::new((Mutex::new(None), Condvar::new()));
+    let answer = Arc::clone(&shared);
     std::thread::Builder::new()
         .name("automation-permission-probe".into())
         .spawn(move || {
-            let _ = sender.send(probe());
+            let status = std::panic::catch_unwind(probe).unwrap_or(PROBE_UNANSWERED);
+            let (slot, answered) = &*answer;
+            if let Ok(mut held) = slot.lock() {
+                *held = Some(status);
+            }
+            answered.notify_all();
         })
         .ok()?;
-    Some(receiver)
+    Some(shared)
 }
 
 #[cfg(test)]
