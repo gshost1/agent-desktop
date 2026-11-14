@@ -2,6 +2,8 @@ use agent_desktop_core::{AdapterError, ErrorCode, Rect, WindowInfo};
 use core_foundation::{base::CFType, dictionary::CFDictionary, string::CFString};
 use std::time::Instant;
 
+use crate::system::window::window_presence::WindowPresence;
+
 pub(in crate::system) type WindowDictionary = CFDictionary<CFString, CFType>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -11,7 +13,7 @@ pub(crate) struct WindowRecord {
     pub(crate) title: Option<String>,
     pub(crate) window_number: i64,
     pub(crate) bounds: Rect,
-    pub(crate) visible: bool,
+    pub(crate) presence: WindowPresence,
     pub(crate) process_instance: Option<String>,
 }
 
@@ -36,7 +38,7 @@ impl WindowRecord {
                 is_focused,
                 accessible,
                 minimized,
-                visible: Some(self.visible),
+                visible: Some(self.presence.is_onscreen()),
             },
         })
     }
@@ -73,7 +75,11 @@ pub(crate) fn window_records_until(
         ),
         WindowRecordScope::Window(_) => {}
     }
-    stabilize_records_until(deadline, || capture_once(deadline, scope))
+    let mut records = stabilize_records_until(deadline, || capture_once(deadline, scope))?;
+    super::window_presence::retain_published_floating(&mut records, |pid| {
+        super::window_presence::published_windows(pid, deadline)
+    });
+    Ok(records)
 }
 
 fn capture_once(
@@ -107,7 +113,8 @@ fn stabilize_records_until(
         match capture() {
             Ok(current) => {
                 if previous.as_ref().is_some_and(|prior| {
-                    inventory_signature(prior) == inventory_signature(&current)
+                    super::cg_window_signature::inventory_signature(prior)
+                        == super::cg_window_signature::inventory_signature(&current)
                 }) {
                     return Ok(current);
                 }
@@ -136,9 +143,12 @@ pub(in crate::system) fn records_from_dictionaries(
     let mut records = Vec::new();
     for dictionary in dictionaries {
         let layer = required_int_field(&dictionary, "kCGWindowLayer")?;
-        if layer != 0 {
+        let Some(presence) = WindowPresence::classify(layer, || {
+            bool_field(&dictionary, "kCGWindowIsOnscreen")
+        })?
+        else {
             continue;
-        }
+        };
         let pid = i32::try_from(required_int_field(&dictionary, "kCGWindowOwnerPID")?)
             .map_err(|_| invalid_field_error("kCGWindowOwnerPID"))?;
         if pid <= 0 {
@@ -166,7 +176,7 @@ pub(in crate::system) fn records_from_dictionaries(
             title: string_field(&dictionary, "kCGWindowName").filter(|title| !title.is_empty()),
             window_number,
             bounds,
-            visible: bool_field(&dictionary, "kCGWindowIsOnscreen")?,
+            presence,
             process_instance: None,
         });
     }
@@ -224,32 +234,6 @@ fn capture_process_instances_with(
         record.process_instance = Some(instance);
     }
     Ok(())
-}
-
-type InventorySignatureEntry<'a> = (i32, i64, &'a str, Option<&'a str>, [u64; 4], bool, &'a str);
-
-fn inventory_signature(records: &[WindowRecord]) -> Vec<InventorySignatureEntry<'_>> {
-    let mut signature = records
-        .iter()
-        .map(|record| {
-            (
-                record.pid,
-                record.window_number,
-                record.app_name.as_str(),
-                record.title.as_deref(),
-                [
-                    record.bounds.x.to_bits(),
-                    record.bounds.y.to_bits(),
-                    record.bounds.width.to_bits(),
-                    record.bounds.height.to_bits(),
-                ],
-                record.visible,
-                record.process_instance.as_deref().unwrap_or(""),
-            )
-        })
-        .collect::<Vec<_>>();
-    signature.sort_unstable();
-    signature
 }
 
 pub(in crate::system) fn ensure_before_deadline(deadline: Instant) -> Result<(), AdapterError> {

@@ -18,6 +18,7 @@ pub(crate) fn select_value(
         Some("collection") => {
             crate::actions::select::select_menu::select_collection_item(element, value, deadline)
         }
+        Some("text") => crate::actions::select::select_text::select_text(element, value, deadline),
         _ => Err(AdapterError::new(
             ErrorCode::ActionNotSupported,
             format!(
@@ -26,7 +27,7 @@ pub(crate) fn select_value(
             ),
         )
         .with_suggestion(
-            "Target a combobox, popup button, menu button, list, table, or outline; otherwise use click.",
+            "Target a combobox, popup button, menu button, list, table, outline, or text field; otherwise use click.",
         )),
     }
 }
@@ -73,6 +74,7 @@ fn select_role_family(role: Option<&str>) -> Option<&'static str> {
         Some("combobox") => Some("value_or_menu"),
         Some("popupbutton" | "menubutton") => Some("menu"),
         Some("list" | "table" | "outline") => Some("collection"),
+        Some("textfield") => Some("text"),
         _ => None,
     }
 }
@@ -133,6 +135,7 @@ mod tests {
         assert_eq!(select_role_family(Some("list")), Some("collection"));
         assert_eq!(select_role_family(Some("table")), Some("collection"));
         assert_eq!(select_role_family(Some("outline")), Some("collection"));
+        assert_eq!(select_role_family(Some("textfield")), Some("text"));
         assert_eq!(select_role_family(Some("button")), None);
     }
 

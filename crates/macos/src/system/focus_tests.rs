@@ -113,3 +113,12 @@ fn frontmost_verification_timeout_preserves_activation_delivery() {
         );
     }
 }
+
+#[test]
+fn a_floating_panel_counts_as_in_front_without_becoming_main() {
+    assert!(is_floating_subrole("AXFloatingWindow"));
+    assert!(is_floating_subrole("AXSystemFloatingWindow"));
+    for subrole in ["AXStandardWindow", "AXDialog", "AXSystemDialog", "AXUnknown", ""] {
+        assert!(!is_floating_subrole(subrole), "{subrole}");
+    }
+}

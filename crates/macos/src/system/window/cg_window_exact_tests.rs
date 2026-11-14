@@ -81,7 +81,7 @@ fn record(pid: i32, window_number: i64, process_instance: &str) -> WindowRecord 
             width: 100.0,
             height: 100.0,
         },
-        visible: true,
+        presence: crate::system::window::window_presence::WindowPresence::Onscreen,
         process_instance: Some(process_instance.into()),
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::system::window::cg_window_signature::inventory_signature;
 
 #[test]
 fn missing_optional_owner_name_does_not_block_scoped_windows() {
@@ -369,7 +370,7 @@ fn record(app_name: &str, pid: i32, window_number: i64, visible: bool) -> Window
             width: 100.0,
             height: 100.0,
         },
-        visible,
+        presence: WindowPresence::from_onscreen(visible),
         process_instance: Some(format!("instance-{pid}")),
     }
 }

@@ -12,6 +12,9 @@ mod imp {
         deadline: Deadline,
     ) -> Result<DeliveryOutcome, AdapterError> {
         prepare(element, deadline)?;
+        if attribute == "AXValue" {
+            crate::actions::chain::chain_edit_focus::focus_before_value_write(element, deadline)?;
+        }
         let uncertain = if attribute == "AXValue" {
             ax_helpers::set_ax_value_coerced(element, value, deadline).err()
         } else {

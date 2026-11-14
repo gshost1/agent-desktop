@@ -121,7 +121,7 @@ fn cg_window_without_an_ax_element_is_labelled_inaccessible() {
 fn visible_windows_survive_ax_inventory_failure() {
     let visible = record("Preview", 10, "Document", 7);
     let mut panel = record("Preview", 10, "Panel", 8);
-    panel.visible = false;
+    panel.presence = crate::system::window::window_presence::WindowPresence::Offscreen;
 
     let mut windows = windows_from_records_with_focus(
         vec![visible, panel],
@@ -139,7 +139,7 @@ fn visible_windows_survive_ax_inventory_failure() {
 #[test]
 fn offscreen_only_inventory_requires_ax_classification() {
     let mut offscreen = record("Preview", 10, "Document", 7);
-    offscreen.visible = false;
+    offscreen.presence = crate::system::window::window_presence::WindowPresence::Offscreen;
 
     let error = windows_from_records_with_focus(
         vec![offscreen],
@@ -239,7 +239,7 @@ fn record(app_name: &str, pid: i32, title: &str, window_number: i64) -> WindowRe
             width: 10.0,
             height: 10.0,
         },
-        visible: true,
+        presence: crate::system::window::window_presence::WindowPresence::Onscreen,
         process_instance: Some(format!("instance-{pid}")),
     }
 }

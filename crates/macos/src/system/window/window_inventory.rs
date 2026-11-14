@@ -220,7 +220,7 @@ fn focus_state(
 fn visible_window_pids(records: &[cg_window::WindowRecord]) -> rustc_hash::FxHashSet<i32> {
     records
         .iter()
-        .filter(|record| record.visible)
+        .filter(|record| record.presence.is_onscreen())
         .map(|record| record.pid)
         .collect()
 }

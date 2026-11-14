@@ -227,7 +227,7 @@ fn window_on_screen(window: i64) -> Result<bool, AdapterError> {
     Ok(
         records_from_dictionaries(window_dictionaries()?, WindowRecordScope::Window(window))?
             .iter()
-            .any(|record| record.visible),
+            .any(|record| record.presence.is_onscreen()),
     )
 }
 

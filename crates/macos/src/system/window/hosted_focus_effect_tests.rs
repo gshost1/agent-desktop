@@ -14,7 +14,7 @@ fn window(window_number: i64, width: f64, visible: bool) -> WindowRecord {
             width,
             height: 448.0,
         },
-        visible,
+        presence: crate::system::window::window_presence::WindowPresence::from_onscreen(visible),
         process_instance: None,
     }
 }

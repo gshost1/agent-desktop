@@ -107,6 +107,9 @@ check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/surfaces.sh
 source "$here/scenarios/surfaces.sh"
 check_fixture_contention || { finish; exit 1; }
+# shellcheck source=tests/e2e/scenarios/panels.sh
+source "$here/scenarios/panels.sh"
+check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/error_contract.sh
 source "$here/scenarios/error_contract.sh"
 check_fixture_contention || { finish; exit 1; }

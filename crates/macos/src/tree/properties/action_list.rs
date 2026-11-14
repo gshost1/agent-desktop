@@ -110,6 +110,9 @@ pub(crate) fn read_platform_available_actions(
         && read_settable(el, "AXSelectedText", deadline, &mut read).unwrap_or(false)
     {
         push_unique(&mut read.actions, capability::TYPE_TEXT);
+        if role == "textfield" {
+            push_unique(&mut read.actions, capability::SELECT);
+        }
     }
     if (role_may_expand(role)
         && read_settable(el, "AXExpanded", deadline, &mut read).unwrap_or(false))
