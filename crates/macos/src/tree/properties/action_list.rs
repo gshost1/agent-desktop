@@ -110,7 +110,7 @@ pub(crate) fn read_platform_available_actions(
         && read_settable(el, "AXSelectedText", deadline, &mut read).unwrap_or(false)
     {
         push_unique(&mut read.actions, capability::TYPE_TEXT);
-        if role == "textfield" {
+        if role_selects_text_by_content(role) {
             push_unique(&mut read.actions, capability::SELECT);
         }
     }
@@ -211,6 +211,10 @@ fn role_may_insert_text(role: &str) -> bool {
     matches!(role, "textfield" | "combobox")
 }
 
+fn role_selects_text_by_content(role: &str) -> bool {
+    role == "textfield"
+}
+
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn read_platform_available_actions(
     _el: &AXElement,
@@ -252,6 +256,13 @@ fn has_scroll_mechanism(has: &impl Fn(&str) -> bool, has_scrollbars: bool) -> bo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_editable_text_field_offers_select_but_a_combo_box_keeps_its_option_select() {
+        assert!(super::role_selects_text_by_content("textfield"));
+        assert!(!super::role_selects_text_by_content("combobox"));
+        assert!(!super::role_selects_text_by_content("statictext"));
+    }
+
     #[test]
     fn value_capability_reuses_observed_settability_and_probes_only_unknown_controls() {
         for (readonly, expected) in [(Some(true), false), (Some(false), true)] {

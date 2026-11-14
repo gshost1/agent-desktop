@@ -12,19 +12,33 @@ fn chord(key: &str, modifiers: &[Modifier]) -> KeyCombo {
 #[test]
 fn command_chords_on_character_keys_run_only_through_the_menu() {
     assert!(runs_only_through_menu(&chord("s", &[Modifier::Meta])));
-    assert!(runs_only_through_menu(&chord("t", &[Modifier::Meta, Modifier::Shift])));
+    assert!(runs_only_through_menu(&chord(
+        "t",
+        &[Modifier::Meta, Modifier::Shift]
+    )));
     assert!(runs_only_through_menu(&chord("comma", &[Modifier::Meta])));
-    assert!(runs_only_through_menu(&chord("5", &[Modifier::Meta, Modifier::Alt])));
+    assert!(runs_only_through_menu(&chord(
+        "5",
+        &[Modifier::Meta, Modifier::Alt]
+    )));
 }
 
 #[test]
 fn navigation_chords_and_plain_keys_still_reach_the_focused_view() {
-    for key in ["right", "up", "left", "down", "home", "end", "delete", "tab", "return"] {
-        assert!(!runs_only_through_menu(&chord(key, &[Modifier::Meta])), "{key}");
+    for key in [
+        "right", "up", "left", "down", "home", "end", "delete", "tab", "return",
+    ] {
+        assert!(
+            !runs_only_through_menu(&chord(key, &[Modifier::Meta])),
+            "{key}"
+        );
     }
     assert!(!runs_only_through_menu(&chord("s", &[])));
     assert!(!runs_only_through_menu(&chord("b", &[Modifier::Ctrl])));
-    assert!(!runs_only_through_menu(&chord("down", &[Modifier::Alt, Modifier::Shift])));
+    assert!(!runs_only_through_menu(&chord(
+        "down",
+        &[Modifier::Alt, Modifier::Shift]
+    )));
 }
 
 #[test]

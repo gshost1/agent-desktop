@@ -143,9 +143,8 @@ pub(in crate::system) fn records_from_dictionaries(
     let mut records = Vec::new();
     for dictionary in dictionaries {
         let layer = required_int_field(&dictionary, "kCGWindowLayer")?;
-        let Some(presence) = WindowPresence::classify(layer, || {
-            bool_field(&dictionary, "kCGWindowIsOnscreen")
-        })?
+        let Some(presence) =
+            WindowPresence::classify(layer, || bool_field(&dictionary, "kCGWindowIsOnscreen"))?
         else {
             continue;
         };

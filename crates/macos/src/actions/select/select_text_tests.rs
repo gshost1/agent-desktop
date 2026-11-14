@@ -1,7 +1,8 @@
 use super::{unique_range, utf16_occurrences};
 use agent_desktop_core::ErrorCode;
 
-const OUTLINE: &str = "Course outline\nWeek one covers records.\nThe final week repeats weeks one to three.";
+const OUTLINE: &str =
+    "Course outline\nWeek one covers records.\nThe final week repeats weeks one to three.";
 
 #[test]
 fn a_text_that_occurs_once_selects_its_exact_range() {

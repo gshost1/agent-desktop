@@ -29,11 +29,10 @@ pub(crate) fn utf16_occurrences(text: &str, wanted: &str) -> Vec<Range<usize>> {
 /// The single range to select, or the refusal that explains why none is.
 pub(crate) fn unique_range(text: &str, wanted: &str) -> Result<Range<usize>, AdapterError> {
     if wanted.is_empty() {
-        return Err(AdapterError::new(
-            ErrorCode::InvalidArgs,
-            "Text to select must not be empty",
-        )
-        .with_disposition(DeliverySemantics::not_delivered()));
+        return Err(
+            AdapterError::new(ErrorCode::InvalidArgs, "Text to select must not be empty")
+                .with_disposition(DeliverySemantics::not_delivered()),
+        );
     }
     let mut found = utf16_occurrences(text, wanted);
     match found.len() {
@@ -104,9 +103,12 @@ fn write_range(
         location: isize::try_from(range.start).map_err(|_| overflow())?,
         length: isize::try_from(range.len()).map_err(|_| overflow())?,
     };
-    let value = unsafe { AXValueCreate(kAXValueTypeCFRange, (&raw_range as *const CFRange).cast()) };
+    let value =
+        unsafe { AXValueCreate(kAXValueTypeCFRange, (&raw_range as *const CFRange).cast()) };
     if value.is_null() {
-        return Err(AdapterError::internal("AXValueCreate returned null for a text range"));
+        return Err(AdapterError::internal(
+            "AXValueCreate returned null for a text range",
+        ));
     }
     let value = unsafe { CFType::wrap_under_create_rule(value as _) };
     let attribute = CFString::new(SELECTED_RANGE);
