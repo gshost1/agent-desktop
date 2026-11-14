@@ -4,7 +4,11 @@
 # bench account's GUI session (cand_start.sh starts it through benchrun). After every run it checks the API
 # refusal scanner, a STOP file, and this pass's list-price spend; past CAP_USD it writes STOP-SPEND and ends.
 #
-#   bash cand_pass.sh <label> <task ids, comma-separated or "all"> <n> [model]
+#   bash cand_pass.sh <label> <task ids, comma-separated or "all"> <n> [model] [control]
+#
+# control is <label>:<native task ids>:<n>, an already registered arm run as the same-day control: in each of
+# its first n rounds its native tasks run right after the candidate's, under the same lock hold. Its rows
+# count toward this pass's spend.
 #
 # The candidate binary is ~/.agent-desktop-bench-target/heldout-tools/candidates/<label>/ (bench HOME), put
 # there by bench_candidate.sh with its helper and a VERSION line; common.register_candidates() makes it an arm.
@@ -13,7 +17,7 @@ BT=$BENCH_REAL_HOME/bench-tools
 H=$HOME/.t3/worktrees/agent-desktop/perf-speed-cost/bench/heldout
 B=$(dirname "$H")
 P=$HELDOUT_PY
-LABEL=$1; TASKS=${2:-all}; N=${3:-5}; MODEL=${4:-claude-sonnet-5-5}; CAP_USD=${CAP_USD:-15}
+LABEL=$1; TASKS=${2:-all}; N=${3:-5}; MODEL=${4:-claude-sonnet-5-5}; CONTROL=${5:-}; CAP_USD=${CAP_USD:-15}
 HOST=${HELDOUT_HOST:-friend-m1pro}
 OWNER="perf/speed-cost heldout"
 CHROME_ARGS=(--chrome-arg=--use-mock-keychain --chrome-arg=--password-store=basic)
@@ -22,7 +26,15 @@ ALL_WEB=(hw1 hw2 hw3 hw4 hw5 hw6 hw7 hp1 hp2 hp3)
 NATIVE_ROWS=$H/runs/results-native.jsonl
 WEB_COSTS=$H/runs/web/$LABEL-$MODEL/runs.jsonl
 
-[ -x "$HOME/.agent-desktop-bench-target/heldout-tools/candidates/$LABEL/agent-desktop" ] || { echo "no candidate $LABEL"; exit 2; }
+CANDS=$HOME/.agent-desktop-bench-target/heldout-tools/candidates
+[ -x "$CANDS/$LABEL/agent-desktop" ] || { echo "no candidate $LABEL"; exit 2; }
+CTL_LABEL=""; CTL_N=0; CTL_TASKS=()
+if [ -n "$CONTROL" ]; then
+  IFS=: read -r CTL_LABEL ctl_list CTL_N <<< "$CONTROL"
+  [ -x "$CANDS/$CTL_LABEL/agent-desktop" ] || { echo "no candidate $CTL_LABEL for the control"; exit 2; }
+  for t in "${ALL_NATIVE[@]}"; do [[ ",$ctl_list," == *",$t,"* ]] && CTL_TASKS+=("$t"); done
+  [ ${#CTL_TASKS[@]} -gt 0 ] && [[ $CTL_N =~ ^[1-9][0-9]?$ ]] || { echo "bad control spec $CONTROL"; exit 2; }
+fi
 frozen=$(grep -oE 'tasks_heldout.py sha256 `[0-9a-f]{64}`' "$H/TASKS_FROZEN.md" | grep -oE '[0-9a-f]{64}')
 actual=$(shasum -a 256 "$H/tasks_heldout.py" | cut -d' ' -f1)
 [ -n "$frozen" ] && [ "$frozen" = "$actual" ] || { echo "tasks_heldout.py sha256 $actual does not match the frozen $frozen"; exit 3; }
@@ -36,14 +48,14 @@ log() { echo "[$(date +%H:%M:%S)] $*"; }
 lines() { [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0; }
 NATIVE_FROM=$(lines "$NATIVE_ROWS"); WEB_FROM=$(lines "$WEB_COSTS")
 spent() {
-  $P -I - "$NATIVE_ROWS" "$NATIVE_FROM" "$WEB_COSTS" "$WEB_FROM" "$LABEL" <<'PY'
+  $P -I - "$NATIVE_ROWS" "$NATIVE_FROM" "$WEB_COSTS" "$WEB_FROM" "$LABEL" "$CTL_LABEL" <<'PY'
 import json, sys
 from pathlib import Path
-native, nfrom, web, wfrom, label = sys.argv[1], int(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5]
+native, nfrom, web, wfrom, label, control = sys.argv[1], int(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5], sys.argv[6]
 def new(path, start):
     p = Path(path)
     return [json.loads(l) for l in p.read_text().splitlines()[start:] if l.strip()] if p.exists() else []
-cost = sum(float(r.get("cost_usd_list") or 0) for r in new(native, nfrom) if r.get("arm") == label)
+cost = sum(float(r.get("cost_usd_list") or 0) for r in new(native, nfrom) if r.get("arm") in (label, control))
 cost += sum(float(r.get("cost_usd_list") or 0) for r in new(web, wfrom))
 print(round(cost, 4))
 PY
@@ -70,21 +82,30 @@ if [ ${#WEB_TASKS[@]} -gt 0 ] && ! $P -I -c "import urllib.request; urllib.reque
 fi
 trap '[ -n "$server_pid" ] && kill "$server_pid" 2>/dev/null; bash "$B/lockq.sh" release "$OWNER" > /dev/null 2>&1' EXIT
 
-log "CAND START $LABEL model $MODEL rounds 0-$((N - 1)) native ${NATIVE_TASKS[*]:-none} web ${WEB_TASKS[*]:-none}"
-for (( r=0; r<N; r++ )); do
-  if [ ${#NATIVE_TASKS[@]} -gt 0 ]; then
+log "CAND START $LABEL model $MODEL rounds 0-$((N - 1)) native ${NATIVE_TASKS[*]:-none} web ${WEB_TASKS[*]:-none}${CTL_LABEL:+ control $CTL_LABEL ${CTL_TASKS[*]} rounds 0-$((CTL_N - 1))}"
+ROUNDS=$(( N > CTL_N ? N : CTL_N ))
+native_run() {
+  local arm=$1 task=$2 r=$3
+  touch "$BT/logs/.since"
+  $P -I "$H/arms/run_native.py" --arm "$arm" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" < /dev/null \
+    || { log "native $arm $task exited; retrying once"
+         $P -I "$H/arms/run_native.py" --arm "$arm" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" < /dev/null \
+           || log "native $arm $task exited again"; }
+}
+for (( r=0; r<ROUNDS; r++ )); do
+  ctl=(); [ "$r" -lt "$CTL_N" ] && ctl=("${CTL_TASKS[@]}")
+  cand=(); [ "$r" -lt "$N" ] && cand=("${NATIVE_TASKS[@]}")
+  if [ ${#cand[@]} -gt 0 ] || [ ${#ctl[@]} -gt 0 ]; then
     bash "$B/lockq.sh" take "$OWNER" 5 > /dev/null
-    for task in $(rot "$r" "${NATIVE_TASKS[@]}"); do
-      touch "$BT/logs/.since"
-      $P -I "$H/arms/run_native.py" --arm "$LABEL" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" < /dev/null \
-        || { log "native $LABEL $task exited; retrying once"
-             $P -I "$H/arms/run_native.py" --arm "$LABEL" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" < /dev/null \
-               || log "native $LABEL $task exited again"; }
-      if check; then exit 9; fi
-    done
+    if [ ${#cand[@]} -gt 0 ]; then
+      for task in $(rot "$r" "${cand[@]}"); do native_run "$LABEL" "$task" "$r"; if check; then exit 9; fi; done
+    fi
+    if [ ${#ctl[@]} -gt 0 ]; then
+      for task in $(rot "$r" "${ctl[@]}"); do native_run "$CTL_LABEL" "$task" "$r"; if check; then exit 9; fi; done
+    fi
     bash "$B/lockq.sh" release "$OWNER" > /dev/null
   fi
-  if [ ${#WEB_TASKS[@]} -gt 0 ]; then
+  if [ ${#WEB_TASKS[@]} -gt 0 ] && [ "$r" -lt "$N" ]; then
     for task in $(rot "$r" "${WEB_TASKS[@]}"); do
       touch "$BT/logs/.since"
       $P -I "$H/arms/run_web.py" --arm "$LABEL" --tasks "$task" --runs 1 --start-run "$r" --model "$MODEL" --host "$HOST" \

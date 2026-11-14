@@ -71,6 +71,7 @@ From the control Mac, with a release build of the candidate (`serial_cargo.sh ca
 ```bash
 bash ~/.t3/worktrees/agent-desktop/perf-speed-cost/bench/heldout/bench_candidate.sh <label> <path-to-agent-desktop> [task ids|all] [n]
 # e.g. NOTE="PR #140 abc1234" WAIT=1 bash .../bench_candidate.sh ad-pr140 <target>/release/agent-desktop hp3,hw3 5
+# same-day control, interleaved per round: CONTROL=ad-main:hn2,hn6,hn7:3 bash .../bench_candidate.sh ad-x <bin> hn1,hn2 5
 bash .../bench_candidate.sh --status <label>     # tail the remote log
 bash .../bench_candidate.sh --collect <label>    # fetch rows, write results/candidates/REPORT-<label>.md against every arm
 bash .../bench_candidate.sh --stop               # stop the running pass after its current run

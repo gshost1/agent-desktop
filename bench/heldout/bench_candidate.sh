@@ -16,7 +16,9 @@
 # the Swift helpers, whose compiled copies on the remote must not be rebuilt), copies the binary and helper as
 # they are (ad-hoc linker signature kept), and starts cand_pass.sh detached in the remote GUI session. The pass
 # stops itself past CAP_USD. WAIT=1 makes the command wait for the pass and collect at the end.
-# Env: MODEL (claude-sonnet-5-5), CAP_USD, NOTE (one line for VERSION), BENCH_HOST, BENCH_USER_FILE.
+# CONTROL=<arm>:<native task ids>:<n> runs an already registered candidate arm (for example ad-main) as the
+# same-day control, interleaved per round with the candidate; --collect writes its rows as <arm>-ctl.
+# Env: MODEL (claude-sonnet-5-5), CAP_USD, NOTE (one line for VERSION), CONTROL, BENCH_HOST, BENCH_USER_FILE.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 BENCH_HOST=${BENCH_HOST:-100.111.59.3}
@@ -64,9 +66,24 @@ web = raw / "web-runs.jsonl"
 cost += sum(float(json.loads(l).get("cost_usd_list") or 0) for l in web.read_text().splitlines() if l.strip()) if web.exists() else 0
 print(f"{label} list-price spend: ${cost:.2f}")
 PY
+  local extra=()
+  if r "test -f $LOGS/cand-$label.control" > /dev/null 2>&1; then
+    local spec from ctl
+    spec=$(r "cat $LOGS/cand-$label.control"); from=${spec##* }; ctl=${spec%%:*}
+    "$PY" -I - "$dir/raw-$label/results-native.jsonl" "$from" "$ctl" "$dir/$label-control-results-native.jsonl" <<'PY'
+import json, sys
+from pathlib import Path
+src, start, arm, out = Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3], Path(sys.argv[4])
+rows = [json.loads(l) for l in src.read_text().splitlines()[start:] if l.strip()]
+rows = [dict(r, arm=f"{arm}-ctl") for r in rows if r.get("arm") == arm]
+out.write_text("".join(json.dumps(r) + "\n" for r in rows))
+print(f"control {arm}-ctl: {len(rows)} rows, list-price ${sum(float(r.get('cost_usd_list') or 0) for r in rows):.2f}")
+PY
+    extra=("$dir/$label-control-results-native.jsonl")
+  fi
   "$PY" -I "$HERE/report.py" --model "$MODEL" --focus "$label" --results "$RESULTS/results-native.jsonl" \
     "$RESULTS/results-web.jsonl" "$RESULTS/ad137-results-web.jsonl" "$dir/$label-results-native.jsonl" \
-    "$dir/$label-results-web.jsonl" > "$dir/REPORT-$label.md"
+    "$dir/$label-results-web.jsonl" ${extra[@]+"${extra[@]}"} > "$dir/REPORT-$label.md"
   echo "report: $dir/REPORT-$label.md"
 }
 
@@ -90,13 +107,19 @@ if [ "$TASKS" != all ]; then
 fi
 list=${TASKS//,/ }; [ "$TASKS" = all ] && list=$ALL
 nn=0; nw=0; for t in $list; do [[ $t == hn* ]] && nn=$((nn + 1)) || nw=$((nw + 1)); done
-est=$("$PY" -I -c "print(round($N * ($nn * $NATIVE_USD + $nw * $WEB_USD), 2))")
-echo "estimate: $N rounds x ($nn native x \$$NATIVE_USD + $nw web x \$$WEB_USD) = \$$est (cap \$$CAP_USD)"
+cn=0; cr=0
+if [ -n "${CONTROL:-}" ]; then
+  IFS=: read -r ctl_label ctl_list cr <<< "$CONTROL"
+  [[ $cr =~ ^[1-9][0-9]?$ ]] || { echo "CONTROL must be <arm>:<native task ids>:<n>" >&2; exit 2; }
+  for t in ${ctl_list//,/ }; do [[ $t == hn[1-8] ]] || { echo "control task $t is not a native task" >&2; exit 2; }; cn=$((cn + 1)); done
+fi
+est=$("$PY" -I -c "print(round($N * ($nn * $NATIVE_USD + $nw * $WEB_USD) + $cr * $cn * $NATIVE_USD, 2))")
+echo "estimate: $N rounds x ($nn native x \$$NATIVE_USD + $nw web x \$$WEB_USD) + control $cr x $cn native = \$$est (cap \$$CAP_USD)"
 "$PY" -I -c "import sys; sys.exit(0 if $est <= $CAP_USD else 1)" || { echo "estimate passes CAP_USD; not starting" >&2; exit 4; }
 
 SHA=$(shasum -a 256 "$BIN" | cut -c1-16)
 VERSION="$("$BIN" --version) candidate $LABEL sha256 $SHA${NOTE:+ ($NOTE)}"
-codesign -dv "$BIN" 2>&1 | grep -q "Signature=adhoc" || echo "warning: $BIN is not ad-hoc signed like ad-14" >&2
+[[ $(codesign -dv "$BIN" 2>&1) == *"Signature=adhoc"* ]] || echo "warning: $BIN is not ad-hoc signed like ad-14" >&2
 
 busy=$(r "pgrep -fl 'cand_pass.sh|remote_run_all.sh|ab_pass.sh|web_pass.sh' | grep -v pgrep | wc -l | tr -d ' '")
 [ "$busy" = 0 ] || { echo "a pass is already running on the bench Mac; not starting" >&2; exit 5; }
@@ -112,7 +135,13 @@ put "$BIN" "$HELPER" "$U@$BENCH_HOST:$CAND/"
 printf '%s\n' "$VERSION" > "${TMPDIR:-/tmp}/ho-cand-version"
 put "${TMPDIR:-/tmp}/ho-cand-version" "$U@$BENCH_HOST:$CAND/VERSION"
 r "cd $CAND && LC_ALL=C shasum -a 256 agent-desktop | cut -c1-16 && ./agent-desktop --version"
-r "zsh $MIRROR/heldout/remote/cand_start.sh cand-$LABEL.log $LABEL $TASKS $N $MODEL"
+if [ -n "${CONTROL:-}" ]; then
+  r "test -x $BH/.agent-desktop-bench-target/heldout-tools/candidates/$ctl_label/agent-desktop" || { echo "no registered arm $ctl_label for the control" >&2; exit 2; }
+  r "L=$MIRROR/heldout/runs/results-native.jsonl; echo $CONTROL \$( [ -f \$L ] && wc -l < \$L | tr -d ' ' || echo 0) > $LOGS/cand-$LABEL.control"
+else
+  r "rm -f $LOGS/cand-$LABEL.control"
+fi
+r "zsh $MIRROR/heldout/remote/cand_start.sh cand-$LABEL.log $LABEL $TASKS $N $MODEL ${CONTROL:-}"
 echo "started: $LABEL on $TASKS, n=$N, model $MODEL. Watch: bash $0 --status $LABEL; collect: bash $0 --collect $LABEL"
 if [ "${WAIT:-0}" = 1 ]; then
   until r "L=$LOGS/cand-$LABEL.log; tail -n +\$(grep -n 'CAND START' \$L | tail -1 | cut -d: -f1) \$L | grep -E 'CAND COMPLETE|ending the pass|SPEND CAP|API REFUSED|no candidate|does not match'" > /dev/null; do
