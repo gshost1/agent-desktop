@@ -122,7 +122,7 @@ fn an_empty_ledger_left_by_a_killed_writer_is_rebuilt_without_counting_it_twice(
 }
 
 #[test]
-fn a_ledger_longer_than_the_record_is_emptied_before_the_rewrite() {
+fn a_ledger_longer_than_the_record_is_replaced_with_one_record() {
     let _home = HomeGuard::new();
     let dir = session_trace_dir("long-ledger");
     let ledger = dir.join(LEDGER);
@@ -134,4 +134,51 @@ fn a_ledger_longer_than_the_record_is_emptied_before_the_rewrite() {
     assert_eq!(record.len(), encode_ledger((0, 0, 0)).len());
     let usage: (usize, usize, usize) = serde_json::from_slice(&record).unwrap();
     assert_eq!(usage, (10, 1, 3));
+}
+
+struct FailingAtomicWrite;
+
+impl crate::storage::private_file_ops::PrivateFileOps for FailingAtomicWrite {
+    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        let temporary = path.with_extension("partial");
+        std::fs::write(&temporary, &bytes[..bytes.len() / 2])?;
+        std::fs::remove_file(&temporary)?;
+        Err(std::io::Error::other("disk full after a short write"))
+    }
+}
+
+#[test]
+fn a_failed_legacy_ledger_upgrade_leaves_the_old_ledger_readable() {
+    let _home = HomeGuard::new();
+    let dir = session_trace_dir("failed-upgrade");
+    let ledger = dir.join(LEDGER);
+    crate::refs::write_private_file(&ledger, b"[10,1,2]").unwrap();
+
+    let failed = crate::storage::private_file_ops::with_test_ops_override(
+        std::rc::Rc::new(FailingAtomicWrite),
+        || TraceWriteBudget::acquire(&dir).map(|_| ()),
+    );
+
+    assert!(failed.is_err());
+    assert_eq!(
+        std::fs::read(&ledger).unwrap(),
+        b"[10,1,2]",
+        "the upgrade must never touch the ledger in place: a short write then a failure \
+         would leave bytes no reader parses and stop recording for the session"
+    );
+    let budget = TraceWriteBudget::acquire(&dir).unwrap();
+    assert_eq!(budget.usage, (10, 1, 3));
+    assert_eq!(
+        std::fs::read(&ledger).unwrap().len(),
+        encode_ledger((0, 0, 0)).len()
+    );
+}
+
+#[test]
+fn the_record_length_constant_matches_every_encoding() {
+    assert_eq!(encode_ledger((0, 0, 0)).len(), LEDGER_RECORD_LEN);
+    assert_eq!(
+        encode_ledger((usize::MAX, usize::MAX, usize::MAX)).len(),
+        LEDGER_RECORD_LEN
+    );
 }
