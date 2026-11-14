@@ -363,7 +363,7 @@ fn bool_field(dict: &WindowDictionary, key: &str) -> Result<bool, AdapterError> 
         .ok_or_else(|| invalid_field_error(key))
 }
 
-fn rect_field(dict: &WindowDictionary, key: &str) -> Option<Rect> {
+pub(in crate::system) fn rect_field(dict: &WindowDictionary, key: &str) -> Option<Rect> {
     use crate::tree::properties::cf_type::borrowed_cf_dictionary;
     use core_foundation::base::TCFType;
 
@@ -378,7 +378,7 @@ fn rect_field(dict: &WindowDictionary, key: &str) -> Option<Rect> {
     })
 }
 
-fn int_or_float_field(dict: &WindowDictionary, key: &str) -> Option<f64> {
+pub(in crate::system) fn int_or_float_field(dict: &WindowDictionary, key: &str) -> Option<f64> {
     use crate::tree::properties::cf_type::borrowed_cf_number;
     use core_foundation::base::TCFType;
 
