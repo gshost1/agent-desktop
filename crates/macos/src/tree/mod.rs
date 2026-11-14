@@ -17,7 +17,6 @@ pub(crate) mod native_menu;
 pub(crate) mod observation_usage;
 pub(crate) mod properties;
 pub(crate) mod query;
-#[cfg(target_os = "macos")]
 pub(crate) mod read_recovery;
 pub(crate) mod renderer_probe;
 pub(crate) mod resolve;

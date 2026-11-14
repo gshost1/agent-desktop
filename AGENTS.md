@@ -89,9 +89,14 @@ check. Bypass it only in an emergency: `git commit --no-verify` or `SKIP_PRECOMM
 - Never add `Co-Authored-By` lines, AI attribution or "Generated with" footers.
 - Use Conventional Commits: `feat:`, `fix:`, `feat!:` or a `BREAKING CHANGE:` footer, `docs:`, `style:`, `refactor:`,
   `perf:`, `chore:`, `ci:`, `test:`. Write `type: imperative summary` in lowercase after the colon, and say why.
+- Every PR adds one changelog fragment, `changelog.d/<branch with / replaced by ->.md`, and never edits
+  `CHANGELOG.md`. A fragment holds `### BREAKING CHANGES`, `### Features`, `### Bug Fixes` or `### Performance`
+  sections (also `Documentation`, `Testing`, `Known issues`) of single-line `* ` bullets in the existing style;
+  `python3 scripts/changelog_fragments.py check` checks them and the pre-commit hook checks staged ones.
 - Versions follow semver from 1.0.0. A release is one PR that bumps the workspace version in `Cargo.toml`,
-  `Cargo.lock`, `npm/package.json` and `CHANGELOG.md`. Merging it starts `.github/workflows/release.yml`, which
-  publishes npm and the GitHub release; `docs/releasing.md` has the steps.
+  `Cargo.lock` and `npm/package.json`, and runs `python3 scripts/changelog_fragments.py assemble --version <x.y.z>`,
+  which writes the release's `CHANGELOG.md` section from the fragments and deletes them. Merging it starts
+  `.github/workflows/release.yml`, which publishes npm and the GitHub release; `docs/releasing.md` has the steps.
 
 ## Architecture
 

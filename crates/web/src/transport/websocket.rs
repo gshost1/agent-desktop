@@ -19,7 +19,7 @@ const MIN_IO_SLICE: Duration = Duration::from_millis(1);
 /// A blocking WebSocket client to a loopback DevTools server. Large
 /// messages such as a full accessibility tree are accepted up to 256 MiB.
 #[derive(Debug)]
-pub struct WebSocketTransport {
+pub(crate) struct WebSocketTransport {
     socket: WebSocket<TcpStream>,
 }
 
@@ -27,7 +27,7 @@ impl WebSocketTransport {
     /// Opens the TCP connection and completes the WebSocket upgrade before
     /// `deadline`. A server that holds the upgrade (a browser waiting on its
     /// user's approval) costs at most the remaining deadline.
-    pub fn connect(url: &WebSocketUrl, deadline: Deadline) -> Result<Self, AdapterError> {
+    pub(crate) fn connect(url: &WebSocketUrl, deadline: Deadline) -> Result<Self, AdapterError> {
         let stream = TcpStream::connect_timeout(&url.socket_addr(), io_slice(deadline)?)
             .map_err(|error| connect_failed(url, &error))?;
         stream

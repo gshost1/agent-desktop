@@ -58,5 +58,14 @@ for package in "${packages[@]}"; do
     || fail "Cargo.lock ${package} version ${lock_version} does not match Cargo.toml ${workspace_version}"
 done
 
+changelog_version="$(sed -n 's/^## \[\([^]]*\)\].*/\1/p' CHANGELOG.md | head -n 1)"
+[[ "$changelog_version" == "$workspace_version" ]] \
+  || fail "CHANGELOG.md tops out at ${changelog_version:-no release}, Cargo.toml is ${workspace_version}; run python3 scripts/changelog_fragments.py assemble --version ${workspace_version} in the release pull request"
+
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/changelog_fragments_test.py >/dev/null 2>&1 \
+  || fail "the changelog fragment self-test fails; rerun python3 scripts/changelog_fragments_test.py for detail"
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/changelog_fragments.py check >/dev/null \
+  || fail "a fragment in changelog.d/ is malformed; rerun python3 scripts/changelog_fragments.py check for detail"
+
 cargo metadata --locked --no-deps --format-version 1 >/dev/null
 echo "OK: release metadata is internally consistent for ${workspace_version}"
