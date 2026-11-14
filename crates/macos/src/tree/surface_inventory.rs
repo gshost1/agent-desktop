@@ -22,7 +22,7 @@ fn window_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, Adap
     let app = element_for_pid(pid);
     let mut windows = read_array(&app, "AXWindows", deadline)?.unwrap_or_default();
     if let Some(focused) = read_element(&app, "AXFocusedWindow", deadline)? {
-        windows.push(focused);
+        crate::tree::element_dedupe::push_unique(&mut windows, focused);
     }
     let mut reads = Vec::with_capacity(windows.len());
     for window in &windows {
