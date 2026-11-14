@@ -7,7 +7,7 @@ use crate::cdp::protocol_error::{is_node_gone, is_protocol_error};
 use crate::{CdpConnection, ElementToken, PageSession};
 
 /// Scrolls the node into the viewport if it is not already visible.
-pub fn scroll_into_view(
+pub(crate) fn scroll_into_view(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,
@@ -15,18 +15,6 @@ pub fn scroll_into_view(
 ) -> Result<(), AdapterError> {
     prove_document(connection, session, token, deadline)?;
     scroll_node(connection, session, token, deadline)
-}
-
-/// The centre of the node's border box in CSS pixels of the main frame's
-/// viewport, the space `Input.dispatchMouseEvent` takes.
-pub fn box_center(
-    connection: &mut CdpConnection,
-    session: &PageSession,
-    token: &ElementToken,
-    deadline: Deadline,
-) -> Result<Point, AdapterError> {
-    prove_document(connection, session, token, deadline)?;
-    node_center(connection, session, token, deadline)
 }
 
 pub(crate) fn scroll_node(
@@ -44,24 +32,6 @@ pub(crate) fn scroll_node(
         )
         .map(|_| ())
         .map_err(|error| not_rendered(error, token))
-}
-
-fn node_center(
-    connection: &mut CdpConnection,
-    session: &PageSession,
-    token: &ElementToken,
-    deadline: Deadline,
-) -> Result<Point, AdapterError> {
-    let reply = connection
-        .call(
-            "DOM.getBoxModel",
-            json!({ "backendNodeId": token.backend_node_id }),
-            Some(&session.session_id),
-            deadline,
-        )
-        .map_err(|error| not_rendered(error, token))?;
-    quad_center(reply.pointer("/model/border"))
-        .ok_or_else(|| not_rendered_error(token.backend_node_id, "the node has an empty box"))
 }
 
 pub(crate) fn quad_center(quad: Option<&Value>) -> Option<Point> {

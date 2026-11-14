@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use super::super::scroll_plan::{BlockedDirections, bar_can_move, next_reveal_direction};
     use super::super::scroll_read;
@@ -358,32 +357,16 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use crate::tree::AXElement;
-    use agent_desktop_core::{AdapterError, Deadline};
+pub(crate) use imp::{scroll_into_view_impl, scroll_into_view_outcome};
 
-    pub fn scroll_into_view_impl(
-        _element: &AXElement,
-        _deadline: Deadline,
-    ) -> Result<(), AdapterError> {
-        Err(AdapterError::not_supported("scroll_into_view"))
-    }
-}
-
-pub(crate) use imp::scroll_into_view_impl;
-
-#[cfg(target_os = "macos")]
-pub(crate) use imp::scroll_into_view_outcome;
-
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 pub(crate) use imp::{rect_has_area, scroll_effect_observed};
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "scroll_into_view_tests.rs"]
 mod tests;
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod evidence_tests {
     #[test]
     fn unverified_scroll_to_visible_is_not_safe_to_retry() {
