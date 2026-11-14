@@ -1,0 +1,76 @@
+---
+title: Daemon mode
+navTitle: Daemon mode
+description: Run commands through a warm background process to skip per-call setup. Opt in with one variable; output and exit codes stay the same.
+---
+
+Every CLI call normally starts a fresh process, which connects to the platform's accessibility services before it runs the command. Daemon mode keeps one background process of the same binary running and hands each call to it, so connections that process already opened are reused. The CLI still starts per call, but as a thin client.
+
+## Turn it on
+
+```bash
+export AGENT_DESKTOP_DAEMON=1
+agent-desktop list-apps
+```
+
+The first call finds no daemon, starts one in the background and runs its own command itself. Later calls go to the daemon. Unset the variable to go back to one process per call.
+
+Each command prints the same stdout and stderr and exits with the same code as without daemon mode. Nothing in the envelope says which process ran it.
+
+## Which daemon serves a call
+
+One daemon serves one combination of:
+
+- user,
+- binary build (version and executable file, so an upgraded or rebuilt binary gets a new daemon),
+- `--session` and `--agent-id` values,
+- environment: display and bus variables (`DISPLAY`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, `AT_SPI_BUS_ADDRESS`, `XDG_*`), every `AGENT_DESKTOP_*` setting, `HOME`, `PATH`, locale and temp-directory variables.
+
+A call with any other combination gets its own daemon. The daemon runs each command in the caller's working directory, so relative paths such as `screenshot shot.png` land where they would without daemon mode.
+
+## When the CLI runs the command itself
+
+The CLI runs a command in its own process, exactly as without daemon mode, when:
+
+- no daemon is running yet (it starts one for the next call),
+- the daemon is busy with another call: calls never queue behind each other,
+- the command reads stdin (`--stdin`), is `launch` or a `batch` that launches (the app must inherit the caller's environment), uses `--verbose`, prints help, or has an argument error,
+- the call holds an interaction lease handed down by `agent-desktop mcp`,
+- a permission check refused the command before it did anything (on macOS a daemon may lack a grant the caller's terminal has),
+- the daemon stopped before it accepted the command.
+
+## Failures
+
+If the daemon stops while it runs a command that only reads (`snapshot`, `find`, `wait`, `list-apps`, ...), the CLI runs the command again itself. A command that can change something (`click`, `type`, `session start`, ...) is never run twice. The CLI returns `INTERNAL` with `disposition.delivery: "delivery_uncertain"` and `retry: "unsafe"`:
+
+```json
+{ "version": "2.7", "ok": false, "command": "click",
+  "error": { "code": "INTERNAL",
+             "message": "The agent-desktop daemon stopped while it was running this command",
+             "suggestion": "The command may have taken effect. Take a fresh snapshot to check before you retry it.",
+             "disposition": { "delivery": "delivery_uncertain", "retry": "unsafe" } } }
+```
+
+Killing the CLI while its command runs stops the daemon too, as it would stop a one-shot process. The next call starts a new daemon. Refs live on disk under the state root, so refs taken before a restart keep resolving, or fail with `STALE_REF`, exactly as without daemon mode.
+
+## Idle exit and stopping
+
+A daemon exits after 5 minutes without a call. `AGENT_DESKTOP_DAEMON_IDLE_MS` sets the wait in milliseconds (100 to 86400000).
+
+Each daemon keeps three files in `<state root>/daemon/`: `<key>.sock`, `<key>.lock` and `<key>.state`, which holds its `pid` and how many commands it `served`. To stop every daemon of a state root now:
+
+```bash
+for f in ~/.agent-desktop/daemon/*.state; do kill "$(sed -E 's/.*"pid":([0-9]+).*/\1/' "$f")"; done
+```
+
+## Security
+
+The daemon directory is created `0700` and the socket `0600`. A daemon serves only clients of its own user: on Linux it checks the peer's credentials and that the peer runs the same executable file, on macOS it checks the peer's user id. It refuses a client whose build or environment differs from its own.
+
+On macOS, Accessibility and Screen Recording grants follow the app that started the daemon, usually your terminal. A daemon started from a terminal with the grants serves other callers of the same user and environment. If that matters, leave daemon mode off.
+
+## Platforms
+
+Linux and macOS. On Windows `AGENT_DESKTOP_DAEMON` is ignored and every call runs in its own process.
+
+Trace segments (`<pid>-<start>.jsonl`) carry the daemon's pid for the calls it ran.
