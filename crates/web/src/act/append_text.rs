@@ -28,7 +28,7 @@ const CARET_TO_END: &str = r"function() {
 /// the caret past the last character, then inserts `text` as one input edit.
 /// A control that does not expose a selection keeps the caret where focus put
 /// it.
-pub fn append_text(
+pub(crate) fn append_text(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,

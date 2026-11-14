@@ -13,7 +13,6 @@ struct ActivationContext {
     failure: Option<AdapterError>,
 }
 
-#[cfg(target_os = "macos")]
 extern "C" fn verify_identity(context: *mut std::ffi::c_void) -> bool {
     let context = unsafe { &mut *context.cast::<ActivationContext>() };
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -34,7 +33,6 @@ extern "C" fn verify_identity(context: *mut std::ffi::c_void) -> bool {
     .unwrap_or(false)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn activate(identity: ProcessIdentity) -> Result<bool, AdapterError> {
     let mut context = ActivationContext {
         identity,
@@ -84,7 +82,6 @@ fn finish_activation(
     }
 }
 
-#[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn agent_desktop_activate_application(
         pid: i32,

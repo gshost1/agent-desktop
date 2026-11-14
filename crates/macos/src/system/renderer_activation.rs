@@ -75,7 +75,7 @@ fn enable_attribute(
         instant(deadline).map_err(uncertain)?,
     )
     .map_err(uncertain)?;
-    let delivered = activation_delivered(application, attribute_name, error, readback)?;
+    let delivered = activation_delivered(attribute_name, error, readback)?;
     if !delivered {
         return Err(AdapterError::new(
             ErrorCode::ActionNotSupported,
@@ -93,7 +93,6 @@ fn enable_attribute(
 }
 
 fn activation_delivered(
-    application: &crate::tree::AXElement,
     attribute: &str,
     error: i32,
     readback: Option<bool>,
@@ -102,7 +101,6 @@ fn activation_delivered(
         return Ok(true);
     }
     let delivered = crate::actions::ax_mutation::classify_result(
-        application,
         attribute,
         "AXUIElementSetAttributeValue",
         error,
@@ -151,10 +149,8 @@ mod tests {
 
     #[test]
     fn observed_activation_overrides_a_setters_not_implemented_response() {
-        let application = crate::tree::AXElement(std::ptr::null_mut());
         assert!(
             activation_delivered(
-                &application,
                 renderer_probe::ENHANCED,
                 accessibility_sys::kAXErrorNotImplemented,
                 Some(true),
@@ -163,7 +159,6 @@ mod tests {
         );
         assert!(
             !activation_delivered(
-                &application,
                 renderer_probe::ENHANCED,
                 accessibility_sys::kAXErrorNotImplemented,
                 Some(false),
@@ -189,9 +184,7 @@ mod tests {
 
     #[test]
     fn reported_success_with_disabled_readback_is_not_activation_success() {
-        let application = crate::tree::AXElement(std::ptr::null_mut());
         let error = activation_delivered(
-            &application,
             renderer_probe::ENHANCED,
             accessibility_sys::kAXErrorSuccess,
             Some(false),
@@ -203,10 +196,8 @@ mod tests {
 
     #[test]
     fn accepted_manual_write_with_disabled_readback_is_not_an_error() {
-        let application = crate::tree::AXElement(std::ptr::null_mut());
         assert!(
             activation_delivered(
-                &application,
                 renderer_probe::MANUAL,
                 accessibility_sys::kAXErrorSuccess,
                 Some(false),
@@ -217,10 +208,8 @@ mod tests {
 
     #[test]
     fn missing_readback_keeps_legacy_success_and_preserves_real_failures() {
-        let application = crate::tree::AXElement(std::ptr::null_mut());
         assert!(
             activation_delivered(
-                &application,
                 renderer_probe::MANUAL,
                 accessibility_sys::kAXErrorSuccess,
                 None,
@@ -228,7 +217,6 @@ mod tests {
             .unwrap()
         );
         let error = activation_delivered(
-            &application,
             renderer_probe::ENHANCED,
             accessibility_sys::kAXErrorCannotComplete,
             None,
