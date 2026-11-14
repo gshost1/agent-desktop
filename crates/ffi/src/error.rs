@@ -197,6 +197,17 @@ fn last_error_disposition() -> DeliverySemantics {
         .unwrap_or_else(|_| DeliverySemantics::unknown())
 }
 
+fn last_error_cstr(select: impl FnOnce(&StoredError) -> Option<*const c_char>) -> *const c_char {
+    LAST_ERROR
+        .try_with(|cell| {
+            cell.try_borrow()
+                .ok()
+                .and_then(|error| error.as_ref().and_then(select))
+                .unwrap_or(std::ptr::null())
+        })
+        .unwrap_or(std::ptr::null())
+}
+
 /// Last-error lifetime — errno-style.
 ///
 /// The pointer returned by `ad_last_error_message`,
@@ -225,16 +236,7 @@ pub extern "C" fn ad_last_error_code() -> AdResult {
 /// the next failing call overwrites it.
 #[unsafe(no_mangle)]
 pub extern "C" fn ad_last_error_message() -> *const c_char {
-    crate::ffi_try::trap_panic_const_ptr(|| {
-        LAST_ERROR
-            .try_with(|cell| {
-                cell.try_borrow()
-                    .ok()
-                    .and_then(|error| error.as_ref().map(|error| error.message.as_ptr()))
-                    .unwrap_or(std::ptr::null())
-            })
-            .unwrap_or(std::ptr::null())
-    })
+    crate::ffi_try::trap_panic_const_ptr(|| last_error_cstr(|error| Some(error.message.as_ptr())))
 }
 
 /// Returns a borrowed C string with a human-readable suggestion for how
@@ -243,18 +245,7 @@ pub extern "C" fn ad_last_error_message() -> *const c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn ad_last_error_suggestion() -> *const c_char {
     crate::ffi_try::trap_panic_const_ptr(|| {
-        LAST_ERROR
-            .try_with(|cell| {
-                cell.try_borrow()
-                    .ok()
-                    .and_then(|error| {
-                        error
-                            .as_ref()
-                            .and_then(|error| error.suggestion.as_ref().map(|value| value.as_ptr()))
-                    })
-                    .unwrap_or(std::ptr::null())
-            })
-            .unwrap_or(std::ptr::null())
+        last_error_cstr(|error| error.suggestion.as_ref().map(|value| value.as_ptr()))
     })
 }
 
@@ -265,18 +256,7 @@ pub extern "C" fn ad_last_error_suggestion() -> *const c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn ad_last_error_platform_detail() -> *const c_char {
     crate::ffi_try::trap_panic_const_ptr(|| {
-        LAST_ERROR
-            .try_with(|cell| {
-                cell.try_borrow()
-                    .ok()
-                    .and_then(|error| {
-                        error.as_ref().and_then(|error| {
-                            error.platform_detail.as_ref().map(|value| value.as_ptr())
-                        })
-                    })
-                    .unwrap_or(std::ptr::null())
-            })
-            .unwrap_or(std::ptr::null())
+        last_error_cstr(|error| error.platform_detail.as_ref().map(|value| value.as_ptr()))
     })
 }
 
@@ -288,18 +268,7 @@ pub extern "C" fn ad_last_error_platform_detail() -> *const c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn ad_last_error_details() -> *const c_char {
     crate::ffi_try::trap_panic_const_ptr(|| {
-        LAST_ERROR
-            .try_with(|cell| {
-                cell.try_borrow()
-                    .ok()
-                    .and_then(|error| {
-                        error
-                            .as_ref()
-                            .and_then(|error| error.details.as_ref().map(|value| value.as_ptr()))
-                    })
-                    .unwrap_or(std::ptr::null())
-            })
-            .unwrap_or(std::ptr::null())
+        last_error_cstr(|error| error.details.as_ref().map(|value| value.as_ptr()))
     })
 }
 

@@ -65,7 +65,6 @@ pub(crate) fn derived_descriptor(
 /// Reads the field's subrole and value. A failed read yields no derived name
 /// and leaves the accessible name's certainty alone, because a derived name
 /// must never change what identity evidence reports.
-#[cfg(target_os = "macos")]
 pub(crate) fn read_field_name(
     field: &AXElement,
     deadline: std::time::Instant,
@@ -95,15 +94,6 @@ pub(crate) fn read_field_name(
     };
     let (joined, complete) = crate::tree::child_labels::join_unique_labels([name], sinks.usage);
     Ok(joined.filter(|_| complete))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn read_field_name(
-    _field: &AXElement,
-    _deadline: std::time::Instant,
-    _sinks: &mut crate::tree::child_labels::NameEvidenceSinks<'_>,
-) -> Result<Option<String>, agent_desktop_core::AdapterError> {
-    Ok(None)
 }
 
 #[cfg(test)]

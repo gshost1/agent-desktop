@@ -10,7 +10,7 @@ const WORLD_NAME: &str = "agent-desktop-visibility";
 /// expression runs in an isolated world created for the main frame, so page
 /// scripts cannot observe or spoof it, and the runtime domain is never
 /// enabled.
-pub fn page_visibility(
+pub(crate) fn page_visibility(
     connection: &mut CdpConnection,
     session: &PageSession,
     deadline: Deadline,

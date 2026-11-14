@@ -7,7 +7,7 @@ use crate::{CdpConnection, ElementToken, PageSession};
 
 /// Moves the page's keyboard focus to the node. Only the page's own focus
 /// changes; the browser window is not raised.
-pub fn focus(
+pub(crate) fn focus(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,
