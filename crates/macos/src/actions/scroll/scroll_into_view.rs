@@ -1,7 +1,8 @@
 #[cfg(target_os = "macos")]
 mod imp {
-    use super::super::scroll_plan::{BlockedDirections, bar_can_move, next_reveal_direction};
+    use super::super::scroll_plan::bar_can_move;
     use super::super::scroll_read;
+    use super::super::scroll_reveal::{RevealArea, reveal_steps};
     use crate::actions::chain::chain_delivery::DeliveryOutcome;
     use crate::tree::AXElement;
     use agent_desktop_core::{
@@ -11,7 +12,6 @@ mod imp {
 
     const MAX_SCROLL_ANCESTORS: usize = 4;
     const MAX_ANCESTOR_DEPTH: usize = 32;
-    const MAX_STEPS_PER_ANCESTOR: usize = 24;
     const MOVEMENT_READS: usize = 3;
     const MOVEMENT_PAUSE: Duration = Duration::from_millis(20);
 
@@ -107,65 +107,51 @@ mod imp {
         Ok(areas)
     }
 
-    /// Scrolls `area` toward the target until the plan settles. A step whose
-    /// mechanism failed after it may have been delivered does not end the
-    /// reveal: the target's own bounds decide whether that direction still
-    /// moves, and the failure is returned only so the caller can report it if
-    /// the target never becomes visible. The postcondition, not an
-    /// intermediate return code, decides the outcome.
+    struct LiveRevealArea<'a> {
+        element: &'a AXElement,
+        area: &'a AXElement,
+        deadline: Deadline,
+    }
+
+    impl RevealArea for LiveRevealArea<'_> {
+        fn target_bounds(&mut self) -> Result<Option<Rect>, AdapterError> {
+            element_bounds(self.element, self.deadline)
+        }
+
+        fn viewport(&mut self) -> Result<Option<Rect>, AdapterError> {
+            Ok(crate::tree::element_bounds::clip_bounds(
+                self.area,
+                "AXScrollArea",
+                element_bounds(self.area, self.deadline)?,
+                crate::tree::locator_deadline::from_operation(self.deadline)?,
+            ))
+        }
+
+        fn step(
+            &mut self,
+            direction: &Direction,
+            target: Rect,
+        ) -> Result<Option<bool>, AdapterError> {
+            scroll_step(self.area, self.element, direction, target, self.deadline)
+        }
+
+        fn target_moved(&mut self, target: Rect) -> Result<bool, AdapterError> {
+            target_moved(self.element, target, self.deadline)
+        }
+    }
+
     fn reveal_within(
         element: &AXElement,
         area: &AXElement,
         delivery: &mut crate::actions::DeliveryTracker,
         deadline: Deadline,
     ) -> Result<Option<AdapterError>, AdapterError> {
-        let mut blocked = BlockedDirections::default();
-        let mut previous = None;
-        let mut refusal = None;
-        for _ in 0..MAX_STEPS_PER_ANCESTOR {
-            deadline.ensure_remaining()?;
-            let target = element_bounds(element, deadline)?.ok_or_else(|| {
-                AdapterError::new(ErrorCode::ActionFailed, "Target has no bounds")
-            })?;
-            let Some(viewport) = crate::tree::element_bounds::clip_bounds(
-                area,
-                "AXScrollArea",
-                element_bounds(area, deadline)?,
-                crate::tree::locator_deadline::from_operation(deadline)?,
-            ) else {
-                break;
-            };
-            let Some(direction) =
-                next_reveal_direction(target, viewport, blocked, previous.as_ref())
-            else {
-                break;
-            };
-            let moved = match scroll_step(area, element, &direction, target, deadline) {
-                Ok(Some(moved)) => {
-                    delivery.mark_delivered();
-                    moved
-                }
-                Ok(None) => false,
-                Err(error) if is_step_refusal(&error) => {
-                    if error.disposition != DeliverySemantics::NotDelivered {
-                        delivery.mark_delivered();
-                    }
-                    refusal = Some(error);
-                    target_moved(element, target, deadline).map_err(after_delivery)?
-                }
-                Err(error) => return Err(error),
-            };
-            if moved {
-                previous = Some(direction);
-            } else {
-                blocked.block(&direction);
-            }
-        }
-        Ok(refusal)
-    }
-
-    fn is_step_refusal(error: &AdapterError) -> bool {
-        !matches!(error.code, ErrorCode::Timeout | ErrorCode::PermDenied)
+        let mut live = LiveRevealArea {
+            element,
+            area,
+            deadline,
+        };
+        reveal_steps(&mut live, delivery, deadline)
     }
 
     /// One semantic scroll of `area` toward the target. `None` when the area
