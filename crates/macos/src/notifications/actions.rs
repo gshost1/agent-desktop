@@ -9,10 +9,10 @@ use super::nc_session::{NcSession, close_session};
 #[path = "actions_tests.rs"]
 mod tests;
 
-pub fn dismiss_notification(
+pub(crate) fn dismiss_notification(
     index: usize,
     app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
+    identity: &NotificationIdentity,
     policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
@@ -22,7 +22,7 @@ pub fn dismiss_notification(
     close_session(session, result)
 }
 
-pub fn dismiss_all(
+pub(crate) fn dismiss_all(
     app_filter: Option<&str>,
     policy: InteractionPolicy,
     deadline: Deadline,
@@ -33,9 +33,9 @@ pub fn dismiss_all(
     close_session(session, result)
 }
 
-pub fn notification_action(
+pub(crate) fn notification_action(
     index: usize,
-    identity: Option<&NotificationIdentity>,
+    identity: &NotificationIdentity,
     action_name: &str,
     policy: InteractionPolicy,
     deadline: Deadline,
@@ -46,11 +46,10 @@ pub fn notification_action(
     close_session(session, result)
 }
 
-#[cfg(target_os = "macos")]
 fn dismiss_impl(
     index: usize,
     app_filter: Option<&str>,
-    identity: Option<&NotificationIdentity>,
+    identity: &NotificationIdentity,
     policy: InteractionPolicy,
     pid: i32,
     deadline: Deadline,
@@ -62,7 +61,7 @@ fn dismiss_impl(
         .iter()
         .find(|e| e.info.index == index)
         .ok_or_else(|| AdapterError::notification_not_found(index))?;
-    verify_notification_identity(index, identity, &entry.info)?;
+    verify_notification_identity(index, Some(identity), &entry.info)?;
 
     let info = entry.info.clone();
     let matching_before = super::dismiss_verify::matching_count(&entries, entry);
@@ -70,7 +69,6 @@ fn dismiss_impl(
     Ok(info)
 }
 
-#[cfg(target_os = "macos")]
 fn dismiss_all_impl(
     app_filter: Option<&str>,
     policy: InteractionPolicy,
@@ -105,7 +103,6 @@ fn dismiss_all_impl(
     Ok((dismissed, failures))
 }
 
-#[cfg(target_os = "macos")]
 fn dismiss_entry(
     entry: &super::list::NotificationEntry,
     policy: InteractionPolicy,
@@ -162,7 +159,6 @@ fn dismiss_entry(
     Err(all_dismiss_strategies_failed())
 }
 
-#[cfg(target_os = "macos")]
 fn try_dismiss_button(
     children: &[crate::tree::AXElement],
     deadline: Deadline,
@@ -200,12 +196,9 @@ fn try_dismiss_button(
 }
 
 /// Presses a named action button on the notification at `index`.
-///
-/// When `identity` is provided, rejects rows whose fingerprint no longer matches after NC reordering.
-#[cfg(target_os = "macos")]
 fn action_impl(
     index: usize,
-    identity: Option<&NotificationIdentity>,
+    identity: &NotificationIdentity,
     action_name: &str,
     pid: i32,
     deadline: Deadline,
@@ -218,7 +211,7 @@ fn action_impl(
         .find(|e| e.info.index == index)
         .ok_or_else(|| AdapterError::notification_not_found(index))?;
 
-    verify_notification_identity(index, identity, &entry.info)?;
+    verify_notification_identity(index, Some(identity), &entry.info)?;
 
     let children = crate::notifications::read::children(&entry.element, deadline)?;
     let action_lower = action_name.to_lowercase();
@@ -259,7 +252,6 @@ fn action_impl(
     Ok(ActionResult::delivered_unverified(action_name))
 }
 
-#[cfg(target_os = "macos")]
 fn hover_over(el: &crate::tree::AXElement, deadline: Deadline) -> Result<(), AdapterError> {
     use agent_desktop_core::{MouseButton, MouseEvent, MouseEventKind, Point};
 
@@ -348,37 +340,4 @@ fn all_dismiss_strategies_failed() -> AdapterError {
         ErrorCode::ActionFailed,
         "All dismiss strategies failed (AXDismiss, AXRemoveFromParent, close button, hover+close)",
     )
-}
-
-#[cfg(not(target_os = "macos"))]
-fn dismiss_impl(
-    _index: usize,
-    _app_filter: Option<&str>,
-    _identity: Option<&NotificationIdentity>,
-    _policy: InteractionPolicy,
-    _pid: i32,
-    _deadline: Deadline,
-) -> Result<NotificationInfo, AdapterError> {
-    Err(AdapterError::not_supported("dismiss_notification"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn dismiss_all_impl(
-    _app_filter: Option<&str>,
-    _policy: InteractionPolicy,
-    _pid: i32,
-    _deadline: Deadline,
-) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
-    Err(AdapterError::not_supported("dismiss_all_notifications"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn action_impl(
-    _index: usize,
-    _identity: Option<&NotificationIdentity>,
-    _action_name: &str,
-    _pid: i32,
-    _deadline: Deadline,
-) -> Result<ActionResult, AdapterError> {
-    Err(AdapterError::not_supported("notification_action"))
 }

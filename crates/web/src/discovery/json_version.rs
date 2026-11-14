@@ -18,7 +18,6 @@ pub(crate) fn parse_version_body(port: u16, body: &str) -> Result<BrowserEndpoin
     Ok(BrowserEndpoint {
         websocket_url: WebSocketUrl::parse(&endpoint.websocket_url)?,
         source: EndpointSource::JsonVersion,
-        product: endpoint.product,
     })
 }
 

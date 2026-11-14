@@ -12,7 +12,6 @@ use crate::tree::element_dedupe::push_unique;
 /// Lands a tokenless anchor by its path inside the scoped roots. Only the role
 /// of the landed element is checked here; core confirms its identity against
 /// the full recorded predicate after the landing.
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn find_entry_by_path(
     roots: &[AXElement],
     entry: &RefEntry,
@@ -45,7 +44,6 @@ pub(in crate::tree) fn find_entry_by_path(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn element_at_path(
     root: &AXElement,
     path: &[usize],
@@ -95,7 +93,6 @@ pub(in crate::tree) fn walk_finite_path<T>(
     Ok(Some(current))
 }
 
-#[cfg(target_os = "macos")]
 fn record_path_child_read(
     read: &crate::tree::query::child_read::ChildRead,
     context: &mut ResolveReadContext,
@@ -108,7 +105,6 @@ fn record_path_child_read(
     context.stats.traversal.limits.child_hits += u64::from(read.status.cursor_stalled);
 }
 
-#[cfg(target_os = "macos")]
 fn landed_role_match(
     element: &AXElement,
     entry: &RefEntry,
@@ -134,7 +130,6 @@ fn role_match(role: &LocatorField<String>, expected: &str) -> IdentityMatch {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn read_node(
     element: &AXElement,
     requirements: EvidenceRequirements,
@@ -164,6 +159,6 @@ fn read_node(
     Ok(read)
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "resolve_search_tests.rs"]
 mod tests;

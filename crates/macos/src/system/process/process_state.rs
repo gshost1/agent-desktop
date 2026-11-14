@@ -29,7 +29,6 @@ pub(crate) fn classify(
     })
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn process_state_impl(
     process: agent_desktop_core::ProcessIdentity,
     deadline: agent_desktop_core::Deadline,
@@ -42,7 +41,7 @@ pub(crate) fn process_state_impl(
     }
     let app = element_for_pid(pid);
     let state = classify(true, || {
-        prepare_probe(&app, deadline)?;
+        crate::tree::properties::attributes::set_messaging_timeout(&app, deadline)?;
         Ok(ax_probe(&app, deadline))
     })?;
     if crate::system::process::process_identity::matches_instance(pid, &process.instance)? {
@@ -52,33 +51,6 @@ pub(crate) fn process_state_impl(
     }
 }
 
-#[cfg(target_os = "macos")]
-fn prepare_probe(
-    app: &crate::tree::AXElement,
-    deadline: agent_desktop_core::Deadline,
-) -> Result<(), AdapterError> {
-    crate::tree::properties::attributes::set_messaging_timeout(app, deadline)
-}
-
-/// `kill(pid, 0)`-style liveness check: signal 0 sends no actual signal, the
-/// kernel only validates the target exists and is reachable.
-#[cfg(all(test, target_os = "macos"))]
-fn pid_is_alive(pid: i32) -> bool {
-    const POSIX_ESRCH: i32 = 3;
-
-    if pid <= 0 {
-        return false;
-    }
-    unsafe extern "C" {
-        fn kill(pid: i32, sig: i32) -> i32;
-    }
-    if unsafe { kill(pid, 0) } == 0 {
-        return true;
-    }
-    std::io::Error::last_os_error().raw_os_error() != Some(POSIX_ESRCH)
-}
-
-#[cfg(target_os = "macos")]
 fn ax_probe(app: &crate::tree::AXElement, deadline: agent_desktop_core::Deadline) -> AxProbeResult {
     use accessibility_sys::{kAXErrorCannotComplete, kAXErrorSuccess, kAXRoleAttribute};
     use core_foundation::{
@@ -102,14 +74,6 @@ fn ax_probe(app: &crate::tree::AXElement, deadline: agent_desktop_core::Deadline
         unsafe { CFType::wrap_under_create_rule(value) };
     }
     AxProbeResult::Responsive
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn process_state_impl(
-    _process: agent_desktop_core::ProcessIdentity,
-    _deadline: agent_desktop_core::Deadline,
-) -> Result<ProcessState, AdapterError> {
-    Err(AdapterError::not_supported("process_state"))
 }
 
 #[cfg(test)]

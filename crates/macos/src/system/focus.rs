@@ -1,12 +1,9 @@
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, WindowInfo};
 
-#[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
 const VERIFY_LIMIT: Duration = Duration::from_millis(500);
 
-#[cfg(target_os = "macos")]
 pub(crate) fn focused_app(
     deadline: Deadline,
 ) -> Result<Option<agent_desktop_core::AppInfo>, AdapterError> {
@@ -45,7 +42,6 @@ pub(crate) fn focused_app(
     }))
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn focus_process(
     process: &agent_desktop_core::ProcessIdentity,
     deadline: Deadline,
@@ -55,12 +51,10 @@ pub(crate) fn focus_process(
     focus_identity(identity, deadline).map(|_| ())
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn ensure_app_focused(pid: i32, deadline: Deadline) -> Result<(), AdapterError> {
     focus_identity(capture_identity(pid)?, deadline).map(|_| ())
 }
 
-#[cfg(target_os = "macos")]
 fn capture_identity(
     pid: i32,
 ) -> Result<crate::system::process::process_identity::ProcessIdentity, AdapterError> {
@@ -68,7 +62,6 @@ fn capture_identity(
         .ok_or_else(|| AdapterError::stale_ref_because("Target application process exited"))
 }
 
-#[cfg(target_os = "macos")]
 fn is_frontmost(
     identity: crate::system::process::process_identity::ProcessIdentity,
     deadline: Deadline,
@@ -81,7 +74,6 @@ fn is_frontmost(
     Ok(focused)
 }
 
-#[cfg(target_os = "macos")]
 fn require_same_process(
     identity: crate::system::process::process_identity::ProcessIdentity,
 ) -> Result<(), AdapterError> {
@@ -94,7 +86,6 @@ fn require_same_process(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn focus_identity(
     identity: crate::system::process::process_identity::ProcessIdentity,
     deadline: Deadline,
@@ -111,7 +102,6 @@ fn focus_identity(
     )
 }
 
-#[cfg(target_os = "macos")]
 fn focus_until(
     deadline: Deadline,
     mut is_frontmost: impl FnMut() -> Result<bool, AdapterError>,
@@ -155,12 +145,10 @@ fn focus_until(
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn verify_app_focused(pid: i32, deadline: Deadline) -> Result<(), AdapterError> {
     verify_identity_focused(capture_identity(pid)?, deadline)
 }
 
-#[cfg(target_os = "macos")]
 fn verify_identity_focused(
     identity: crate::system::process::process_identity::ProcessIdentity,
     deadline: Deadline,
@@ -178,7 +166,6 @@ fn verify_identity_focused(
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn focus_window_impl(
     window: &WindowInfo,
     deadline: Deadline,
@@ -202,7 +189,6 @@ pub(crate) fn focus_window_impl(
     verify_identity_focused(identity, deadline).map_err(after_delivery)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn wait_until_main(
     window: &crate::tree::AXElement,
     deadline: Deadline,
@@ -210,7 +196,6 @@ pub(crate) fn wait_until_main(
     wait_until(window, "AXMain", deadline, "window did not become main")
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn verify_window_main(
     window: &crate::tree::AXElement,
     deadline: Deadline,
@@ -227,7 +212,6 @@ pub(crate) fn verify_window_main(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn read_boolean(
     element: &crate::tree::AXElement,
     attribute: &str,
@@ -244,7 +228,6 @@ fn read_boolean(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn wait_until(
     element: &crate::tree::AXElement,
     attribute: &str,
@@ -270,44 +253,10 @@ fn wait_until(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn prepare(element: &crate::tree::AXElement, deadline: Deadline) -> Result<(), AdapterError> {
     crate::tree::properties::attributes::set_messaging_timeout(element, deadline)
 }
 
-#[cfg(target_os = "macos")]
-pub(crate) fn finish_mutation(
-    element: &crate::tree::AXElement,
-    error: i32,
-    operation: &str,
-    deadline: Deadline,
-) -> Result<(), AdapterError> {
-    let delivered = crate::actions::ax_mutation::classify_result(
-        element,
-        operation,
-        "AXUIElement mutation",
-        error,
-    )?;
-    if !delivered {
-        return Err(AdapterError::new(
-            ErrorCode::ActionNotSupported,
-            format!("Accessibility does not support {operation}"),
-        )
-        .with_disposition(DeliverySemantics::not_delivered()));
-    }
-    if deadline.is_expired() {
-        return Err(deadline
-            .timeout_error()
-            .with_details(serde_json::json!({
-                "kind": "mutation_completed_after_deadline",
-                "operation": operation,
-            }))
-            .with_disposition(DeliverySemantics::delivered_unverified()));
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn map_ax_read_error(error: i32, operation: &str) -> AdapterError {
     use accessibility_sys::{
         kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement,
@@ -328,27 +277,12 @@ pub(crate) fn map_ax_read_error(error: i32, operation: &str) -> AdapterError {
         .with_disposition(DeliverySemantics::not_delivered())
 }
 
-#[cfg(target_os = "macos")]
 fn before_activation(error: AdapterError) -> AdapterError {
     error.with_disposition(DeliverySemantics::not_delivered())
 }
 
-#[cfg(target_os = "macos")]
 fn after_delivery(error: AdapterError) -> AdapterError {
     error.with_disposition(DeliverySemantics::delivered_unverified())
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn ensure_app_focused(_pid: i32, _deadline: Deadline) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("focus_app"))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn focus_window_impl(
-    _window: &WindowInfo,
-    _deadline: Deadline,
-) -> Result<(), AdapterError> {
-    Err(AdapterError::not_supported("focus_window"))
 }
 
 #[cfg(test)]
