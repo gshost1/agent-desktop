@@ -37,14 +37,55 @@ pub(crate) fn find_window_for_process(
         .into_iter()
         .filter(|window| window.process_instance.as_deref() == Some(process.instance.as_str()))
         .collect();
-    select_window(
+    select_app_window(
+        adapter,
         candidates,
         crate::AdapterError::new(
             ErrorCode::WindowNotFound,
             "No window found for the selected process instance",
         ),
         "Multiple windows matched the selected process instance",
+        deadline,
     )
+}
+
+/// Chooses one of an application's windows, as every `--app` command does.
+/// When the rules of [`select_window`] leave several windows, the ones the
+/// adapter reports as auxiliary, such as a floating panel or a text field's
+/// suggestion list, are set aside and the choice is made among the rest.
+/// Two or more remaining windows stay ambiguous, and a set that is all
+/// auxiliary or has none is judged as it stands.
+pub(crate) fn select_app_window(
+    adapter: &dyn PlatformAdapter,
+    candidates: Vec<WindowInfo>,
+    empty_error: crate::AdapterError,
+    ambiguous_message: &str,
+    deadline: crate::Deadline,
+) -> Result<WindowInfo, AppError> {
+    match select_window(candidates.clone(), empty_error.clone(), ambiguous_message) {
+        Err(AppError::Adapter(error)) if error.code == ErrorCode::AmbiguousTarget => {
+            match standard_windows(adapter, candidates, deadline) {
+                Some(standard) => select_window(standard, empty_error, ambiguous_message),
+                None => Err(AppError::Adapter(error)),
+            }
+        }
+        chosen => chosen,
+    }
+}
+
+/// The windows among `windows` that are not auxiliary, when the adapter
+/// reports at least one auxiliary window and at least one other.
+fn standard_windows(
+    adapter: &dyn PlatformAdapter,
+    windows: Vec<WindowInfo>,
+    deadline: crate::Deadline,
+) -> Option<Vec<WindowInfo>> {
+    let count = windows.len();
+    let standard: Vec<_> = windows
+        .into_iter()
+        .filter(|window| !adapter.is_auxiliary_window(window, deadline))
+        .collect();
+    (!standard.is_empty() && standard.len() < count).then_some(standard)
 }
 
 /// A menu bar, menu, or alert belongs to the application, not to one of its
