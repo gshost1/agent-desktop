@@ -141,7 +141,7 @@ fn resolve_request(args: &FindArgs, deadline: crate::Deadline) -> LocatorResolve
     let selection = if args.selection.count {
         LocatorSelection::Count
     } else if args.selection.first {
-        LocatorSelection::First
+        LocatorSelection::FirstPreferringExactName
     } else if args.selection.last {
         LocatorSelection::Last
     } else if let Some(index) = args.selection.nth {
@@ -306,6 +306,7 @@ mod tests {
                 selection_complete: true,
                 truncated: true,
                 roles_present: vec!["button".into()],
+                exact_name_unproven: false,
             },
         };
         let response =

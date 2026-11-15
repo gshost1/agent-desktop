@@ -172,3 +172,7 @@ mod live_tests;
 #[cfg(test)]
 #[path = "find_exact_name_tests.rs"]
 mod exact_name_tests;
+
+#[cfg(test)]
+#[path = "find_first_cut_tests.rs"]
+mod first_cut_tests;

@@ -81,6 +81,7 @@ fn incomplete(matches: Vec<LocatorMatch>) -> LocatorResolution {
             selection_complete: false,
             truncated: false,
             roles_present: Vec::new(),
+            exact_name_unproven: false,
         },
     }
 }

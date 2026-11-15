@@ -260,7 +260,7 @@ fn resolve_attempts_with(
 /// first. Its first match there answers the query without the rows; with no
 /// match there, the next pass reads the rows too.
 fn first_pass_rows(request: &LocatorResolveRequest) -> RowReading {
-    if request.selection == super::LocatorSelection::First {
+    if request.selection.is_first() {
         RowReading::LeaveUnread
     } else {
         RowReading::All
@@ -332,7 +332,7 @@ fn resolve_observed_attempt(
     )?;
     let rows_left_unread = tree.rows_unread();
     let unanswered = !resolution.meta.selection_complete;
-    let unproven_first = request.selection == super::LocatorSelection::First
+    let unproven_first = request.selection.is_first()
         && request.materialization == super::LocatorMaterialization::SelectedMatches
         && !unanswered
         && (rows_left_unread || proving)
