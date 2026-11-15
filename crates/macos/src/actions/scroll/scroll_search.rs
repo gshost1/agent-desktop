@@ -16,19 +16,23 @@
 use agent_desktop_core::{AdapterError, Deadline, Direction, ErrorCode, ScrollPage};
 use std::time::Duration;
 
+use super::scroll_loaded_items::LoadedItems;
+use super::scroll_search_step::SearchStep;
 use super::scroll_signals::ScrollSignals;
 use crate::tree::AXElement;
 
 const SETTLE_READS: usize = 8;
 const SETTLE_PAUSE: Duration = Duration::from_millis(25);
-const MAX_WRAPPER_DEPTH: usize = 3;
+const INSIDE_DEPTH: usize = 2;
+const INSIDE_CHILDREN: usize = 16;
+const INSIDE_READS: usize = 32;
 
 pub(crate) fn page_scroll_area(
     element: &AXElement,
     direction: &Direction,
     deadline: Deadline,
 ) -> Result<ScrollPage, AdapterError> {
-    let area = super::find_scroll_area(element, deadline)?.unwrap_or_else(|| element.clone());
+    let area = search_area(element, deadline)?;
     let room = bar_room(&area, direction, deadline)?;
     if room == Some(false) {
         return Ok(ScrollPage::AtEnd { delivered: false });
@@ -36,7 +40,8 @@ pub(crate) fn page_scroll_area(
     let before = super::scroll_page::capture(&area, direction, deadline);
     let mut farthest = || reveal_farthest_item(&area, direction, deadline);
     let mut page_part = || press_bar_part(&area, direction, deadline);
-    let mut page_action = || super::try_action(&area, super::page_action(direction), deadline);
+    let mut page_action =
+        || Ok(super::try_action(&area, super::page_action(direction), deadline).into());
     let mut value_step =
         || super::scroll_search_value::calibrated_value_step(&area, direction, deadline);
     let mut line_step = || bar_line_step(&area, direction, deadline);
@@ -60,34 +65,102 @@ pub(crate) fn page_scroll_area(
 }
 
 /// Sends steps in order until one moves the area, and settles what it did.
-/// A step refused before delivery, or refused with the area proven unmoved,
-/// passes to the next step, and so does a delivered step that moved nothing
-/// while the scroll bar still has room. A refusal whose effect the reads
-/// cannot decide ends the page with that error: something may have been sent.
+/// A step that failed before it sent anything, was refused before delivery,
+/// or was refused with the area proven unmoved passes to the next step, and
+/// so does a sent step that moved nothing: an item already in view reveals
+/// with no movement, so one unmoved step is no end. The page is the end only
+/// when steps were sent, none moved the area, and its bar does not say it
+/// has room; with room left that is an inert area. A refusal whose effect
+/// the reads cannot decide ends the page with that error.
 pub(super) fn send_steps(
-    steps: &mut [&mut dyn FnMut() -> Result<bool, AdapterError>],
+    steps: &mut [&mut dyn FnMut() -> Result<SearchStep, AdapterError>],
     room_left: bool,
     mut settled: impl FnMut() -> ScrollPage,
 ) -> Result<ScrollPage, AdapterError> {
     let mut refusal = None;
+    let mut unmoved = false;
     for step in steps.iter_mut() {
         match step() {
-            Ok(false) => {}
-            Ok(true) => match settled() {
-                ScrollPage::AtEnd { .. } if room_left => refusal = Some(inert_area()),
+            Err(unsent) => refusal = Some(unsent),
+            Ok(SearchStep::Skipped) => {}
+            Ok(SearchStep::Sent) => match settled() {
+                ScrollPage::AtEnd { .. } => unmoved = true,
                 page => return Ok(page),
             },
-            Err(error) if super::scroll_into_view::declined_without_delivery(&error) => {
+            Ok(SearchStep::Refused(error))
+                if super::scroll_into_view::declined_without_delivery(&error) =>
+            {
                 refusal = Some(error);
             }
-            Err(error) => match settled() {
+            Ok(SearchStep::Refused(error)) => match settled() {
                 ScrollPage::Moved => return Ok(ScrollPage::Moved),
                 ScrollPage::AtEnd { .. } => refusal = Some(error),
                 ScrollPage::Unconfirmed => return Err(error),
             },
         }
     }
-    Err(refusal.unwrap_or_else(no_page_step))
+    match (unmoved, room_left) {
+        (true, true) => Err(inert_area()),
+        (true, false) => Ok(ScrollPage::AtEnd { delivered: true }),
+        (false, _) => Err(refusal.unwrap_or_else(no_page_step)),
+    }
+}
+
+/// The scroll area a search pages: the root itself, or else the one around
+/// a list root, or else one inside any other root, such as a pane that holds
+/// a search field beside its list.
+fn search_area(element: &AXElement, deadline: Deadline) -> Result<AXElement, AdapterError> {
+    let role = super::scroll_read::string(element, "AXRole", deadline)?;
+    if role.as_deref() == Some("AXScrollArea") {
+        return Ok(element.clone());
+    }
+    let outside = |deadline| super::find_scroll_area(element, deadline);
+    let inside = |deadline| scroll_area_inside(element, deadline);
+    let found = if looks_inside_first(role.as_deref()) {
+        match inside(deadline)? {
+            Some(area) => Some(area),
+            None => outside(deadline)?,
+        }
+    } else {
+        match outside(deadline)? {
+            Some(area) => Some(area),
+            None => inside(deadline)?,
+        }
+    };
+    Ok(found.unwrap_or_else(|| element.clone()))
+}
+
+/// A list root is paged by the area around it; a row inside it may hold a
+/// scroll area of its own. Any other root may wrap the area it means.
+pub(super) fn looks_inside_first(role: Option<&str>) -> bool {
+    !role.is_some_and(|role| super::scroll_loaded_items::COLLECTION_ROLES.contains(&role))
+}
+
+fn scroll_area_inside(
+    element: &AXElement,
+    deadline: Deadline,
+) -> Result<Option<AXElement>, AdapterError> {
+    let mut level = vec![element.clone()];
+    let mut reads = 0;
+    for _ in 0..INSIDE_DEPTH {
+        let mut next = Vec::new();
+        for parent in &level {
+            for child in super::scroll_read::children_up_to(parent, INSIDE_CHILDREN, deadline)? {
+                if reads == INSIDE_READS {
+                    return Ok(None);
+                }
+                reads += 1;
+                if super::scroll_read::string(&child, "AXRole", deadline)?.as_deref()
+                    == Some("AXScrollArea")
+                {
+                    return Ok(Some(child));
+                }
+                next.push(child);
+            }
+        }
+        level = next;
+    }
+    Ok(None)
 }
 
 /// `Some(true)` when the bar on `direction`'s axis can still move that way,
@@ -109,51 +182,21 @@ fn reveal_farthest_item(
     area: &AXElement,
     direction: &Direction,
     deadline: Deadline,
-) -> Result<bool, AdapterError> {
-    let items = loaded_items(area, deadline)?;
-    let farthest = match direction {
-        Direction::Down | Direction::Right => items.last(),
-        Direction::Up | Direction::Left => items.first(),
-    };
-    match farthest {
-        Some(item) => super::try_action(item, "AXScrollToVisible", deadline),
-        None => Ok(false),
+) -> Result<SearchStep, AdapterError> {
+    match LoadedItems::read(area, deadline)?.farthest(direction, deadline)? {
+        Some(item) => Ok(super::try_action(&item, "AXScrollToVisible", deadline).into()),
+        None => Ok(SearchStep::Skipped),
     }
-}
-
-/// The items the area has loaded: its content's children, below any chain
-/// of single-child wrappers.
-pub(super) fn loaded_items(
-    area: &AXElement,
-    deadline: Deadline,
-) -> Result<Vec<AXElement>, AdapterError> {
-    let mut items = content_of(area, deadline)?;
-    for _ in 0..MAX_WRAPPER_DEPTH {
-        let [only] = items.as_slice() else { break };
-        items = super::scroll_read::children(only, deadline)?;
-    }
-    Ok(items)
-}
-
-fn content_of(area: &AXElement, deadline: Deadline) -> Result<Vec<AXElement>, AdapterError> {
-    let mut content = Vec::new();
-    for child in super::scroll_read::children(area, deadline)? {
-        if super::scroll_read::string(&child, "AXRole", deadline)?.as_deref() != Some("AXScrollBar")
-        {
-            content.push(child);
-        }
-    }
-    Ok(content)
 }
 
 fn press_bar_part(
     area: &AXElement,
     direction: &Direction,
     deadline: Deadline,
-) -> Result<bool, AdapterError> {
+) -> Result<SearchStep, AdapterError> {
     let (bar_attribute, _) = super::scroll_bar_action(direction);
     let Some(bar) = super::scroll_read::element(area, bar_attribute, deadline)? else {
-        return Ok(false);
+        return Ok(SearchStep::Skipped);
     };
     let part = match direction {
         Direction::Down | Direction::Right => "AXIncrementPage",
@@ -161,21 +204,21 @@ fn press_bar_part(
     };
     for child in super::scroll_read::children(&bar, deadline)? {
         if super::scroll_read::string(&child, "AXSubrole", deadline)?.as_deref() == Some(part) {
-            return super::try_action(&child, "AXPress", deadline);
+            return Ok(super::try_action(&child, "AXPress", deadline).into());
         }
     }
-    Ok(false)
+    Ok(SearchStep::Skipped)
 }
 
 fn bar_line_step(
     area: &AXElement,
     direction: &Direction,
     deadline: Deadline,
-) -> Result<bool, AdapterError> {
+) -> Result<SearchStep, AdapterError> {
     let (bar_attribute, increment) = super::scroll_bar_action(direction);
     match super::scroll_read::element(area, bar_attribute, deadline)? {
-        Some(bar) => super::try_action(&bar, increment, deadline),
-        None => Ok(false),
+        Some(bar) => Ok(super::try_action(&bar, increment, deadline).into()),
+        None => Ok(SearchStep::Skipped),
     }
 }
 
@@ -237,7 +280,7 @@ pub(super) fn settle(
     }
 }
 
-fn pause(deadline: Deadline) -> bool {
+pub(super) fn pause(deadline: Deadline) -> bool {
     let Ok(slice) = deadline.remaining_slice(SETTLE_PAUSE) else {
         return false;
     };

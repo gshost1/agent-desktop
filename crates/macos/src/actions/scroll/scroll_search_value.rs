@@ -8,42 +8,80 @@
 
 use agent_desktop_core::{AdapterError, Deadline, Direction, Rect};
 
+use super::scroll_loaded_items::LoadedItems;
+use super::scroll_search_step::SearchStep;
 use crate::tree::AXElement;
 
 const PROBE_SHIFT: f64 = 0.002;
 const VIEWPORT_SHARE: f64 = 0.8;
 const MIN_MEASURED_PIXELS: f64 = 0.5;
+const PROBE_READS: usize = 8;
 
 pub(super) fn calibrated_value_step(
     area: &AXElement,
     direction: &Direction,
     deadline: Deadline,
-) -> Result<bool, AdapterError> {
+) -> Result<SearchStep, AdapterError> {
     let (bar_attribute, _) = super::scroll_bar_action(direction);
     let Some(bar) = super::scroll_read::element(area, bar_attribute, deadline)? else {
-        return Ok(false);
+        return Ok(SearchStep::Skipped);
     };
     let Some(start) = super::scroll_read::number(&bar, "AXValue", deadline)? else {
-        return Ok(false);
+        return Ok(SearchStep::Skipped);
     };
-    let items = super::scroll_search::loaded_items(area, deadline)?;
-    let Some(probe) = items.get(items.len() / 2) else {
-        return Ok(false);
+    let items = LoadedItems::read(area, deadline)?;
+    let Some(probe) = items.middle() else {
+        return Ok(SearchStep::Skipped);
     };
     let (Some(viewport), Some(before)) = (bounds(area, deadline)?, bounds(probe, deadline)?) else {
-        return Ok(false);
+        return Ok(SearchStep::Skipped);
     };
-    if !write_value(&bar, shifted(start, PROBE_SHIFT, direction), deadline)? {
-        return Ok(false);
-    }
-    let Ok(Some(after)) = bounds(probe, deadline) else {
-        return Ok(true);
+    let mut reads = 0;
+    let moved = || {
+        if reads > 0 && !super::scroll_search::pause(deadline) {
+            return None;
+        }
+        reads += 1;
+        let after = bounds(probe, deadline).ok().flatten()?;
+        Some((offset(&after, direction) - offset(&before, direction)).abs())
     };
-    let measured = (offset(&after, direction) - offset(&before, direction)).abs();
-    if let Some(page) = page_shift(measured, length(&viewport, direction)) {
-        write_value(&bar, shifted(start, page, direction), deadline)?;
+    Ok(calibrate(
+        (start, length(&viewport, direction)),
+        direction,
+        |value| write_value(&bar, value, deadline),
+        moved,
+    ))
+}
+
+/// Writes a probe shift, waits for the probe item to move, then writes the
+/// shift that moves the content by the viewport share. A probe the reads
+/// never see move sizes no page, so the bar is put back where it started and
+/// the step counts as not sent: a probe shift left in place would read as a
+/// page that moved a fraction of a pixel.
+pub(super) fn calibrate(
+    (start, viewport): (f64, f64),
+    direction: &Direction,
+    mut write: impl FnMut(f64) -> Result<bool, AdapterError>,
+    mut moved: impl FnMut() -> Option<f64>,
+) -> SearchStep {
+    match write(shifted(start, PROBE_SHIFT, direction)) {
+        Ok(true) => {}
+        unsent => return unsent.into(),
     }
-    Ok(true)
+    let measured =
+        (0..PROBE_READS).find_map(|_| moved().filter(|pixels| *pixels >= MIN_MEASURED_PIXELS));
+    if let Some(page) = measured.and_then(|pixels| page_shift(pixels, viewport)) {
+        match write(shifted(start, page, direction)) {
+            Ok(true) => return SearchStep::Sent,
+            Ok(false) => {}
+            Err(error) => return SearchStep::Refused(error),
+        }
+    }
+    match write(start) {
+        Ok(true) => SearchStep::Skipped,
+        Ok(false) => SearchStep::Sent,
+        Err(error) => SearchStep::Refused(error),
+    }
 }
 
 /// The value change that moves the content by the viewport share, from the
