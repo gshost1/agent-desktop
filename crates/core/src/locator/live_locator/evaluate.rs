@@ -6,7 +6,7 @@ use super::{
     match_verdict::MatchVerdict,
     materialize::{materialize_refmap, ref_entry},
     predicate::{normalize_query, self_text_verdict, self_verdict},
-    select::{is_exact_name, match_data, selected_indices},
+    select::{exact_name_wanted, is_exact_name, match_data, selected_indices},
     selection_completeness::first_is_authoritative,
     validate::{validate_query, validate_request},
 };
@@ -83,14 +83,17 @@ pub(super) fn evaluate_locator_tree_in(
         }
     }
     stats.evaluation.matched_nodes = matched_indices.len() as u64;
-    let (selected, truncated) = selected_indices(&matched_indices, request.selection, |index| {
+    let is_exact = |index: usize| {
         tree.nodes.get(index).is_some_and(|node| {
             is_exact_name(
                 &normalized,
                 &node.evidence.display_name().unwrap_or_default(),
             )
         })
-    });
+    };
+    let (selected, truncated) = selected_indices(&matched_indices, request.selection, is_exact);
+    let settled_without_rows = !prefers_exact_name(request.selection, &normalized)
+        || selected.first().is_some_and(|index| is_exact(*index));
     let mut complete = tree.structurally_complete && !unknown;
     let refmap = match request.materialization {
         LocatorMaterialization::None => None,
@@ -145,12 +148,13 @@ pub(super) fn evaluate_locator_tree_in(
     };
     let total_matches = u32::try_from(matched_indices.len())
         .map_err(|_| AdapterError::internal("locator match count exceeds u32"))?;
-    let first_outside_unread_rows = matches!(request.selection, super::LocatorSelection::First)
+    let first_outside_unread_rows = request.selection.is_first()
         && tree.rows_unread()
         && !unknown
         && !selected_matches.is_empty();
     let selection_complete = complete || first_outside_unread_rows || {
-        matches!(request.selection, super::LocatorSelection::First)
+        request.selection.is_first()
+            && settled_without_rows
             && selected_matches.first().is_some_and(|selected| {
                 let root_verdicts = (0..tree.nodes.len())
                     .map(|index| matches[cell(index, root_clause, clauses.len())])
@@ -299,6 +303,18 @@ fn cell(node: usize, clause: usize, clause_count: usize) -> usize {
 /// Whether a node sits inside the subtree a rooted query is scoped to. The scope
 /// is the matched root's own path in the same observation, so the root itself and
 /// its descendants are in and nothing else is.
+/// A pick by whole name over a partial read is final only when the pick is a
+/// whole-name match: a match whose name only contains the query could be
+/// passed over by a whole-name match the read has not reached.
+fn prefers_exact_name(selection: super::LocatorSelection, query: &LocatorQuery) -> bool {
+    selection == super::LocatorSelection::FirstPreferringExactName
+        && exact_name_wanted(query).is_some()
+}
+
 fn in_scope(path: &RefPath, scope: Option<&RefPath>) -> bool {
     scope.is_none_or(|scope| path.starts_with(scope.as_slice()))
 }
+
+#[cfg(test)]
+#[path = "evaluate_tests.rs"]
+mod tests;

@@ -3,7 +3,7 @@ use crate::{locator::LocatorQuery, tree::search_text};
 
 /// The whole name a `--name` query asks for when it matches by substring.
 /// A match whose whole name equals it is the one the caller named.
-fn exact_name_wanted(query: &LocatorQuery) -> Option<&str> {
+pub(crate) fn exact_name_wanted(query: &LocatorQuery) -> Option<&str> {
     if query.exact {
         return None;
     }
@@ -33,6 +33,16 @@ pub(crate) fn selected_indices(
         }
         LocatorSelection::Count => (Vec::new(), false),
         LocatorSelection::First => take(matches, 1),
+        LocatorSelection::FirstPreferringExactName => (
+            matches
+                .iter()
+                .copied()
+                .find(|index| is_exact(*index))
+                .or_else(|| matches.first().copied())
+                .into_iter()
+                .collect(),
+            matches.len() > 1,
+        ),
         LocatorSelection::Last => (
             matches.last().copied().into_iter().collect(),
             matches.len() > 1,
