@@ -2,6 +2,7 @@ use crate::command_policy::CommandEffect;
 use clap::Subcommand;
 
 pub(crate) mod emit;
+pub(crate) mod error_line;
 mod identity;
 pub(crate) mod output;
 mod post_action_wait;

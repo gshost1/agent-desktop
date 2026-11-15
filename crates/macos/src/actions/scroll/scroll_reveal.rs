@@ -84,7 +84,8 @@ fn overshoot_error() -> AdapterError {
     .with_details(serde_json::json!({ "kind": "scroll_step_overshoot" }))
     .with_suggestion(
         "The area can still move, but its page steps are larger than the gap to the target. \
-         Scroll it with '--headed', whose wheel steps are smaller, then retry.",
+         If the user allows physical input, scroll it with '--headed', whose wheel steps are \
+         smaller, then retry.",
     )
 }
 

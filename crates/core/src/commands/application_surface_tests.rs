@@ -165,10 +165,12 @@ fn find_materializes_refs_from_the_application_surface() {
     let context = CommandContext::default();
     let result = find::execute(
         find::FindArgs {
-            app: Some("MenuApp".into()),
-            window_id: None,
-            root: None,
-            surface: SnapshotSurface::Menubar,
+            scope: find::FindScopeArgs {
+                app: Some("MenuApp".into()),
+                window_id: None,
+                root: None,
+                surface: SnapshotSurface::Menubar,
+            },
             filter: find::FindFilterArgs {
                 role: Some("menuitem".into()),
                 name: Some("Help".into()),

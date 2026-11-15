@@ -316,6 +316,9 @@ struct ContentView: View {
                     }
                     .padding()
                 }
+
+            FloatingPanelControls()
+            FixtureFormControls()
         }
     }
 

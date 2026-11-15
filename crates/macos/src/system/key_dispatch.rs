@@ -57,6 +57,15 @@ fn press_for_app(
     if matches!(menu, MenuShortcutOutcome::Pressed(_)) {
         return post_delivery_process_result(&process, menu_shortcut_report(&menu));
     }
+    if host_owns_keys
+        && !policy.allow_focus_steal
+        && crate::system::menu_shortcut::background_chord::runs_only_through_menu(combo)
+        && crate::system::menu_shortcut::background_chord::reads_background(&app, deadline)?
+    {
+        return Err(
+            crate::system::menu_shortcut::background_chord::unrouted_in_background(combo, &menu),
+        );
+    }
     if let Some(action) = host_key_action(host_owns_keys, combo) {
         if let Some(modal) = modal::ModalWatch::capture(&app, action, deadline)? {
             return modal_route::press_on_modal(&target, (combo, policy), &modal, deadline)
@@ -211,8 +220,9 @@ fn no_focused_element_error(policy: InteractionPolicy) -> AdapterError {
     .with_suggestion(if policy.allow_focus_steal {
         "Ensure the target field has keyboard focus before retrying, or run the menu command without keys: find the item with 'snapshot --app <app> --surface menubar' and click its ref."
     } else {
-        "Retry with --headed so the app can take focus, or run the menu command without \
-         keys: find the item with 'snapshot --app <app> --surface menubar' and click its ref."
+        "Run the menu command without keys: find the item with 'snapshot --app <app> --surface \
+         menubar' and click its ref. If the user allows physical input, retry with --headed \
+         instead, so the app can take focus; do not do both."
     })
 }
 

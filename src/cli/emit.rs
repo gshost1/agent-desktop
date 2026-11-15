@@ -16,7 +16,7 @@ use serde_json::Value;
 pub(crate) fn finish(cmd_name: &str, result: Result<Value, AppError>, lines: bool) -> ExitCode {
     let (result, pretty) = present_lines(cmd_name, result, lines);
     let response = response(cmd_name, result);
-    if let Err(write_err) = emit_response(&response, pretty) {
+    if let Err(write_err) = emit_with_error_line(&response, pretty) {
         return report_output_failure(write_err);
     }
     if response.ok {
@@ -29,6 +29,14 @@ pub(crate) fn finish(cmd_name: &str, result: Result<Value, AppError>, lines: boo
 pub(crate) fn report_output_failure(write_err: std::io::Error) -> ExitCode {
     eprintln!("agent-desktop: failed to write response to stdout: {write_err}");
     ExitCode::FAILURE
+}
+
+/// Prints `response` on stdout and then, for an error, its one-line summary on
+/// stderr (`error_line`).
+pub(crate) fn emit_with_error_line(response: &Response, pretty: bool) -> std::io::Result<()> {
+    emit_response(response, pretty)?;
+    super::error_line::report_response_errors(response);
+    Ok(())
 }
 
 pub(crate) fn emit_response(response: &impl serde::Serialize, pretty: bool) -> std::io::Result<()> {

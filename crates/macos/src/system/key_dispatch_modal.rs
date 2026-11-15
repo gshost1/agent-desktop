@@ -227,7 +227,7 @@ fn window_on_screen(window: i64) -> Result<bool, AdapterError> {
     Ok(
         records_from_dictionaries(window_dictionaries()?, WindowRecordScope::Window(window))?
             .iter()
-            .any(|record| record.visible),
+            .any(|record| record.presence.is_onscreen()),
     )
 }
 
@@ -274,8 +274,11 @@ fn ignored_suggestion(kind: &str, (button, present): (&str, bool)) -> String {
     let route = match (present, button) {
         (true, "cancel_button") => "click its cancel button by ref",
         (true, _) => "click its default button by ref",
+        (false, "cancel_button") => {
+            "click its Close or Cancel button by ref to dismiss it, or, if the user allows physical input, send the key once with --headed instead, so its window takes focus first"
+        }
         (false, _) => {
-            "send the key once more with --headed so its window takes focus first, or click its Close or Cancel button by ref to dismiss it"
+            "click the button that confirms it, such as OK, Go or Save, by ref, or, if the user allows physical input, send the key once with --headed instead, so its window takes focus first. Do not click Close or Cancel: that discards the edit"
         }
     };
     format!(

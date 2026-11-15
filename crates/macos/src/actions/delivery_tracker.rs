@@ -1,6 +1,6 @@
 use agent_desktop_core::{AdapterError, DeliverySemantics};
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct DeliveryTracker {
     delivered_units: usize,
 }

@@ -51,10 +51,12 @@ fn supported_surface_requests_do_not_discover_unrelated_capabilities() {
     .unwrap_err();
     let find = crate::commands::find::execute(
         crate::commands::find::FindArgs {
-            app: None,
-            window_id: None,
-            root: None,
-            surface: SnapshotSurface::Window,
+            scope: crate::commands::find::FindScopeArgs {
+                app: None,
+                window_id: None,
+                root: None,
+                surface: SnapshotSurface::Window,
+            },
             filter: crate::commands::find::FindFilterArgs {
                 role: Some("button".into()),
                 name: None,

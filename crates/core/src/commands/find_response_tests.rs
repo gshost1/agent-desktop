@@ -1,7 +1,7 @@
-use super::{format_match, format_response};
+use super::{format_match, format_response, order_exact_names_first};
 use crate::{
     LocatorQuery, Rect,
-    commands::find::{FindArgs, FindFilterArgs, FindSelectionArgs},
+    commands::find::{FindArgs, FindFilterArgs, FindScopeArgs, FindSelectionArgs},
     locator::live_locator::{
         LocatorMatchData, LocatorResolution, LocatorResolutionMeta, LocatorStats,
     },
@@ -9,10 +9,12 @@ use crate::{
 
 fn args(allow_partial: bool, count: bool) -> FindArgs {
     FindArgs {
-        app: None,
-        window_id: None,
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: None,
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             role: None,
             name: None,
@@ -139,4 +141,46 @@ fn matches_omit_absent_values_and_empty_lists_as_the_golden_file_shows() {
         serde_json::from_str(include_str!("../../../../tests/fixtures/find-matches.json"))
             .expect("golden parses");
     assert_eq!(serde_json::Value::from(printed), golden);
+}
+
+fn name_query(name: &str, exact: bool) -> LocatorQuery {
+    let mut query = LocatorQuery {
+        exact,
+        ..LocatorQuery::default()
+    };
+    query.identity.name = Some(crate::tree::search_text::normalize(name));
+    query
+}
+
+#[test]
+fn a_whole_name_match_comes_before_names_that_only_contain_it() {
+    let mut names = vec![
+        "Undo Subscript",
+        "Show Subscripts",
+        "Subscript",
+        "subscript",
+    ];
+
+    order_exact_names_first(&mut names, &name_query("Subscript", false), |name| name);
+
+    assert_eq!(
+        names,
+        vec![
+            "Subscript",
+            "subscript",
+            "Undo Subscript",
+            "Show Subscripts"
+        ]
+    );
+}
+
+#[test]
+fn without_a_whole_name_match_or_a_name_query_the_order_is_kept() {
+    let mut names = vec!["Undo Typing", "Typing Speed"];
+    order_exact_names_first(&mut names, &name_query("Typing", false), |name| name);
+    assert_eq!(names, vec!["Undo Typing", "Typing Speed"]);
+
+    let mut unnamed = vec!["b", "a"];
+    order_exact_names_first(&mut unnamed, &LocatorQuery::default(), |name| name);
+    assert_eq!(unnamed, vec!["b", "a"]);
 }

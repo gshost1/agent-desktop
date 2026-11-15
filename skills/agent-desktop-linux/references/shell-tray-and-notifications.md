@@ -200,25 +200,26 @@ How an entry is read:
 The protocol has no history query and GNOME exposes no notification ID, so an
 index is a position, not an identity. Within one command an entry is its
 accessibility object plus its words. Every single-item mutation reads the list
-twice, checks the expected app and title at the index, checks that both reads
-found the same object, and proves the effect by the object leaving the list.
+twice, lets core pick the entry that carries the key (or the expected app and
+title at the index), checks that both reads found the same object, and proves the effect by the object leaving the list.
 
 The example assumes exactly one disposable notification from `Skill Example`,
-titled `Beta`, already exists. `jq` selects the actual index, and the mutation
-guards both identity fields:
+titled `Beta`, already exists. `jq` selects its key, which names the entry by
+app, title and body:
 
 ```bash
 agent-desktop list-notifications
-notice_index=$(agent-desktop list-notifications --app "Skill Example" --text Beta | jq -r '.data.notifications[] | select(.app_name == "Skill Example" and .title == "Beta") | .index')
-test -n "$notice_index" && agent-desktop --headed dismiss-notification "$notice_index" --expected-app "Skill Example" --expected-title Beta
+notice_key=$(agent-desktop list-notifications --app "Skill Example" --text Beta | jq -r '.data.notifications[] | select(.app_name == "Skill Example" and .title == "Beta") | .key' | head -n1)
+test -n "$notice_key" && agent-desktop --headed dismiss-notification --key "$notice_key"
 agent-desktop list-notifications --app "Skill Example"
 ```
 
 Single-item `dismiss-notification` and `notification-action` require
-`--headed` and at least one of `--expected-app` / `--expected-title`.
+`--headed` and the entry's `--key`, or INDEX with at least one of
+`--expected-app` / `--expected-title`.
 `dismiss-notification` returns the entry it removed as `data.dismissed`.
 
-- No identity flag: `INVALID_ARGS`. Headless mutation: `POLICY_DENIED`,
+- No key and no identity flag: `INVALID_ARGS`. Headless mutation: `POLICY_DENIED`,
   `dismiss-all-notifications` on an empty list included.
 - Missing index or changed identity: `NOTIFICATION_NOT_FOUND`. `--app` does not
   renumber the list: INDEX stays the position in the unfiltered list, and the

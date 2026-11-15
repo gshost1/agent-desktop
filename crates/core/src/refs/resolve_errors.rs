@@ -66,8 +66,8 @@ fn identity_not_unique(entry: &RefEntry) -> AdapterError {
 
 const TWIN_SUGGESTION: &str = "When this ref was captured, another element in its window had the \
      same role, name, description and native id, so every new snapshot refuses it the same way. \
-     Act on a control that is unique in the window, reach this one with the keyboard, or, where \
-     headed pointer input is available, pick it with --headed mouse-click --xy X,Y. A ref from a \
+     Act on a control that is unique in the window or reach this one with the keyboard; only if \
+     the user allows physical input, pick it with --headed mouse-click --xy X,Y instead. A ref from a \
      snapshot taken before 2.7 may not be a twin: take a new snapshot first.";
 
 const MENU_TWIN_SUGGESTION: &str = "This menu entry has a twin with the same role, name, \
@@ -87,8 +87,8 @@ const MENU_BAR_TWIN_SUGGESTION: &str = "This menu has a twin with the same role,
 
 const OPEN_MENU_TWIN_SUGGESTION: &str = "The open menu holds another entry with the same role, \
      name, description and native id, so every snapshot of it refuses this ref. Move to the entry \
-     with the arrow keys and press Return, or, where headed pointer input is available, pick it \
-     with --headed mouse-click --xy X,Y. A ref from a snapshot taken before 2.7 may not be a twin: \
+     with the arrow keys and press Return; only if the user allows physical input, pick it with \
+     --headed mouse-click --xy X,Y instead. A ref from a snapshot taken before 2.7 may not be a twin: \
      take a new snapshot first.";
 
 /// Picks the way out from where the twin was counted: a menu entry seen in a
@@ -142,8 +142,8 @@ fn capture_unknown(entry: &RefEntry) -> AdapterError {
     )
     .with_suggestion(
         "The element's identity cannot be read reliably, so a new snapshot may refuse it again. \
-         Target it through a different selector, or, where headed pointer input is available, \
-         an explicit --headed coordinate click.",
+         Target it through a different selector, or, if the user allows physical input, use an \
+         explicit --headed coordinate click.",
     )
     .with_details(json!({
         "kind": "identity_unproven",
@@ -178,7 +178,7 @@ pub(crate) fn ambiguous_live_match(entry: &RefEntry) -> AdapterError {
     .with_suggestion(
         "An element identical to the captured one appeared, so neither can be picked by ref and \
          a new snapshot refuses both as twins. Act on a control that is unique in the window, or, \
-         where headed pointer input is available, use an explicit --headed coordinate click.",
+         if the user allows physical input, use an explicit --headed coordinate click.",
     )
     .with_details(json!({
         "kind": "saved_ref_ambiguous",

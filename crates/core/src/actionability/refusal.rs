@@ -184,7 +184,7 @@ fn suggestion(
         if request.policy.is_headed() {
             "This field has no semantic text-write action. Use 'type' in the current headed mode for physical keyboard input; select the existing text first if you intend to replace it. If typing refuses because the field cannot be focused, use clipboard-set and the app's paste shortcut, then verify the field."
         } else {
-            "This field has no semantic text-write action. Use '--headed type' for physical keyboard input; select the existing text first if you intend to replace it. If typing refuses because the field cannot be focused, use clipboard-set and the app's paste shortcut, then verify the field."
+            "This field has no semantic text-write action. Put the text on the clipboard with clipboard-set and send the app's paste shortcut, then verify the field. If the user allows physical input, '--headed type' sends real keys instead; select the existing text first if you intend to replace it."
         }
     } else {
         NOT_SATISFIABLE_SUGGESTION

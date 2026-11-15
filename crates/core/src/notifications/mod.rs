@@ -1,10 +1,12 @@
 pub(crate) mod dismiss_all_notifications_request;
 pub(crate) mod dismiss_notification_request;
 pub(crate) mod notification_action_request;
+pub(crate) mod notification_address;
 pub(crate) mod notification_baseline;
 pub(crate) mod notification_filter;
 pub(crate) mod notification_identity;
-pub(crate) mod notification_identity_check;
 pub(crate) mod notification_info;
 pub(crate) mod notification_key;
 pub(crate) mod notification_seed;
+pub(crate) mod notification_target;
+pub(crate) mod notification_token;

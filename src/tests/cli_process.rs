@@ -6,6 +6,9 @@ mod support;
 #[path = "cli_parse_error_tests.rs"]
 mod parse_error_tests;
 
+#[path = "cli_error_line_tests.rs"]
+mod error_line_tests;
+
 #[cfg(target_os = "linux")]
 #[path = "cli_launch_display_tests.rs"]
 mod launch_display_tests;

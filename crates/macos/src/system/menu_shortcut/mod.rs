@@ -6,6 +6,7 @@
 //! item, except that a background app's disabled item is refused: its command
 //! would not run, and neither would a keystroke to a background app.
 
+pub(crate) mod background_chord;
 pub(crate) mod menu_item_shortcut;
 pub(crate) mod menu_match;
 pub(crate) mod menu_node;
@@ -135,8 +136,9 @@ fn disabled_in_background(walk: &menu_walk::MenuWalk) -> AdapterError {
         "physical_delivery_started": false,
     }))
     .with_suggestion(
-        "Retry with --headed, or bring the app's window forward with focus-window and press again; \
-         the app enables window commands only while it is frontmost",
+        "Bring the app's window forward with focus-window and press again; the app enables window \
+         commands only while it is frontmost. If the user allows physical input, retry with \
+         --headed instead",
     )
     .with_disposition(DeliverySemantics::not_delivered())
 }
