@@ -26,7 +26,12 @@ pub(super) fn exchange(
 ) -> Result<Exchange, AdapterError> {
     let mut stream = match UnixStream::connect(socket) {
         Ok(stream) => stream,
-        Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => {
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::NotFound | ErrorKind::ConnectionRefused
+            ) =>
+        {
             return Ok(Exchange::Absent);
         }
         Err(error) => {
@@ -63,7 +68,11 @@ pub(super) fn exchange(
         return Ok(Exchange::Delivered);
     }
     if let Err(error) = stream.shutdown(std::net::Shutdown::Write) {
-        return closed_early(control, error, "Could not finish the cursor overlay control");
+        return closed_early(
+            control,
+            error,
+            "Could not finish the cursor overlay control",
+        );
     }
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
