@@ -54,9 +54,16 @@ impl ActionabilityReport {
     /// a policy refusal, or a genuinely hidden target will not resolve by
     /// waiting, but bounds not yet matching a stale snapshot hash might.
     pub(crate) fn only_blocking_check_is_stability(&self) -> bool {
+        self.sole_blocking_check()
+            .is_some_and(|check| check.check == "stable")
+    }
+
+    /// The one check that keeps this report from being actionable, or `None`
+    /// when no check or more than one does.
+    pub(crate) fn sole_blocking_check(&self) -> Option<&ActionabilityCheck> {
         let mut blocking = self.checks.iter().filter(|check| is_blocking(check));
-        matches!(blocking.next(), Some(check) if check.check == "stable")
-            && blocking.next().is_none()
+        let sole = blocking.next()?;
+        blocking.next().is_none().then_some(sole)
     }
 
     pub(crate) fn failure_reasons(&self) -> String {
