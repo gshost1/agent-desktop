@@ -94,7 +94,13 @@ fn dismiss_impl(
     let index = info.index;
 
     invoke_dismiss(&entry.element, index)?;
-    let mut current = read_settling_without(std::slice::from_ref(&info), hwnd, &filter, deadline)?;
+    let mut current = read_settling_without(
+        std::slice::from_ref(&info),
+        &before,
+        hwnd,
+        &filter,
+        deadline,
+    )?;
     let mut step = after_dismiss(&info, &before, &current);
     if step == DismissStep::SubstituteClearAll
         && clear_all_still_the_sole_target(hwnd, &info, &before, deadline)?
@@ -102,7 +108,13 @@ fn dismiss_impl(
         let root = crate::tree::automation::root_from_hwnd(hwnd, deadline)?;
         if let Some(clear) = super::read::find_clear_all_button(&root)? {
             invoke_element(&clear)?;
-            current = read_settling_without(std::slice::from_ref(&info), hwnd, &filter, deadline)?;
+            current = read_settling_without(
+                std::slice::from_ref(&info),
+                &before,
+                hwnd,
+                &filter,
+                deadline,
+            )?;
             step = after_dismiss(&info, &before, &current);
         }
     }
@@ -160,7 +172,7 @@ fn dismiss_all_impl(
             .ok_or_else(super::read::missing_clear_all_error)?;
         invoke_element(&clear)?;
     }
-    let current = read_settling_without(&captured, hwnd, &filter, deadline)?;
+    let current = read_settling_without(&captured, &captured, hwnd, &filter, deadline)?;
     let failures = dismiss_all_failures(&captured, &current, &invoke_errors);
     let dismissed = captured
         .iter()
@@ -244,13 +256,19 @@ fn action_impl(
     deadline: Deadline,
 ) -> Result<ActionResult, AdapterError> {
     let filter = NotificationFilter::default();
-    let (entry, _) = locate(target, &filter, hwnd, deadline)?;
+    let (entry, before) = locate(target, &filter, hwnd, deadline)?;
     let original = entry.info.clone();
     let index = original.index;
     invoke_notification_action(&entry.element, action_name, index)?;
-    let current = read_settling_without(std::slice::from_ref(&original), hwnd, &filter, deadline)?;
+    let current = read_settling_without(
+        std::slice::from_ref(&original),
+        &before,
+        hwnd,
+        &filter,
+        deadline,
+    )?;
     let mut result = ActionResult::delivered_unverified(action_name);
-    if action_changed_state(&original, &current) {
+    if action_changed_state(&original, &before, &current) {
         result = result.with_verified_delivery();
     }
     Ok(result)

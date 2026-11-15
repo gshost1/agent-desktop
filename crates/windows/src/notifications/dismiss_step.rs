@@ -1,6 +1,6 @@
 use agent_desktop_core::NotificationInfo;
 
-use super::verify::{entry_gone, same_identity};
+use super::verify::{departed, matching_count, same_identity};
 
 #[cfg(test)]
 #[path = "dismiss_step_tests.rs"]
@@ -17,16 +17,22 @@ pub(super) enum DismissStep {
 /// The step the dismiss path takes once the entry's own dismiss control was
 /// invoked, judged from the listing the target was picked from (`before`) and
 /// the settled re-read (`current`).
+///
+/// The dismiss is verified when the entries identical to the target dropped
+/// in number. The clear-all stands in for an ignored dismiss only when the
+/// target had no identical twin when it was picked and is still the center's
+/// sole entry: a survivor beside a listed twin cannot be told apart from that
+/// twin, so clearing it could remove a notification nobody targeted. That
+/// case is reported as survived, never cleared.
 pub(super) fn after_dismiss(
     target: &NotificationInfo,
     before: &[NotificationInfo],
     current: &[NotificationInfo],
 ) -> DismissStep {
-    let _ = before;
-    if entry_gone(target, current) {
+    if departed(std::slice::from_ref(target), before, current) {
         return DismissStep::Verified;
     }
-    if is_sole_target(target, current) {
+    if matching_count(before, target) == 1 && is_sole_target(target, current) {
         return DismissStep::SubstituteClearAll;
     }
     DismissStep::Survived
