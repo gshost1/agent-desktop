@@ -42,7 +42,9 @@ pub(crate) fn launch_app_impl(
     validate_launched_target(&target, &launched).map_err(after_launch)?;
     let window =
         settled_window(launched.0, &launched.1, options, deadline).map_err(after_launch)?;
-    result_from_launched(&launched, window, id, path).map_err(after_launch)
+    let mut result = result_from_launched(&launched, window, id, path).map_err(after_launch)?;
+    launch_off_space::explain_off_space(&mut result, launched.0, deadline);
+    Ok(result)
 }
 
 /// A running application is reported, and brought forward when asked, without
@@ -78,6 +80,7 @@ fn use_running_app(
     };
     let mut result = result_from_app(app, window, path);
     result.notes.suggestion = joined_notes([several, ignored_inputs_hint(options)]);
+    launch_off_space::explain_off_space(&mut result, pid, deadline);
     Ok(result)
 }
 
@@ -332,3 +335,6 @@ pub(crate) mod launch_settle;
 
 #[path = "launch_window.rs"]
 pub(crate) mod launch_window;
+
+#[path = "launch_off_space.rs"]
+pub(crate) mod launch_off_space;
