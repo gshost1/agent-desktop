@@ -70,7 +70,7 @@ fn live_window_info(
         None => "window handle is no longer present in the top-level inventory",
     };
     match presented_surface_at(handle, deadline)? {
-        Some(surface) if surface.pid == expected.pid => Ok(WindowInfo {
+        Some((surface, _)) if surface.pid == expected.pid => Ok(WindowInfo {
             id: expected.id.clone(),
             title: surface.title,
             app: expected.app.clone(),

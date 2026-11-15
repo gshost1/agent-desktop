@@ -6,18 +6,21 @@
 
 use agent_desktop_core::commands::focus;
 use agent_desktop_core::commands::helpers::RefArgs;
+use agent_desktop_core::commands::open_system_surface::{self, OpenSystemSurfaceArgs};
 use agent_desktop_core::commands::snapshot::{self, SnapshotArgs};
-use agent_desktop_core::{CommandContext, SnapshotSurface};
+use agent_desktop_core::{AdapterError, AppError, CommandContext, SnapshotSurface};
 
 use super::resolve_window_strict;
 use crate::adapter::WindowsAdapter;
 use crate::system::capture::capture_test_support::HomeIsolation;
 use crate::system::fixture::test_support::{
-    SHELL_SURFACE_LOCK, stage_foreground, with_interaction_lease_test_lock,
+    SHELL_SURFACE_LOCK, or_skip_shell, stage_foreground, with_interaction_lease_test_lock,
 };
 use crate::system::fixture::test_time::deadline;
 use crate::system::private_file::WindowsPrivateFile;
+use crate::system::shell::raise_oracle::{responded_since, witness_desktop};
 use crate::system::shell::shell_surface::resolve_surface;
+use crate::system::shell::shell_surface_open::close_surface;
 use crate::system::window::window_ops::{is_root_foreground_window, parse_handle};
 use crate::tree::fixture::bootstrap;
 
@@ -37,7 +40,7 @@ fn first_ref(value: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn taskbar_snapshot() -> serde_json::Value {
+fn surface_snapshot(surface: SnapshotSurface) -> serde_json::Value {
     snapshot::execute(
         SnapshotArgs {
             app: None,
@@ -46,7 +49,7 @@ fn taskbar_snapshot() -> serde_json::Value {
             include_bounds: false,
             interactive_only: true,
             compact: true,
-            surface: SnapshotSurface::Taskbar,
+            surface,
             skeleton: false,
             root_ref: None,
             timeout_ms: Some(10_000),
@@ -55,7 +58,35 @@ fn taskbar_snapshot() -> serde_json::Value {
         &WindowsAdapter::new(),
         &CommandContext::default(),
     )
-    .expect("the taskbar is always up, so its snapshot answers")
+    .expect("a presented shell surface answers its snapshot")
+}
+
+fn focus_first_ref_headed(snapshot: &serde_json::Value) -> Result<serde_json::Value, AppError> {
+    let ref_id = first_ref(&snapshot["tree"]).expect("the surface exposes a ref");
+    focus::execute(
+        RefArgs {
+            ref_id,
+            timeout_ms: None,
+        },
+        &WindowsAdapter::new(),
+        &CommandContext::default().with_headed(true),
+    )
+}
+
+fn adapter_error_of(error: AppError) -> AdapterError {
+    match error {
+        AppError::Adapter(error) => error,
+        error => AdapterError::internal(error.to_string()),
+    }
+}
+
+/// Whatever the test raised is dismissed on every exit path.
+struct CloseOnDrop(SnapshotSurface);
+
+impl Drop for CloseOnDrop {
+    fn drop(&mut self) {
+        let _ = close_surface(self.0, deadline(8_000));
+    }
 }
 
 #[test]
@@ -82,18 +113,10 @@ fn a_headed_focus_on_a_taskbar_ref_raises_the_taskbar() {
         let _home = HomeIsolation::enter("agent-desktop-headed-taskbar-home");
         let _ = agent_desktop_core::install_private_file_ops(Box::new(WindowsPrivateFile::new()));
         let previous = foreground();
-        let snapshot = taskbar_snapshot();
+        let snapshot = surface_snapshot(SnapshotSurface::Taskbar);
         let taskbar = parse_handle(snapshot["window"]["id"].as_str().expect("window id"));
-        let ref_id = first_ref(&snapshot["tree"]).expect("the taskbar exposes a ref");
 
-        let focused = focus::execute(
-            RefArgs {
-                ref_id,
-                timeout_ms: None,
-            },
-            &WindowsAdapter::new(),
-            &CommandContext::default().with_headed(true),
-        );
+        let focused = focus_first_ref_headed(&snapshot);
         let raised = is_root_foreground_window(taskbar);
         if previous != 0 {
             stage_foreground(previous);
@@ -102,5 +125,43 @@ fn a_headed_focus_on_a_taskbar_ref_raises_the_taskbar() {
         let focused = focused.expect("a headed ref action on the taskbar focuses its window");
         assert_eq!(focused["action"], "focus", "{focused}");
         assert!(raised, "the taskbar owned the foreground after the focus");
+    });
+}
+
+/// Start is an immersive surface: the shell presents it above every window
+/// while the foreground sits on another process's input window, so a headed
+/// ref action on it acts on the presented surface instead of refusing.
+#[test]
+fn a_headed_focus_on_a_start_menu_ref_acts_on_the_presented_surface() {
+    bootstrap();
+    let _lock = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    with_interaction_lease_test_lock(|| {
+        let _home = HomeIsolation::enter("agent-desktop-headed-start-home");
+        let _ = agent_desktop_core::install_private_file_ops(Box::new(WindowsPrivateFile::new()));
+        let _ = close_surface(SnapshotSurface::StartMenu, deadline(5_000));
+        let _cleanup = CloseOnDrop(SnapshotSurface::StartMenu);
+        let witness = witness_desktop();
+        let headed = CommandContext::default().with_headed(true);
+        let opened = or_skip_shell(
+            "the command opens the start menu",
+            open_system_surface::execute(
+                OpenSystemSurfaceArgs {
+                    surface: SnapshotSurface::StartMenu,
+                },
+                &WindowsAdapter::new(),
+                &headed,
+            )
+            .map_err(adapter_error_of),
+            || responded_since(&witness),
+        );
+        if opened.is_none() {
+            return;
+        }
+        let snapshot = surface_snapshot(SnapshotSurface::StartMenu);
+
+        let focused = focus_first_ref_headed(&snapshot)
+            .expect("a headed ref action on the presented start menu acts on it");
+
+        assert_eq!(focused["action"], "focus", "{focused}");
     });
 }

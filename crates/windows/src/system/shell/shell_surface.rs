@@ -33,7 +33,7 @@ pub(crate) fn resolve_surface(
 pub(crate) fn presented_surface_at(
     handle: crate::system::window::window_enum::WindowHandle,
     deadline: Deadline,
-) -> Result<Option<WindowInfo>, AdapterError> {
+) -> Result<Option<(WindowInfo, &'static SurfaceKindRow)>, AdapterError> {
     let id = crate::system::window::window_ops::window_id(handle);
     for row in super::shell_surface_kinds::rows()
         .iter()
@@ -42,11 +42,38 @@ pub(crate) fn presented_surface_at(
         deadline.ensure_remaining()?;
         if let Ok(Some(info)) = resolve_present_row(row) {
             if info.id == id {
-                return Ok(Some(info));
+                return Ok(Some((info, row)));
             }
         }
     }
     Ok(None)
+}
+
+/// Whether `handle` is an immersive shell surface (Start, the Action Center)
+/// the shell presents right now for `pid`.
+///
+/// The shell keeps a presented immersive surface above every window and
+/// dismisses it once another application takes the foreground, while the
+/// foreground itself sits elsewhere: measured on build 26100, an open Start
+/// leaves the foreground on `SearchHost.exe`'s input window, a different
+/// process from the `StartMenuExperienceHost.exe` window the surface is, and
+/// raising the surface's own window does not move it. Presented is therefore
+/// the focus such a surface can have. The class read comes first, so no other
+/// window pays for the resolution.
+pub(crate) fn is_presented_immersive_surface(
+    handle: crate::system::window::window_enum::WindowHandle,
+    pid: agent_desktop_core::ProcessId,
+    deadline: Deadline,
+) -> Result<bool, AdapterError> {
+    let class = crate::system::window::window_ops::window_class_name(handle);
+    if class.as_deref() != Some(super::shell_surface_kinds::CORE_WINDOW_CLASS) {
+        return Ok(false);
+    }
+    Ok(
+        presented_surface_at(handle, deadline)?.is_some_and(|(info, row)| {
+            info.pid == pid && matches!(row.family, SurfaceFamily::Immersive { .. })
+        }),
+    )
 }
 
 pub(in crate::system) fn resolve_row(

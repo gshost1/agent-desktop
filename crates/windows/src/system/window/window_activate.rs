@@ -71,6 +71,15 @@ pub(crate) fn focus_window(win: &WindowInfo, lease: &InteractionLease) -> Result
     if is_owned_foreground(target, &evidence) {
         return Ok(());
     }
+    if crate::system::shell::shell_surface::is_presented_immersive_surface(
+        handle,
+        win.pid,
+        lease.deadline(),
+    )
+    .map_err(before_activation)?
+    {
+        return evidence.verify_stored().map_err(before_activation);
+    }
     let strictly_higher = activation_target_is_strictly_higher(win.pid);
     raise_with_budget(target, &evidence, lease, strictly_higher)
 }
