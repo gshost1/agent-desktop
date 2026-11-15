@@ -238,5 +238,6 @@ Skills ship inside the binary. The JSON envelope holds the markdown in `data.con
 agent-desktop skills                            # list skills and references
 agent-desktop skills get desktop                # this skill
 agent-desktop skills get desktop workflows      # one reference
+agent-desktop skills get round-trips            # a core or platform topic, no skill name
 agent-desktop skills get platform               # skill for the current OS
 ```

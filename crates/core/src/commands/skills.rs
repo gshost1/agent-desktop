@@ -42,14 +42,18 @@ pub fn list() -> Result<Value, AppError> {
 }
 
 pub fn get(args: GetArgs) -> Result<Value, AppError> {
-    let skill = match find_skill(&args.name) {
-        Ok(skill) => skill,
-        Err(unknown) if args.reference.is_none() => {
-            let (skill, topic) = find_topic(&args.name).ok_or(unknown)?;
-            return Ok(reference_body(skill, topic));
-        }
-        Err(unknown) => return Err(unknown),
+    let (skill, topic) = if args.name.trim().eq_ignore_ascii_case(PLATFORM_ALIAS) {
+        (platform_skill()?, None)
+    } else {
+        resolve_name(SKILLS, &args.name, CURRENT_PLATFORM)
+            .ok_or_else(|| unknown_name(&args.name))?
     };
+    if let Some(topic) = topic {
+        if args.reference.is_some() {
+            return Err(unknown_name(&args.name));
+        }
+        return Ok(reference_body(skill, topic));
+    }
 
     if let Some(rel) = args.reference {
         let refs = skill.refs;
@@ -96,42 +100,55 @@ fn reference_body(skill: &Skill, reference: &SkillRef) -> Value {
     })
 }
 
-fn find_skill(name: &str) -> Result<&'static Skill, AppError> {
+/// A name is a skill alias first. Otherwise it is a topic: a reference of the
+/// core skill, then of the platform skill for `platform`, so
+/// `skills get round-trips` and `skills get capabilities` need no skill name.
+fn resolve_name(
+    skills: &'static [Skill],
+    name: &str,
+    platform: Option<&str>,
+) -> Option<(&'static Skill, Option<&'static SkillRef>)> {
     let needle = name.trim();
-    if needle.eq_ignore_ascii_case(PLATFORM_ALIAS) {
-        return platform_skill();
-    }
-    SKILLS
+    if let Some(skill) = skills
         .iter()
         .find(|s| s.aliases.iter().any(|a| a.eq_ignore_ascii_case(needle)))
-        .ok_or_else(|| {
-            let known: Vec<&str> = SKILLS
-                .iter()
-                .flat_map(|s| s.aliases.iter().copied())
-                .collect();
-            AppError::invalid_input(format!(
-                "Unknown skill '{name}'. Known: {}",
-                known.join(", ")
-            ))
-        })
+    {
+        return Some((skill, None));
+    }
+    let core = skills.iter().filter(|s| s.canonical == CORE_SKILL);
+    let own = skills
+        .iter()
+        .filter(|s| s.platform.is_some() && s.platform == platform);
+    core.chain(own).find_map(|s| {
+        s.refs
+            .iter()
+            .find(|r| matches_ref(r.rel_path, needle))
+            .map(|r| (s, Some(r)))
+    })
 }
 
-/// A bare topic resolves against the core skill's references first, then this
-/// build's platform skill, so `skills get round-trips` and
-/// `skills get capabilities` need no skill name.
-fn find_topic(name: &str) -> Option<(&'static Skill, &'static SkillRef)> {
-    let needle = name.trim();
-    SKILLS
+fn unknown_name(name: &str) -> AppError {
+    let skills: Vec<&str> = SKILLS
+        .iter()
+        .flat_map(|s| s.aliases.iter().copied())
+        .collect();
+    let topics: Vec<&str> = SKILLS
         .iter()
         .filter(|s| {
             s.canonical == CORE_SKILL || (s.platform.is_some() && s.platform == CURRENT_PLATFORM)
         })
-        .find_map(|s| {
-            s.refs
-                .iter()
-                .find(|r| matches_ref(r.rel_path, needle))
-                .map(|r| (s, r))
-        })
+        .flat_map(|s| s.refs.iter().map(|r| topic_stem(r.rel_path)))
+        .collect();
+    AppError::invalid_input(format!(
+        "Unknown skill or topic '{name}'. Skills: {}. Topics: {}",
+        skills.join(", "),
+        topics.join(", ")
+    ))
+}
+
+fn topic_stem(rel_path: &str) -> &str {
+    let file = rel_path.rsplit('/').next().unwrap_or(rel_path);
+    file.strip_suffix(".md").unwrap_or(file)
 }
 
 fn platform_skill() -> Result<&'static Skill, AppError> {
@@ -151,8 +168,7 @@ fn matches_ref(rel_path: &str, query: &str) -> bool {
         return true;
     }
     let file = rel_path.rsplit('/').next().unwrap_or(rel_path);
-    let stem = file.strip_suffix(".md").unwrap_or(file);
-    file.eq_ignore_ascii_case(query) || stem.eq_ignore_ascii_case(query)
+    file.eq_ignore_ascii_case(query) || topic_stem(rel_path).eq_ignore_ascii_case(query)
 }
 
 fn render_full(skill: &Skill) -> String {
@@ -183,3 +199,7 @@ mod tests;
 #[cfg(test)]
 #[path = "skills_budget_tests.rs"]
 mod budget_tests;
+
+#[cfg(test)]
+#[path = "skills_resolve_tests.rs"]
+mod resolve_tests;

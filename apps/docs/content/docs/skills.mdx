@@ -12,7 +12,7 @@ Run these three commands before the first action:
 
 ```bash
 agent-desktop status                  # platform, permissions, supported surfaces
-agent-desktop skills get desktop      # the loop, refs, verification, and retry rules
+agent-desktop skills get desktop      # the loop, refs, read-back, and error recovery; topics hold the rest
 agent-desktop skills get platform     # what differs on the OS the binary runs on
 ```
 
@@ -104,12 +104,12 @@ agent-desktop skills get desktop | jq -r '.data.content'
 }
 ```
 
-An unknown name returns `INVALID_ARGS` and lists every alias:
+An unknown name returns `INVALID_ARGS` and lists every alias and the topics a bare name can reach on this OS (Linux shown):
 
 ```json
 {
   "code": "INVALID_ARGS",
-  "message": "Unknown skill 'nope'. Known: desktop, agent-desktop, macos, agent-desktop-macos, windows, agent-desktop-windows, linux, agent-desktop-linux, ffi, agent-desktop-ffi, jev, jev-desktop"
+  "message": "Unknown skill or topic 'nope'. Skills: desktop, agent-desktop, macos, agent-desktop-macos, windows, agent-desktop-windows, linux, agent-desktop-linux, web, agent-desktop-web, ffi, agent-desktop-ffi, jev, jev-desktop. Topics: refs-and-retry, round-trips, commands-observation, commands-interaction, commands-system, workflows, capabilities, bus-and-permissions, display-servers-and-input, windows-and-lifecycle, capture-and-clipboard, shell-tray-and-notifications, troubleshooting"
 }
 ```
 

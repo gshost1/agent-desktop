@@ -20,12 +20,12 @@ Only what differs on Linux; the core skill has the loop. Run the CLI inside the 
 
 | Topic | Open it for |
 |-------|-------------|
-| `capabilities` | Per command group, what works on X11 and Wayland; `select`, `focus` and toolkit limits |
+| `capabilities` | Per command group on X11 and Wayland, every first-contact note, `select`, `focus`, toolkit limits, waiting for a window or its close, cursor overlay |
 | `bus-and-permissions` | Bus states, `status` and `permissions` output, state-root rules |
 | `display-servers-and-input` | `press`, `type`, pointer, wheel, drag, blocked combos, key names |
 | `windows-and-lifecycle` | `launch`, `close-app`, window ops, waits for a window or close, workspaces |
 | `capture-and-clipboard` | `screenshot` and the Wayland consent dialog, clipboard |
-| `shell-tray-and-notifications` | Menus and popovers, GNOME shell, tray, notifications, cursor overlay |
+| `shell-tray-and-notifications` | Menus and popovers, GNOME shell, tray, notifications |
 | `troubleshooting` | Symptom to cause, Chromium, Electron and Qt flags, error codes |
 
 ## First contact
@@ -43,7 +43,7 @@ agent-desktop snapshot --app gnome-text-editor -i --compact --lines
 - **A ref must have been unique in its window.** Identical controls (same role, name and description) refuse with `AMBIGUOUS_TARGET`, `identity_not_unique`, before anything is sent. Act on a unique control, or on X11 use `--headed mouse-click --xy`.
 - **Headless `type` writes through the text interface**, so it works without focus; a terminal accepts keys only under `--headed`. A GTK4 entry has no headless `click` activation: use `type`.
 - **Two `click`s on one GTK4 button within about 250 ms act once.** Wait for the effect between repeated clicks.
-- **Pointer input is X11 and `--headed` only**: `double-click`, `triple-click`, `hover`, `drag`, `scroll`, `mouse-*`. Wayland refuses them with `ACTION_NOT_SUPPORTED`. `press` works on X11 and Mutter Wayland; window ops and `focus-window` need X11. Under `--headed`, ref `click`, `right-click` and `type` try physical input first.
+- **Pointer input is X11 and `--headed` only**: `double-click`, `triple-click`, `hover`, `drag`, `scroll`, `mouse-*`. Wayland refuses them with `ACTION_NOT_SUPPORTED`. `press` works on X11 and Mutter Wayland, and a headless `press --app` needs the target to hold live focus; window ops and `focus-window` need X11. Under `--headed`, ref `click`, `right-click` and `type` try physical input first.
 - **Keys:** `cmd` and `meta` are Super; X keysym names work. Blocked combos refuse without `--force`.
 - **Menus:** after opening one, read `data.surfaces`, then `snapshot --surface menu --app <name> -i`. A list-backed dropdown is part of the window, not a menu.
 - **Chromium and Qt apps need a launch flag** to appear on the bus; open `troubleshooting`.

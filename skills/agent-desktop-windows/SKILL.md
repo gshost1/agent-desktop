@@ -12,7 +12,7 @@ description: >
 
 # agent-desktop-windows
 
-Only what differs on Windows; the core skill has the loop. Run it in the interactive desktop session of the signed-in user (Windows 10 1809+ or Server 2019+); Session 0, the secure desktop and a locked desktop are not supported.
+Only what differs on Windows; the core skill has the loop. Run it in the interactive desktop session of the signed-in user (Windows 10 1809+ or Server 2019+); Session 0, the secure desktop and a locked desktop are not supported. Run `agent-desktop status` first.
 
 ## Topics
 
@@ -47,7 +47,8 @@ Only what differs on Windows; the core skill has the loop. Run it in the interac
 
 - **Quote every ref in PowerShell.** A bare `@token` is PowerShell's splatting operator, so `set-value @s8f3k2p9:e1 hi` fails `INVALID_ARGS`. Write `set-value '@s8f3k2p9:e1' hi`.
 - **A minimized window is not drivable**; one behind another window is. Run `restore --app <image>` and snapshot again. `focus-window` steals the user's foreground.
-- **`type` and `right-click` need `--headed`**; use `set-value` to write a field headless.
+- **`type` and `right-click` need `--headed`**; use `set-value` to write a field headless. `type` can end `delivered_unverified` when the field exposes no readable text: confirm with `get`.
+- **Notifications:** listing with the Action Center closed, `dismiss-notification` and `notification-action` need `--headed`; the last two also need `--expected-app` or `--expected-title`.
 - **`press --app` writes to the foreground queue**: a headless press to an app that is not frontmost fails closed.
 - **`launch` takes an absolute path or a bare System32 name** (`notepad`), not a display name.
 - **Chromium and Electron apps read thin before they settle**: raise `--timeout-ms`.

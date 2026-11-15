@@ -1,7 +1,7 @@
 use super::*;
 
 const FIRST_READ_BYTE_BUDGETS: &[(&str, usize)] =
-    &[("desktop", 4608), ("linux", 4096), ("windows", 5120)];
+    &[("desktop", 5120), ("linux", 4096), ("windows", 5120)];
 
 fn main_guide(name: &str) -> String {
     get(GetArgs {
@@ -80,7 +80,10 @@ fn the_core_guide_keeps_the_rules_an_agent_needs_before_its_first_action() {
         "disposition.retry",
         "`safe`",
         "delivered_verified",
-        "Do not snapshot just to confirm",
+        "do not snapshot just to confirm",
+        "`delivered_unverified` did not read the effect",
+        "refs-and-retry`",
+        "prints one line on stderr",
         "-w \"role:text\"",
         "data.surfaces",
         "STALE_REF",
