@@ -188,7 +188,7 @@ The full `STALE_REF` envelope after a re-drill is in [Skeleton and drill-down](/
 Refs describe one observation. Re-read after anything that can change the tree, and act only on refs from the latest read of the region:
 
 - `snapshot` returns a new snapshot id and a new ref map.
-- `find` with matches also saves a new snapshot, and its `data.snapshot_id` qualifies the refs it returns.
+- `find` that returns at least one ref also saves a new snapshot, and its `data.snapshot_id` qualifies those refs. A `find` whose matches carry no ref saves none and has no `snapshot_id`.
 - `snapshot --root` re-reads one region inside an existing snapshot. See [Skeleton and drill-down](/desktop/skeleton-and-drill-down#re-drill-after-a-change).
 
 An older snapshot stays on disk until it is pruned, and its refs keep resolving while their elements still match. Do not rely on that: after the UI changes, an old ref can fail, or match an element that is no longer the one you meant.
