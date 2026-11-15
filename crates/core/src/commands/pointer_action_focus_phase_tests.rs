@@ -4,6 +4,7 @@ use crate::commands::pointer_action::{point_failed_check, tests::point_ref_snaps
 use crate::commands::{drag, hover};
 use crate::refs::RefEntry;
 use crate::refs::refs_test_support::HomeGuard;
+use crate::wait::deadline::VirtualClock;
 use crate::{AdapterError, AppError, CommandContext, DragParams, ErrorCode, Rect};
 use serde_json::json;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -208,6 +209,12 @@ fn drag_args(snapshot_id: &str) -> drag::DragArgs {
     }
 }
 
+fn frozen_ref_fixture() -> (HomeGuard, VirtualClock, String) {
+    let guard = HomeGuard::new();
+    let clock = VirtualClock::freeze();
+    (guard, clock, point_ref_snapshot())
+}
+
 fn headed() -> CommandContext {
     CommandContext::default().with_headed(true)
 }
@@ -227,8 +234,7 @@ fn refusal(check: &str) -> AppError {
 
 #[test]
 fn a_covered_hover_raises_its_window_once_and_times_out_with_preparatory_focus() {
-    let _guard = HomeGuard::new();
-    let snapshot_id = point_ref_snapshot();
+    let (_guard, _clock, snapshot_id) = frozen_ref_fixture();
     let adapter = CoveredTargetAdapter::new(FOREVER);
 
     let error = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap_err();
@@ -252,8 +258,7 @@ fn a_covered_hover_raises_its_window_once_and_times_out_with_preparatory_focus()
 
 #[test]
 fn a_transient_overlay_clears_without_a_second_raise() {
-    let _guard = HomeGuard::new();
-    let snapshot_id = point_ref_snapshot();
+    let (_guard, _clock, snapshot_id) = frozen_ref_fixture();
     let adapter = CoveredTargetAdapter::new(2);
 
     let value = hover::execute(hover_args(&snapshot_id), &adapter, &headed()).unwrap();
@@ -265,8 +270,7 @@ fn a_transient_overlay_clears_without_a_second_raise() {
 
 #[test]
 fn a_drag_onto_a_covered_drop_point_raises_its_window_once() {
-    let _guard = HomeGuard::new();
-    let snapshot_id = point_ref_snapshot();
+    let (_guard, _clock, snapshot_id) = frozen_ref_fixture();
     let mut adapter = CoveredTargetAdapter::new(FOREVER);
     adapter.clear_hit_tests = 1;
 
@@ -280,8 +284,7 @@ fn a_drag_onto_a_covered_drop_point_raises_its_window_once() {
 
 #[test]
 fn a_raise_made_while_the_wait_scrolls_is_the_commands_only_raise() {
-    let _guard = HomeGuard::new();
-    let snapshot_id = point_ref_snapshot();
+    let (_guard, _clock, snapshot_id) = frozen_ref_fixture();
     let mut adapter = CoveredTargetAdapter::new(0);
     adapter.offscreen_until_focus = true;
 
@@ -293,8 +296,7 @@ fn a_raise_made_while_the_wait_scrolls_is_the_commands_only_raise() {
 
 #[test]
 fn a_focus_call_that_failed_after_it_may_have_raised_ends_the_command() {
-    let _guard = HomeGuard::new();
-    let snapshot_id = point_ref_snapshot();
+    let (_guard, _clock, snapshot_id) = frozen_ref_fixture();
     let mut adapter = CoveredTargetAdapter::new(0);
     adapter.focus_fails_retryably = true;
 
@@ -311,6 +313,7 @@ fn marked_phase<T>(
     raised: bool,
     mut attempt: impl FnMut() -> Result<T, AppError>,
 ) -> Result<T, AppError> {
+    let _clock = VirtualClock::freeze();
     let deadline = crate::Deadline::after(timeout_ms.max(1)).unwrap();
     super::CommandFocus::default().marking(|focus| {
         focus.raised = raised;
@@ -362,8 +365,7 @@ fn the_timeout_after_attempts_with_no_focus_call_carries_no_preparatory_focus() 
 
 #[test]
 fn an_endpoint_that_needs_no_focus_does_not_stop_the_raise_another_endpoint_needs() {
-    let _guard = HomeGuard::new();
-    let snapshot_id = point_ref_snapshot();
+    let (_guard, _clock, snapshot_id) = frozen_ref_fixture();
     let ref_id = format!("@{snapshot_id}:e1");
     let adapter = CoveredTargetAdapter::new(0);
     let context = headed();

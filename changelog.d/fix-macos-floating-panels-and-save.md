@@ -12,4 +12,4 @@
 
 ### Documentation
 
-* The macOS platform skill is now a short page of recipes: select text by content, format then save, floating panels, waiting with `-w`, linked fields, key chords. The full rules moved to the references `actions` and `apps-and-windows`, read with `agent-desktop skills get platform <topic>`. `skills get desktop` plus `skills get platform` printed about 32 KB on macOS, past the roughly 30,000 characters an agent shell tool shows, so agents saw only a 2 KB preview of the platform skill. They now print about 17 KB, and a test fails above 28,000 bytes.
+* The macOS platform skill is now a short page of recipes: select text by content, format then save, floating panels, waiting with `-w`, linked fields, key chords. The full rules moved to the references `actions` and `apps-and-windows`, read with `agent-desktop skills get platform <topic>`. `skills get desktop` plus `skills get platform` printed about 32 KB on macOS, past the roughly 30,000 characters an agent shell tool shows, so agents saw only a 2 KB preview of the platform skill. They now print about 12 KB.
