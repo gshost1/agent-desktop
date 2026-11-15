@@ -149,10 +149,10 @@ fn input_command_whose_daemon_died_after_starting_is_never_run_again() {
 }
 
 #[test]
-fn a_heartbeat_alone_proves_the_command_started() {
+fn a_heartbeat_alone_does_not_prove_the_command_ran() {
     let script = after_ready(false, vec![DaemonReply::Running], false);
 
-    assert_eq!(exchange_with(script), (Some(ExitCode::FAILURE), true));
+    assert_eq!(exchange_with(script), (None, true));
 }
 
 #[test]
@@ -188,5 +188,24 @@ fn a_daemon_that_never_answers_is_left_after_the_ready_timeout_without_a_go() {
     assert!(
         waited >= super::READY_TIMEOUT && waited < super::READY_TIMEOUT * 3 / 2,
         "the client gives up at its timeout, not when the daemon hangs up: {waited:?}"
+    );
+}
+
+#[test]
+fn a_daemon_that_falls_silent_after_the_go_leaves_an_input_command_in_doubt() {
+    let (client, mut server) = UnixStream::pair().unwrap();
+    let daemon = std::thread::spawn(move || {
+        let _: DaemonRequest = read_message(&mut server, REQUEST_LIMIT).unwrap();
+        write_message(&mut server, &ready(false)).unwrap();
+        let _: String = read_message(&mut server, REQUEST_LIMIT).unwrap();
+        std::thread::sleep(super::STALL_LIMIT + std::time::Duration::from_millis(500));
+    });
+    let result = exchange(Box::new(client), &request());
+    daemon.join().unwrap();
+
+    assert_eq!(
+        result,
+        Some(ExitCode::FAILURE),
+        "never run a second time here"
     );
 }

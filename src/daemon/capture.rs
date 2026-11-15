@@ -9,6 +9,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::OpenOptionsExt;
 
 use super::endpoint::DaemonEndpoint;
+use super::wire::REPLY_LIMIT;
 
 /// The output of one command while it is being captured.
 pub(crate) struct OutputCapture {
@@ -50,7 +51,10 @@ impl OutputCapture {
         flushed?;
         restored_out?;
         restored_err?;
-        Ok((read_all(self.out)?, read_all(self.err)?))
+        Ok((
+            read_bounded(self.out, REPLY_LIMIT)?,
+            read_bounded(self.err, REPLY_LIMIT)?,
+        ))
     }
 }
 
@@ -88,7 +92,17 @@ fn redirect(from: RawFd, to: RawFd) -> std::io::Result<()> {
     }
 }
 
-fn read_all(mut file: File) -> std::io::Result<Vec<u8>> {
+/// The captured bytes, or an error when they exceed what a client accepts in one frame. The
+/// executor then ends the connection after `Started`, which a client reports as in doubt for a
+/// command that changes something and re-runs itself for one that only reads.
+pub(crate) fn read_bounded(mut file: File, limit: usize) -> std::io::Result<Vec<u8>> {
+    let len = usize::try_from(file.metadata()?.len()).unwrap_or(usize::MAX);
+    if len > limit {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "captured output exceeds the reply limit",
+        ));
+    }
     file.seek(SeekFrom::Start(0))?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;

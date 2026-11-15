@@ -18,6 +18,8 @@ The first call finds no daemon, starts one in the background, waits up to 1.5 se
 
 Each command prints the same stdout and stderr and exits with the same code as without daemon mode. Nothing in the envelope says which process ran it.
 
+The saving is small today. The CLI still starts one process per call, and most of a `snapshot`, `find` or `click` goes to reading the accessibility tree or the page, which the daemon does not cache. Measured on Linux, a cheap command such as `version` is a few milliseconds slower through the daemon. Measure your own loop before you turn it on.
+
 ## Which daemon serves a call
 
 One daemon serves one combination of:

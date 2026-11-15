@@ -22,6 +22,9 @@ const GO_TIMEOUT: Duration = Duration::from_secs(2);
 /// How often a running command's client hears that the daemon is alive.
 pub(crate) const HEARTBEAT: Duration = Duration::from_millis(500);
 const STOP_GRACE: Duration = Duration::from_secs(5);
+/// How long a reply or heartbeat may wait on a client that stopped reading. The bound keeps a
+/// stalled client from holding the executor, which serves the next caller.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Serves one accepted connection to its end.
 pub(crate) fn serve_connection(
@@ -51,7 +54,10 @@ pub(crate) fn serve_connection(
         command: admitted.command.to_owned(),
         rerun_safe: admitted.rerun_safe,
     };
-    if write_message(&mut stream, &ready).is_err() || !received_go(stream.as_mut()) {
+    if write_message(&mut stream, &ready).is_err()
+        || !received_go(stream.as_mut())
+        || stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err()
+    {
         server.release();
         return;
     }
@@ -139,7 +145,7 @@ fn send_heartbeat(writer: &SharedWriter) {
 fn stop_daemon() {
     unsafe { libc::kill(libc::getpid(), libc::SIGTERM) };
     std::thread::sleep(STOP_GRACE);
-    std::process::exit(1);
+    unsafe { libc::_exit(1) };
 }
 
 #[cfg(test)]

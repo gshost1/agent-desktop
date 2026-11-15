@@ -50,6 +50,7 @@ fn serve(transport: &dyn DaemonTransport, socket: &Path) -> ExitCode {
     let (Some(build), Some(env)) = (BuildIdentity::current(), EnvSubset::current()) else {
         return ExitCode::FAILURE;
     };
+    unsafe { libc::umask(0o077) };
     let Ok(listener) = transport.listen(&endpoint) else {
         return ExitCode::FAILURE;
     };

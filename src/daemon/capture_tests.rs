@@ -1,5 +1,6 @@
 use super::OutputCapture;
 use crate::daemon::endpoint::DaemonEndpoint;
+use std::io::Write;
 
 fn write_fd(fd: i32, bytes: &[u8]) {
     let written = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
@@ -26,4 +27,26 @@ fn descriptor_writes_are_captured_per_stream_and_the_files_are_gone() {
     assert!(out.contains("to-stdout-marker") && !out.contains("to-stderr-marker"));
     assert!(err.contains("to-stderr-marker") && !err.contains("to-stdout-marker"));
     assert_eq!(left, 0);
+}
+
+#[test]
+fn output_over_the_reply_limit_is_refused_not_truncated() {
+    let mut file = tempfile_in_temp("over");
+    file.write_all(b"0123456789").unwrap();
+
+    assert!(super::read_bounded(file.try_clone().unwrap(), 9).is_err());
+    assert_eq!(super::read_bounded(file, 10).unwrap(), b"0123456789");
+}
+
+fn tempfile_in_temp(name: &str) -> std::fs::File {
+    let path = std::env::temp_dir().join(format!("ad-capture-{name}-{}", std::process::id()));
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&path)
+        .unwrap();
+    std::fs::remove_file(&path).unwrap();
+    file
 }

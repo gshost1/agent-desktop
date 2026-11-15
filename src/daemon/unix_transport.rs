@@ -23,6 +23,10 @@ impl DaemonStream for UnixStream {
     fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
         UnixStream::set_read_timeout(self, timeout)
     }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        UnixStream::set_write_timeout(self, timeout)
+    }
 }
 
 impl DaemonTransport for UnixTransport {

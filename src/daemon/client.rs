@@ -105,23 +105,30 @@ pub(crate) fn exchange(
     }
 }
 
+/// Reads to the result. Only `Started` proves the command ran: a heartbeat can precede a setup
+/// failure that ends the connection unrun. After the go the client is committed, so a daemon
+/// that falls silent before `Started` leaves the command in doubt, while one that closes the
+/// connection before it proves the command never ran.
 fn read_result(mut stream: &mut dyn DaemonStream) -> Outcome {
     let mut started = false;
     loop {
-        let Ok(reply) = read_message::<DaemonReply>(&mut stream, REPLY_LIMIT) else {
-            return if started {
-                Outcome::Lost
-            } else {
-                Outcome::NotRun
-            };
+        let reply = match read_message::<DaemonReply>(&mut stream, REPLY_LIMIT) {
+            Ok(reply) => reply,
+            Err(error) if started || is_timeout(&error) => return Outcome::Lost,
+            Err(_) => return Outcome::NotRun,
         };
         match reply {
-            DaemonReply::Started | DaemonReply::Running => started = true,
+            DaemonReply::Started => started = true,
+            DaemonReply::Running => {}
             DaemonReply::Done { exit } => return read_output(stream, exit),
             DaemonReply::Rerun { .. } => return Outcome::NotRun,
             DaemonReply::Declined { .. } | DaemonReply::Ready { .. } => return Outcome::Lost,
         }
     }
+}
+
+fn is_timeout(error: &std::io::Error) -> bool {
+    matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
 }
 
 fn read_output(mut stream: &mut dyn DaemonStream, exit: u8) -> Outcome {

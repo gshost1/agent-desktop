@@ -13,6 +13,8 @@ pub(crate) trait DaemonStream: Read + Write + Send {
     fn try_clone_stream(&self) -> std::io::Result<Box<dyn DaemonStream>>;
     /// Bounds every later read; `None` waits without limit.
     fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
+    /// Bounds every later write; `None` waits without limit.
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
 }
 
 /// A daemon's listening endpoint.

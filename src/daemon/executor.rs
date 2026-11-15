@@ -39,10 +39,10 @@ pub(crate) fn run_until_idle(
                     served += 1;
                     let _ = record.record(served);
                 }
-                server.release();
                 if let Some((writer, exit, output)) = finished {
                     reply(&writer, exit, output);
                 }
+                server.release();
                 timer.touch(clock.now());
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -57,8 +57,9 @@ pub(crate) fn run_until_idle(
 }
 
 /// Runs one job and returns its result for the client, or `None` when it did not run. The
-/// caller counts it and frees the slot before it replies, so the client's next call never
-/// finds this daemon still busy with the call it just answered.
+/// caller counts it before it replies, so a client that reads the state file after its answer
+/// sees its call counted, and frees the slot after the reply, so no new command is committed
+/// while a reply to a stalled client is still being written.
 fn run_job(job: Job, server: &ServerState) -> Option<(SharedWriter, u8, CapturedOutput)> {
     let Job {
         writer,
