@@ -1,7 +1,7 @@
 use super::{format_match, format_response, order_exact_names_first};
 use crate::{
     LocatorQuery, Rect,
-    commands::find::{FindArgs, FindFilterArgs, FindSelectionArgs},
+    commands::find::{FindArgs, FindFilterArgs, FindScopeArgs, FindSelectionArgs},
     locator::live_locator::{
         LocatorMatchData, LocatorResolution, LocatorResolutionMeta, LocatorStats,
     },
@@ -9,10 +9,12 @@ use crate::{
 
 fn args(allow_partial: bool, count: bool) -> FindArgs {
     FindArgs {
-        app: None,
-        window_id: None,
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: None,
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             role: None,
             name: None,

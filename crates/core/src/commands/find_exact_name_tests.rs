@@ -13,10 +13,12 @@ fn longer_names_then_the_exact_one() -> Vec<String> {
 
 fn find_by_name(name: &str, limit: Option<usize>) -> FindArgs {
     FindArgs {
-        app: None,
-        window_id: Some("w-1".into()),
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: Some("w-1".into()),
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             role: None,
             name: Some(name.into()),
@@ -85,7 +87,10 @@ fn the_default_limit_keeps_an_exact_name_that_traversal_reaches_after_the_cut() 
     assert_eq!(found.len(), DEFAULT_LIMIT);
     assert_eq!(found[0], "Save");
     assert_eq!(found[1], "Save As 0");
-    assert_eq!(found[DEFAULT_LIMIT - 1], format!("Save As {}", DEFAULT_LIMIT - 2));
+    assert_eq!(
+        found[DEFAULT_LIMIT - 1],
+        format!("Save As {}", DEFAULT_LIMIT - 2)
+    );
     assert_eq!(response["total_matches"], SUBSTRING_MATCHES + 1);
     assert_eq!(response["truncated"], true);
 }

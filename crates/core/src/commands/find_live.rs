@@ -41,18 +41,18 @@ pub(super) fn execute(
 ) -> Result<Value, AppError> {
     let deadline = traversal_deadline(args)?;
     let request = resolve_request(args, deadline);
-    let mut resolution = match args.root.as_deref() {
+    let mut resolution = match args.scope.root.as_deref() {
         Some(root_ref) => rooted_resolution(args, query, root_ref, &request, (adapter, context))?,
         None => {
             let owners = snapshot::surface_target::resolve_owners(
                 adapter,
-                args.app.as_deref(),
-                args.window_id.as_deref(),
-                args.surface,
+                args.scope.app.as_deref(),
+                args.scope.window_id.as_deref(),
+                args.scope.surface,
                 deadline,
             )?;
             snapshot::window_capture::first_surface_owner(owners, |owner| {
-                let root = owner.observation_root(args.surface);
+                let root = owner.observation_root(args.scope.surface);
                 if args.selection.allow_partial {
                     resolve_query_allowing_partial(adapter, query, root, &request)
                 } else {
@@ -160,7 +160,8 @@ fn resolve_request(args: &FindArgs, deadline: crate::Deadline) -> LocatorResolve
         selection,
         deadline,
         max_raw_depth: MAX_RAW_DEPTH,
-        surface: (args.surface != crate::SnapshotSurface::Window).then_some(args.surface),
+        surface: (args.scope.surface != crate::SnapshotSurface::Window)
+            .then_some(args.scope.surface),
         materialization: if args.selection.count {
             LocatorMaterialization::None
         } else {
@@ -217,10 +218,12 @@ mod tests {
 
     fn args(limit: Option<usize>) -> FindArgs {
         FindArgs {
-            app: None,
-            window_id: None,
-            root: None,
-            surface: crate::SnapshotSurface::Window,
+            scope: crate::commands::find::FindScopeArgs {
+                app: None,
+                window_id: None,
+                root: None,
+                surface: crate::SnapshotSurface::Window,
+            },
             filter: crate::commands::find::FindFilterArgs {
                 role: None,
                 name: None,

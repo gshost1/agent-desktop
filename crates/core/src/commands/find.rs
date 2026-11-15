@@ -30,11 +30,18 @@ pub struct FindSelectionArgs {
     pub allow_partial: bool,
 }
 
-pub struct FindArgs {
+/// Where to search: the application or window, an optional root ref inside
+/// it, and the surface. Grouped out of [`FindArgs`] to keep it under the
+/// repo's field-count limit.
+pub struct FindScopeArgs {
     pub app: Option<String>,
     pub window_id: Option<String>,
     pub root: Option<String>,
     pub surface: crate::SnapshotSurface,
+}
+
+pub struct FindArgs {
+    pub scope: FindScopeArgs,
     pub filter: FindFilterArgs,
     pub states: Vec<StatePredicate>,
     pub selection: FindSelectionArgs,
@@ -47,8 +54,12 @@ pub fn execute(
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     validate_find_mode(&args)?;
-    super::surface_scope::reject_root_with_surface("find", args.root.as_deref(), args.surface)?;
-    adapter.check_surface_support(args.surface)?;
+    super::surface_scope::reject_root_with_surface(
+        "find",
+        args.scope.root.as_deref(),
+        args.scope.surface,
+    )?;
+    adapter.check_surface_support(args.scope.surface)?;
     let query = locator_query_from_args(&args)?;
     query.validate_states().map_err(AppError::Adapter)?;
 

@@ -5,7 +5,7 @@ use crate::{RefMap, refs::refs_test_support::HomeGuard};
 /// even when a complete node skips locator hydration and no anchor is resolved.
 #[test]
 fn rooted_find_and_drill_validate_the_observed_menu_context_before_publishing() {
-    use crate::commands::find::{FindArgs, FindFilterArgs, FindSelectionArgs};
+    use crate::commands::find::{FindArgs, FindFilterArgs, FindScopeArgs, FindSelectionArgs};
     use crate::context::CommandContext;
     use crate::refs::refs_store::RefStore;
 
@@ -25,10 +25,12 @@ fn rooted_find_and_drill_validate_the_observed_menu_context_before_publishing() 
         let root = format!("@{snapshot_id}:e1");
         let found = crate::commands::find::execute(
             FindArgs {
-                app: None,
-                window_id: None,
-                root: Some(root.clone()),
-                surface: crate::SnapshotSurface::Window,
+                scope: FindScopeArgs {
+                    app: None,
+                    window_id: None,
+                    root: Some(root.clone()),
+                    surface: crate::SnapshotSurface::Window,
+                },
                 filter: FindFilterArgs {
                     role: Some("button".into()),
                     name: Some("Run".into()),

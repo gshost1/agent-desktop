@@ -85,7 +85,10 @@ pub(super) fn evaluate_locator_tree_in(
     stats.evaluation.matched_nodes = matched_indices.len() as u64;
     let (selected, truncated) = selected_indices(&matched_indices, request.selection, |index| {
         tree.nodes.get(index).is_some_and(|node| {
-            is_exact_name(&normalized, &node.evidence.display_name().unwrap_or_default())
+            is_exact_name(
+                &normalized,
+                &node.evidence.display_name().unwrap_or_default(),
+            )
         })
     });
     let mut complete = tree.structurally_complete && !unknown;
