@@ -88,11 +88,11 @@ fn a_torn_latest_pointer_reads_as_no_latest_snapshot() {
     let _home = HomeGuard::new();
     let store = RefStore::new().unwrap();
     let id = store.save_new_snapshot(&refmap(1)).unwrap();
-    let cut_to_three = id[..3].as_bytes().to_vec();
+    let cut_to_three = id.as_bytes()[..3].to_vec();
     let torn: [(&str, Vec<u8>); 6] = [
         ("empty", Vec::new()),
         ("zero-filled", vec![0; id.len()]),
-        ("cut to two bytes", id[..2].as_bytes().to_vec()),
+        ("cut to two bytes", id.as_bytes()[..2].to_vec()),
         ("cut to three bytes", cut_to_three),
         ("not UTF-8", vec![0xff, 0xfe, 0xfd]),
         ("garbage", b"s1 s2/../x".to_vec()),
