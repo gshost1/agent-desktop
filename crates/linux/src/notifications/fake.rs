@@ -193,7 +193,7 @@ pub(crate) fn reading(specs: &[Spec]) -> Walk {
 #[derive(Default)]
 pub(crate) struct Faults {
     pub(crate) daemon: Option<DaemonFailure>,
-    pub(crate) open: bool,
+    pub(crate) open_error: Option<AdapterError>,
     pub(crate) window_info: bool,
     pub(crate) close_sticks: bool,
     pub(crate) click: bool,
@@ -301,15 +301,14 @@ impl ShellWorld for FakeWorld {
         _: &InteractionLease,
     ) -> Result<(WindowInfo, Opened), AdapterError> {
         self.note("open");
-        if self.faults.open || self.faults.window_info {
+        if let Some(error) = &self.faults.open_error {
+            self.showing.set(true);
+            return Err(error.clone());
+        }
+        if self.faults.window_info {
             let opened_by_call = self.opened == Opened::Opened;
             self.showing.set(true);
-            let message = if self.faults.window_info {
-                "window info could not be read"
-            } else {
-                "the list never showed"
-            };
-            return Err(AdapterError::timeout(message)
+            return Err(AdapterError::timeout("window info could not be read")
                 .with_details(serde_json::json!({"surface_opened_by_call": opened_by_call})));
         }
         self.showing.set(true);
