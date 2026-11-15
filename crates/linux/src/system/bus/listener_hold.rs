@@ -19,7 +19,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 /// How long the listener outlives the last key event sent.
-pub(crate) const LISTENER_HOLD: Duration = Duration::from_millis(500);
+pub(crate) const LISTENER_HOLD: Duration = Duration::from_millis(1_000);
 const HELD_FD: i32 = 3;
 const SLEEP_PROGRAMS: [&str; 2] = ["/usr/bin/sleep", "/bin/sleep"];
 

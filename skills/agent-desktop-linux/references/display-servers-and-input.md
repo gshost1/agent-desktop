@@ -169,6 +169,12 @@ empty insertion is dispatched.
   navigation or submission. On Wayland, `--headed type` sends a newline as
   `Return` and a tab as `Tab`, which can submit a form or move focus; other
   control characters are refused with `character_outside_layout`.
+- After X11 key events, a `sleep` child holds this process's accessibility-bus
+  socket for 1 s, so the event listener every agent-desktop process registers
+  does not leave while an application still answers the keys through its
+  at-spi2-atk key snooper. A listener that left at that moment crashed GTK 3
+  applications and Chrome. The command returns without waiting; the child
+  holds no other descriptor of the caller.
 - X11 physical text checks the live keyboard state before each chunk. If that
   state is unsupported, the physical route refuses before that chunk's keys; the
   semantic fallback applies only if no key was sent, since earlier chunks report
