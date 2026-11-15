@@ -12,33 +12,37 @@ use crate::{
     system::process_state::ProcessState,
 };
 
-const MAIN: &str = "w-main";
+pub(super) const MAIN: &str = "w-main";
 const DIALOG: &str = "w-dialog";
-const OTHER: &str = "w-other";
-const NEVER: Duration = Duration::from_secs(3600);
+pub(super) const OTHER: &str = "w-other";
+pub(super) const NEVER: Duration = Duration::from_secs(3600);
 
-struct Window {
-    id: &'static str,
-    opens: Duration,
-    closes: Duration,
+pub(super) struct Window {
+    pub(super) id: &'static str,
+    pub(super) opens: Duration,
+    pub(super) closes: Duration,
 }
 
-struct ScriptedApp {
-    anchor: Instant,
-    windows: Vec<Window>,
-    field: (&'static str, Duration),
-    exits: Duration,
-    unresponsive: (Duration, Duration),
+pub(super) struct ScriptedApp {
+    pub(super) anchor: Instant,
+    pub(super) windows: Vec<Window>,
+    pub(super) field: (&'static str, Duration),
+    pub(super) exits: Duration,
+    pub(super) unresponsive: (Duration, Duration),
+    pub(super) focused: &'static str,
+    pub(super) sheet: (&'static str, Duration),
 }
 
 impl ScriptedApp {
-    fn new(windows: Vec<Window>, field: (&'static str, Duration)) -> Self {
+    pub(super) fn new(windows: Vec<Window>, field: (&'static str, Duration)) -> Self {
         Self {
             anchor: now(),
             windows,
             field,
             exits: NEVER,
             unresponsive: (NEVER, NEVER),
+            focused: MAIN,
+            sheet: (MAIN, NEVER),
         }
     }
 
@@ -58,6 +62,23 @@ impl ScriptedApp {
     fn unresponsive_now(&self) -> bool {
         let at = self.at();
         self.unresponsive.0 <= at && at < self.unresponsive.1
+    }
+
+    fn surface_tree(
+        &self,
+        id: &str,
+        surface: crate::SnapshotSurface,
+    ) -> Result<AccessibilityNode, AdapterError> {
+        if surface != crate::SnapshotSurface::Sheet {
+            return self.tree(id);
+        }
+        self.tree(id)?;
+        let sheet = if self.sheet.0 == id && self.sheet.1 <= self.at() {
+            vec![node("incrementor", "Width:", Vec::new())]
+        } else {
+            Vec::new()
+        };
+        Ok(node("sheet", id, sheet))
     }
 
     fn tree(&self, id: &str) -> Result<AccessibilityNode, AdapterError> {
@@ -109,15 +130,19 @@ fn window_info(id: &str) -> WindowInfo {
 }
 
 impl ObservationOps for ScriptedApp {
+    fn is_application_surface(&self, surface: crate::SnapshotSurface) -> bool {
+        surface == crate::SnapshotSurface::Menubar
+    }
+
     fn observe_tree(
         &self,
         root: crate::locator::live_locator::ObservationRoot<'_>,
-        _request: &crate::locator::live_locator::ObservationRequest,
+        request: &crate::locator::live_locator::ObservationRequest,
     ) -> Result<crate::locator::live_locator::ObservedTree, AdapterError> {
         let crate::locator::live_locator::ObservationRoot::Window(window) = root else {
             return Err(AdapterError::not_supported("observe_tree"));
         };
-        crate::adapter::observed_tree(&root, self.tree(&window.id)?)
+        crate::adapter::observed_tree(&root, self.surface_tree(&window.id, request.surface)?)
     }
 
     fn list_windows(
@@ -129,17 +154,21 @@ impl ObservationOps for ScriptedApp {
             .windows
             .iter()
             .filter(|window| self.is_open(window.id))
-            .map(|window| window_info(window.id))
+            .map(|window| {
+                let mut info = window_info(window.id);
+                info.state.is_focused = window.id == self.focused;
+                info
+            })
             .collect())
     }
 
     fn get_tree(
         &self,
         window: &WindowInfo,
-        _opts: &crate::adapter::TreeOptions,
+        opts: &crate::adapter::TreeOptions,
         _deadline: crate::Deadline,
     ) -> Result<AccessibilityNode, AdapterError> {
-        self.tree(&window.id)
+        self.surface_tree(&window.id, opts.surface)
     }
 }
 
@@ -148,6 +177,13 @@ impl ActionOps for ScriptedApp {}
 impl InputOps for ScriptedApp {}
 
 impl SystemOps for ScriptedApp {
+    fn supported_surfaces(&self) -> Vec<crate::SnapshotSurface> {
+        vec![
+            crate::SnapshotSurface::Window,
+            crate::SnapshotSurface::Sheet,
+        ]
+    }
+
     fn resolve_window_strict(
         &self,
         expected: &WindowInfo,
@@ -177,7 +213,7 @@ impl SystemOps for ScriptedApp {
     }
 }
 
-fn open(id: &'static str, opens_ms: u64) -> Window {
+pub(super) fn open(id: &'static str, opens_ms: u64) -> Window {
     Window {
         id,
         opens: Duration::from_millis(opens_ms),
@@ -185,7 +221,7 @@ fn open(id: &'static str, opens_ms: u64) -> Window {
     }
 }
 
-fn entry() -> crate::RefEntry {
+pub(super) fn entry() -> crate::RefEntry {
     let mut entry = crate::adapter::minimal_ref_entry("menuitem", Some("Scale Image..."));
     entry.source.source_app = Some("TestApp".into());
     entry.source.source_window_id = Some(MAIN.into());
@@ -194,7 +230,14 @@ fn entry() -> crate::RefEntry {
 }
 
 fn wait_after_action(app: &ScriptedApp, timeout_ms: u64) -> Result<Value, AppError> {
-    let entry = entry();
+    wait_after_action_on(app, entry(), timeout_ms)
+}
+
+pub(super) fn wait_after_action_on(
+    app: &ScriptedApp,
+    entry: crate::RefEntry,
+    timeout_ms: u64,
+) -> Result<Value, AppError> {
     let selector = crate::WaitSelector {
         query_raw: ":Width".into(),
         gone: false,
@@ -217,7 +260,7 @@ fn wait_after_action(app: &ScriptedApp, timeout_ms: u64) -> Result<Value, AppErr
     )
 }
 
-fn adapter_error(result: Result<Value, AppError>) -> AdapterError {
+pub(super) fn adapter_error(result: Result<Value, AppError>) -> AdapterError {
     match result {
         Err(AppError::Adapter(error)) => error,
         other => panic!("expected an adapter error, got {other:?}"),
@@ -345,6 +388,9 @@ fn the_default_budget_ends_an_effect_that_never_comes_at_ten_seconds() {
     assert!(clock.elapsed() < ms(10_500), "{:?}", clock.elapsed());
 }
 
-fn ms(value: u64) -> Duration {
+pub(super) fn ms(value: u64) -> Duration {
     Duration::from_millis(value)
 }
+
+#[path = "wait_selector_scope_surface_tests.rs"]
+mod surface_tests;

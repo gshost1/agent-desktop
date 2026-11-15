@@ -33,12 +33,12 @@ fn exited_original_application_satisfies_only_a_gone_wait() {
             delivered_wait(&adapter, &menu_entry(), true).unwrap()["target_absent"],
             true
         );
-        assert_eq!(
-            delivered_wait(&adapter, &menu_entry(), false)
-                .unwrap_err()
-                .code(),
-            "TIMEOUT"
-        );
+        let AppError::Adapter(gone) = delivered_wait(&adapter, &menu_entry(), false).unwrap_err()
+        else {
+            panic!("expected an adapter error");
+        };
+        assert_eq!(gone.code, ErrorCode::AppNotFound);
+        assert_eq!(gone.details.unwrap()["kind"], "wait_target_gone");
         let result = observe(&wait_for_ready(true), &menu_entry(), &adapter);
         assert_eq!(
             result["outcome"],
@@ -319,8 +319,12 @@ fn successful_menu_materialization_rechecks_original_process_liveness() {
         exits_after_observation: true,
         ..windowless_adapter()
     };
-    let error = delivered_wait(&adapter, &menu_entry(), false).unwrap_err();
-    assert_eq!(error.code(), "TIMEOUT");
+    let AppError::Adapter(error) = delivered_wait(&adapter, &menu_entry(), false).unwrap_err()
+    else {
+        panic!("expected an adapter error");
+    };
+    assert_eq!(error.code, ErrorCode::AppNotFound);
+    assert_eq!(error.details.unwrap()["kind"], "wait_target_gone");
     assert_eq!(adapter.observed.lock().unwrap().len(), 1);
     assert!(adapter.process_checks.load(Ordering::SeqCst) >= 2);
 }

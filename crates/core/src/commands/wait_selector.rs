@@ -109,12 +109,21 @@ fn execute_for_target(
             let completion = match observed {
                 Ok(Some((true, _))) if input.gone => None,
                 Ok(Some((true, owner))) => {
-                    let owners = match owner {
-                        Some(owner) => Ok(vec![owner]),
-                        None => resolve_owners(adapter, &input, entry, poll_deadline),
+                    let (owners, opts) = match owner {
+                        Some((owner, surface)) => (
+                            Ok(vec![owner]),
+                            TreeOptions {
+                                surface,
+                                ..input.opts
+                            },
+                        ),
+                        None => (
+                            resolve_owners(adapter, &input, entry, poll_deadline),
+                            input.opts,
+                        ),
                     };
                     match owners.and_then(|owners| {
-                        build_materialization(adapter, &input.opts, owners, &query, poll_deadline)
+                        build_materialization(adapter, &opts, owners, &query, poll_deadline)
                     }) {
                         Ok((true, result)) => {
                             Some(Ok(SelectorCompletion::Matched(Box::new(result))))

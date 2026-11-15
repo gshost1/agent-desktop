@@ -21,19 +21,25 @@ pub(crate) struct WindowBaseline {
     open: BTreeSet<String>,
 }
 
+/// Whether a ref's own observation already reads every window of its
+/// process: a ref captured through a process root on a window surface. A ref
+/// on an application surface, such as a menu bar item, is also captured
+/// through its process, but reading it reads only that surface.
+pub(crate) fn observes_whole_process(adapter: &dyn PlatformAdapter, entry: &RefEntry) -> bool {
+    entry.source.is_process_owned() && !adapter.is_application_surface(entry.source.source_surface)
+}
+
 impl WindowBaseline {
     /// The baseline an appear wait after an action on `entry` follows, taken
-    /// before the action is sent. `None` without such a wait, for a ref that
-    /// already observes its whole owner, or when the windows cannot be listed.
+    /// before the action is sent. `None` without such a wait, for a ref owned
+    /// by a process root, which already observes the whole process, or when
+    /// the windows cannot be listed.
     pub(crate) fn before_action(
         adapter: &dyn PlatformAdapter,
         entry: &RefEntry,
         wait: Option<&WaitSelector>,
     ) -> Option<Self> {
-        if wait.is_none_or(|wait| wait.gone)
-            || adapter.is_application_surface(entry.source.source_surface)
-            || entry.source.is_process_owned()
-        {
+        if wait.is_none_or(|wait| wait.gone) || observes_whole_process(adapter, entry) {
             return None;
         }
         let deadline = Deadline::from_duration(WINDOW_BASELINE_BUDGET).ok()?;
@@ -80,6 +86,24 @@ impl WindowBaseline {
                 .filter(|window| !self.open.contains(&window.id))
                 .collect(),
         )
+    }
+
+    /// The windows an application-level command such as a menu item acts in:
+    /// the process's focused window, where a sheet it opens attaches, then the
+    /// windows it opened since the action.
+    pub(crate) fn acted_on(
+        &self,
+        adapter: &dyn PlatformAdapter,
+        deadline: Deadline,
+    ) -> Result<Vec<WindowInfo>, AdapterError> {
+        let (focused, rest): (Vec<_>, Vec<_>) =
+            process_windows(adapter, &self.app, &self.process, deadline)?
+                .into_iter()
+                .partition(|window| window.state.is_focused);
+        let opened = rest
+            .into_iter()
+            .filter(|window| !self.open.contains(&window.id));
+        Ok(focused.into_iter().chain(opened).collect())
     }
 }
 
