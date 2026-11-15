@@ -112,7 +112,10 @@ fn only_the_ref_store_writes_without_a_flush() {
         vec![
             ("crates/core/src/refs/mod.rs".to_string(), 2),
             ("crates/core/src/refs/refs_store.rs".to_string(), 2),
-            ("crates/core/src/snapshot/diff/diff_baseline.rs".to_string(), 1),
+            (
+                "crates/core/src/snapshot/diff/diff_baseline.rs".to_string(),
+                1
+            ),
             ("crates/core/src/storage/private_file.rs".to_string(), 4),
             ("crates/core/src/storage/private_file_ops.rs".to_string(), 3),
         ],

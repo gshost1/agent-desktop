@@ -62,7 +62,10 @@ pub(crate) fn save_baseline(
     if let Err(err) = serde_json::to_writer(&mut writer, &view) {
         let err = std::io::Error::from(err);
         if err.kind() == ErrorKind::FileTooLarge {
-            tracing::debug!(snapshot_id, "snapshot: diff baseline over its cap, not saved");
+            tracing::debug!(
+                snapshot_id,
+                "snapshot: diff baseline over its cap, not saved"
+            );
             return Ok(());
         }
         return Err(err.into());

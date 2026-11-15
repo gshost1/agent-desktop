@@ -78,6 +78,9 @@ fn an_incomplete_diff_says_which_read_was_cut_before_its_rows() {
     assert!(replace_diff_with_lines(&mut data).unwrap());
     assert_eq!(
         data["lines"],
-        json!(["incomplete (snapshot)", "focused @s2:e1 button \"OK\" [focused]"])
+        json!([
+            "incomplete (snapshot)",
+            "focused @s2:e1 button \"OK\" [focused]"
+        ])
     );
 }

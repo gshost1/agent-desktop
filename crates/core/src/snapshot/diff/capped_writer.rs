@@ -23,7 +23,10 @@ impl<W: Write> CappedWriter<W> {
 impl<W: Write> Write for CappedWriter<W> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         if bytes.len() > self.remaining {
-            return Err(Error::new(ErrorKind::FileTooLarge, "diff baseline over its cap"));
+            return Err(Error::new(
+                ErrorKind::FileTooLarge,
+                "diff baseline over its cap",
+            ));
         }
         let written = self.inner.write(bytes)?;
         self.remaining -= written;
