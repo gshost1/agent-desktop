@@ -33,6 +33,7 @@ fn a_choice_missing_from_a_popup_read_back_collapsed_stays_unsent() {
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
     let details = error.details.expect("details");
     assert_eq!(details["preparatory_expand"], "expanded_then_collapsed");
+    assert_eq!(details["preparatory_focus"], "may_have_moved_focus");
     assert_eq!(details["popup_closed"], true);
     assert_eq!(details["searched"], true);
 }

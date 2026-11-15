@@ -242,7 +242,8 @@ fn close_and_confirm(
 /// and records the expand in `preparatory_expand`. A popup that may still be
 /// open is a change the caller has to inspect, so that refusal becomes
 /// `delivered_unverified`. Every failure after the expand carries
-/// `popup_closed`.
+/// `popup_closed`, and `preparatory_focus`, because a toolkit's popup may
+/// hand keyboard focus to the control when it closes (GTK 4 does).
 fn expand_then_choose(
     expand: impl FnOnce() -> Result<(), AdapterError>,
     choose: impl FnOnce() -> Result<ActionResult, AdapterError>,
@@ -257,6 +258,7 @@ fn expand_then_choose(
 fn after_expand(error: AdapterError, closed: bool) -> AdapterError {
     let unsent = error.disposition == DeliverySemantics::not_delivered();
     let error = with_detail(error, "popup_closed", json!(closed));
+    let error = with_detail(error, "preparatory_focus", json!("may_have_moved_focus"));
     if !closed {
         return if unsent {
             error.with_disposition(DeliverySemantics::delivered_unverified())

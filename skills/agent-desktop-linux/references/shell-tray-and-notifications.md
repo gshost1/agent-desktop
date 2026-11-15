@@ -106,8 +106,10 @@ adding `--headed` does not supply a missing semantic action.
 A dropdown that `select` expands semantically, such as a GTK4 `DropDown`, is
 collapsed again when the choice is missing or refused, and then read back. When
 the read shows it collapsed, a refusal that sent nothing stays `not_delivered`
-with `details.preparatory_expand: "expanded_then_collapsed"` and
-`details.popup_closed: true`; keyboard focus may have moved to the dropdown.
+with `details.preparatory_expand: "expanded_then_collapsed"`,
+`details.popup_closed: true` and `details.preparatory_focus:
+"may_have_moved_focus"`: GTK 4 hands keyboard focus to the dropdown when its
+popup closes, so read focus before you type.
 When the collapse fails or the popup still reads expanded or unreadable, the
 refusal is `delivered_unverified` with `details.popup_closed: false`.
 
