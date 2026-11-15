@@ -10,6 +10,7 @@ use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode, ProcessId};
 use super::launch_attach::matches;
 use super::launch_handoff;
 use super::launch_owner_query::OwnerQuery;
+use super::launch_owner_query::off_bus::{self, OffBus};
 use crate::system::SharedBus;
 use crate::system::process::running_app::Running;
 use crate::system::registry::Registry;
@@ -182,14 +183,15 @@ fn after_spawn(error: AdapterError) -> AdapterError {
 
 /// Polls the registry until the launch has an owner, the launcher failed, or
 /// the deadline. A child that is alive with no registry entry at the deadline,
-/// or after the query's not-on-bus grace, is reported as not on the bus: the
-/// pid is the spawned process's.
+/// or after the query's not-on-bus grace once it shows it will not join, is
+/// reported as not on the bus: the pid is the spawned process's.
 pub(super) fn find_owner(
     bus: &SharedBus,
     spawned: &mut Spawned,
     query: &OwnerQuery<'_>,
 ) -> Result<Option<Running>, AdapterError> {
     let deadline = query.deadline;
+    let pid = spawned.pid;
     poll_owner(
         spawned,
         query,
@@ -199,19 +201,22 @@ pub(super) fn find_owner(
             Err(error) => Err(error),
         },
         |apps| launch_handoff::observe(bus, query.before, apps, deadline),
+        || off_bus::observe(pid),
     )
 }
 
 /// The owner search over a registry reader. `read` answers `None` when the
 /// registry could not be read in time, which is not evidence that the
 /// spawned process is off the bus. Only a read that began after the
-/// not-on-bus grace expired can settle the search on it. `handoff` looks for a resident that
-/// received the launch from a launcher that exited cleanly.
+/// not-on-bus grace expired can settle the search on it, and only when
+/// `observe` shows the process will not join. `handoff` looks for a resident
+/// that received the launch from a launcher that exited cleanly.
 fn poll_owner(
     spawned: &mut Spawned,
     query: &OwnerQuery<'_>,
     mut read: impl FnMut() -> Result<Option<Vec<Running>>, AdapterError>,
     mut handoff: impl FnMut(&[Running]) -> Step,
+    mut observe: impl FnMut() -> OffBus,
 ) -> Result<Option<Running>, AdapterError> {
     let deadline = query.deadline;
     let mut interval = POLL_INTERVAL;
@@ -240,7 +245,11 @@ fn poll_owner(
                 next = Step::Failed(status);
             }
         }
-        let not_on_bus = child.is_none() && registry_read && grace_over;
+        let not_on_bus = child.is_none() && registry_read && grace_over && {
+            let seen = observe();
+            query.off_bus.set(seen);
+            seen.never_joins()
+        };
         match next {
             Step::Owner(owner) => return Ok(Some(owner)),
             Step::Ambiguous(pids) => return Err(ambiguous(&pids, &spawned.identifier)),
@@ -258,6 +267,9 @@ fn poll_owner(
     }
 }
 
+#[cfg(test)]
+#[path = "launch_observe_poll_tests.rs"]
+mod poll_tests;
 #[cfg(test)]
 #[path = "launch_observe_tests.rs"]
 mod tests;

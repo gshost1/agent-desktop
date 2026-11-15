@@ -322,7 +322,7 @@ impl Launch<'_> {
                 .map_err(|error| with_spawned_pid(error, spawned_pid))?;
                 Ok(self.conclude_with(&owner, window, owner.pid == spawned.pid))
             }
-            None => Ok(report_unlisted(self.id, spawned.pid)),
+            None => Ok(report_unlisted(self.id, spawned.pid, query.off_bus.get())),
         }
     }
 }

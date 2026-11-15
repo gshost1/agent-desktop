@@ -157,36 +157,68 @@ fn live_a_launch_that_shows_no_window_does_not_wait_for_the_whole_timeout() {
     }
 }
 
-#[test]
-#[ignore = "drives real applications; run through scripts/private-session.sh --wm"]
-fn live_a_process_that_never_joins_the_bus_is_reported_after_the_grace_not_the_timeout() {
-    let mut owned = Owned(Vec::new());
-    let options = LaunchOptions {
-        timeout_ms: 20_000,
-        ..options(&["120"])
-    };
+fn launch_off_bus(id: &str, options: &LaunchOptions) -> (LaunchResult, Duration) {
     let started = Instant::now();
-    let result = launch("/bin/sleep", &options).expect("a launch");
-    owned.keep(result.pid.get());
+    let result = launch(id, options).expect("a launch");
     let waited = started.elapsed();
     assert!(result.window.is_none(), "{result:?}");
+    assert!(process_facts::read(result.pid.get()).is_some());
+    (result, waited)
+}
+
+fn suggestion_of(result: &LaunchResult) -> &str {
+    result.notes.suggestion.as_deref().unwrap_or_default()
+}
+
+#[test]
+#[ignore = "drives real applications; run through scripts/private-session.sh --wm"]
+fn live_a_process_that_will_never_join_the_bus_is_reported_after_the_grace_not_the_timeout() {
+    let mut owned = Owned(Vec::new());
+    let windowed = LaunchOptions {
+        timeout_ms: 20_000,
+        ..options(&[])
+    };
+    let (result, waited) = launch_off_bus("xlogo", &windowed);
+    owned.keep(result.pid.get());
     assert!(
-        result
-            .notes
-            .suggestion
-            .as_deref()
-            .is_some_and(|text| text.contains("did not join the accessibility bus")),
+        suggestion_of(&result).contains("shows a window"),
         "{result:?}"
     );
+    assert!(waited < Duration::from_secs(9), "waited {waited:?} of 20 s");
+    let bridge_off = LaunchOptions {
+        timeout_ms: 20_000,
+        env: BTreeMap::from([("NO_AT_BRIDGE".to_owned(), "1".to_owned())]),
+        ..options(&["120"])
+    };
+    let (result, waited) = launch_off_bus("/bin/sleep", &bridge_off);
+    owned.keep(result.pid.get());
     assert!(
-        waited < Duration::from_secs(9),
-        "waited {waited:?} of a 20 s timeout"
+        suggestion_of(&result).contains("NO_AT_BRIDGE"),
+        "{result:?}"
     );
-    assert!(process_facts::read(result.pid.get()).is_some());
-    println!(
-        "independent /proc: pid {} still runs after {waited:?}",
-        result.pid.get()
+    assert!(waited < Duration::from_secs(9), "waited {waited:?} of 20 s");
+}
+
+#[test]
+#[ignore = "drives real applications; run through scripts/private-session.sh --wm"]
+fn live_a_process_with_no_window_yet_is_waited_for_until_the_timeout() {
+    let mut owned = Owned(Vec::new());
+    let starting = LaunchOptions {
+        timeout_ms: 8_000,
+        ..options(&["120"])
+    };
+    let (result, waited) = launch_off_bus("/bin/sleep", &starting);
+    owned.keep(result.pid.get());
+    assert!(
+        suggestion_of(&result).contains("still starting"),
+        "{result:?}"
     );
+    assert!(!suggestion_of(&result).contains("toolkit"), "{result:?}");
+    assert!(
+        waited >= Duration::from_millis(7_500),
+        "waited {waited:?} of 8 s"
+    );
+    assert!(waited < Duration::from_secs(9), "waited {waited:?} of 8 s");
 }
 
 #[test]
