@@ -2,11 +2,12 @@
 //! window lives relative to the caller.
 //!
 //! A window of the calling thread runs its window procedure inside the send.
-//! A window of another process gets a copy of the text the system makes
-//! when the message is sent, so the sender's buffer is free once the send
-//! returns, answered or not. Only a window of another thread in this process
-//! reads the sender's own buffer, whenever its thread gets to the message,
-//! so only that case needs the buffer kept alive past a timed-out send.
+//! For a window of another process the system marshals the text into that
+//! process, since it cannot read the sender's memory, so the replace keeps
+//! the inline `SendMessageTimeoutW` and frees the buffer on return, as
+//! before. Only a window of another thread in this process reads the
+//! sender's own buffer, whenever its thread gets to the message, so only
+//! that case keeps the buffer alive past a timed-out send.
 
 /// The thread and process a window belongs to, or the caller runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
