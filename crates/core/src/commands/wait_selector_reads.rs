@@ -190,7 +190,10 @@ pub(super) fn read_overlays(
                     matches: true,
                     complete: true,
                 }) => return Some((owner.clone(), surface)),
-                Ok(_) => {}
+                Ok(SelectorObservation::Selector { complete, .. }) => {
+                    unmatched.record_read(complete)
+                }
+                Ok(SelectorObservation::OwnerUnavailable(_)) => unmatched.record_read(false),
                 Err(error) => unmatched.record_error(error),
             }
         }

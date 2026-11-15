@@ -43,7 +43,10 @@ fn is_modal(element: &UIAElement) -> Result<bool, AdapterError> {
 
 /// The visible, enabled popup the window owns, when the same process owns
 /// both. The window itself, a hidden popup or a popup of another process is
-/// not one.
+/// not one. `GW_ENABLEDPOPUP` names one popup: a modal that sits below a
+/// non-modal enabled popup of the same owner is not seen. A modal dialog
+/// normally disables its owner and is the enabled popup, so this is the
+/// rare case.
 #[cfg(target_os = "windows")]
 fn owned_enabled_popup(handle: isize) -> Option<isize> {
     use crate::system::window::window_identity::live_window_owner;

@@ -22,6 +22,7 @@ struct MenuApp {
     anchor: Instant,
     menu_opens: Duration,
     menu_is_application_surface: bool,
+    menu_open_reads: Option<usize>,
     reads: Mutex<Vec<(String, SnapshotSurface)>>,
 }
 
@@ -31,6 +32,7 @@ impl MenuApp {
             anchor: now(),
             menu_opens,
             menu_is_application_surface: false,
+            menu_open_reads: None,
             reads: Mutex::new(Vec::new()),
         }
     }
@@ -50,10 +52,21 @@ impl MenuApp {
         id: &str,
         surface: SnapshotSurface,
     ) -> Result<AccessibilityNode, AdapterError> {
-        self.reads.lock().unwrap().push((id.to_owned(), surface));
+        let menu_reads = {
+            let mut reads = self.reads.lock().unwrap();
+            reads.push((id.to_owned(), surface));
+            reads
+                .iter()
+                .filter(|(_, read)| *read == SnapshotSurface::Menu)
+                .count()
+        };
+        let closed_since = self
+            .menu_open_reads
+            .is_some_and(|open_reads| menu_reads > open_reads);
         match surface {
             SnapshotSurface::Menu
-                if now().saturating_duration_since(self.anchor) >= self.menu_opens =>
+                if !closed_since
+                    && now().saturating_duration_since(self.anchor) >= self.menu_opens =>
             {
                 Ok(node(
                     "menu",
@@ -128,7 +141,7 @@ impl ObservationOps for MenuApp {
         _filter: &WindowFilter,
         _deadline: crate::Deadline,
     ) -> Result<Vec<WindowInfo>, AdapterError> {
-        Ok(vec![window_info(MAIN), window_info(OTHER)])
+        Ok(vec![window_info(OTHER), window_info(MAIN)])
     }
 
     fn get_tree(
@@ -263,4 +276,21 @@ fn an_application_owned_menu_is_not_read_as_a_window_overlay() {
     assert_eq!(error.code, ErrorCode::Timeout);
     assert!(clock.elapsed() >= Duration::from_secs(2));
     assert!(app.reads_of(SnapshotSurface::Menu).is_empty());
+}
+
+#[test]
+fn a_menu_that_closes_before_its_snapshot_is_rebuilt_keeps_the_wait_polling() {
+    let _home = HomeGuard::new();
+    let _clock = VirtualClock::freeze();
+    let mut app = MenuApp::new(Duration::ZERO);
+    app.menu_open_reads = Some(1);
+
+    let error = adapter_error(wait_after_action(&app, 2_000));
+
+    assert_eq!(
+        error.code,
+        ErrorCode::Timeout,
+        "the rebuild's surface_absent for the closed menu ended the wait: {error:?}"
+    );
+    assert!(app.reads_of(SnapshotSurface::Menu).len() >= 2);
 }
