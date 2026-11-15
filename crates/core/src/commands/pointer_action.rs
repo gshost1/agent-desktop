@@ -235,7 +235,7 @@ pub(crate) fn wait_for_point_with_focus<'a>(
                     scroll_point_target(&entry, deadline, &lease, adapter)?;
                     drop(lease);
                     last_scrolled_bounds_hash = observed;
-                    std::thread::sleep(POLL_INTERVAL.min(deadline.remaining()));
+                    crate::wait::deadline::sleep(POLL_INTERVAL.min(deadline.remaining()));
                     continue;
                 }
                 if let Some(observed) = observed {
@@ -246,7 +246,7 @@ pub(crate) fn wait_for_point_with_focus<'a>(
                 } else {
                     POLL_INTERVAL
                 };
-                std::thread::sleep(interval.min(remaining));
+                crate::wait::deadline::sleep(interval.min(remaining));
             }
         }
     }

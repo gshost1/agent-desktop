@@ -4,8 +4,9 @@ Update the Cargo workspace version, lockfile, npm source version, and changelog 
 
 ## Changelog fragments
 
-A pull request never edits `CHANGELOG.md`. It adds one fragment, `changelog.d/<branch>.md`, named after its branch
-with `/` replaced by `-` (`fix/click-wait` writes `changelog.d/fix-click-wait.md`):
+Every pull request with a user-visible change, except the release pull request, adds one fragment and leaves
+`CHANGELOG.md` alone. The fragment is `changelog.d/<branch>.md`, named after its branch with `/` replaced by `-`
+(`fix/click-wait` writes `changelog.d/fix-click-wait.md`), and sits directly in `changelog.d/`:
 
 ```markdown
 ### Bug Fixes
@@ -15,8 +16,10 @@ with `/` replaced by `-` (`fix/click-wait` writes `changelog.d/fix-click-wait.md
 
 A fragment holds one or more `### <Heading>` sections. The headings are `BREAKING CHANGES`, `Features`, `Bug Fixes`,
 `Performance`, `Documentation`, `Testing` and `Known issues`. Each heading has a blank line after it and one or more
-single-line `* ` bullets. `python3 scripts/changelog_fragments.py check` checks every fragment, the pre-commit hook
-checks staged fragments, and `scripts/check-release-consistency.sh` checks them in CI.
+single-line `* ` bullets, and the file ends with a newline. `python3 scripts/changelog_fragments.py check` checks every
+fragment. The pre-commit hook checks staged fragments, refuses one in a subfolder, and refuses a staged `CHANGELOG.md`
+unless the same commit stages the version bump in `Cargo.toml` or the fragment deletions that `assemble` makes. The
+Format job in CI runs the fragment self-test and `check` on every pull request.
 
 The release pull request assembles the fragments after it bumps the version:
 
@@ -30,8 +33,10 @@ order above and the bullets of each heading ordered by pull request number. It c
 deletes the fragments it used; `changelog.d/.gitkeep` stays. The compare link runs from the previous top release, or
 from `--previous`. `--date` defaults to today, and `--intro "<paragraph>"` adds a paragraph under the heading. It
 refuses a version that already has a section, an empty `changelog.d/` and a malformed fragment, and then changes
-nothing. `scripts/check-release-consistency.sh` fails while the top section of `CHANGELOG.md` is not the workspace
-version, so a version bump without an assembled changelog does not pass CI.
+nothing. The release pull request can assemble and bump in one commit or in two; each commit passes the hook.
+`scripts/check-release-consistency.sh` runs the self-test and `check` too, and fails while the top section of
+`CHANGELOG.md` is not the workspace version. The Release workflow runs it before it tags, so a version bump without
+an assembled changelog stops the release there. Run it locally before you open the release pull request.
 
 ## Publishing
 
