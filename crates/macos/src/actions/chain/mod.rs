@@ -68,11 +68,23 @@ mod imp {
         Ok((steps, false))
     }
 
+    /// A chain's own suggestion names another mechanism to try, which is
+    /// right only when nothing was sent. Once a step was delivered without a
+    /// confirmed effect, the caller must read the result before acting again.
     pub(crate) fn exhaustion_error(steps: &[ActionStep], suggestion: &str) -> AdapterError {
+        let disposition = exhaustion_disposition(steps);
+        let suggestion =
+            if disposition == agent_desktop_core::DeliverySemantics::delivered_unverified() {
+                DELIVERED_SUGGESTION
+            } else {
+                suggestion
+            };
         AdapterError::new(ErrorCode::ActionFailed, "All chain steps exhausted")
-            .with_disposition(exhaustion_disposition(steps))
+            .with_disposition(disposition)
             .with_suggestion(suggestion)
     }
+
+    const DELIVERED_SUGGESTION: &str = "A step was sent but its effect was not confirmed, so repeating the action can apply it twice. Take a new snapshot (for a context menu, 'snapshot --app <app> --surface menu') before deciding whether to act again.";
 
     pub(crate) fn after_steps(steps: &[ActionStep], error: AdapterError) -> AdapterError {
         let delivered = exhaustion_disposition(steps)
