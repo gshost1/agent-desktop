@@ -233,7 +233,13 @@ mod imp {
             status: &mut ChildReadStatus,
             requested: usize,
         ) -> Result<Vec<AXElement>, i32> {
-            read_prefix(self.element, self.attribute, requested, self.deadline, status)
+            read_prefix(
+                self.element,
+                self.attribute,
+                requested,
+                self.deadline,
+                status,
+            )
         }
 
         fn recount(&self, status: &mut ChildReadStatus) -> Result<usize, i32> {

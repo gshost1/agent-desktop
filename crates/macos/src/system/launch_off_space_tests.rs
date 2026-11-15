@@ -2,8 +2,7 @@ use super::{OFF_SPACE_NOTE, explain_off_space, has_off_space_window};
 use crate::system::window::cg_window::WindowRecord;
 use crate::system::window::window_presence::WindowPresence;
 use agent_desktop_core::{
-    ProcessId, Rect, system::launch_notes::LaunchNotes,
-    system::launch_result::LaunchResult,
+    ProcessId, Rect, system::launch_notes::LaunchNotes, system::launch_result::LaunchResult,
 };
 
 fn record(visible: bool, width: f64, height: f64) -> WindowRecord {

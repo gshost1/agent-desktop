@@ -1,6 +1,6 @@
 use super::imp::{
-    HitClassification, ax_point, classify_relation, decide_hit, ends_clipping_walk, intersect_rects,
-    needs_application_retry, remember_ancestor,
+    HitClassification, ax_point, classify_relation, decide_hit, ends_clipping_walk,
+    intersect_rects, needs_application_retry, remember_ancestor,
 };
 use crate::tree::AXElement;
 use accessibility_sys::AXUIElementCreateSystemWide;

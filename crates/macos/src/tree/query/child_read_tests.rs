@@ -240,7 +240,11 @@ fn a_list_that_grew_after_a_refused_longer_range_is_reported_incomplete() {
 
     let (elements, final_count, complete, status) = settle(&list, 3);
 
-    assert_eq!(list.recounts.get(), 1, "the exact-range read is never proof");
+    assert_eq!(
+        list.recounts.get(),
+        1,
+        "the exact-range read is never proof"
+    );
     assert!(!complete);
     assert!(status.count_changed);
     assert_eq!(final_count, 4);
