@@ -204,6 +204,21 @@ A failed `--wait-for` after a delivered operation keeps the operation's own deli
 
 Each match carries `role` and `interactive`, and `ref_id`, `name`, `value`, `states` and `path` when it has them (`path` is trimmed above). A match that earns a ref has a qualified `ref_id`, and the response then includes the `snapshot_id` that holds it. A match with no ref is a context match: it has no `ref_id` and carries `bounds` when the platform reports them, so you can see where it is. An element without an accessible name omits `name`, and its content stays in `value`. When a query with `--role` matches nothing, `roles_present` lists the roles the search did see.
 
+## Snapshot contents
+
+A snapshot whose tree holds 40 or more nodes carries `contents` in `data`, before the tree: a short index of what the tree holds and where, so a read that stops early still shows which lists exist and how much of each is loaded.
+
+```json
+"contents": {
+  "roles": { "button": 62, "cell": 6, "radiobutton": 5, "treeitem": 6 },
+  "regions": [
+    { "line": 75, "role": "scrollarea", "name": "lazy-list", "ref": "@s8f3k2p9:e73", "items": 12, "partial": true }
+  ]
+}
+```
+
+`roles` counts the nodes with refs for the four commonest roles. `regions` lists, in tree order and at most six (`more_regions` counts the rest), each list, table, outline, grid, browser and list-like scroll area, and each toolbar and tab bar. `line` is the node's index in `data.lines`, `items` the number of items the list holds in this snapshot (a lazily loaded list holds only the rows near its viewport), and `partial: true` means the list can still scroll, so it may hold items the snapshot does not show. With `--lines`, `contents` prints as lines such as `line 75: @s8f3k2p9:e73 scrollarea "lazy-list" items=12 partial`.
+
 ## Snapshot diffs
 
 `snapshot --since <snapshot_id>` returns the usual snapshot fields (`app`, `window`, `snapshot_id`, `ref_count`, `complete` and, when cut short, `truncated`, `nodes_observed` and `refmap_capped`) and `diff` in place of `tree`. The usage is in [`snapshot`](/desktop/commands/observation#only-what-changed).
