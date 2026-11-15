@@ -17,12 +17,14 @@ use crate::{Action, AdapterError, ErrorCode, actions::action_request::ActionRequ
 /// is enabled at the first poll, and one a 1 s timer enables is seen enabled
 /// 1,080 to 1,200 ms (GTK3) and 1,420 to 1,630 ms (GTK4) after the click
 /// starts, so 2 s keeps that case and cuts a control that stays disabled from
-/// the 5 s default to about 2 s.
+/// the 5 s default to about 2 s. Other toolkits were not measured; a control
+/// enabled later is reached with `wait --element <ref> --predicate enabled` or
+/// a `--timeout-ms` the caller chooses.
 pub(crate) const DISABLED_SETTLE: Duration = Duration::from_millis(2000);
 
 const DISABLED_SUGGESTION: &str = "The element is disabled. Do what enables it first, such as \
      filling a required field or selecting an item, then act on it again. If it becomes enabled \
-     on its own, wait for that with `wait --element <ref> --predicate enabled --timeout <ms>`, \
+     on its own, wait for that with wait --element <ref> --predicate enabled --timeout <ms>, \
      then act.";
 
 const WAITABLE_SUGGESTION: &str = "Wait for the target to become actionable, refresh the \
@@ -46,11 +48,12 @@ pub(super) fn finish(
     let sole = report.sole_blocking_check();
     let disabled = sole.is_some_and(is_disabled);
     let mut details = report_details(evidence, &report);
-    let message = if disabled && disabled_is_final(request, deadline) {
-        mark_final_disabled(&mut details, deadline);
+    let elapsed = deadline.elapsed();
+    let message = if disabled && disabled_is_final(request, elapsed) {
+        mark_final_disabled(&mut details, elapsed);
         format!(
             "Target is disabled: its live enabled state is still false after {} ms",
-            deadline.elapsed().as_millis()
+            elapsed.as_millis()
         )
     } else {
         format!("Target is not actionable: {}", report.failure_reasons())
@@ -82,22 +85,20 @@ fn is_disabled(check: &ActionabilityCheck) -> bool {
     check.check == "enabled" && check.status == ActionabilityStatus::Fail
 }
 
-/// A caller that set a budget other than the default asked to wait for the
-/// target, so only the default budget is cut short.
-fn disabled_is_final(request: &ActionRequest, deadline: crate::Deadline) -> bool {
-    let default_budget = request
-        .timeout_ms
-        .is_none_or(|timeout_ms| timeout_ms == crate::DEFAULT_OPERATION_TIMEOUT_MS);
-    default_budget && deadline.elapsed() >= DISABLED_SETTLE
+/// Only a ref action polling on its command's default budget is cut short: a
+/// caller that set its own budget asked to wait for the target, and a request
+/// with no budget at all is not a polling ref action.
+fn disabled_is_final(request: &ActionRequest, elapsed: Duration) -> bool {
+    request.on_default_budget() && elapsed >= DISABLED_SETTLE
 }
 
-fn mark_final_disabled(details: &mut Value, deadline: crate::Deadline) {
+fn mark_final_disabled(details: &mut Value, elapsed: Duration) {
     if let Some(object) = details.as_object_mut() {
         object.insert("kind".into(), json!("target_disabled"));
         object.insert("retryable".into(), json!(false));
         object.insert(
             "elapsed_ms".into(),
-            json!(deadline.elapsed().as_millis() as u64),
+            json!(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)),
         );
     }
 }
@@ -107,7 +108,10 @@ fn mark_final_disabled(details: &mut Value, deadline: crate::Deadline) {
 /// instead: the same command with `--headed`. The denial is terminal, so a
 /// waitable gap reported beside it does not change the answer; a disabled
 /// target or another terminal refusal, such as a target that is not editable,
-/// does, because headed input cannot fix either.
+/// does, because headed input cannot fix either. A headed request never gets
+/// here: its policy permits the pointer and focus fallbacks this check denies.
+/// Switching to headed input is the user's choice, so the text makes it
+/// conditional on their permission.
 fn fallback_denied_suggestion(
     report: &ActionabilityReport,
     request: &ActionRequest,
@@ -122,37 +126,33 @@ fn fallback_denied_suggestion(
             && check.status == ActionabilityStatus::Fail
             && check.terminal_code.is_some()
     });
-    if !denied
-        || other_terminal
-        || report.checks.iter().any(is_disabled)
-        || request.policy.is_headed()
-    {
+    if !denied || other_terminal || report.checks.iter().any(is_disabled) {
         return None;
     }
     Some(match request.action {
         Action::Click => {
-            "This element has no semantic click action, so only the pointer can click it. If \
-             pointer input is acceptable here, rerun the command with --headed; it moves the \
-             pointer and may raise the window. Where this session has no headed pointer input, \
-             the headed command refuses and says why."
+            "This element has no semantic click action, so only the pointer can click it. If the \
+             user allows physical input for this task, run the command with --headed; it moves \
+             the pointer and may raise the window. Where this session has no headed pointer \
+             input, the headed command refuses and says why."
         }
         Action::RightClick => {
             "This element has no semantic right-click action, so only the pointer can right-click \
-             it. If pointer input is acceptable here, rerun the command with --headed; it moves \
-             the pointer and may raise the window. Where this session has no headed pointer \
-             input, the headed command refuses and says why."
+             it. If the user allows physical input for this task, run the command with --headed; \
+             it moves the pointer and may raise the window. Where this session has no headed \
+             pointer input, the headed command refuses and says why."
         }
         Action::DoubleClick | Action::TripleClick => {
             "This element has no semantic action for this gesture, so only the pointer can send \
-             it. If pointer input is acceptable here, rerun the command with --headed; it moves \
-             the pointer and may raise the window. Where this session has no headed pointer \
-             input, the headed command refuses and says why."
+             it. If the user allows physical input for this task, run the command with --headed; \
+             it moves the pointer and may raise the window. Where this session has no headed \
+             pointer input, the headed command refuses and says why."
         }
         _ if request.action.may_use_focus_fallback() => {
             "This element has no semantic action for this input, so it has to take keyboard focus \
-             first. If focus changes are acceptable here, rerun the command with --headed to \
-             focus it and send the keys. Where this session has no headed input, the headed \
-             command refuses and says why."
+             first. If the user allows physical input for this task, run the command with \
+             --headed to focus it and send the keys. Where this session has no headed input, the \
+             headed command refuses and says why."
         }
         _ => return None,
     })
@@ -194,3 +194,7 @@ fn suggestion(
 #[cfg(test)]
 #[path = "refusal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "refusal_auto_wait_tests.rs"]
+mod auto_wait_tests;

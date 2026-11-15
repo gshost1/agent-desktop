@@ -67,7 +67,10 @@ pub fn execute(
             return super::type_text_interval::execute(args, interval_ms, adapter, context);
         }
     }
-    let request = context.request_base(Action::TypeText(args.text));
+    let default_budget_ms = default_timeout_ms(&args.text);
+    let request = context
+        .request_base(Action::TypeText(args.text))
+        .with_default_budget_ms(default_budget_ms);
     execute_ref_action_with_context(
         RefArgs {
             ref_id: args.ref_id,

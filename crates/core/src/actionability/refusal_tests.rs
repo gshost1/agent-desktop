@@ -130,11 +130,16 @@ fn clickable() -> Vec<String> {
     vec![crate::actions::capability::CLICK.to_string()]
 }
 
+fn default_budget_click() -> ActionRequest {
+    ActionRequest::headless(Action::Click)
+        .with_timeout_ms(Some(crate::DEFAULT_OPERATION_TIMEOUT_MS))
+}
+
 #[test]
 fn a_target_still_disabled_after_the_settle_time_gets_a_final_disabled_refusal() {
     let error = refuse(
         &live_evidence(false, clickable()),
-        &ActionRequest::headless(Action::Click),
+        &default_budget_click(),
         started_ago(DISABLED_SETTLE + Duration::from_millis(100)),
     );
 
@@ -165,7 +170,7 @@ fn a_target_still_disabled_after_the_settle_time_gets_a_final_disabled_refusal()
 fn a_target_disabled_within_the_settle_time_stays_waitable_and_says_it_is_disabled() {
     let error = refuse(
         &live_evidence(false, clickable()),
-        &ActionRequest::headless(Action::Click),
+        &default_budget_click(),
         started_ago(Duration::from_millis(200)),
     );
 
@@ -180,9 +185,9 @@ fn a_target_disabled_within_the_settle_time_stays_waitable_and_says_it_is_disabl
 }
 
 #[test]
-fn the_default_budget_passed_explicitly_still_ends_a_disabled_wait_early() {
-    let request = ActionRequest::headless(Action::Click)
-        .with_timeout_ms(Some(crate::DEFAULT_OPERATION_TIMEOUT_MS));
+fn the_cut_survives_a_rewrite_of_the_budget_to_the_time_left() {
+    let mut request = default_budget_click();
+    request.timeout_ms = Some(1_234);
     let error = refuse(
         &live_evidence(false, clickable()),
         &request,
@@ -190,6 +195,33 @@ fn the_default_budget_passed_explicitly_still_ends_a_disabled_wait_early() {
     );
 
     assert!(!error.permits_retry_by_default());
+}
+
+#[test]
+fn typing_on_its_own_default_budget_gets_the_cut() {
+    let text = "hello";
+    let request = ActionRequest::headless(Action::TypeText(text.into()))
+        .with_default_budget_ms(crate::commands::type_text::default_timeout_ms(text))
+        .with_timeout_ms(Some(crate::commands::type_text::default_timeout_ms(text)));
+    let mut evidence = live_evidence(false, Vec::new());
+    evidence.state.role = "textfield".into();
+    evidence.available_actions = vec![crate::actions::capability::TYPE_TEXT.to_string()];
+    let error = refuse(&evidence, &request, started_ago(DISABLED_SETTLE * 2));
+
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.details.unwrap()["kind"], "target_disabled");
+}
+
+#[test]
+fn a_request_without_a_budget_is_not_cut() {
+    let error = refuse(
+        &live_evidence(false, clickable()),
+        &ActionRequest::headless(Action::Click),
+        started_ago(DISABLED_SETTLE * 2),
+    );
+
+    assert!(error.permits_retry_by_default());
+    assert!(error.details.unwrap().get("kind").is_none());
 }
 
 #[test]
@@ -211,7 +243,7 @@ fn a_disabled_target_with_another_gap_keeps_the_generic_refusal() {
     evidence.state.offscreen = Some(true);
     let error = refuse(
         &evidence,
-        &ActionRequest::headless(Action::Click),
+        &default_budget_click(),
         started_ago(DISABLED_SETTLE * 2),
     );
 
@@ -236,11 +268,11 @@ fn a_headless_click_without_a_semantic_action_names_headed_as_the_way_out() {
         assert_eq!(error.code, ErrorCode::PolicyDenied, "{action:?}");
         let hint = error.suggestion.unwrap();
         assert!(
-            hint.contains("rerun the command with --headed"),
+            hint.contains("run the command with --headed"),
             "{action:?}: {hint}"
         );
         assert!(
-            hint.contains("If pointer input is acceptable"),
+            hint.contains("If the user allows physical input for this task"),
             "{action:?}: {hint}"
         );
         assert!(
@@ -268,10 +300,23 @@ fn headless_typing_without_a_semantic_action_names_headed_focus_as_the_way_out()
     let hint = error.suggestion.unwrap();
     assert!(hint.contains("--headed"), "{hint}");
     assert!(hint.contains("keyboard focus"), "{hint}");
+    assert!(hint.contains("If the user allows physical input"), "{hint}");
 }
 
 #[test]
-fn a_disabled_target_without_a_semantic_click_says_disabled_not_headed() {
+fn headless_typing_into_a_target_that_is_not_editable_gets_no_headed_hint() {
+    let error = refuse(
+        &live_evidence(true, Vec::new()),
+        &ActionRequest::headless(Action::TypeText("hello".into())),
+        started_ago(Duration::ZERO),
+    );
+
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert!(!error.suggestion.unwrap().contains("--headed"));
+}
+
+#[test]
+fn a_disabled_target_without_a_semantic_click_gets_no_headed_hint() {
     let error = refuse(
         &live_evidence(false, Vec::new()),
         &ActionRequest::headless(Action::Click),
