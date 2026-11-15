@@ -48,7 +48,7 @@ agent-desktop wait --app "Font Book" --text "Saved" --timeout 5000
 ## Reading output in a shell
 
 - Chain steps with `&&`, never `;`: a refused click must stop the save or submit after it.
-- When a command fails, agent-desktop also prints one line on stderr, `agent-desktop: <CODE>: <message> -- <suggestion>`, so a pipe into jq, grep or head cannot hide the error.
+- When a command fails, agent-desktop also prints one line on stderr, `agent-desktop: <CODE>: <message>` plus ` -- <suggestion>` when there is one, so a pipe into jq, grep or head cannot hide the error. Keep stderr out of the pipe: no `2>&1 | jq`.
 - A `jq` path over `data` prints nothing useful for an error envelope. Keep the error visible: `jq -r '.data.lines[]? // .error'`.
 - Lines are JSON strings, so a name's quotes print as `\"`. `grep -i subscript`, not `grep 'switch "Subscript"'`.
 - Filter with `grep` or `jq`; never cut a snapshot with `head`.
