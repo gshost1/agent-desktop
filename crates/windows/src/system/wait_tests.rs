@@ -67,6 +67,9 @@ fn open_true_returns_ok_once_the_fixtures_menu_opens_shortly_after_the_wait_star
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let _stage = crate::tree::fixture::fixture_window::on_screen_stage();
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
     let identity = identity_for(ProcessId::from(fixture.process_id()));
@@ -102,6 +105,9 @@ fn open_true_returns_ok_once_the_fixtures_menu_opens_shortly_after_the_wait_star
 fn open_false_waits_and_returns_ok_once_the_already_open_menu_is_dismissed() {
     bootstrap();
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
@@ -161,6 +167,9 @@ fn already_in_the_requested_state_returns_immediately_reading_the_predicate_once
 fn a_menu_that_never_transitions_times_out_with_direction_specific_platform_detail() {
     bootstrap();
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let _stage = crate::tree::fixture::fixture_window::on_screen_stage();
