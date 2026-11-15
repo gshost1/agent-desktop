@@ -8,6 +8,11 @@ print(windows[0]["id"] if len(windows) == 1 else "")
 ' "$fixture_pid" "$1" 2>/dev/null
 }
 
+written_report() {
+    printf '%s/%s/%s' "$(json_field "$1" ok)" "$(json_field "$1" data.disposition.delivery)" \
+        "$(json_field "$1" data.details.application_commit)"
+}
+
 panel_window_id() { fixture_window_id "Fixture Panel"; }
 
 main_window_value() {
@@ -82,6 +87,17 @@ panel_suite() {
     assert "focus on another field ends the edit and the app commits it" \
         "$([ "$commit_status" = "committed-$label" ] && echo 1 || echo 0)" "committed=$commit_status"
 
+    text="$(panel_target "$window" textfield panel-commit-text)"
+    written="$(act_target "$text" set-value "view-$label" 2>/dev/null)"
+    height="$(panel_target "$window" textfield panel-height)"
+    act_target "$height" focus >/dev/null 2>&1
+    commit_status="$(main_window_value panel-commit-text-status "view-$label")"
+    assert "set-value on a text view reports an unobserved commit that focus elsewhere ends" \
+        "$([ "$(written_report "$written")" = "True/delivered_unverified/unobserved" ] && \
+            [[ "$(json_field "$written" data.details.commit_hint)" == *'check the saved result'* ]] && \
+            [ "$commit_status" = "view-$label" ] && echo 1 || echo 0)" \
+        "report=$(written_report "$written") committed=$commit_status"
+
     text="$(panel_target "$window" textfield panel-text)"
     act_target "$text" select gamma >/dev/null 2>&1
     selection_status="$(main_window_value panel-selection-status 11+5)"
@@ -115,8 +131,8 @@ check_fixture_contention || { finish; exit 1; }
 panel_suite headed "--headed"
 
 form_suite() {
-    local open_form form plain swift counts
-    note "[form] set-value never presses a default button or submits"
+    local open_form form target written report action_count search_count plain_status counts
+    note "[form] set-value never presses a default button or submits, and reports what it cannot see"
     "$bin" focus-window --app "$app" >/dev/null 2>&1
     main_window="$(fixture_window_id "AgentDesk Fixture")"
     require_target open_form button open-form-window
@@ -129,14 +145,44 @@ form_suite() {
         sleep 0.1
     done
     [ -n "$form" ] || { assert "the form window opens" 0 ""; return; }
-    plain="$(panel_target "$form" textfield form-plain)"
-    act_target "$plain" set-value "written-plain" >/dev/null 2>&1
-    require_target swift textfield swift-submit
-    act_target "$swift" set-value "written-swift" >/dev/null 2>&1
-    sleep 0.5
-    counts="$(main_window_value form-default-count 0)/$(main_window_value swift-default-count 0)/$(main_window_value swift-submit-count 0)/$(main_window_value form-action-count 0)"
-    assert "set-value presses no default button and runs no submit or field action" \
-        "$([ "$counts" = "0/0/0/0" ] && echo 1 || echo 0)" "default/swift-default/swift-submit/action=$counts"
+
+    target="$(panel_target "$form" textfield form-action)"
+    written="$(act_target "$target" set-value "written-action" 2>/dev/null)"
+    report="$(written_report "$written")"
+    action_count="$(main_window_value form-action-count 0)"
+    assert "set-value on a field with an action reports an unobserved commit and runs no action" \
+        "$([ "$report" = "True/delivered_unverified/unobserved" ] && [ "$action_count" = "0" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report action=$action_count"
+
+    target="$(panel_target "$form" textfield form-search)"
+    written="$(act_target "$target" set-value "written-search" 2>/dev/null)"
+    report="$(written_report "$written")"
+    search_count="$(main_window_value form-search-count 0)"
+    assert "set-value on a search field is settled by its read-back and runs no search action" \
+        "$([ "$report" = "True/delivered_verified/not_verified" ] && [ "$search_count" = "0" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report search=$search_count"
+
+    target="$(panel_target "$form" textfield form-plain)"
+    written="$(act_target "$target" set-value "written-plain" 2>/dev/null)"
+    report="$(written_report "$written")"
+    plain_status="$(main_window_value form-plain-status plain)"
+    assert "set-value on a commit-on-end-editing field leaves the commit to the caller" \
+        "$([ "$report" = "True/delivered_unverified/unobserved" ] && [ "$plain_status" = "plain" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report committed=$plain_status"
+
+    require_target target textfield swift-submit
+    written="$(act_target "$target" set-value "written-swift" 2>/dev/null)"
+    report="$(written_report "$written")"
+    counts="$(main_window_value form-default-count 0)/$(main_window_value swift-default-count 0)/$(main_window_value swift-submit-count 0)"
+    assert "set-value presses no default button and runs no SwiftUI submit" \
+        "$([ "$report" = "True/delivered_unverified/unobserved" ] && [ "$counts" = "0/0/0" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report default/swift-default/swift-submit=$counts"
+
+    target="$(panel_target "$form" textfield form-search)"
+    act_target "$target" focus >/dev/null 2>&1
+    plain_status="$(main_window_value form-plain-status written-plain)"
+    assert "focus on another field in the window commits the written field" \
+        "$([ "$plain_status" = "written-plain" ] && echo 1 || echo 0)" "committed=$plain_status"
     act_target "$(panel_target "$form" button Close)" click >/dev/null 2>&1
 }
 

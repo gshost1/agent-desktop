@@ -112,12 +112,15 @@ pub fn execute_verified_action(
             "insufficient_evidence"
         };
         result.post_state = Some(observed.state);
+        let commit_unobserved = result.commit_unobserved();
         result = result.with_unverified_delivery();
         let details = result.details.get_or_insert_with(|| serde_json::json!({}));
         if let Some(details) = details.as_object_mut() {
             details.insert("verification_scope".into(), "unavailable".into());
             details.insert("verification_reason".into(), reason.into());
-            details.insert("application_commit".into(), "not_verified".into());
+            if !commit_unobserved {
+                details.insert("application_commit".into(), "not_verified".into());
+            }
         }
         return Ok(result);
     }

@@ -11,9 +11,11 @@ mod imp {
         deadline: Deadline,
     ) -> Result<DeliveryOutcome, AdapterError> {
         prepare(element, deadline)?;
-        if attribute == "AXValue" {
-            crate::actions::chain::chain_edit_focus::focus_before_value_write(element, deadline)?;
-        }
+        let focus = if attribute == "AXValue" {
+            crate::actions::chain::chain_edit_focus::focus_before_value_write(element, deadline)?
+        } else {
+            crate::actions::DeliveryTracker::default()
+        };
         let uncertain = if attribute == "AXValue" {
             ax_helpers::set_ax_value_coerced(element, value, deadline).err()
         } else {
@@ -21,7 +23,7 @@ mod imp {
         };
         if let Some(error) = uncertain {
             if error.disposition != agent_desktop_core::DeliverySemantics::uncertain() {
-                return Err(error);
+                return Err(focus.annotate(error));
             }
             let observed = crate::tree::copy_value_typed(element, deadline);
             let role = ax_helpers::element_role(element, deadline).ok().flatten();
@@ -37,7 +39,7 @@ mod imp {
                 Err(error)
             };
         }
-        let mut delivery = crate::actions::DeliveryTracker::default();
+        let mut delivery = focus;
         delivery.mark_delivered();
         prepare(element, deadline).map_err(|error| delivery.annotate(error))?;
         let role = ax_helpers::element_role(element, deadline)

@@ -77,14 +77,12 @@ mod imp {
                     request,
                     deadline,
                 )?);
-                if crate::actions::chain::chain_edit_focus::edits_through_focus(
-                    crate::actions::ax_helpers::element_role(el, deadline)
-                        .ok()
-                        .flatten()
-                        .as_deref(),
-                ) {
-                    return Ok(ActionResult::from_execution(action, steps)
-                        .with_commit_unobserved(EDIT_COMMIT_HINT));
+                if let Some(hint) =
+                    crate::actions::edit_commit::read_edit_commit(el, deadline).hint()
+                {
+                    return Ok(
+                        ActionResult::from_execution(action, steps).with_commit_unobserved(hint)
+                    );
                 }
             }
 
@@ -221,8 +219,6 @@ mod imp {
 
         Ok(ActionResult::from_execution(action, steps))
     }
-
-    const EDIT_COMMIT_HINT: &str = "The field shows the new text, but an app may take it only when editing ends. Before you save or confirm, run `focus` on another field in the same window to end the edit, then check the result. Do not press Return in the field: it can submit a form or press a default button.";
 
     fn awaiting_commit(action: &Action, steps: Vec<ActionStep>) -> ActionResult {
         ActionResult::awaiting_commit(action, steps, inline_editor_target::COMMIT_KEY)

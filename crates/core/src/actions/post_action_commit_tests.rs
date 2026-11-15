@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct ShadowedField {
     execution: ActionResult,
+    value: Option<&'static str>,
     reads_after_dispatch: AtomicUsize,
     dispatched: AtomicUsize,
 }
@@ -18,7 +19,7 @@ impl ObservationOps for ShadowedField {
             state: crate::ElementState {
                 role: "textfield".into(),
                 states: vec![],
-                value: Some("untitled folder".into()),
+                value: self.value.map(str::to_string),
                 enabled: Some(true),
                 hidden: Some(false),
                 offscreen: Some(false),
@@ -65,6 +66,7 @@ fn text_held_by_an_inline_editor_is_unverified_and_names_the_commit_key() {
                 vec![ActionStep::succeeded("AXValue").with_verified(true)],
                 "return",
             ),
+            value: Some("untitled folder"),
             reads_after_dispatch: AtomicUsize::new(0),
             dispatched: AtomicUsize::new(0),
         };
@@ -104,8 +106,16 @@ fn verified_steps_alone_never_mark_a_pending_commit() {
 }
 
 fn written_field(execution: ActionResult) -> (ShadowedField, Result<ActionResult, AdapterError>) {
+    field_reading(execution, Some("untitled folder"))
+}
+
+fn field_reading(
+    execution: ActionResult,
+    value: Option<&'static str>,
+) -> (ShadowedField, Result<ActionResult, AdapterError>) {
     let adapter = ShadowedField {
         execution,
+        value,
         reads_after_dispatch: AtomicUsize::new(0),
         dispatched: AtomicUsize::new(0),
     };
@@ -154,4 +164,38 @@ fn an_unmarked_value_write_that_reads_back_stays_verified() {
         result.details.unwrap()["application_commit"],
         "not_verified"
     );
+}
+
+fn unobserved_write() -> ActionResult {
+    let steps = vec![ActionStep::succeeded("AXValue").with_verified(true)];
+    ActionResult::from_execution(&Action::SetValue("x".into()), steps)
+        .with_commit_unobserved("focus another field")
+}
+
+#[test]
+fn a_marked_value_write_that_did_not_land_still_fails_the_read_back() {
+    let (_, result) = field_reading(unobserved_write(), Some("old text"));
+    let error = result.expect_err("the field still holds its old text");
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert!(
+        error
+            .message
+            .contains("does not match the requested change"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn a_marked_value_write_that_cannot_be_read_keeps_its_commit_report() {
+    let (_, result) = field_reading(unobserved_write(), None);
+    let result = result.unwrap();
+    assert_eq!(
+        result.disposition(),
+        DeliverySemantics::delivered_unverified()
+    );
+    let details = result.details.unwrap();
+    assert_eq!(details["verification_scope"], "unavailable");
+    assert_eq!(details["application_commit"], "unobserved");
+    assert_eq!(details["commit_hint"], "focus another field");
 }
