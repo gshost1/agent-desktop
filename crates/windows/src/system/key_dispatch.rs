@@ -170,7 +170,7 @@ fn background_fail_closed(pid: ProcessId) -> AdapterError {
         "physical_delivery_started": false,
     }))
     .with_suggestion(
-        "Retry with --headed so the target can be activated first, or ensure the target is already foreground",
+        "Bring the target to the foreground yourself and retry, or, if the user allows physical input, retry with --headed so the target can be activated first",
     )
     .with_disposition(DeliverySemantics::not_delivered())
 }

@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use agent_desktop_core::{
     ActionResult, AdapterError, DeliverySemantics, ErrorCode, InteractionLease, MouseButton,
-    NotificationActionRequest,
+    NotificationActionRequest, NotificationTarget,
 };
 use serde_json::json;
 
@@ -10,7 +10,7 @@ use super::extract::Entry;
 use super::list::read_listing;
 use super::session::{Session, require_headed};
 use super::signal::{BusSignals, SETTLE_BUDGET, SignalSource};
-use super::target::{Located, Wanted, locate, reconfirm, require};
+use super::target::{Located, locate, reconfirm, require};
 use super::verify::{REMOVAL_SETTLE, evidence, holds, pressed_without_effect, settle_read};
 use super::world::{LiveWorld, ShellWorld};
 use crate::system::SharedBus;
@@ -26,7 +26,7 @@ pub(crate) fn action(
     action_in(&LiveWorld::new(bus), &BusSignals, request, lease)
 }
 
-/// Presses the named action button of the entry at the index, expanding the
+/// Presses the named action button of the targeted entry, expanding the
 /// entry first when its buttons are not laid out. The press only counts when
 /// its effect shows: the entry's own object left the list, with the daemon's
 /// action signal as the sharper proof when exactly one arrived. A press whose
@@ -41,11 +41,7 @@ pub(crate) fn action_in(
     lease: &InteractionLease,
 ) -> Result<ActionResult, AdapterError> {
     require_headed(request.policy)?;
-    let wanted = Wanted {
-        index: request.index,
-        app_filter: None,
-        identity: request.identity,
-    };
+    let wanted = request.target;
     let first = locate(world, wanted, lease.deadline())?;
     offered(first.entry(), request.action_name)?;
     let session = Session::open(world, request.policy, lease)?;
@@ -56,11 +52,11 @@ pub(crate) fn action_in(
 fn press(
     world: &dyn ShellWorld,
     signals: &dyn SignalSource,
-    (request, wanted): (&NotificationActionRequest<'_>, Wanted<'_>),
+    (request, wanted): (&NotificationActionRequest<'_>, &NotificationTarget),
     first: &Entry,
     lease: &InteractionLease,
 ) -> Result<ActionResult, AdapterError> {
-    let (deadline, name, index) = (lease.deadline(), request.action_name, request.index);
+    let (deadline, name, index) = (lease.deadline(), request.action_name, first.info.index);
     let mut ready = reconfirm(world, wanted, first, deadline)?;
     if !laid_out(ready.entry(), name) {
         let expand = require(ready.entry().expand(), "expand button", index)?;
@@ -92,7 +88,7 @@ fn press(
 
 fn expanded(
     world: &dyn ShellWorld,
-    wanted: Wanted<'_>,
+    wanted: &NotificationTarget,
     first: &Entry,
     name: &str,
     lease: &InteractionLease,

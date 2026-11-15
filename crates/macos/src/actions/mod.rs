@@ -6,6 +6,7 @@ pub(crate) mod ax_perform;
 pub(crate) mod chain;
 pub(crate) mod delivery_tracker;
 pub(crate) mod dispatch;
+pub(crate) mod edit_commit;
 pub(crate) mod extras;
 pub(crate) mod inline_editor_target;
 mod native_menu;

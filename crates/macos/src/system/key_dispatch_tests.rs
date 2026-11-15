@@ -132,8 +132,13 @@ fn a_missing_focused_element_names_both_recovery_routes() {
     let suggestion = error
         .suggestion
         .expect("the error carries a recovery suggestion");
-    assert!(suggestion.contains("--headed"), "{suggestion}");
     assert!(suggestion.contains("--surface menubar"), "{suggestion}");
+    let menu = suggestion.find("--surface menubar").expect("menu route");
+    let headed = suggestion
+        .find("--headed instead")
+        .expect("headed is the alternative");
+    assert!(menu < headed, "{suggestion}");
+    assert!(suggestion.contains("do not do both"), "{suggestion}");
 }
 
 #[test]

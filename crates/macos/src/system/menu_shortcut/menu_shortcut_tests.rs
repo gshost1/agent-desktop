@@ -57,7 +57,15 @@ fn a_disabled_item_in_a_background_app_is_refused_as_not_delivered() {
             "menu": "File", "item": "New Folder", "enabled": false, "frontmost": false, "visited": 9
         })
     );
-    assert!(error.suggestion.unwrap().contains("--headed"));
+    let suggestion = error.suggestion.unwrap();
+    let headless = suggestion
+        .find("focus-window")
+        .expect("headless route named");
+    let permission = suggestion
+        .find("If the user allows physical input")
+        .expect("headed route needs the user's permission");
+    let headed = suggestion.find("--headed").expect("headed route named");
+    assert!(headless < permission && permission < headed, "{suggestion}");
 }
 
 #[test]

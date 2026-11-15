@@ -2,23 +2,23 @@ use super::*;
 use crate::notifications::fake::{FakeSignals, FakeWorld, Log, lease, log, reading, spec};
 use crate::notifications::signal::Signal;
 use crate::system::shell::search::Walk;
-use agent_desktop_core::{ErrorCode, InteractionPolicy, NotificationIdentity};
+use agent_desktop_core::{ErrorCode, InteractionPolicy, NotificationIdentity, NotificationTarget};
 
-fn identity() -> NotificationIdentity {
-    NotificationIdentity {
+fn identity() -> NotificationTarget {
+    let identity = NotificationIdentity {
         expected_app: Some("Mail".to_owned()),
         expected_title: Some("a".to_owned()),
-    }
+    };
+    NotificationTarget::new(Some(1), None, identity).expect("target")
 }
 
 fn request<'a>(
-    identity: &'a NotificationIdentity,
+    target: &'a NotificationTarget,
     name: &'a str,
     policy: InteractionPolicy,
 ) -> NotificationActionRequest<'a> {
     NotificationActionRequest {
-        index: 1,
-        identity,
+        target,
         action_name: name,
         policy,
     }
@@ -205,4 +205,33 @@ fn an_expand_control_that_removed_the_entry_is_reported_as_what_it_did() {
     assert_eq!(error.code, ErrorCode::ActionFailed);
     assert!(error.message.contains("removed the notification instead"));
     assert_eq!(world.clicks(), vec!["/Mail:a/expand"]);
+}
+
+#[test]
+fn a_keyed_action_on_a_shifted_list_presses_nothing() {
+    let log = log();
+    let seen = [agent_desktop_core::NotificationInfo {
+        index: 1,
+        app_name: "Mail".into(),
+        title: "a".into(),
+        body: None,
+        actions: vec![],
+    }];
+    let key = agent_desktop_core::notification_keys(&seen).remove(0);
+    let shifted = reading(&[
+        spec("Mail", "a").body("another").actions(&["Run A"]),
+        spec("Mail", "a").actions(&["Run A"]),
+    ]);
+    let world = FakeWorld::new(&log, vec![shifted]);
+    let target =
+        NotificationTarget::new(Some(1), Some(&key), NotificationIdentity::default()).expect("t");
+    let error = action_in(
+        &world,
+        &signals(&log, Vec::new()),
+        request(&target, "Run A", InteractionPolicy::headed()),
+        &lease(600),
+    )
+    .expect_err("index 1 holds a different Mail entry now");
+    assert_eq!(error.code, ErrorCode::NotificationNotFound);
+    assert!(world.clicks().is_empty());
 }

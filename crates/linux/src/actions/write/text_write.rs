@@ -46,7 +46,7 @@ pub(crate) fn editable_text_ignored(policy: InteractionPolicy, action: &str) -> 
     } else if policy.is_headed() {
         "Use 'type' in the current headed mode to send real key events; select the existing text first if you intend to replace it"
     } else {
-        "Use '--headed type' to send real key events; select the existing text first if you intend to replace it"
+        "If the user allows physical input, use '--headed type' to send real key events; select the existing text first if you intend to replace it"
     })
     .with_details(serde_json::json!({ "cause": "toolkit_ignores_editable_text" }))
     .with_disposition(DeliverySemantics::not_delivered())

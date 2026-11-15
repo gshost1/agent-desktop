@@ -47,6 +47,7 @@ Stateful actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `e
 
 - Secure text is redacted. A delivered write can return `delivered_unverified` with `verification_reason: "secure_field"`. This never turns a native delivery error into success.
 - `set-value` and `type` verify the element value only (`verification_scope: element_value`, `application_commit: not_verified`). Confirm document-level effects, such as a table that should have resized, with an independent read.
+- `application_commit: unobserved` (macOS plain text fields and text areas) means the element reads back the value, but the app may not have taken it into its document. `details.commit_hint` says what to do. For a text field, run `focus` on another field in the same window before you save or confirm, then check the result, and do not press Return in that field. For a text area, `focus` elsewhere commits some text views and not others, so after you save, check the saved result. This differs from `application_commit: pending`, where pressing `commit_key` is the commit.
 - `application_commit: pending` with `verification_scope: inline_editor` means the text went into an editor floating over the field, such as a list row being renamed. Nothing is committed yet: press `details.commit_key` (`press return --app <App>`), then confirm with an independent read, such as the file name on disk.
 - If `data.surfaces` lists a sheet, menu or alert, the app is waiting on it. Use `find --surface sheet` and answer it. A `delivered_unverified` result with an open surface usually means a confirmation is pending. A missing `data.surfaces`, or an entry whose `unclassified` names a kind, does not prove that kind is closed: snapshot that surface when you expect one.
 
@@ -144,7 +145,7 @@ agent-desktop toggle @s8f3k2p9:e6
 agent-desktop expand @s8f3k2p9:e7
 ```
 
-- `select` picks an option by display text in a list, dropdown or combobox. For menu-backed controls it opens the menu, activates the item and checks the control value. A missing item or an unchanged value returns a structured error. On macOS, `select` on a text field or text area selects that exact text instead; the text must occur once in the field, or it fails `AMBIGUOUS_TARGET` (`details.offsets`) or `ELEMENT_NOT_FOUND` and changes nothing.
+- `select` picks an option by display text in a list, dropdown or combobox. For menu-backed controls it opens the menu, activates the item and checks the control value. A missing item or an unchanged value returns a structured error. On macOS, `select` on a text field or text area selects that exact text instead; the text must occur once in the field, or it fails `AMBIGUOUS_TARGET` (`details.offsets`) or `ELEMENT_NOT_FOUND` and changes nothing. A field whose value cannot be read whole fails before anything is written, with `details.kind` `text_value_unreadable` or `text_value_truncated`. When the field reports a different selection after the write, `select` fails `ACTION_FAILED` with `details.kind: selection_not_observed` and `retry: unsafe`; only a selection that cannot be read back succeeds as `delivered_unverified`.
 - `check` and `uncheck` are idempotent and verify the final state. Prefer them over `toggle`. Use `toggle` only when the current state is unknown, and it needs readable before and after state.
 - `expand` and `collapse` act on disclosure triangles, tree items and accordions, and verify the final state.
 
@@ -212,7 +213,7 @@ agent-desktop --headed mouse-move --xy 100,200
 - `drag` accepts refs, coordinates, or a mix. The destination app is never pre-focused, because raising it could cover the source point. For a cross-app drag, keep the destination visible. Both endpoints still pass visibility, stability and hit-test checks.
 - `drag --timeout-ms` covers the whole gesture as well as target preparation. An explicit `--duration` plus `--drop-delay` at or above the budget returns `INVALID_ARGS` before target work. Leave additional room for platform pickup/default delays, resolution and completion: for a 5000 ms movement, use `--duration 5000 --timeout-ms 10000`. A valid request can still return `TIMEOUT` if preparation consumes the remaining gesture budget. Optional `--wait-for`/`--wait-for-gone` verification has its own separate wait budget.
 - A drop target often needs the item to dwell over it. The default `--drop-delay` is 500 ms (150 ms on Linux, where a longer hold opens a hovered Files folder). Raise it (800 to 1200) for list reorders and cross-window drops.
-- `mouse-click` takes `--button left|right|middle`, `--count`, and `--modifiers`.
+- `mouse-click` requires `--xy X,Y` (without it the command exits 2) and takes `--button left|right|middle`, `--count`, and `--modifiers`.
 
 ## Choose the command
 
@@ -222,7 +223,7 @@ agent-desktop --headed mouse-move --xy 100,200
 | Fill a text field | `set-value @ref "text"` | `clear` then `type` |
 | Set a checkbox | `check` / `uncheck` | `toggle` when state is unknown |
 | Pick a dropdown option | `select @ref "Option"` | open the menu, then `snapshot --surface menu` |
-| Open a context menu | `right-click @ref` | `--headed mouse-click --button right` |
+| Open a context menu | `right-click @ref` | `--headed mouse-click --button right --xy X,Y` |
 | Move between fields | `press tab` | `focus @ref` |
 | Copy text out of a field | `get @ref --property value` | `press` the copy shortcut, then `clipboard-get` |
 | Find an off-screen item | `scroll @area`, then `find` | `scroll-to @ref` |

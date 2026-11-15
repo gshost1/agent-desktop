@@ -318,6 +318,7 @@ struct ContentView: View {
                 }
 
             FloatingPanelControls()
+            FixtureFormControls()
         }
     }
 

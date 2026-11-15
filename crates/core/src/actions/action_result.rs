@@ -56,6 +56,28 @@ impl ActionResult {
             }))
     }
 
+    /// Marks a value write whose readback cannot show that the application
+    /// committed it: the control may hand its text to the application's model
+    /// only when editing ends. Verification still reads the value back, but
+    /// the delivery stays unverified and `hint` says how to end the edit.
+    pub fn with_commit_unobserved(self, hint: &str) -> Self {
+        let mut this = self.with_unverified_delivery();
+        let details = this.details.get_or_insert_with(|| serde_json::json!({}));
+        if let Some(details) = details.as_object_mut() {
+            details.insert("application_commit".into(), UNOBSERVED_COMMIT.into());
+            details.insert("commit_hint".into(), hint.into());
+        }
+        this
+    }
+
+    /// True for a result marked by [`ActionResult::with_commit_unobserved`].
+    pub fn commit_unobserved(&self) -> bool {
+        self.details
+            .as_ref()
+            .and_then(|details| details["application_commit"].as_str())
+            == Some(UNOBSERVED_COMMIT)
+    }
+
     /// True for a result built by [`ActionResult::awaiting_commit`].
     pub fn awaits_application_commit(&self) -> bool {
         self.details
@@ -135,6 +157,7 @@ fn delivery_summary(steps: &[ActionStep]) -> (bool, bool) {
 }
 
 const PENDING_COMMIT: &str = "pending";
+const UNOBSERVED_COMMIT: &str = "unobserved";
 
 const fn default_action_disposition() -> DeliverySemantics {
     DeliverySemantics::delivered_unverified()
