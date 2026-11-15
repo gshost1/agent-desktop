@@ -319,12 +319,27 @@ fn successful_menu_materialization_rechecks_original_process_liveness() {
         exits_after_observation: true,
         ..windowless_adapter()
     };
-    let AppError::Adapter(error) = delivered_wait(&adapter, &menu_entry(), false).unwrap_err()
-    else {
+    let wait = WaitSelector {
+        timeout_ms: 10_000,
+        ..wait_for_ready(false)
+    };
+    let context = crate::CommandContext::default().with_wait_selector(Some(wait));
+    let delivered =
+        serde_json::to_value(crate::ActionResult::delivered_unverified("click")).unwrap();
+    let started = std::time::Instant::now();
+    let AppError::Adapter(error) = super::super::super::apply_post_action_wait(
+        delivered,
+        Some(&menu_entry()),
+        None,
+        &adapter,
+        &context,
+    )
+    .unwrap_err() else {
         panic!("expected an adapter error");
     };
     assert_eq!(error.code, ErrorCode::AppNotFound);
     assert_eq!(error.details.unwrap()["kind"], "wait_target_gone");
     assert_eq!(adapter.observed.lock().unwrap().len(), 1);
     assert!(adapter.process_checks.load(Ordering::SeqCst) >= 2);
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }
