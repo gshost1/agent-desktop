@@ -7,6 +7,7 @@ use agent_desktop_core::{
 use super::{PointerSession, run_pointer};
 use crate::input::wayland::key_session::KeySession;
 use crate::input::wayland::stream_point::StreamPoint;
+use crate::system::DisplayLayout;
 
 #[derive(Default)]
 struct Recording {
@@ -100,7 +101,7 @@ fn receiver_loss_before_a_button_stops_dispatch_and_preserves_prior_motion() {
                 kind: agent_desktop_core::MouseEventKind::Click { count: 1 },
                 modifiers: Vec::new(),
             },
-            &[display("DP-1", 0., 0.)],
+            &DisplayLayout::unscaled(vec![display("DP-1", 0., 0.)]),
             &mut || {
                 checks += 1;
                 if checks > allowed {
@@ -148,7 +149,7 @@ fn receiver_loss_before_a_button_stops_dispatch_and_preserves_prior_motion() {
 
 #[test]
 fn missing_absolute_targeting_never_presses_a_shell_control() {
-    let displays = [display("DP-1", 100., 0.)];
+    let displays = DisplayLayout::unscaled(vec![display("DP-1", 100., 0.)]);
     for fail in [None, Some("start")] {
         let mut session = Recording {
             stream: fail.is_some(),
@@ -216,7 +217,7 @@ fn an_overlapping_control_with_an_off_display_center_is_not_aimed() {
 
 #[test]
 fn pointer_routing_and_failures() {
-    let displays = [display("DP-1", 600., 50.)];
+    let displays = DisplayLayout::unscaled(vec![display("DP-1", 600., 50.)]);
     let target = Point { x: 677., y: 71. };
     let mut session = Recording {
         stream: true,

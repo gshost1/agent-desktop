@@ -13,7 +13,7 @@ use crate::input::mouse::press_clock::PressClock;
 use crate::input::physical::target_world::{LiveWorld, PhysicalWorld};
 use crate::input::plan::Plan;
 use crate::input::step::Step;
-use crate::system::SharedBus;
+use crate::system::{DisplayLayout, SharedBus};
 use crate::tree::{AtspiElement, atspi_element};
 
 pub(crate) struct ClickSpec {
@@ -236,10 +236,14 @@ pub(crate) fn click_shell(
     let extents = crate::system::shell::light::live_extents(bus, node, deadline)?
         .map(Rect::from)
         .ok_or_else(geometry_refusal)?;
-    let displays = crate::system::list_displays(deadline)?;
-    let point = super::shell_aim::aim(extents, &displays)?;
     let world = LiveWorld { bus, lease };
-    match world.backend()? {
+    let backend = world.backend()?;
+    let layout = match backend {
+        Backend::Wayland => crate::system::wayland_layout(deadline)?,
+        Backend::X11(_) => DisplayLayout::unscaled(crate::system::list_displays(deadline)?),
+    };
+    let point = super::shell_aim::aim(extents, &layout.displays)?;
+    match backend {
         Backend::X11(_) => {
             click_steps(
                 &world,
@@ -262,7 +266,7 @@ pub(crate) fn click_shell(
                     kind: MouseEventKind::Click { count: 1 },
                     modifiers: Vec::new(),
                 },
-                &displays,
+                &layout,
                 &mut || world.validate_pointer(node, &point, deadline),
                 deadline,
             )?;

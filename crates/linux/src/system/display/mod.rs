@@ -2,6 +2,7 @@ use agent_desktop_core::{AdapterError, Deadline, DisplayInfo, ErrorCode, Rect};
 
 use super::x11::{self, MonitorFault, MonitorReader, MonitorSource, X11Monitor};
 use crate::system::display::display_cause::Cause;
+use crate::system::display::display_layout::DisplayLayout;
 use crate::system::display::display_mutter::LogicalMonitor;
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::display::display_unavailable::Unavailable;
@@ -156,11 +157,23 @@ pub(crate) fn decide_x11(
 /// The displays of a Wayland session as Mutter lists them, with no look at the
 /// environment: a caller that already chose the Wayland route asks here.
 pub(crate) fn list_wayland_displays(deadline: Deadline) -> Result<Vec<DisplayInfo>, AdapterError> {
-    decide(
+    wayland_layout(deadline).map(|layout| layout.displays)
+}
+
+/// The Wayland displays with Mutter's layout mode, which decides what one
+/// stream unit of a pointer gesture is on each display.
+pub(crate) fn wayland_layout(deadline: Deadline) -> Result<DisplayLayout, AdapterError> {
+    let state = display_mutter::current_state(deadline)?;
+    let stream_scaled = state.as_ref().is_some_and(|state| state.layout_is_logical);
+    let displays = decide(
         DisplayServer::Wayland,
         None,
-        display_mutter::logical_monitors(deadline)?,
-    )
+        state.map(|state| state.monitors),
+    )?;
+    Ok(DisplayLayout {
+        displays,
+        stream_scaled,
+    })
 }
 
 /// Lists the session's displays. On X11 the monitor list comes from RandR
@@ -192,9 +205,11 @@ mod tests;
 pub(crate) mod display_cause;
 pub(crate) mod display_env;
 pub(super) mod display_error;
+pub(crate) mod display_layout;
 #[cfg(test)]
 pub(super) mod display_live_tests;
 pub(super) mod display_mutter;
+pub(super) mod display_mutter_state;
 pub(super) mod display_probe;
 pub(crate) mod display_reach;
 pub(crate) mod display_server;

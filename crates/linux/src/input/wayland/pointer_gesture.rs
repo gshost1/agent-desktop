@@ -5,9 +5,7 @@
 
 use std::time::Duration;
 
-use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, DisplayInfo, ErrorCode, Point,
-};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, Point};
 use serde_json::json;
 
 use super::pointer_send::{PointerSession, delivery_error, execute_created_session};
@@ -16,6 +14,7 @@ use crate::input::delivery::{Delivery, Gate};
 use crate::input::keyboard::key_names::KEYSYM_SHIFT_L;
 use crate::input::physical::shell_aim::display_under;
 use crate::input::step::Step;
+use crate::system::DisplayLayout;
 
 /// A fresh session's first motion only creates the virtual pointer, and a
 /// press before a second motion reaches no surface (L43-1).
@@ -59,14 +58,14 @@ fn outside(x: i32, y: i32) -> AdapterError {
 fn stream_point(
     x: i32,
     y: i32,
-    displays: &[DisplayInfo],
+    layout: &DisplayLayout,
     connectors: &mut Vec<String>,
 ) -> Result<StreamPoint, AdapterError> {
     let point = Point {
         x: f64::from(x),
         y: f64::from(y),
     };
-    let display = display_under(&point, displays).ok_or_else(|| outside(x, y))?;
+    let display = display_under(&point, &layout.displays).ok_or_else(|| outside(x, y))?;
     let connector = display.id.split('+').next().unwrap_or_default().to_owned();
     let stream = match connectors.iter().position(|known| *known == connector) {
         Some(index) => index,
@@ -75,11 +74,7 @@ fn stream_point(
             connectors.len() - 1
         }
     };
-    let scale = if display.scale.is_finite() && display.scale > 0.0 {
-        display.scale
-    } else {
-        1.0
-    };
+    let scale = layout.stream_scale(display);
     Ok(StreamPoint {
         stream,
         x: (point.x - display.bounds.x) * scale,
@@ -115,7 +110,7 @@ fn button_act(code: u8, down: bool) -> Result<Option<PointerAct>, AdapterError> 
 pub(crate) fn translate(
     steps: &[Step],
     modifiers: Vec<u32>,
-    displays: &[DisplayInfo],
+    layout: &DisplayLayout,
 ) -> Result<WaylandGesture, AdapterError> {
     let mut connectors = Vec::new();
     let mut acts = Vec::new();
@@ -124,7 +119,7 @@ pub(crate) fn translate(
             Step::MoveTo { x, y } => acts.push(PointerAct::Motion(stream_point(
                 *x,
                 *y,
-                displays,
+                layout,
                 &mut connectors,
             )?)),
             Step::Button { code, down } => acts.extend(button_act(*code, *down)?),
@@ -358,3 +353,7 @@ pub(crate) fn run_gesture<S: PointerSession>(
 #[cfg(test)]
 #[path = "pointer_gesture_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pointer_gesture_layout_tests.rs"]
+mod layout_tests;
