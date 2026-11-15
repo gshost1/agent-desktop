@@ -36,7 +36,10 @@ impl Drop for FullTrace {
     }
 }
 
-fn closing_failure(command_mutates: bool, result: Result<serde_json::Value, AppError>) -> AdapterError {
+fn closing_failure(
+    command_mutates: bool,
+    result: Result<serde_json::Value, AppError>,
+) -> AdapterError {
     let trace = FullTrace::new("closing");
     let context = CommandContext::new(None, Some(trace.0.clone()), true).unwrap();
     let scope = if command_mutates {

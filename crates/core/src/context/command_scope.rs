@@ -59,7 +59,8 @@ impl<'a> CommandScope<'a> {
             Ok(_) => self.emit_end(true, None),
             Err(err) => self.emit_end(false, Some(err.code())),
         };
-        emitted.map_err(|error| trace_error_with_disposition(error, self.closing_disposition(result)))
+        emitted
+            .map_err(|error| trace_error_with_disposition(error, self.closing_disposition(result)))
     }
 
     fn closing_disposition(&self, result: &Result<Value, AppError>) -> DeliverySemantics {
