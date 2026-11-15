@@ -1,3 +1,5 @@
+use super::{child_read_status::ChildReadStatus, child_read_telemetry as telemetry};
+
 #[derive(Clone, Copy)]
 pub(crate) struct ChildReadBudget {
     pub(crate) max_elements: usize,
@@ -79,6 +81,77 @@ pub(super) fn read_counted_list<T, S>(
         }
         None => (read_exact(state), false),
     }
+}
+
+/// The reads a counted list takes after its first count.
+pub(super) trait CountedChildren {
+    type Element;
+
+    fn attribute(&self) -> &str;
+
+    /// The page of `page_len` children from the first, or `None` when the
+    /// responder refuses a range longer than its count.
+    fn read_whole(
+        &self,
+        status: &mut ChildReadStatus,
+        page_len: usize,
+    ) -> Option<Result<Vec<Self::Element>, i32>>;
+
+    fn read_exact(
+        &self,
+        status: &mut ChildReadStatus,
+        requested: usize,
+    ) -> Result<Vec<Self::Element>, i32>;
+
+    fn recount(&self, status: &mut ChildReadStatus) -> Result<usize, i32>;
+}
+
+/// Reads a list whose first count was `count` and settles the elements, the
+/// count to report and whether the read is whole. The second count runs
+/// unless the read itself proved the count, and a count that changed between
+/// the two leaves the read incomplete.
+pub(super) fn settle_counted_read<C: CountedChildren>(
+    children: &C,
+    status: &mut ChildReadStatus,
+    count: usize,
+    (max_elements, page_size): (usize, usize),
+) -> (Vec<C::Element>, usize, bool) {
+    let attribute = children.attribute();
+    let requested = count.min(max_elements);
+    let whole_page = whole_list_page(count, max_elements, page_size);
+    let mut complete = true;
+    let (read, proven) = read_counted_list(
+        status,
+        count,
+        whole_page,
+        |status, page_len| children.read_whole(status, page_len),
+        |status| children.read_exact(status, requested),
+    );
+    let mut elements = match read {
+        Ok(elements) => elements,
+        Err(error) => {
+            telemetry::record(status, attribute, "prefix", error, Some(count));
+            complete = false;
+            Vec::new()
+        }
+    };
+    elements.truncate(requested);
+    complete &= elements.len() == requested;
+    let recount = (recount_after_prefix(requested) && !proven).then(|| children.recount(status));
+    let final_count = match recount.unwrap_or(Ok(count)) {
+        Ok(final_count) => final_count,
+        Err(error) => {
+            telemetry::record(status, attribute, "stable_count", error, Some(count));
+            complete = false;
+            count
+        }
+    };
+    if count != final_count {
+        status.count_changed = true;
+        complete = false;
+        elements.truncate(final_count);
+    }
+    (elements, final_count, complete)
 }
 
 #[cfg(test)]

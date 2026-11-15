@@ -404,6 +404,8 @@ run_set_value "$text_field" "$text_value"
 await_status text_after text-echo equal "$text_value" || fail "semantic set-value did not reach fixture state"
 pass "AX set-value produced the fixture-owned binding change"
 source "$here/scenarios/silent-text.sh"
+# shellcheck source=tests/e2e/scenarios/background-chord.sh
+source "$here/scenarios/background-chord.sh"
 
 read_status toggle_before toggle-status || fail "toggle status is unavailable"
 [ "$toggle_before" = "off" ] || fail "fresh toggle state is not clean"

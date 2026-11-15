@@ -15,6 +15,7 @@ SAFE_NAMED_TARGETS = {
     ("textfield", "silent-text-input"),
     ("checkbox", "toggle-box"),
 }
+UNROUTED_BACKGROUND_CHORD = "cmd+j"
 SAFE_STATUS_IDS = {
     ("statictext", "click-status"),
     ("statictext", "text-echo"),
@@ -181,6 +182,12 @@ def validate_command(argv, fixture_app, window_id, mutation_armed):
             or argv[7] == "--native-id" and target in SAFE_STATUS_IDS
         ):
             raise SafetyError("find target is outside the fixture-safe allowlist")
+        return
+    if command == "press":
+        if not mutation_armed or not window_id:
+            raise SafetyError("press requires an armed ownership and focus checkpoint")
+        if argv != ["press", UNROUTED_BACKGROUND_CHORD, "--app", fixture_app, "--window-id", window_id]:
+            raise SafetyError("press is allowed only as the headless unrouted chord on the owned fixture window")
         return
     if command not in {"click", "type", "set-value", "toggle", "check", "uncheck"}:
         raise SafetyError(f"command is forbidden in the safe semantic suite: {command}")
