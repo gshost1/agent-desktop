@@ -114,7 +114,7 @@ fn surfaces_for_apps_is_empty_without_an_app_or_pid_filter() {
     let surfaces =
         surfaces_for_apps(&filter, &apps, deadline).expect("unscoped inventory succeeds");
     assert!(
-        surfaces.is_empty(),
+        surfaces.signals.is_empty() && surfaces.complete,
         "unscoped waits must not walk every running app's AX tree for surfaces"
     );
 }
@@ -127,4 +127,55 @@ fn baseline_capture_rejects_an_expired_deadline() {
         .expect_err("an expired baseline capture must time out");
 
     assert_eq!(error.code.as_str(), "TIMEOUT");
+}
+
+fn surface_info(id: &str, kind: &str, unclassified: &[&str]) -> agent_desktop_core::SurfaceInfo {
+    agent_desktop_core::SurfaceInfo {
+        id: id.into(),
+        kind: kind.into(),
+        title: None,
+        item_count: None,
+        unclassified: unclassified.iter().map(|kind| (*kind).into()).collect(),
+    }
+}
+
+fn probe_app() -> AppInfo {
+    AppInfo {
+        name: "Probe".into(),
+        pid: agent_desktop_core::ProcessId::new(42),
+        bundle_id: None,
+        process_instance: Some("instance".into()),
+        presentation: None,
+    }
+}
+
+fn recorded(infos: Vec<agent_desktop_core::SurfaceInfo>) -> SurfaceCapture {
+    let mut capture = SurfaceCapture {
+        signals: Vec::new(),
+        complete: true,
+    };
+    record_surfaces(&mut capture, &probe_app(), "instance", infos);
+    capture
+}
+
+#[test]
+fn a_fully_read_inventory_is_a_complete_surface_capture() {
+    let capture = recorded(vec![surface_info("w-7", "sheet", &[])]);
+
+    assert!(capture.complete);
+    assert_eq!(capture.signals.len(), 1);
+    assert_eq!(capture.signals[0].id, "w-7");
+}
+
+#[test]
+fn an_unread_surface_kind_makes_the_capture_incomplete() {
+    for unread in [
+        surface_info("app/menubar", "menubar", &["menu"]),
+        surface_info("app/windows", "window", &["sheet", "popover", "alert"]),
+    ] {
+        let capture = recorded(vec![surface_info("w-7", "sheet", &[]), unread]);
+
+        assert!(!capture.complete);
+        assert_eq!(capture.signals.len(), 1);
+    }
 }

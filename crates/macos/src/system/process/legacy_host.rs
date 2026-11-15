@@ -102,7 +102,7 @@ fn blob_names_agent_desktop(blob: &[u8]) -> bool {
     identifier == b"agent-desktop" || identifier.starts_with(b"agent_desktop-")
 }
 
-fn is_agent_desktop(pid: libc::pid_t) -> bool {
+pub(crate) fn is_agent_desktop(pid: libc::pid_t) -> bool {
     let mut blob = [0u8; IDENTITY_BUFFER_LEN];
     let read = unsafe { csops(pid, CS_OPS_IDENTITY, blob.as_mut_ptr().cast(), blob.len()) };
     read == 0 && blob_names_agent_desktop(&blob)
