@@ -42,6 +42,24 @@ pub(crate) struct StagedHosted {
     previous_foreground: isize,
 }
 
+impl StagedHosted {
+    /// Whether this staging started Settings itself, so a test may close it
+    /// without closing a Settings the desktop's user had open.
+    pub(crate) fn started_settings(&self) -> bool {
+        !self.settings_preexisting
+    }
+}
+
+/// The hosted application's identity as the window listing reports it: its
+/// own pid with that process's generation token.
+pub(crate) fn hosted_process_identity(pid: u32) -> agent_desktop_core::ProcessIdentity {
+    let pid = ProcessId::from(pid);
+    let token = crate::system::process_identity::token_for_pid(pid)
+        .expect("the token read answers")
+        .expect("a live hosted process carries a generation token");
+    agent_desktop_core::ProcessIdentity::new(pid, token)
+}
+
 impl Drop for StagedHosted {
     fn drop(&mut self) {
         if !self.settings_preexisting {

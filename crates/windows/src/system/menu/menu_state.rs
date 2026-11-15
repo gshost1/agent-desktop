@@ -202,7 +202,7 @@ const WINUI_POPUP_WINDOW_CLASS: &str = "Microsoft.UI.Content.PopupWindowSiteBrid
 fn tool_window_candidates(pid: ProcessId) -> Result<Vec<isize>, AdapterError> {
     let mut handles = Vec::new();
     enumerate_top_level(|window| {
-        if crate::system::window::window_identity::live_window_owner(window.handle) == Some(pid)
+        if crate::system::window::frame_identity::is_window_of_process(window.handle, pid)
             && (window.tool || is_shown_winui_popup(&window))
         {
             handles.push(window.handle as isize);
@@ -335,6 +335,10 @@ fn probe_step(error: &uiautomation::Error, context: &str) -> Result<bool, Adapte
 #[cfg(test)]
 #[path = "menu_state_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "menu_state_hosted_tests.rs"]
+mod hosted_tests;
 
 #[cfg(all(test, target_os = "windows"))]
 #[path = "menu_state_chromium_tests.rs"]
