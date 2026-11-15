@@ -11,10 +11,10 @@ use crate::tree::walk::walker::walk_levels;
 use crate::tree::walk::wrapper::classify;
 use crate::tree::{Expansion, Field, ObservedRead, Walk, WalkLimits};
 
-fn gtk4() -> ToolkitId {
+fn gtk(version: &str) -> ToolkitId {
     ToolkitId {
         name: Some("GTK".into()),
-        version: Some("4.14.5".into()),
+        version: Some(version.into()),
     }
 }
 
@@ -41,11 +41,13 @@ fn window_with_a_tab(limits: &WalkLimits) -> Result<Walk<ObservedRead>, AdapterE
     )
 }
 
-fn tab_actions(toolkit: Option<ToolkitId>) -> Vec<String> {
+fn tab_actions(toolkit: Option<ToolkitId>, identity_only: bool) -> Vec<String> {
     let window = window(window_id::encode(":1.1", "/p").expect("encodes"));
+    let mut request = request();
+    request.observation_mode.identity_only = identity_only;
     let tree = observe_with(
         ObservationRoot::Window(&window),
-        &request(),
+        &request,
         SettleHost {
             walker: &mut |_, limits, _, _| window_with_a_tab(limits),
             scan: &mut |_, limits, _, _| window_with_a_tab(limits),
@@ -63,6 +65,16 @@ fn tab_actions(toolkit: Option<ToolkitId>) -> Vec<String> {
 
 #[test]
 fn a_snapshot_applies_the_toolkit_placement_read_to_the_tokens_it_prints() {
-    assert!(!tab_actions(Some(gtk4())).contains(&"Select".to_owned()));
-    assert!(tab_actions(None).contains(&"Select".to_owned()));
+    assert!(!tab_actions(Some(gtk("4.14.5")), false).contains(&"Select".to_owned()));
+    assert!(tab_actions(Some(gtk("3.24.41")), false).contains(&"Select".to_owned()));
+}
+
+#[test]
+fn a_snapshot_whose_toolkit_read_did_not_answer_withholds_the_index_select() {
+    assert!(!tab_actions(None, false).contains(&"Select".to_owned()));
+}
+
+#[test]
+fn an_identity_read_that_publishes_nothing_keeps_every_token() {
+    assert!(tab_actions(Some(gtk("4.14.5")), true).contains(&"Select".to_owned()));
 }

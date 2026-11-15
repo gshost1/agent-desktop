@@ -1,7 +1,9 @@
 //! The capability tokens a snapshot withholds because the application's
 //! toolkit refuses their headless route. A snapshot's `available_actions`
 //! promise a headless semantic action, so a token whose every route the
-//! action path refuses before writing is not printed. A node read for an
+//! action path refuses before writing is not printed. A snapshot that could
+//! not read the toolkit withholds what the action path refuses for a toolkit
+//! it cannot name. A node read for an
 //! action is projected without this pass: its live evidence keeps `Select`,
 //! which the preflight of a `--headed select` needs to reach the row click,
 //! and a `--headed click` passes preflight without a `Click` token.
@@ -16,8 +18,7 @@ use crate::tree::{ObservedRead, Walk, WalkedNode};
 
 /// The toolkit a snapshot read for the application it observed, keyed by
 /// that application's bus name. A node of another application, a toolkit
-/// that refuses none of these routes, or a snapshot whose toolkit read did
-/// not answer keeps every token.
+/// that refuses none of these routes, or a live read keeps every token.
 pub(crate) struct HeadlessRoutes {
     application: Option<(String, ToolkitId)>,
 }
@@ -27,7 +28,8 @@ fn may_refuse(toolkit: &ToolkitId) -> bool {
 }
 
 impl HeadlessRoutes {
-    pub(crate) fn unread() -> Self {
+    /// The routes of a node read for an action, which keeps every token.
+    pub(crate) fn every_token() -> Self {
         Self { application: None }
     }
 
@@ -38,14 +40,16 @@ impl HeadlessRoutes {
     }
 
     /// The routes of a walk whose placement read `toolkit` from the walked
-    /// application's root.
+    /// application's root. A read that did not answer, or was not made, is
+    /// judged as a toolkit that names nothing: the action path reads the
+    /// toolkit again and, when that read names nothing either, refuses an
+    /// index select and still dispatches an entry's `activate` (L41-22 needs
+    /// GTK 4 named).
     pub(crate) fn of_walk(walk: &Walk<ObservedRead>, toolkit: Option<ToolkitId>) -> Self {
-        match toolkit {
-            Some(toolkit) => {
-                Self::of_application(walk.root.payload.node.element.bus_name(), toolkit)
-            }
-            None => Self::unread(),
-        }
+        Self::of_application(
+            walk.root.payload.node.element.bus_name(),
+            toolkit.unwrap_or_default(),
+        )
     }
 
     pub(crate) fn withhold(&self, node: &WalkedNode<ObservedRead>, evidence: &mut LocatorEvidence) {

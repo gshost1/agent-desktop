@@ -137,6 +137,12 @@ Each line, in order:
 - A tree that cannot be rendered stays `data.tree`, and the envelope stays on one line, so a delivered action's report is never replaced by an error. Check for `data.lines` before reading it.
 - `agent-desktop mcp --lines` applies the flag to every call the server runs. A result whose top-level `data` holds `lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope. A `batch` result keeps each entry's lines inside the envelope text.
 
+## Available actions
+
+`available_actions` names the actions an element offers through its accessibility interfaces, the routes a request without `--headed` uses. On macOS and Windows a snapshot, `find` and the read an action makes of its target before it runs (the actionability preflight) list the same tokens from the same read.
+
+On Linux a snapshot and `find` also leave out a token whose every headless route the application's toolkit refuses: `Click` on a GTK 4 entry whose only action is `activate`, and `Select` on a list, row, tab list or tab whose selection rests on indices the toolkit does not map to its accessible rows (GTK 4, or a toolkit that does not name itself or that the snapshot could not read), unless the node or an item a select on it can match acts on its own. The preflight read keeps those tokens, so `click --headed` and `select --headed` still reach the element.
+
 ## Snapshot diffs (`--since`)
 
 `snapshot --since <snapshot_id>` is an additive flag: without it, every envelope is what it was. With it, the command takes a full snapshot exactly as `snapshot` does, with its own `snapshot_id`, saved refmap and trace, and returns `data.diff` in place of `data.tree`. Every other `data` field keeps its meaning: `app`, `window`, `snapshot_id`, `ref_count`, `complete`, and `truncated`, `nodes_observed`, `refmap_capped` and `identity_unproven` when they apply to the new snapshot.
