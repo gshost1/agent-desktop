@@ -37,6 +37,10 @@ mod baseline_tests;
 #[path = "open_system_surface_parity_tests.rs"]
 mod open_system_surface_parity_tests;
 
+#[cfg(test)]
+#[path = "skill_example_tests.rs"]
+mod skill_example_tests;
+
 pub(crate) use result_entry::{entry_disposition, trace_failure_details};
 
 #[cfg(test)]

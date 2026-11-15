@@ -212,7 +212,7 @@ agent-desktop --headed mouse-move --xy 100,200
 - `drag` accepts refs, coordinates, or a mix. The destination app is never pre-focused, because raising it could cover the source point. For a cross-app drag, keep the destination visible. Both endpoints still pass visibility, stability and hit-test checks.
 - `drag --timeout-ms` covers the whole gesture as well as target preparation. An explicit `--duration` plus `--drop-delay` at or above the budget returns `INVALID_ARGS` before target work. Leave additional room for platform pickup/default delays, resolution and completion: for a 5000 ms movement, use `--duration 5000 --timeout-ms 10000`. A valid request can still return `TIMEOUT` if preparation consumes the remaining gesture budget. Optional `--wait-for`/`--wait-for-gone` verification has its own separate wait budget.
 - A drop target often needs the item to dwell over it. The default `--drop-delay` is 500 ms (150 ms on Linux, where a longer hold opens a hovered Files folder). Raise it (800 to 1200) for list reorders and cross-window drops.
-- `mouse-click` takes `--button left|right|middle`, `--count`, and `--modifiers`.
+- `mouse-click` requires `--xy X,Y` (without it the command exits 2) and takes `--button left|right|middle`, `--count`, and `--modifiers`.
 
 ## Choose the command
 
@@ -222,7 +222,7 @@ agent-desktop --headed mouse-move --xy 100,200
 | Fill a text field | `set-value @ref "text"` | `clear` then `type` |
 | Set a checkbox | `check` / `uncheck` | `toggle` when state is unknown |
 | Pick a dropdown option | `select @ref "Option"` | open the menu, then `snapshot --surface menu` |
-| Open a context menu | `right-click @ref` | `--headed mouse-click --button right` |
+| Open a context menu | `right-click @ref` | `--headed mouse-click --button right --xy X,Y` |
 | Move between fields | `press tab` | `focus @ref` |
 | Copy text out of a field | `get @ref --property value` | `press` the copy shortcut, then `clipboard-get` |
 | Find an off-screen item | `scroll @area`, then `find` | `scroll-to @ref` |
