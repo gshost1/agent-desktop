@@ -206,6 +206,7 @@ fn an_absent_choice_closes_the_popup_and_is_not_found_but_not_untouched() {
     assert!(world.commits.is_empty());
     assert_eq!(world.escapes, 1);
     assert!(!world.open);
+    assert_eq!(error.details.expect("details")["popup_closed"], true);
 }
 
 #[test]
@@ -215,6 +216,7 @@ fn an_absent_choice_that_leaves_the_popup_open_is_not_reported_as_untouched() {
     let error = choose(&world, "Sometimes").expect_err("absent");
     assert_eq!(error.code, ErrorCode::ElementNotFound);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert_eq!(error.details.expect("details")["popup_closed"], false);
 }
 
 #[test]
@@ -304,8 +306,19 @@ fn a_commit_the_popup_refuses_closes_the_popup_and_returns_the_refusal() {
     let error = choose(&world, "Never").expect_err("refused");
     assert_eq!(error.code, ErrorCode::ActionFailed);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert_eq!(error.details.expect("details")["popup_closed"], true);
     assert_eq!(world.borrow().escapes, 1);
     assert!(!world.borrow().open);
+}
+
+#[test]
+fn a_refused_commit_whose_popup_stays_open_says_the_popup_is_not_closed() {
+    let world = World::dropdown();
+    world.borrow_mut().refuse_commit = true;
+    world.borrow_mut().escape_closes = false;
+    let error = choose(&world, "Never").expect_err("refused");
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert_eq!(error.details.expect("details")["popup_closed"], false);
 }
 
 #[test]

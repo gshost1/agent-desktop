@@ -96,11 +96,20 @@ finds the choice in the list that appears, selects it through that list and the
 popup's default action, and checks the value the combobox shows. A missing
 choice closes the popup with Escape and answers `ELEMENT_NOT_FOUND` with
 `delivered_unverified` and `retry: unsafe`: the click already focused and
-selected the row. Read the combobox before another select. The same holds for a
-dropdown that `select` expands semantically, such as a GTK4 `DropDown`. Without
-`--headed` that select is `POLICY_DENIED`, kind `pointer_required`, unless the
-combobox already shows the choice. Where `select` still refuses, adding
-`--headed` does not supply a missing semantic action.
+selected the row. Read the combobox before another select.
+`details.popup_closed` says whether the popup read closed afterwards; when it
+is `false`, the popup may still be open, so close it before the next action.
+Without `--headed` that select is `POLICY_DENIED`, kind `pointer_required`,
+unless the combobox already shows the choice. Where `select` still refuses,
+adding `--headed` does not supply a missing semantic action.
+
+A dropdown that `select` expands semantically, such as a GTK4 `DropDown`, is
+collapsed again when the choice is missing or refused, and then read back. When
+the read shows it collapsed, a refusal that sent nothing stays `not_delivered`
+with `details.preparatory_expand: "expanded_then_collapsed"` and
+`details.popup_closed: true`; keyboard focus may have moved to the dropdown.
+When the collapse fails or the popup still reads expanded or unreadable, the
+refusal is `delivered_unverified` with `details.popup_closed: false`.
 
 On X11, after a headed click focuses the open dropdown, explicit headed
 `press down` / `press up` and `press return` can choose an item. Inspect the

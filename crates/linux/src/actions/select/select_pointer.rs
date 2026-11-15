@@ -141,16 +141,33 @@ pub(in crate::actions) fn pointer_required() -> AdapterError {
     }))
 }
 
-/// Keeps a failure that follows input this select already sent from reading as
-/// untouched. The click or expand that opened the choices moved focus and may
-/// have changed the control even when the choice was then missing or refused,
-/// so a `not_delivered` failure after it becomes `delivered_unverified`.
+/// Keeps a failure that follows the pointer click of a select from reading as
+/// untouched. The click that opened the choices moved focus and may have
+/// changed the control even when the choice was then missing or refused, so a
+/// `not_delivered` failure after it becomes `delivered_unverified`.
 pub(super) fn after_input_sent(error: AdapterError) -> AdapterError {
     if error.disposition == DeliverySemantics::not_delivered() {
         error.with_disposition(DeliverySemantics::delivered_unverified())
     } else {
         error
     }
+}
+
+/// Adds one entry to the details of a select error, keeping the entries the
+/// error already carries.
+pub(super) fn with_detail(
+    mut error: AdapterError,
+    key: &str,
+    value: serde_json::Value,
+) -> AdapterError {
+    let mut details = error.details.take().unwrap_or_else(|| json!({}));
+    if !details.is_object() {
+        details = json!({ "error_details": details });
+    }
+    if let Some(fields) = details.as_object_mut() {
+        fields.insert(key.to_owned(), value);
+    }
+    error.with_details(details)
 }
 
 #[cfg(test)]

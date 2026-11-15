@@ -5,7 +5,9 @@ use agent_desktop_core::{
 };
 use serde_json::json;
 
-use super::select_pointer::{Pointer, after_input_sent, already_satisfied, pointer_required};
+use super::select_pointer::{
+    Pointer, after_input_sent, already_satisfied, pointer_required, with_detail,
+};
 use super::select_popup::{Shown, commit, first_label};
 use super::select_search::{Hit, Search, name_matches, search};
 use crate::actions::click::{POLL_STEP, poll_until};
@@ -244,15 +246,17 @@ fn choose_in_opened(
     let hit = match choices.find(&popup, list.wanted)? {
         Search::Found(hit) => hit,
         miss => {
-            close_popup(choices, pointer, closed, deadline);
-            return Err(miss_error(&miss));
+            let shut = close_popup(choices, pointer, closed, deadline);
+            return Err(with_detail(miss_error(&miss), "popup_closed", json!(shut)));
         }
     };
     let committed = choices.commit(&hit, list.current, list.wanted);
-    if committed.is_err() || !wait_closed(choices, closed, deadline) {
-        close_popup(choices, pointer, closed, deadline);
-    }
-    committed
+    let shut = if committed.is_err() || !wait_closed(choices, closed, deadline) {
+        close_popup(choices, pointer, closed, deadline)
+    } else {
+        true
+    };
+    committed.map_err(|error| with_detail(error, "popup_closed", json!(shut)))
 }
 
 pub(in crate::actions) fn select_in_pointer_combo(
