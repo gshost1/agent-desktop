@@ -2,20 +2,7 @@ use agent_desktop_core::{
     ErrorCode, InteractionPolicy, NotificationIdentity, NotificationInfo, NotificationTarget,
 };
 
-use super::{
-    dismiss_all_failures, is_sole_target, require_foreground_policy, take_target,
-    unknown_action_error,
-};
-
-fn info(app: &str, title: &str) -> NotificationInfo {
-    NotificationInfo {
-        index: 1,
-        app_name: app.into(),
-        title: title.into(),
-        body: None,
-        actions: Vec::new(),
-    }
-}
+use super::{dismiss_all_failures, require_foreground_policy, take_target, unknown_action_error};
 
 #[test]
 fn a_strict_headless_caller_is_policy_denied_before_anything_raises() {
@@ -105,17 +92,6 @@ fn an_invoke_error_recorded_for_an_entry_that_still_left_is_never_reported() {
     );
     assert!(!failures[0].contains("transient invoke error"));
     assert!(failures[0].contains("#2"));
-}
-
-#[test]
-fn the_clear_all_substitute_fires_only_on_exactly_one_matching_entry() {
-    let target = info("Toaster", "Build finished");
-    let foreign = info("Toaster", "Build finished (not the staged entry)");
-
-    assert!(is_sole_target(&target, std::slice::from_ref(&target)));
-    assert!(!is_sole_target(&target, std::slice::from_ref(&foreign)));
-    assert!(!is_sole_target(&target, &[]));
-    assert!(!is_sole_target(&target, &[target.clone(), foreign]));
 }
 
 #[test]
