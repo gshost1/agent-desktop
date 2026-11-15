@@ -159,7 +159,7 @@ SHA=$(shasum -a 256 "$BIN" | cut -c1-16)
 VERSION="$("$BIN" --version) candidate $LABEL sha256 $SHA${NOTE:+ ($NOTE)}"
 [[ $(codesign -dv "$BIN" 2>&1) == *"Signature=adhoc"* ]] || echo "warning: $BIN is not ad-hoc signed like ad-14" >&2
 
-busy=$(r "pgrep -fl 'cand_pass.sh|remote_run_all.sh|ab_pass.sh|web_pass.sh' | grep -v pgrep | wc -l | tr -d ' '")
+busy=$(r "pgrep -fl 'cand_pass.sh|arms_pass.sh|remote_run_all.sh|ab_pass.sh|web_pass.sh' | grep -v pgrep | wc -l | tr -d ' '")
 [ "$busy" = 0 ] || { echo "a pass is already running on the bench Mac; not starting" >&2; exit 5; }
 CAND="$BH/.agent-desktop-bench-target/heldout-tools/candidates/$LABEL"
 old=$(r "cat $CAND/VERSION 2>/dev/null || true")
