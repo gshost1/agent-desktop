@@ -70,9 +70,12 @@ shape when none are, and a top-level `ClearAllButton`.
   `NOTIFICATION_NOT_FOUND`. An action name the
   entry does not offer is `ACTION_NOT_SUPPORTED`.
 - **A dismiss that does nothing fails.** The shell can accept an entry's
-  `DismissButton` without acting on it. When the target is the only entry, the
-  verified clear-all control runs instead. Otherwise the call reports
-  `ACTION_FAILED` (`delivered_unverified`). `dismiss-all-notifications` is
+  `DismissButton` without acting on it. A dismiss counts as done when the
+  entries with the target's app, title and body drop in number, so an
+  identical twin left behind does not hide it. When the target is the only
+  entry and had no identical twin, the verified clear-all control runs instead.
+  Otherwise the call reports `ACTION_FAILED` (`delivered_unverified`) and
+  never clears an identical twin. `dismiss-all-notifications` is
   judged against the entries captured before the clear, so entries that arrive
   while it runs are not failures.
 - **`wait --notification` opens and closes the center per poll**, as on macOS.
