@@ -72,7 +72,7 @@ agent-desktop launch gtk3-demo
 }
 ```
 
-The result also carries `cdp` when `--cdp` was verified, `renderer: "chromium"` for a detected Chromium or Electron app, and sometimes a `suggestion`. A missing `window` is not a failure. With `--cdp`, `data.cdp` holds `http_endpoint`, `port`, `product`, and `websocket_url` for a CDP client such as agent-browser; [Chromium and Electron apps](/desktop/guides/chromium-and-electron) walks through the handoff.
+The result also carries `cdp` when `--cdp` was verified, `renderer: "chromium"` for a detected Chromium or Electron app, and sometimes a `suggestion`. A missing `window` is not a failure. On macOS a window off the current Space (behind a full-screen app, on another Space, or kept hidden by the app) cannot be read, so `window` is missing, later commands on the app fail `WINDOW_NOT_FOUND`, and `suggestion` explains it. A fresh `launch --activate` opens the window on the current Space. With `--cdp`, `data.cdp` holds `http_endpoint`, `port`, `product`, and `websocket_url` for a CDP client such as agent-browser; [Chromium and Electron apps](/desktop/guides/chromium-and-electron) walks through the handoff.
 
 Errors specific to `launch`:
 
