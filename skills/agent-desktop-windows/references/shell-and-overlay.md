@@ -155,7 +155,12 @@ An app hosted in `ApplicationFrameHost` is reported through its frame:
 which every window operation targets, while `app` and `pid` name the hosted
 app, read from its `Windows.UI.Core.CoreWindow`. `list-apps` names the same
 app and pid, so `press --app SystemSettings.exe` and `press --window-id <frame
-id>` deliver to the hosted app while its frame is in front. A suspended hosted
+id>` deliver to the hosted app while its frame is in front.
+`list-surfaces --app SystemSettings.exe` lists the frame as the app's `window`
+surface. `close-app SystemSettings.exe` closes the app through its frame,
+without `--force`. The unresponsive-app check reads the hosted `CoreWindow`,
+whose thread is the app's own. The frame host's title bar and every other
+hosted app's frame stay under the frame host's identity. A suspended hosted
 app drops its `CoreWindow`, so until it resumes the entry reads as its frame
 host, and identities checked against the hosted pid fail closed.
 
