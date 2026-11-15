@@ -1,6 +1,6 @@
 use agent_desktop_core::{DeliverySemantics, ErrorCode, SnapshotSurface};
 
-use super::timeout_error;
+use super::{after_send, timeout_error};
 use crate::system::shell::shell_surface::row_for;
 
 fn action_center() -> &'static crate::system::shell::shell_surface::SurfaceKindRow {
@@ -13,6 +13,7 @@ fn a_timeout_after_the_raise_was_sent_is_not_safe_to_repeat() {
         action_center(),
         "did not open within the deadline",
         "shell_surface_not_opened",
+        true,
     );
 
     assert_eq!(error.code, ErrorCode::Timeout);
@@ -22,6 +23,35 @@ fn a_timeout_after_the_raise_was_sent_is_not_safe_to_repeat() {
         error.details.expect("details")["kind"],
         "shell_surface_not_opened"
     );
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(
+        suggestion.contains("before you open or close it again"),
+        "{suggestion}"
+    );
+}
+
+#[test]
+fn a_timeout_with_nothing_sent_stays_safe_to_repeat() {
+    let taskbar = row_for(SnapshotSurface::Taskbar).expect("the taskbar has a row");
+    let error = timeout_error(
+        taskbar,
+        "did not open within the deadline",
+        "shell_surface_not_opened",
+        false,
+    );
+
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert!(error.is_explicitly_retryable());
+}
+
+#[test]
+fn a_read_that_fails_after_the_input_was_sent_is_not_safe_to_repeat() {
+    let unread = agent_desktop_core::AdapterError::new(ErrorCode::Internal, "read failed")
+        .with_disposition(DeliverySemantics::not_delivered());
+
+    let error = after_send(unread);
+
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     let suggestion = error.suggestion.expect("a suggestion");
     assert!(
         suggestion.contains("before you open or close it again"),

@@ -6,7 +6,7 @@ use super::shell_surface::{
 #[cfg(all(test, target_os = "windows"))]
 pub(in crate::system) use super::shell_surface_raise::accelerator_probe;
 use super::shell_surface_raise::raise_row;
-use super::shell_surface_refusal::timeout_error;
+use super::shell_surface_refusal::{after_send, timeout_error};
 #[cfg(target_os = "windows")]
 use super::shell_surface_refusal::{declined_after_raise_error, foreground_declined_error};
 
@@ -67,7 +67,12 @@ pub(in crate::system) fn open_row(
         SurfaceFamily::Win32Class(_) => Vec::new(),
     };
     raise_row(row, deadline)?;
-    poll_until_observed(row, deadline, &pre_raise_children)
+    let observed = poll_until_observed(row, deadline, &pre_raise_children);
+    if matches!(row.raise, SurfaceRaise::AlreadyRaised) {
+        observed
+    } else {
+        observed.map_err(after_send)
+    }
 }
 
 /// The open is never reported from the fact that the accelerator was sent or
@@ -93,6 +98,7 @@ fn poll_until_observed(
                 row,
                 "did not open within the deadline",
                 "shell_surface_not_opened",
+                !matches!(row.raise, SurfaceRaise::AlreadyRaised),
             ));
         }
         deadline.ensure_remaining()?;
@@ -170,14 +176,14 @@ pub(in crate::system) fn close_row(
                 super::shell_surface_kinds::VK_ESCAPE,
                 deadline,
             )?;
-            poll_until_gone(row, deadline)
+            poll_until_gone(row, deadline).map_err(after_send)
         }
         SurfaceDismiss::RaiseThenEscape => raise_then_escape(row, deadline),
         SurfaceDismiss::Toggle => {
             if let SurfaceRaise::Accelerator { modifiers, key } = row.raise {
                 super::shell_surface_raise::send_chord(modifiers, key, deadline)?;
             }
-            poll_until_gone(row, deadline)
+            poll_until_gone(row, deadline).map_err(after_send)
         }
     }
 }
@@ -205,6 +211,11 @@ const FOREGROUND_SETTLE: std::time::Duration = std::time::Duration::from_millis(
 #[cfg(target_os = "windows")]
 fn raise_then_escape(row: &SurfaceKindRow, deadline: Deadline) -> Result<(), AdapterError> {
     super::shell_surface_raise::raise_row(row, deadline)?;
+    escape_after_raise(row, deadline).map_err(after_send)
+}
+
+#[cfg(target_os = "windows")]
+fn escape_after_raise(row: &SurfaceKindRow, deadline: Deadline) -> Result<(), AdapterError> {
     if settles_absent(row, deadline)? {
         return Ok(());
     }
@@ -342,6 +353,7 @@ fn poll_until_gone(row: &SurfaceKindRow, deadline: Deadline) -> Result<(), Adapt
                 row,
                 "did not close within the deadline",
                 "shell_surface_not_closed",
+                true,
             ));
         }
         deadline.ensure_remaining()?;

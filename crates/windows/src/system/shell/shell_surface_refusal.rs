@@ -48,16 +48,40 @@ fn declined(row: &SurfaceKindRow) -> AdapterError {
     )
 }
 
-/// The deadline passed after the raise or the dismissal keystroke was sent.
+/// An error raised after a raise or a dismissal keystroke went out: the input
+/// landed, so a read that failed afterwards cannot say nothing changed.
+pub(super) fn after_send(error: AdapterError) -> AdapterError {
+    match error.disposition {
+        DeliverySemantics::Unknown | DeliverySemantics::NotDelivered => error
+            .with_disposition(DeliverySemantics::delivered_unverified())
+            .with_suggestion(READ_BEFORE_RAISING),
+        _ => error,
+    }
+}
+
+/// The deadline passed while the surface was awaited. `sent` says whether a
+/// raise or a dismissal keystroke went out first; a surface the taskbar
+/// always presents is awaited without one, and its timeout is safe to repeat.
 pub(super) fn timeout_error(
     row: &SurfaceKindRow,
     outcome: &str,
     kind: &'static str,
+    sent: bool,
 ) -> AdapterError {
-    AdapterError::timeout(format!("the '{}' shell surface {outcome}", kebab(row.kind)))
-        .with_suggestion(READ_BEFORE_RAISING)
-        .with_details(serde_json::json!({ "kind": kind }))
-        .with_disposition(DeliverySemantics::delivered_unverified())
+    let error = AdapterError::timeout(format!("the '{}' shell surface {outcome}", kebab(row.kind)));
+    if sent {
+        return error
+            .with_suggestion(READ_BEFORE_RAISING)
+            .with_details(serde_json::json!({ "kind": kind }))
+            .with_disposition(DeliverySemantics::delivered_unverified());
+    }
+    error
+        .with_suggestion(
+            "Retry: nothing was sent, and the surface may still be loading; \
+             a build that lacks the surface refuses instead of timing out",
+        )
+        .with_details(serde_json::json!({ "kind": kind, "retryable": true }))
+        .with_disposition(DeliverySemantics::not_delivered())
 }
 
 #[cfg(test)]
