@@ -18,7 +18,7 @@ use crate::input::physical::shell_aim::display_under;
 use crate::input::step::Step;
 
 /// A fresh session's first motion only creates the virtual pointer, and a
-/// press before a second motion reaches no surface (L6 probe, 4 of 4 runs).
+/// press before a second motion reaches no surface (L43-1).
 const LEAD_SETTLE: Duration = Duration::from_millis(100);
 const MOTION_SETTLE: Duration = Duration::from_millis(50);
 const KEY_LEAD_SETTLE: Duration = Duration::from_millis(100);

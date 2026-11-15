@@ -20,7 +20,7 @@ A result shows which mechanism ran: in `data.steps`, `semantic_api` is an access
 - On macOS, clicking a native menu-bar item uses `AXPress`; it works headless and does not move the pointer under `--headed`. A headless `right-click` can use `AXShowMenu` when the target provides it.- Raw coordinates (`--xy`) carry no window identity, so they never focus anything.
 - It applies to every entry of a [batch](/desktop/guides/batch).
 - It permits physical input; it does not force it. Each platform decides per action whether to use a physical or a semantic path, and `check`, `set-value`, and `expand` stay semantic under `--headed` everywhere.
-- It does not lift other guards. A blocked key combo still needs `--force`, and a platform that cannot deliver physical input, such as pointer input on Wayland, still refuses.
+- It does not lift other guards. A blocked key combo still needs `--force`, and a platform that cannot deliver physical input, such as pointer input aimed at a ref on Wayland, still refuses.
 
 ```bash
 agent-desktop --headed double-click @s8f3k2p9:e3    # a physical gesture
