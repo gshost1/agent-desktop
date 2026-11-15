@@ -74,9 +74,11 @@ Observation and semantic actions need no helper tool.
   a role and carry no other field, refuse with `AMBIGUOUS_TARGET`,
   `details.kind: identity_not_unique`, before anything reaches the app, and an
   element that is gone is `STALE_REF`, `saved_ref_absent`. Take a
-  fresh snapshot after a list changes. To pick one of two identical controls on
-  X11, use `--headed mouse-click --xy`; a Wayland session refuses headed pointer
-  input, so there the twin has neither a ref nor a pointer path. A ref belongs
+  fresh snapshot after a list changes. A menu entry twinned in a whole-window
+  snapshot gets a unique ref from `snapshot --surface menu` once its menu is
+  open. To pick one of two other identical controls on X11, use `--headed
+  mouse-click --xy`; a Wayland session refuses headed pointer input, so there
+  the twin has neither a ref nor a pointer path. A ref belongs
   to the window it was taken in, so two windows with the same title each
   resolve their own refs.
 - **Chromium and Qt apps need a launch flag or variable** to appear on the bus;

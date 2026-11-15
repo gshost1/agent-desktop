@@ -13,6 +13,10 @@ pub struct ActionRequest {
     pub(crate) verified_point: Option<Point>,
     #[serde(skip)]
     pub(crate) expected_process: Option<crate::ProcessIdentity>,
+    #[serde(skip)]
+    pub(crate) default_budget_ms: u64,
+    #[serde(skip)]
+    pub(crate) on_default_budget: bool,
 }
 
 impl ActionRequest {
@@ -31,6 +35,8 @@ impl ActionRequest {
             timeout_ms: None,
             verified_point: None,
             expected_process: None,
+            default_budget_ms: crate::DEFAULT_OPERATION_TIMEOUT_MS,
+            on_default_budget: false,
         }
     }
 
@@ -41,6 +47,8 @@ impl ActionRequest {
             timeout_ms: None,
             verified_point: None,
             expected_process: None,
+            default_budget_ms: crate::DEFAULT_OPERATION_TIMEOUT_MS,
+            on_default_budget: false,
         }
     }
 
@@ -51,12 +59,30 @@ impl ActionRequest {
             timeout_ms: None,
             verified_point: None,
             expected_process: None,
+            default_budget_ms: crate::DEFAULT_OPERATION_TIMEOUT_MS,
+            on_default_budget: false,
         }
     }
 
+    /// Sets the wait budget and records whether it is the command's default,
+    /// so a later rewrite of `timeout_ms` to the time left keeps that answer.
     pub fn with_timeout_ms(mut self, timeout_ms: Option<u64>) -> Self {
         self.timeout_ms = timeout_ms;
+        self.on_default_budget = timeout_ms == Some(self.default_budget_ms);
         self
+    }
+
+    /// Names the budget the command uses when the caller sets none. Call it
+    /// before [`Self::with_timeout_ms`].
+    pub(crate) fn with_default_budget_ms(mut self, default_budget_ms: u64) -> Self {
+        self.default_budget_ms = default_budget_ms;
+        self
+    }
+
+    /// Whether the command runs on its default budget rather than one the
+    /// caller chose.
+    pub(crate) fn on_default_budget(&self) -> bool {
+        self.on_default_budget
     }
 
     pub(crate) fn with_verified_point(mut self, point: Option<Point>) -> Self {

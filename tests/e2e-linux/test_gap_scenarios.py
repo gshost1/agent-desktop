@@ -124,9 +124,10 @@ class GapScenarioTests(unittest.TestCase):
                             gaps_events.quiet(ctx, "window-opened", True)
 
     def test_disabled_action_rejects_ignored_timeout_flags_and_changed_text(self):
-        for timeout, elapsed, mutated, valid in ((None, 5000, False, True), (2000, 2000, False, True),
+        for timeout, elapsed, mutated, valid in ((None, 2000, False, True), (2000, 2000, False, True),
                                                   (100, 100, False, True), (0, 0, False, True),
-                                                  (None, 100, False, False), (2000, 5000, False, False),
+                                                  (None, 100, False, False), (None, 5000, False, False),
+                                                  (2000, 5000, False, False),
                                                   (100, 5000, False, False), (0, 5000, False, False),
                                                   (0, 0, True, False)):
             with self.subTest(timeout=timeout, elapsed=elapsed, mutated=mutated):
@@ -139,6 +140,9 @@ class GapScenarioTests(unittest.TestCase):
                     if timeout == 0:
                         error = {"code": "ACTION_FAILED", "details": {"checks": [
                             {"check": "enabled", "status": "fail"}]}, "disposition": {"delivery": "not_delivered"}}
+                    if timeout is None:
+                        error = {"code": "ACTION_FAILED", "details": {"kind": "target_disabled", "retryable": False},
+                                 "disposition": {"delivery": "not_delivered"}}
                     return Envelope(False, None, error, "refusal", elapsed, argv)
                 with patch.object(gaps_actions, "managed", return_value=contextlib.nullcontext(object())), \
                     patch.object(gaps_actions, "root", return_value=object()), \
@@ -151,6 +155,19 @@ class GapScenarioTests(unittest.TestCase):
                     else:
                         with self.assertRaises(AssertionError):
                             gaps_actions.disabled_timeout(ctx, timeout)
+
+    def test_the_default_budget_rejects_the_old_full_budget_timeout(self):
+        ctx = context()
+        undo = SimpleNamespace(states=frozenset())
+        error = {"code": "TIMEOUT", "details": {"kind": "actionability_timeout"}}
+        with patch.object(gaps_actions, "managed", return_value=contextlib.nullcontext(object())), \
+            patch.object(gaps_actions, "root", return_value=object()), \
+            patch.object(gaps_actions, "one", return_value=undo), \
+            patch.object(gaps_actions, "ref", return_value="@snapshot:e1"), \
+            patch.object(gaps_actions, "display", side_effect=lambda tree: ""), \
+            patch.object(ctx, "product", return_value=Envelope(False, None, error, "refusal", 2000, [])):
+            with self.assertRaises(AssertionError):
+                gaps_actions.disabled_timeout(ctx, None)
 
     def test_seeded_wait_rejects_wrong_token_and_failed_batch_entries(self):
         good = [{"ok": True}, {"ok": True, "data": {
