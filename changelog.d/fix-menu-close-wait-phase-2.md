@@ -1,0 +1,3 @@
+### Bug Fixes
+
+* `wait --menu-closed` no longer returns before a menu that its opener has not shown yet: on every platform a closed read counts only after the menu was seen open (two closed reads in a row) or after a 1.5 s opener grace, a timeout that ends inside the grace with every read closed returns closed, and in `batch` the entry before the wait reads the menu first so a menu-item click ends the wait after two closed reads with no hold. On Linux this replaces the 2 s per-process action clock that raw `mouse-click` and `drag` never wrote.
