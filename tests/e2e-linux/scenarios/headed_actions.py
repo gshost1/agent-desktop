@@ -54,9 +54,10 @@ def longest_text(root) -> str:
 
 def restore_text(ctx, app, before):
     target = ref_for(ctx, window_of(app), role="textfield")
-    assert_ok(ctx.product(["clear", target]))
     if before:
-        assert_ok(ctx.product(["type", target, before]))
+        assert_ok(ctx.product(["set-value", target, before]))
+    else:
+        assert_ok(ctx.product(["clear", target]))
     ctx.restored("atspi.document_text", helper_module.changed(
         lambda: longest_text(live_root(ctx.tier, app)), before))
 
