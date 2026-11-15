@@ -105,6 +105,18 @@ def ref(ctx, app, *, role=None, name=None, surface=None):
     return result
 
 
+def listed_name(ctx, app) -> str:
+    """The name `list-apps` gives the owned process, which `--app` accepts. The accessibility
+    root's name is not one: a script runs as its interpreter, and a server process started by
+    D-Bus has no desktop entry that runs it."""
+    response = ctx.product(["list-apps"])
+    require(response.ok, response.raw)
+    names = [item.get("name") for item in (response.data or {}).get("apps", [])
+             if item.get("pid") == app.pid]
+    require(len(names) == 1 and names[0], f"list-apps does not name pid {app.pid} once: {response.raw}")
+    return names[0]
+
+
 def root(ctx, app):
     return raw.app_root(ctx.tier, app.owner_names[0])
 

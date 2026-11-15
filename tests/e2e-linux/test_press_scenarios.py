@@ -31,6 +31,22 @@ class PressVerdictTests(unittest.TestCase):
                 self.assertIn(expected, problems[0])
 
 
+class DocumentTextTests(unittest.TestCase):
+    @staticmethod
+    def node(role, text, children=()):
+        return SimpleNamespace(role=role, text=lambda: text, children=lambda: list(children))
+
+    def test_an_empty_document_reads_empty_beside_a_longer_title_label(self):
+        window = self.node(23, None, [self.node(29, "New Document"), self.node(61, "")])
+        self.assertEqual(text_entry.document_text(window), "")
+        self.assertEqual(headed_actions.longest_text(window), "New Document")
+
+    def test_a_window_without_exactly_one_document_is_not_read(self):
+        for documents in ([], [self.node(61, "a"), self.node(61, "b")]):
+            with self.subTest(count=len(documents)), self.assertRaises(AssertionError):
+                text_entry.document_text(self.node(23, None, documents))
+
+
 class RestorationTests(unittest.TestCase):
     def run_leg(self, original, backspace_works=True):
         tier = SimpleNamespace(runtime_dir=Path("/private/test"))
@@ -59,6 +75,7 @@ class RestorationTests(unittest.TestCase):
             patch.object(text_entry, "live_root", return_value=app), \
             patch.object(headed_actions, "longest_text", side_effect=lambda _: document[0]), \
             patch.object(text_entry, "longest_text", side_effect=lambda _: document[0]), \
+            patch.object(text_entry, "document_text", side_effect=lambda _: document[0]), \
             patch.object(text_entry, "_modifier_state", return_value=ALL_OFF), \
             patch.object(lifecycle.atspi_raw, "poll", side_effect=lambda read, *a, **kw: read()), \
             patch("runner.verdict.run_product", side_effect=product):

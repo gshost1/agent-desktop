@@ -115,7 +115,7 @@ REGISTRY: tuple[Leg, ...] = (
     Leg('values.hot_corner_flip_restore', 'Hot Corner flips, the key confirms it, and it restores', 'Settings', ('x11-openbox',), ('headless', 'headed'), ('gsettings',), 'pass', ''),
     Leg('values.pointer_speed_commit', 'Pointer Speed takes a value the key confirms after panel reopen', 'Settings', ('x11-openbox',), ('headless', 'headed'), ('gsettings',), 'pass', ''),
     Leg('values.terminal_read_only_flip', 'The Read-Only check item flips and restores', 'Terminal', ('x11-openbox', 'x11-mutter'), ('headless', 'headed'), ('atspi',), 'pass', ''),
-    Leg('select.screen_blank_value', 'Screen Blank takes a new value the idle-delay key confirms', 'Settings', ('x11-openbox', 'x11-mutter'), ('headless', 'headed'), ('gsettings',), 'pass', ''),
+    Leg('select.screen_blank_value', 'Headless select on Screen Blank is refused as pointer_required; a headed select sets a value the idle-delay key confirms, then restores', 'Settings', ('x11-openbox', 'x11-mutter'), ('headless', 'headed'), ('gsettings',), 'pass', ''),
     Leg('select.refusal_without_semantic_route', 'A combo with no semantic route is refused with no effect', 'Settings', ('x11-openbox', 'x11-mutter'), ('headless', 'headed'), ('gsettings',), 'asserted-refusal', "the leg asserts the product's refusal as its expected outcome"),
     Leg('placeholder.settings_apps_search', 'Applications search reports its placeholder and no description', 'Settings', ('x11-openbox', 'x11-mutter'), ('headless',), ('atspi',), 'pass', ''),
     Leg('placeholder.files_search_none', 'Files search has no placeholder and headed typing reaches its focused internal editor', 'Files', ('x11-openbox', 'x11-mutter'), ('headless', 'headed'), ('atspi', 'x11'), 'pass', ''),

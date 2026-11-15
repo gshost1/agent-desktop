@@ -125,10 +125,13 @@ def launch_suggestion(ctx: LegContext) -> None:
 @implementation("launch.recovery_strategy_on_error")
 def recovery_strategy_on_error(ctx: LegContext) -> None:
     app = launch(ctx.tier, CALCULATOR)
-    snapshot = ctx.product(["snapshot", "--app", CALCULATOR, "-i"])
-    assert snapshot.ok, snapshot.raw
-    ref = _first_ref((snapshot.data or {}).get("tree"))
-    assert ref, "the snapshot allocated no ref"
+    # A ref that was unique at capture: a twin is refused AMBIGUOUS_TARGET before the owner
+    # is read, so it never reaches the dead-owner STALE_REF this leg asserts.
+    found = ctx.product(["find", "--app", CALCULATOR, "--exact", "--role", "button", "--name", "7"])
+    assert found.ok, found.raw
+    matches = [item.get("ref_id") for item in (found.data or {}).get("matches", [])]
+    assert len(matches) == 1 and matches[0], found.raw
+    ref = matches[0]
     stop(app)
     read = lambda: any(member[0] == app.pid for member in members(ctx.tier.runtime_dir))
     assert not read(), "stale-ref setup did not stop Calculator"

@@ -11,6 +11,7 @@ from scenarios.headed_actions import (
     assert_ok,
     live_root,
     longest_text,
+    raw_walk,
     ref_for,
     restore_text,
     window_of,
@@ -120,6 +121,18 @@ def press_verdict(typed: str, after_return: str, after_clear: str, stuck: list[s
     return problems
 
 
+DOCUMENT_TEXT = 61
+
+
+def document_text(root) -> str:
+    """The text of the window's one document text node. The longest text in the window is not
+    it: once the document is empty, a title label such as 'New Document' is longer."""
+    documents = [node for node in raw_walk(root) if node.role == DOCUMENT_TEXT]
+    if len(documents) != 1:
+        raise AssertionError(f"expected one document text node, found {len(documents)}")
+    return documents[0].text() or ""
+
+
 def _settled_document(read, accepted) -> str:
     atspi_raw.poll(lambda: accepted(read()), 6.0)
     return read()
@@ -129,7 +142,7 @@ def _settled_document(read, accepted) -> str:
 def press_combos_edit_document(ctx: LegContext) -> None:
     app, window = _launch(ctx)
     try:
-        read = lambda: longest_text(live_root(ctx.tier, app))
+        read = lambda: document_text(live_root(ctx.tier, app))
         before = read()
         ctx.before("atspi.document_text", before)
         ctx.before("x11.modifiers", held_modifiers(_modifier_state(ctx.tier)))

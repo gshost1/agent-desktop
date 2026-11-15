@@ -1,6 +1,6 @@
 from oracle import gsettings
 from runner import apps
-from runner.helper import (changed, command, managed, one, ref, require, root,
+from runner.helper import (changed, command, listed_name, managed, one, ref, require, root,
                            stale_twin)
 from runner.legs import implementation
 from runner.verdict import LegContext
@@ -80,7 +80,7 @@ def terminal_read_only_flip(ctx: LegContext) -> None:
         initial = "CHECKED" in item.states
         menu = ref(ctx, app, role="menu", name="Terminal")
         command(ctx, ["click", menu], app)
-        command(ctx, ["wait", "--menu", "--app", "Terminal", "--timeout", "5000"])
+        command(ctx, ["wait", "--menu", "--app", listed_name(ctx, app), "--timeout", "5000"])
         target = ref(ctx, app, role="menuitem", name="Read-Only", surface="menu")
         ctx.before("atspi", initial)
         try:
@@ -91,7 +91,7 @@ def terminal_read_only_flip(ctx: LegContext) -> None:
         finally:
             if ("CHECKED" in item.states) != initial:
                 command(ctx, ["click", menu], app)
-                command(ctx, ["wait", "--menu", "--app", "Terminal", "--timeout", "5000"])
+                command(ctx, ["wait", "--menu", "--app", listed_name(ctx, app), "--timeout", "5000"])
                 target = ref(ctx, app, role="menuitem", name="Read-Only", surface="menu")
                 command(ctx, ["click", target], app)
             changed(lambda: "CHECKED" in item.states, initial)
