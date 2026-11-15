@@ -71,6 +71,10 @@ name = "command_host_absent"
 path = "tests/command_host_absent.rs"
 
 [[test]]
+name = "daemon_windows_fallback"
+path = "tests/daemon_windows_fallback.rs"
+
+[[test]]
 name = "windows_private_file_install"
 path = "tests/windows_private_file_install.rs"
 
