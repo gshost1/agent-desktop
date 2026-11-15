@@ -12,7 +12,7 @@
 
 use std::time::Instant;
 
-use agent_desktop_core::{Deadline, system::launch_result::LaunchResult};
+use agent_desktop_core::{AdapterError, Deadline, system::launch_result::LaunchResult};
 
 use crate::system::window::window_presence::WindowPresence;
 
@@ -21,17 +21,31 @@ use crate::system::window::cg_window::{WindowRecord, WindowRecordScope, window_r
 pub(crate) const OFF_SPACE_NOTE: &str = "No window is reported, but the window server lists an off-screen window of this process that macOS gives no accessibility tree: it may be on another Space (for example behind a full-screen app), belong to a hidden app, or be kept hidden by the app until it is brought forward. Commands on the app fail WINDOW_NOT_FOUND until the window is on the current Space. A launch with --activate of an app that is not running yet opens its window on the current Space; for a running app, leave full screen in the front app or switch to the window's Space, then retry.";
 
 /// Adds the off-Space note to a result that reports no window and carries no
-/// other note, when the launched process has an off-screen window.
-pub(crate) fn explain_off_space(result: &mut LaunchResult, pid: i32, deadline: Deadline) {
+/// other note, when `records` lists an off-screen window of the process. The
+/// records are read only when the note could apply.
+pub(crate) fn explain_off_space(
+    result: &mut LaunchResult,
+    records: impl FnOnce() -> Result<Vec<WindowRecord>, AdapterError>,
+) {
     if result.window.is_some() || result.notes.suggestion.is_some() {
         return;
     }
-    let until = Instant::now() + deadline.remaining();
-    let Ok(records) = window_records_until(until, WindowRecordScope::Pid(pid)) else {
+    let Ok(records) = records() else {
         return;
     };
     if has_off_space_window(&records) {
         result.notes.suggestion = Some(OFF_SPACE_NOTE.to_owned());
+    }
+}
+
+/// The window server's records of `pid`'s windows, read within `deadline`.
+pub(crate) fn process_windows(
+    pid: i32,
+    deadline: Deadline,
+) -> impl FnOnce() -> Result<Vec<WindowRecord>, AdapterError> {
+    move || {
+        let until = Instant::now() + deadline.remaining();
+        window_records_until(until, WindowRecordScope::Pid(pid))
     }
 }
 

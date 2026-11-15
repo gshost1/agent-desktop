@@ -38,7 +38,7 @@ A failed command prints an envelope with `ok: false` and exits `1` (or `2` for a
     <tr><td><code>suggestion</code></td><td>when set</td><td>A hint for a person or an agent. Check any command it names before you run it.</td></tr>
     <tr><td><code>recovery</code></td><td>only when retry is safe</td><td>A declared recovery plan. See <a href="#recovery-strategies">Recovery strategies</a>.</td></tr>
     <tr><td><code>platform_detail</code></td><td>when set</td><td>The native platform's own error text.</td></tr>
-    <tr><td><code>details</code></td><td>when set</td><td>Structured context. <code>details.kind</code> names the cause for many codes, for example <code>actionability_timeout</code>, <code>focus_verification</code>, <code>surface_absent</code>, <code>wait_timeout</code>, <code>session_ended</code>, or <code>post_action_verification</code>.</td></tr>
+    <tr><td><code>details</code></td><td>when set</td><td>Structured context. <code>details.kind</code> names the cause for many codes, for example <code>actionability_timeout</code>, <code>target_disabled</code>, <code>focus_verification</code>, <code>surface_absent</code>, <code>wait_timeout</code>, <code>session_ended</code>, or <code>post_action_verification</code>.</td></tr>
   </tbody>
 </table>
 
@@ -62,7 +62,7 @@ A failed command prints an envelope with `ok: false` and exits `1` (or `2` for a
     <tr><td><code>INVALID_ARGS</code></td><td>An argument is invalid. Also returned for a bare <code>@eN</code> ref and an ended session.</td><td>Fix the input. Repeating the same arguments fails the same way.</td></tr>
     <tr><td><code>NOTIFICATION_NOT_FOUND</code></td><td>No entry carries the notification key, or the entry at the index no longer matches.</td><td>Run <code>list-notifications</code> again.</td></tr>
     <tr><td><code>SNAPSHOT_NOT_FOUND</code></td><td>The snapshot id is missing, pruned, or belongs to another <a href="/desktop/sessions">session</a> namespace.</td><td>Take a snapshot in the same session scope you act in, then use its refs.</td></tr>
-    <tr><td><code>POLICY_DENIED</code></td><td>Headless mode blocked a physical or headed path.</td><td>Do not switch modes to recover. See <a href="/desktop/guides/headed-mode">Headed mode</a>.</td></tr>
+    <tr><td><code>POLICY_DENIED</code></td><td>Headless mode blocked a physical or headed path.</td><td>Do not switch modes to recover. When the suggestion names <code>--headed</code> because the element has no semantic action, use it only if the user allows physical input for the task. See <a href="/desktop/guides/headed-mode">Headed mode</a>.</td></tr>
     <tr><td><code>APP_UNRESPONSIVE</code></td><td>The application stopped responding.</td><td>Wait, take a fresh snapshot, then retry only if <code>disposition.retry</code> is <code>safe</code>.</td></tr>
     <tr><td><code>INTERNAL</code></td><td>An unexpected error.</td><td>Read <code>message</code>. Retry once only if <code>disposition.retry</code> is <code>safe</code>.</td></tr>
   </tbody>

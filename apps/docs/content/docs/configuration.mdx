@@ -91,6 +91,7 @@ agent-desktop status                       # data.state_root shows this path
   latest_snapshot_id                  newest snapshot in the global namespace
   snapshots/
     s8f3k2p9/refmap.json              one refmap per snapshot
+    s8f3k2p9/diff_baseline.json       rows snapshot --since compares against
   tmp/                                clipboard-get images outside a session
   sessions/
     run-1793352720537-17009-0/        one directory per session
@@ -101,7 +102,7 @@ agent-desktop status                       # data.state_root shows this path
       clipboard/                      clipboard-get images inside the session
 ```
 
-- **Snapshots.** Each snapshot writes `snapshots/<id>/refmap.json`. Size and retention limits are in [Where refs are stored](/desktop/snapshots-and-refs#where-refs-are-stored).
+- **Snapshots.** Each snapshot writes `snapshots/<id>/refmap.json`, and one taken by the `snapshot` command also writes `diff_baseline.json` (at most 1 MB) for `snapshot --since`. Both are pruned together. Size and retention limits are in [Where refs are stored](/desktop/snapshots-and-refs#where-refs-are-stored).
 - **Sessions.** `session start` creates `sessions/<id>/` with its own `snapshots/`, so one session's refs are invisible to another. `session gc` deletes ended sessions with their traces. See [Sessions](/desktop/sessions).
 - **Traces.** A tracing session writes one JSONL segment per process under `trace/`, plus `screens/` and `refmaps/` with `--screenshots`. See [Traces](/desktop/guides/traces).
 

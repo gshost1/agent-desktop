@@ -129,7 +129,8 @@ fn connect(deadline: Deadline, reconnect: bool) -> Result<Connection, AdapterErr
     let address = discover_address(deadline, reconnect)?;
     deadline.ensure_remaining()?;
     let connection: AsyncConnection = within(deadline, async {
-        Builder::address(address.as_str())
+        listener_hold::builder(address.as_str())
+            .await
             .map_err(|error| classify(&error))?
             .method_timeout(Duration::from_millis(DEFAULT_OPERATION_TIMEOUT_MS))
             .build()
@@ -392,4 +393,8 @@ pub(super) mod bus_slice {
     }
 }
 pub(super) mod bus_stage;
+pub(crate) mod listener_child;
+pub(crate) mod listener_hold;
+pub(crate) mod listener_holder;
+pub(crate) mod listener_socket;
 pub(crate) mod session_bus;

@@ -49,6 +49,8 @@ pub fn execute_with_timeout(
         timeout_ms,
         verified_point: None,
         expected_process: None,
+        default_budget_ms: crate::DEFAULT_OPERATION_TIMEOUT_MS,
+        on_default_budget: false,
     };
     execute_ref_action_with_context(
         RefArgs {

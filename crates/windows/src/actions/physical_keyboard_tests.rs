@@ -1,6 +1,7 @@
 use super::{
     focus_lost_before_delivery, press_key_from_gate, press_key_global, type_text_from_gate,
 };
+use crate::actions::keyboard_focus::KeyboardFocus;
 use crate::input::keyboard_send_fake_sink as key_sink;
 use crate::system::fixture::test_time::deadline;
 use agent_desktop_core::{
@@ -114,4 +115,38 @@ fn type_text_stops_synthesizing_when_focus_is_lost_between_chunks() {
         posted > 0 && posted < long_text.len(),
         "synthesis must stop part-way, not run to completion; posted {posted}"
     );
+}
+
+#[test]
+fn a_focus_this_command_moved_is_reported_before_the_typed_text() {
+    key_sink::reset();
+
+    let keystroke = type_text_from_gate("hi", true, deadline(5_000), |_| Ok(())).expect("type");
+    let steps = KeyboardFocus::FocusedBySetFocus.then(keystroke);
+
+    let labels: Vec<&str> = steps.iter().map(|step| step.label()).collect();
+    assert_eq!(labels, ["UIElement.SetFocus", "SendInput.type_text"]);
+}
+
+#[test]
+fn a_focus_this_command_moved_is_reported_before_the_pressed_key() {
+    key_sink::reset();
+
+    let keystroke = press_key_from_gate(&combo(), true, deadline(5_000)).expect("press");
+    let steps = KeyboardFocus::FocusedBySetFocus.then(keystroke);
+
+    let labels: Vec<&str> = steps.iter().map(|step| step.label()).collect();
+    assert_eq!(labels, ["UIElement.SetFocus", "SendInput.press_key"]);
+}
+
+#[test]
+fn an_unfocused_focus_fallback_target_is_refused_with_no_keystroke() {
+    key_sink::reset();
+
+    let focus = KeyboardFocus::NotFocused;
+    let error = type_text_from_gate("hi", focus.is_ready(), deadline(5_000), |_| Ok(()))
+        .expect_err("refused");
+
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert!(key_sink::recorded().is_empty());
 }

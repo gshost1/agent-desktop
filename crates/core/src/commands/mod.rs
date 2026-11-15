@@ -65,6 +65,7 @@ pub mod session;
 pub mod set_value;
 pub mod skills;
 pub mod snapshot;
+pub mod snapshot_since;
 pub mod status;
 pub(crate) mod surface_scope;
 pub mod toggle;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ErrorCode;
 use crate::{Action, ActionOps, HeadedRequirement, InputOps, ObservationOps, SystemOps};
 
 struct GeometryAdapter(HeadedRequirement);

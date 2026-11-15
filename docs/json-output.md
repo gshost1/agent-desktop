@@ -137,6 +137,61 @@ Each line, in order:
 - A tree that cannot be rendered stays `data.tree`, and the envelope stays on one line, so a delivered action's report is never replaced by an error. Check for `data.lines` before reading it.
 - `agent-desktop mcp --lines` applies the flag to every call the server runs. A result whose top-level `data` holds `lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope. A `batch` result keeps each entry's lines inside the envelope text.
 
+## Snapshot diffs (`--since`)
+
+`snapshot --since <snapshot_id>` is an additive flag: without it, every envelope is what it was. With it, the command takes a full snapshot exactly as `snapshot` does, with its own `snapshot_id`, saved refmap and trace, and returns `data.diff` in place of `data.tree`. Every other `data` field keeps its meaning: `app`, `window`, `snapshot_id`, `ref_count`, `complete`, and `truncated`, `nodes_observed`, `refmap_capped` and `identity_unproven` when they apply to the new snapshot.
+
+```json
+{
+  "version": "2.7",
+  "ok": true,
+  "command": "snapshot",
+  "data": {
+    "app": "Notes",
+    "complete": true,
+    "diff": {
+      "added": [
+        { "name": "Saved", "role": "statictext" },
+        { "name": "Close", "ref_id": "@s4m7q1x2:e3", "role": "button" }
+      ],
+      "changed": [
+        { "changed": ["value"], "name": "Title", "ref_id": "@s4m7q1x2:e1", "role": "textfield",
+          "states": ["focused"], "value": "draft 2", "was": { "value": "draft" } }
+      ],
+      "focused": { "name": "Title", "ref_id": "@s4m7q1x2:e1", "role": "textfield", "states": ["focused"], "value": "draft 2" },
+      "removed": [ { "name": "Unsaved", "role": "statictext" } ],
+      "since": "s8f3k2p9",
+      "status": "changed"
+    },
+    "ref_count": 3,
+    "snapshot_id": "s4m7q1x2",
+    "window": { "id": "w-1", "title": "Notes" }
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `since` | The snapshot compared against. |
+| `status` | `changed`, `unchanged`, `incomplete` or `not_comparable`. |
+| `incomplete` | With `incomplete` only: `"baseline"`, `"snapshot"` or both, naming the read that was cut short (`complete: false`, including a refmap cap). |
+| `reason` | With `not_comparable` only: `owner_changed` or `presentation_changed`. |
+| `added` | Nodes that appeared, in tree order, each with the ref of the new snapshot when it has one. |
+| `changed` | Nodes paired by identity whose visible fields differ, with `changed` and `was`. |
+| `removed` | Nodes that are gone, in the earlier tree order, with no `ref_id`. |
+| `focused` | The deepest node of the new tree with the `focused` state, the first in tree order on a tie. Omitted when none has it. |
+
+- Each row is a tree node as `data.tree` prints it, without `children`. `added`, `changed` and `removed` are omitted when empty.
+- `changed` lists the fields that differ, in this order: `name`, `value`, `description`, `placeholder`, `hint`, `states` (any state other than focus) and `focus`. `was` holds each changed field's earlier value, `null` when it had none; `states` and `focus` both report the earlier `states` list.
+- Rows pair only through the identity a ref records: role plus native id, stable name and description (a derived name, and a name that mirrors a control's value, are not identity). A row pairs when that identity names exactly one row in each tree; uniqueness is counted over rows, not over the structure-only nodes that are never rows. Values, states and bounds never pair rows. Every row that does not pair is cancelled by an earlier row with the same identity and the same visible fields, and otherwise reported as `removed` or `added`. A renamed control, or an element with an identical twin, is never `changed`.
+- A node with no ref, no non-blank name, value, description, placeholder or hint, and no state is structure only and is never a row.
+- `unchanged` means both reads were complete and no row differs. When either read was cut short the status is `incomplete`, whatever the rows say, because a node past a cut may be missing from either side.
+- `not_comparable` means the two snapshots observed different owners (`owner_changed`: another pid, process instance or window id, as when a dialog opens as its own window) or were shaped differently (`presentation_changed`: `--surface`, `--max-depth`, `-i`, `--compact` or `--skeleton` differ). `data.tree` is then present as in a plain snapshot, and `diff` holds only `since`, `status` and `reason`.
+- With `--lines`, `added`, `changed`, `removed` and `focused` move out of `diff` into `data.lines`: `+ <line>`, `~ <line> (was ...)`, `- <line>`, a first line `no change` when unchanged or `incomplete (baseline)`, `incomplete (snapshot)` or `incomplete (baseline, snapshot)` when a read was cut short, and `focused <line>` last. Each `<line>` is a `--lines` node line at depth 0. The `(was ...)` part lists `name=`, `value=`, `desc=`, `placeholder=`, `hint=` with the earlier quoted text, `no <field>` when there was none, and the earlier states in brackets. A `not_comparable` diff prints its tree as lines.
+- The baseline, `snapshots/<id>/diff_baseline.json`, is saved beside the refmap of every snapshot the `snapshot` command takes, in the same session namespace, and is pruned with it. It is capped at 1 MB like the refmap; a snapshot whose rows do not fit keeps no baseline. It is not synced to disk on Linux and macOS, and one that is missing or unparsable reads as `diff_baseline_missing`. Snapshots saved by `find`, `wait` and `--wait-for` keep none.
+
+Errors: an id that is not a valid snapshot id is `INVALID_ARGS`. An id this session's namespace does not hold, including a pruned one and one from another session, fails `SNAPSHOT_NOT_FOUND` with `details.kind: "since_snapshot_not_found"`, and a snapshot saved without a baseline with `details.kind: "diff_baseline_missing"`. Both carry `details.since`, a `not_delivered` disposition and the `refresh_snapshot_then_retry_original` recovery: take a full snapshot without `--since`, and pass its id to `--since` after the next action. Nothing is read from the application before either refusal. `--since` with `--root`, `--wait-for` or `--wait-for-gone` is `INVALID_ARGS`.
+
 ## Disposition values
 
 Every error carries `disposition`, and commands that act on a target may also
@@ -359,7 +414,7 @@ A complete menu lookup with no surface returns `ELEMENT_NOT_FOUND` with `details
 
 When a ref action returns `delivery_uncertain` with a post-action wait selector, `error.details.post_action_observation` records a read-only observation of the original process. Application-owned refs keep their source surface. Window-owned refs observe their original pinned window, including refs captured from `sheet`, `alert`, `popover`, `focused`, or a window-owned `menu` such as a Linux menu. A web ref, captured on the `web` surface, is observed on its page over the same DevTools endpoint rather than the window's native tree, so browser UI outside the page, such as a JavaScript dialog, is not seen; run `snapshot --surface window` with the selector to wait on it. This lets a closed overlay be observed without treating the parent window as absent. The action is never repeated, and its original error and unsafe retry disposition stay unchanged. Even `expected_state_observed` does not prove that the action caused the state. Observation uses `--wait-timeout` separately from the action timeout.
 
-A post-action `--wait-for` that follows a ref, either window-owned or on an application-owned surface such as a macOS menu bar, ends before its budget when it cannot succeed: `APP_NOT_FOUND` with `details.kind: "wait_target_gone"` and `details.process_state` (`exited` or `crashed`) when the ref's process is gone, and `APP_UNRESPONSIVE` with `details.kind: "wait_owner_unresponsive"` and `details.unresponsive_ms` when every read failed as unresponsive for 5 s and the platform's process check then reported the process unresponsive. Both carry `predicate`, `selector`, `elapsed_ms`, `timeout_ms` and `details.after_action`, and keep the action's delivery disposition. On success the snapshot may be of a window the action opened, or of a sheet, alert or popover the process has open; `data.window` names the window that holds it.
+A post-action `--wait-for` that follows a ref, either window-owned or on an application-owned surface such as a macOS menu bar, ends before its budget when it cannot succeed: `APP_NOT_FOUND` with `details.kind: "wait_target_gone"` and `details.process_state` (`exited` or `crashed`) when the ref's process is gone, and `APP_UNRESPONSIVE` with `details.kind: "wait_owner_unresponsive"` and `details.unresponsive_ms` when every read failed as unresponsive for 5 s and the platform's process check then reported the process unresponsive. Both carry `predicate`, `selector`, `elapsed_ms`, `timeout_ms` and `details.after_action`, and keep the action's delivery disposition. A window or overlay read that fails with `PERM_DENIED`, as when accessibility permission is revoked, or with an `APP_UNRESPONSIVE` not marked retryable, ends the wait with that error, `details.after_action` and the action's delivery disposition unless another window or overlay read in the same poll matched; it is never counted as a closed window. A failed window listing is not such a read: the wait goes on polling. A menu bar ref with no focused window reads the first accessible visible window of its process. On success the snapshot may be of a window the action opened, or of a sheet, alert or popover open on any window of the ref's process instance; `data.window` names the window that holds it.
 
 | Field | Meaning |
 | --- | --- |
@@ -481,16 +536,25 @@ command, so comes after `Subscript`. `--exact` returns only whole-name matches.
 cuts: when more matches exist than the limit, the whole-name matches are kept
 and the remaining places go to the other matches in traversal order. Without a
 whole-name match the limit keeps the first matches in traversal order.
-`--first`, `--last` and `--nth` count in traversal order; pass `--exact` with them.
+`--first` returns the first whole-name match, and the first match when no
+name equals `--name`. `--last` and `--nth` count every match in traversal
+order; pass `--exact` with them.
 
 ### Which match `--first` returns
 
-`--first` returns the first match in traversal order, not in document order.
+`--first` returns the first match in traversal order, not in document order,
+with a whole-name match before a match whose name only contains `--name`.
 Where the platform reads list and table rows last (macOS: outlines, tables,
 browsers and lists), a match outside those rows comes before any match inside
 them, and `find --first` answers it without reading the rows. Only when nothing
-outside the rows matches does it read them, and then it returns the first match
-inside them. Platforms that read the tree in document order return the first
+outside the rows matches does it read them, and then it returns the first
+whole-name match inside them, or the first match there. A read that ran out of
+budget answers `--first` exactly when the traversal-first match is settled, as
+it did before whole-name matches came first. It returns the first whole-name
+match it saw, or the first match when it saw none. When a whole-name match
+could still lie in the unread part, `data` carries `"complete": false` and
+`"truncated": true`, with or without `--allow-partial`; pass `--exact` to rule
+that out. Platforms that read the tree in document order return the first
 match in document order. A ref from such an answer re-identifies by element
 token. A platform without one keeps its usual rule: an element whose capture
 saw a twin gets the `identity_not_unique` refusal when you act on it, and one
@@ -500,7 +564,9 @@ the capture could not count gets `identity_unproven`.
 
 By default a `find` that cannot finish its walk within `--timeout-ms` returns
 `TIMEOUT`. With `--allow-partial` it returns the matches it observed instead.
-The data then carries `complete`:
+The data then carries `complete`. A `--first --name` answer carries
+`complete: false` and `truncated: true` without the flag too, when its read
+could hide an earlier whole-name match (see above):
 
 ```json
 { "data": { "complete": false, "truncated": true, "total_matches": 3,
@@ -599,7 +665,7 @@ Every ref is re-identified from its stored entry or refused, and `details.kind` 
 | `retained_object_stale` | `STALE_REF` | macOS: the element's recorded address is dead, or its process, role or recorded identifier no longer matches. `details.reason` is `dead`, `pid`, `role` or `native_identifier`. No search runs, so the ref cannot land on a look-alike. Take a fresh snapshot. |
 | `saved_ref_absent` | `STALE_REF` | No live element matches the stored role and stable fields over complete evidence, so the element is gone. Take a fresh snapshot. |
 | `saved_ref_ambiguous` | `AMBIGUOUS_TARGET` | An element identical to the captured one appeared, so two or more live elements match the stored role and stable fields. A fresh snapshot refuses both as twins; act on a control that is unique in the window. |
-| `identity_not_unique` | `AMBIGUOUS_TARGET` | The capture counted two or more elements matching the ref's role and stable fields, so nothing is searched. It is reached on Windows, on Linux, and on macOS when the element yields no address, and for every unproven ref of a refmap written before 2.7, which a new snapshot re-judges. A twin is refused by every snapshot; only an explicit coordinate click (`--headed mouse-click --xy`) can pick one, it takes the foreground, and it is unavailable on a Linux Wayland session. |
+| `identity_not_unique` | `AMBIGUOUS_TARGET` | The capture counted two or more elements matching the ref's role and stable fields, so nothing is searched. It is reached on Windows, on Linux, and on macOS when the element yields no address, and for every unproven ref of a refmap written before 2.7, which a new snapshot re-judges. A twin is refused by every snapshot of the same surface. A menu entry (`menuitem` or `menu`) twinned in a whole-window capture can be reached by opening its menu and acting on a ref from `snapshot --surface menu`, which counts only the open menu. Otherwise only `--headed mouse-click --xy` can pick one; it takes the foreground and is unavailable on a Linux Wayland session. The suggestion says which applies. |
 | `identity_unproven` | `STALE_REF` | No capture proved the ref, so nothing is searched and no twin was seen. Both reasons carry `details.retryable: false` and no `recovery`. `details.reason` is `capture_incomplete` when the capture was not a complete read of the whole window (the snapshot reports `data.identity_unproven`) or no longer holds the path a drill recorded: retake the snapshot with a larger `--timeout-ms`. It is `capture_unknown` when an element in the window left a field the ref records unread, the ref's fields match one other element and not its own, or no capture judged the ref: a new snapshot may read the same way, so use a different selector or an explicit `--headed` coordinate click. A twin seen in a partial read is `identity_not_unique`, not this kind. |
 
 On macOS, the `focused` surface of a named window is that window's focused surface only while it is the application's focused window. A ref captured with `--surface focused` that carries no element address therefore resolves only while its source window is still focused; a ref with an address resolves to that exact element. Once focus has moved to another window, the ref returns `STALE_REF` with `details.kind: "focused_window_changed"`, `details.source_window_id`, `details.focused_window_id` when the focused window's number could be read, `details.complete: true` and `details.retryable: false`, and nothing is sent. A focused window whose number reads as absent, or no focused window, counts as another window; a read that fails returns its own error. `snapshot --surface focused` fails the same way when the window it reads is not the focused one, as with `--window-id` of an unfocused window or when focus moves during the read. Focus the source window with `focus-window --window-id` and retry, or take a new snapshot.

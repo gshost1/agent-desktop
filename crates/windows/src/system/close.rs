@@ -174,7 +174,7 @@ fn windowless_graceful_fallback(
     )
     .with_details(serde_json::json!({ "pid": u32::from(pid) }))
     .with_suggestion(format!(
-        "Retry with --force to terminate pid {pid} without WM_CLOSE"
+        "Retry with --force to terminate pid {pid} without WM_CLOSE; it discards unsaved work"
     ))
     .with_disposition(DeliverySemantics::not_delivered()))
 }

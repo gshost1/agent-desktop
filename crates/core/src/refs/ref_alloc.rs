@@ -5,6 +5,7 @@ use crate::refs::{RefEntry, RefMap};
 use crate::{AccessibilityNode, NameSource};
 use std::collections::HashSet;
 
+pub(crate) use crate::refs::ref_alloc_compact::is_collapsible;
 pub(crate) use crate::refs::ref_alloc_config::RefAllocConfig;
 
 pub(crate) use crate::tree::roles::INTERACTIVE_ROLES;
@@ -96,37 +97,6 @@ fn advertises_primary_action(available_actions: &[String]) -> bool {
         .any(|action| !UBIQUITOUS_AFFORDANCES.contains(&action.as_str()))
 }
 
-pub(crate) fn is_collapsible(node: &AccessibilityNode) -> bool {
-    crate::Role::from_token(&node.role).is_transparent_wrapper()
-        && node.ref_id.is_none()
-        && node
-            .identity
-            .name
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-        && node
-            .identity
-            .value
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-        && node
-            .identity
-            .description
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-        && node.identity.native_id.is_none()
-        && node
-            .presentation
-            .hint
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-        && node.presentation.states.is_empty()
-        && node.presentation.available_actions.is_empty()
-        && node.presentation.bounds.is_none()
-        && node.children_count.is_none()
-        && node.children.len() == 1
-}
-
 /// Applies `include_bounds`, `interactive_only`, and `compact` semantics
 /// to a raw adapter tree **without** allocating refs. Used by the FFI
 /// `ad_get_tree_exact` path, which exposes a raw tree (no CLI/JSON ref pipeline).
@@ -150,9 +120,8 @@ pub fn transform_tree(
         .children
         .into_iter()
         .filter_map(|child| {
-            let collapsible = compact && is_collapsible(&child);
             let child = transform_tree(child, include_bounds, interactive_only, compact);
-            if collapsible {
+            if compact && is_collapsible(&child) {
                 return child.children.into_iter().next();
             }
             if interactive_only
@@ -329,11 +298,10 @@ fn allocate_refs_at_path(
 
     let mut children = Vec::new();
     for (idx, child) in node.children.into_iter().enumerate() {
-        let collapsible = config.options.compact && is_collapsible(&child);
         path.push(idx);
         let child = allocate_refs_at_path(child, refmap, config, path, plan)?;
         path.pop();
-        if collapsible {
+        if config.options.compact && is_collapsible(&child) {
             if let Some(child) = child.children.into_iter().next() {
                 children.push(child);
             }

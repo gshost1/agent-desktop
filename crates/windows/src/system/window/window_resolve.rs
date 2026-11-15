@@ -3,9 +3,15 @@ use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo};
 use super::window_enum::enumerate_top_level;
 use super::window_identity::{WindowIdentityEvidence, live_window_title};
 use super::window_ops::{is_foreground_window, parse_handle, passes_filter, window_state};
+use crate::system::shell::shell_surface::presented_surface_at;
 
 /// Resolves a live window by `WindowInfo.id`, corroborating pid and process
 /// generation against the handle's current owner (stored-evidence rule).
+///
+/// A window the agent inventory leaves out resolves only when it is a shell
+/// surface the shell-surface resolver presents right now under the same id
+/// and process, which is where a shell-surface snapshot's window id came
+/// from.
 pub(crate) fn resolve_window_strict(
     expected: &WindowInfo,
     deadline: Deadline,
@@ -31,12 +37,13 @@ pub(crate) fn resolve_window_strict(
         ));
     };
     evidence.verify_stored()?;
-    live_window_info(handle, expected)
+    live_window_info(handle, expected, deadline)
 }
 
 fn live_window_info(
     handle: super::window_enum::WindowHandle,
     expected: &WindowInfo,
+    deadline: Deadline,
 ) -> Result<WindowInfo, AdapterError> {
     let mut found = None;
     enumerate_top_level(|window| {
@@ -46,28 +53,68 @@ fn live_window_info(
         found = Some(window);
         false
     })?;
-    let window = found.ok_or_else(|| {
-        AdapterError::new(
-            ErrorCode::WindowNotFound,
-            "window handle is no longer present in the top-level inventory",
-        )
-    })?;
-    if !passes_filter(&window) && !window.iconic {
-        return Err(AdapterError::new(
-            ErrorCode::WindowNotFound,
-            "window is no longer an agent-visible top-level window",
-        ));
+    let refusal = match found {
+        Some(window) if passes_filter(&window) || window.iconic => {
+            let focused = is_foreground_window(handle);
+            return Ok(confirmed(
+                expected,
+                live_window_title(handle),
+                Some(window.rect),
+                window_state(focused, window.iconic, window.visible),
+            ));
+        }
+        Some(_) => "window is no longer an agent-visible top-level window",
+        None => "window handle is no longer present in the top-level inventory",
+    };
+    let presented = presented_surface_at(handle, deadline).map(|found| found.map(|(info, _)| info));
+    presented_or_refused(presented, expected, refusal)
+}
+
+/// The shell-surface fallback only ever confirms a window the inventory
+/// refused; it never changes the refusal. A surface another process owns,
+/// no presented surface, and a fault while reading the shell all stay the
+/// inventory's `WINDOW_NOT_FOUND`, with the fault kept as platform detail.
+fn presented_or_refused(
+    presented: Result<Option<WindowInfo>, AdapterError>,
+    expected: &WindowInfo,
+    refusal: &str,
+) -> Result<WindowInfo, AdapterError> {
+    match presented {
+        Ok(Some(surface)) if surface.pid == expected.pid => Ok(confirmed(
+            expected,
+            Some(surface.title).filter(|title| !title.is_empty()),
+            surface.bounds,
+            surface.state,
+        )),
+        Ok(_) => Err(AdapterError::new(ErrorCode::WindowNotFound, refusal)),
+        Err(fault) => Err(not_found_despite_fault(refusal, fault)),
     }
-    let focused = is_foreground_window(handle);
-    Ok(WindowInfo {
+}
+
+fn not_found_despite_fault(refusal: &str, fault: AdapterError) -> AdapterError {
+    AdapterError::new(ErrorCode::WindowNotFound, refusal).with_platform_detail(format!(
+        "the shell-surface check could not read the shell: {}",
+        fault.message
+    ))
+}
+
+/// The resolved window: the stored identity with the live title (the stored
+/// one when the live read has none), bounds and state.
+fn confirmed(
+    expected: &WindowInfo,
+    title: Option<String>,
+    bounds: Option<agent_desktop_core::Rect>,
+    state: agent_desktop_core::WindowState,
+) -> WindowInfo {
+    WindowInfo {
         id: expected.id.clone(),
-        title: live_window_title(handle).unwrap_or_else(|| expected.title.clone()),
+        title: title.unwrap_or_else(|| expected.title.clone()),
         app: expected.app.clone(),
         pid: expected.pid,
         process_instance: expected.process_instance.clone(),
-        bounds: Some(window.rect),
-        state: window_state(focused, window.iconic, window.visible),
-    })
+        bounds,
+        state,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -84,3 +131,7 @@ fn window_exists(_handle: super::window_enum::WindowHandle) -> bool {
 #[cfg(test)]
 #[path = "window_resolve_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "window_resolve_shell_tests.rs"]
+mod shell_tests;

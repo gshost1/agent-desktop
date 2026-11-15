@@ -49,6 +49,7 @@ fn resolution(selection_complete: bool) -> LocatorResolution {
             selection_complete,
             truncated: false,
             roles_present: Vec::new(),
+            exact_name_unproven: false,
         },
     }
 }

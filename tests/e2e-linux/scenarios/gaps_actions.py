@@ -23,13 +23,21 @@ def disabled_timeout(ctx, timeout):
             require(any(check.get("check") == "enabled" and check.get("status") == "fail"
                         for check in checks), "zero-timeout refusal did not check the disabled target")
             require((error.get("disposition") or {}).get("delivery") == "not_delivered", response.raw)
+        elif timeout is None:
+            details = error.get("details") or {}
+            require(not response.ok and error.get("code") == "ACTION_FAILED", response.raw)
+            require(details.get("kind") == "target_disabled", response.raw)
+            require(details.get("retryable") is False, response.raw)
+            require((error.get("disposition") or {}).get("delivery") == "not_delivered", response.raw)
+            require(1500 <= response.elapsed_ms <= 4000,
+                    f"default budget took {response.elapsed_ms}ms, expected the 2000ms disabled cut")
         else:
             require(not response.ok and error.get("code") == "TIMEOUT", response.raw)
             require((error.get("details") or {}).get("kind") == "actionability_timeout",
                     response.raw)
-        expected = 5000 if timeout is None else timeout
-        require(max(0, expected - 500) <= response.elapsed_ms <= expected + 2000,
-                f"timeout {timeout!r} took {response.elapsed_ms}ms, expected {expected}ms")
+        if timeout is not None:
+            require(max(0, timeout - 500) <= response.elapsed_ms <= timeout + 2000,
+                    f"timeout {timeout!r} took {response.elapsed_ms}ms, expected {timeout}ms")
         after = read()
         ctx.after("atspi.disabled_action", after)
         require(after == before, "a disabled action changed the Calculator")

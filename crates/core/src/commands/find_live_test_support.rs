@@ -122,7 +122,7 @@ impl LiveFindAdapter {
         evidence
     }
 
-    fn evidence(role: &str, name: Option<&str>) -> LocatorEvidence {
+    pub(crate) fn evidence(role: &str, name: Option<&str>) -> LocatorEvidence {
         LocatorEvidence {
             role: LocatorField::Known(role.into()),
             name: name

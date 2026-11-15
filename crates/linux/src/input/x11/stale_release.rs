@@ -12,14 +12,17 @@ use crate::system::{
     x11::{self, PendingRead},
 };
 
-const SWEEP_BUDGET_MS: u64 = 1_000;
+/// The most a sweep may take of the preflight it runs in. The preflight runs
+/// before the command's own deadline starts, so the sweep and the display
+/// probe together must stay inside the one second a command may overrun by.
+pub(crate) const SWEEP_SLICE: Duration = Duration::from_millis(400);
 const CUTOFF: Duration = Duration::from_millis(1_500);
 
 /// Releases the keys and buttons a dead input call of this display left held.
 /// A command that only reads the desktop calls it, so a killed drag does not
 /// stay stuck until the next physical input. It connects only when a record
 /// of a dead process exists, and sends only under a lease this process owns.
-pub(crate) fn sweep() {
+pub(crate) fn sweep(caller: Deadline) {
     let DisplayServer::X11(display) = session_server() else {
         return;
     };
@@ -29,9 +32,7 @@ pub(crate) fn sweep() {
     if !journal.has_stale_entries() {
         return;
     }
-    let Ok(deadline) = Deadline::detached_after(SWEEP_BUDGET_MS) else {
-        return;
-    };
+    let deadline = caller.capped(SWEEP_SLICE);
     let Ok(lease) = interaction_lease::acquire_with_origin(deadline) else {
         return;
     };

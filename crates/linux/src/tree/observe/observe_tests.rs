@@ -14,17 +14,21 @@ use crate::tree::{AtspiElement, Expansion, Field, ObservedRead, Walk, WalkLimits
 pub(super) fn observe_plain(
     root: ObservationRoot<'_>,
     request: &ObservationRequest,
-    mut walker: impl FnMut(
-        &AtspiElement,
-        &WalkLimits,
-        Deadline,
-    ) -> Result<Walk<ObservedRead>, AdapterError>,
+    walker: impl FnMut(&AtspiElement, &WalkLimits, Deadline) -> Result<Walk<ObservedRead>, AdapterError>,
 ) -> Result<agent_desktop_core::ObservedTree, AdapterError> {
+    let walker = std::cell::RefCell::new(walker);
     observe_with(
         root,
         request,
         SettleHost {
-            walker: &mut |element, limits, deadline, _| walker(element, limits, deadline),
+            walker: &mut |element, limits, deadline, _| {
+                (walker.borrow_mut())(element, limits, deadline)
+            },
+            scan: &mut |element, limits, deadline, _| {
+                super::scan_of(limits, |whole| {
+                    (walker.borrow_mut())(element, whole, deadline)
+                })
+            },
             place: &mut |_| Ok(()),
             is_web_process: &|_| Ok(false),
             stopped: &|_| false,
@@ -376,6 +380,7 @@ fn optional_display_completion_runs_after_the_accessibility_walk() {
                 walked.set(true);
                 one_node_walk(limits)
             },
+            scan: &mut super::never_scans,
             place: &mut |_| Ok(()),
             is_web_process: &|_| Ok(false),
             stopped: &|_| false,

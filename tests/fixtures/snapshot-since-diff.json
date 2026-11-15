@@ -1,0 +1,57 @@
+{
+  "app": "FixtureApp",
+  "complete": true,
+  "diff": {
+    "added": [
+      {
+        "name": "Saved",
+        "role": "statictext"
+      },
+      {
+        "name": "Close",
+        "ref_id": "@snewsnap:e3",
+        "role": "button"
+      }
+    ],
+    "changed": [
+      {
+        "changed": [
+          "value"
+        ],
+        "name": "Title",
+        "ref_id": "@snewsnap:e1",
+        "role": "textfield",
+        "states": [
+          "focused"
+        ],
+        "value": "draft 2",
+        "was": {
+          "value": "draft"
+        }
+      }
+    ],
+    "focused": {
+      "name": "Title",
+      "ref_id": "@snewsnap:e1",
+      "role": "textfield",
+      "states": [
+        "focused"
+      ],
+      "value": "draft 2"
+    },
+    "removed": [
+      {
+        "name": "Unsaved",
+        "role": "statictext"
+      }
+    ],
+    "since": "sbaseline",
+    "status": "changed"
+  },
+  "ref_count": 3,
+  "snapshot_id": "snewsnap",
+  "window": {
+    "id": "w-1",
+    "title": "Notes"
+  }
+}

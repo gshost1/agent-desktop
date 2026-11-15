@@ -31,7 +31,7 @@ pub struct SnapshotArgs {
     pub force_electron_a11y: bool,
 }
 
-fn tree_options(args: &SnapshotArgs) -> crate::adapter::TreeOptions {
+pub(crate) fn tree_options(args: &SnapshotArgs) -> crate::adapter::TreeOptions {
     let skeleton_applies = args.skeleton && args.root_ref.is_none();
     let effective_depth = if skeleton_applies {
         args.max_depth.min(3)
@@ -127,8 +127,21 @@ pub(crate) fn format_snapshot_fields(
     elapsed_ms: Option<u128>,
     matched_selector: Option<&str>,
 ) -> Result<Value, AppError> {
+    let mut body = snapshot_fields_without_tree(result);
+    body["tree"] = serde_json::to_value(&result.tree)?;
+    if let Some(ms) = elapsed_ms {
+        body["elapsed_ms"] = json!(ms);
+    }
+    if let Some(selector) = matched_selector {
+        body["matched_selector"] = json!(selector);
+    }
+    Ok(body)
+}
+
+/// Every `data` field of a snapshot except `tree`, for a caller that prints
+/// something else in its place.
+pub(crate) fn snapshot_fields_without_tree(result: &snapshot::SnapshotResult) -> Value {
     let ref_count = result.refmap.len();
-    let tree = serde_json::to_value(&result.tree)?;
 
     tracing::debug!(refs = ref_count, "tree: snapshot complete");
 
@@ -137,7 +150,6 @@ pub(crate) fn format_snapshot_fields(
         "ref_count": ref_count,
         "snapshot_id": result.snapshot_id,
         "complete": result.complete,
-        "tree": tree
     });
     if let Some(window) = result.owner.window() {
         body["window"] = json!({ "id": window.id, "title": window.title });
@@ -155,13 +167,7 @@ pub(crate) fn format_snapshot_fields(
     if let Some(channel) = &result.notes.channel {
         channel.write_into(&mut body);
     }
-    if let Some(ms) = elapsed_ms {
-        body["elapsed_ms"] = json!(ms);
-    }
-    if let Some(selector) = matched_selector {
-        body["matched_selector"] = json!(selector);
-    }
-    Ok(body)
+    body
 }
 
 #[cfg(test)]

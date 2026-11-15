@@ -111,3 +111,49 @@ fn resolve_window_strict_refuses_an_expired_deadline() {
     let err = resolve_window_strict(&win, deadline).unwrap_err();
     assert_eq!(err.code, ErrorCode::Timeout);
 }
+
+fn presented_surface(pid: u32) -> WindowInfo {
+    WindowInfo {
+        id: "w-1".into(),
+        title: "Taskbar".into(),
+        app: "explorer.exe".into(),
+        pid: agent_desktop_core::ProcessId::from(pid),
+        process_instance: None,
+        bounds: None,
+        state: WindowState::default(),
+    }
+}
+
+#[test]
+fn a_shell_fault_in_the_surface_fallback_stays_window_not_found() {
+    let expected = presented_surface(7);
+    let fault = AdapterError::internal("UI Automation root read failed");
+
+    let error = presented_or_refused(Err(fault), &expected, "window is gone")
+        .expect_err("a fault confirms nothing");
+
+    assert_eq!(error.code, ErrorCode::WindowNotFound);
+    assert_eq!(error.message, "window is gone");
+    assert!(
+        error
+            .platform_detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("UI Automation root read failed")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn the_surface_fallback_confirms_only_the_expected_process() {
+    let expected = presented_surface(7);
+
+    let foreign = presented_or_refused(Ok(Some(presented_surface(8))), &expected, "gone")
+        .expect_err("another process's surface is not the window");
+    let absent = presented_or_refused(Ok(None), &expected, "gone").expect_err("no surface");
+    let own = presented_or_refused(Ok(Some(presented_surface(7))), &expected, "gone")
+        .expect("the expected process's presented surface confirms");
+
+    assert_eq!(foreign.code, ErrorCode::WindowNotFound);
+    assert_eq!(absent.code, ErrorCode::WindowNotFound);
+    assert_eq!(own.id, expected.id);
+}
