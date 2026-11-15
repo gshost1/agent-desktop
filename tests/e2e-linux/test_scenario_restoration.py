@@ -17,14 +17,18 @@ class RestorationTests(unittest.TestCase):
         for module, run, leg_id in (
             (headed_actions, headed_actions.type_text, "headed_actions.type_text"),
             (text_entry, text_entry.typed_text_reaches_document, "text_entry.typed_text_reaches_document")):
-            for original in ("", "saved"):
+            for original in ("", "saved", "line one\nline two"):
                 with self.subTest(leg=leg_id, original=original):
                     document = [original]
                     ctx = LegContext(tier, "headed", legs.leg_by_id(leg_id),
                                      member_reader=lambda _: frozenset())
                     def product(tier, argv, **kw):
+                        if argv[0] == "type" and "\n" in argv[-1]:
+                            return Envelope(False, None, {"code": "INVALID_ARGS"}, "{}", 1, argv)
                         if argv[0] == "type":
                             document[0] += argv[-1]
+                        elif argv[0] == "set-value":
+                            document[0] = argv[-1]
                         elif argv[0] == "clear":
                             document[0] = ""
                         return Envelope(True, {}, None, "{}", 0, argv)
