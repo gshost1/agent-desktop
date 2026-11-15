@@ -236,7 +236,11 @@ fn a_headless_click_without_a_semantic_action_names_headed_as_the_way_out() {
         assert_eq!(error.code, ErrorCode::PolicyDenied, "{action:?}");
         let hint = error.suggestion.unwrap();
         assert!(
-            hint.contains("Rerun the command with --headed"),
+            hint.contains("rerun the command with --headed"),
+            "{action:?}: {hint}"
+        );
+        assert!(
+            hint.contains("If pointer input is acceptable"),
             "{action:?}: {hint}"
         );
         assert!(
