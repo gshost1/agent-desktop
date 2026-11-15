@@ -59,7 +59,7 @@ impl PendingSeed {
 /// A `wait --menu-closed` gets one menu reading of its app. A menu open
 /// before the action tells the wait that the action closes it; without the
 /// reading the wait cannot tell a menu the action closed from one it is about
-/// to open, and holds for the opener grace. Every action kind gets the same
+/// to open, and holds for the opener grace. Every input action gets the same
 /// reading, so a raw `mouse-click` and a ref `click` seed the wait alike. A
 /// reading that fails or is slow leaves no seed and never fails.
 pub(super) fn read_seed(

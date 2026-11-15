@@ -229,7 +229,7 @@ fn a_closed_read_right_after_an_opener_does_not_end_the_closed_wait() {
 }
 
 #[test]
-fn a_raw_mouse_click_opener_holds_the_closed_wait_like_a_ref_click() {
+fn a_menu_that_opens_on_the_second_read_holds_the_closed_wait_until_it_closes() {
     let world = Fake::new(vec![Ok(false), Ok(true), Ok(false)]);
     assert!(run(&world, closed_after_opener(), deadline(5000)).is_ok());
     assert_eq!(world.read_count.get(), 4);
