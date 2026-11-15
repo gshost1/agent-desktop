@@ -78,15 +78,20 @@ log() { echo "[$(date +%H:%M:%S)] $*"; }
 lines() { [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0; }
 NATIVE_FROM=$(lines "$NATIVE_ROWS"); WEB_FROM=$(lines "$WEB_COSTS")
 spent() {
-  $P -I - "$NATIVE_ROWS" "$NATIVE_FROM" "$WEB_COSTS" "$WEB_FROM" "$LABEL" "$CTL_LABEL" <<'PY'
+  $P -I - "$NATIVE_ROWS" "$NATIVE_FROM" "$WEB_COSTS" "$WEB_FROM" "$LABEL" "$CTL_LABEL" "$B" <<'PY'
 import json, sys
 from pathlib import Path
 native, nfrom, web, wfrom, label, control = sys.argv[1], int(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5], sys.argv[6]
+sys.path.insert(0, sys.argv[7])
+import pricing
 def new(path, start):
     p = Path(path)
     return [json.loads(l) for l in p.read_text().splitlines()[start:] if l.strip()] if p.exists() else []
-cost = sum(float(r.get("cost_usd_list") or 0) for r in new(native, nfrom) if r.get("arm") in (label, control))
-cost += sum(float(r.get("cost_usd_list") or 0) for r in new(web, wfrom))
+def price(r):
+    cost, _ = pricing.row_cost(r)
+    return float("inf") if cost is None else cost
+cost = sum(price(r) for r in new(native, nfrom) if r.get("arm") in (label, control))
+cost += sum(price(r) for r in new(web, wfrom))
 print(round(cost, 4))
 PY
 }

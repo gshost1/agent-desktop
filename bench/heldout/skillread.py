@@ -11,7 +11,11 @@ Usage: python3 -I heldout/skillread.py --arms ad-up,ad-148b --tasks hn3,hn4,hn5 
 import argparse
 import json
 import statistics
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pricing  # noqa: E402
 
 PREVIEW_MAX = 3000
 
@@ -31,7 +35,7 @@ def read_spill(row):
 def run_facts(row):
     k, tool = skill_step(row)
     steps = row.get("steps") or []
-    facts = {"tokens": int(row.get("input_total") or 0) + int(row.get("output_tokens") or 0), "skill": tool is not None}
+    facts = {"tokens": int(row.get("input_total") or 0) + pricing.row_output_tokens(row), "skill": tool is not None}
     if tool is None:
         return facts
     facts["bytes"] = int(tool.get("result_bytes") or 0)

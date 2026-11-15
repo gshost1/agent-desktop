@@ -4,8 +4,9 @@
 Metrics, in this order everywhere:
   CLI s    seconds inside the arm's tool, summed over the run (wrapper log, arms/logwrap.zsh)
   wall s   whole run, claude -p start to exit
-  tokens   input (uncached + cache read + cache write) plus output, summed over the run
-  turns    claude -p num_turns
+  tokens   input (uncached + cache read + cache write) plus output, summed over the run; output comes from the
+           final result usage (the per-call stream usage undercounts it), so a capped run has a lower bound
+  turns    claude -p num_turns; a run stopped at the cap has none, so its API call count stands in
 
 Statistics are kept apart, because a tool that fails fast looks fast in any median that counts failures:
   pass          verifier passes / valid runs
@@ -26,7 +27,11 @@ import json
 import math
 import statistics
 from collections import defaultdict
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pricing  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_RESULTS = [HERE / "runs" / "results-native.jsonl", HERE / "runs" / "results-web.jsonl"]
@@ -60,8 +65,10 @@ def normalize(r):
            "ok": bool(r.get("success")), "why": r.get("verify", ""), "run_id": r.get("run_id"), "round": r.get("round")}
     out["cli"] = float(r.get("cli_s") or 0)
     out["wall"] = float(r.get("wall_s") or 0)
-    out["tokens"] = int(r.get("input_total") or 0) + int(r.get("output_tokens") or 0)
-    out["turns"] = int(r.get("num_turns") or 0)
+    out["tokens"] = int(r.get("input_total") or 0) + pricing.row_output_tokens(r)
+    out["turns"] = pricing.row_turns(r)
+    out["cost"], out["cost_estimated"] = pricing.row_cost(r)
+    out["timed_out"] = bool(r.get("timed_out"))
     return out
 
 

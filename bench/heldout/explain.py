@@ -11,7 +11,11 @@ import argparse
 import json
 import shlex
 from collections import defaultdict
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pricing  # noqa: E402
 
 
 def native_calls(row):
@@ -60,10 +64,10 @@ def render(rows, runs):
     lines = []
     for r in rows:
         s = summarize(r, runs)
-        tokens = int(r.get("input_total") or 0) + int(r.get("output_tokens") or 0)
+        tokens = int(r.get("input_total") or 0) + pricing.row_output_tokens(r)
         top = sorted(s["by"].items(), key=lambda kv: -kv[1][1])[:6]
         lines.append(f"- {r['arm']} {r['task']} r{r.get('round')} ok={r.get('success')} wall={r.get('wall_s')} "
-                     f"cli={r.get('cli_s')} turns={r.get('num_turns')} tokens={tokens // 1000}k calls={s['calls']} "
+                     f"cli={r.get('cli_s')} turns={pricing.row_turns(r)} tokens={tokens // 1000}k calls={s['calls']} "
                      f"failed={len(s['failed'])} | " +
                      ", ".join(f"{k} x{n} {t:.1f}s {b // 1000}kB" for k, (n, t, b) in top) +
                      (f" | slowest {s['slowest']['s']:.2f}s `{s['slowest']['args'][:80]}`" if s["slowest"] else "") +

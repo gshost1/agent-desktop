@@ -76,32 +76,39 @@ collect() {
     put "$U@$BENCH_HOST:$MIRROR/$rows/results-$kind.jsonl" "$dir/raw-$label/" 2>/dev/null || echo "no $kind rows on the bench Mac"
   done
   put "$U@$BENCH_HOST:$MIRROR/$rows/web/$label-$MODEL/runs.jsonl" "$dir/raw-$label/web-runs.jsonl" || true
-  "$PY" -I - "$dir/raw-$label" "$label" "$dir" <<'PY'
+  "$PY" -I - "$dir/raw-$label" "$label" "$dir" "$HERE/.." <<'PY'
 import json, sys
 from pathlib import Path
 raw, label, out = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+sys.path.insert(0, sys.argv[4])
+import pricing
+def price(line):
+    cost, _ = pricing.row_cost(json.loads(line))
+    return cost or 0.0
 for name in ("results-native.jsonl", "results-web.jsonl"):
     p = raw / name
     rows = [l for l in p.read_text().splitlines() if l.strip() and json.loads(l).get("arm") == label] if p.exists() else []
     (out / f"{label}-{name}").write_text("".join(l + "\n" for l in rows))
     print(f"{label}-{name}: {len(rows)} rows")
-cost = sum(float(json.loads(l).get("cost_usd_list") or 0) for l in (out / f"{label}-results-native.jsonl").read_text().splitlines())
+cost = sum(price(l) for l in (out / f"{label}-results-native.jsonl").read_text().splitlines() if l.strip())
 web = raw / "web-runs.jsonl"
-cost += sum(float(json.loads(l).get("cost_usd_list") or 0) for l in web.read_text().splitlines() if l.strip()) if web.exists() else 0
+cost += sum(price(l) for l in web.read_text().splitlines() if l.strip()) if web.exists() else 0
 print(f"{label} list-price spend: ${cost:.2f}")
 PY
   local extra=()
   if r "test -f $LOGS/cand-$label.control" > /dev/null 2>&1; then
     local spec from ctl
     spec=$(r "cat $LOGS/cand-$label.control"); from=${spec##* }; ctl=${spec%%:*}
-    "$PY" -I - "$dir/raw-$label/results-native.jsonl" "$from" "$ctl" "$dir/$label-control-results-native.jsonl" <<'PY'
+    "$PY" -I - "$dir/raw-$label/results-native.jsonl" "$from" "$ctl" "$dir/$label-control-results-native.jsonl" "$HERE/.." <<'PY'
 import json, sys
 from pathlib import Path
 src, start, arm, out = Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3], Path(sys.argv[4])
+sys.path.insert(0, sys.argv[5])
+import pricing
 rows = [json.loads(l) for l in src.read_text().splitlines()[start:] if l.strip()]
 rows = [dict(r, arm=f"{arm}-ctl") for r in rows if r.get("arm") == arm]
 out.write_text("".join(json.dumps(r) + "\n" for r in rows))
-print(f"control {arm}-ctl: {len(rows)} rows, list-price ${sum(float(r.get('cost_usd_list') or 0) for r in rows):.2f}")
+print(f"control {arm}-ctl: {len(rows)} rows, list-price ${sum(pricing.row_cost(r)[0] or 0.0 for r in rows):.2f}")
 PY
     extra=("$dir/$label-control-results-native.jsonl")
   fi
@@ -162,6 +169,7 @@ fi
 r "rm -f bench-tools/STOP bench-tools/STOP-SPEND; mkdir -p $CAND"
 put --exclude 'runs*' --exclude 'out/' --exclude '__pycache__' --exclude '*.swift' --exclude 'REPORT*' \
   --exclude 'COSTS*' "$HERE/" "$U@$BENCH_HOST:$MIRROR/heldout/"
+put "$HERE/../driver.py" "$HERE/../pricing.py" "$U@$BENCH_HOST:$MIRROR/"
 put "$BIN" "$HELPER" "$U@$BENCH_HOST:$CAND/"
 printf '%s\n' "$VERSION" > "${TMPDIR:-/tmp}/ho-cand-version"
 put "${TMPDIR:-/tmp}/ho-cand-version" "$U@$BENCH_HOST:$CAND/VERSION"

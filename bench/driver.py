@@ -32,6 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 sys.path.insert(0, str(ROOT))
+import pricing  # noqa: E402
 from tasks import TASKS, audit_command, reset_desktop, restore_save_folder  # noqa: E402
 
 REAL_BIN = REPO / "target" / "release" / "agent-desktop"
@@ -295,6 +296,8 @@ def summarize(events, rdir, wall):
             if len(parts) >= 5:
                 cli.append({"s": float(parts[1]) - float(parts[0]), "rc": int(parts[2]), "bytes": int(parts[3]), "args": parts[4][:200]})
     u = result.get("usage") or usage_so_far(calls)
+    model = next((ev.get("model") for ev in events if ev.get("type") == "system" and ev.get("model")), None)
+    cost = result.get("total_cost_usd")
     tool_s = round(sum(t["tool_s"] for s in steps for t in s["tools"]), 3)
     return {
         "answer": result.get("result", ""),
@@ -305,9 +308,11 @@ def summarize(events, rdir, wall):
         "api_calls": len(steps),
         "input_total": sum(s["input_total"] for s in steps),
         "cache_read": sum(s["cache_read"] for s in steps),
-        "output_tokens": sum(s["output"] for s in steps),
+        "output_tokens": u.get("output_tokens", 0) if result else sum(s["output"] for s in steps),
+        "usage_complete": bool(result),
         "result_usage": u,
-        "cost_usd_list": result.get("total_cost_usd"),
+        "cost_usd_list": cost if cost is not None else pricing.list_cost(model, u),
+        "cost_estimated": cost is None,
         "cli_calls": len(cli),
         "cli_s": round(sum(c["s"] for c in cli), 3) if cli else tool_s,
         "cli_bytes": sum(c["bytes"] for c in cli),
