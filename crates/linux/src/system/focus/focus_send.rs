@@ -100,6 +100,33 @@ pub(super) fn dialog_over(client: u32, deadline: Deadline) -> Option<String> {
     })
 }
 
+/// The title of the active window when it is already a modal dialog of
+/// `client`: transient for it and carrying `_NET_WM_STATE_MODAL`. A window
+/// manager hands an activation of `client` to that dialog, so asking it is
+/// pointless and would only raise the parent beneath the dialog.
+pub(super) fn open_modal_over(client: u32, deadline: Deadline) -> Option<String> {
+    bounded(deadline, None, move || {
+        let (connection, root) = connect().ok()?;
+        let active = first_window(&connection, root, atom(&connection, b"_NET_ACTIVE_WINDOW")?)?;
+        if active == client {
+            return None;
+        }
+        let owner = first_window(&connection, active, AtomEnum::WM_TRANSIENT_FOR.into())?;
+        (owner == client && is_modal(&connection, active)?).then(|| title_of(&connection, active))
+    })
+}
+
+fn is_modal(connection: &RustConnection, window: Window) -> Option<bool> {
+    let state = atom(connection, b"_NET_WM_STATE")?;
+    let modal = atom(connection, b"_NET_WM_STATE_MODAL")?;
+    let reply = connection
+        .get_property(false, window, state, AtomEnum::ATOM, 0, 64)
+        .ok()?
+        .reply()
+        .ok()?;
+    Some(reply.value32()?.any(|value| value == modal))
+}
+
 /// Whether the input focus lies in `client`: the focus window is the client or
 /// one of its descendants.
 pub(crate) fn input_focus_in(client: u32, deadline: Deadline) -> bool {
