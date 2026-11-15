@@ -68,7 +68,18 @@ fn a_live_overlay_that_drops_one_stop_and_answers_the_next_is_stopped() {
     let listener = UnixListener::bind(&path).unwrap();
     let overlay = thread::spawn(move || {
         drop(take_control(&listener));
-        take_control(&listener).write_all(&[1]).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let until = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < until {
+            if let Ok((stream, _)) = listener.accept() {
+                stream.set_nonblocking(false).unwrap();
+                let mut payload = Vec::new();
+                (&stream).read_to_end(&mut payload).unwrap();
+                (&stream).write_all(&[1]).unwrap();
+                return;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
     });
 
     let result = stop(&path, Duration::from_secs(2));

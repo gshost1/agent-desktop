@@ -1,7 +1,7 @@
 use agent_desktop_core::{
     AdapterError, CURSOR_ARRIVAL_TIMEOUT_MS, CursorOverlayControl, ErrorCode,
 };
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -10,8 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::child::{MARKER, SOCKET_ENV};
-
-const MAX_INSTRUCTION_BYTES: usize = 4 * 1024;
+use super::exchange::{Exchange, MAX_INSTRUCTION_BYTES};
 
 pub(crate) fn update(control: &CursorOverlayControl) -> Result<(), AdapterError> {
     control.validate()?;
@@ -57,11 +56,16 @@ fn broadcast(control: &CursorOverlayControl) -> Result<(), AdapterError> {
     let (paths, mut first_error) = super::endpoint::discover(control.session_id())?;
     for socket in paths {
         if Instant::now() >= deadline {
-            return Err(AdapterError::internal(
+            return Err(super::exchange::deadline_elapsed(
                 "Timed out stopping macOS cursor overlays",
             ));
         }
-        if let Err(error) = send_until(&socket, control, deadline) {
+        let sent = if control.is_disable() {
+            super::stop::stop_until(&socket, control, deadline)
+        } else {
+            send_until(&socket, control, deadline).map(|_| ())
+        };
+        if let Err(error) = sent {
             first_error.get_or_insert(error);
         }
     }
@@ -181,112 +185,10 @@ pub(super) fn send_until(
     control: &CursorOverlayControl,
     deadline: Instant,
 ) -> Result<bool, AdapterError> {
-    let mut stream = match UnixStream::connect(socket) {
-        Ok(stream) => stream,
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
-            ) =>
-        {
-            return Ok(false);
-        }
-        Err(error) => {
-            return Err(
-                AdapterError::internal("Could not connect to the macOS cursor overlay")
-                    .with_platform_detail(error.to_string()),
-            );
-        }
-    };
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    if remaining.is_zero() {
-        return Err(AdapterError::internal(
-            "Cursor overlay control deadline elapsed",
-        ));
-    }
-    stream
-        .set_write_timeout(Some(remaining.min(Duration::from_secs(1))))
-        .map_err(|error| {
-            AdapterError::internal("Could not bound the cursor overlay control write")
-                .with_platform_detail(error.to_string())
-        })?;
-    let payload = serde_json::to_vec(control).map_err(|error| {
-        AdapterError::internal("Could not encode macOS cursor overlay control")
-            .with_platform_detail(error.to_string())
-    })?;
-    if payload.len() > MAX_INSTRUCTION_BYTES {
-        return Err(AdapterError::new(
-            ErrorCode::InvalidArgs,
-            "Cursor overlay instruction exceeds the transport limit",
-        ));
-    }
-    stream.write_all(&payload).map_err(|error| {
-        AdapterError::internal("Could not send the cursor overlay control")
-            .with_platform_detail(error.to_string())
-    })?;
-    let travels = control.is_travel();
-    if !control.expects_acknowledgement() {
-        return Ok(true);
-    }
-    stream
-        .shutdown(std::net::Shutdown::Write)
-        .map_err(|error| {
-            AdapterError::internal("Could not finish the cursor overlay control")
-                .with_platform_detail(error.to_string())
-        })?;
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    let budget = if remaining.is_zero() {
-        return Err(AdapterError::internal(
-            "Timed out stopping macOS cursor overlays",
-        ));
-    } else if travels {
-        remaining.min(Duration::from_millis(CURSOR_ARRIVAL_TIMEOUT_MS))
-    } else {
-        remaining
-    };
-    stream.set_read_timeout(Some(budget)).map_err(|error| {
-        AdapterError::internal("Could not bound the cursor overlay acknowledgement")
-            .with_platform_detail(error.to_string())
-    })?;
-    let mut acknowledgement = [0_u8; 1];
-    match stream.read_exact(&mut acknowledgement) {
-        Ok(()) => Ok(true),
-        Err(error)
-            if control.instruction().is_some_and(|instruction| {
-                instruction.phase() == agent_desktop_core::CursorPhase::Travel
-            }) =>
-        {
-            tracing::warn!(
-                session = control.session_id(),
-                agent = control.agent_id(),
-                %error,
-                "cursor overlay travel was not acknowledged; continuing without cursor confirmation"
-            );
-            Err(
-                AdapterError::internal("macOS cursor overlay did not confirm cursor arrival")
-                    .with_platform_detail(error.to_string()),
-            )
-        }
-        Err(error)
-            if control.instruction().is_some_and(|instruction| {
-                instruction.phase() == agent_desktop_core::CursorPhase::Effect
-            }) =>
-        {
-            tracing::warn!(
-                session = control.session_id(),
-                agent = control.agent_id(),
-                %error,
-                "cursor overlay effect was not acknowledged; continuing without effect confirmation"
-            );
-            Err(
-                AdapterError::internal("macOS cursor overlay did not confirm cursor effect")
-                    .with_platform_detail(error.to_string()),
-            )
-        }
-        Err(error) => Err(AdapterError::internal(
-            "macOS cursor overlay did not acknowledge the control",
-        )
-        .with_platform_detail(error.to_string())),
+    match super::exchange::exchange(socket, control, deadline)? {
+        Exchange::Absent => Ok(false),
+        Exchange::Delivered => Ok(true),
+        Exchange::Unanswered(error) => Err(super::exchange::unanswered_error(control, &error)),
     }
 }
 
