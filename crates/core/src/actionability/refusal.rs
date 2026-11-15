@@ -15,8 +15,9 @@ use crate::{Action, AdapterError, ErrorCode, actions::action_request::ActionRequ
 /// live enabled state is false before it ends with a final refusal. Measured
 /// on GTK3 and GTK4 under AT-SPI: a button enabled by the caller's own typing
 /// is enabled at the first poll, and one a 1 s timer enables is seen enabled
-/// 1.1-1.2 s (GTK3) and 1.4-1.6 s (GTK4) after the click starts, so 2 s keeps that
-/// case and cuts a control that stays disabled from the 5 s default to about 2 s.
+/// 1,080 to 1,200 ms (GTK3) and 1,420 to 1,630 ms (GTK4) after the click
+/// starts, so 2 s keeps that case and cuts a control that stays disabled from
+/// the 5 s default to about 2 s.
 pub(crate) const DISABLED_SETTLE: Duration = Duration::from_millis(2000);
 
 const DISABLED_SUGGESTION: &str = "The element is disabled. Do what enables it first, such as \

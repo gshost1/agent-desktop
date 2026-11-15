@@ -1,4 +1,5 @@
 use super::*;
+use crate::ErrorCode;
 use crate::{Action, InteractionPolicy, Rect};
 
 fn unsupported(action: Action, policy: InteractionPolicy) -> AdapterError {

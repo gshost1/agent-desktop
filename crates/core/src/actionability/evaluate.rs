@@ -4,7 +4,7 @@ use super::{
     stability::StabilityExpectation,
 };
 use crate::{
-    AdapterError, ErrorCode,
+    AdapterError,
     actions::action_request::ActionRequest,
     adapter::{NativeHandle, PlatformAdapter},
 };
