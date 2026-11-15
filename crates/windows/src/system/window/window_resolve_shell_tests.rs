@@ -9,7 +9,7 @@ use agent_desktop_core::commands::helpers::RefArgs;
 use agent_desktop_core::commands::open_system_surface::{self, OpenSystemSurfaceArgs};
 use agent_desktop_core::commands::snapshot::{self, SnapshotArgs};
 use agent_desktop_core::{
-    AdapterError, AppError, CommandContext, Deadline, InteractionLease, SnapshotSurface,
+    AdapterError, AppError, CommandContext, Deadline, ErrorCode, InteractionLease, SnapshotSurface,
 };
 
 use super::resolve_window_strict;
@@ -48,7 +48,7 @@ fn surface_snapshot(surface: SnapshotSurface) -> serde_json::Value {
         SnapshotArgs {
             app: None,
             window_id: None,
-            max_depth: 6,
+            max_depth: 10,
             include_bounds: false,
             interactive_only: true,
             compact: true,
@@ -64,8 +64,7 @@ fn surface_snapshot(surface: SnapshotSurface) -> serde_json::Value {
     .expect("a presented shell surface answers its snapshot")
 }
 
-fn focus_first_ref_headed(snapshot: &serde_json::Value) -> Result<serde_json::Value, AppError> {
-    let ref_id = first_ref(&snapshot["tree"]).expect("the surface exposes a ref");
+fn focus_ref_headed(ref_id: String) -> Result<serde_json::Value, AppError> {
     focus::execute(
         RefArgs {
             ref_id,
@@ -118,8 +117,16 @@ fn a_headed_focus_on_a_taskbar_ref_raises_the_taskbar() {
         let previous = foreground();
         let snapshot = surface_snapshot(SnapshotSurface::Taskbar);
         let taskbar = parse_handle(snapshot["window"]["id"].as_str().expect("window id"));
+        let Some(ref_id) = first_ref(&snapshot["tree"]) else {
+            eprintln!(
+                "skip taskbar focus: this desktop's taskbar exposes no ref at the default depth \
+                 (ref_count {}, complete {}), so there is no ref action to drive",
+                snapshot["ref_count"], snapshot["complete"]
+            );
+            return;
+        };
 
-        let focused = focus_first_ref_headed(&snapshot);
+        let focused = focus_ref_headed(ref_id);
         let raised = is_root_foreground_window(taskbar);
         if previous != 0 {
             stage_foreground(previous);
@@ -182,5 +189,25 @@ fn the_presented_start_menu_resolves_strictly_and_counts_as_focused() {
 
         assert_eq!(live.id, start.id);
         focused.expect("the presented start menu counts as focused");
+
+        if let Err(error) = close_surface(SnapshotSurface::StartMenu, deadline(8_000)) {
+            eprintln!(
+                "skip start dismissal: this desktop's shell kept the start menu up: {error:?}"
+            );
+            return;
+        }
+        let gone = resolve_surface(SnapshotSurface::StartMenu, deadline(10_000))
+            .expect("the desktop is readable");
+        assert!(
+            gone.is_none(),
+            "the closed start menu is no longer presented"
+        );
+        let closed = resolve_window_strict(&start, deadline(10_000))
+            .expect_err("a dismissed start menu's id no longer resolves");
+        assert_eq!(closed.code, ErrorCode::WindowNotFound, "{closed:?}");
+        let lease = InteractionLease::guarded(Deadline::after(10_000).expect("deadline"), ())
+            .expect("lease");
+        focus_window(&start, &lease)
+            .expect_err("a dismissed start menu no longer counts as focused");
     });
 }

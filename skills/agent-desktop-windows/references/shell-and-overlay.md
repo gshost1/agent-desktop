@@ -33,13 +33,17 @@ windows.
   `delivered_unverified` with `retry: unsafe`, because a synthesized click
   cannot confirm what the owning app did with it. A click on an overflow item
   is untested.
-- **Headed ref actions work on shell-surface refs.** With `--headed`, a ref
-  action first raises the surface's top-level window: the taskbar for a
-  `taskbar` or `system-tray` ref. A presented `start-menu` or `action-center`
-  counts as raised as it is, because the shell keeps it above every window
-  while the foreground stays on another process's input window. A physical
-  action on those two surfaces, such as `right-click`, can still refuse
-  `not_delivered` when the element's own window does not hold the foreground.
+- **Headed ref actions work on `taskbar` and `start-menu` refs.** With
+  `--headed`, a ref action first raises the surface's top-level window. A
+  `taskbar` ref raises the taskbar. A presented `start-menu` counts as raised
+  as it is, because the shell keeps it above every window while the
+  foreground stays on another process's input window. A physical action on
+  it, such as `right-click`, can still refuse `not_delivered` when the
+  element's own window does not hold the foreground. Only these two surfaces
+  were measured. `system-tray`, `system-tray-overflow` and `action-center`
+  refs take the same path but are untested: a tray ref raises its toolbar's
+  top-level window (the taskbar for `system-tray`, the overflow window for
+  `system-tray-overflow`), and a presented `action-center` counts as raised.
 
 ## Notifications
 

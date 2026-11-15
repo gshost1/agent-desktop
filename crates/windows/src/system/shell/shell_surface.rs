@@ -36,11 +36,19 @@ pub(crate) fn presented_surface_at(
     handle: crate::system::window::window_enum::WindowHandle,
     deadline: Deadline,
 ) -> Result<Option<(WindowInfo, &'static SurfaceKindRow)>, AdapterError> {
+    presented_surface_in(super::shell_surface_kinds::rows(), handle, deadline)
+}
+
+fn presented_surface_in(
+    rows: &'static [SurfaceKindRow],
+    handle: crate::system::window::window_enum::WindowHandle,
+    deadline: Deadline,
+) -> Result<Option<(WindowInfo, &'static SurfaceKindRow)>, AdapterError> {
     let Some(class) = crate::system::window::window_ops::window_class_name(handle) else {
         return Ok(None);
     };
     let id = crate::system::window::window_ops::window_id(handle);
-    for row in super::shell_surface_kinds::rows()
+    for row in rows
         .iter()
         .filter(|row| row.exists_on_build && row_presents_class(row, &class))
     {
@@ -103,11 +111,21 @@ pub(crate) fn is_presented_immersive_surface(
     if class.as_deref() != Some(super::shell_surface_kinds::CORE_WINDOW_CLASS) {
         return Ok(false);
     }
-    Ok(
-        presented_surface_at(handle, deadline)?.is_some_and(|(info, row)| {
-            info.pid == pid && matches!(row.family, SurfaceFamily::Immersive { .. })
-        }),
-    )
+    Ok(presents_immersive_for(
+        presented_surface_at(handle, deadline)?,
+        pid,
+    ))
+}
+
+/// A presented surface counts as `pid`'s focus only when it is immersive and
+/// `pid` owns it: another process's presented surface is not the caller's.
+fn presents_immersive_for(
+    presented: Option<(WindowInfo, &SurfaceKindRow)>,
+    pid: agent_desktop_core::ProcessId,
+) -> bool {
+    presented.is_some_and(|(info, row)| {
+        info.pid == pid && matches!(row.family, SurfaceFamily::Immersive { .. })
+    })
 }
 
 pub(in crate::system) fn resolve_row(
@@ -321,3 +339,7 @@ pub(in crate::system) fn class_chain_top_handle(chain: &[&str]) -> Option<Window
 #[cfg(all(test, target_os = "windows"))]
 #[path = "shell_surface_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "shell_surface_presented_tests.rs"]
+mod presented_tests;

@@ -66,15 +66,36 @@ fn live_window_info(
         Some(_) => "window is no longer an agent-visible top-level window",
         None => "window handle is no longer present in the top-level inventory",
     };
-    match presented_surface_at(handle, deadline)? {
-        Some((surface, _)) if surface.pid == expected.pid => Ok(confirmed(
+    let presented = presented_surface_at(handle, deadline).map(|found| found.map(|(info, _)| info));
+    presented_or_refused(presented, expected, refusal)
+}
+
+/// The shell-surface fallback only ever confirms a window the inventory
+/// refused; it never changes the refusal. A surface another process owns,
+/// no presented surface, and a fault while reading the shell all stay the
+/// inventory's `WINDOW_NOT_FOUND`, with the fault kept as platform detail.
+fn presented_or_refused(
+    presented: Result<Option<WindowInfo>, AdapterError>,
+    expected: &WindowInfo,
+    refusal: &str,
+) -> Result<WindowInfo, AdapterError> {
+    match presented {
+        Ok(Some(surface)) if surface.pid == expected.pid => Ok(confirmed(
             expected,
             Some(surface.title).filter(|title| !title.is_empty()),
             surface.bounds,
             surface.state,
         )),
-        _ => Err(AdapterError::new(ErrorCode::WindowNotFound, refusal)),
+        Ok(_) => Err(AdapterError::new(ErrorCode::WindowNotFound, refusal)),
+        Err(fault) => Err(not_found_despite_fault(refusal, fault)),
     }
+}
+
+fn not_found_despite_fault(refusal: &str, fault: AdapterError) -> AdapterError {
+    AdapterError::new(ErrorCode::WindowNotFound, refusal).with_platform_detail(format!(
+        "the shell-surface check could not read the shell: {}",
+        fault.message
+    ))
 }
 
 /// The resolved window: the stored identity with the live title (the stored
