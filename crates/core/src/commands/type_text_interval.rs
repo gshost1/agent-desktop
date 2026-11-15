@@ -184,18 +184,14 @@ fn execute_landing(
     (context, wait_context): (&CommandContext, &CommandContext),
 ) -> Result<Landing, AppError> {
     let landed = Cell::new(None);
-    let baseline = Cell::new(None);
+    let baseline = crate::wait::baseline_once::BaselineOnce::default();
     let value = execute_ref_action_dispatching(
         args,
         adapter,
         request,
         context,
         |target, request, lease| {
-            baseline.set(crate::wait::window_baseline::WindowBaseline::before_action(
-                adapter,
-                target.entry,
-                wait_context,
-            ));
+            baseline.take_before_dispatch(adapter, target.entry, wait_context, target.deadline);
             let (result, handle) =
                 crate::ref_action::dispatch_resolved_landing(target, request, lease)?;
             landed.set(Some(Burst::landed(target.entry.clone(), handle)));
@@ -208,7 +204,7 @@ fn execute_landing(
     Ok(Landing {
         value,
         burst,
-        baseline: baseline.take(),
+        baseline: baseline.into_baseline(),
     })
 }
 

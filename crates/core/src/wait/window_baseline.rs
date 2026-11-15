@@ -13,6 +13,11 @@ use crate::{
 /// sent. A slower listing leaves the wait on the ref's own window.
 pub(crate) const WINDOW_BASELINE_BUDGET: Duration = Duration::from_millis(500);
 
+/// The least an action must have left for the listing to run, so the listing
+/// can take at most half of what remains and never pushes the dispatch past
+/// the action's deadline.
+pub(crate) const WINDOW_BASELINE_RESERVE: Duration = Duration::from_millis(1_000);
+
 /// The windows of one process instance that were open before an action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WindowBaseline {
@@ -23,19 +28,22 @@ pub(crate) struct WindowBaseline {
 
 impl WindowBaseline {
     /// The baseline an appear wait after an action on `entry` follows, taken
-    /// before the action is sent. `None` without such a wait, for a ref that
-    /// already observes its whole owner, or when the windows cannot be listed.
+    /// before the action is sent within the action's own `deadline`. `None`
+    /// without such a wait, for a ref that already observes its whole owner,
+    /// when less than [`WINDOW_BASELINE_RESERVE`] is left, or when the windows
+    /// cannot be listed.
     pub(crate) fn before_action(
         adapter: &dyn PlatformAdapter,
         entry: &RefEntry,
         context: &CommandContext,
+        deadline: Deadline,
     ) -> Option<Self> {
         if context.wait_selector().is_none_or(|wait| wait.gone)
             || !crate::wait::ref_wait::follows_windows(adapter, entry)
+            || deadline.remaining() < WINDOW_BASELINE_RESERVE
         {
             return None;
         }
-        let deadline = Deadline::from_duration(WINDOW_BASELINE_BUDGET).ok()?;
         Self::capture(
             adapter,
             entry.source.source_app.as_deref()?,

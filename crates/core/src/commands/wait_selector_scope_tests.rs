@@ -207,7 +207,12 @@ fn wait_after_action(app: &ScriptedApp, timeout_ms: u64) -> Result<Value, AppErr
     let entry = entry();
     let selector = selector(timeout_ms);
     let context = CommandContext::default().with_wait_selector(Some(selector.clone()));
-    let baseline = WindowBaseline::before_action(app, &entry, &context);
+    let baseline = WindowBaseline::before_action(
+        app,
+        &entry,
+        &context,
+        crate::Deadline::after(5_000).unwrap(),
+    );
     execute_after_action(
         WaitSelectorInput {
             query_raw: selector.query_raw.clone(),

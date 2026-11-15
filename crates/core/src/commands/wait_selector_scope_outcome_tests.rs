@@ -3,7 +3,12 @@ use super::*;
 fn wait_through_the_command(app: &ScriptedApp) -> AdapterError {
     let entry = entry();
     let context = CommandContext::default().with_wait_selector(Some(selector(10_000)));
-    let baseline = WindowBaseline::before_action(app, &entry, &context);
+    let baseline = WindowBaseline::before_action(
+        app,
+        &entry,
+        &context,
+        crate::Deadline::after(5_000).unwrap(),
+    );
     let delivered = serde_json::to_value(crate::ActionResult::delivered_unverified("click"));
     adapter_error(crate::commands::helpers::apply_post_action_wait(
         delivered.unwrap(),
