@@ -43,9 +43,9 @@ fn run_on_dead_display(scratch: &Path, display: &str, args: &[&str]) -> serde_js
 }
 
 /// An accessibility bus that dies with the display is reported as the
-/// display, never as an internal error: commands that read the bus answer the
-/// display refusal, and a launch, which checks permissions first, is refused
-/// with the display named and nothing spawned.
+/// display, never as an internal error or a missing permission: commands that
+/// read the bus, and those that check permissions first, such as `snapshot`
+/// and `launch`, answer the display refusal, and a launch spawns nothing.
 #[test]
 fn an_accessibility_bus_that_dies_with_the_display_is_reported_as_the_display() {
     let runs = std::process::Command::new("dbus-run-session")
@@ -80,6 +80,8 @@ fn an_accessibility_bus_that_dies_with_the_display_is_reported_as_the_display() 
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("mode");
 
     let listed = run_on_dead_display(&scratch, &display, &["list-apps"]);
+    let snapshot = run_on_dead_display(&scratch, &display, &["snapshot", "--app", "Absent"]);
+    let status = run_on_dead_display(&scratch, &display, &["status"]);
     let launched = run_on_dead_display(
         &scratch,
         &display,
@@ -96,30 +98,29 @@ fn an_accessibility_bus_that_dies_with_the_display_is_reported_as_the_display() 
     });
     drop(guard);
 
-    assert_eq!(
-        listed["error"]["code"], "PLATFORM_NOT_SUPPORTED",
-        "{listed}"
-    );
-    assert!(
-        listed["error"]["details"]["display_unavailable"]
-            .as_str()
-            .is_some_and(|cause| cause != "not_configured"),
-        "{listed}"
-    );
-    assert!(
-        listed["error"]["details"]["bus_error"].is_object(),
-        "{listed}"
-    );
-    assert_eq!(launched["error"]["code"], "PERM_DENIED", "{launched}");
-    assert!(
-        launched["error"]["suggestion"]
-            .as_str()
-            .is_some_and(|text| text.contains("DISPLAY")),
-        "{launched}"
-    );
+    for answer in [&listed, &snapshot, &launched] {
+        assert_eq!(
+            answer["error"]["code"], "PLATFORM_NOT_SUPPORTED",
+            "{answer}"
+        );
+        assert!(
+            answer["error"]["details"]["display_unavailable"]
+                .as_str()
+                .is_some_and(|cause| cause != "not_configured"),
+            "{answer}"
+        );
+        assert!(
+            answer["error"]["details"]["bus_error"].is_object(),
+            "{answer}"
+        );
+    }
     assert_eq!(
         launched["error"]["disposition"]["delivery"], "not_delivered",
         "{launched}"
+    );
+    assert_eq!(
+        status["data"]["permissions"]["accessibility"]["state"], "denied",
+        "{status}"
     );
     assert!(!started, "the launch started the program");
 }

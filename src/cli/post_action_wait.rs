@@ -20,7 +20,7 @@ pub(crate) struct PostActionWaitArgs {
     #[arg(
         long,
         global = true,
-        help = "Maximum wait time in milliseconds for --wait-for / --wait-for-gone (default: 30000)"
+        help = "Maximum wait time in milliseconds for --wait-for / --wait-for-gone (default: 10000)"
     )]
     pub wait_timeout: Option<u64>,
 }
