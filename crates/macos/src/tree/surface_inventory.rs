@@ -1,3 +1,4 @@
+use crate::tree::surface_window_ids::{SurfaceRead, WindowSurfaces, surfaces_from_windows};
 use crate::tree::{AXElement, properties::element::element_for_pid};
 use agent_desktop_core::{AdapterError, ErrorCode, SurfaceInfo};
 use std::time::Instant;
@@ -7,20 +8,68 @@ pub(crate) fn list_surfaces_for_process(
     deadline: Instant,
 ) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let pid = identity.pid();
-    let windows = super::app_menu::observe(identity, deadline, || {
-        focused_window_surfaces(pid, deadline)
-    })?;
+    let windows = super::app_menu::observe(identity, deadline, || window_surfaces(pid, deadline))?;
     let menus = super::app_menu::observe(identity, deadline, || open_menu_surfaces(pid, deadline));
+    let menus = settle_by_window_server(menus, || {
+        crate::system::window::popup_menu_window::menu_window_numbers(pid)
+    });
     combine_surfaces(windows, menus)
 }
 
-fn focused_window_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
+/// Reads every window the application publishes, plus its focused window,
+/// which is where a sheet that is not listed among the windows shows up.
+fn window_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let app = element_for_pid(pid);
-    let mut surfaces = Vec::new();
-    if let Some(window) = read_element(&app, "AXFocusedWindow", deadline)? {
-        collect_window_surfaces(&window, "focused-window", deadline, &mut surfaces)?;
+    let mut windows = read_array(&app, "AXWindows", deadline)?.unwrap_or_default();
+    if let Some(focused) = read_element(&app, "AXFocusedWindow", deadline)? {
+        crate::tree::element_dedupe::push_unique(&mut windows, focused);
     }
-    Ok(surfaces)
+    let mut reads = Vec::with_capacity(windows.len());
+    for window in &windows {
+        reads.push(read_window(window, deadline)?);
+    }
+    Ok(surfaces_from_windows(reads))
+}
+
+fn read_window(window: &AXElement, deadline: Instant) -> Result<WindowSurfaces, AdapterError> {
+    let own = read_surface(window, deadline)?;
+    let mut children = Vec::new();
+    for child in read_array(window, "AXChildren", deadline)?.unwrap_or_default() {
+        if let Some(surface) = read_surface(&child, deadline)? {
+            children.push(surface);
+        }
+    }
+    let number = if own.is_some() || !children.is_empty() {
+        window_number(window, deadline)?
+    } else {
+        None
+    };
+    Ok(WindowSurfaces {
+        number,
+        own,
+        children,
+    })
+}
+
+fn read_surface(
+    element: &AXElement,
+    deadline: Instant,
+) -> Result<Option<SurfaceRead>, AdapterError> {
+    let Some(kind) = surface_kind(element, deadline)? else {
+        return Ok(None);
+    };
+    Ok(Some(SurfaceRead {
+        number: window_number(element, deadline)?,
+        kind,
+        title: read_title(element, deadline)?,
+    }))
+}
+
+fn window_number(element: &AXElement, deadline: Instant) -> Result<Option<i64>, AdapterError> {
+    match crate::system::window::window_bridge::window_id(element, deadline) {
+        Err(error) if crate::system::window::window_bridge::is_unavailable(&error) => Ok(None),
+        read => read,
+    }
 }
 
 fn open_menu_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
@@ -31,9 +80,35 @@ fn open_menu_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, A
     Ok(surfaces)
 }
 
+/// A menu search that stopped at its node cap is unfinished on every attempt
+/// in a dense application. The window server lists every on-screen pop-up menu
+/// window of the process, so when it lists none no menu is open and the read
+/// is complete. Any other answer leaves the scan unfinished.
+fn settle_by_window_server(
+    menus: Result<Vec<SurfaceInfo>, AdapterError>,
+    menu_windows: impl FnOnce() -> Result<Vec<i64>, AdapterError>,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    match menus {
+        Err(error) if stopped_at_node_cap(&error) => match menu_windows() {
+            Ok(windows) if windows.is_empty() => Ok(Vec::new()),
+            _ => Err(error),
+        },
+        menus => menus,
+    }
+}
+
+fn stopped_at_node_cap(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        == Some("surface_search_limit")
+}
+
 /// Proving that no context menu is open takes a walk of the whole application
 /// tree, which a large application does not finish inside a short budget. The
-/// sheets and alerts of the focused window were already read, so an unfinished
+/// sheets, popovers and alerts of the windows were already read, so an unfinished
 /// menu scan keeps them and marks the menu kind unread on the application's
 /// menu bar, the owner of every macOS menu. A missing `menu` entry is then
 /// never mistaken for an observed absence.
@@ -83,38 +158,6 @@ fn push_menu_surface(
         item_count,
         unclassified: Vec::new(),
     });
-    Ok(())
-}
-
-fn collect_window_surfaces(
-    window: &AXElement,
-    window_id: &str,
-    deadline: Instant,
-    surfaces: &mut Vec<SurfaceInfo>,
-) -> Result<(), AdapterError> {
-    if let Some(kind) = surface_kind(window, deadline)? {
-        surfaces.push(SurfaceInfo {
-            id: window_id.to_string(),
-            kind: kind.into(),
-            title: read_title(window, deadline)?,
-            item_count: None,
-            unclassified: Vec::new(),
-        });
-    }
-    let Some(children) = read_array(window, "AXChildren", deadline)? else {
-        return Ok(());
-    };
-    for (index, child) in children.iter().enumerate() {
-        if let Some(kind) = surface_kind(child, deadline)? {
-            surfaces.push(SurfaceInfo {
-                id: format!("{window_id}/children/{index}"),
-                kind: kind.into(),
-                title: read_title(child, deadline)?,
-                item_count: None,
-                unclassified: Vec::new(),
-            });
-        }
-    }
     Ok(())
 }
 

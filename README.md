@@ -132,7 +132,7 @@ Your agent calls the CLI, or the C library in process. Both run the same core, w
 The binary carries guides that match its version:
 
 ```bash
-agent-desktop skills get desktop      # the loop, refs, verification and retry rules
+agent-desktop skills get desktop      # the loop, refs, read-back and error recovery; topics hold the rest
 agent-desktop skills get platform     # what differs on the OS you run on
 agent-desktop skills get web          # web pages in Chrome; enough on its own for web work
 agent-desktop <command> --help        # flags for one command
