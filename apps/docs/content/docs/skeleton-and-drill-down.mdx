@@ -246,7 +246,7 @@ agent-desktop find --app gtk3-widget-factory --surface menu --name "Dark Theme" 
 
 They cannot combine. `find --root <ref> --surface menu` returns `INVALID_ARGS`, "--root cannot be combined with --surface", with the suggestion to run `find --surface` without `--root`, or to drop `--surface`.
 
-A `find` that returns matches saves its own new snapshot, and its refs are qualified with the returned `data.snapshot_id`:
+A `find` that returns at least one ref saves its own new snapshot, and its refs are qualified with the returned `data.snapshot_id` (a `find` whose matches carry no ref saves none):
 
 ```json
 {

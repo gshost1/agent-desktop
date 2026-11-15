@@ -50,7 +50,7 @@ pub(crate) fn resolve_window_for_surface(
         return crate::system::app_lookup::windowless_app_owner(adapter, app, deadline);
     }
     if let (crate::SnapshotSurface::Window, Some(app)) = (surface, app_name) {
-        return select_app_window(windows, app);
+        return select_app_window(adapter, windows, app, deadline);
     }
     if let (true, crate::SnapshotSurface::Web, Some(app)) = (windows.is_empty(), surface, app_name)
         && let Some(owner) = crate::system::app_lookup::web_process_owner(adapter, app, deadline)
@@ -98,12 +98,43 @@ fn is_process_surface(surface: crate::SnapshotSurface) -> bool {
     )
 }
 
-fn select_app_window(windows: Vec<WindowInfo>, app: &str) -> Result<WindowInfo, AppError> {
-    crate::system::window_lookup::select_window(
-        windows,
-        crate::AdapterError::app_has_no_window(app),
-        "More than one window matches the target",
-    )
+fn select_app_window(
+    adapter: &dyn PlatformAdapter,
+    windows: Vec<WindowInfo>,
+    app: &str,
+    deadline: Deadline,
+) -> Result<WindowInfo, AppError> {
+    let select = |candidates| {
+        crate::system::window_lookup::select_window(
+            candidates,
+            crate::AdapterError::app_has_no_window(app),
+            "More than one window matches the target",
+        )
+    };
+    match select(windows.clone()) {
+        Err(AppError::Adapter(error)) if error.code == crate::ErrorCode::AmbiguousTarget => {
+            match primary_windows(adapter, windows, deadline) {
+                Some(primary) => select(primary),
+                None => Err(AppError::Adapter(error)),
+            }
+        }
+        chosen => chosen,
+    }
+}
+
+/// The windows among `windows` that are not auxiliary, when the adapter
+/// reports at least one auxiliary window and at least one other.
+fn primary_windows(
+    adapter: &dyn PlatformAdapter,
+    windows: Vec<WindowInfo>,
+    deadline: Deadline,
+) -> Option<Vec<WindowInfo>> {
+    let count = windows.len();
+    let primary: Vec<_> = windows
+        .into_iter()
+        .filter(|window| !adapter.is_auxiliary_window(window, deadline))
+        .collect();
+    (!primary.is_empty() && primary.len() < count).then_some(primary)
 }
 
 pub(crate) fn surface_windows(
@@ -190,7 +221,7 @@ pub(crate) fn resolve_window(
                 }
             }
         }
-        select_app_window(windows, app)
+        select_app_window(adapter, windows, app, deadline)
     } else {
         crate::system::window_lookup::select_window(
             windows,
@@ -321,6 +352,7 @@ pub(crate) fn ref_observation_surface(
 ) -> SnapshotSurface {
     if adapter.is_application_surface(entry.source.source_surface)
         || entry.source.is_process_owned()
+        || entry.source.source_surface == SnapshotSurface::Web
     {
         entry.source.source_surface
     } else {
@@ -335,3 +367,7 @@ pub(crate) fn is_confirmed_surface_absence(error: &AppError, surface: SnapshotSu
 #[cfg(test)]
 #[path = "surface_target_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "surface_target_auxiliary_tests.rs"]
+mod auxiliary_tests;

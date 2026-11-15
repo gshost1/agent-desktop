@@ -255,6 +255,10 @@ fn assert_answered_without_a_ref(resolution: &super::LocatorResolution) {
         resolution.matches[0].data.ref_id.is_none(),
         "an unproven tokenless ref must never be published"
     );
+    assert!(
+        resolution.refmap.is_none(),
+        "an answer with no ref must publish no refmap, or find saves an empty snapshot"
+    );
 }
 
 #[test]

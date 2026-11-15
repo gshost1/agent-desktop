@@ -93,6 +93,14 @@ pub trait ObservationOps: Send + Sync {
         Err(AdapterError::not_supported("list_windows"))
     }
 
+    /// Whether `window` is auxiliary rather than a document window or a
+    /// dialog, such as a floating tool panel or a text field's suggestion
+    /// list. When `--app` matches several windows and no one of them is
+    /// focused, it chooses among the windows that are not auxiliary.
+    fn is_auxiliary_window(&self, _window: &WindowInfo, _deadline: Deadline) -> bool {
+        false
+    }
+
     fn list_apps(&self, _deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
         Err(AdapterError::not_supported("list_apps"))
     }

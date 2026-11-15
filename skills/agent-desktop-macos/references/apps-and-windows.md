@@ -1,0 +1,40 @@
+# macOS apps, windows and surfaces
+
+The full macOS rules for permissions, windows, surfaces, launch and refs. The platform skill (`agent-desktop skills get platform`) has the short recipes.
+
+## Requirements
+
+- macOS 13 or later, Intel or Apple Silicon.
+- Accessibility permission for the app that launches agent-desktop (Terminal, iTerm2, Warp, VS Code, Codex). macOS 27 and later name this list Device Control and Data Access. If System Settings lists the `agent-desktop` binary separately, grant it too.
+- Screen Recording permission, only for `screenshot` and for `session start --screenshots` artifacts. Window titles do not need it: without it, `list-windows`, `snapshot` and `wait --window` read each title from the window's accessibility element. A title macOS cannot tie to exactly one window is reported as `""`, never as the app name.
+- Automation permission for System Events, only where a command reports it missing.
+
+## First contact
+
+1. Run `agent-desktop permissions`.
+2. If a permission is denied, run `agent-desktop permissions --guide`. It opens the right System Settings page with a panel that shows the user which app to drag into the list. The user confirms with Touch ID or a password, and the panel moves to the next missing permission by itself. The command returns at once with `"guide": "started"`, `"already_running"` or `"not_needed"`. `agent-desktop permissions --request` shows the system prompts instead.
+3. If the guide cannot run, open System Settings > Privacy & Security > Accessibility (Device Control and Data Access on macOS 27 and later). Add the launching app and turn it on.
+4. Run `agent-desktop permissions` to confirm `granted`. The next agent-desktop call sees a new grant, so the launching app does not need a restart. Each command reads permissions in its own process, so a permission granted during a `batch` applies from the next CLI call, not to later items in that batch.
+5. Run `agent-desktop snapshot -i` to confirm. It reads the focused app. `snapshot --app Finder -i` returns `WINDOW_NOT_FOUND` when Finder has no open window.
+
+`permissions` does not prompt. `permissions --request` can prompt, including for Automation. `permissions --guide` does not prompt and covers Accessibility and Screen Recording only. Automation reports `unknown` when macOS would need to prompt.
+
+## Windows, surfaces and refs
+
+**Floating panels.** A panel that floats above an app's documents, such as the Fonts or Colors panel or an inspector, is a window of its own. While it is on screen, `list-windows --app <App>` lists it by title with its own id, and `snapshot --window-id <id> -i` and `find --window-id <id>` read it; refs from that snapshot act in the panel. `snapshot --app <App>` and every other `--app` command still read the focused document window: when no one window is focused, `--app` chooses among the standard windows and dialogs, so an open panel or a text field's suggestion list does not make it `AMBIGUOUS_TARGET`. Most panels hide while their app is in the background, and a hidden panel is not listed.
+
+**Surfaces.** Use `--surface menubar` for an app's File, Edit, and View menus. Use `--surface menu-bar-extras` for status items: with no `--app` it reads system items such as Wi-Fi, Battery, and Clock; with `--app` it reads that app's own item. Use `--surface dock` for the Dock. These shell surfaces are available headless through `open-system-surface`. A background app with no ordinary window, such as a menu-bar app or Control Center, can be observed through its process with `snapshot --app "Control Center"`. This applies to `window`, `menubar`, and `menu-bar-extras`, not `focused`; a regular app that has not shown its window returns `WINDOW_NOT_FOUND`. While a menu, sheet, alert, or popover is open, refs from the window tree behind it are the wrong target. A ref from `--surface focused` that carries no element address acts only while the window it was captured from is still the app's focused window; after focus moves to another window, even one of the same app with the same controls, it returns `STALE_REF` with `details.kind: "focused_window_changed"` and nothing is sent: run `focus-window --window-id` with its `details.source_window_id` and retry, or take a new snapshot.
+
+**File lists and outlines.** Open and Save panel file browsers, and other outlines whose rows rename inline, label each row with an `AXTextField`. That row or cell reports the field's value as `name`, marked `"name_source": "child_field_value"` in snapshots, so `find --surface sheet --name <file>` finds it. A secure field never names a row. The ref still resolves by the row's native address, not by that name.
+
+**Long lists in find.** `find` reads the rows of outlines, tables, browsers and lists after everything else in the window or surface. `--first` returns the first match in that order: a match outside list and table rows comes before any match inside them, and find answers it without reading the rows. A control beside a long file list, such as a Save sheet's `Where:` pop-up or its buttons, is found without reading the file list, with an element-token ref. A match whose ref would carry no element token is answered only after a second pass reads the rows too, so its ref is proven over the whole window; when that pass runs out of time or the app stops answering during it, or no budget is left for it, the match comes back without a ref. When nothing outside the rows matches, `--first` reads the rows as well. A plain `find` and `--count` still read every row, and return `TIMEOUT` when the budget ends inside them; `--allow-partial` returns what they read instead.
+
+**Chromium and Electron.** agent-desktop switches on the web accessibility of a Chromium renderer automatically when it needs it. For a dense running app, use `snapshot --skeleton -i --compact`, then drill with `--root @ref`.
+
+**Identity.** `launch` accepts a display name (`"System Settings"`) or a bundle ID (`com.apple.systempreferences`). Other commands take the display name through `--app`, or the bundle ID or executable name (`ControlCenter`) when no running app has that display name. Window IDs such as `w-4521` stay valid for the life of the window. Find them with `list-windows`.
+
+**Launching a running app.** `launch "App" --activate` on an app that is already running brings it forward through `NSRunningApplication`, not Launch Services, so no reopen event reaches it. It no longer opens a window: an app with none stays windowless (Finder opens no default folder, a document app opens no untitled document) and `data.window` is absent. When you want the app's default or a new window, add `--reopen`; it sends the reopen, and the app opens whatever it opens for one. Do not use `--reopen` just to switch to an app. `data.launch_path` is `attached_running`, `activated_running`, `launched` or `reopened`.
+
+**Launch window and exit.** `launch` claims a window only when the app shows one window, or one focused window among several. An app that restores several windows with none focused returns `ok` with no `data.window` and a `data.suggestion` that lists the window ids once the wait ends (1.5 s after the app finishes starting up, or `--timeout` with `--activate`); pick one with `list-windows`. An app that exits while `launch` waits for its window, before or after it finished starting up and with or without `--activate`, fails with `APP_UNRESPONSIVE` "Launched application exited before it presented a window", `delivered_unverified`, with the pid in `details.pid`.
+
+**Refs use native addresses when available.** A ref turns back into the exact element it was captured from, so identical twins, such as several identical `Delete` buttons, each act on their own row. If the element was removed or the app restarted, the ref is `STALE_REF`, `details.kind: retained_object_stale`, and it never falls back to a search for a look-alike. When an app yields no address for an element, that ref follows the cross-platform rule instead and must have been the only element in its window with its role, native id, name and description. Take a fresh snapshot after a list changes.

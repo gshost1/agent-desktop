@@ -17,6 +17,43 @@ pub(crate) struct RefActionPollState {
 }
 
 impl RefActionPollState {
+    /// The poll's starting state. A headless action compares live bounds with
+    /// the snapshot's hash, but only a screen-space one: a window-space hash
+    /// never matches the live screen rectangle, so such a ref is primed from
+    /// its first live read instead (see [`Self::prime_from_live`]).
+    pub(crate) fn for_entry(entry: &crate::RefEntry, request: &crate::ActionRequest) -> Self {
+        Self {
+            expected_bounds_hash: screen_bounds_hash(entry).filter(|_| is_headless(request)),
+            ..Default::default()
+        }
+    }
+
+    /// Takes the live screen bounds as the expected hash before the first
+    /// preflight of a headless window-space ref, so the stability check
+    /// compares two live screen reads instead of failing on a hash measured
+    /// in another frame.
+    pub(crate) fn prime_from_live(
+        &mut self,
+        target: (&crate::RefEntry, &crate::ActionRequest),
+        adapter: &dyn crate::PlatformAdapter,
+        handle: &crate::NativeHandle,
+        deadline: crate::Deadline,
+    ) {
+        let (entry, request) = target;
+        if self.preflight_attempts > 0
+            || self.expected_bounds_hash.is_some()
+            || !is_headless(request)
+            || !is_window_space(entry)
+        {
+            return;
+        }
+        self.expected_bounds_hash = adapter
+            .get_element_bounds(handle, deadline)
+            .ok()
+            .flatten()
+            .and_then(|bounds| bounds.bounds_hash());
+    }
+
     pub(crate) fn stability(&self) -> StabilityExpectation {
         StabilityExpectation::strict_hash(self.expected_bounds_hash)
     }
@@ -126,4 +163,20 @@ fn is_live_read_incomplete(error: &AdapterError) -> bool {
         details.get("kind").and_then(Value::as_str) == Some("live_element_evidence")
             && details.get("complete").and_then(Value::as_bool) == Some(false)
     })
+}
+
+/// The snapshot's bounds hash when it was measured on screen. A refmap entry
+/// without a space tag is a screen rectangle.
+pub(crate) fn screen_bounds_hash(entry: &crate::RefEntry) -> Option<u64> {
+    (!is_window_space(entry))
+        .then_some(entry.geometry.bounds_hash)
+        .flatten()
+}
+
+fn is_window_space(entry: &crate::RefEntry) -> bool {
+    entry.geometry.bounds_space == Some(crate::BoundsSpace::Window)
+}
+
+fn is_headless(request: &crate::ActionRequest) -> bool {
+    request.policy == crate::InteractionPolicy::headless()
 }

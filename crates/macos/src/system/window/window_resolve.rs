@@ -190,7 +190,7 @@ fn window_info_from_record(
             is_focused: win.state.is_focused,
             accessible: win.state.accessible,
             minimized: win.state.minimized,
-            visible: Some(record.visible),
+            visible: Some(record.presence.is_onscreen()),
         },
     })
 }

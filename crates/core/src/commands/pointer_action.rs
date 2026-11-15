@@ -13,6 +13,10 @@ use crate::actionability::pointer_timeout::point_actionability_timeout;
 mod focus_phase;
 pub(crate) use focus_phase::{CommandFocus, retry_leased_point_phase};
 
+#[path = "pointer_action_capture_refusal.rs"]
+mod capture_refusal;
+pub(crate) use capture_refusal::refuse_unproven_refs;
+
 struct EntryPointResolve<'a> {
     ref_id: &'a str,
     entry: &'a RefEntry,
@@ -235,7 +239,7 @@ pub(crate) fn wait_for_point_with_focus<'a>(
                     scroll_point_target(&entry, deadline, &lease, adapter)?;
                     drop(lease);
                     last_scrolled_bounds_hash = observed;
-                    std::thread::sleep(POLL_INTERVAL.min(deadline.remaining()));
+                    crate::wait::deadline::sleep(POLL_INTERVAL.min(deadline.remaining()));
                     continue;
                 }
                 if let Some(observed) = observed {
@@ -246,7 +250,7 @@ pub(crate) fn wait_for_point_with_focus<'a>(
                 } else {
                     POLL_INTERVAL
                 };
-                std::thread::sleep(interval.min(remaining));
+                crate::wait::deadline::sleep(interval.min(remaining));
             }
         }
     }

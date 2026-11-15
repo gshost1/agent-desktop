@@ -19,6 +19,49 @@ pub(crate) fn menu_window_numbers(pid: i32) -> Result<Vec<i64>, AdapterError> {
     Ok(menu_numbers_from(&on_screen_dictionaries()?, pid))
 }
 
+/// Whether `pid` shows a menu, from the window server and then accessibility.
+/// See [`menu_shown_from`].
+pub(crate) fn menu_shown(
+    pid: i32,
+    accessibility: impl FnOnce() -> Result<bool, AdapterError>,
+) -> Result<bool, AdapterError> {
+    menu_shown_from(menu_window_numbers(pid), accessibility)
+}
+
+/// Answers from two reads. The window server goes first: it never waits on
+/// the application, and a pop-up menu window of the process is a menu on
+/// screen whatever the accessibility tree says. The accessibility read then
+/// decides, except that a menu search that ran out of its node budget proves
+/// nothing alone; it counts as no menu only when the window server answered
+/// and listed no menu window, since the menu bar was read before the search
+/// and showed none. Every other failed read stays an error.
+pub(crate) fn menu_shown_from(
+    menu_windows: Result<Vec<i64>, AdapterError>,
+    accessibility: impl FnOnce() -> Result<bool, AdapterError>,
+) -> Result<bool, AdapterError> {
+    let window_server_saw_none = match &menu_windows {
+        Ok(windows) if !windows.is_empty() => return Ok(true),
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    match accessibility() {
+        Err(error) if window_server_saw_none && searched_past_budget(&error) => Ok(false),
+        answer => answer,
+    }
+}
+
+/// Whether a menu read failed only because the accessibility search for a
+/// menu ran out of its node budget, as it does in a window with thousands of
+/// elements.
+pub(crate) fn searched_past_budget(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        == Some("surface_search_limit")
+}
+
 pub(in crate::system) fn menu_numbers_from(
     dictionaries: &[WindowDictionary],
     pid: i32,
