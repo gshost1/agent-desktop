@@ -85,6 +85,15 @@ impl PhysicalWorld for ReceiverWorld<'_> {
         self.live.send_plans(plans, gate, deadline)
     }
 
+    fn send_planned(
+        &self,
+        planner: crate::input::x11::plan_source::KeyPlanner,
+        gate: Gate<'_>,
+        deadline: Deadline,
+    ) -> Result<Delivery, AdapterError> {
+        self.live.send_planned(planner, gate, deadline)
+    }
+
     fn send_keysyms(
         &self,
         chunks: &[Vec<KeysymStep>],

@@ -1,10 +1,11 @@
 use std::time::Duration;
 
+use super::keyboard::key_fingerprint::KeyFingerprint;
 use super::keyboard::keymap_edit::KeymapEdit;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Step {
-    CheckTextState,
+    CheckTextState(KeyFingerprint),
     Key { code: u8, down: bool },
     Button { code: u8, down: bool },
     MoveTo { x: i32, y: i32 },

@@ -242,10 +242,13 @@ impl X11Sink for XtestSink {
         Ok(map)
     }
 
-    fn ensure_text_state(&mut self) -> Result<(), AdapterError> {
+    fn ensure_text_state(
+        &mut self,
+        planned: &crate::input::keyboard::key_fingerprint::KeyFingerprint,
+    ) -> Result<(), AdapterError> {
         self.keymap()
             .map_err(SinkError::into_adapter)?
-            .ensure_text_state()
+            .ensure_planned_text_state(planned)
     }
 
     fn edit_keymap(&mut self, edit: &KeymapEdit) -> Result<(), SinkError> {

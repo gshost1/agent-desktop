@@ -11,6 +11,7 @@ use crate::input::delivery::{Delivery, Gate};
 use crate::input::keyboard::keymap::Keymap;
 use crate::input::keyboard::keysym_step::KeysymStep;
 use crate::input::plan::Plan;
+use crate::input::x11::plan_source::KeyPlanner;
 use crate::system::SharedBus;
 use crate::tree::AtspiElement;
 
@@ -55,6 +56,17 @@ pub(crate) trait PhysicalWorld {
         gate: Gate<'_>,
         deadline: Deadline,
     ) -> Result<Delivery, AdapterError>;
+    /// Sends the plans `planner` builds from the keymap. A live X11 world reads
+    /// the keymap and sends on one connection.
+    fn send_planned(
+        &self,
+        planner: KeyPlanner,
+        gate: Gate<'_>,
+        deadline: Deadline,
+    ) -> Result<Delivery, AdapterError> {
+        let map = self.keymap(deadline)?;
+        self.send_plans(planner(&map)?, gate, deadline)
+    }
     fn send_keysyms(
         &self,
         chunks: &[Vec<KeysymStep>],
@@ -175,6 +187,15 @@ impl PhysicalWorld for LiveWorld<'_> {
         _deadline: Deadline,
     ) -> Result<Delivery, AdapterError> {
         crate::input::deliver::send_plans(plans, gate, self.lease)
+    }
+
+    fn send_planned(
+        &self,
+        planner: KeyPlanner,
+        gate: Gate<'_>,
+        _deadline: Deadline,
+    ) -> Result<Delivery, AdapterError> {
+        crate::input::deliver::send_planned(planner, gate, self.lease)
     }
 
     fn send_keysyms(

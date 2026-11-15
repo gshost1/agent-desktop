@@ -42,6 +42,29 @@ impl Keymap {
         .with_disposition(DeliverySemantics::not_delivered()))
     }
 
+    /// The text-state check before a chunk: the state rules above, and every
+    /// keycode the chunk presses still carrying the keysyms it was planned for.
+    pub(crate) fn ensure_planned_text_state(
+        &self,
+        planned: &super::key_fingerprint::KeyFingerprint,
+    ) -> Result<(), AdapterError> {
+        self.ensure_text_state()?;
+        let Some(keycode) = planned.changed_in(self) else {
+            return Ok(());
+        };
+        Err(AdapterError::new(
+            ErrorCode::ActionNotSupported,
+            "The keyboard layout changed after the text was planned, so its keys would type other text",
+        )
+        .with_details(serde_json::json!({
+            "check": "keyboard_layout",
+            "keycode": keycode,
+            "physical_delivery_started": false,
+        }))
+        .with_suggestion("Run type again to plan against the current layout, or use headless type")
+        .with_disposition(DeliverySemantics::not_delivered()))
+    }
+
     fn harmless_lock_bits(&self) -> u16 {
         let width = usize::from(self.modifier_codes_per_modifier);
         (0..MODIFIER_ROWS)

@@ -38,9 +38,14 @@ pub(crate) fn target_steps(
         Action::TypeText(text) => {
             match &backend {
                 Backend::X11(_) => {
-                    let map = world.keymap(deadline)?;
-                    let plans = crate::input::keyboard::text_plan::plan_text(&map, text)?;
-                    world.send_plans(plans, &mut gate, deadline)?;
+                    let text = text.clone();
+                    world.send_planned(
+                        Box::new(move |map| {
+                            crate::input::keyboard::text_plan::plan_text(map, &text)
+                        }),
+                        &mut gate,
+                        deadline,
+                    )?;
                 }
                 Backend::Wayland => {
                     let chunks = crate::input::keyboard::text_plan::plan_text_keysyms(text);
@@ -134,9 +139,14 @@ fn send_combo(
 ) -> Result<(), AdapterError> {
     match backend {
         Backend::X11(_) => {
-            let map = world.keymap(deadline)?;
-            let plan = crate::input::keyboard::key_plan::plan_combo(&map, combo)?;
-            world.send_plans(vec![plan], gate, deadline)?;
+            let combo = combo.clone();
+            world.send_planned(
+                Box::new(move |map| {
+                    crate::input::keyboard::key_plan::plan_combo(map, &combo).map(|plan| vec![plan])
+                }),
+                gate,
+                deadline,
+            )?;
         }
         Backend::Wayland => {
             let keys = crate::input::keyboard::key_plan::plan_keysyms(combo)?;

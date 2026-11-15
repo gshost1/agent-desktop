@@ -6,6 +6,7 @@ use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 use serde_json::json;
 
 use super::held_journal::HeldJournal;
+use super::plan_source::PlanSource;
 use super::progress::Progress;
 use super::sink::X11Sink;
 use super::sink_error::SinkError;
@@ -41,13 +42,34 @@ pub(crate) fn mark_started(error: AdapterError, started: bool) -> AdapterError {
 
 pub(crate) fn work(
     mut sink: impl X11Sink,
-    plans: Vec<Plan>,
+    plans: impl Into<PlanSource>,
     link: &Link,
     deadline: Deadline,
     progress: &Progress,
 ) {
-    let outcome = execute(&mut sink, &plans, link, deadline, progress);
+    let outcome = match plans.into() {
+        PlanSource::Ready(plans) => execute(&mut sink, &plans, link, deadline, progress),
+        PlanSource::FromKeymap(planner) => planned(&mut sink, planner, link).and_then(|plans| {
+            preflight(&mut sink, &plans)?;
+            send(&mut sink, &plans, link, deadline, progress)
+        }),
+    };
     let _ = link.reports.send(Report::Done(outcome));
+}
+
+/// Recovers this process's own pending remaps before the keymap is read, as a
+/// separate keymap read does, then plans against that keymap. The sweep is
+/// the call's only one.
+fn planned(
+    sink: &mut dyn X11Sink,
+    planner: super::plan_source::KeyPlanner,
+    link: &Link,
+) -> Result<Vec<Plan>, AdapterError> {
+    if let Some(journal) = &link.journal {
+        journal.release_stale(sink)?;
+    }
+    let map = sink.keymap().map_err(SinkError::into_adapter)?;
+    planner(&map)
 }
 
 fn execute(
@@ -61,6 +83,16 @@ fn execute(
     if let Some(journal) = &link.journal {
         journal.release_stale(sink)?;
     }
+    send(sink, plans, link, deadline, progress)
+}
+
+fn send(
+    sink: &mut dyn X11Sink,
+    plans: &[Plan],
+    link: &Link,
+    deadline: Deadline,
+    progress: &Progress,
+) -> Result<Delivery, AdapterError> {
     let mut guard = ReleaseGuard::new(sink);
     guard.journal_to(link.journal.clone());
     for plan in plans {
@@ -141,15 +173,15 @@ fn run_step(
     deadline: Deadline,
     progress: &Progress,
 ) -> Result<(), AdapterError> {
-    if !matches!(step, Step::Pause(_) | Step::CheckTextState) && !progress.begin_dispatch() {
+    if !matches!(step, Step::Pause(_) | Step::CheckTextState(_)) && !progress.begin_dispatch() {
         return Err(mark_started(
             deadline.timeout_error(),
             progress.has_started(),
         ));
     }
     let sent = match step {
-        Step::CheckTextState => {
-            return guard.sink().ensure_text_state();
+        Step::CheckTextState(planned) => {
+            return guard.sink().ensure_text_state(planned);
         }
         Step::Key { code, down } => guard.key(*code, *down),
         Step::Button { code, down } => guard.button(*code, *down),

@@ -25,6 +25,17 @@ pub(crate) fn send_plans(
     }
 }
 
+pub(crate) fn send_planned(
+    planner: super::x11::plan_source::KeyPlanner,
+    gate: Gate<'_>,
+    lease: &InteractionLease,
+) -> Result<Delivery, AdapterError> {
+    match backend()? {
+        Backend::X11(display) => session::run_planned(&display, planner, gate, lease),
+        Backend::Wayland => Err(keysym_send::pointer_refusal("pointer_and_chord_input")),
+    }
+}
+
 pub(crate) fn send_keysyms(
     chunks: &[Vec<KeysymStep>],
     gate: Gate<'_>,

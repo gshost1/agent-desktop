@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode, Modifier};
 
+use super::key_fingerprint::KeyFingerprint;
 use super::key_lookup::KeyLookup;
 use super::key_names::keysym_for_char;
 use super::keymap::Keymap;
@@ -160,7 +161,16 @@ fn chunk_plan(
     last: bool,
 ) -> Result<Plan, AdapterError> {
     let shift = map.modifier_code(&Modifier::Shift);
-    let mut steps = vec![Step::CheckTextState];
+    let mut planned = KeyFingerprint::default();
+    for typing in chunk {
+        if let Typing::Mapped(lookup) = typing {
+            planned.record(map, lookup.code);
+            if let (true, Some(code)) = (lookup.shift, shift) {
+                planned.record(map, code);
+            }
+        }
+    }
+    let mut steps = vec![Step::CheckTextState(planned)];
     for typing in chunk {
         match *typing {
             Typing::Mapped(lookup) => mapped_steps(&mut steps, lookup, shift)?,

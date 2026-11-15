@@ -1,5 +1,6 @@
 use super::pointer_read::PointerRead;
 use super::sink_error::SinkError;
+use crate::input::keyboard::key_fingerprint::KeyFingerprint;
 use crate::input::keyboard::keymap::Keymap;
 use crate::input::keyboard::keymap_edit::KeymapEdit;
 use agent_desktop_core::AdapterError;
@@ -12,7 +13,7 @@ pub(crate) trait X11Sink {
     fn pointer(&mut self) -> Result<PointerRead, SinkError>;
     fn keys_down(&mut self) -> Result<[u8; 32], SinkError>;
     fn keymap(&mut self) -> Result<Keymap, SinkError>;
-    fn ensure_text_state(&mut self) -> Result<(), AdapterError>;
+    fn ensure_text_state(&mut self, planned: &KeyFingerprint) -> Result<(), AdapterError>;
     fn edit_keymap(&mut self, edit: &KeymapEdit) -> Result<(), SinkError>;
     fn root_size(&mut self) -> Result<(u16, u16), SinkError>;
 }

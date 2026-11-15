@@ -217,10 +217,13 @@ impl X11Sink for FakeSink {
         Ok(self.world().keymap.clone())
     }
 
-    fn ensure_text_state(&mut self) -> Result<(), AdapterError> {
+    fn ensure_text_state(
+        &mut self,
+        planned: &crate::input::keyboard::key_fingerprint::KeyFingerprint,
+    ) -> Result<(), AdapterError> {
         let mut world = self.world();
         world.queries.push("text_state");
-        world.keymap.ensure_text_state()
+        world.keymap.ensure_planned_text_state(planned)
     }
 
     fn edit_keymap(&mut self, edit: &KeymapEdit) -> Result<(), SinkError> {

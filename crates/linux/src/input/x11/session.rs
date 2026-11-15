@@ -7,6 +7,7 @@ use std::time::Duration;
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, InteractionLease};
 
 use super::held_journal::HeldJournal;
+use super::plan_source::{KeyPlanner, PlanSource};
 use super::progress::Progress;
 use super::signal_release;
 use super::sink::X11Sink;
@@ -44,6 +45,32 @@ pub(crate) fn run(
     run_journaled(
         move || XtestSink::connect(&display, deadline, cutoff),
         plans,
+        gate,
+        CallEnv {
+            deadline,
+            journal,
+            slot: worker_slot::shared(),
+            release_on_signal: true,
+            lease: Some(lease),
+        },
+    )
+}
+
+/// Reads the keymap and sends the plans `planner` builds from it on one X
+/// connection, under one worker claim and one journal sweep.
+pub(crate) fn run_planned(
+    display: &str,
+    planner: KeyPlanner,
+    gate: Gate<'_>,
+    lease: &InteractionLease,
+) -> Result<Delivery, AdapterError> {
+    let deadline = lease.deadline();
+    let display = display.to_owned();
+    let journal = HeldJournal::in_runtime_dir(&display);
+    let cutoff = deadline.remaining() + RELEASE_ALLOWANCE;
+    run_journaled(
+        move || XtestSink::connect(&display, deadline, cutoff),
+        PlanSource::FromKeymap(planner),
         gate,
         CallEnv {
             deadline,
@@ -93,7 +120,7 @@ fn read_keymap<S: X11Sink + 'static>(
 
 pub(crate) fn run_journaled<S: X11Sink + 'static>(
     open: impl FnOnce() -> Result<S, AdapterError> + Send + 'static,
-    plans: Vec<Plan>,
+    plans: impl Into<PlanSource>,
     gate: Gate<'_>,
     env: CallEnv<'_>,
 ) -> Result<Delivery, AdapterError> {
@@ -117,6 +144,7 @@ pub(crate) fn run_journaled<S: X11Sink + 'static>(
         journal,
     };
     let worker_progress = Arc::clone(&progress);
+    let plans = plans.into();
     let spawned = thread::Builder::new()
         .name("x11-input".to_owned())
         .spawn(move || {
@@ -228,3 +256,7 @@ mod planning_tests;
 #[cfg(test)]
 #[path = "session_cancel_tests.rs"]
 mod cancel_tests;
+
+#[cfg(test)]
+#[path = "session_planned_tests.rs"]
+mod planned_tests;

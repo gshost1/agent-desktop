@@ -7,6 +7,7 @@ pub(crate) mod live_remap_tests;
 #[cfg(test)]
 pub(crate) mod live_tests;
 pub(crate) mod mouse_send;
+pub(crate) mod plan_source;
 pub(crate) mod pointer_read;
 pub(crate) mod progress;
 pub(crate) mod session;

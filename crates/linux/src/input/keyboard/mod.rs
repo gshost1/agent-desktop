@@ -1,3 +1,4 @@
+pub(crate) mod key_fingerprint;
 pub(crate) mod key_lookup;
 pub(crate) mod key_names;
 pub(crate) mod key_plan;
