@@ -140,10 +140,12 @@ Each line, in order:
 
 ## Snapshot contents
 
-A snapshot whose tree holds 40 or more nodes carries `data.contents`, a short
+A window snapshot whose tree holds 80 or more nodes carries `data.contents`, a short
 index of what the tree holds and where, so a read that stops early still shows
 which lists exist, how much of each is loaded and what comes after them. The
-key sorts before `lines` and `tree`, so it prints first.
+key sorts before `lines` and `tree`, so it prints first. A `--root` drill omits it,
+and so does a tree with nothing to index. `snapshot --since` carries it when it
+returns the whole tree in place of a diff.
 
 ```json
 { "data": { "contents": {
@@ -157,20 +159,22 @@ key sorts before `lines` and `tree`, so it prints first.
 
 - `roles` counts the nodes that carry a ref, for the four commonest roles, leaving
   out structure no one acts on (`column`, `handle`, `scrollarea`, `scrollbar`,
-  `window`).
-- `regions` lists, in tree order, each `list`, `table`, `outline`, `grid` and
-  `browser`, each `scrollarea` whose content reads as a list (five or more items,
-  80 % of them one role) and does not wrap one of those, and each `toolbar` and
+  `window`). It is left out when no node carries a ref.
+- `regions` lists, in tree order, each `list`, `listbox`, `table`, `outline`, `grid`
+  and `browser`, each `scrollarea` whose content reads as a list (five or more
+  items that are not text, 80 % of them one role) and does not wrap one of those, and each `toolbar` and
   `tablist`. At most six are listed; `more_regions` counts the rest.
 - `line` is the region node's index in tree order, which is its index in
   `data.lines`. `name` (shortened to 32 characters) and `ref` appear when the node
   has them.
-- `items` is the number of items the list holds in this snapshot. A list that
-  loads rows only near its viewport holds only those, so `items` can be far below
-  the list's length.
-- `partial: true` means the list's scroll area has an enabled scroll bar: it can
-  scroll, so it may hold items this snapshot does not show. Search it with
-  `find --root <ref> --scroll` (macOS) rather than reading it in pages.
+- `items` is the number of items the list holds in this snapshot, or the
+  `children_count` its line prints when a depth cut left its children out. A list
+  that loads rows only near its viewport holds only those, so `items` can be far
+  below the list's length.
+- `partial: true` means the list may hold items this snapshot does not show: the
+  list or the scroll area around it has an enabled scroll bar, the list advertises
+  `Scroll` (a Windows list with no separate scroll area), or the snapshot cut its
+  subtree (`--max-depth`, `--skeleton`, the observation budget or the refmap cap).
 - With `--lines`, `contents` is an array of lines: `roles: button 62, cell 6, ...`,
   then one line per region such as
   `line 75: @s8f3k2p9:e73 scrollarea "lazy-list" items=12 partial`, and

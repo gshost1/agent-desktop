@@ -206,7 +206,7 @@ Each match carries `role` and `interactive`, and `ref_id`, `name`, `value`, `sta
 
 ## Snapshot contents
 
-A snapshot whose tree holds 40 or more nodes carries `contents` in `data`, before the tree: a short index of what the tree holds and where, so a read that stops early still shows which lists exist and how much of each is loaded.
+A window snapshot whose tree holds 80 or more nodes carries `contents` in `data`, before the tree (a `--root` drill does not): a short index of what the tree holds and where, so a read that stops early still shows which lists exist and how much of each is loaded.
 
 ```json
 "contents": {
@@ -217,7 +217,7 @@ A snapshot whose tree holds 40 or more nodes carries `contents` in `data`, befor
 }
 ```
 
-`roles` counts the nodes with refs for the four commonest roles. `regions` lists, in tree order and at most six (`more_regions` counts the rest), each list, table, outline, grid, browser and list-like scroll area, and each toolbar and tab bar. `line` is the node's index in `data.lines`, `items` the number of items the list holds in this snapshot (a lazily loaded list holds only the rows near its viewport), and `partial: true` means the list can still scroll, so it may hold items the snapshot does not show. With `--lines`, `contents` prints as lines such as `line 75: @s8f3k2p9:e73 scrollarea "lazy-list" items=12 partial`.
+`roles` counts the nodes with refs for the four commonest roles. `regions` lists, in tree order and at most six (`more_regions` counts the rest), each list, listbox, table, outline, grid, browser and list-like scroll area, and each toolbar and tab bar. `line` is the node's index in `data.lines`, `items` the number of items the list holds in this snapshot (a lazily loaded list holds only the rows near its viewport), and `partial: true` means the list may hold items the snapshot does not show: it or its scroll area can still scroll, or the snapshot cut its subtree. With `--lines`, `contents` prints as lines such as `line 75: @s8f3k2p9:e73 scrollarea "lazy-list" items=12 partial`.
 
 ## Snapshot diffs
 

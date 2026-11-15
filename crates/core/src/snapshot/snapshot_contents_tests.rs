@@ -56,24 +56,24 @@ fn a_tree_small_enough_to_read_whole_gets_no_contents() {
 #[test]
 fn a_scrolling_list_reports_its_loaded_items_and_that_more_may_exist() {
     let toolbar = parent(node("toolbar", ""), buttons(3, "tool"));
-    let tree = window(vec![toolbar, lazy_list(45, true)]);
+    let tree = window(vec![toolbar, lazy_list(85, true)]);
     let contents = summarize(&tree).expect("contents");
-    assert_eq!(contents.roles.get("button"), Some(&48));
+    assert_eq!(contents.roles.get("button"), Some(&88));
     let regions = &contents.regions;
     assert_eq!(regions.len(), 2);
     assert_eq!((regions[0].role.as_str(), regions[0].line), ("toolbar", 1));
     assert_eq!(regions[0].items, None);
     assert_eq!(regions[1].role, "scrollarea");
     assert_eq!(regions[1].ref_id.as_deref(), Some("@s1:area"));
-    assert_eq!(regions[1].items, Some(45));
+    assert_eq!(regions[1].items, Some(85));
     assert!(regions[1].partial);
 }
 
 #[test]
 fn a_region_line_is_its_index_in_the_lines_output() {
     let tree = window(vec![
-        parent(node("group", ""), buttons(20, "a")),
-        lazy_list(30, true),
+        parent(node("group", ""), buttons(40, "a")),
+        lazy_list(50, true),
     ]);
     let lines = ref_lines::render_ref_lines(&tree);
     let contents = summarize(&tree).expect("contents");
@@ -87,7 +87,7 @@ fn a_region_line_is_its_index_in_the_lines_output() {
 
 #[test]
 fn a_list_in_a_scroll_area_is_the_region_and_a_disabled_bar_is_not_partial() {
-    let rows = (0..50).map(|i| with_ref(node("row", &format!("r{i}")), &format!("@s1:r{i}")));
+    let rows = (0..90).map(|i| with_ref(node("row", &format!("r{i}")), &format!("@s1:r{i}")));
     let outline = parent(
         with_ref(node("outline", "Files"), "@s1:list"),
         std::iter::once(node("column", "Name"))
@@ -98,7 +98,7 @@ fn a_list_in_a_scroll_area_is_the_region_and_a_disabled_bar_is_not_partial() {
     let contents = summarize(&window(vec![area])).expect("contents");
     assert_eq!(contents.regions.len(), 1);
     let region = &contents.regions[0];
-    assert_eq!((region.role.as_str(), region.items), ("outline", Some(50)));
+    assert_eq!((region.role.as_str(), region.items), ("outline", Some(90)));
     assert!(!region.partial);
 }
 
@@ -120,7 +120,7 @@ fn the_index_keeps_the_commonest_roles_and_the_first_regions() {
             (0..(10 - rank)).map(move |i| with_ref(node(role, ""), &format!("@s1:{role}{i}")))
         })
         .collect();
-    children.extend((0..8).map(|i| parent(node("list", &format!("L{i}")), buttons(1, "x"))));
+    children.extend((0..8).map(|i| parent(node("list", &format!("L{i}")), buttons(3, "x"))));
     let contents = summarize(&window(children)).expect("contents");
     assert_eq!(contents.roles.len(), 4);
     assert!(!contents.roles.contains_key("menuitem"));
@@ -136,7 +136,7 @@ fn the_index_keeps_the_commonest_roles_and_the_first_regions() {
 #[test]
 fn a_long_region_name_is_shortened() {
     let long = "A list whose accessible name runs on far past what an index needs";
-    let tree = window(vec![parent(node("list", long), buttons(45, "i"))]);
+    let tree = window(vec![parent(node("list", long), buttons(85, "i"))]);
     let name = summarize(&tree).expect("contents").regions[0]
         .name
         .clone()
@@ -148,7 +148,7 @@ fn a_long_region_name_is_shortened() {
 #[test]
 fn contents_serialize_as_the_golden_file_shows() {
     let toolbar = parent(node("toolbar", ""), buttons(2, "tool"));
-    let tree = window(vec![toolbar, lazy_list(40, true)]);
+    let tree = window(vec![toolbar, lazy_list(80, true)]);
     let contents = serde_json::to_string_pretty(&summarize(&tree).expect("contents")).unwrap();
     let golden = include_str!("../../../../tests/fixtures/snapshot-contents.json");
     assert_eq!(contents, golden.replace("\r\n", "\n").trim_end());
@@ -156,8 +156,8 @@ fn contents_serialize_as_the_golden_file_shows() {
 
 #[test]
 fn a_scroll_area_of_mixed_controls_is_not_a_list() {
-    let mut mixed = buttons(20, "b");
-    mixed.extend((0..20).map(|i| with_ref(node("checkbox", ""), &format!("@s1:c{i}"))));
+    let mut mixed = buttons(40, "b");
+    mixed.extend((0..40).map(|i| with_ref(node("checkbox", ""), &format!("@s1:c{i}"))));
     let page = parent(
         node("scrollarea", "Page"),
         vec![parent(node("group", ""), mixed)],
@@ -169,7 +169,7 @@ fn a_scroll_area_of_mixed_controls_is_not_a_list() {
 #[test]
 fn the_lines_form_puts_each_region_on_one_line_led_by_its_line() {
     let toolbar = parent(node("toolbar", ""), buttons(2, "tool"));
-    let tree = window(vec![toolbar, lazy_list(40, true)]);
+    let tree = window(vec![toolbar, lazy_list(80, true)]);
     let mut data = serde_json::json!({
         "contents": summarize(&tree).expect("contents"),
         "tree": tree,
@@ -178,10 +178,131 @@ fn the_lines_form_puts_each_region_on_one_line_led_by_its_line() {
     assert_eq!(
         data["contents"],
         serde_json::json!([
-            "roles: button 42",
+            "roles: button 82",
             "line 1: toolbar",
-            "line 4: @s1:area scrollarea \"Rows\" items=40 partial",
+            "line 4: @s1:area scrollarea \"Rows\" items=80 partial",
         ])
     );
     assert!(data.get("tree").is_none());
+}
+
+fn filler() -> AccessibilityNode {
+    parent(node("group", ""), buttons(85, "f"))
+}
+
+fn rows(role: &str, count: usize) -> Vec<AccessibilityNode> {
+    (0..count)
+        .map(|i| with_ref(node(role, &format!("item {i}")), &format!("@s1:{role}{i}")))
+        .collect()
+}
+
+fn only_region(tree: &AccessibilityNode) -> crate::snapshot::content_region::ContentRegion {
+    let contents = summarize(tree).expect("contents");
+    assert_eq!(contents.regions.len(), 1, "{:?}", contents.regions);
+    contents.regions[0].clone()
+}
+
+#[test]
+fn a_depth_cut_list_reports_the_count_its_line_prints_and_that_it_was_cut() {
+    let mut outline = with_ref(node("outline", "Files"), "@s1:list");
+    outline.children_count = Some(600);
+    let region = only_region(&window(vec![filler(), outline]));
+    assert_eq!(region.items, Some(600));
+    assert!(region.partial);
+}
+
+#[test]
+fn a_list_the_refmap_cap_cut_is_partial_after_its_scroll_bar_was_cut_away() {
+    let mut outline = parent(
+        with_ref(node("outline", "Files"), "@s1:list"),
+        rows("row", 85),
+    );
+    outline.subtree_truncated = true;
+    let area = parent(node("scrollarea", ""), vec![outline]);
+    let region = only_region(&window(vec![area]));
+    assert_eq!((region.role.as_str(), region.items), ("outline", Some(85)));
+    assert!(region.partial);
+}
+
+#[test]
+fn a_windows_listbox_that_owns_its_scroll_bar_is_a_partial_region() {
+    let mut children = rows("listitem", 85);
+    children.push(scrollbar(true));
+    let listbox = parent(with_ref(node("listbox", "Fonts"), "@s1:fonts"), children);
+    let region = only_region(&window(vec![listbox]));
+    assert_eq!((region.role.as_str(), region.items), ("listbox", Some(85)));
+    assert!(region.partial);
+}
+
+#[test]
+fn a_windows_list_that_advertises_scrolling_is_partial() {
+    let mut list = parent(
+        with_ref(node("list", "Files"), "@s1:files"),
+        rows("listitem", 85),
+    );
+    list.presentation.available_actions = vec!["Scroll".into()];
+    assert!(only_region(&window(vec![list])).partial);
+}
+
+#[test]
+fn a_linux_listbox_in_a_scroll_pane_is_the_one_region() {
+    let listbox = parent(node("listbox", "Apps"), rows("listitem", 85));
+    let pane = parent(node("scrollarea", ""), vec![listbox, scrollbar(true)]);
+    let region = only_region(&window(vec![pane]));
+    assert_eq!((region.role.as_str(), region.items), ("listbox", Some(85)));
+    assert!(region.partial);
+}
+
+#[test]
+fn a_web_table_keeps_the_scroll_bar_of_the_area_around_its_document() {
+    let table = parent(node("table", "Orders"), rows("row", 85));
+    let document = parent(node("webarea", "Shop"), vec![table]);
+    let area = parent(node("scrollarea", ""), vec![document, scrollbar(true)]);
+    let region = only_region(&window(vec![area]));
+    assert_eq!(region.role, "table");
+    assert!(region.partial);
+}
+
+#[test]
+fn paragraphs_beside_a_few_controls_are_not_a_list() {
+    let mut page: Vec<AccessibilityNode> = (0..80)
+        .map(|i| node("statictext", &format!("p{i}")))
+        .collect();
+    for (i, role) in ["button", "textfield", "checkbox", "combobox", "slider"]
+        .iter()
+        .enumerate()
+    {
+        page.push(with_ref(node(role, ""), &format!("@s1:c{i}")));
+    }
+    let area = parent(
+        node("scrollarea", "Article"),
+        vec![parent(node("group", ""), page)],
+    );
+    assert!(
+        summarize(&window(vec![area]))
+            .expect("contents")
+            .regions
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_tree_with_no_ref_roles_omits_the_role_counts() {
+    let text: Vec<AccessibilityNode> = (0..85)
+        .map(|i| node("statictext", &format!("t{i}")))
+        .collect();
+    assert_eq!(
+        summarize(&parent(node("window", "Help"), text.clone())),
+        None
+    );
+    let list = parent(node("list", "Notes"), text);
+    let contents = summarize(&parent(node("window", "Help"), vec![list])).expect("contents");
+    let json = serde_json::to_value(&contents).unwrap();
+    assert!(json.get("roles").is_none(), "{json}");
+    assert!(
+        contents
+            .lines()
+            .iter()
+            .all(|line| !line.starts_with("roles:"))
+    );
 }

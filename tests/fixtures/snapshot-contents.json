@@ -1,6 +1,6 @@
 {
   "roles": {
-    "button": 42
+    "button": 82
   },
   "regions": [
     {
@@ -12,7 +12,7 @@
       "role": "scrollarea",
       "name": "Rows",
       "ref": "@s1:area",
-      "items": 40,
+      "items": 80,
       "partial": true
     }
   ]

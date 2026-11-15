@@ -51,6 +51,9 @@ pub fn execute_since(
     let diff = diff_match::compare(since, &baseline, &result, DiffPresentation::of(&opts));
     let mut body = snapshot_fields_without_tree(&result);
     if !diff.is_comparable() {
+        if let Some(contents) = crate::snapshot::snapshot_contents::summarize(&result.tree) {
+            body["contents"] = serde_json::to_value(contents)?;
+        }
         body["tree"] = serde_json::to_value(&result.tree)?;
     }
     body["diff"] = diff.to_json()?;
