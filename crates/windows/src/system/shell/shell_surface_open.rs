@@ -1,14 +1,14 @@
-use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionPolicy, SnapshotSurface,
-    WindowInfo,
-};
+use agent_desktop_core::{AdapterError, Deadline, InteractionPolicy, SnapshotSurface, WindowInfo};
 
 use super::shell_surface::{
-    SurfaceDismiss, SurfaceFamily, SurfaceKindRow, SurfaceRaise, kebab, refusal_error, row_for,
+    SurfaceDismiss, SurfaceFamily, SurfaceKindRow, SurfaceRaise, refusal_error, row_for,
 };
 #[cfg(all(test, target_os = "windows"))]
 pub(in crate::system) use super::shell_surface_raise::accelerator_probe;
 use super::shell_surface_raise::raise_row;
+use super::shell_surface_refusal::timeout_error;
+#[cfg(target_os = "windows")]
+use super::shell_surface_refusal::{declined_after_raise_error, foreground_declined_error};
 
 /// Opens a shell surface: refuses before anything is raised when the caller's
 /// policy does not permit the foreground to move, returns an already-present
@@ -164,7 +164,7 @@ pub(in crate::system) fn close_row(
     match row.dismiss {
         SurfaceDismiss::None => Ok(()),
         SurfaceDismiss::Escape => {
-            await_foreground(row, deadline)?;
+            await_foreground(row, deadline, foreground_declined_error)?;
             super::shell_surface_raise::send_chord(
                 &[],
                 super::shell_surface_kinds::VK_ESCAPE,
@@ -208,7 +208,7 @@ fn raise_then_escape(row: &SurfaceKindRow, deadline: Deadline) -> Result<(), Ada
     if settles_absent(row, deadline)? {
         return Ok(());
     }
-    await_foreground(row, deadline)?;
+    await_foreground(row, deadline, declined_after_raise_error)?;
     super::shell_surface_raise::send_chord(&[], super::shell_surface_kinds::VK_ESCAPE, deadline)?;
     poll_until_gone(row, deadline)
 }
@@ -221,13 +221,17 @@ fn settles_absent(row: &SurfaceKindRow, deadline: Deadline) -> Result<bool, Adap
 }
 
 #[cfg(target_os = "windows")]
-fn await_foreground(row: &SurfaceKindRow, deadline: Deadline) -> Result<(), AdapterError> {
+fn await_foreground(
+    row: &SurfaceKindRow,
+    deadline: Deadline,
+    declined: fn(&SurfaceKindRow) -> AdapterError,
+) -> Result<(), AdapterError> {
     if poll_with_cap(FOREGROUND_SETTLE, deadline, || {
         surface_owns_foreground(row, deadline)
     })? {
         Ok(())
     } else {
-        Err(foreground_declined_error(row))
+        Err(declined(row))
     }
 }
 
@@ -298,30 +302,6 @@ fn surface_top_handle(
     }
 }
 
-/// The answer for a surface that is up but unreachable by keystroke. It is
-/// not a timeout: waiting longer cannot change it, because the surface never
-/// took the foreground the dismissal needs and the deadline is not what is
-/// short. Naming the state lets a caller act on it instead of retrying.
-#[cfg(target_os = "windows")]
-fn foreground_declined_error(row: &SurfaceKindRow) -> AdapterError {
-    AdapterError::new(
-        ErrorCode::ActionFailed,
-        format!(
-            "the '{}' shell surface stayed up without taking the foreground, \
-             so a dismissal keystroke cannot reach it",
-            kebab(row.kind)
-        ),
-    )
-    .with_suggestion(
-        "Activate the surface - click it, or raise it again from the shell - then retry the close",
-    )
-    .with_details(serde_json::json!({
-        "kind": "shell_surface_declined_foreground",
-        "retryable": true
-    }))
-    .with_disposition(DeliverySemantics::not_delivered())
-}
-
 #[cfg(not(target_os = "windows"))]
 pub(in crate::system) fn close_row(
     _row: &SurfaceKindRow,
@@ -372,16 +352,6 @@ fn poll_until_gone(row: &SurfaceKindRow, deadline: Deadline) -> Result<(), Adapt
         std::thread::sleep(interval.min(remaining));
         interval = (interval * 3 / 2).min(std::time::Duration::from_millis(250));
     }
-}
-
-fn timeout_error(row: &SurfaceKindRow, outcome: &str, kind: &'static str) -> AdapterError {
-    AdapterError::timeout(format!("the '{}' shell surface {outcome}", kebab(row.kind)))
-        .with_suggestion(
-            "Retry: the shell can decline an accelerator or an invoke without reporting it; \
-         a build that lacks the surface refuses instead of timing out",
-        )
-        .with_details(serde_json::json!({ "kind": kind, "retryable": true }))
-        .with_disposition(DeliverySemantics::not_delivered())
 }
 
 #[cfg(all(test, target_os = "windows"))]

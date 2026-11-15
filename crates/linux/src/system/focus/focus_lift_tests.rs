@@ -53,6 +53,12 @@ fn a_flag_that_stays_set_is_not_supported_names_the_manager_and_is_no_success() 
         assert_eq!(error.details.as_ref().expect("details")["cause"], cause);
         assert!(error.message.contains("Openbox"), "{}", error.message);
         assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+        assert!(
+            error
+                .suggestion
+                .as_deref()
+                .is_some_and(|s| s.contains("before you focus"))
+        );
         assert_eq!(world.sends(), 0);
         assert_eq!(world.active.get(), Some(OTHER));
     }
@@ -64,6 +70,13 @@ fn a_never_focused_window_gets_the_stamped_and_the_unstamped_request_and_no_othe
     world.grant = Grant::Never;
     let error = failure(&world);
     assert_refused(&error, "activation_not_granted");
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert!(
+        error
+            .suggestion
+            .as_deref()
+            .is_some_and(|s| s.contains("before you focus"))
+    );
     assert_eq!(*world.writes.borrow(), vec!["send", "send_untimed"]);
 }
 

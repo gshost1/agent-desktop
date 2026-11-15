@@ -63,7 +63,7 @@ fn a_modal_dialog_that_took_the_focus_is_named_and_never_a_success() {
         error
             .suggestion
             .as_deref()
-            .is_some_and(|s| s.contains("Save changes?"))
+            .is_some_and(|s| s.contains("Save changes?") && s.contains("before you focus"))
     );
     assert_eq!(writes(&world), ["send"]);
 }

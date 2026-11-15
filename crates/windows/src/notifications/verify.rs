@@ -74,7 +74,7 @@ pub(super) fn dismiss_survived_error(index: usize) -> AdapterError {
         ),
     )
     .with_suggestion(
-        "Retry the dismissal: the shell can accept an invoke without acting on it"
+        "Run list-notifications before deciding whether to dismiss it again: the shell can apply an accepted invoke after the settle window"
     )
     .with_disposition(DeliverySemantics::delivered_unverified())
 }

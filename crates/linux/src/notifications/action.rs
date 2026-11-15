@@ -106,7 +106,7 @@ fn expanded(
         if lease.deadline().is_expired() {
             return Err(pressed_without_effect(
                 format!("The entry was expanded but the '{name}' button never appeared"),
-                "Run list-notifications and retry",
+                "Run list-notifications before deciding whether to act on the entry again: the expand press was sent, and a second press can collapse it",
             ));
         }
         std::thread::sleep(EXPAND_POLL);

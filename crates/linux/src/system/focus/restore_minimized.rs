@@ -52,7 +52,9 @@ pub(in crate::system) fn still_hidden(manager: &str, overview_open: bool) -> Ada
                 "The Activities Overview is open, so the window manager {manager} did not show the minimized window"
             ),
         )
-        .with_suggestion("Close the Activities Overview (press Escape), then retry")
+        .with_suggestion(
+            "Close the Activities Overview (press Escape), then read the window with 'list-windows' before you restore it again: the request was sent and can still show it",
+        )
         .with_details(json!({ "cause": Cause::OverviewOpen.as_str(), "manager": manager }))
         .with_disposition(DeliverySemantics::delivered_unverified());
     }

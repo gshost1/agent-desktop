@@ -139,16 +139,51 @@ fn exhaustion_after_unverified_delivery_reports_delivered_unverified() {
         true,
     ));
 
-    let error = super::exhaustion_error(&steps, "Inspect the current state");
+    let error = super::exhaustion_error(&steps, "Try another mechanism");
     assert_eq!(error.code, agent_desktop_core::ErrorCode::ActionFailed);
-    assert_eq!(
-        error.suggestion.as_deref(),
-        Some("Inspect the current state")
-    );
     assert_eq!(
         error.disposition,
         agent_desktop_core::DeliverySemantics::delivered_unverified()
     );
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(!suggestion.contains("another mechanism"), "{suggestion}");
+    assert!(suggestion.contains("before deciding"), "{suggestion}");
+}
+
+#[test]
+fn a_right_click_that_delivered_does_not_suggest_a_second_right_click() {
+    let mut steps = Vec::new();
+    record_step_outcome(
+        &mut steps,
+        &ChainStep::CustomWithDeadline {
+            label: "show_menu",
+            func: |_, _| Ok(DeliveryOutcome::DeliveredUnverified),
+        },
+        DeliveryOutcome::DeliveredUnverified,
+        true,
+    );
+    let chain = &crate::actions::chain::chain_defs::RIGHT_CLICK_CHAIN;
+
+    let error = super::exhaustion_error(&steps, chain.suggestion);
+
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(!suggestion.contains("mouse-click"), "{suggestion}");
+    assert!(suggestion.contains("--surface menu"), "{suggestion}");
+}
+
+#[test]
+fn exhaustion_without_any_delivery_keeps_the_chain_suggestion() {
+    let mut steps = Vec::new();
+    record_step_outcome(
+        &mut steps,
+        &ChainStep::Action("AXPress"),
+        DeliveryOutcome::NotDelivered,
+        false,
+    );
+
+    let error = super::exhaustion_error(&steps, "Try another mechanism");
+
+    assert_eq!(error.suggestion.as_deref(), Some("Try another mechanism"));
 }
 
 #[test]

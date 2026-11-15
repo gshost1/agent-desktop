@@ -124,7 +124,7 @@ fn exited_early(owner: &Running, liveness: Liveness) -> Result<(), AdapterError>
             owner.name, owner.pid
         ),
     )
-    .with_suggestion("Run the program from a terminal to see why it stopped, then launch it again.")
+    .with_suggestion("Run it from a terminal to see why it stopped before you launch it again.")
     .with_disposition(DeliverySemantics::delivered_unverified()))
 }
 
