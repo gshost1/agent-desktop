@@ -64,7 +64,8 @@ fn a_not_comparable_diff_or_no_diff_is_left_alone() {
 
 #[test]
 fn a_row_that_does_not_read_back_changes_nothing() {
-    let mut data = json!({ "diff": { "since": "s1", "status": "changed", "added": [{ "name": "no role" }] } });
+    let mut data =
+        json!({ "diff": { "since": "s1", "status": "changed", "added": [{ "name": "no role" }] } });
     let before = data.clone();
     assert!(replace_diff_with_lines(&mut data).is_err());
     assert_eq!(data, before);

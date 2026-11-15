@@ -42,7 +42,12 @@ fn diff_lines(diff: &Map<String, Value>) -> Result<Vec<String>, AppError> {
         lines.push("no change".to_owned());
     }
     for (key, marker) in ROW_KEYS {
-        for row in diff.get(key).and_then(Value::as_array).into_iter().flatten() {
+        for row in diff
+            .get(key)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let mut line = format!("{marker}{}", row_line(row)?);
             if key == "changed" {
                 push_was(&mut line, row);

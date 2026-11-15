@@ -43,7 +43,11 @@ fn find_focused<'a>(
     depth: usize,
     best: &mut Option<(usize, &'a AccessibilityNode)>,
 ) {
-    let focused = node.presentation.states.iter().any(|state| state == FOCUSED);
+    let focused = node
+        .presentation
+        .states
+        .iter()
+        .any(|state| state == FOCUSED);
     if focused && best.is_none_or(|(best_depth, _)| depth > best_depth) {
         *best = Some((depth, node));
     }

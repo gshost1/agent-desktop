@@ -119,12 +119,16 @@ fn lines_replace_diff_rows_in_a_snapshot_and_in_a_batch_entry() {
 
     let mut batch = json!({ "results": [{ "ok": true, "data": diff_data() }] });
     assert!(apply_lines_output("batch", &mut batch));
-    assert_eq!(batch["results"][0]["data"]["lines"][0], "+ @s9:e2 button \"Close\"");
+    assert_eq!(
+        batch["results"][0]["data"]["lines"][0],
+        "+ @s9:e2 button \"Close\""
+    );
 }
 
 #[test]
 fn a_diff_row_that_cannot_be_rendered_keeps_its_rows_and_says_why() {
-    let mut data = json!({ "diff": { "since": "s8", "status": "changed", "added": [{ "name": "x" }] } });
+    let mut data =
+        json!({ "diff": { "since": "s8", "status": "changed", "added": [{ "name": "x" }] } });
     assert!(!apply_lines_output("snapshot", &mut data));
     assert!(data["diff"]["added"].is_array());
     assert!(data["lines_error"].is_string());

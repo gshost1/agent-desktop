@@ -82,7 +82,10 @@ fn other_states(node: &AccessibilityNode) -> Vec<&str> {
 }
 
 fn is_focused(node: &AccessibilityNode) -> bool {
-    node.presentation.states.iter().any(|state| state == FOCUSED)
+    node.presentation
+        .states
+        .iter()
+        .any(|state| state == FOCUSED)
 }
 
 #[cfg(test)]

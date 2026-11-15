@@ -72,15 +72,16 @@ pub(crate) fn save_baseline(
 pub(crate) fn load_baseline(store: &RefStore, snapshot_id: &str) -> Result<DiffBaseline, AppError> {
     validate_snapshot_id(snapshot_id)?;
     let path = baseline_path(store, snapshot_id);
-    let bytes =
-        match crate::storage::private_file::read_private_bounded(&path, MAX_BASELINE_BYTES as u64)
-        {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == ErrorKind::NotFound => {
-                return Err(missing(store, snapshot_id));
-            }
-            Err(err) => return Err(err.into()),
-        };
+    let bytes = match crate::storage::private_file::read_private_bounded(
+        &path,
+        MAX_BASELINE_BYTES as u64,
+    ) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            return Err(missing(store, snapshot_id));
+        }
+        Err(err) => return Err(err.into()),
+    };
     match serde_json::from_slice::<DiffBaseline>(&bytes) {
         Ok(baseline) if baseline.format == BASELINE_FORMAT => Ok(baseline),
         _ => Err(not_found(snapshot_id, "diff_baseline_missing")),

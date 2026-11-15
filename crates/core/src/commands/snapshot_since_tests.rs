@@ -209,7 +209,10 @@ fn an_unknown_id_fails_before_the_window_is_read() {
         .unwrap()
         .latest_snapshot_id()
         .unwrap();
-    assert!(saved.is_none(), "no snapshot may be taken for a refused diff");
+    assert!(
+        saved.is_none(),
+        "no snapshot may be taken for a refused diff"
+    );
 }
 
 #[test]

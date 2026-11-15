@@ -54,7 +54,10 @@ fn native_id_and_description_are_identity_and_blank_ones_are_not() {
 
     let mut described = node("button", "OK");
     described.identity.description = Some("Confirm".into());
-    assert_ne!(IdentityKey::of(&described), IdentityKey::of(&node("button", "OK")));
+    assert_ne!(
+        IdentityKey::of(&described),
+        IdentityKey::of(&node("button", "OK"))
+    );
 
     let mut blank = node("button", "OK");
     blank.identity.description = Some("  ".into());
@@ -62,7 +65,10 @@ fn native_id_and_description_are_identity_and_blank_ones_are_not() {
         kind: IdentifierKind::AutomationId,
         value: " ".into(),
     });
-    assert_eq!(IdentityKey::of(&blank), IdentityKey::of(&node("button", "OK")));
+    assert_eq!(
+        IdentityKey::of(&blank),
+        IdentityKey::of(&node("button", "OK"))
+    );
 }
 
 #[test]

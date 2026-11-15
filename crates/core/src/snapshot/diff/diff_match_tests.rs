@@ -193,6 +193,9 @@ fn another_window_or_another_shape_is_not_comparable() {
         ..presentation()
     };
     let diff = compare("s1", &before, &result(vec![], true), reshaped);
-    assert_eq!(diff.status, DiffStatus::NotComparable("presentation_changed"));
+    assert_eq!(
+        diff.status,
+        DiffStatus::NotComparable("presentation_changed")
+    );
     assert!(diff.added.is_empty() && diff.removed.is_empty());
 }

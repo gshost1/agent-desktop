@@ -19,17 +19,17 @@ pub(super) fn snapshot(
 ) -> Result<Value, AppError> {
     let since = args.since;
     let args = snapshot_command::SnapshotArgs {
-            app: args.scope.app,
-            window_id: args.scope.window_id,
-            max_depth: args.tree.max_depth,
-            include_bounds: args.tree.include_bounds,
-            interactive_only: args.tree.interactive_only,
-            compact: args.tree.compact,
-            surface: args.surface.to_core(),
-            skeleton: args.tree.skeleton,
-            root_ref: args.root,
-            timeout_ms: args.timeout_ms,
-            force_electron_a11y: args.force_electron_a11y,
+        app: args.scope.app,
+        window_id: args.scope.window_id,
+        max_depth: args.tree.max_depth,
+        include_bounds: args.tree.include_bounds,
+        interactive_only: args.tree.interactive_only,
+        compact: args.tree.compact,
+        surface: args.surface.to_core(),
+        skeleton: args.tree.skeleton,
+        root_ref: args.root,
+        timeout_ms: args.timeout_ms,
+        force_electron_a11y: args.force_electron_a11y,
     };
     match since {
         Some(since) => snapshot_since_command::execute_since(args, &since, adapter, context),

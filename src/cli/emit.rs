@@ -90,8 +90,7 @@ pub(crate) fn apply_lines_output(cmd_name: &str, data: &mut Value) -> bool {
 }
 
 fn replace_or_mark(data: &mut Value) -> bool {
-    match replace_tree_with_lines(data)
-        .and_then(|tree| Ok(replace_diff_with_lines(data)? || tree))
+    match replace_tree_with_lines(data).and_then(|tree| Ok(replace_diff_with_lines(data)? || tree))
     {
         Ok(replaced) => replaced,
         Err(error) => {
