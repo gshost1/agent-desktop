@@ -144,6 +144,6 @@ pub(super) fn closed_center_policy_error(policy: InteractionPolicy) -> AdapterEr
         policy,
     )
     .with_suggestion(
-        "Open the Action Center yourself or pass --headed to allow opening and restoring desktop focus.",
+        "Open the Action Center yourself and retry, or, if the user allows physical input, pass --headed to allow opening and restoring desktop focus.",
     )
 }

@@ -285,7 +285,7 @@ fn finish(
         if request.policy.is_headed() {
             "This field has no semantic text-write action. Use 'type' in the current headed mode for physical keyboard input; select the existing text first if you intend to replace it. If typing refuses because the field cannot be focused, use clipboard-set and the app's paste shortcut, then verify the field."
         } else {
-            "This field has no semantic text-write action. Use '--headed type' for physical keyboard input; select the existing text first if you intend to replace it. If typing refuses because the field cannot be focused, use clipboard-set and the app's paste shortcut, then verify the field."
+            "This field has no semantic text-write action. Put the text on the clipboard with clipboard-set and send the app's paste shortcut, then verify the field. If the user allows physical input, '--headed type' sends real keys instead; select the existing text first if you intend to replace it."
         }
     } else {
         "Waiting will not help: this element cannot satisfy the action as targeted. Target an element that advertises the action (check available_actions in a fresh snapshot). For a dropdown without select support, open it with click, inspect its choices, and use explicit keyboard input."

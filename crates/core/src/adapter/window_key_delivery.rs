@@ -19,7 +19,7 @@ pub(crate) fn press_key_for_focused_window<A: SystemOps + ?Sized>(
         .with_suggestion(if policy.is_headed() {
             "Ensure the named window remains active before retrying; a sibling window or another application's menu can hold the keyboard"
         } else {
-            "Retry with --headed so the named window is brought forward first, or name the active window"
+            "Name the active window, or, if the user allows physical input, retry with --headed so the named window is brought forward first"
         })
         .with_details(serde_json::json!({
             "check": "window_active",

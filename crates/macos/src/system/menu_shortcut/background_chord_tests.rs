@@ -54,4 +54,11 @@ fn the_refusal_reports_nothing_sent_and_carries_the_lookup() {
     assert_eq!(details["kind"], "command_chord_unrouted_in_background");
     assert_eq!(details["menu_shortcut"]["skipped"], "ambiguous");
     assert_eq!(details["physical_delivery_started"], false);
+    let suggestion = error.suggestion.unwrap();
+    let click = suggestion.find("'click <ref>'").expect("menu click route");
+    let headed = suggestion
+        .find("--headed instead")
+        .expect("headed is the alternative");
+    assert!(click < headed, "{suggestion}");
+    assert!(suggestion.contains("do not do both"), "{suggestion}");
 }
