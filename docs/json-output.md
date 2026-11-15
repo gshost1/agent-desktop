@@ -182,9 +182,20 @@ left out: `details.result_omitted` is `true` and only `total_entries`,
 kept. The
 disposition is `not_delivered` when no entry can have delivered (each entry's
 disposition is `not_delivered`, or it is a successful command that sends no
-input), and `delivery_uncertain` otherwise. Any other command whose closing
-trace record fails after it succeeded reports `delivered_unverified` unless it
-is read-only.
+input), and `delivery_uncertain` otherwise.
+
+Any other command whose closing trace record fails under `--trace-strict` (a
+full recording, a disk error, or a trace lock wait that runs out) fails with
+the trace error, which replaces the command's own result. The error carries
+the delivery that result reported: the `data.disposition` of a success, the
+`error.disposition` of a failure, and `delivered_unverified` for a successful
+command that sends input and reports none. A read-only command reports
+`not_delivered`. When the command's own result left delivery `unknown`, a
+command that sends input reports `delivery_uncertain`, because the trace
+error's code (`INVALID_ARGS` for a full recording) says nothing about whether
+input was sent; only an `INVALID_ARGS` refusal raised before any focus or
+scroll ran keeps `not_delivered`. Never retry such a failure as safe unless its
+`disposition.retry` says `safe`; read the state first.
 
 A ref action that fails after it starts waiting on the interaction lease and
 before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
