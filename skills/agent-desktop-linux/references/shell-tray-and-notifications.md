@@ -245,9 +245,12 @@ Single-item `dismiss-notification` and `notification-action` require
   Wayland a mutation fails with `ACTION_FAILED`, `pointer_hit_unproven`, before
   any input.
 - The command opens a closed message list by a click on the clock menu and
-  closes it again after the call. If it cannot open the list, the error
-  suggestion says so: open the list by hand and retry, because a list that is
-  already showing is used as it is and left showing.
+  closes it again after the call. If it cannot open the list and never pressed
+  the clock menu, the error is `retry: safe` and its suggestion says to open
+  the list by hand and retry, because a list that is already showing is used
+  as it is and left showing. If the clock menu was pressed, the error is
+  `retry: unsafe`: the press toggles the list, so run `list-surfaces` to see
+  whether it is showing before you press anything again.
 - Dismissal presses the entry's header buttons, last one first. The two look
   alike, so the effect decides: afterwards the entry's own object must be gone
   from the list and no other entry's may be. A button that only expands the
@@ -269,7 +272,9 @@ Single-item `dismiss-notification` and `notification-action` require
   `ACTION_NOT_SUPPORTED` with `available_actions`. If the entry's buttons are
   not laid out, the command first expands it with the header button before the
   last one. If that press removes the entry instead, the result is
-  `ACTION_FAILED`.
+  `ACTION_FAILED`. Every error after the expand press, a moved entry included,
+  is `delivery: delivered_unverified` with `retry: unsafe`: the press toggles
+  the entry, so run `list-notifications` before you act on it again.
 - An action counts only when the entry's object leaves the list, which GNOME
   does after an action unless the notification is resident. `details.evidence`
   is `action_invoked` when the daemon's own `ActionInvoked` signal was also seen
