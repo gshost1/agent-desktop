@@ -39,12 +39,12 @@ fn process() -> ProcessIdentity {
     ProcessIdentity::new(1, "test-instance")
 }
 
-fn appear(gone: bool) -> WaitSelector {
-    WaitSelector {
+fn appear(gone: bool) -> crate::CommandContext {
+    crate::CommandContext::default().with_wait_selector(Some(WaitSelector {
         query_raw: ":Width".into(),
         gone,
         timeout_ms: 1_000,
-    }
+    }))
 }
 
 fn entry() -> crate::RefEntry {
@@ -88,16 +88,17 @@ fn a_baseline_is_taken_only_for_an_appear_wait_on_a_window_ref() {
         listed: Mutex::new(vec![window("w-main", 1, Some("test-instance"))]),
     };
     let entry = entry();
-    assert!(WindowBaseline::before_action(&windows, &entry, Some(&appear(false))).is_some());
-    assert!(WindowBaseline::before_action(&windows, &entry, Some(&appear(true))).is_none());
-    assert!(WindowBaseline::before_action(&windows, &entry, None).is_none());
+    assert!(WindowBaseline::before_action(&windows, &entry, &appear(false)).is_some());
+    assert!(WindowBaseline::before_action(&windows, &entry, &appear(true)).is_none());
+    assert!(
+        WindowBaseline::before_action(&windows, &entry, &crate::CommandContext::default())
+            .is_none()
+    );
 
     let mut process_owned = entry.clone();
     process_owned.source.source_window_id = None;
     process_owned.source.source_window_title = Some(String::new());
-    assert!(
-        WindowBaseline::before_action(&windows, &process_owned, Some(&appear(false))).is_none()
-    );
+    assert!(WindowBaseline::before_action(&windows, &process_owned, &appear(false)).is_none());
 }
 
 #[test]
@@ -108,5 +109,5 @@ fn a_platform_that_cannot_list_windows_leaves_no_baseline() {
     impl InputOps for NoWindows {}
     impl SystemOps for NoWindows {}
 
-    assert!(WindowBaseline::before_action(&NoWindows, &entry(), Some(&appear(false))).is_none());
+    assert!(WindowBaseline::before_action(&NoWindows, &entry(), &appear(false)).is_none());
 }

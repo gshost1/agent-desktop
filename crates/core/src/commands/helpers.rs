@@ -119,7 +119,7 @@ pub(crate) fn execute_ref_action_dispatching(
         super::point_resolve::require_pointer_capability(adapter)?;
     }
     let entry = load_ref_entry(&args.ref_id, context)?;
-    let baseline = WindowBaseline::before_action(adapter, &entry, context.wait_selector());
+    let (baseline, capture) = (std::cell::RefCell::new(None), WindowBaseline::before_action);
     let action_result = crate::ref_action::ref_action_wait::execute_with_auto_wait_and_lease(
         RefActionWaitContext {
             adapter,
@@ -128,7 +128,10 @@ pub(crate) fn execute_ref_action_dispatching(
             context,
         },
         request,
-        dispatch,
+        |target, request, lease| {
+            baseline.replace(capture(adapter, target.entry, context));
+            dispatch(target, request, lease)
+        },
     );
     let (result, lease, artifacts, lease_started) = match action_result {
         Ok(result) => result,
@@ -148,14 +151,14 @@ pub(crate) fn execute_ref_action_dispatching(
     let value = serde_json::to_value(result).map_err(|error| {
         post_delivery_error(AppError::Json(error), json!({ "action": "delivered" }))
     })?;
+    let baseline = baseline.into_inner();
     let mut outcome =
         apply_post_action_wait(value, Some(&entry), baseline.as_ref(), adapter, context);
     update_lease_hold_ms(&mut outcome, lease_hold_ms);
     outcome
 }
 
-/// Runs the command's post-action wait, following the ref into the windows
-/// its process opened since `baseline` was taken before the action.
+/// Runs the post-action wait, following the ref into windows opened since `baseline`.
 pub(crate) fn apply_post_action_wait(
     result: Value,
     entry: Option<&RefEntry>,

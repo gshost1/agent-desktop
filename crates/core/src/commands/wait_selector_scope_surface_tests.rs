@@ -1,10 +1,30 @@
 use std::time::Duration;
 
 use super::{
-    MAIN, NEVER, OTHER, ScriptedApp, Window, adapter_error, entry, ms, open, wait_after_action_on,
+    MAIN, NEVER, OTHER, ScriptedApp, Window, adapter_error, entry, ms, node, open,
+    wait_after_action_on,
 };
 use crate::wait::deadline::VirtualClock;
-use crate::{ErrorCode, refs::refs_test_support::HomeGuard};
+use crate::{AccessibilityNode, AdapterError, ErrorCode, refs::refs_test_support::HomeGuard};
+
+impl ScriptedApp {
+    pub(super) fn surface_tree(
+        &self,
+        id: &str,
+        surface: crate::SnapshotSurface,
+    ) -> Result<AccessibilityNode, AdapterError> {
+        if surface != crate::SnapshotSurface::Sheet {
+            return self.tree(id);
+        }
+        self.tree(id)?;
+        let sheet = if self.sheet.0 == id && self.sheet.1 <= self.at() {
+            vec![node("incrementor", "Width:", Vec::new())]
+        } else {
+            Vec::new()
+        };
+        Ok(node("sheet", id, sheet))
+    }
+}
 
 fn menubar_entry() -> crate::RefEntry {
     let mut entry = entry();

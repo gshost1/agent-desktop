@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use crate::{
-    AdapterError, Deadline, PlatformAdapter, ProcessIdentity, RefEntry, WaitSelector, WindowFilter,
-    WindowInfo,
+    AdapterError, CommandContext, Deadline, PlatformAdapter, ProcessIdentity, RefEntry,
+    WindowFilter, WindowInfo,
 };
 
 /// The longest an action spends listing its process's windows before it is
@@ -21,25 +21,19 @@ pub(crate) struct WindowBaseline {
     open: BTreeSet<String>,
 }
 
-/// Whether a ref's own observation already reads every window of its
-/// process: a ref captured through a process root on a window surface. A ref
-/// on an application surface, such as a menu bar item, is also captured
-/// through its process, but reading it reads only that surface.
-pub(crate) fn observes_whole_process(adapter: &dyn PlatformAdapter, entry: &RefEntry) -> bool {
-    entry.source.is_process_owned() && !adapter.is_application_surface(entry.source.source_surface)
-}
-
 impl WindowBaseline {
     /// The baseline an appear wait after an action on `entry` follows, taken
-    /// before the action is sent. `None` without such a wait, for a ref owned
-    /// by a process root, which already observes the whole process, or when
-    /// the windows cannot be listed.
+    /// before the action is sent. `None` without such a wait, for a ref whose
+    /// own read already covers every window of its process, or when the
+    /// windows cannot be listed.
     pub(crate) fn before_action(
         adapter: &dyn PlatformAdapter,
         entry: &RefEntry,
-        wait: Option<&WaitSelector>,
+        context: &CommandContext,
     ) -> Option<Self> {
-        if wait.is_none_or(|wait| wait.gone) || observes_whole_process(adapter, entry) {
+        if context.wait_selector().is_none_or(|wait| wait.gone)
+            || !crate::wait::ref_wait::follows_windows(adapter, entry)
+        {
             return None;
         }
         let deadline = Deadline::from_duration(WINDOW_BASELINE_BUDGET).ok()?;

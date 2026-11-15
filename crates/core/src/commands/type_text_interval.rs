@@ -49,22 +49,11 @@ pub(crate) fn execute(
             "type --interval-ms needs text to type",
         ));
     };
-    let baseline = match context.wait_selector() {
-        Some(_) => crate::commands::helpers::load_ref_entry(&args.ref_id, context)
-            .ok()
-            .and_then(|entry| {
-                crate::wait::window_baseline::WindowBaseline::before_action(
-                    adapter,
-                    &entry,
-                    context.wait_selector(),
-                )
-            }),
-        None => None,
-    };
     let first_slot = clock.wait();
     let Landing {
         value: mut last,
         burst,
+        baseline,
     } = execute_landing(
         RefArgs {
             ref_id: args.ref_id.clone(),
@@ -72,7 +61,7 @@ pub(crate) fn execute(
         },
         adapter,
         context.request_base(Action::TypeText(first.clone())),
-        &per_keystroke,
+        (&per_keystroke, context),
     )?;
     clock.delivered(first_slot);
     for (offset, unit) in rest.iter().enumerate() {
@@ -181,24 +170,32 @@ impl Burst {
 struct Landing {
     value: Value,
     burst: Burst,
+    baseline: Option<crate::wait::window_baseline::WindowBaseline>,
 }
 
 /// Runs the first unit as a full ref action and keeps the element and entry it
 /// landed on, so the burst neither resolves the element nor loads the entry
-/// again.
+/// again. `wait_context` carries the command's post-action wait, which the
+/// window baseline is taken for just before the first keystroke is sent.
 fn execute_landing(
     args: RefArgs,
     adapter: &dyn PlatformAdapter,
     request: crate::ActionRequest,
-    context: &CommandContext,
+    (context, wait_context): (&CommandContext, &CommandContext),
 ) -> Result<Landing, AppError> {
     let landed = Cell::new(None);
+    let baseline = Cell::new(None);
     let value = execute_ref_action_dispatching(
         args,
         adapter,
         request,
         context,
         |target, request, lease| {
+            baseline.set(crate::wait::window_baseline::WindowBaseline::before_action(
+                adapter,
+                target.entry,
+                wait_context,
+            ));
             let (result, handle) =
                 crate::ref_action::dispatch_resolved_landing(target, request, lease)?;
             landed.set(Some(Burst::landed(target.entry.clone(), handle)));
@@ -208,7 +205,11 @@ fn execute_landing(
     let burst = landed
         .take()
         .ok_or_else(|| AdapterError::internal("the ref action landed no element"))?;
-    Ok(Landing { value, burst })
+    Ok(Landing {
+        value,
+        burst,
+        baseline: baseline.take(),
+    })
 }
 
 fn deliver(
