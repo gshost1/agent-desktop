@@ -31,8 +31,11 @@ observation, actions and capture there fail or return nothing.
   `--headed`. Headed, it raises the window and, when the field does not hold
   keyboard focus, focuses it with UI Automation `SetFocus` first (a
   `UIElement.SetFocus` step before `SendInput.type_text`); no separate `focus`
-  call is needed. A field that refuses focus fails `ACTION_FAILED` with no
-  keystrokes sent. Element-scoped `press <ref>` does the same. It ends
+  call is needed. A field that refuses focus fails `ACTION_FAILED` ("Target
+  did not take keyboard focus", the HRESULT in `platform_detail`), or
+  `STALE_REF` when the element is gone, with no keystrokes sent. Headed element-scoped `press --ref` does the same. Without
+  `--headed`, `press --ref` moves no focus: it presses only into a target that
+  already holds keyboard focus and refuses one that does not. `type` ends
   `delivered_unverified` (`verification_scope: "unavailable"`) when the field
   exposes no readable Text selection, and can verify when one is readable:
   confirm with a fresh `get`.
