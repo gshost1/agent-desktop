@@ -475,6 +475,10 @@ same case and whitespace folding the match uses), then the matches whose name on
 contains it, each group in traversal order. An item whose title grew to hold
 another item's name, such as an Edit menu's `Undo Subscript` after a Subscript
 command, so comes after `Subscript`. `--exact` returns only whole-name matches.
+`--limit`, including the default of 50, keeps the whole-name matches before it
+cuts: when more matches exist than the limit, the whole-name matches are kept
+and the remaining places go to the other matches in traversal order. Without a
+whole-name match the limit keeps the first matches in traversal order.
 `--first`, `--last` and `--nth` count in traversal order; pass `--exact` with them.
 
 ### Which match `--first` returns
