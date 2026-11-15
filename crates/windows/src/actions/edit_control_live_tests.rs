@@ -36,6 +36,7 @@ const MULTILINE_ID: i32 = 102;
 const SINGLE_LINE_ID: i32 = 103;
 const READ_ONLY_ID: i32 = 104;
 const DROP_LIST_ID: i32 = 105;
+const FIXED_WIDTH_ID: i32 = 106;
 
 static NOTIFICATIONS: Mutex<Vec<(isize, u32)>> = Mutex::new(Vec::new());
 
@@ -148,6 +149,7 @@ fn create_owner(class_name: &str) -> isize {
     child(window, "EDIT", 0x0080, SINGLE_LINE_ID, 200);
     child(window, "EDIT", 0x0800, READ_ONLY_ID, 232);
     child(window, "COMBOBOX", 0x0003, DROP_LIST_ID, 264);
+    child(window, "EDIT", 0, FIXED_WIDTH_ID, 296);
     window as isize
 }
 
@@ -332,4 +334,20 @@ fn read_only_edits_and_drop_down_lists_keep_their_value_pattern() {
         edit_target(&element, "value", deadline()),
         EditTarget::Edit(owner.control(SINGLE_LINE_ID))
     );
+}
+
+#[test]
+fn an_edit_that_cannot_scroll_keeps_the_value_pattern_and_its_whole_value() {
+    ensure_test_apartment();
+    let owner = EditOwner::create();
+    let edit = owner.control(FIXED_WIDTH_ID);
+    let wide_value = "a value much wider than the three hundred pixel box it is written to, so typing would stop at its edge";
+    let element = root_from_hwnd(edit, deadline()).expect("resolves");
+    assert_eq!(
+        edit_target(&element, wide_value, deadline()),
+        EditTarget::NotEdit
+    );
+    let steps = write(edit, wide_value);
+    assert_ne!(steps[0].label(), EDIT_LABEL);
+    assert_eq!(text_of(edit), wide_value);
 }

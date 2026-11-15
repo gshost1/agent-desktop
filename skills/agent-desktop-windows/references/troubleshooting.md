@@ -175,9 +175,10 @@ edit, the step is `EditControl.ReplaceSel`: the whole text is selected and repla
 so the application is told the text changed, as it is when a user types or
 pastes. `ValuePattern.SetValue` on such an edit tells a multiline edit's or a
 combo box's owner nothing, so the field showed the new text while the app kept
-the old one. A read-only or disabled edit, a drop-down list, a value over the
-edit's text limit or holding U+0000, and every other control still take
-`ValuePattern.SetValue`.
+the old one. A read-only or disabled edit, an edit that cannot scroll its text
+(where a replace, like typing, would cut a value wider than the box), a
+drop-down list, a value over the edit's text limit or holding U+0000, and
+every other control still take `ValuePattern.SetValue`.
 
 **A `set-value` that the application reshapes reads as failed.** If the app
 trims whitespace, reformats a date or normalizes a number, the readback differs

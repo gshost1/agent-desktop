@@ -15,9 +15,11 @@
 //! combo box forwards `CBN_EDITCHANGE`, and it marks the text modified. The
 //! same dialog saved to the written path 2 of 2 through it (run 43740201813).
 //!
-//! A value holding U+0000, a read-only or disabled edit and a value over the
-//! edit's text limit keep `ValuePattern.SetValue`, since `EM_REPLACESEL` would
-//! cut or refuse them.
+//! A value holding U+0000, a read-only or disabled edit, a value over the
+//! edit's text limit, and an edit that cannot scroll its text (a single-line
+//! edit without `ES_AUTOHSCROLL`, a multiline one without `ES_AUTOVSCROLL`)
+//! keep `ValuePattern.SetValue`, since `EM_REPLACESEL`, like typing, would cut
+//! or refuse them while `WM_SETTEXT` writes the whole value.
 //!
 //! The rule keys on the window class the control was built from, which
 //! `RealGetWindowClassW` reports through any superclass, never on the
@@ -68,8 +70,9 @@ mod imp {
     use std::ffi::c_void;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        ES_READONLY, FindWindowExW, GWL_STYLE, GetWindowLongW, RealGetWindowClassW,
-        SMTO_ABORTIFHUNG, SMTO_ERRORONEXIT, SendMessageTimeoutW,
+        ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, FindWindowExW, GWL_STYLE,
+        GetWindowLongW, RealGetWindowClassW, SMTO_ABORTIFHUNG, SMTO_ERRORONEXIT,
+        SendMessageTimeoutW,
     };
 
     const EM_SETSEL: u32 = 0x00B1;
@@ -182,9 +185,15 @@ mod imp {
     fn accepts(handle: isize, value: &str, deadline: Deadline) -> bool {
         let window = handle as *mut c_void;
         let style = unsafe { GetWindowLongW(window, GWL_STYLE) };
+        let scrolls = if style & ES_MULTILINE != 0 {
+            style & ES_AUTOVSCROLL != 0
+        } else {
+            style & ES_AUTOHSCROLL != 0
+        };
         if value.contains('\0')
             || unsafe { IsWindowEnabled(window) } == 0
             || style & ES_READONLY != 0
+            || !scrolls
         {
             return false;
         }
