@@ -94,7 +94,13 @@ pub(crate) fn probe(connection: &Connection, deadline: Deadline) -> Result<(), A
 }
 
 fn refused_unsent(mut error: AdapterError) -> AdapterError {
-    error.details.get_or_insert_with(|| json!({}))["physical_delivery_started"] = false.into();
+    let mut details = match error.details.take() {
+        Some(serde_json::Value::Object(map)) => map,
+        Some(other) => serde_json::Map::from_iter([("detail".to_owned(), other)]),
+        None => serde_json::Map::new(),
+    };
+    details.insert("physical_delivery_started".to_owned(), false.into());
+    error.details = Some(serde_json::Value::Object(details));
     error.with_disposition(DeliverySemantics::not_delivered())
 }
 

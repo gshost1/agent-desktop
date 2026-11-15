@@ -238,10 +238,7 @@ pub(crate) fn click_shell(
         .ok_or_else(geometry_refusal)?;
     let world = LiveWorld { bus, lease };
     let backend = world.backend()?;
-    let layout = match backend {
-        Backend::Wayland => crate::system::wayland_layout(deadline)?,
-        Backend::X11(_) => DisplayLayout::unscaled(crate::system::list_displays(deadline)?),
-    };
+    let layout = DisplayLayout::unscaled(crate::system::list_displays(deadline)?);
     let point = super::shell_aim::aim(extents, &layout.displays)?;
     match backend {
         Backend::X11(_) => {

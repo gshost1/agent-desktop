@@ -187,4 +187,4 @@ agent-desktop --headed mouse-wheel --x 700 --y 400 --dy -2
 }
 ```
 
-Platform limits for all mouse commands: Linux needs X11. See [macOS](/desktop/platforms/macos), [Windows](/desktop/platforms/windows), and [Linux](/desktop/platforms/linux).
+Platform limits: on Linux, a ref target needs X11; on GNOME Wayland, `--headed` with explicit `--xy` coordinates works through Mutter's RemoteDesktop and reports `delivered_unverified`. See [macOS](/desktop/platforms/macos), [Windows](/desktop/platforms/windows), and [Linux](/desktop/platforms/linux).

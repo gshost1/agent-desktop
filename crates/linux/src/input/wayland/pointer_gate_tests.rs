@@ -128,3 +128,16 @@ fn the_probe_names_the_first_missing_compositor_interface() {
     assert_eq!(missing_after_probe(), None);
     drop((remote, cast));
 }
+
+#[test]
+fn a_probe_refusal_with_non_object_details_is_stamped_unsent_without_panicking() {
+    let refusal = coordinate_gate(Ok(Backend::Wayland), || {
+        Err(AdapterError::new(ErrorCode::ActionFailed, "probe failed")
+            .with_details(serde_json::json!("a string, not an object")))
+    })
+    .expect("the probe refused");
+    let details = refusal.details.expect("details");
+    assert_eq!(details["physical_delivery_started"], false);
+    assert_eq!(details["detail"], "a string, not an object");
+    assert_eq!(refusal.disposition, DeliverySemantics::not_delivered());
+}
