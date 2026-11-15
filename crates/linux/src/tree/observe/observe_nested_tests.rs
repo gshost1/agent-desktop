@@ -121,7 +121,7 @@ fn an_alert_below_the_depth_the_request_asks_for_is_still_the_sheet() {
     )
     .expect("the alert below the request's depth is the sheet");
     assert!(tree.is_complete());
-    assert_eq!(rooted_at, ["/a", "/a", "/d"]);
+    assert_eq!(rooted_at, ["/a", "/d"]);
 }
 
 #[test]
