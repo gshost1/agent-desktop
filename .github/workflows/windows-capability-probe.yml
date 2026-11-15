@@ -24,12 +24,14 @@ jobs:
         run: rustup show
 
       - name: Describe the runner
-        shell: pwsh
+        continue-on-error: true
+        shell: powershell
         run: |
           Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
-          Get-AppxPackage -Name '*Notepad*','*Calculator*','*WindowsTerminal*','*Paint*' -ErrorAction SilentlyContinue | Select-Object Name, Version | Format-Table
-          Get-Command notepad.exe, msedge.exe, chrome.exe -ErrorAction SilentlyContinue | Select-Object Name, Source | Format-Table
-          Get-ChildItem "$env:ProgramFiles\WindowsApps" -ErrorAction SilentlyContinue | Select-Object -First 40 Name | Format-Table
+          try { Get-AppxPackage -Name '*Notepad*' | Select-Object Name, Version | Format-Table } catch { Write-Host "appx notepad: $_" }
+          try { Get-AppxPackage -Name '*Calculator*' | Select-Object Name, Version | Format-Table } catch { Write-Host "appx calc: $_" }
+          try { (Get-Item "$env:WINDIR\System32\notepad.exe").VersionInfo | Format-List FileVersion, ProductName } catch { Write-Host "notepad: $_" }
+          Get-Command msedge.exe, chrome.exe -ErrorAction SilentlyContinue | Select-Object Name, Source | Format-Table
 
       - name: Run scripts/run-windows-e2e-ci.ps1
         shell: powershell
