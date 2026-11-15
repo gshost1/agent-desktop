@@ -78,6 +78,30 @@ fn find_scroll_defaults_to_down_takes_a_direction_and_needs_a_root() {
 }
 
 #[test]
+fn find_scroll_refuses_an_unknown_direction_and_whole_list_selections_at_parse_time() {
+    let sideways = FindArgs::try_parse_from([
+        "find", "--root", "@s1:e4", "--name", "Row", "--scroll", "sideways",
+    ])
+    .unwrap_err();
+    assert_eq!(sideways.kind(), clap::error::ErrorKind::InvalidValue);
+    for flag in [
+        &["--count"][..],
+        &["--last"],
+        &["--nth", "3"],
+        &["--allow-partial"],
+    ] {
+        let mut argv = vec!["find", "--root", "@s1:e4", "--name", "Row", "--scroll"];
+        argv.extend_from_slice(flag);
+        let error = FindArgs::try_parse_from(argv).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::ArgumentConflict,
+            "{flag:?}"
+        );
+    }
+}
+
+#[test]
 fn find_args_selection_conflicts_still_enforced_across_the_flatten_boundary() {
     let err = FindArgs::try_parse_from(["find", "--first", "--last"]).unwrap_err();
 

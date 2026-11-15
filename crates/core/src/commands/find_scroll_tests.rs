@@ -163,3 +163,99 @@ fn a_look_that_runs_out_of_time_is_reported_as_the_deadline() {
     assert_eq!(details["scroll_search"]["pages"], 1);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }
+
+fn scroll_args(selection: crate::commands::find::FindSelectionArgs) -> FindArgs {
+    FindArgs {
+        scope: crate::commands::find::FindScopeArgs {
+            app: None,
+            window_id: None,
+            root: Some("@s1:e1".into()),
+            surface: crate::SnapshotSurface::Window,
+            scroll: Some(Direction::Down),
+        },
+        filter: crate::commands::find::FindFilterArgs {
+            role: None,
+            name: Some("Row 300".into()),
+            description: None,
+            native_id: None,
+            value: None,
+            text: None,
+            exact: true,
+        },
+        states: Vec::new(),
+        timeout_ms: None,
+        selection,
+    }
+}
+
+fn selection() -> crate::commands::find::FindSelectionArgs {
+    crate::commands::find::FindSelectionArgs {
+        count: false,
+        first: false,
+        last: false,
+        nth: None,
+        limit: None,
+        allow_partial: false,
+    }
+}
+
+#[test]
+fn a_selection_that_needs_the_whole_list_is_refused_before_any_page() {
+    let refusals = [
+        (
+            "count",
+            crate::commands::find::FindSelectionArgs {
+                count: true,
+                ..selection()
+            },
+        ),
+        (
+            "last",
+            crate::commands::find::FindSelectionArgs {
+                last: true,
+                ..selection()
+            },
+        ),
+        (
+            "nth",
+            crate::commands::find::FindSelectionArgs {
+                nth: Some(20),
+                ..selection()
+            },
+        ),
+        (
+            "allow_partial",
+            crate::commands::find::FindSelectionArgs {
+                allow_partial: true,
+                ..selection()
+            },
+        ),
+    ];
+    for (flag, refused) in refusals {
+        let Err(error) = scroll_target(&scroll_args(refused)) else {
+            panic!("--scroll with {flag} must be refused");
+        };
+        assert_eq!(error.code(), ErrorCode::InvalidArgs.as_str(), "{flag}");
+    }
+    let first = crate::commands::find::FindSelectionArgs {
+        first: true,
+        ..selection()
+    };
+    assert!(scroll_target(&scroll_args(first)).is_ok());
+    let limited = crate::commands::find::FindSelectionArgs {
+        limit: Some(3),
+        ..selection()
+    };
+    assert!(scroll_target(&scroll_args(limited)).is_ok());
+}
+
+#[test]
+fn only_a_returned_element_counts_as_found() {
+    assert!(holds_a_match(&json!({ "match": { "ref_id": "@s1:e4" } })));
+    assert!(holds_a_match(
+        &json!({ "matches": [{ "ref_id": "@s1:e4" }] })
+    ));
+    assert!(!holds_a_match(&json!({ "match": null })));
+    assert!(!holds_a_match(&json!({ "matches": [] })));
+    assert!(!holds_a_match(&json!({ "count": 12 })));
+}

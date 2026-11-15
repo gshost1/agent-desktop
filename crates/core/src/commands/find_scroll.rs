@@ -19,6 +19,7 @@ use std::time::Duration;
 
 const MAX_SCROLL_PAGES: u32 = 200;
 const SCROLL_SEARCH_TIMEOUT: Duration = Duration::from_secs(20);
+const UNSCROLLABLE_SELECTION: &str = "find --scroll stops at the first page that holds a match, so it cannot take --count, --last, --nth or --allow-partial";
 
 /// What the search reads from and does to one scroll area.
 pub(super) trait ScrollSearch {
@@ -124,7 +125,8 @@ struct LiveScrollSearch<'a> {
 impl ScrollSearch for LiveScrollSearch<'_> {
     fn look(&mut self) -> Result<bool, AppError> {
         let (args, query) = self.find;
-        let (response, matched) = live::execute_within(args, query, self.env, self.deadline)?;
+        let response = live::execute_within(args, query, self.env, self.deadline)?;
+        let matched = holds_a_match(&response);
         self.last = Some(response);
         Ok(matched)
     }
@@ -165,6 +167,17 @@ pub(super) fn execute(
     Ok(response)
 }
 
+/// Whether a find response returned an element: a `match` that is not null,
+/// or a non-empty `matches` list. A response that only counted matches, or
+/// whose selection fell outside the loaded rows, holds none.
+pub(super) fn holds_a_match(response: &Value) -> bool {
+    response.get("match").is_some_and(|found| !found.is_null())
+        || response
+            .get("matches")
+            .and_then(Value::as_array)
+            .is_some_and(|matches| !matches.is_empty())
+}
+
 fn scroll_target(args: &FindArgs) -> Result<(Direction, &str), AppError> {
     let direction = args.scope.scroll.clone().unwrap_or(Direction::Down);
     let Some(root_ref) = args.scope.root.as_deref() else {
@@ -173,10 +186,11 @@ fn scroll_target(args: &FindArgs) -> Result<(Direction, &str), AppError> {
             "Pass --root with the ref of the list or scroll area to page through, from a snapshot.",
         ));
     };
-    if args.selection.count {
+    let selection = &args.selection;
+    if selection.count || selection.last || selection.nth.is_some() || selection.allow_partial {
         return Err(AppError::invalid_input_with_suggestion(
-            "find --scroll stops at the first page that holds a match, so it cannot --count",
-            "Drop --count, or count without --scroll.",
+            UNSCROLLABLE_SELECTION,
+            "Use --first or --limit with --scroll, or drop --scroll to count or pick by position among the loaded rows.",
         ));
     }
     Ok((direction, root_ref))

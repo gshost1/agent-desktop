@@ -40,16 +40,16 @@ pub(super) fn execute(
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     let deadline = traversal_deadline(args)?;
-    execute_within(args, query, (adapter, context), deadline).map(|(response, _)| response)
+    execute_within(args, query, (adapter, context), deadline)
 }
 
-/// Runs one find inside `deadline` and says whether it matched anything.
+/// Runs one find inside `deadline`.
 pub(super) fn execute_within(
     args: &FindArgs,
     query: &LocatorQuery,
     (adapter, context): (&dyn PlatformAdapter, &CommandContext),
     deadline: crate::Deadline,
-) -> Result<(Value, bool), AppError> {
+) -> Result<Value, AppError> {
     let request = resolve_request(args, deadline);
     let mut resolution = match args.scope.root.as_deref() {
         Some(root_ref) => rooted_resolution(args, query, root_ref, &request, (adapter, context))?,
@@ -92,9 +92,7 @@ pub(super) fn execute_within(
         }
     }
     emit_resolution(context, &resolution, snapshot_id.as_deref(), ref_count)?;
-    let matched = resolution.meta.total_matches > 0;
     format_response(args, query, resolution, snapshot_id.as_deref())
-        .map(|response| (response, matched))
 }
 
 /// A rooted find draws its matches from the root's own subtree. A root with an

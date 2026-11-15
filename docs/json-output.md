@@ -606,6 +606,7 @@ search paged the `--root` scroll area and why it stopped:
   could not be read; such a page may have moved the view.
 - `stopped` is `found`, `both_ends` (no match between the two ends of the
   area: `match` is `null`, or `matches` is empty) or `page_cap` (200 pages).
+  `found` always comes with a match.
 - The view stays where the search stopped.
 - An error that ends the search carries the same object in
   `details.scroll_search`, with `stopped` `deadline` or `error`. Once a page may

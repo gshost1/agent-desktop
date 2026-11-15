@@ -142,7 +142,7 @@ A list that builds rows only near its viewport, such as a long font or photo gri
 agent-desktop find --root @s8f3k2p9:e9 --name "Report 2024" --exact --first --scroll
 ```
 
-It stops at the first match, at both ends of the area, after 200 pages, or at `--timeout-ms` (default 20000 with `--scroll`). The result is the usual find data plus `data.scroll`, which says how many pages it sent, whether the view moved and why it stopped; no match after both ends is `ok: true` with `stopped: "both_ends"`. The view stays where the search stopped. `--scroll` needs `--root` and cannot combine with `--count`. Paging is supported on macOS; elsewhere, and for a `web` surface ref, a search that needs a page returns `PLATFORM_NOT_SUPPORTED` with `details.scroll_search`. The fields are in [JSON output](/desktop/json-output#find-results).
+It stops at the first match, at both ends of the area, after 200 pages, or at `--timeout-ms` (default 20000 with `--scroll`). The result is the usual find data plus `data.scroll`, which says how many pages it sent, whether the view moved and why it stopped; no match after both ends is `ok: true` with `stopped: "both_ends"`. The view stays where the search stopped. `--scroll` needs `--root` and cannot combine with `--count`, `--last`, `--nth` or `--allow-partial`, which need the whole list. In `batch` JSON the direction is a string: `"scroll": "down"`. Paging is supported on macOS; elsewhere, and for a `web` surface ref, a search that needs a page returns `PLATFORM_NOT_SUPPORTED` with `details.scroll_search`. The fields are in [JSON output](/desktop/json-output#find-results).
 
 ## get
 

@@ -222,8 +222,10 @@ pub(crate) struct FindPlaceArgs {
         value_name = "DIRECTION",
         num_args = 0..=1,
         default_missing_value = "down",
+        value_parser = ["up", "down", "left", "right"],
         requires = "root",
-        help = "Page the --root list or scroll area toward DIRECTION (default down), then back, until a match loads; scrolls the view headlessly and leaves it where the match is"
+        conflicts_with_all = ["count", "last", "nth", "allow_partial"],
+        help = "Page the --root list or scroll area toward DIRECTION (default down), then back, until a match loads; scrolls the view headlessly and leaves it where the search stopped"
     )]
     pub scroll: Option<String>,
 }
