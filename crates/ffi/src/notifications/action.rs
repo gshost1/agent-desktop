@@ -53,12 +53,13 @@ pub unsafe extern "C" fn ad_notification_action(
                 return set_last_error(&error);
             }
         };
-        let identity = match super::identity::decode(request.identity.app, request.identity.title) {
-            Ok(identity) => identity,
-            Err(error) => {
-                return set_last_error(&error);
-            }
-        };
+        let target =
+            match super::identity::decode(index, request.identity.app, request.identity.title) {
+                Ok(target) => target,
+                Err(error) => {
+                    return set_last_error(&error);
+                }
+            };
         let policy = match AdPolicyKind::from_c(request.policy) {
             Some(policy) => policy.to_interaction_policy(),
             None => {
@@ -77,8 +78,7 @@ pub unsafe extern "C" fn ad_notification_action(
         let adapter = crate::adapter::acquire_adapter!(adapter);
         let lease = crate::operation::interaction_lease!(adapter.inner.as_ref());
         let request = agent_desktop_core::NotificationActionRequest {
-            index,
-            identity: &identity,
+            target: &target,
             action_name: &action,
             policy,
         };

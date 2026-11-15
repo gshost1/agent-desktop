@@ -373,3 +373,25 @@ fn a_bare_topic_resolves_against_the_core_skill_then_this_platform() {
         assert!(format!("{}", platform.expect_err("no such topic here")).contains("Unknown skill"));
     }
 }
+
+#[test]
+fn macos_references_offer_headed_only_instead_of_the_headless_route() {
+    for name in ["actions.md", "troubleshooting.md"] {
+        let body = get(GetArgs {
+            name: "macos".into(),
+            full: false,
+            reference: Some(name.into()),
+        })
+        .expect("macos reference");
+        let text = body["content"].as_str().expect("string");
+        assert!(!text.contains("rerun it with `--headed`, or"), "{name}");
+        assert!(
+            !text.contains("send the key once more with `--headed`"),
+            "{name}"
+        );
+        assert!(
+            text.contains("only if the user allows physical input"),
+            "{name}"
+        );
+    }
+}

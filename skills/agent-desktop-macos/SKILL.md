@@ -68,7 +68,7 @@ A panel that floats above an app's documents, such as Fonts, Colors or an inspec
 
 ## Long lists
 
-A snapshot prints a long list or grid before the toolbar and search field below it, so read all of it and never cut it with `head`. To reach one item of a long list, `set-value` its name into the window's `textfield "Search"`, snapshot again, and read the filtered list instead of scrolling for it.
+A snapshot prints a long list or grid before the toolbar below it. Read all of it, or filter it with `grep -i "<name>"`, never with `head`, and look for the item by name before you search or scroll. After `set-value` on a search field, snapshot again and act on the refs the filtered list shows, which may name an item differently, such as `group "Show <name>"`; do not type the text again. If the filtered list does not show the item, clear the search with `clear @ref` and read the full list, still without `type` or `--headed`.
 
 ## Wait for the effect in the same call
 
@@ -76,18 +76,18 @@ Add `-w ":<text>"` or `-w "<role>:<text>"` to a ref action: it polls until the t
 
 ## Linked fields in sheets
 
-`set-value @ref "<value>"` on a text field gives it keyboard focus in its window first, without raising the app, so the app's own edit handling runs. In an image-size sheet that keeps the aspect ratio, setting the height updates the width. Read the linked field back before you confirm the sheet. Its fields may have no names: tell them apart by order and value, and check the unit pop-up (`select @ref "pixels"`) before you write numbers.
+`set-value @ref "<value>"` on a text field gives it keyboard focus in its window first, without raising the app, so the app's own edit handling runs. A plain single-line text field that `set-value` writes returns `delivered_unverified` with `application_commit: "unobserved"`: the field holds the text, but many apps take it into the document only when editing ends. Before you save or confirm, run `focus` on another field in the same window, then check the result. Do not press Return in such a field to commit it: Return can submit a form or press a default button. A text area also reports `unobserved`: `focus` elsewhere commits some text views and not others, so after you save, check the saved result. A search field, secure field or pop-up is settled by the read-back and needs no extra step. In an image-size sheet that keeps the aspect ratio, setting the height updates the width. Read the linked field back before you confirm the sheet. Its fields may have no names: tell them apart by order and value, and check the unit pop-up (`select @ref "pixels"`) before you write numbers.
 
 ## Keys and menu shortcuts
 
 - With `cmd` and `--app`, `press` first looks for a menu item with that shortcut and presses it with `AXPress`, headless included: `data.details.menu_shortcut` names the `menu` and `item`.
-- If no enabled item matches and the app is in the background, a character chord such as `cmd+b` fails `ACTION_FAILED` `command_chord_unrouted_in_background`, and nothing is sent. Rerun with `--headed`, or `click` the menu item. Arrows and navigation chords still reach a background app's focused text view.
-- A disabled match in a background app fails with `menu_item_disabled_in_background`. Rerun with `--headed`.
+- If no enabled item matches and the app is in the background, a character chord such as `cmd+b` fails `ACTION_FAILED` `command_chord_unrouted_in_background`, and nothing is sent. `click` the menu item instead. Arrows and navigation chords still reach a background app's focused text view.
+- A disabled match in a background app fails with `menu_item_disabled_in_background`, and nothing is sent. The app enables the item only while it is frontmost: run `focus-window --app <App>` and `press` again. Use `--headed` instead only if the user allows physical input.
 - Quit chords return `POLICY_DENIED`. Use `close-app`.
 
 ## Headed or headless
 
-Headless is the default and acts through accessibility: `click`, `select` and `set-value` work on a background app. `--headed` brings the window forward and uses the real pointer and keyboard. `double-click`, `triple-click`, `hover` and `drag` need it. Check every effect by observation: a success code does not prove an effect, so snapshot again or `get` the value.
+Headless is the default and acts through accessibility: `click`, `select` and `set-value` work on a background app. `--headed` brings the window forward and moves the user's real pointer and keyboard, so use it only when the user allows physical input; `double-click`, `triple-click`, `hover` and `drag` need it. Never add `--headed` or switch to `type` because a headless action seemed to do nothing: snapshot again and read what changed. Check every effect by observation: a success code does not prove an effect, so snapshot again or `get` the value.
 
 ## Sheets and menus
 

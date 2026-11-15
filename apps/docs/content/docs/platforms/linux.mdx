@@ -133,7 +133,7 @@ To drive the web contents with agent-browser instead, launch the app with `--cdp
     <tr><td>The message list stays open after a notification dismiss or action that succeeded</td><td>The command could not show the list it opened closed again; the mutation was delivered and its result stands, and <code>notification-action</code> carries <code>details.list_restore: "unverified"</code></td><td>Re-list instead of repeating the old index, and close the list with Escape</td></tr>
     <tr><td><code>--menu-closed</code> returns at once</td><td>The menu never opened</td><td>Wait for <code>--menu</code> first</td></tr>
     <tr><td><code>screenshot</code> returns <code>ACTION_FAILED</code> with <code>details.reason: "covered"</code></td><td>A non-compositing window manager cannot capture a covered window</td><td>Raise it with <code>focus-window</code>; on a non-compositing window manager, capture the display with <code>--screen 0</code></td></tr>
-    <tr><td><code>INTERNAL</code>, "private file parent is accessible by group or other users"</td><td>The state root is not private</td><td><code>chmod 700</code> the state root</td></tr>
+    <tr><td><code>PERM_DENIED</code>, "private file parent is accessible by group or other users" (<code>details.kind: state_directory_permission</code>)</td><td>The state root is not private</td><td><code>chmod 700</code> the state root</td></tr>
   </tbody>
 </table>
 

@@ -79,7 +79,7 @@ A node always carries `role` and, when they exist, `ref_id`, `name`, `value`, `d
 `children_count` and `subtree_truncated` mark where the tree was cut; [Skeleton and drill-down](/desktop/skeleton-and-drill-down) explains both. Three flags shrink the tree, and the [commands reference](/desktop/commands/observation#snapshot) lists every flag:
 
 - `-i` (`--interactive-only`) drops leaves that have no ref. It keeps nodes that lead to refs and nodes marked with `children_count`. Static text has no ref, so a row's label is dropped: to see which row a repeated button belongs to, drill that row's container with `--root` and leave out `-i`.
-- `--compact` collapses a single-child wrapper that has no name, value, description, id, state, or action.
+- `--compact` collapses a `group` that has no name, value, description, id, state, action, or ref and has one child left after `-i`. Under `--include-bounds` a wrapper shows its bounds and is kept. Refs are the same with and without `--compact`.
 - `--max-depth` limits depth. The default is 10 and the maximum is 50.
 
 ## Choose the window

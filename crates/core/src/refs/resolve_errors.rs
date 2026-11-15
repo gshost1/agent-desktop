@@ -57,8 +57,8 @@ fn identity_not_unique(entry: &RefEntry) -> AdapterError {
     .with_suggestion(
         "Another element in the window matched it when it was captured; a refmap from an \
          earlier version does not record why, so take a new snapshot for one. Identical twins \
-         are refused again by every snapshot; where headed pointer input is available, an \
-         explicit --headed coordinate click can pick one.",
+         are refused again by every snapshot; if the user allows physical input, an explicit \
+         --headed coordinate click can pick one.",
     )
     .with_details(json!({
         "kind": "identity_not_unique",
@@ -102,8 +102,8 @@ fn capture_unknown(entry: &RefEntry) -> AdapterError {
     )
     .with_suggestion(
         "The element's identity cannot be read reliably, so a new snapshot may refuse it again. \
-         Target it through a different selector, or, where headed pointer input is available, \
-         an explicit --headed coordinate click.",
+         Target it through a different selector, or, if the user allows physical input, use an \
+         explicit --headed coordinate click.",
     )
     .with_details(json!({
         "kind": "identity_unproven",
@@ -138,7 +138,7 @@ pub(crate) fn ambiguous_live_match(entry: &RefEntry) -> AdapterError {
     .with_suggestion(
         "An element identical to the captured one appeared, so neither can be picked by ref and \
          a new snapshot refuses both as twins. Act on a control that is unique in the window, or, \
-         where headed pointer input is available, use an explicit --headed coordinate click.",
+         if the user allows physical input, use an explicit --headed coordinate click.",
     )
     .with_details(json!({
         "kind": "saved_ref_ambiguous",

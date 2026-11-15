@@ -99,31 +99,10 @@ fn order_and_filter(
     }
     let filtered: Vec<NotificationInfo> = infos
         .into_iter()
-        .filter(|info| matches_filters(info, filter))
+        .filter(|info| filter.admits(info))
         .collect();
     match filter.limit {
         Some(limit) => filtered.into_iter().take(limit).collect(),
         None => filtered,
     }
-}
-
-fn matches_filters(info: &NotificationInfo, filter: &NotificationFilter) -> bool {
-    if let Some(app) = filter.app.as_deref()
-        && !info.app_name.to_lowercase().contains(&app.to_lowercase())
-    {
-        return false;
-    }
-    if let Some(text) = filter.text.as_deref() {
-        let haystack = format!(
-            "{} {} {}",
-            info.title,
-            info.body.as_deref().unwrap_or(""),
-            info.app_name
-        )
-        .to_lowercase();
-        if !haystack.contains(&text.to_lowercase()) {
-            return false;
-        }
-    }
-    true
 }

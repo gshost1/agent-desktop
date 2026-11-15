@@ -160,7 +160,7 @@ fn closed_center_policy_error(policy: InteractionPolicy) -> AdapterError {
         policy,
     )
     .with_suggestion(
-        "Open Notification Center yourself or pass --headed to allow opening and restoring desktop focus.",
+        "Open Notification Center yourself and retry, or, if the user allows physical input, pass --headed to allow opening and restoring desktop focus.",
     )
 }
 

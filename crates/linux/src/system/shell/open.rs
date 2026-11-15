@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use agent_desktop_core::{
-    AdapterError, Deadline, ErrorCode, InteractionLease, InteractionPolicy, MouseButton, Rect,
-    WindowInfo, WindowState,
+    AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionLease, InteractionPolicy,
+    MouseButton, Rect, WindowInfo, WindowState,
 };
 use serde_json::json;
 
@@ -16,6 +16,7 @@ use crate::system::shell::located::Located;
 use crate::system::{SharedBus, process::process_facts, window::window_id};
 
 const POLL: Duration = Duration::from_millis(40);
+const READ_BEFORE_PRESSING: &str = "Run 'list-surfaces' to see whether the surface is showing before you open or close it again: its opener toggles, so a second press can undo a first one the shell applied late";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Opened {
@@ -69,10 +70,9 @@ fn settle<W: Surface>(
                     title_of(kind)
                 ),
             )
-            .with_suggestion("Retry the command; the shell may be busy")
-            .with_details(
-                json!({ "physical_delivery_started": true, "surface": title_of(kind) }),
-            ));
+            .with_suggestion(READ_BEFORE_PRESSING)
+            .with_details(json!({ "physical_delivery_started": true, "surface": title_of(kind) }))
+            .with_disposition(DeliverySemantics::delivered_unverified()));
         }
         world.pause(POLL);
     }
@@ -107,11 +107,12 @@ pub(crate) fn open_with<W: Surface>(
             == Some(true);
         with_open_progress(error, started)
     })?;
-    settle(world, kind, true, deadline).map_err(|error| with_open_progress(error, true))?;
+    settle(world, kind, true, deadline)
+        .map_err(|error| pressed(with_open_progress(error, true)))?;
     world
         .window(kind, deadline)
         .map(|window| (window, Opened::Opened))
-        .map_err(|error| with_open_progress(error, true))
+        .map_err(|error| pressed(with_open_progress(error, true)))
 }
 
 pub(crate) fn close_with<W: Surface>(
@@ -123,7 +124,18 @@ pub(crate) fn close_with<W: Surface>(
         return Ok(());
     }
     world.press_opener(kind, InteractionPolicy::headed())?;
-    settle(world, kind, false, deadline)
+    settle(world, kind, false, deadline).map_err(pressed)
+}
+
+/// An error raised after the opener was pressed: the press landed, so a read
+/// that failed afterwards cannot say the surface was left alone.
+fn pressed(error: AdapterError) -> AdapterError {
+    match error.disposition {
+        DeliverySemantics::Unknown | DeliverySemantics::NotDelivered => error
+            .with_disposition(DeliverySemantics::delivered_unverified())
+            .with_suggestion(READ_BEFORE_PRESSING),
+        _ => error,
+    }
 }
 
 fn with_open_progress(error: AdapterError, opened_by_call: bool) -> AdapterError {

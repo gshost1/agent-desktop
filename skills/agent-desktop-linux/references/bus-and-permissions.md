@@ -108,7 +108,8 @@ launcher away from the live socket.
 The state root (`~/.agent-desktop`, or `AGENT_DESKTOP_HOME`) must be private to
 the user. A root the tool creates has mode 0700. A root that is group-writable or open to
 other users makes the commands that write there (`snapshot` for one) fail with
-`INTERNAL` and the message "private file parent is accessible by group or other
+`PERM_DENIED`, `details.kind: "state_directory_permission"`, the path in
+`details.path` and the message "private file parent is accessible by group or other
 users". `status` still runs. Fix an existing root:
 
 ```bash

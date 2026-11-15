@@ -83,7 +83,9 @@ pub(super) fn write_failed(error: ControlError) -> AdapterError {
             ErrorCode::ActionFailed,
             "The request could not be written to the display server",
         )
-        .with_suggestion("Run 'list-windows' to see whether the window changed, then retry")
+        .with_suggestion(
+            "Run 'list-windows' to see whether the window changed before deciding whether to send the request again",
+        )
         .with_disposition(DeliverySemantics::uncertain()),
     }
 }

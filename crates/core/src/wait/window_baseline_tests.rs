@@ -117,3 +117,33 @@ fn a_platform_that_cannot_list_windows_leaves_no_baseline() {
 
     assert!(WindowBaseline::before_action(&NoWindows, &entry(), &appear(false), long()).is_none());
 }
+
+#[test]
+fn with_no_window_focused_the_command_acts_in_the_first_shown_window_not_a_minimized_one() {
+    let mut minimized = window("w-minimized", 1, Some("instance"));
+    minimized.state.visible = Some(true);
+    minimized.state.minimized = Some(true);
+    let mut shown = window("w-shown", 1, Some("instance"));
+    shown.state.visible = Some(true);
+    let mut behind = window("w-behind", 1, Some("instance"));
+    behind.state.visible = Some(true);
+    let adapter = Windows {
+        listed: Mutex::new(vec![minimized, shown, behind]),
+    };
+    let baseline = WindowBaseline::capture(
+        &adapter,
+        "TestApp",
+        ProcessIdentity::new(crate::ProcessId::new(1), "instance"),
+        long(),
+    )
+    .unwrap();
+
+    let acted_on: Vec<_> = baseline
+        .acted_on(&adapter, long())
+        .unwrap()
+        .into_iter()
+        .map(|window| window.id)
+        .collect();
+
+    assert_eq!(acted_on, ["w-shown"]);
+}
