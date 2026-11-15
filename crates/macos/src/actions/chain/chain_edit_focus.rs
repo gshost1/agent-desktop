@@ -8,37 +8,68 @@
 //! one. Focus moves only inside the target's window; the application is not
 //! activated.
 
-use agent_desktop_core::{AdapterError, Deadline};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
+
+use crate::actions::DeliveryTracker;
 
 /// Whether a value write on `role` should first take focus.
 pub(crate) fn edits_through_focus(role: Option<&str>) -> bool {
     matches!(role, Some("textfield" | "combobox"))
 }
 
+/// Returns what the focus step may already have changed, so a value write
+/// refused after it does not report the action as never delivered.
 #[cfg(target_os = "macos")]
 pub(crate) fn focus_before_value_write(
     element: &crate::tree::AXElement,
     deadline: Deadline,
-) -> Result<(), AdapterError> {
+) -> Result<DeliveryTracker, AdapterError> {
     use crate::actions::ax_helpers;
 
     let role = ax_helpers::element_role(element, deadline)?;
     if !edits_through_focus(role.as_deref()) {
-        return Ok(());
+        return Ok(DeliveryTracker::default());
     }
     if crate::tree::copy_bool_attr(element, accessibility_sys::kAXFocusedAttribute, deadline)
         == Some(true)
     {
-        return Ok(());
+        return Ok(DeliveryTracker::default());
     }
     if !ax_helpers::is_attr_settable(element, accessibility_sys::kAXFocusedAttribute, deadline)? {
-        return Ok(());
+        return Ok(DeliveryTracker::default());
     }
     match ax_helpers::ax_focus_or_err(element, deadline) {
-        Ok(_) => Ok(()),
-        Err(_) if !deadline.is_expired() => Ok(()),
-        Err(error) => Err(error),
+        Ok(_) => Ok(DeliveryTracker::default()),
+        Err(error) => settle_focus_failure(error, deadline.is_expired()),
     }
+}
+
+/// A field that declines focus can still take the value, so only that
+/// refusal is passed over. A lost permission, a vanished element or an
+/// expired deadline ends the write, and a focus whose delivery is uncertain
+/// counts as delivered.
+pub(crate) fn settle_focus_failure(
+    error: AdapterError,
+    expired: bool,
+) -> Result<DeliveryTracker, AdapterError> {
+    let ends_the_write = expired
+        || matches!(
+            error.code,
+            ErrorCode::PermDenied
+                | ErrorCode::StaleRef
+                | ErrorCode::ElementNotFound
+                | ErrorCode::AppNotFound
+                | ErrorCode::AppUnresponsive
+                | ErrorCode::Timeout
+        );
+    if ends_the_write {
+        return Err(error);
+    }
+    let mut focus = DeliveryTracker::default();
+    if error.disposition != DeliverySemantics::not_delivered() {
+        focus.mark_delivered();
+    }
+    Ok(focus)
 }
 
 #[cfg(test)]
