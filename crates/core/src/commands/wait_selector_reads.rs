@@ -20,10 +20,11 @@ use crate::{
 
 use super::{Matched, Observed};
 
-const OVERLAY_SURFACES: [SnapshotSurface; 3] = [
+const OVERLAY_SURFACES: [SnapshotSurface; 4] = [
     SnapshotSurface::Sheet,
     SnapshotSurface::Alert,
     SnapshotSurface::Popover,
+    SnapshotSurface::Menu,
 ];
 
 /// What the reads of one poll found short of a match, across its windows and
@@ -130,10 +131,15 @@ pub(super) fn observe_each(
     None
 }
 
-/// The sheet, alert or popover of the ref's own process instance that holds
-/// the selector, with the window it is attached to. Each window is read on
-/// its own, so an overlay without the selector on one window never hides one
-/// with it on another.
+/// The sheet, alert, popover or open menu of the ref's own process instance
+/// that holds the selector, with the window it is attached to. Each window is
+/// read on its own for a sheet, alert or popover, so an overlay without the
+/// selector on one window never hides one with it on another. An open menu is
+/// read once, through the first window in surface-owner order: the platforms
+/// that root it at a window find the process's open menu from any of its
+/// windows, so reading it per window would repeat one read. A surface the
+/// platform owns by application, such as the macOS menu, is not an overlay
+/// of a window and is not read here.
 pub(super) fn read_overlays(
     adapter: &dyn PlatformAdapter,
     entry: &RefEntry,
@@ -147,7 +153,10 @@ pub(super) fn read_overlays(
     };
     let surfaces: Vec<_> = OVERLAY_SURFACES
         .into_iter()
-        .filter(|surface| adapter.check_surface_support(*surface).is_ok())
+        .filter(|surface| {
+            !adapter.is_application_surface(*surface)
+                && adapter.check_surface_support(*surface).is_ok()
+        })
         .collect();
     if surfaces.is_empty() {
         return None;
@@ -164,7 +173,12 @@ pub(super) fn read_overlays(
         .map(SnapshotOwner::Window)
         .collect();
     for surface in surfaces {
-        for owner in &owners {
+        let readers = if surface == SnapshotSurface::Menu {
+            &owners[..owners.len().min(1)]
+        } else {
+            &owners[..]
+        };
+        for owner in readers {
             match SelectorObservation::observe_owners(
                 adapter,
                 vec![owner.clone()],
@@ -204,3 +218,7 @@ fn is_unreadable(error: &AppError) -> bool {
             if matches!(error.code, ErrorCode::PermDenied | ErrorCode::AppUnresponsive)
     )
 }
+
+#[cfg(test)]
+#[path = "wait_selector_menu_tests.rs"]
+mod menu_tests;
