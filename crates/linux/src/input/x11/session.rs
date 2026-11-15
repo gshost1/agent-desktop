@@ -42,22 +42,24 @@ pub(crate) fn run(
     let journal = HeldJournal::in_runtime_dir(&display);
     let cutoff = deadline.remaining() + RELEASE_ALLOWANCE;
     let sends_keys = sends_keys(&plans);
-    let delivery = run_journaled(
-        move || XtestSink::connect(&display, deadline, cutoff),
-        plans,
-        gate,
-        CallEnv {
-            deadline,
-            journal,
-            slot: worker_slot::shared(),
-            release_on_signal: true,
-            lease: Some(lease),
+    crate::system::bus::listener_hold::hold_after(
+        sends_keys,
+        || {
+            run_journaled(
+                move || XtestSink::connect(&display, deadline, cutoff),
+                plans,
+                gate,
+                CallEnv {
+                    deadline,
+                    journal,
+                    slot: worker_slot::shared(),
+                    release_on_signal: true,
+                    lease: Some(lease),
+                },
+            )
         },
-    );
-    if sends_keys {
-        crate::system::bus::listener_hold::outlive_sent_keys();
-    }
-    delivery
+        crate::system::bus::listener_hold::outlive_sent_keys,
+    )
 }
 
 /// Whether any plan presses a key: the applications that take the keys may

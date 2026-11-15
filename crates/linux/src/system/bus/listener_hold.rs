@@ -7,122 +7,106 @@
 //! while it waits. When the last registered event listener leaves during that
 //! wait, the bridge removes its key listener from inside the snooper, and GTK 3
 //! applications and Chromium crash on the key. A short-lived CLI that sends
-//! keys and exits is that last listener leaving. A child that holds a duplicate
-//! of the connection's socket keeps the listener's bus name owned until the
-//! applications are done with the keys, and costs the command no wait.
+//! keys and exits is that last listener leaving. A forked child that holds a
+//! duplicate of the connection's socket keeps the listener's bus name owned
+//! until the applications are done with the keys, and costs the command no
+//! wait. One holder lives at a time: a new hold starts its child before it
+//! kills and reaps the previous one.
 
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
-use std::os::unix::net::UnixStream;
-use std::os::unix::process::CommandExt;
-use std::process::{Child, Command, Stdio};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// How long the listener outlives the last key event sent.
-pub(crate) const LISTENER_HOLD: Duration = Duration::from_millis(1_000);
-const HELD_FD: i32 = 3;
-const SLEEP_PROGRAMS: [&str; 2] = ["/usr/bin/sleep", "/bin/sleep"];
+use super::listener_child::fork_holder;
+use super::listener_socket;
 
-static LISTENER_SOCKET: Mutex<Option<OwnedFd>> = Mutex::new(None);
+const LISTENER_HOLD: Duration = Duration::from_millis(1_000);
+const SOCKET_FLOOR: RawFd = 10;
 
-/// Records the socket of the connection that registered the event listener.
-pub(crate) fn remember(stream: &UnixStream) {
-    let Ok(copy) = stream.try_clone() else {
-        return;
-    };
-    *LISTENER_SOCKET
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner) = Some(OwnedFd::from(copy));
+/// The remembered listener socket, the live holder child and when keys were
+/// last sent.
+#[derive(Default)]
+pub(crate) struct ListenerHold {
+    socket: Option<OwnedFd>,
+    child: Option<libc::pid_t>,
+    keys_sent: Option<Instant>,
+}
+
+static HOLD: Mutex<ListenerHold> = Mutex::new(ListenerHold {
+    socket: None,
+    child: None,
+    keys_sent: None,
+});
+
+fn shared() -> std::sync::MutexGuard<'static, ListenerHold> {
+    HOLD.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Starts a holder for the remembered connection after key events were sent.
-/// Best effort: without a remembered socket or a `sleep` program nothing is
-/// held, which is the behavior before this guard existed.
+/// Best effort: without a remembered socket nothing is held, which is the
+/// behavior before this guard existed.
 pub(crate) fn outlive_sent_keys() {
-    let guard = LISTENER_SOCKET
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let Some(socket) = guard.as_ref() else {
-        return;
-    };
-    if let Ok(child) = spawn_holder(socket.as_fd(), LISTENER_HOLD) {
-        reap(child);
+    shared().after_keys(LISTENER_HOLD);
+}
+
+/// Runs `send` and then `hold` when `sends_keys`, whatever `send` returned:
+/// a call that failed after some keys left still has applications answering
+/// them.
+pub(crate) fn hold_after<T>(sends_keys: bool, send: impl FnOnce() -> T, hold: impl FnOnce()) -> T {
+    let sent = send();
+    if sends_keys {
+        hold();
     }
+    sent
 }
 
 /// A connection builder for the accessibility bus at `address`. A Unix socket
-/// address is connected here, so the socket can be remembered for a holder;
-/// any other address is left to zbus and is never held.
-pub(crate) fn builder(address: &str) -> zbus::Result<zbus::connection::Builder<'static>> {
-    match listener_stream(address) {
-        Some(stream) => {
-            remember(&stream);
-            Ok(zbus::connection::Builder::async_io_unix_stream(stream))
-        }
-        None => zbus::connection::Builder::address(address),
-    }
-}
-
-fn listener_stream(address: &str) -> Option<UnixStream> {
-    use zbus::address::transport::{Transport, UnixSocket};
-    let parsed = zbus::Address::try_from(address).ok()?;
-    let Transport::Unix(unix) = parsed.transport() else {
-        return None;
+/// address is connected here without blocking the deadline, so the socket can
+/// be remembered for a holder; any other address is left to zbus, never held,
+/// and forgets an earlier socket.
+pub(crate) async fn builder(address: &str) -> zbus::Result<zbus::connection::Builder<'static>> {
+    let Some(target) = listener_socket::target_of(address) else {
+        shared().forget();
+        return zbus::connection::Builder::address(address);
     };
-    match unix.path() {
-        UnixSocket::File(path) => UnixStream::connect(path).ok(),
-        UnixSocket::Abstract(name) => {
-            use std::os::linux::net::SocketAddrExt;
-            use std::os::unix::ffi::OsStrExt;
-            let socket =
-                std::os::unix::net::SocketAddr::from_abstract_name(name.as_bytes()).ok()?;
-            UnixStream::connect_addr(&socket).ok()
+    let stream = listener_socket::connect(&target).await?;
+    shared().remember(&stream, LISTENER_HOLD);
+    Ok(zbus::connection::Builder::async_io_unix_stream(stream))
+}
+
+impl ListenerHold {
+    /// Keeps a copy of the listener socket above the standard descriptors. A
+    /// listener registered right after keys were sent is held at once: it
+    /// would otherwise leave with the process while the keys are answered.
+    pub(crate) fn remember(&mut self, stream: &std::os::unix::net::UnixStream, hold: Duration) {
+        let copy = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_DUPFD_CLOEXEC, SOCKET_FLOOR) };
+        if copy < 0 {
+            return;
         }
-        _ => None,
+        self.socket = Some(unsafe { std::os::fd::FromRawFd::from_raw_fd(copy) });
+        if self.keys_sent.is_some_and(|sent| sent.elapsed() < hold) {
+            self.after_keys(hold);
+        }
     }
-}
 
-/// Spawns a `sleep` that holds `fd` as its descriptor 3 for `hold` and no other
-/// descriptor of this process beyond the null standard streams, so it keeps no
-/// lock, pipe or lease of the caller open.
-pub(crate) fn spawn_holder(fd: BorrowedFd<'_>, hold: Duration) -> std::io::Result<Child> {
-    let program = SLEEP_PROGRAMS
-        .iter()
-        .find(|path| std::path::Path::new(path).exists())
-        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
-    let raw = fd.as_raw_fd();
-    let mut command = Command::new(program);
-    command
-        .arg(format!("{:.3}", hold.as_secs_f64()))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .process_group(0);
-    unsafe {
-        command.pre_exec(move || keep_only(raw));
+    pub(crate) fn forget(&mut self) {
+        self.socket = None;
     }
-    command.spawn()
-}
 
-fn keep_only(raw: i32) -> std::io::Result<()> {
-    if raw != HELD_FD && unsafe { libc::dup2(raw, HELD_FD) } < 0 {
-        return Err(std::io::Error::last_os_error());
+    /// Starts the new holder, then kills and reaps the previous one, so at
+    /// most one child of this process holds the socket.
+    pub(crate) fn after_keys(&mut self, hold: Duration) -> Option<libc::pid_t> {
+        self.keys_sent = Some(Instant::now());
+        let socket = self.socket.as_ref()?.as_raw_fd();
+        let started = fork_holder(socket, hold).ok()?;
+        if let Some(previous) = self.child.replace(started) {
+            unsafe {
+                libc::kill(previous, libc::SIGKILL);
+                libc::waitpid(previous, std::ptr::null_mut(), 0);
+            }
+        }
+        Some(started)
     }
-    if unsafe { libc::fcntl(HELD_FD, libc::F_SETFD, 0) } < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    if unsafe { libc::syscall(libc::SYS_close_range, HELD_FD + 1, u32::MAX, 0) } < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-fn reap(mut child: Child) {
-    let _ = std::thread::Builder::new()
-        .name("listener-hold".to_owned())
-        .spawn(move || {
-            let _ = child.wait();
-        });
 }
 
 #[cfg(test)]

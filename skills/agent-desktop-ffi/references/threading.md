@@ -126,3 +126,16 @@ The last-error slot is thread-local (see error-handling.md).
 `ad_wait` blocks its calling thread for at most its finite deadline and retains
 the adapter for that duration. Destroying the adapter token concurrently stops
 new calls but does not invalidate an in-flight wait.
+
+## Child processes on Linux
+
+After a call that sent key events (an `ad_execute_action` or `ad_execute_by_ref`
+action that presses keys or types physically), the Linux library forks one child
+without exec.
+The child holds a copy of the accessibility-bus socket for 1 s, then exits; it
+keeps no other descriptor of the host. The host therefore gets one `SIGCHLD`
+about 1 s after such a call. One child lives at a time: the next keyboard call
+kills and reaps the previous one, and the last child stays a zombie until the
+next keyboard call or the host's own `waitpid(-1, ...)` reaps it. A host that
+reaps every child with `waitpid(-1, ...)` from a `SIGCHLD` handler is safe; the
+library's own `waitpid` on that pid then returns `ECHILD`, which it ignores.

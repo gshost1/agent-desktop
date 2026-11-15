@@ -133,6 +133,7 @@ fn watch(read_end: OwnedFd) {
             .clone();
         if let Some(target) = target {
             release_before(&target.progress, &target.slot, RELEASE_WAIT, || {});
+            crate::system::bus::listener_hold::outlive_sent_keys();
         }
         restore();
         unsafe {
