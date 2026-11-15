@@ -5,6 +5,7 @@ use common::{
     ad_adapter_create_with_session, ad_adapter_destroy, ad_execute_action,
     ad_execute_action_with_policy, ad_execute_ref_action_exact_with_policy, ad_free_action_result,
     ad_last_error_message, default_action, default_exact_ref_entry, with_adapter,
+    with_isolated_home,
 };
 use std::ffi::{CStr, CString};
 
@@ -132,13 +133,20 @@ fn execute_action_policy_rejects_null_adapter_on_worker_thread() {
 }
 
 /// Session context must not weaken the exact ref entry's fail-closed identity
-/// check.
+/// check. A session adapter resolves the state root from `HOME`, so the test
+/// holds its own isolated `HOME`: another test in this binary swaps `HOME` to
+/// a directory it deletes when it ends, and a creation that read that `HOME`
+/// would find no home directory and return null.
 #[test]
 fn session_adapter_keeps_exact_ref_missing_generation_fail_closed() {
-    unsafe {
+    with_isolated_home(|| unsafe {
         let session = CString::new("test-session-01").unwrap();
         let adapter = ad_adapter_create_with_session(session.as_ptr());
-        assert!(!adapter.is_null());
+        assert!(
+            !adapter.is_null(),
+            "session adapter creation failed: {}",
+            CStr::from_ptr(ad_last_error_message()).to_string_lossy()
+        );
 
         let role = CString::new("button").unwrap();
         let mut entry = default_exact_ref_entry();
@@ -162,7 +170,7 @@ fn session_adapter_keeps_exact_ref_missing_generation_fail_closed() {
         );
 
         ad_adapter_destroy(adapter);
-    }
+    });
 }
 
 #[test]
