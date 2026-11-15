@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from runner import helper
 from runner.product import Envelope
-from scenarios import launch, select, surfaces
+from scenarios import gaps_gestures, launch, select, surfaces
 
 
 def envelope(ok, data=None, error=None):
@@ -81,6 +81,14 @@ class MenuSettleTests(unittest.TestCase):
                 patch.object(surfaces.raw, "poll", side_effect=lambda check, *_a, **_k: check()):
             with self.assertRaisesRegex(RuntimeError, "NoReply"):
                 surfaces.about_items(SimpleNamespace(tier=None), app)
+
+
+class GestureGeometryTests(unittest.TestCase):
+    def test_a_target_must_lie_inside_its_window(self):
+        window = (380, 277, 520, 260)
+        self.assertTrue(gaps_gestures.inside((389, 324, 100, 30), window))
+        self.assertFalse(gaps_gestures.inside((9, 47, 882, 299), window))
+        self.assertFalse(gaps_gestures.inside((389, 324, 0, 30), window))
 
 
 if __name__ == "__main__":

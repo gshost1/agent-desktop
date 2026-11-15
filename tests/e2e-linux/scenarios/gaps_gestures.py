@@ -18,6 +18,24 @@ def target_app(ctx, toolkit):
             yield app
 
 
+def inside(rect, outer) -> bool:
+    x, y, width, height = rect
+    left, top, outer_width, outer_height = outer
+    return (width > 0 and height > 0 and x >= left and y >= top
+            and x + width <= left + outer_width and y + height <= top + outer_height)
+
+
+def screen_point(ctx, window, target):
+    """The centre of the target's screen extents, checked against the X11 window geometry.
+    Qt reports screen positions directly; PyQt 6.6's window-relative extents are not usable
+    (run 43763709881: a 882 px wide button in a 520 px wide window)."""
+    extents = target.extents(window_coords=False)
+    geometry = lifecycle._geometry(ctx, window)
+    require(inside(extents, geometry),
+            f"target screen extents {extents} lie outside the window geometry {geometry}")
+    return extents[0] + extents[2] // 2, extents[1] + extents[3] // 2
+
+
 def gesture(ctx, toolkit, position):
     with target_app(ctx, toolkit) as app:
         window = app.windows[0]
@@ -38,7 +56,10 @@ def gesture(ctx, toolkit, position):
                 require(raw.poll(lambda: lifecycle._geometry(ctx, window)[:2] == destination, 6))
             extents = target.extents(window_coords=True)
             origin = x11.client_origin(ctx.tier, window)
-            point = expected_point(origin, frame_extents(ctx.tier, window), extents)
+            if toolkit == "qt":
+                point = screen_point(ctx, window, target)
+            else:
+                point = expected_point(origin, frame_extents(ctx.tier, window), extents)
             require(min(extents[2:]) > 0, "gesture target has no positive geometry")
             before = display(tree) if toolkit == "gtk4" else None
             if toolkit == "qt":
