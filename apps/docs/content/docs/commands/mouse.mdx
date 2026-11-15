@@ -55,7 +55,7 @@ agent-desktop --headed hover --xy 640,400
 }
 ```
 
-For a ref, the cursor goes to the center of the live bounds after visibility, stability, and hit-test checks. On macOS the position is read back and the result is `delivered_verified`. Errors: `INVALID_ARGS` for a missing target or bad coordinates; `ACTION_NOT_SUPPORTED` with cause `wayland_session` on Linux Wayland; `ACTION_FAILED` when another element covers the target; the ref errors `STALE_REF`, `AMBIGUOUS_TARGET`, and `SNAPSHOT_NOT_FOUND`.
+For a ref, the cursor goes to the center of the live bounds after visibility, stability, and hit-test checks. On macOS the position is read back and the result is `delivered_verified`. Errors: `INVALID_ARGS` for a missing target or bad coordinates; `ACTION_NOT_SUPPORTED` with cause `wayland_session` for a ref on Linux Wayland (`--xy` is sent there and reported `delivered_unverified`); `ACTION_FAILED` when another element covers the target; the ref errors `STALE_REF`, `AMBIGUOUS_TARGET`, and `SNAPSHOT_NOT_FOUND`.
 
 ## drag
 
@@ -140,7 +140,7 @@ Reserved name for pressing and holding a button. It never sends input.
 agent-desktop --headed mouse-down --xy 500,300 [--button NAME] [--modifiers NAME]...
 ```
 
-The first failing check decides the error: a bad argument is `INVALID_ARGS`; headless is `POLICY_DENIED` (`not_delivered`); Linux Wayland is `ACTION_NOT_SUPPORTED` with cause `wayland_session`; everywhere else, `--headed` ends in `ACTION_NOT_SUPPORTED`, `mouse-down is unavailable in stateless mode`, with a disposition of `unknown` and no event sent. Use [`mouse-click`](#mouse-click) or [`drag`](#drag).
+The first failing check decides the error: a bad argument is `INVALID_ARGS`; headless is `POLICY_DENIED` (`not_delivered`); a Linux Wayland session without Mutter RemoteDesktop and ScreenCast is `PLATFORM_NOT_SUPPORTED` with cause `wayland_interface_missing`; everywhere else, `--headed` ends in `ACTION_NOT_SUPPORTED`, `mouse-down is unavailable in stateless mode`, with a disposition of `unknown` and no event sent. Use [`mouse-click`](#mouse-click) or [`drag`](#drag).
 
 ## mouse-up
 
