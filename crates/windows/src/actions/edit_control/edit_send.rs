@@ -90,10 +90,11 @@ pub(super) fn reserve_route(
 
 /// Sends `EM_REPLACESEL` with `text` along `route`.
 ///
-/// Inline, the text is freed when the send returns. That is safe because a
-/// window of the calling thread runs its window procedure inside the send,
-/// and a window of another process reads a copy the system made at send
-/// time, so neither reads this buffer after the call. A window of another
+/// Inline, the text is freed when the send returns. A window of the
+/// calling thread runs its window procedure inside the send, so it reads
+/// the buffer only during the call. For a window of another process the
+/// system marshals the text into that process, which cannot read this
+/// buffer itself. A window of another
 /// thread in this process reads the buffer in place whenever its thread
 /// processes the message, which can be after a timed-out send returned, so
 /// a worker thread owns the buffer and sends with a blocking `SendMessageW`.

@@ -120,6 +120,7 @@ fn a_caller_waiting_on_a_worker_answers_messages_sent_to_its_own_windows() {
     static POOL: PendingReplacements = PendingReplacements::new(1);
     let owner = EditOwner::create();
     let edit = owner.control(SINGLE_LINE_ID);
+    unsafe { SendMessageW(edit as HWND, EM_SETSEL, 0, -1) };
     let caller_window = calling_thread_window("STATIC");
     owner.echo_changes_to(caller_window);
     let answer = replace(edit, "echoed", &POOL, 1_500);
