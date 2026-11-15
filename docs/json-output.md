@@ -608,3 +608,13 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 ## Exit codes
 
 `0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`). `mcp` also exits `2` when it refuses its startup flags, and writes that envelope to stderr, since its stdout carries only JSON-RPC.
+
+## Stderr summary line
+
+Stdout carries only the envelope. When the envelope is an error, the CLI also writes one line to stderr after it:
+
+```
+agent-desktop: STALE_REF: <message> -- <suggestion>
+```
+
+The line holds `error.code`, `error.message` and, when present, `error.suggestion`, with control characters replaced by spaces and each field cut at 400 characters. A successful `batch` writes one such line for each completed entry that failed, prefixed with the entry, as in `agent-desktop: batch[2] click: POLICY_DENIED: ...`; entries that did not start get no line. A successful command writes nothing. The line never changes stdout or the exit code, so a pipe such as `agent-desktop ... | jq` still shows the error. It is not part of the JSON contract: parse the envelope, never the line. Set `AGENT_DESKTOP_STDERR_SUMMARY=0` to turn it off. `agent-desktop mcp` reads its child's stdout and is unaffected.
