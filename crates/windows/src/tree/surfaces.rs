@@ -38,16 +38,8 @@ pub(crate) fn surface_root(
             root_from_hwnd(handle, deadline)
         }
         (ObservationRoot::Window(window), SnapshotSurface::Sheet) => {
-            let handle = focused_hwnd_of(&window.id)?;
-            let element = root_from_hwnd(handle, deadline)?;
-            if window_is_modal_sheet(&element) {
-                Ok(element)
-            } else {
-                Err(AdapterError::new(
-                    ErrorCode::WindowNotFound,
-                    "The focused window is not a modal sheet",
-                ))
-            }
+            let handle = parse_window_id(&window.id)?;
+            super::sheet_root::sheet_root(handle, deadline)
         }
         (ObservationRoot::Window(window), SnapshotSurface::Menu) => {
             let location = crate::system::menu::menu_state::locate_menu(window.pid, deadline)?
@@ -149,6 +141,10 @@ pub(crate) fn window_is_modal_sheet(_root: &UIAElement) -> bool {
 #[cfg(test)]
 #[path = "surfaces_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "surfaces_sheet_tests.rs"]
+mod sheet_tests;
 
 #[cfg(all(test, target_os = "windows"))]
 #[path = "surfaces_advertising_tests.rs"]
