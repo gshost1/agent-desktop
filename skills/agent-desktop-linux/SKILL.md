@@ -44,7 +44,6 @@ agent-desktop snapshot --app gnome-text-editor -i --compact --lines
 - **Headless `type` writes through the text interface**, so it works without focus; a terminal accepts keys only under `--headed`. A GTK4 entry has no headless `click` activation: use `type`.
 - **Two `click`s on one GTK4 button within about 250 ms act once.** Wait for the effect between repeated clicks.
 - **Pointer input is X11 and `--headed` only**: `double-click`, `triple-click`, `hover`, `drag`, `scroll`, `mouse-*`. Wayland refuses them with `ACTION_NOT_SUPPORTED`. `press` works on X11 and Mutter Wayland, and a headless `press --app` needs the target to hold live focus; window ops and `focus-window` need X11. Under `--headed`, ref `click`, `right-click` and `type` try physical input first.
-- **`find --scroll` does not page here**: it answers a match its first look sees, and returns `PLATFORM_NOT_SUPPORTED` when it would need to page. Use `scroll` and look again.
 - **Keys:** `cmd` and `meta` are Super; X keysym names work. Blocked combos refuse without `--force`.
 - **Menus:** after opening one, read `data.surfaces`, then `snapshot --surface menu --app <name> -i`. A list-backed dropdown is part of the window, not a menu.
 - **Chromium and Qt apps need a launch flag** to appear on the bus; open `troubleshooting`.
