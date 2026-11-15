@@ -2,7 +2,7 @@ use super::{OFF_SPACE_NOTE, explain_off_space, has_off_space_window};
 use crate::system::window::cg_window::WindowRecord;
 use crate::system::window::window_presence::WindowPresence;
 use agent_desktop_core::{
-    Deadline, ProcessId, Rect, system::launch_notes::LaunchNotes,
+    ProcessId, Rect, system::launch_notes::LaunchNotes,
     system::launch_result::LaunchResult,
 };
 
@@ -65,9 +65,10 @@ fn no_window_record_is_not_off_space() {
 
 #[test]
 fn a_result_that_already_carries_a_note_keeps_it() {
-    let deadline = Deadline::after(1_000).unwrap();
     let mut noted = windowless(Some("several windows".into()));
-    explain_off_space(&mut noted, 7, deadline);
+    explain_off_space(&mut noted, || {
+        panic!("a result that already carries a note reads no window records")
+    });
     assert_eq!(noted.notes.suggestion.as_deref(), Some("several windows"));
 }
 
