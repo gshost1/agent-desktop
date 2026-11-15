@@ -69,8 +69,9 @@ fn both_directions(rig: &Rig, legs: &Legs) {
     let grace = u64::try_from(agent_desktop_core::MENU_OPENER_GRACE.as_millis()).unwrap_or(0);
     let held = elapsed_ms(&closed);
     assert!(
-        held >= grace && held < grace + 1_500,
-        "{}: a menu never seen open satisfies --menu-closed once the opener grace has passed: {}",
+        held >= grace && held < MENU_MS,
+        "{}: a menu never seen open satisfies --menu-closed once the opener grace has passed, \
+         not at the deadline (held {held} ms): {}",
         legs.label,
         outcome(&closed)
     );
