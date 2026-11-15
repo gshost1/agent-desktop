@@ -129,7 +129,7 @@ CONFLICTING; push a PR once; no new PRs while >=10 laptop PRs are open (control 
 Monitor: re-arm `bash .agents/lead15/watch-prs.sh` (PR list in .agents/lead15/watch-prs.txt; state in watch-seen.txt).
 
 Open laptop PRs (head, state):
-- #182 fix/linux-xtest-key-crash 52491b1d: release-blocker fix; second-worker review was running at pause (agent aee74d58bb6dc57bf) -> read its result, send fixes to linux-losses (a51391e0385d616ca), one push.
+- #182 fix/linux-xtest-key-crash 52491b1d: release-blocker fix; second-worker review FIX (Wayland path unheld; signal path unheld; holders unbounded/FFI not flat; + should-fix) saved in .agents/lead15/review-182.md -> send to linux-losses (a51391e0385d616ca) right after the reset, one push.
 - #177 fix/linux-launch-still-starting cb5b2a13: all review findings fixed, lead accepted; CI pending -> READY when green.
 - #178 fix/actionability-refusal-next-step caa854a6: re-review MERGE; CI pending (first real run of the changed macOS E2E AE7) -> READY when green; nits only if another push is forced.
 - #162 fix/click-wait-decidable b601fd16: reviewed MERGE; next in control's merge order.
