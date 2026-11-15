@@ -21,7 +21,7 @@
 # TASKSET=<local task module> runs another task set with tasks_heldout.py's contract (for example a private one
 # outside the repo): its folder is copied to the remote bench HOME under .agent-desktop-bench-target/, owner-only,
 # and must carry a FROZEN.md that pins every file's sha256. Its rows go to results/candidates/<set NAME>/.
-# Env: MODEL (claude-sonnet-5-5), CAP_USD, NOTE (one line for VERSION), CONTROL, TASKSET, BENCH_HOST, BENCH_USER_FILE.
+# Env: MODEL (claude-sonnet-5-5), CAP_USD (enforced by the remote pass too), NATIVE_USD (estimate per native run, 0.10), NOTE (one line for VERSION), CONTROL, TASKSET, BENCH_HOST, BENCH_USER_FILE.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 BENCH_HOST=${BENCH_HOST:-100.111.59.3}
@@ -32,7 +32,7 @@ MODEL=${MODEL:-claude-sonnet-5-5}
 CAP_USD=${CAP_USD:-15}
 PY=${HELDOUT_PY:-python3.11}
 BUILTIN=" ad-14 ad-137 ad-up peekaboo cua bh pw ab "
-NATIVE_USD=0.10
+NATIVE_USD=${NATIVE_USD:-0.10}
 WEB_USD=0.03
 
 U=$(<"$BENCH_USER_FILE")
