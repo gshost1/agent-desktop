@@ -97,8 +97,9 @@ A failed check list appears in `error.details.checks`, each with a `status` of `
     <tr><td><code>STALE_REF</code></td><td>No live element matches the ref's saved identity.</td></tr>
     <tr><td><code>AMBIGUOUS_TARGET</code></td><td>Several live elements match. A ref action never guesses.</td></tr>
     <tr><td><code>ACTION_NOT_SUPPORTED</code></td><td>The element does not expose the action.</td></tr>
-    <tr><td><code>POLICY_DENIED</code></td><td>A physical or focus-taking path was needed and headless policy refused it.</td></tr>
+    <tr><td><code>POLICY_DENIED</code></td><td>A physical or focus-taking path was needed and headless policy refused it. When the element advertises no semantic action, the suggestion names <code>--headed</code> as the only way to act on it.</td></tr>
     <tr><td><code>TIMEOUT</code>, <code>details.kind: actionability_timeout</code></td><td>The target never became actionable within <code>--timeout-ms</code>. <code>details.last_report</code> names the failing check.</td></tr>
+    <tr><td><code>ACTION_FAILED</code>, <code>details.kind: target_disabled</code></td><td>The target's live enabled state was still false 2 s into the default 5 s budget, so the command stopped waiting (<code>retryable: false</code>). Enable it first, or wait for it with <code>wait --element REF --predicate enabled</code>. A <code>--timeout-ms</code> other than the default waits the whole budget.</td></tr>
     <tr><td><code>ACTION_FAILED</code></td><td>The action was rejected, blocked, or contradicted by the readback.</td></tr>
     <tr><td><code>APP_UNRESPONSIVE</code></td><td>The app stopped responding.</td></tr>
     <tr><td><code>PERM_DENIED</code></td><td>Accessibility permission is not granted, or, with <code>details.kind: "state_directory_permission"</code>, the state path in <code>details.path</code> is open to other users.</td></tr>

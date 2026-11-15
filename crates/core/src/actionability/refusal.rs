@@ -11,12 +11,13 @@ use super::{
 };
 use crate::{Action, AdapterError, ErrorCode, actions::action_request::ActionRequest};
 
-/// How long a ref action without an explicit `--timeout-ms` keeps polling a
-/// target whose live enabled state is false before it ends with a final
-/// refusal. An application that enables a control in answer to the caller's
-/// previous input does so within a few event-loop turns; the rest of the
-/// default budget only delayed the answer for a control that stays disabled.
-pub(crate) const DISABLED_SETTLE: Duration = Duration::from_millis(1500);
+/// How long a ref action on the default budget keeps polling a target whose
+/// live enabled state is false before it ends with a final refusal. Measured
+/// on GTK3 and GTK4 under AT-SPI: a button enabled by the caller's own typing
+/// is enabled at the first poll, and one a 1 s timer enables is seen enabled
+/// 1.1-1.2 s (GTK3) and 1.4-1.6 s (GTK4) after the click starts, so 2 s keeps that
+/// case and cuts a control that stays disabled from the 5 s default to about 2 s.
+pub(crate) const DISABLED_SETTLE: Duration = Duration::from_millis(2000);
 
 const DISABLED_SUGGESTION: &str = "The element is disabled. Do what enables it first, such as \
      filling a required field or selecting an item, then act on it again. If it becomes enabled \
@@ -80,10 +81,13 @@ fn is_disabled(check: &ActionabilityCheck) -> bool {
     check.check == "enabled" && check.status == ActionabilityStatus::Fail
 }
 
-/// A caller that set its own budget asked to wait for the target, so only the
-/// default budget is cut short.
+/// A caller that set a budget other than the default asked to wait for the
+/// target, so only the default budget is cut short.
 fn disabled_is_final(request: &ActionRequest, deadline: crate::Deadline) -> bool {
-    request.timeout_ms.is_none() && deadline.elapsed() >= DISABLED_SETTLE
+    let default_budget = request
+        .timeout_ms
+        .is_none_or(|timeout_ms| timeout_ms == crate::DEFAULT_OPERATION_TIMEOUT_MS);
+    default_budget && deadline.elapsed() >= DISABLED_SETTLE
 }
 
 fn mark_final_disabled(details: &mut Value, deadline: crate::Deadline) {
@@ -126,24 +130,28 @@ fn fallback_denied_suggestion(
     }
     Some(match request.action {
         Action::Click => {
-            "This element has no semantic click action, so only the pointer can click it. Rerun \
-             the command with --headed to click it with the pointer; where this session has no \
-             headed pointer input, the headed command refuses and says why."
+            "This element has no semantic click action, so only the pointer can click it. If \
+             pointer input is acceptable here, rerun the command with --headed; it moves the \
+             pointer and may raise the window. Where this session has no headed pointer input, \
+             the headed command refuses and says why."
         }
         Action::RightClick => {
             "This element has no semantic right-click action, so only the pointer can right-click \
-             it. Rerun the command with --headed to right-click it with the pointer; where this \
-             session has no headed pointer input, the headed command refuses and says why."
+             it. If pointer input is acceptable here, rerun the command with --headed; it moves \
+             the pointer and may raise the window. Where this session has no headed pointer \
+             input, the headed command refuses and says why."
         }
         Action::DoubleClick | Action::TripleClick => {
             "This element has no semantic action for this gesture, so only the pointer can send \
-             it. Rerun the command with --headed to send it with the pointer; where this session \
-             has no headed pointer input, the headed command refuses and says why."
+             it. If pointer input is acceptable here, rerun the command with --headed; it moves \
+             the pointer and may raise the window. Where this session has no headed pointer \
+             input, the headed command refuses and says why."
         }
         _ if request.action.may_use_focus_fallback() => {
             "This element has no semantic action for this input, so it has to take keyboard focus \
-             first. Rerun the command with --headed to focus it and send the keys; where this \
-             session has no headed input, the headed command refuses and says why."
+             first. If focus changes are acceptable here, rerun the command with --headed to \
+             focus it and send the keys. Where this session has no headed input, the headed \
+             command refuses and says why."
         }
         _ => return None,
     })

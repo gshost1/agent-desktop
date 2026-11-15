@@ -180,6 +180,19 @@ fn a_target_disabled_within_the_settle_time_stays_waitable_and_says_it_is_disabl
 }
 
 #[test]
+fn the_default_budget_passed_explicitly_still_ends_a_disabled_wait_early() {
+    let request = ActionRequest::headless(Action::Click)
+        .with_timeout_ms(Some(crate::DEFAULT_OPERATION_TIMEOUT_MS));
+    let error = refuse(
+        &live_evidence(false, clickable()),
+        &request,
+        started_ago(DISABLED_SETTLE * 2),
+    );
+
+    assert!(!error.permits_retry_by_default());
+}
+
+#[test]
 fn an_explicit_timeout_keeps_waiting_for_a_disabled_target() {
     let request = ActionRequest::headless(Action::Click).with_timeout_ms(Some(30_000));
     let error = refuse(
