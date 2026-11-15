@@ -402,6 +402,11 @@ diffs a baseline taken at the start against fresh reads. On Linux:
   agent-desktop snapshot --app gnome-text-editor --surface sheet -i --compact
   ```
 
+  With no dialog standing, `--surface sheet` and `--surface alert` answer
+  `ELEMENT_NOT_FOUND`. The search reads the window's own frame and skips web
+  page content, so a browser window answers in the time of its frame, not of
+  its page.
+
 ## Window classification
 
 `list-windows` classifies frames from AT-SPI roles, interfaces and state, plus,
