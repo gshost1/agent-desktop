@@ -1,6 +1,6 @@
 use agent_desktop_core::{
     ActionOps, AdapterError, Deadline, InputOps, ObservationOps, PermissionReport, PermissionState,
-    SystemOps,
+    SnapshotSurface, SystemOps,
 };
 
 use super::WebChannelAdapter;
@@ -47,4 +47,14 @@ fn a_command_preflight_reaches_the_platform_preflight_report() {
         panic!("the platform preflight report is infallible here");
     };
     assert_eq!(report.automation, PermissionState::Unknown);
+}
+
+#[test]
+fn a_platform_with_no_surfaces_is_not_reported_as_offering_the_web_surface() {
+    let web = WebChannelAdapter::with_connector(
+        PreflightPlatform,
+        Box::new(ScriptedConnector::default()),
+    )
+    .with_download_ledger(None);
+    assert_eq!(web.supported_surfaces(), Vec::<SnapshotSurface>::new());
 }

@@ -143,8 +143,10 @@ function Invoke-PermanentlyDisabledLegs {
             $clock = [System.Diagnostics.Stopwatch]::StartNew()
             $envelope = Invoke-AgentDesktop -Arguments @('click', $target.RefId) -TimeoutSeconds 20
             $clock.Stop()
-            Assert-Envelope -Envelope $envelope -ErrorCode 'TIMEOUT'
-            if ($clock.Elapsed.TotalMilliseconds -lt 3000) { throw "returned in $($clock.Elapsed.TotalMilliseconds)ms, too fast to have exhausted a multi-second default" }
+            <# The default budget ends a target that stays disabled 2 s in with
+               a final refusal instead of waiting out the whole 5 s. #>
+            Assert-Envelope -Envelope $envelope -ErrorCode 'ACTION_FAILED' -Delivery 'not_delivered' -Details @{ kind = 'target_disabled'; retryable = $false }
+            if ($clock.Elapsed.TotalMilliseconds -lt 1700 -or $clock.Elapsed.TotalMilliseconds -gt 4500) { throw "returned in $($clock.Elapsed.TotalMilliseconds)ms, outside the expected range around the 2000ms disabled cut" }
             Add-Pass -Leg 'auto-wait-permanently-disabled-default-timeout'
         } catch { Add-Fail -Leg 'auto-wait-permanently-disabled-default-timeout' -Reason $_.Exception.Message }
 

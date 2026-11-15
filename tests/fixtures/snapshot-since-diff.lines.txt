@@ -1,0 +1,5 @@
++ statictext "Saved"
++ @snewsnap:e3 button "Close"
+~ @snewsnap:e1 textfield "Title" value="draft 2" [focused] (was value="draft")
+- statictext "Unsaved"
+focused @snewsnap:e1 textfield "Title" value="draft 2" [focused]

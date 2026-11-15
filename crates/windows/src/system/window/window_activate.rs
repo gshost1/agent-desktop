@@ -46,6 +46,14 @@ const INTER_ATTEMPT_DELAY: Duration = Duration::from_millis(25);
 /// are attempt-and-verify (A21-7); budget exhaustion on a strictly-higher
 /// integrity target is activation-worded `PERM_DENIED`, otherwise
 /// `ACTION_FAILED` with `physical_delivery_started: false`.
+///
+/// A child window id raises its own process's top-level window, and a
+/// presented immersive shell surface (Start, the Action Center) succeeds
+/// without a raise, because the shell keeps it above every window while the
+/// foreground sits on another process's input window. That success licenses
+/// no blind input: the physical click and keyboard gates re-verify the
+/// element's own window foreground and the element's keyboard focus before
+/// any event is sent.
 pub(crate) fn focus_window(win: &WindowInfo, lease: &InteractionLease) -> Result<(), AdapterError> {
     lease
         .deadline()
@@ -65,13 +73,61 @@ pub(crate) fn focus_window(win: &WindowInfo, lease: &InteractionLease) -> Result
         )));
     };
     evidence.verify_stored().map_err(before_activation)?;
-    ensure_window_is_pumping(handle).map_err(before_activation)?;
-    restore_if_iconic(handle, &evidence).map_err(before_activation)?;
-    if is_owned_foreground(handle, &evidence) {
+    let target = activation_root(handle);
+    if super::window_enum::is_hidden_by_cloak(target) {
+        return Err(before_activation(cloaked_target_error()));
+    }
+    ensure_window_is_pumping(target).map_err(before_activation)?;
+    restore_if_iconic(target, &evidence).map_err(before_activation)?;
+    if is_owned_foreground(target, &evidence) {
         return Ok(());
     }
+    if crate::system::shell::shell_surface::is_presented_immersive_surface(
+        handle,
+        win.pid,
+        lease.deadline(),
+    )
+    .map_err(before_activation)?
+    {
+        return evidence.verify_stored().map_err(before_activation);
+    }
     let strictly_higher = activation_target_is_strictly_higher(win.pid);
-    raise_with_budget(handle, &evidence, lease, strictly_higher)
+    raise_with_budget(target, &evidence, lease, strictly_higher)
+}
+
+/// The window activation acts on: the handle itself, or the root of a child
+/// window id, because only a top-level window can own the foreground. A
+/// shell-surface snapshot is what hands out a child id (the tray toolbar);
+/// the identity evidence stays on the child, so every ownership check still
+/// reads the window the caller named.
+/// A root another process owns is never raised for the child: the ownership
+/// checks read the child, so they could not guard a write to that root.
+#[cfg(target_os = "windows")]
+fn activation_root(handle: super::window_enum::WindowHandle) -> super::window_enum::WindowHandle {
+    use super::window_identity::live_window_owner;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor};
+    let root = unsafe { GetAncestor(handle, GA_ROOT) };
+    if root.is_null() || live_window_owner(root) != live_window_owner(handle) {
+        handle
+    } else {
+        root
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn activation_root(handle: super::window_enum::WindowHandle) -> super::window_enum::WindowHandle {
+    handle
+}
+
+/// A cloaked window is not shown, and the agent inventory leaves it out
+/// (a dismissed Start survives cloaked, A26-2). Raising one hands the
+/// foreground to a window nobody can see, so it is refused before any write.
+fn cloaked_target_error() -> AdapterError {
+    AdapterError::new(
+        ErrorCode::WindowNotFound,
+        "window is cloaked, so it is not shown on this desktop",
+    )
+    .with_suggestion("Take a fresh snapshot to find the window that is shown now")
 }
 
 fn before_activation(error: AdapterError) -> AdapterError {
@@ -329,3 +385,7 @@ mod policy_tests;
 #[cfg(test)]
 #[path = "window_activate_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "window_activate_child_tests.rs"]
+mod child_tests;

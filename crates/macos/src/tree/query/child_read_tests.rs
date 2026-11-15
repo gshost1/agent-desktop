@@ -185,3 +185,102 @@ fn ax_failure_remains_a_native_read_failure() {
     assert_eq!(status.health.native_read_failures, 1);
     assert_eq!(status.health.cannot_complete, 0);
 }
+
+struct GrowingList {
+    whole: Option<Result<Vec<u32>, i32>>,
+    exact: Vec<u32>,
+    recount: usize,
+    recounts: std::cell::Cell<usize>,
+}
+
+impl super::super::child_read_budget::CountedChildren for GrowingList {
+    type Element = u32;
+
+    fn attribute(&self) -> &str {
+        "AXChildren"
+    }
+
+    fn read_whole(
+        &self,
+        _status: &mut ChildReadStatus,
+        _page_len: usize,
+    ) -> Option<Result<Vec<u32>, i32>> {
+        self.whole.clone()
+    }
+
+    fn read_exact(&self, _status: &mut ChildReadStatus, requested: usize) -> Result<Vec<u32>, i32> {
+        Ok(self.exact.iter().copied().take(requested).collect())
+    }
+
+    fn recount(&self, _status: &mut ChildReadStatus) -> Result<usize, i32> {
+        self.recounts.set(self.recounts.get() + 1);
+        Ok(self.recount)
+    }
+}
+
+fn settle(list: &GrowingList, count: usize) -> (Vec<u32>, usize, bool, ChildReadStatus) {
+    let mut status = ChildReadStatus::default();
+    let (elements, final_count, complete) = super::super::child_read_budget::settle_counted_read(
+        list,
+        &mut status,
+        count,
+        (64, imp::CHILD_PAGE_SIZE),
+    );
+    (elements, final_count, complete, status)
+}
+
+#[test]
+fn a_list_that_grew_after_a_refused_longer_range_is_reported_incomplete() {
+    let list = GrowingList {
+        whole: None,
+        exact: vec![1, 2, 3],
+        recount: 4,
+        recounts: std::cell::Cell::new(0),
+    };
+
+    let (elements, final_count, complete, status) = settle(&list, 3);
+
+    assert_eq!(
+        list.recounts.get(),
+        1,
+        "the exact-range read is never proof"
+    );
+    assert!(!complete);
+    assert!(status.count_changed);
+    assert_eq!(final_count, 4);
+    assert_eq!(elements, vec![1, 2, 3]);
+}
+
+#[test]
+fn a_longer_range_that_answered_with_the_count_proves_it_without_a_recount() {
+    let list = GrowingList {
+        whole: Some(Ok(vec![1, 2, 3])),
+        exact: Vec::new(),
+        recount: 99,
+        recounts: std::cell::Cell::new(0),
+    };
+
+    let (elements, final_count, complete, status) = settle(&list, 3);
+
+    assert_eq!(list.recounts.get(), 0);
+    assert!(complete);
+    assert!(!status.count_changed);
+    assert_eq!((elements, final_count), (vec![1, 2, 3], 3));
+}
+
+#[test]
+fn a_longer_range_that_shows_an_extra_child_is_not_proof() {
+    let list = GrowingList {
+        whole: Some(Ok(vec![1, 2, 3, 4])),
+        exact: Vec::new(),
+        recount: 4,
+        recounts: std::cell::Cell::new(0),
+    };
+
+    let (_, final_count, complete, status) = settle(&list, 3);
+
+    assert_eq!(list.recounts.get(), 1);
+    assert!(!complete);
+    assert!(status.count_changed);
+    assert_eq!(final_count, 4);
+}

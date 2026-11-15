@@ -183,9 +183,13 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
         self.inner.process_state(process, deadline)
     }
 
+    /// A web page is found through the platform's window and application
+    /// inventory, so the web surface is offered only when the platform answers
+    /// with surfaces of its own. An empty platform list, such as a Linux session
+    /// whose accessibility bus did not answer, stays empty.
     fn supported_surfaces(&self) -> Vec<SnapshotSurface> {
         let mut surfaces = self.inner.supported_surfaces();
-        if !surfaces.contains(&SnapshotSurface::Web) {
+        if !surfaces.is_empty() && !surfaces.contains(&SnapshotSurface::Web) {
             surfaces.push(SnapshotSurface::Web);
         }
         surfaces

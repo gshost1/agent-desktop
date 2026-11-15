@@ -10,6 +10,7 @@ mod pointer_delivery;
 pub(crate) mod pointer_timeout;
 mod protocol_delivery;
 mod receives_events;
+mod refusal;
 mod report;
 mod requirements;
 mod stability;

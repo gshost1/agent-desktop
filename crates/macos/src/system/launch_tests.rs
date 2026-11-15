@@ -114,3 +114,112 @@ fn arguments_a_running_app_cannot_receive_are_called_out() {
     assert!(ignored_inputs_hint(&with_env).is_some());
     assert!(ignored_inputs_hint(&LaunchOptions::default()).is_none());
 }
+
+fn off_screen_window() -> Result<Vec<WindowRecord>, AdapterError> {
+    Ok(vec![WindowRecord {
+        app_name: "probe".into(),
+        pid: 7,
+        title: None,
+        window_number: 41,
+        bounds: agent_desktop_core::Rect {
+            x: 200.0,
+            y: 200.0,
+            width: 230.0,
+            height: 408.0,
+        },
+        presence: crate::system::window::window_presence::WindowPresence::Offscreen,
+        process_instance: None,
+    }])
+}
+
+fn running_app() -> AppInfo {
+    AppInfo {
+        name: "probe".into(),
+        pid: agent_desktop_core::ProcessId::new(u32::MAX),
+        bundle_id: None,
+        process_instance: Some("instance".into()),
+        presentation: None,
+    }
+}
+
+#[test]
+fn a_fresh_launch_with_no_window_explains_its_off_space_window() {
+    let result = result_from_launched(
+        &(i32::MAX, "instance".into()),
+        LaunchWindow::Absent,
+        "probe",
+        LaunchPath::Launched,
+        off_screen_window,
+    )
+    .unwrap();
+
+    assert!(result.window.is_none());
+    assert_eq!(
+        result.notes.suggestion.as_deref(),
+        Some(launch_off_space::OFF_SPACE_NOTE)
+    );
+}
+
+#[test]
+fn a_fresh_launch_that_found_several_windows_keeps_that_note() {
+    let result = result_from_launched(
+        &(i32::MAX, "instance".into()),
+        LaunchWindow::Several(vec!["w-1".into(), "w-2".into()]),
+        "probe",
+        LaunchPath::Launched,
+        || panic!("a result with a note reads no window records"),
+    )
+    .unwrap();
+
+    assert_ne!(
+        result.notes.suggestion.as_deref(),
+        Some(launch_off_space::OFF_SPACE_NOTE)
+    );
+    assert!(result.notes.suggestion.is_some());
+}
+
+#[test]
+fn a_running_app_with_no_window_explains_its_off_space_window() {
+    let result = result_from_app(
+        &running_app(),
+        (None, None),
+        LaunchPath::AttachedRunning,
+        off_screen_window,
+    );
+
+    assert_eq!(
+        result.notes.suggestion.as_deref(),
+        Some(launch_off_space::OFF_SPACE_NOTE)
+    );
+}
+
+#[test]
+fn a_running_app_keeps_its_ignored_inputs_note_over_the_off_space_note() {
+    let result = result_from_app(
+        &running_app(),
+        (None, Some("ignored inputs".into())),
+        LaunchPath::AttachedRunning,
+        || panic!("a result with a note reads no window records"),
+    );
+
+    assert_eq!(result.notes.suggestion.as_deref(), Some("ignored inputs"));
+}
+
+#[test]
+fn a_running_app_whose_windows_are_all_on_screen_gets_no_note() {
+    let on_screen = || {
+        off_screen_window().map(|mut records| {
+            records[0].presence = crate::system::window::window_presence::WindowPresence::Onscreen;
+            records
+        })
+    };
+
+    let result = result_from_app(
+        &running_app(),
+        (None, None),
+        LaunchPath::AttachedRunning,
+        on_screen,
+    );
+
+    assert!(result.notes.suggestion.is_none());
+}

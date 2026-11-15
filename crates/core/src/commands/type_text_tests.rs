@@ -13,6 +13,7 @@ struct StaleThenOkAdapter {
     value: Mutex<String>,
     policies: Mutex<Vec<crate::InteractionPolicy>>,
     expected_processes: Mutex<Vec<bool>>,
+    default_budgets: Mutex<Vec<bool>>,
 }
 
 impl StaleThenOkAdapter {
@@ -22,6 +23,7 @@ impl StaleThenOkAdapter {
             value: Mutex::new(String::new()),
             policies: Mutex::new(Vec::new()),
             expected_processes: Mutex::new(Vec::new()),
+            default_budgets: Mutex::new(Vec::new()),
         }
     }
 }
@@ -64,6 +66,10 @@ impl ActionOps for StaleThenOkAdapter {
             .lock()
             .unwrap()
             .push(request.expected_process().is_some());
+        self.default_budgets
+            .lock()
+            .unwrap()
+            .push(request.on_default_budget());
         if let crate::Action::TypeText(text) = request.action {
             self.value.lock().unwrap().push_str(&text);
         }
@@ -128,6 +134,31 @@ fn timeout_none_makes_exactly_one_resolve_attempt() {
 
     assert_eq!(err.code(), "STALE_REF");
     assert_eq!(adapter.retry.calls(), 1);
+}
+
+#[test]
+fn typing_on_its_default_budget_is_marked_default_and_a_chosen_budget_is_not() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = snapshot_id();
+    let adapter = StaleThenOkAdapter::new(0);
+    for timeout_ms in [
+        default_timeout_ms("hi"),
+        crate::DEFAULT_OPERATION_TIMEOUT_MS,
+    ] {
+        execute(
+            TypeArgs {
+                ref_id: format!("@{}:e1", snapshot_id),
+                text: "hi".into(),
+                timeout_ms: Some(timeout_ms),
+                interval_ms: None,
+            },
+            &adapter,
+            &CommandContext::default(),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(*adapter.default_budgets.lock().unwrap(), vec![true, false]);
 }
 
 #[test]

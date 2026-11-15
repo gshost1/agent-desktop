@@ -208,3 +208,18 @@ fn snapshot_args_batch_json_defaults_timeout_and_force_electron_a11y_when_absent
     assert_eq!(args.timeout_ms, None);
     assert!(!args.force_electron_a11y);
 }
+
+#[test]
+fn snapshot_since_parses_from_the_cli_and_from_batch_json() {
+    let args = SnapshotArgs::try_parse_from(["snapshot", "--since", "s8f3k2p9"]).unwrap();
+    assert_eq!(args.since.as_deref(), Some("s8f3k2p9"));
+    assert!(
+        SnapshotArgs::try_parse_from(["snapshot"])
+            .unwrap()
+            .since
+            .is_none()
+    );
+    let batch: SnapshotArgs =
+        serde_json::from_value(serde_json::json!({ "app": "Notes", "since": "s8f3k2p9" })).unwrap();
+    assert_eq!(batch.since.as_deref(), Some("s8f3k2p9"));
+}

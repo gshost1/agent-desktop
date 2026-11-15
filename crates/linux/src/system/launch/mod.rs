@@ -4,13 +4,15 @@ use std::time::Duration;
 use agent_desktop_core::system::launch_options::LaunchOptions;
 use agent_desktop_core::system::launch_result::LaunchResult;
 use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionLease, ProcessId,
-    RendererKind, WindowInfo, system::launch_notes::LaunchNotes,
+    AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionLease, ProcessId, WindowInfo,
+    system::launch_notes::LaunchNotes,
 };
 
 use self::launch_attach::{Decision, decide};
 use self::launch_observe::{POLL_INTERVAL, find_owner, pids_of, running_of};
 use self::launch_owner_query::OwnerQuery;
+use self::launch_owner_query::seen::Seen;
+use self::launch_owner_reads::{chromium_renderer, same_window};
 use self::launch_preflight::{require_display, with_spawned_pid};
 use self::launch_search::Search;
 use self::launch_spawn::{before_spawn, spawn, validate};
@@ -22,7 +24,6 @@ use crate::system::app::launched_entries::remember_launch;
 use crate::system::focus::focus_window::focus_window;
 use crate::system::process::liveness::{Liveness, liveness};
 use crate::system::process::running_app::Running;
-use crate::system::process::web_family::WebFamily;
 use crate::system::registry::registry_frames::RootRead;
 use crate::system::window::native_group::is_unproven;
 use crate::system::window::window_ops::{require_complete_frames, windows_of_process};
@@ -36,34 +37,6 @@ fn bounded(deadline: Deadline, timeout_ms: u64) -> Deadline {
     } else {
         deadline.capped(Duration::from_millis(timeout_ms))
     }
-}
-
-fn chromium_renderer(bus: &SharedBus, pid: u32, deadline: Deadline) -> Option<RendererKind> {
-    super::registry::read_registry_for(bus, Some(pid), deadline)
-        .ok()?
-        .apps
-        .iter()
-        .any(|app| {
-            crate::tree::properties::toolkit_trust::web_family(&app.toolkit)
-                == Some(WebFamily::Chromium)
-        })
-        .then_some(RendererKind::Chromium)
-}
-
-/// Refreshes the same process-owned window after successful focus when a complete read is available.
-fn same_window(
-    observation: Result<(Vec<WindowInfo>, RootRead), AdapterError>,
-    expected: &WindowInfo,
-) -> Option<WindowInfo> {
-    let (windows, read) = observation.ok()?;
-    if read != RootRead::Read {
-        return None;
-    }
-    windows.into_iter().find(|window| {
-        window.id == expected.id
-            && window.pid == expected.pid
-            && window.process_instance == expected.process_instance
-    })
 }
 
 /// The result for an owner and its window. A window is brought forward once,
@@ -251,6 +224,16 @@ impl Launch<'_> {
         self.deadline.capped(wait)
     }
 
+    /// The result for an instance taken as the owner without a new window,
+    /// which says so in its suggestion.
+    fn conclude_adopted(&self, owner: &Running) -> LaunchResult {
+        let window = launch_adopt::adopted_window(self.bus, owner, self.deadline);
+        let mut result = self.conclude_with(owner, window, false);
+        let earlier = result.notes.suggestion.take();
+        result.notes.suggestion = Some(launch_adopt::adoption_note(owner.pid, earlier));
+        result
+    }
+
     fn conclude_with(
         &self,
         owner: &Running,
@@ -301,11 +284,13 @@ impl Launch<'_> {
             &before,
             self.deadline,
             self.options.presentation.activate,
-        );
+        )
+        .for_entry(plan.desktop_id.as_deref());
         let spawned_pid = spawned.pid;
         let owner = find_owner(self.bus, &mut spawned, &query)
             .map_err(|error| with_spawned_pid(error, spawned_pid))?;
         match owner {
+            Some(owner) if query.seen.get() == Seen::Adopted => Ok(self.conclude_adopted(&owner)),
             Some(owner) => {
                 let known = before
                     .residents
@@ -322,7 +307,11 @@ impl Launch<'_> {
                 .map_err(|error| with_spawned_pid(error, spawned_pid))?;
                 Ok(self.conclude_with(&owner, window, owner.pid == spawned.pid))
             }
-            None => Ok(report_unlisted(self.id, spawned.pid)),
+            None => Ok(report_unlisted(
+                self.id,
+                spawned.pid,
+                query.seen.get().off_bus(),
+            )),
         }
     }
 }
@@ -385,12 +374,14 @@ pub(super) mod desktop_exec;
 pub(super) mod desktop_lookup;
 pub(super) mod desktop_stamp;
 pub(super) mod indexed_entry;
+mod launch_adopt;
 pub(super) mod launch_attach;
 mod launch_handoff;
 #[cfg(test)]
 pub(super) mod launch_live_tests;
 pub(super) mod launch_observe;
 mod launch_owner_query;
+mod launch_owner_reads;
 mod launch_preflight;
 pub(crate) mod launch_sample;
 pub(crate) mod launch_search;

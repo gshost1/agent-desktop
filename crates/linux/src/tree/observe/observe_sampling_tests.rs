@@ -16,6 +16,7 @@ fn settling_places_only_the_returned_full_payload() {
         &request(5000),
         SettleHost {
             walker: &mut walker,
+            scan: &mut super::never_scans,
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},
@@ -58,6 +59,7 @@ fn busy_document_samples_cannot_certify_a_completed_tree() {
         &request(5000),
         SettleHost {
             walker: &mut walker,
+            scan: &mut super::never_scans,
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},
@@ -92,6 +94,7 @@ fn an_interrupted_narrow_sample_returns_the_full_payload_as_incomplete() {
         &request(5000),
         SettleHost {
             walker: &mut walker,
+            scan: &mut super::never_scans,
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},
@@ -119,6 +122,7 @@ fn an_identity_only_read_skips_extents_actions_and_placement() {
         &identity_only,
         SettleHost {
             walker: &mut walker,
+            scan: &mut super::never_scans,
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},

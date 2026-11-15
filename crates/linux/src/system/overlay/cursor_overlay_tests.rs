@@ -28,9 +28,7 @@ fn a_wayland_cursor_refusal_is_explicit_without_x11_fallback() {
         assert_eq!(details["cause"], "wayland_session");
         return;
     }
-    let path = std::env::current_dir()
-        .unwrap()
-        .join(format!(".cursor-wayland-{}.sock", std::process::id()));
+    let path = std::env::temp_dir().join(format!("ad-cursor-wayland-{}.sock", std::process::id()));
     let listener = std::os::unix::net::UnixListener::bind(&path).expect("reachable Wayland socket");
     const FILTER: &str = "system::overlay::cursor_overlay::tests::a_wayland_cursor_refusal_is_explicit_without_x11_fallback";
     let output = std::process::Command::new(std::env::current_exe().unwrap())

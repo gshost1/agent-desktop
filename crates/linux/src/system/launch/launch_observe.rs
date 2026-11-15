@@ -7,9 +7,12 @@ use std::time::Duration;
 
 use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode, ProcessId};
 
+use super::launch_adopt;
 use super::launch_attach::matches;
 use super::launch_handoff;
 use super::launch_owner_query::OwnerQuery;
+use super::launch_owner_query::off_bus::{self, OffBus};
+use super::launch_owner_query::seen::Seen;
 use crate::system::SharedBus;
 use crate::system::process::running_app::Running;
 use crate::system::registry::Registry;
@@ -182,15 +185,21 @@ fn after_spawn(error: AdapterError) -> AdapterError {
 
 /// Polls the registry until the launch has an owner, the launcher failed, or
 /// the deadline. A child that is alive with no registry entry at the deadline,
-/// or after the query's not-on-bus grace, is reported as not on the bus: the
-/// pid is the spawned process's.
+/// or after the query's not-on-bus grace once it shows it will not join, is
+/// reported as not on the bus: the pid is the spawned process's, and what was
+/// seen of it is in the query, read once more if the search never looked. A
+/// launcher that exited cleanly with no resident gaining a window may hand
+/// the launch to the one running instance ([`launch_adopt::adopt`]), which
+/// the query then records as adopted.
 pub(super) fn find_owner(
     bus: &SharedBus,
     spawned: &mut Spawned,
     query: &OwnerQuery<'_>,
 ) -> Result<Option<Running>, AdapterError> {
     let deadline = query.deadline;
-    poll_owner(
+    let pid = spawned.pid;
+    let mut serving = std::collections::HashMap::new();
+    let found = poll_owner(
         spawned,
         query,
         || match crate::system::registry::read_processes(bus, deadline) {
@@ -198,23 +207,42 @@ pub(super) fn find_owner(
             Err(error) if error.code == ErrorCode::Timeout => Ok(None),
             Err(error) => Err(error),
         },
-        |apps| launch_handoff::observe(bus, query.before, apps, deadline),
-    )
+        |apps, settled| match launch_handoff::observe(bus, query.before, apps, deadline) {
+            Step::Wait if settled => {
+                let adopted = launch_adopt::adopt(bus, query, apps, &mut serving);
+                if matches!(adopted, Step::Owner(_)) {
+                    query.seen.set(Seen::Adopted);
+                }
+                adopted
+            }
+            observed => observed,
+        },
+        || off_bus::observe(pid),
+    );
+    if matches!(found, Ok(None)) && query.seen.get() == Seen::Nothing {
+        query.seen.set(Seen::OffBus(off_bus::observe(pid)));
+    }
+    found
 }
 
 /// The owner search over a registry reader. `read` answers `None` when the
 /// registry could not be read in time, which is not evidence that the
 /// spawned process is off the bus. Only a read that began after the
-/// not-on-bus grace expired can settle the search on it. `handoff` looks for a resident that
-/// received the launch from a launcher that exited cleanly.
+/// not-on-bus grace expired can settle the search on it, and only when
+/// `observe` shows the process will not join. `handoff` looks for a resident
+/// that received the launch from a launcher that exited cleanly, and is told
+/// when the query's `settle` has passed since that exit.
 fn poll_owner(
     spawned: &mut Spawned,
     query: &OwnerQuery<'_>,
     mut read: impl FnMut() -> Result<Option<Vec<Running>>, AdapterError>,
-    mut handoff: impl FnMut(&[Running]) -> Step,
+    mut handoff: impl FnMut(&[Running], bool) -> Step,
+    mut observe: impl FnMut() -> OffBus,
 ) -> Result<Option<Running>, AdapterError> {
     let deadline = query.deadline;
     let mut interval = POLL_INTERVAL;
+    let mut exited_at = None;
+    let mut windowed_at = None;
     loop {
         let child = spawned.state();
         let expired = deadline.is_expired();
@@ -235,12 +263,29 @@ fn poll_owner(
             && status.success()
             && matches!(next, Step::Wait | Step::Failed(_))
         {
-            next = handoff(&apps);
+            let exited: &mut std::time::Instant =
+                exited_at.get_or_insert_with(std::time::Instant::now);
+            next = handoff(&apps, expired || exited.elapsed() >= query.settles.handoff);
             if next == Step::Wait && expired {
                 next = Step::Failed(status);
             }
         }
-        let not_on_bus = child.is_none() && registry_read && grace_over;
+        let not_on_bus = next == Step::Wait && child.is_none() && registry_read && grace_over && {
+            let seen = observe();
+            query.seen.set(Seen::OffBus(seen));
+            match seen {
+                OffBus::Windowed => {
+                    let since: &mut std::time::Instant =
+                        windowed_at.get_or_insert_with(std::time::Instant::now);
+                    since.elapsed() >= query.settles.window_off_bus
+                }
+                OffBus::BridgeOff => true,
+                OffBus::Starting => {
+                    windowed_at = None;
+                    false
+                }
+            }
+        };
         match next {
             Step::Owner(owner) => return Ok(Some(owner)),
             Step::Ambiguous(pids) => return Err(ambiguous(&pids, &spawned.identifier)),
@@ -258,6 +303,9 @@ fn poll_owner(
     }
 }
 
+#[cfg(test)]
+#[path = "launch_observe_poll_tests.rs"]
+mod poll_tests;
 #[cfg(test)]
 #[path = "launch_observe_tests.rs"]
 mod tests;
