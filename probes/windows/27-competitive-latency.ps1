@@ -26,7 +26,9 @@
       click     click <ref>          (ref from the arm's own untimed find)
       type      --headed type <ref> q  (ref from the arm's own untimed find;
                                         Windows type is keystroke synthesis and
-                                        is refused headless)
+                                        is refused headless; before every sample
+                                        an untimed --headed focus on the button
+                                        takes keyboard focus off the field)
 
     and once per host: list-apps, and launch <fixture exe> with every
     instance the launch started killed, untimed, before the next sample.
@@ -180,6 +182,11 @@ function Get-SampleSummary {
     $sorted = @($timed | ForEach-Object { $_.Ms } | Sort-Object)
     $codes = @($timed | Where-Object { -not $_.Ok -and $_.Code } | ForEach-Object { $_.Code } | Sort-Object -Unique)
     $firstFailure = @($Samples | Where-Object { $null -ne $_.Failure } | Select-Object -First 1 | ForEach-Object { $_.Failure })
+    $firstOkSteps = @()
+    $firstOk = @($Samples | Where-Object { $_.Ok } | Select-Object -First 1)
+    if ($firstOk.Count -gt 0 -and ($firstOk[0].Envelope.data.PSObject.Properties.Name -contains 'steps')) {
+        $firstOkSteps = @($firstOk[0].Envelope.data.steps | ForEach-Object { [string]$_.label })
+    }
     return [ordered]@{
         timed_runs       = $sorted.Count
         warmup_discarded = 1
@@ -191,6 +198,7 @@ function Get-SampleSummary {
         ok_with_warmup   = @($Samples | Where-Object { $_.Ok }).Count
         error_codes      = $codes
         first_failure    = $(if ($firstFailure.Count -gt 0) { $firstFailure[0] } else { $null })
+        first_ok_steps   = $firstOkSteps
     }
 }
 
@@ -199,13 +207,16 @@ function Get-SampleSummary {
     an order that rotates with i. ArgumentsByArm maps an arm to its argument
     list, because ref-bearing legs carry each arm's own ref. ReapProcessName,
     when given, kills every process of that name that the leg started, untimed,
-    after every sample.
+    after every sample. ResetArguments, when given, runs untimed through the
+    first arm before every sample, so a state one arm's sample leaves behind
+    (keyboard focus, for type) cannot serve the next arm.
 #>
 function Measure-Leg {
     param(
         [Parameter(Mandatory = $true)][string[]]$Arms,
         [Parameter(Mandatory = $true)][hashtable]$ArgumentsByArm,
-        [string]$ReapProcessName = ''
+        [string]$ReapProcessName = '',
+        [string[]]$ResetArguments = @()
     )
     $baseline = @()
     if ($ReapProcessName) { $baseline = @(Get-Process -Name $ReapProcessName -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }) }
@@ -214,6 +225,7 @@ function Measure-Leg {
     for ($i = 0; $i -le $TimedRuns; $i++) {
         for ($j = 0; $j -lt $Arms.Count; $j++) {
             $name = $Arms[($i + $j) % $Arms.Count]
+            if ($ResetArguments.Count -gt 0) { $null = Invoke-ArmCommand -Name $Arms[0] -Arguments $ResetArguments }
             [void]$samples[$name].Add((Invoke-ArmCommand -Name $name -Arguments $ArgumentsByArm[$name]))
             if ($ReapProcessName) {
                 Get-Process -Name $ReapProcessName -ErrorAction SilentlyContinue |
@@ -334,7 +346,8 @@ function Measure-TargetLegs {
     $legs['click'] = Measure-Leg -Arms $Arms -ArgumentsByArm $clickArgs
     $clickEvidence = Get-CounterEvidence -Target $Target -Evidence $Target.ClickEvidence -Expected (Get-TotalOkRuns -Leg $legs['click'])
     $before = Get-CharacterCount -Text (Get-UiaText -WindowHandle $Target.WindowHandle -Key $Target.TextBox) -Character 'q'
-    $legs['type'] = Measure-Leg -Arms $Arms -ArgumentsByArm $typeArgs
+    $focusElsewhere = @('--headed', 'focus', $clickArgs[$Arms[0]][1])
+    $legs['type'] = Measure-Leg -Arms $Arms -ArgumentsByArm $typeArgs -ResetArguments $focusElsewhere
     $expectedTyped = Get-TotalOkRuns -Leg $legs['type']
     if ($Target.TypeEvidence) {
         $typeEvidence = Get-CounterEvidence -Target $Target -Evidence $Target.TypeEvidence -Expected $expectedTyped
