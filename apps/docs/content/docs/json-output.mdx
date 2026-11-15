@@ -215,6 +215,8 @@ Each match carries `role` and `interactive`, and `ref_id`, `name`, `value`, `sta
   </tbody>
 </table>
 
+On exit code `1` or `2`, agent-desktop also prints one line on standard error, `agent-desktop: <CODE>: <message> -- <suggestion>`, so a pipe that filters or cuts standard output cannot hide the failure.
+
 ```bash
 agent-desktop click @e1   # bare ref: INVALID_ARGS envelope
 echo $?                   # 1

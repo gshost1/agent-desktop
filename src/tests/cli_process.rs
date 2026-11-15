@@ -40,6 +40,12 @@ fn clap_parse_failure_is_structured_on_stdout_with_exit_two() {
     assert_eq!(envelope["ok"], false);
     assert_eq!(envelope["command"], "unknown");
     assert_eq!(envelope["error"]["code"], "INVALID_ARGS");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.lines().count(), 1, "{stderr}");
+    assert!(
+        stderr.starts_with("agent-desktop: INVALID_ARGS: "),
+        "{stderr}"
+    );
     assert_eq!(
         envelope["error"]["disposition"]["delivery"],
         "not_delivered"

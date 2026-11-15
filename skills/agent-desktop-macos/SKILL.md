@@ -64,7 +64,11 @@ agent-desktop snapshot --window-id w-4521 -i --compact --lines
 
 ## Floating panels
 
-A panel that floats above an app's documents, such as Fonts, Colors or an inspector, is its own window. While it is on screen, `list-windows --app <App>` lists it by title with its own id. Read it with `snapshot --window-id <id> -i` or `find --window-id <id>`; its refs act in the panel, headed or not. `snapshot --app <App>` still reads the document window. A panel usually hides while its app is in the background, and a hidden panel is not listed.
+A panel that floats above an app's documents, such as Fonts, Colors or an inspector, is its own window. While it is on screen, `list-windows --app <App>` lists it by title with its own id. Read it with `snapshot --window-id <id> -i` or `find --window-id <id>`; its refs act in the panel, headed or not. `--app <App>` still reads the document window, also while a text field's suggestion list is open. A panel usually hides while its app is in the background, and a hidden panel is not listed.
+
+## Long lists
+
+A snapshot prints a long list or grid before the toolbar and search field below it, so read all of it and never cut it with `head`. To reach one item of a long list, `set-value` its name into the window's `textfield "Search"`, snapshot again, and read the filtered list instead of scrolling for it.
 
 ## Wait for the effect in the same call
 

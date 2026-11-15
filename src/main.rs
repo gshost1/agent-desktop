@@ -26,7 +26,7 @@ use agent_desktop_core::{
 use clap::{CommandFactory, FromArgMatches};
 use cli::{
     Cli, Commands,
-    emit::{emit_response, finish, report_output_failure},
+    emit::{emit_response, finish, report_failure_notice, report_output_failure},
 };
 use command_policy::preflight_deadline;
 use dispatch::pre_dispatch_error;
@@ -140,14 +140,12 @@ fn report_parse_failure(e: clap::Error) -> ExitCode {
     let summary = diagnostic::clap_error_summary(&e.to_string());
     let error = AppError::invalid_input(diagnostic::bounded_text(&summary, 512));
     let command_name = diagnostic::clap_command_name(std::env::args().skip(1));
-    if let Err(write_err) = emit_response(
-        &Response::err(&command_name, ErrorPayload::from_app_error(&error)),
-        false,
-    ) {
-        report_output_failure(write_err)
-    } else {
-        ExitCode::from(EXIT_INVALID_ARGS)
+    let response = Response::err(&command_name, ErrorPayload::from_app_error(&error));
+    if let Err(write_err) = emit_response(&response, false) {
+        return report_output_failure(write_err);
     }
+    report_failure_notice(&response);
+    ExitCode::from(EXIT_INVALID_ARGS)
 }
 
 fn execute(cli: Cli, cmd: Commands) -> Result<serde_json::Value, AppError> {

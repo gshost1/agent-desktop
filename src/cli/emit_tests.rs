@@ -1,7 +1,7 @@
 use agent_desktop_core::{AppError, response::output::Response};
 use serde_json::{Value, json};
 
-use super::{apply_lines_output, present_lines, write_response};
+use super::{apply_lines_output, failure_notice, present_lines, write_response};
 
 fn snapshot_data() -> Value {
     json!({
@@ -91,4 +91,23 @@ fn an_unreadable_tree_keeps_the_result_and_names_why_lines_are_missing() {
     assert!(!pretty);
     assert!(reason.is_some_and(|reason| !reason.is_empty()));
     assert_eq!(shown, data);
+}
+
+#[test]
+fn a_failed_response_gives_one_stderr_line_with_code_message_and_suggestion() {
+    let error = AppError::invalid_input_with_suggestion(
+        "More than one window\nmatches the target",
+        "Pass --window-id",
+    );
+    let response = Response::err(
+        "snapshot",
+        agent_desktop_core::response::output::ErrorPayload::from_app_error(&error),
+    );
+    assert_eq!(
+        failure_notice(&response).as_deref(),
+        Some(
+            "agent-desktop: INVALID_ARGS: More than one window matches the target -- Pass --window-id"
+        )
+    );
+    assert_eq!(failure_notice(&Response::ok("snapshot", json!({}))), None);
 }
