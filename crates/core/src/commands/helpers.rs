@@ -46,7 +46,9 @@ pub(crate) fn resolve_ref_with_context(
 }
 
 /// Resolves a saved ref under the caller deadline and records resolution traces.
-fn resolve_ref_within_deadline(
+/// A command that reads the element afterwards passes the deadline it reads
+/// under, so the resolution and the read share one budget.
+pub(crate) fn resolve_ref_within_deadline(
     ref_id: &str,
     deadline: crate::Deadline,
     adapter: &dyn PlatformAdapter,
