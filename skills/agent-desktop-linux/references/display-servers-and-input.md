@@ -232,11 +232,15 @@ agent-desktop --headed drag --from-xy 100,100 --to-xy 300,200
 - `mouse-click`, `mouse-move`, `mouse-wheel`, `hover --xy` and `drag
   --from-xy --to-xy` go through Mutter's RemoteDesktop session and a ScreenCast
   stream of the monitor under each point. They need `--headed`, like on X11.
-- The coordinates are the global logical desktop space whose display bounds
+- The coordinates are the global desktop space whose display bounds
   `list-displays` prints, the same space as on X11. A point is sent to the
-  display whose bounds hold it; on a display with `scale` 2 one unit is two
-  physical pixels. A drag may cross displays when every point on its path is on
-  one. A point outside every display is `ACTION_FAILED`, `not_delivered`.
+  display whose bounds hold it. What one unit is follows Mutter's layout mode,
+  which `list-displays` already reflects: in the logical layout (Mutter's
+  `scale-monitor-framebuffer` feature on) one unit is one logical pixel, `scale`
+  physical pixels on that display; in the physical layout one unit is one
+  physical pixel on every display. A drag may cross displays when every point on
+  its path is on one. A point outside every display is `ACTION_FAILED`,
+  `not_delivered`.
 - The result is `delivered_unverified`: Wayland does not tell a client which
   window is under a point, so nothing proves the window that received the
   event. Read the effect back with `snapshot`, `get` or `wait`.

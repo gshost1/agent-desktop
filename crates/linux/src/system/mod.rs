@@ -29,7 +29,8 @@ pub(crate) use bus::{
 pub(crate) use bus::{REGISTRY_ROOT_PATH, REGISTRY_SERVICE};
 
 pub(crate) use app::app_ops::{inventory as app_inventory, scoped as apps_scoped};
-pub(crate) use display::{list_displays, list_wayland_displays};
+pub(crate) use display::display_layout::DisplayLayout;
+pub(crate) use display::{list_displays, list_wayland_displays, wayland_layout};
 pub(crate) use menu::surfaces::list_surfaces;
 pub(crate) use window::window_ops::{focused_window, list_windows};
 pub(crate) use window::window_resolve::resolve_window_strict;

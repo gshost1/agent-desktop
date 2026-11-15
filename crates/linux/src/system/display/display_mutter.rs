@@ -5,6 +5,7 @@ use agent_desktop_core::{AdapterError, Deadline};
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
+use super::display_mutter_state::MutterState;
 use crate::system::bus::bus_deadline::within;
 use crate::system::bus::bus_slice::within_slice;
 use crate::system::bus::session_bus::SessionBus;
@@ -73,10 +74,10 @@ fn logical_size(monitors: &[Physical], specs: &[Spec], scale: f64, logical: bool
     }
 }
 
-fn assemble(reply: Reply) -> Vec<LogicalMonitor> {
+fn assemble(reply: Reply) -> MutterState {
     let (_, monitors, logical, properties) = reply;
     let layout_is_logical = logical_layout(&properties);
-    logical
+    let monitors = logical
         .into_iter()
         .map(|(x, y, scale, _, primary, specs, _)| {
             let (width, height) = logical_size(&monitors, &specs, scale, layout_is_logical);
@@ -90,10 +91,14 @@ fn assemble(reply: Reply) -> Vec<LogicalMonitor> {
                 connectors: specs.into_iter().map(|spec| spec.0).collect(),
             }
         })
-        .collect()
+        .collect();
+    MutterState {
+        monitors,
+        layout_is_logical,
+    }
 }
 
-async fn get_current_state(session: Connection) -> Option<Vec<LogicalMonitor>> {
+async fn get_current_state(session: Connection) -> Option<MutterState> {
     let reply = session
         .call_method(Some(SERVICE), PATH, Some(INTERFACE), "GetCurrentState", &())
         .await
@@ -113,11 +118,9 @@ fn open_session(
     }
 }
 
-/// The compositor's logical monitor list, or `None` when the session bus has
-/// no Mutter answering it. Only the deadline itself is an error.
-pub(crate) fn logical_monitors(
-    deadline: Deadline,
-) -> Result<Option<Vec<LogicalMonitor>>, AdapterError> {
+/// The compositor's monitor configuration, or `None` when the session bus
+/// has no Mutter answering it. Only the deadline itself is an error.
+pub(crate) fn current_state(deadline: Deadline) -> Result<Option<MutterState>, AdapterError> {
     let Some(session) = open_session(deadline, deadline)? else {
         return Ok(None);
     };
@@ -136,6 +139,11 @@ pub(crate) fn logical_monitors_within(
     within(deadline, async {
         Ok(within_slice(slice, get_current_state(session))
             .await
-            .flatten())
+            .flatten()
+            .map(|state| state.monitors))
     })
 }
+
+#[cfg(test)]
+#[path = "display_mutter_tests.rs"]
+mod tests;

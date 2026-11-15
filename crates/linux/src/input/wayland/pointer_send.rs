@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, DisplayInfo, DragParams, MouseEvent, MouseEventKind,
+    AdapterError, Deadline, DeliverySemantics, DragParams, MouseEvent, MouseEventKind,
 };
 use serde_json::json;
 
@@ -17,6 +17,7 @@ use crate::input::mouse::drag_plan::plan_drag;
 use crate::input::mouse::pointer_plan::{plan_click, plan_move};
 use crate::input::mouse::wheel_plan::plan_wheel;
 use crate::input::standalone::reject_standalone;
+use crate::system::DisplayLayout;
 
 const RECOVERY_MS: u64 = 1_000;
 
@@ -97,7 +98,7 @@ fn recovery_deadline(spent: Deadline) -> Deadline {
 
 fn event_gesture(
     event: &MouseEvent,
-    displays: &[DisplayInfo],
+    layout: &DisplayLayout,
 ) -> Result<WaylandGesture, AdapterError> {
     let map = Keymap::default();
     let plan = match &event.kind {
@@ -117,18 +118,18 @@ fn event_gesture(
         MouseEventKind::Up => Err(reject_standalone("mouse_event up")),
     }?;
     let modifiers = event.modifiers.iter().map(modifier_keysym).collect();
-    translate(&plan.steps, modifiers, displays)
+    translate(&plan.steps, modifiers, layout)
 }
 
 /// Sends one pointer event through a session opened for it; `gate` is asked
 /// before the first event and before every press.
 pub(crate) fn send(
     event: &MouseEvent,
-    displays: &[DisplayInfo],
+    layout: &DisplayLayout,
     gate: Gate<'_>,
     deadline: Deadline,
 ) -> Result<Delivery, AdapterError> {
-    let gesture = event_gesture(event, displays)?;
+    let gesture = event_gesture(event, layout)?;
     let mut session = open_input_session(deadline)?;
     run_gesture(&mut session, &gesture, gate, deadline)
 }
@@ -137,11 +138,11 @@ pub(crate) fn send(
 pub(crate) fn run_pointer<S: PointerSession>(
     session: &mut S,
     event: &MouseEvent,
-    displays: &[DisplayInfo],
+    layout: &DisplayLayout,
     gate: Gate<'_>,
     deadline: Deadline,
 ) -> Result<Delivery, AdapterError> {
-    let gesture = event_gesture(event, displays)?;
+    let gesture = event_gesture(event, layout)?;
     run_gesture(session, &gesture, gate, deadline)
 }
 
@@ -151,16 +152,16 @@ pub(crate) fn mouse_event(
     event: &MouseEvent,
     deadline: Deadline,
 ) -> Result<Delivery, AdapterError> {
-    let displays = crate::system::list_wayland_displays(deadline)?;
-    send(event, &displays, &mut || Ok(()), deadline)
+    let layout = crate::system::wayland_layout(deadline)?;
+    send(event, &layout, &mut || Ok(()), deadline)
 }
 
 /// A drag between two caller-given points, which may lie on different
 /// monitors; every point it passes must be on a listed display.
 pub(crate) fn drag(params: &DragParams, deadline: Deadline) -> Result<Delivery, AdapterError> {
     let plan = plan_drag(params, deadline)?;
-    let displays = crate::system::list_wayland_displays(deadline)?;
-    let gesture = translate(&plan.steps, Vec::new(), &displays)?;
+    let layout = crate::system::wayland_layout(deadline)?;
+    let gesture = translate(&plan.steps, Vec::new(), &layout)?;
     let mut session = open_input_session(deadline)?;
     run_gesture(&mut session, &gesture, &mut || Ok(()), deadline)
 }

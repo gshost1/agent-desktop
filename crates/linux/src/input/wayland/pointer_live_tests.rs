@@ -13,6 +13,7 @@ use crate::tree::live::live_launch::Launched;
 const FILTER: &str = "input::wayland::pointer_send::live_tests::coordinate_pointer_input_lands_where_the_probe_windows_say";
 const MONITORS: &str = "1280x800 1600x1200";
 const SERIES_END: Duration = Duration::from_millis(500);
+const LAYOUT_MODES: [&str; 2] = ["1", "2"];
 const LAYOUT: &str = r#"
 import sys
 from gi.repository import Gio, GLib
@@ -23,9 +24,12 @@ def call(method, params=None):
     return bus.call_sync(name, path, iface, method, params, None, Gio.DBusCallFlags.NONE, 5000, None).unpack()
 serial, monitors, _, _ = call('GetCurrentState')
 mode = {spec[0]: next(m[0] for m in modes if m[6].get('is-current')) for spec, modes, _ in monitors}
+layout_mode = int(sys.argv[1])
+right = 800 if layout_mode == 1 else 1600
 layout = [(0, 0, 2.0, 0, True, [('Meta-1', mode['Meta-1'], {})]),
-          (800, 0, 1.0, 0, False, [('Meta-0', mode['Meta-0'], {})])]
-call('ApplyMonitorsConfig', GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', (serial, 1, layout, {})))
+          (right, 0, 1.0, 0, False, [('Meta-0', mode['Meta-0'], {})])]
+props = {'layout-mode': GLib.Variant('u', layout_mode)}
+call('ApplyMonitorsConfig', GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', (serial, 1, layout, props)))
 "#;
 
 fn deadline() -> Deadline {
@@ -39,6 +43,7 @@ fn lease() -> InteractionLease {
 struct Probe {
     display: DisplayInfo,
     log: PathBuf,
+    window_per_unit: f64,
 }
 
 impl Probe {
@@ -55,6 +60,13 @@ impl Probe {
     fn clear(&self) {
         std::thread::sleep(SERIES_END);
         std::fs::write(&self.log, "").expect("the probe log clears");
+    }
+
+    /// Whether `event` is at the window position of the `--xy` offset
+    /// (`x`, `y`): GTK reports surface pixels, which are physical pixels over
+    /// the scale in the physical layout and the listed units in the logical one.
+    fn lands(&self, event: &Value, x: f64, y: f64) -> bool {
+        near(event, x * self.window_per_unit, y * self.window_per_unit)
     }
 
     fn global(&self, x: f64, y: f64) -> Point {
@@ -101,15 +113,17 @@ fn start_pipewire(launched: &mut Launched) {
     }
 }
 
-fn open_probes(launched: &mut Launched) -> Vec<Probe> {
+fn open_probes(launched: &mut Launched, layout_mode: &str) -> Vec<Probe> {
     let layout = Command::new("python3")
-        .args(["-c", LAYOUT])
+        .args(["-c", LAYOUT, layout_mode])
         .output()
         .unwrap();
     assert!(layout.status.success(), "{layout:?}");
     std::thread::sleep(Duration::from_secs(1));
-    let displays = crate::system::list_wayland_displays(deadline()).unwrap();
+    let layout = crate::system::wayland_layout(deadline()).unwrap();
+    let displays = layout.displays.clone();
     assert_eq!(displays.len(), 2, "{displays:?}");
+    assert_eq!(layout.stream_scaled, layout_mode == "1", "{layout:?}");
     let script = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/e2e-linux/apps/pointer_probe_gtk4.py")
         .display()
@@ -121,7 +135,16 @@ fn open_probes(launched: &mut Launched) -> Vec<Probe> {
             let log = runtime.join(format!("pointer-probe-{}.jsonl", display.id));
             let path = log.display().to_string();
             launched.spawn("python3", &[&script, &path, &display.id]);
-            Probe { display, log }
+            let window_per_unit = if layout.stream_scaled {
+                1.0
+            } else {
+                1.0 / display.scale
+            };
+            Probe {
+                display,
+                log,
+                window_per_unit,
+            }
         })
         .collect();
     for probe in &probes {
@@ -164,7 +187,7 @@ fn legs_on(probe: &Probe, other: &Probe) {
         let events = probe.wait_for("a left click", |events| !kind(events, "press").is_empty());
         let presses = kind(&events, "press");
         assert_eq!(presses.len(), 1, "{events:?}");
-        assert!(near(presses[0], local.0, local.1), "{events:?}");
+        assert!(probe.lands(presses[0], local.0, local.1), "{events:?}");
         assert_eq!(presses[0]["button"], 1);
         assert!(kind(&other.events(), "press").is_empty());
     }
@@ -186,9 +209,9 @@ fn legs_on(probe: &Probe, other: &Probe) {
         vec![Modifier::Ctrl],
     ));
     probe.wait_for("a ctrl right click", |events| {
-        kind(events, "press")
-            .iter()
-            .any(|press| press["button"] == 3 && press["ctrl"] == true && near(press, 310., 210.))
+        kind(events, "press").iter().any(|press| {
+            press["button"] == 3 && press["ctrl"] == true && probe.lands(press, 310., 210.)
+        })
     });
     probe.clear();
     send(MouseEvent {
@@ -200,7 +223,7 @@ fn legs_on(probe: &Probe, other: &Probe) {
     probe.wait_for("a move", |events| {
         kind(events, "motion")
             .iter()
-            .any(|motion| near(motion, 222., 111.))
+            .any(|motion| probe.lands(motion, 222., 111.))
     });
     probe.clear();
     send(MouseEvent {
@@ -231,15 +254,16 @@ fn legs_on(probe: &Probe, other: &Probe) {
     let events = probe.wait_for("a drag", |events| !kind(events, "drag-end").is_empty());
     let begin = kind(&events, "drag-begin");
     let end = kind(&events, "drag-end");
-    assert!(near(begin[0], 100., 100.), "{events:?}");
+    assert!(probe.lands(begin[0], 100., 100.), "{events:?}");
+    let unit = probe.window_per_unit;
     assert!(
-        (end[0]["dx"].as_f64().unwrap() - 200.).abs() <= 2.
-            && (end[0]["dy"].as_f64().unwrap() - 100.).abs() <= 2.,
+        (end[0]["dx"].as_f64().unwrap() - 200. * unit).abs() <= 2.
+            && (end[0]["dy"].as_f64().unwrap() - 100. * unit).abs() <= 2.,
         "{events:?}"
     );
     println!(
-        "{}: left x5, double, ctrl+right, move, wheel, drag landed at the requested logical points (scale {})",
-        probe.display.id, probe.display.scale
+        "{}: left x5, double, ctrl+right, move, wheel, drag landed at the requested points (scale {}, window px per unit {})",
+        probe.display.id, probe.display.scale, probe.window_per_unit
     );
 }
 
@@ -266,34 +290,45 @@ fn measure_clicks(probe: &Probe) {
     );
 }
 
+/// Runs this test again in a fresh two-monitor shell with Mutter set to
+/// `layout_mode` (1 logical, 2 physical).
+fn run_child(layout_mode: &str) {
+    let runtime = PathBuf::from(std::env::var("XDG_RUNTIME_DIR").unwrap());
+    let report = runtime.join(format!("pointer-live-child-{layout_mode}.log"));
+    let file = std::fs::File::create(&report).unwrap();
+    let status = Command::new("bash")
+        .args(["scripts/private-wayland-shell.sh", "--"])
+        .arg(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", FILTER, "--nocapture"])
+        .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        .env("AD_POINTER_WAYLAND_LAYOUT", layout_mode)
+        .env("AGENT_DESKTOP_WAYLAND_MONITORS", MONITORS)
+        .stdout(file.try_clone().unwrap())
+        .stderr(file)
+        .status()
+        .unwrap();
+    let output = std::fs::read_to_string(&report).unwrap();
+    println!("layout-mode {layout_mode}:\n{output}");
+    assert!(
+        status.success(),
+        "private Wayland child failed in layout-mode {layout_mode}"
+    );
+    assert!(
+        output.contains("1 passed; 0 failed"),
+        "{FILTER} must execute exactly one test"
+    );
+}
+
 #[test]
 #[ignore = "starts a two-monitor headless gnome-shell; run inside scripts/private-session.sh"]
 fn coordinate_pointer_input_lands_where_the_probe_windows_say() {
     assert!(std::env::var_os("AGENT_DESKTOP_PRIVATE_SESSION").is_some());
-    if std::env::var_os("AD_POINTER_WAYLAND_CHILD").is_none() {
-        let runtime = PathBuf::from(std::env::var("XDG_RUNTIME_DIR").unwrap());
-        let report = runtime.join("pointer-live-child.log");
-        let file = std::fs::File::create(&report).unwrap();
-        let status = Command::new("bash")
-            .args(["scripts/private-wayland-shell.sh", "--"])
-            .arg(std::env::current_exe().unwrap())
-            .args(["--ignored", "--exact", FILTER, "--nocapture"])
-            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
-            .env("AD_POINTER_WAYLAND_CHILD", "1")
-            .env("AGENT_DESKTOP_WAYLAND_MONITORS", MONITORS)
-            .stdout(file.try_clone().unwrap())
-            .stderr(file)
-            .status()
-            .unwrap();
-        let output = std::fs::read_to_string(&report).unwrap();
-        println!("{output}");
-        assert!(status.success(), "private Wayland child failed");
-        assert!(
-            output.contains("1 passed; 0 failed"),
-            "{FILTER} must execute exactly one test"
-        );
+    let Ok(layout_mode) = std::env::var("AD_POINTER_WAYLAND_LAYOUT") else {
+        for layout_mode in LAYOUT_MODES {
+            run_child(layout_mode);
+        }
         return;
-    }
+    };
     let mut launched = Launched::new();
     start_pipewire(&mut launched);
     let adapter = crate::LinuxAdapter::new();
@@ -302,7 +337,7 @@ fn coordinate_pointer_input_lands_where_the_probe_windows_say() {
         .physical_pointer_refusal()
         .expect("an element-aimed pointer stays refused on Wayland");
     assert_eq!(refusal.code, ErrorCode::ActionNotSupported);
-    let probes = open_probes(&mut launched);
+    let probes = open_probes(&mut launched, &layout_mode);
     for (index, probe) in probes.iter().enumerate() {
         legs_on(probe, &probes[1 - index]);
     }

@@ -11,6 +11,7 @@ use crate::input::mouse::drag_plan::plan_drag;
 use crate::input::wayland::key_session::KeySession;
 use crate::input::wayland::pointer_send::{PointerSession, run_pointer};
 use crate::input::wayland::stream_point::StreamPoint;
+use crate::system::DisplayLayout;
 
 #[derive(Default)]
 struct Recorder {
@@ -78,11 +79,14 @@ fn display(id: &str, bounds: (f64, f64, f64, f64), scale: f64) -> DisplayInfo {
     }
 }
 
-fn two_monitors() -> Vec<DisplayInfo> {
-    vec![
-        display("Meta-0", (1600., 0., 1280., 800.), 1.),
-        display("Meta-1+Meta-2", (0., 0., 800., 600.), 2.),
-    ]
+fn two_monitors() -> DisplayLayout {
+    DisplayLayout {
+        displays: vec![
+            display("Meta-0", (1600., 0., 1280., 800.), 1.),
+            display("Meta-1+Meta-2", (0., 0., 800., 600.), 2.),
+        ],
+        stream_scaled: true,
+    }
 }
 
 fn event(kind: MouseEventKind, x: f64, y: f64) -> MouseEvent {
@@ -265,7 +269,12 @@ fn a_drag_across_monitors_links_both_streams_in_first_use_order() {
         deadline(),
     )
     .unwrap();
-    let gesture = translate(&plan.steps, Vec::new(), &displays).unwrap();
+    let gesture = translate(
+        &plan.steps,
+        Vec::new(),
+        &DisplayLayout::unscaled(displays.to_vec()),
+    )
+    .unwrap();
     assert_eq!(gesture.connectors, ["Meta-0", "Meta-1"]);
     let last = gesture
         .acts
