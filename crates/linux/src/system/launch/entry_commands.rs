@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use super::desktop_entry::{GROUP, keys_of, unescape};
+use super::desktop_stamp::DesktopStamp;
 
 const SERVICE_GROUP: &str = "[D-BUS Service]";
 const SERVICES: &str = "dbus-1/services";
@@ -65,19 +66,50 @@ pub(in crate::system) fn activation_exec(
         return None;
     }
     let name = bus_name(id)?;
-    applications_dirs
-        .iter()
-        .filter_map(|dir| dir.parent())
-        .map(|data| data.join(SERVICES).join(format!("{name}.service")))
+    services_dirs(applications_dirs)
+        .map(|dir| dir.join(format!("{name}.service")))
         .find_map(|file| service_exec(&file, name))
 }
 
+fn services_dirs(applications_dirs: &[PathBuf]) -> impl Iterator<Item = PathBuf> + '_ {
+    applications_dirs
+        .iter()
+        .filter_map(|dir| dir.parent())
+        .map(|data| data.join(SERVICES))
+}
+
+/// The service's `Exec`, when the file names `name` and the bus runs that
+/// command itself. A service with `SystemdService` is started as that unit,
+/// and its `Exec` is then often a placeholder such as `/bin/false`.
 fn service_exec(file: &Path, name: &str) -> Option<String> {
     let text = std::fs::read_to_string(file).ok()?;
     let pairs = keys_of(&text, SERVICE_GROUP);
-    (value(&pairs, "Name").as_deref() == Some(name))
-        .then(|| value(&pairs, "Exec"))
-        .flatten()
+    if value(&pairs, "Name").as_deref() != Some(name) || value(&pairs, "SystemdService").is_some() {
+        return None;
+    }
+    value(&pairs, "Exec")
+}
+
+/// Versions of the service directories beside the entry directories and of
+/// the service files in them, so an index that read a service is rebuilt
+/// when one changes.
+pub(in crate::system) fn service_stamps(applications_dirs: &[PathBuf]) -> Vec<DesktopStamp> {
+    services_dirs(applications_dirs)
+        .flat_map(|dir| {
+            let mut files: Vec<_> = std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                .filter(|path| {
+                    path.extension()
+                        .is_some_and(|extension| extension == "service")
+                })
+                .collect();
+            files.sort();
+            std::iter::once(dir).chain(files)
+        })
+        .map(DesktopStamp::read)
+        .collect()
 }
 
 /// Every command other than its `Exec` the entry starts its application with:
