@@ -35,9 +35,15 @@ fn two_holds_in_a_row_leave_exactly_one_holder() {
     let first = hold
         .after_keys(Duration::from_secs(5))
         .expect("first holder");
+    let started = std::time::Instant::now();
     let second = hold
         .after_keys(Duration::from_secs(5))
         .expect("second holder");
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "replacing the holder waited {:?} for the first one to end",
+        started.elapsed()
+    );
     let mut status = 0;
     let reaped = unsafe { libc::waitpid(first, &mut status, libc::WNOHANG) };
     assert_eq!(reaped, -1, "the first holder was already killed and reaped");
