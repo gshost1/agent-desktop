@@ -121,6 +121,15 @@ Losses: hn1, hn2, hn4, hn7, hn8 (more turns). Second-call input: upstream ~14.1k
 The fork's first call is `skills get desktop; skills get platform` = 28 KB of output.
 
 
+
+## Session 2026-11-15 00:00 (after the reset) - control's list
+1. Final-head review status: #173 lead MERGE (01aedc5f, unchanged); #177 independent re-review MERGE on cb5b2a13 (+clean main merge 6a4ab2bc; 3 nits: adoption needs --timeout > ~6 s undocumented, flaky X read resets the 2 s window wait, missing tests/wording); #178 independent re-review MERGE on caa854a6 (+clean main merge fda07e60); #182 review FIX open -> linux-losses fixing (NOT mergeable yet); #183 independent review running; #184 lead MERGE (test-only; nit: CStr::from_ptr on a possibly null last-error in the assert message).
+2. #169 conflicts -> since-diff merging main.
+3. #18 redo as a fresh branch off main -> queued for a worker.
+4. #34 conflicts -> queued for a worker.
+5a. DONE: Linux skill/docs said INTERNAL for an exposed state root (6 places incl. capabilities.md the audit missed) -> PERM_DENIED; skill test no_skill_names_internal_for_a_state_root_other_users_can_reach, invert-verified (failed twice on old text). PR #189 (fix/linux-state-root-perm-denied-docs).
+5b. DONE in #189: #171 fragment scoped - the menu/application-surface branch runs only where is_application_surface is true (macOS adapter); overlay surfaces per platform: macOS sheet/alert/popover, Linux sheet/alert, Windows sheet. Text-only (no meaningful test for a changelog claim).
+
 ## RESUME HERE (paused 2026-11-14 ~21:30 PST for the subscription limit; resumes after 01:00 PST Sunday)
 
 Control's order after the reset: #182 (XTEST crash), #177, #178 first. Rules in force: <=4 laptop workers; all cargo via
