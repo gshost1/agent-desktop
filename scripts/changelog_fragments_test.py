@@ -54,6 +54,12 @@ class CheckTests(unittest.TestCase):
             with self.subTest(fixture=path.name):
                 self.assertEqual(run("check", str(path))[0], 0)
 
+    def test_a_missing_fragment_fails_without_a_traceback(self):
+        code, _, err = run("check", "/nonexistent/changelog.d/fix-gone.md")
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("FAIL: /nonexistent/changelog.d/fix-gone.md: cannot read it"))
+        self.assertNotIn("Traceback", err)
+
     def test_missing_fragment_directory_fails(self):
         with ReleaseTree() as root:
             shutil.rmtree(root / "changelog.d")
