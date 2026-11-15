@@ -56,12 +56,13 @@ fn unsupported_strict_resolution_does_not_fall_back_to_window_listing() {
     let _home = HomeGuard::new();
     let mut entry = crate::adapter::minimal_ref_entry("button", None);
     entry.source.source_window_id = Some("w-1".into());
-    let error = execute_with_ref(
+    let error = execute_after_action(
         WaitSelectorInput {
             timeout_ms: 30,
             ..base_input("button:Close", true)
         },
-        Some(&entry),
+        &entry,
+        None,
         &CodeErrorAdapter {
             code: ErrorCode::WindowNotFound,
         },
@@ -77,9 +78,10 @@ fn confirmed_window_absence_survives_default_process_state_capability() {
     let _home = HomeGuard::new();
     let mut entry = crate::adapter::minimal_ref_entry("button", None);
     entry.source.source_window_id = Some("closed-window".into());
-    let result = execute_with_ref(
+    let result = execute_after_action(
         base_input("button:Close", true),
-        Some(&entry),
+        &entry,
+        None,
         &StrictDiagnosticAdapter,
         &CommandContext::default(),
     )
@@ -130,12 +132,13 @@ fn a_web_ref_wait_reads_the_page_and_a_window_ref_wait_reads_the_window() {
         entry.source.source_window_id = Some("w-1".into());
         entry.source.source_window_title = Some("Weather - Browser".into());
         entry.source.source_surface = surface;
-        let _ = execute_with_ref(
+        let _ = execute_after_action(
             WaitSelectorInput {
                 timeout_ms: 30,
                 ..base_input("statictext:Honolulu", false)
             },
-            Some(&entry),
+            &entry,
+            None,
             &adapter,
             &CommandContext::default(),
         );
