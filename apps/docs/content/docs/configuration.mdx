@@ -23,6 +23,7 @@ Global flags work before or after the command name, so `agent-desktop --headed c
     <tr><td><code>--wait-for SELECTOR</code>, <code>-w</code></td><td>none</td><td>After the command, poll until an element matches. See <a href="#post-action-wait-flags">Post-action wait flags</a>.</td></tr>
     <tr><td><code>--wait-for-gone SELECTOR</code></td><td>none</td><td>After the command, poll until no element matches.</td></tr>
     <tr><td><code>--wait-timeout MS</code></td><td><code>30000</code></td><td>Longest wait for the two flags above.</td></tr>
+    <tr><td><code>--daemon</code></td><td>off</td><td>Run this call through a warm background process; same output. Linux and macOS. See <a href="/desktop/guides/daemon">Daemon mode</a>.</td></tr>
     <tr><td><code>--verbose</code>, <code>-v</code></td><td>off</td><td>Write debug logs to stderr. Stdout stays one JSON envelope.</td></tr>
     <tr><td><code>--debug</code>, <code>--screenshot PATH.html</code></td><td>off</td><td>Write a visual debug HTML file for <code>snapshot</code> or <code>click</code>. Each requires the other. See <a href="/desktop/guides/traces#make-a-visual-debug-file">Traces</a>.</td></tr>
     <tr><td><code>--help</code>, <code>-h</code>; <code>--version</code>, <code>-V</code></td><td></td><td>Print help or the version as text. The <code>version</code> command prints it as JSON.</td></tr>
@@ -63,6 +64,8 @@ agent-desktop snapshot --app gnome-calculator -w "button:7"
     <tr><td><code>AGENT_DESKTOP_HOME</code></td><td>Relocates the <a href="#state-root">state root</a>. Must be an absolute path.</td></tr>
     <tr><td><code>AGENT_DESKTOP_SESSION</code></td><td>Session id used when <code>--session</code> is not passed. <code>session start</code> prints the line that sets it. An empty value is <code>INVALID_ARGS</code>.</td></tr>
     <tr><td><code>AGENT_DESKTOP_AGENT_ID</code></td><td>Subagent id used when <code>--agent-id</code> is not passed.</td></tr>
+    <tr><td><code>AGENT_DESKTOP_DAEMON</code></td><td><code>1</code> runs every call through <a href="/desktop/guides/daemon">daemon mode</a>, as <code>--daemon</code> does for one call. Any other value leaves it off.</td></tr>
+    <tr><td><code>AGENT_DESKTOP_DAEMON_IDLE_MS</code></td><td>How long an idle daemon waits for a call before it exits, 100 to 86400000. Default <code>300000</code>.</td></tr>
     <tr><td><code>AGENT_DESKTOP_MACOS_HELPER_PATH</code></td><td>macOS only. Absolute path to the packaged <code>agent-desktop-macos-helper</code>. The npm launcher sets it.</td></tr>
     <tr><td><code>RUST_LOG</code></td><td>Log filter for stderr logs. A valid value replaces the default level.</td></tr>
   </tbody>
