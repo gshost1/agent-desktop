@@ -80,6 +80,20 @@ fn a_modal_dialog_already_active_over_the_window_is_refused_before_any_request()
     assert_eq!(details["dialog"], "About");
     assert_eq!(details["physical_delivery_started"], false);
     assert!(writes(&world).is_empty(), "{:?}", writes(&world));
+    for minimized in [false, true] {
+        let mut world = World::new(Some(OTHER));
+        world.open_modal = Some("About".to_owned());
+        world.minimized = Some(minimized);
+        world.desktop = DesktopPlacement::On(2);
+        world.current_desktop = Some(1);
+        let error = failure(&world);
+        assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+        assert!(
+            writes(&world).is_empty(),
+            "minimized={minimized}: {:?}",
+            writes(&world)
+        );
+    }
 }
 
 #[test]

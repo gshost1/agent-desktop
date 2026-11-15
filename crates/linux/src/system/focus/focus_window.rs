@@ -243,6 +243,9 @@ pub(in crate::system) fn run(
         return Err(refusal(Cause::OverviewOpen));
     }
     let view = client_view(world, client).map_err(refusal)?;
+    if let Some(dialog) = world.open_modal_over(client) {
+        return Err(modal_refusal(&dialog));
+    }
     let mut prior_delivery = DeliverySemantics::not_delivered();
     let outcome = (|| {
         if let Some(desktop) = view.other_desktop {
@@ -277,9 +280,6 @@ pub(in crate::system) fn run(
             }
             None => active,
         };
-        if let Some(dialog) = world.open_modal_over(client) {
-            return Err(modal_refusal(&dialog));
-        }
         match ask_and_wait(world, client, active, deadline, false) {
             Err(error) if was_ignored(&error) => {
                 if deadline.is_expired() {
