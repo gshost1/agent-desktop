@@ -187,7 +187,9 @@ impl Projector<'_> {
 
 /// The evidence of one node read, exactly as a walk projects it: a ref taken
 /// from a snapshot and a node read later through this function agree on every
-/// field the node's own reads decide.
+/// field the node's own reads decide, except `available_actions` on a toolkit
+/// whose headless routes refuse a token. A snapshot leaves that token out; this
+/// live read keeps it, because a headed request can still deliver it.
 pub(crate) fn project_node(
     read: &ObservedRead,
     in_web_document: bool,

@@ -369,6 +369,10 @@ pub(super) mod readiness_step;
 mod tests;
 
 #[cfg(test)]
+#[path = "observe_routes_tests.rs"]
+mod routes_tests;
+
+#[cfg(test)]
 #[path = "observe_nested_tests.rs"]
 mod nested_tests;
 
