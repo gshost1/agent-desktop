@@ -36,7 +36,10 @@ fn a_parse_failure_prints_the_summary_line_and_keeps_exit_two() {
     let stderr = String::from_utf8(output.stderr).expect("stderr is UTF-8");
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(stderr.starts_with("agent-desktop: INVALID_ARGS: "), "{stderr}");
+    assert!(
+        stderr.starts_with("agent-desktop: INVALID_ARGS: "),
+        "{stderr}"
+    );
     assert_eq!(stderr.lines().count(), 1, "{stderr}");
 }
 
@@ -45,7 +48,11 @@ fn a_successful_command_prints_nothing_on_stderr() {
     let output = run(&["version"], None);
 
     assert!(output.status.success());
-    assert!(output.stderr.is_empty(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

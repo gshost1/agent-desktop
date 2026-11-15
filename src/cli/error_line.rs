@@ -13,18 +13,11 @@ pub(crate) const ERROR_LINE_ENV: &str = "AGENT_DESKTOP_STDERR_SUMMARY";
 const MAX_FIELD_CHARS: usize = 400;
 
 /// Writes the summary lines for `response` to stderr, unless the caller turned
-/// them off with [`ERROR_LINE_ENV`].
+/// them off with [`ERROR_LINE_ENV`]. Every path that prints an envelope calls
+/// this one function, so each prints the same line.
 pub(crate) fn report_response_errors(response: &Response) {
     if error_lines_enabled(std::env::var(ERROR_LINE_ENV).ok().as_deref()) {
         write_lines(&response_error_lines(response));
-    }
-}
-
-/// Writes the summary lines for an envelope already in JSON form, such as one
-/// relayed from another process, exactly as [`report_response_errors`] would.
-pub(crate) fn report_envelope_errors(envelope: &Value) {
-    if error_lines_enabled(std::env::var(ERROR_LINE_ENV).ok().as_deref()) {
-        write_lines(&envelope_error_lines(envelope));
     }
 }
 
@@ -38,22 +31,9 @@ pub(crate) fn response_error_lines(response: &Response) -> Vec<String> {
             &error.message,
             error.suggestion.as_deref(),
         )],
-        (None, Some(data)) if response.ok && response.command == "batch" => {
-            batch_entry_lines(data)
-        }
+        (None, Some(data)) if response.ok && response.command == "batch" => batch_entry_lines(data),
         _ => Vec::new(),
     }
-}
-
-/// [`response_error_lines`] for an envelope in JSON form.
-pub(crate) fn envelope_error_lines(envelope: &Value) -> Vec<String> {
-    if envelope["ok"] != Value::Bool(true) {
-        return vec![error_object_line("", &envelope["error"])];
-    }
-    if envelope["command"] == "batch" {
-        return batch_entry_lines(&envelope["data"]);
-    }
-    Vec::new()
 }
 
 pub(crate) fn error_lines_enabled(setting: Option<&str>) -> bool {

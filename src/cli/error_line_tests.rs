@@ -82,21 +82,6 @@ fn a_successful_batch_gives_one_line_per_failed_completed_entry() {
 }
 
 #[test]
-fn a_json_envelope_gives_the_same_lines_as_the_response() {
-    let error = Response::err("click", ErrorPayload::from_app_error(&stale_ref_error()));
-    let batch = Response::ok("batch", batch_data());
-    let success = Response::ok("version", json!({}));
-
-    for response in [error, batch, success] {
-        let envelope = serde_json::to_value(&response).unwrap();
-        assert_eq!(
-            envelope_error_lines(&envelope),
-            response_error_lines(&response)
-        );
-    }
-}
-
-#[test]
 fn the_env_setting_turns_the_line_off_only_when_asked() {
     assert!(error_lines_enabled(None));
     assert!(error_lines_enabled(Some("1")));
