@@ -15,6 +15,7 @@ tasks_heldout.py is frozen by sha256, so run_native.py installs this over its cl
 """
 import json
 import os
+import re
 import signal
 import subprocess
 import time
@@ -23,14 +24,19 @@ BENCH_PREFIXES = ("seed-ho-", "bench-ho-")
 PANEL_TITLES = {"Fonts", "Colors", "Adjust Color", "Adjust Size", "Inspector", "Spelling and Grammar",
                 "Substitutions", "Typography", "Show Colors", "Show Fonts"}
 ESCAPE_KEYCODE = "53"
+CRASH_HOST = "UserNotificationCenter"
+IGNORE_BUTTON = re.compile(r'^\s*(@\S+) button "Ignore"')
+CRASH_DIALOGS_MAX = 20
 
 
 class Desktop:
     """The side effects, injectable for tests: macctl, pids and signals."""
 
-    def __init__(self, macctl, sleep=time.sleep):
+    def __init__(self, macctl, sleep=time.sleep, reader=None, clicker=None):
         self.macctl = macctl
         self.sleep = sleep
+        self.reader = reader
+        self.clicker = clicker
 
     def pids(self, app):
         out = subprocess.run(["pgrep", "-x", app], capture_output=True, text=True).stdout
@@ -48,6 +54,49 @@ class Desktop:
         except (json.JSONDecodeError, subprocess.TimeoutExpired):
             return None
         return [str(t) for t in titles] if isinstance(titles, list) else None
+
+
+TOP_LEVEL = re.compile(r"^ {0,2}(?:@\S+ )?(?:window|dialog|sheet)\b")
+
+
+def dialog_blocks(lines):
+    """The AX lines of each top-level window or dialog (a snapshot may nest them one level under `application`)."""
+    blocks = []
+    for line in lines:
+        if TOP_LEVEL.match(line):
+            blocks.append([])
+        if blocks:
+            blocks[-1].append(line)
+    return blocks
+
+
+def crash_dialogs(d, apps):
+    """(app, Ignore ref) for every crash-report dialog that names one of `apps`. Other alerts are read only to test
+    for those exact phrases; their text is never returned or printed."""
+    if d.reader is None or not d.pids(CRASH_HOST):
+        return []
+    out = []
+    for block in dialog_blocks(d.reader(CRASH_HOST)):
+        text = " ".join(block)
+        named = [a for a in apps if f"{a} quit unexpectedly" in text]
+        refs = [m.group(1) for m in (IGNORE_BUTTON.match(line) for line in block) if m]
+        if named and refs:
+            out.append((named[0], refs[0]))
+    return out
+
+
+def dismiss_crash_dialogs(d, apps):
+    """Click Ignore on each crash-report dialog of a bench app; returns the apps whose dialogs were dismissed."""
+    gone = []
+    for _ in range(CRASH_DIALOGS_MAX):
+        found = crash_dialogs(d, apps)
+        if not found:
+            break
+        app, ref = found[0]
+        d.clicker(ref)
+        gone.append(app)
+        d.sleep(1)
+    return gone
 
 
 def is_bench_window(title):
@@ -117,10 +166,11 @@ def close_app(d, app, wait_s=30, allowed=None, discard=()):
     raise RuntimeError(f"{app} did not quit")
 
 
-def install(th):
+def install(th, reader=None, clicker=None):
     """Replace the task set's close_bench_app with close_app on the real desktop. A task set may name the other
-    windows its apps may show (`window_allowed(app, title)`) and more title prefixes to discard (DISCARD_PREFIXES)."""
-    d = Desktop(th.macctl)
+    windows its apps may show (`window_allowed(app, title)`) and more title prefixes to discard (DISCARD_PREFIXES).
+    reader(app) returns an app's AX lines and clicker(ref) clicks one, for crash-report dialogs."""
+    d = Desktop(th.macctl, reader=reader, clicker=clicker)
     allowed_for = getattr(th, "window_allowed", None)
     discard = tuple(getattr(th, "DISCARD_PREFIXES", ()))
 

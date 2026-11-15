@@ -16,6 +16,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -34,7 +35,33 @@ import desktop  # noqa: E402
 
 th = common.load_taskset()
 
-desktop.install(th)
+VERIFY_HOME = tempfile.mkdtemp(prefix="ho-dialogs-")
+
+
+def verify_ad(*args):
+    env = dict(os.environ, AGENT_DESKTOP_HOME=VERIFY_HOME)
+    env.pop("AGENT_DESKTOP_SESSION", None)
+    out = subprocess.run([str(common.VERIFY_AD), *args], capture_output=True, text=True, env=env, timeout=60)
+    try:
+        return json.loads(out.stdout)
+    except ValueError:
+        return {}
+
+
+def dialog_lines(app):
+    return (verify_ad("snapshot", "--app", app, "--lines").get("data") or {}).get("lines") or []
+
+
+DESKTOP = desktop.install(th, reader=dialog_lines, clicker=lambda ref: verify_ad("click", ref))
+
+
+def bench_apps():
+    return list(getattr(th, "NATIVE_APPS", ["TextEdit", "Preview", "System Settings"]))
+
+
+def crashed_apps():
+    """Bench apps showing a crash-report dialog now. A crash is an infrastructure fault: the run is marked invalid."""
+    return sorted({app for app, _ in desktop.crash_dialogs(DESKTOP, bench_apps())})
 
 RUNS = common.taskset_runs(th)
 
@@ -42,7 +69,10 @@ RUNS = common.taskset_runs(th)
 def reset_heldout_desktop():
     """Quit System Settings (only ever read) and the bench documents' apps. An app that shows any
     window that is not a bench window stops the run before the model starts; it is never touched."""
-    for app in getattr(th, "NATIVE_APPS", ["TextEdit", "Preview", "System Settings"]):
+    left = desktop.dismiss_crash_dialogs(DESKTOP, bench_apps())
+    if left:
+        print(f"dismissed {len(left)} leftover crash dialog(s): {', '.join(sorted(set(left)))}", flush=True)
+    for app in bench_apps():
         if app == "System Settings":
             tasks.quit_app(app)
         else:
@@ -124,6 +154,14 @@ def run_once(a):
         ok, why = False, f"forbidden command {forbidden[0]}; {why}"
     if capped.is_set():
         ok, why = False, f"timed out at the {th.NATIVE_CAP_S} s cap; {why}"
+    crashed = [f"{app} during the run" for app in crashed_apps()]
+    for step in (task.cleanup, lambda: post_arm_cleanup(a.arm, rdir)):
+        try:
+            step()
+        except Exception as exc:
+            print(f"{run_id} cleanup failed: {exc}", flush=True)
+    crashed += [f"{app} during cleanup" for app in crashed_apps() if f"{app} during the run" not in crashed]
+    desktop.dismiss_crash_dialogs(DESKTOP, bench_apps())
     del summary["commands"]
     summary.update({"suite": "native", "arm": a.arm, "arm_version": common.ARM_VERSIONS[a.arm], "run_id": run_id,
                     "task": a.task, "round": a.round, "model": a.model, "success": ok, "verify": why,
@@ -131,16 +169,16 @@ def run_once(a):
                     "rules": common.RULES, "violations": forbidden[:5],
                     "host": a.host})
     summary.update(driver.validity(stderr, rdir))
+    if crashed:
+        reason = "infrastructure: crash-report dialog for " + ", ".join(crashed)
+        summary["valid"] = False
+        summary["invalid_reason"] = "; ".join(filter(None, [summary.get("invalid_reason"), reason]))
     (rdir / "summary.json").write_text(json.dumps(summary, indent=1))
     with open(RUNS / "results-native.jsonl", "a") as fh:
         fh.write(json.dumps(summary) + "\n")
     print(f"{run_id} {a.arm:8} {a.task} ok={ok!s:5} wall={wall:6.1f}s cli={summary['cli_s']:5.1f}s "
-          f"turns={summary.get('num_turns')} in={summary['input_total']} | {why}", flush=True)
-    for step in (task.cleanup, lambda: post_arm_cleanup(a.arm, rdir)):
-        try:
-            step()
-        except Exception as exc:
-            print(f"{run_id} cleanup failed after the row was written: {exc}", flush=True)
+          f"turns={summary.get('num_turns')} in={summary['input_total']} | {why}"
+          + (f" | INVALID {summary['invalid_reason']}" if summary.get("valid") is False else ""), flush=True)
     return summary
 
 

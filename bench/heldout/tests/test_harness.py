@@ -214,6 +214,47 @@ class PairedReportTests(unittest.TestCase):
         self.assertIn("| 1 | ad-15 | 9/9 | 100% | 70%–100% |", text)
 
 
+CRASH_LINES = ['application "UserNotificationCenter"', '  dialog "alert"', '    image "app icon"',
+               '    statictext "Chess quit unexpectedly." value="Chess quit unexpectedly."', '    @s1:e1 button "Help"',
+               '    @s1:e2 button "Reopen"', '    @s1:e3 button "Ignore"', '    @s1:e4 button "Report…"',
+               '  dialog "alert"', '    statictext "Some other alert" value="Some other alert"',
+               '    @s1:e5 button "OK"']
+
+
+class CrashDialogTests(unittest.TestCase):
+    def fake(self, dialogs):
+        state = {"dialogs": dialogs, "clicked": []}
+
+        def reader(app):
+            return state["dialogs"][0] if state["dialogs"] else []
+
+        def clicker(ref):
+            state["clicked"].append(ref)
+            state["dialogs"] = state["dialogs"][1:]
+
+        d = desktop.Desktop(lambda *a, **k: "[]", sleep=lambda s: None, reader=reader, clicker=clicker)
+        d.pids = lambda app: [1]
+        return d, state
+
+    def test_only_a_bench_apps_crash_dialog_is_found(self):
+        d, _ = self.fake([CRASH_LINES])
+        self.assertEqual(desktop.crash_dialogs(d, ["Chess", "ColorSync Utility"]), [("Chess", "@s1:e3")])
+        self.assertEqual(desktop.crash_dialogs(d, ["TextEdit"]), [])
+
+    def test_dismiss_clicks_ignore_until_none_is_left_and_never_touches_other_alerts(self):
+        d, state = self.fake([CRASH_LINES, CRASH_LINES, CRASH_LINES[8:]])
+        self.assertEqual(desktop.dismiss_crash_dialogs(d, ["Chess"]), ["Chess", "Chess"])
+        self.assertEqual(state["clicked"], ["@s1:e3", "@s1:e3"])
+
+    def test_no_reader_or_no_dialog_host_finds_nothing(self):
+        d, _ = self.fake([CRASH_LINES])
+        d.reader = None
+        self.assertEqual(desktop.crash_dialogs(d, ["Chess"]), [])
+        d, _ = self.fake([CRASH_LINES])
+        d.pids = lambda app: []
+        self.assertEqual(desktop.crash_dialogs(d, ["Chess"]), [])
+
+
 class FakeDesktop(desktop.Desktop):
     """Scripted app: window titles per query, whether quit works, and whether a menu blocks quit until Escape."""
 
