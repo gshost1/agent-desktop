@@ -129,12 +129,22 @@ pub fn execute_verified_action(
         ));
     }
     result.post_state = Some(observed.state);
-    result = result.with_verified_delivery();
+    let commit_unobserved = result.commit_unobserved();
+    if !commit_unobserved {
+        result = result.with_verified_delivery();
+    }
     let details = result.details.get_or_insert_with(|| serde_json::json!({}));
     if let Some(details) = details.as_object_mut() {
         details.insert("verification_scope".into(), "element_state".into());
         if action.writes_element_value() {
             details.insert("verification_scope".into(), "element_value".into());
+        }
+        if commit_unobserved {
+            details.insert(
+                "verification_reason".into(),
+                "edit_commit_unobserved".into(),
+            );
+        } else if action.writes_element_value() {
             details.insert("application_commit".into(), "not_verified".into());
         }
     }

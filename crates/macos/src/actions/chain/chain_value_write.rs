@@ -31,9 +31,6 @@ mod imp {
                 value,
                 observed.as_deref(),
             );
-            if verified && attribute == "AXValue" {
-                crate::actions::chain::chain_edit_focus::commit_value_write(element, deadline)?;
-            }
             return if verified {
                 Ok(DeliveryOutcome::DeliveredVerified)
             } else {
@@ -42,10 +39,6 @@ mod imp {
         }
         let mut delivery = crate::actions::DeliveryTracker::default();
         delivery.mark_delivered();
-        if attribute == "AXValue" {
-            crate::actions::chain::chain_edit_focus::commit_value_write(element, deadline)
-                .map_err(|error| delivery.annotate(error))?;
-        }
         prepare(element, deadline).map_err(|error| delivery.annotate(error))?;
         let role = ax_helpers::element_role(element, deadline)
             .map_err(|error| delivery.annotate(error))?;

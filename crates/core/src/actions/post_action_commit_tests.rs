@@ -102,3 +102,56 @@ fn verified_steps_alone_never_mark_a_pending_commit() {
             .awaits_application_commit()
     );
 }
+
+fn written_field(execution: ActionResult) -> (ShadowedField, Result<ActionResult, AdapterError>) {
+    let adapter = ShadowedField {
+        execution,
+        reads_after_dispatch: AtomicUsize::new(0),
+        dispatched: AtomicUsize::new(0),
+    };
+    let result = execute_verified_action(
+        &adapter,
+        &NativeHandle::null(),
+        ActionRequest::headless(Action::SetValue("untitled folder".into())),
+        &InteractionLease::guarded(Deadline::after(1000).unwrap(), ()).unwrap(),
+    );
+    (adapter, result)
+}
+
+#[test]
+fn a_value_write_whose_commit_is_unobserved_reads_back_but_stays_unverified() {
+    let steps = vec![ActionStep::succeeded("AXValue").with_verified(true)];
+    let execution = ActionResult::from_execution(&Action::SetValue("x".into()), steps)
+        .with_commit_unobserved("click another field");
+    let (adapter, result) = written_field(execution);
+    let result = result.unwrap();
+
+    assert!(adapter.reads_after_dispatch.load(Ordering::SeqCst) > 0);
+    assert_eq!(
+        result.disposition(),
+        DeliverySemantics::delivered_unverified()
+    );
+    let details = result.details.as_ref().unwrap();
+    assert_eq!(details["application_commit"], "unobserved");
+    assert_eq!(details["verification_reason"], "edit_commit_unobserved");
+    assert_eq!(details["verification_scope"], "element_value");
+    assert_eq!(details["commit_hint"], "click another field");
+}
+
+#[test]
+fn an_unmarked_value_write_that_reads_back_stays_verified() {
+    let steps = vec![ActionStep::succeeded("AXValue").with_verified(true)];
+    let (_, result) = written_field(ActionResult::from_execution(
+        &Action::SetValue("x".into()),
+        steps,
+    ));
+    let result = result.unwrap();
+    assert_eq!(
+        result.disposition(),
+        DeliverySemantics::delivered_verified()
+    );
+    assert_eq!(
+        result.details.unwrap()["application_commit"],
+        "not_verified"
+    );
+}

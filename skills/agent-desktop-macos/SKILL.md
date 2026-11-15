@@ -76,7 +76,7 @@ Add `-w ":<text>"` or `-w "<role>:<text>"` to a ref action: it polls until the t
 
 ## Linked fields in sheets
 
-`set-value @ref "<value>"` on a text field gives it keyboard focus in its window first, without raising the app, so the app's own edit handling runs. On a single-line field it then performs `AXConfirm`, as Return does, so a field that hands its text to the document only when editing ends has committed it before you save. A text area and a password field are not confirmed: after `set-value` on a text area, save and check the file before you report done. In an image-size sheet that keeps the aspect ratio, setting the height updates the width. Read the linked field back before you confirm the sheet. Its fields may have no names: tell them apart by order and value, and check the unit pop-up (`select @ref "pixels"`) before you write numbers.
+`set-value @ref "<value>"` on a text field gives it keyboard focus in its window first, without raising the app, so the app's own edit handling runs. On macOS a text field or text area that `set-value` writes returns `delivered_unverified` with `application_commit: "unobserved"`: the field holds the text, but many apps take it into the document only when editing ends. Before you save or confirm, run `focus` on another field in the same window, then check the result. Never press Return in the field to commit it: Return can submit a form or press a default button. In an image-size sheet that keeps the aspect ratio, setting the height updates the width. Read the linked field back before you confirm the sheet. Its fields may have no names: tell them apart by order and value, and check the unit pop-up (`select @ref "pixels"`) before you write numbers.
 
 ## Keys and menu shortcuts
 

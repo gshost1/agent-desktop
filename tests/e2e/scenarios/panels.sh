@@ -40,7 +40,7 @@ panel_target() {
 
 panel_suite() {
     local label="$1" open_panel window main_window chosen check height text close
-    local check_status width_status selection_status repeated code delivery commit commit_status
+    local check_status width_status selection_status repeated code delivery commit commit_status written
     MODE_FLAG="$2"
     note "[$label] floating panel: listed, observed, acted on"
     "$bin" focus-window --app "$app" >/dev/null 2>&1
@@ -71,9 +71,15 @@ panel_suite() {
         "$([ "$width_status" = "768" ] && echo 1 || echo 0)" "linked width=$width_status"
 
     commit="$(panel_target "$window" textfield panel-commit)"
-    act_target "$commit" set-value "committed-$label" >/dev/null 2>&1
+    written="$(act_target "$commit" set-value "committed-$label" 2>/dev/null)"
+    assert "set-value on a field reports that the app's commit is unobserved" \
+        "$([ "$(json_field "$written" data.disposition.delivery)" = "delivered_unverified" ] && \
+            [ "$(json_field "$written" data.details.application_commit)" = "unobserved" ] && echo 1 || echo 0)" \
+        "delivery=$(json_field "$written" data.disposition.delivery) commit=$(json_field "$written" data.details.application_commit)"
+    height="$(panel_target "$window" textfield panel-height)"
+    act_target "$height" focus >/dev/null 2>&1
     commit_status="$(main_window_value panel-commit-status "committed-$label")"
-    assert "set-value commits a field that hands its text over only when editing ends" \
+    assert "focus on another field ends the edit and the app commits it" \
         "$([ "$commit_status" = "committed-$label" ] && echo 1 || echo 0)" "committed=$commit_status"
 
     text="$(panel_target "$window" textfield panel-text)"
@@ -107,3 +113,31 @@ panel_suite() {
 panel_suite headless ""
 check_fixture_contention || { finish; exit 1; }
 panel_suite headed "--headed"
+
+form_suite() {
+    local open_form form plain swift counts
+    note "[form] set-value never presses a default button or submits"
+    "$bin" focus-window --app "$app" >/dev/null 2>&1
+    main_window="$(fixture_window_id "AgentDesk Fixture")"
+    require_target open_form button open-form-window
+    act_target "$open_form" scroll-to >/dev/null 2>&1
+    require_target open_form button open-form-window
+    act_target "$open_form" click >/dev/null 2>&1
+    for _ in $(seq 1 25); do
+        form="$(fixture_window_id "Fixture Form")"
+        [ -n "$form" ] && break
+        sleep 0.1
+    done
+    [ -n "$form" ] || { assert "the form window opens" 0 ""; return; }
+    plain="$(panel_target "$form" textfield form-plain)"
+    act_target "$plain" set-value "written-plain" >/dev/null 2>&1
+    require_target swift textfield swift-submit
+    act_target "$swift" set-value "written-swift" >/dev/null 2>&1
+    sleep 0.5
+    counts="$(main_window_value form-default-count 0)/$(main_window_value swift-default-count 0)/$(main_window_value swift-submit-count 0)/$(main_window_value form-action-count 0)"
+    assert "set-value presses no default button and runs no submit or field action" \
+        "$([ "$counts" = "0/0/0/0" ] && echo 1 || echo 0)" "default/swift-default/swift-submit/action=$counts"
+    act_target "$(panel_target "$form" button Close)" click >/dev/null 2>&1
+}
+
+form_suite

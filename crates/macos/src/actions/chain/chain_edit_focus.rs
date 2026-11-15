@@ -7,11 +7,6 @@
 //! of it, so the value reads back as written and a later confirm uses the old
 //! one. Focus moves only inside the target's window; the application is not
 //! activated.
-//!
-//! A field bound to a document often hands its text to the model only when
-//! editing ends, as Return does. After the write, a single-line field that
-//! advertises `AXConfirm` is confirmed, so the document holds the new value
-//! before a later save.
 
 use agent_desktop_core::{AdapterError, Deadline};
 
@@ -44,34 +39,6 @@ pub(crate) fn focus_before_value_write(
         Err(_) if !deadline.is_expired() => Ok(()),
         Err(error) => Err(error),
     }
-}
-
-/// Whether a written field of this accessibility role and subrole commits its
-/// edit through `AXConfirm`. A text area takes Return as a new line, and a
-/// secure field's Return can submit its form, so neither is confirmed.
-pub(crate) fn commits_by_confirm(ax_role: Option<&str>, ax_subrole: Option<&str>) -> bool {
-    matches!(ax_role, Some("AXTextField" | "AXComboBox")) && ax_subrole != Some("AXSecureTextField")
-}
-
-/// Confirms a written single-line field so the application commits the edit.
-/// Returns whether `AXConfirm` was performed.
-#[cfg(target_os = "macos")]
-pub(crate) fn commit_value_write(
-    element: &crate::tree::AXElement,
-    deadline: Deadline,
-) -> Result<bool, AdapterError> {
-    use crate::tree::properties::attributes::copy_string_attr_result;
-
-    let role = copy_string_attr_result(element, accessibility_sys::kAXRoleAttribute, deadline);
-    let subrole =
-        copy_string_attr_result(element, accessibility_sys::kAXSubroleAttribute, deadline);
-    let (Ok(role), Ok(subrole)) = (role, subrole) else {
-        return Ok(false);
-    };
-    if !commits_by_confirm(role.as_deref(), subrole.as_deref()) {
-        return Ok(false);
-    }
-    crate::actions::ax_helpers::try_ax_action_or_err(element, "AXConfirm", deadline)
 }
 
 #[cfg(test)]
