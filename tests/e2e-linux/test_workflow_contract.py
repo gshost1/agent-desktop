@@ -11,8 +11,10 @@ class WorkflowTests(unittest.TestCase):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
         self.assertIn("workflow_dispatch", workflow)
         self.assertIn("LINUX_E2E_RUNNER", workflow)
-        self.assertNotIn("continue-on-error", workflow)
         self.assertIn("tests/e2e-linux/run.sh", workflow)
+        job, steps = workflow.split("\n    steps:\n", 1)
+        self.assertNotIn("continue-on-error", steps)
+        self.assertEqual(job.count("\n    continue-on-error: true\n"), 1, job)
 
     def test_hosted_lane_runs_the_self_tests(self):
         ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
@@ -30,11 +32,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('AGENT_DESKTOP_EXPECT_SESSION_BUS: "1"', runs[0])
         self.assertIn('AGENT_DESKTOP_EXPECT_ATSPI_BUS: "1"', runs[0])
 
-    def test_live_workflow_runs_on_every_push_to_main(self):
+    def test_live_workflow_runs_on_pull_requests_and_main(self):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
         triggers = workflow.split("\npermissions:", 1)[0]
+        self.assertIn("\n  pull_request:\n", triggers)
         self.assertIn("\n  push:\n    branches: [main]", triggers)
         self.assertIn("--tier x11-openbox", workflow)
+
+    def test_live_workflow_writes_the_harness_summary_even_when_legs_fail(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        steps = workflow.split("\n      - name: ")
+        summary = [step for step in steps if "runner/step_summary.py" in step]
+        self.assertEqual(len(summary), 1, summary)
+        self.assertIn("always()", summary[0])
+        self.assertIn('>> "$GITHUB_STEP_SUMMARY"', summary[0])
+        self.assertIn("/ad-sessions/e2e-suite-*/report.txt", summary[0])
+        harness = [step for step in steps if "--tier x11-openbox" in step]
+        self.assertEqual(len(harness), 1, harness)
+        self.assertIn("AGENT_DESKTOP_SESSION_BASE: ${{ runner.temp }}/ad-sessions", harness[0])
+        self.assertLess(steps.index(harness[0]), steps.index(summary[0]))
 
 
 
