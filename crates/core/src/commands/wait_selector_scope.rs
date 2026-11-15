@@ -8,9 +8,10 @@
 //! process once two reads in a row found the ref's window closed. A ref on an
 //! application surface, such as a menu bar item, reads that surface, then the
 //! process's focused window, or its front window when none is focused, and
-//! the windows opened since the action. A sheet, alert or popover is not part
-//! of its window's tree, so a read no window satisfies goes on to the
-//! overlays open on the process's windows. A process
+//! the windows opened since the action. A sheet, alert, popover or open menu
+//! is not part of its window's tree, so a read no window satisfies goes on to
+//! the overlays open on the process's windows; the open menu is read once per
+//! poll, and not at all where the platform owns it by application. A process
 //! that exited or crashed can show nothing more, so the wait ends at once; one
 //! whose reads keep failing ends only once the platform's own process check
 //! says it is unresponsive.
