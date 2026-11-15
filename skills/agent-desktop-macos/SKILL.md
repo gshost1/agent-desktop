@@ -68,7 +68,7 @@ A panel that floats above an app's documents, such as Fonts, Colors or an inspec
 
 ## Long lists
 
-A snapshot prints a long list or grid before the toolbar below it. Read all of it, or filter it with `grep -i "<name>"`, never with `head`, and look for the item by name before you search or scroll. After `set-value` on a search field, snapshot again and act on the refs the filtered list shows, which may name an item differently, such as `group "Show <name>"`; do not type the text again. If the filtered list does not show the item, clear the search with `clear @ref` and read the full list, still without `type` or `--headed`.
+A snapshot prints a long list or grid before the toolbar below it. Read all of it, or filter it with `grep -i "<name>"`, never with `head`, and look for the item by name before you search or scroll. After `set-value` on a search field, snapshot again and act on the refs the filtered list shows, which may name an item differently, such as `group "Show <name>"`; do not type the text again. If the filtered list does not show the item, clear the search with `clear @ref` and read the full list, still without `type` or `--headed`. When the list has no search field and the item is not in the snapshot because the list has not loaded it, run `find --root <list ref> --name "<name>" --exact --first --scroll` once instead of scrolling and reading in a loop; it pages the list headlessly until the item loads.
 
 ## Wait for the effect in the same call
 

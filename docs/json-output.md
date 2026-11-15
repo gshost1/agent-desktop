@@ -587,6 +587,30 @@ could hide an earlier whole-name match (see above):
 - Without the flag the data has no `complete` field, and an incomplete walk is
   still `TIMEOUT`.
 
+### Scroll search
+
+`find --scroll` adds `data.scroll` to the usual find data. It says how far the
+search paged the `--root` scroll area and why it stopped:
+
+```json
+{ "data": { "snapshot_id": "s8f3k2p9",
+  "match": { "ref_id": "@s8f3k2p9:e1", "role": "button", "name": "Row 300" },
+  "scroll": { "pages": 48, "view_moved": true, "directions": ["down"],
+              "stopped": "found" } } }
+```
+
+- `pages` counts the pages sent, `directions` the directions searched in order,
+  and `view_moved` whether any page was observed to move the area. A search
+  that matched on its first look sends nothing: `pages: 0`, `directions: []`.
+- `unconfirmed_pages` appears when some pages were sent but their movement
+  could not be read; such a page may have moved the view.
+- `stopped` is `found`, `both_ends` (no match between the two ends of the
+  area: `match` is `null`, or `matches` is empty) or `page_cap` (200 pages).
+- The view stays where the search stopped.
+- An error that ends the search carries the same object in
+  `details.scroll_search`, with `stopped` `deadline` or `error`. Once a page may
+  have moved the view, the error's disposition is `delivered_unverified`.
+
 ## Derived names
 
 A `row`, `treeitem` or `cell` that no accessible-name source names, but whose
