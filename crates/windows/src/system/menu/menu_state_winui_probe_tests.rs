@@ -73,9 +73,12 @@ fn windows_of(pid: agent_desktop_core::ProcessId) {
 #[test]
 fn probe_the_menu_detector_against_the_hosts_notepad() {
     bootstrap();
+    let launched = std::process::Command::new("explorer.exe")
+        .arg("shell:AppsFolder\\Microsoft.WindowsNotepad_8wekyb3d8bbwe!App")
+        .status();
+    eprintln!("PROBE launch via AppsFolder: {launched:?}");
     let _home = HomeIsolation::enter("agent-desktop-winui-menu-probe");
     let _ = agent_desktop_core::install_private_file_ops(Box::new(WindowsPrivateFile::new()));
-    let _ = std::process::Command::new("notepad.exe").spawn();
     let mut notepad = None;
     for _ in 0..60 {
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -96,6 +99,35 @@ fn probe_the_menu_detector_against_the_hosts_notepad() {
         }
     }
     let Some(window) = notepad else {
+        let all = list_windows_live(
+            &WindowFilter {
+                focused_only: false,
+                app: None,
+            },
+            deadline(10_000),
+        )
+        .unwrap_or_default();
+        for w in all {
+            eprintln!("PROBE listed {} app={} title={:?}", w.id, w.app, w.title);
+        }
+        let _ = enumerate_top_level(|window| {
+            let pid = live_window_owner(window.handle);
+            let image = pid.and_then(crate::system::process_identity::process_image_name);
+            if image
+                .as_deref()
+                .is_some_and(|i| i.to_ascii_lowercase().contains("notepad"))
+            {
+                eprintln!(
+                    "PROBE raw notepad window {} class={:?} visible={} cloaked={} tool={}",
+                    window.handle as isize,
+                    window_class_name(window.handle),
+                    window.visible,
+                    window.cloaked,
+                    window.tool
+                );
+            }
+            true
+        });
         eprintln!("PROBE no notepad window");
         return;
     };
