@@ -55,6 +55,13 @@ impl SystemOps for LinuxAdapter {
         permissions::report(self.bus(), deadline)
     }
 
+    fn preflight_permission_report(
+        &self,
+        deadline: Deadline,
+    ) -> Result<PermissionReport, AdapterError> {
+        permissions::preflight_report(self.bus(), deadline)
+    }
+
     fn focused_window(&self, deadline: Deadline) -> Result<Option<WindowInfo>, AdapterError> {
         crate::system::focused_window(self.bus(), deadline)
     }

@@ -66,14 +66,19 @@ pub(crate) fn is_new_menu_window(baseline: &MenuBaseline, menu_windows_now: &[i6
         .any(|number| !baseline.menu_windows.contains(number))
 }
 
-/// A baseline exists only when the accessibility read positively shows no
-/// open menu and the window server answers; the window list is read only then.
+/// A baseline exists only when the accessibility read shows no open menu and
+/// the window server answers; the window list is read only then. A menu
+/// search that ran out of its node budget, as in a window with thousands of
+/// elements, shows no open menu either: the baseline then rests on the window
+/// list alone, and only a pop-up menu window that appears afterwards counts.
 pub(crate) fn baseline_from(
     ax_open: Result<bool, AdapterError>,
     menu_windows: impl FnOnce() -> Result<Vec<i64>, AdapterError>,
 ) -> Option<MenuBaseline> {
-    if ax_open.ok()? {
-        return None;
+    match ax_open {
+        Ok(false) => {}
+        Err(error) if crate::system::window::popup_menu_window::searched_past_budget(&error) => {}
+        Ok(true) | Err(_) => return None,
     }
     Some(MenuBaseline {
         menu_windows: menu_windows().ok()?,

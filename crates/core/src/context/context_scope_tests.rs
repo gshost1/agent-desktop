@@ -244,6 +244,9 @@ fn command_end_omits_secret_and_huge_error_messages() {
     assert!(body.len() < 4096);
 }
 
+/// The reap is reduced to removing the manifest, which is what the command
+/// reads after its lease. Windows cannot remove the session directory while
+/// this test holds the session's lock file open inside it.
 #[test]
 fn a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease() {
     let guard = crate::refs::refs_test_support::HomeGuard::new();
@@ -265,7 +268,7 @@ fn a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease(
     });
     started.wait();
     std::thread::sleep(std::time::Duration::from_millis(300));
-    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_file(dir.join(crate::session::SESSION_MANIFEST_FILE)).unwrap();
     drop(lock);
 
     assert!(!command.join().unwrap().unwrap().trace_enabled());

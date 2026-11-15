@@ -192,8 +192,9 @@ fn stable_preflight(
     target: &ResolvedRefAction<'_>,
     request: &ActionRequest,
 ) -> Result<ActionabilityPreflight, AppError> {
-    let stability =
-        actionability::StabilityExpectation::permissive(target.entry.geometry.bounds_hash);
+    let stability = actionability::StabilityExpectation::permissive(
+        ref_action_poll_state::screen_bounds_hash(target.entry),
+    );
     let report = ref_action_actionability::check_report_with_trace(
         target,
         request,

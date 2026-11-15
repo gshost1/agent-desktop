@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn acquire_collapses_to_lock_timeout_under_an_expired_inherited_deadline() {
+    fn acquire_reports_a_deadline_expiry_under_an_expired_inherited_deadline() {
         let path = lock_path("expired-inherited");
         let inherited = Deadline::after(0).unwrap();
         let _scope = crate::wait::deadline::enter_scope(Some(inherited));
@@ -105,21 +105,27 @@ mod tests {
         let AppError::Adapter(adapter_err) = error else {
             panic!("expected adapter error");
         };
-        let details = adapter_err.details.expect("lock timeout details");
-        assert_eq!(details["kind"], "lock_timeout");
-        assert_eq!(details["purpose"], "ref store lock");
+        let details = adapter_err.details.expect("deadline details");
+        assert_eq!(details["kind"], "deadline");
+        assert!(details.get("contention_count").is_none());
         assert!(!lock_holder_is_live(&path));
     }
 
     #[test]
     fn lock_timeout_details_name_the_lock_file_without_its_directory() {
         let path = lock_path("redacted-directory");
-        let inherited = Deadline::after(0).unwrap();
-        let _scope = crate::wait::deadline::enter_scope(Some(inherited));
-        let AppError::Adapter(adapter_err) = RefStoreLock::acquire(&path).err().unwrap() else {
+        let _held = RefStoreLock::acquire(&path).unwrap();
+        let _clock = crate::wait::deadline::VirtualClock::freeze();
+        let deadline = Deadline::after(10).unwrap();
+        let AppError::Adapter(adapter_err) = RefStoreLock::acquire_with_deadline(&path, deadline)
+            .err()
+            .unwrap()
+        else {
             panic!("expected adapter error");
         };
         let details = adapter_err.details.expect("lock timeout details");
+        assert_eq!(details["kind"], "lock_timeout");
+        assert_eq!(details["purpose"], "ref store lock");
         assert_eq!(details["path"], "store.lock");
     }
 
