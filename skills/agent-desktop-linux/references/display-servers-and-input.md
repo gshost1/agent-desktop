@@ -18,7 +18,8 @@ A stale `WAYLAND_DISPLAY` from another session falls through to a working
 |------------|-----|-----------------|
 | Observation, semantic ref actions | AT-SPI, no tool | AT-SPI, no tool |
 | Keys, `press`, text keys | XTEST in process, live keymap | Mutter RemoteDesktop, keysyms |
-| App pointer: `hover`, `drag`, `mouse-*`, physical click, wheel | XTEST, `--headed` | None: `ACTION_NOT_SUPPORTED` with `physical_delivery_started: false` |
+| App pointer at coordinates: `mouse-*`, `hover --xy`, `drag --from-xy --to-xy` | XTEST, `--headed` | Mutter RemoteDesktop and ScreenCast, `--headed`, `delivered_unverified` |
+| App pointer aimed at a ref: physical click, `hover`, `drag`, `scroll`, `double-click` | XTEST, `--headed` | None: `ACTION_NOT_SUPPORTED`, cause `wayland_session`, `physical_delivery_started: false` |
 | Window ops | EWMH on the X11 display | Xwayland clients only; native windows and un-minimize refused |
 | `focus-window`, headed scoped `press` | EWMH activation, then keys for `press` | Refused with `ACTION_NOT_SUPPORTED`, cause `wayland_session`, Xwayland clients included |
 | Headless scoped `press` | Live display and frame focus guards, no activation | Live frame focus guard, no activation |
@@ -49,10 +50,12 @@ synthetic pointer path moves the user's real cursor.
   refusal. When the element has no semantic action either, the pointer refusal
   is returned unchanged. Focus, policy, timeout, uncertain and partial-delivery
   refusals never fall back.
-- On Wayland the CLI's pointer gate runs before that fallback: ordinary-app
-  headed pointer commands are refused at once with `ACTION_NOT_SUPPORTED`, cause
-  `wayland_session` and `physical_delivery_started: false` (`click`, `hover`,
-  `double-click`, `mouse-wheel`, `mouse-down` and `select` included). A
+- On Wayland the CLI's pointer gate runs before that fallback: a headed
+  pointer command aimed at a ref is refused at once with
+  `ACTION_NOT_SUPPORTED`, cause `wayland_session` and
+  `physical_delivery_started: false` (`click`, `hover`, `double-click`, `drag
+  --from`, `scroll` and `select` included). Commands addressed only by
+  coordinates are sent; see Pointer at coordinates on Wayland below. A
   headed `type` sends keys through `RemoteDesktop.type_text` once the Mutter
   capability probe succeeds.
 - Windows works the other way round (semantic first); do not carry that
@@ -211,12 +214,40 @@ its own. Ending a session releases its held keys.
   Set the value directly with `set-value` instead. On a non-US layout, a
   character your keymap holds can still be refused. A refusal is safe: nothing
   was sent.
-- **App pointer.** AT-SPI gives no global window origin on Wayland, so ordinary
-  app pointer commands cannot be aimed (see Headed and headless above). GNOME
-  Shell ref clicks and popup openers refuse too; see
-  `references/shell-tray-and-notifications.md`.
+- **App pointer.** AT-SPI gives no global window origin on Wayland, so a
+  pointer command aimed at a ref cannot be aimed (see Headed and headless
+  above). GNOME Shell ref clicks and popup openers refuse too; see
+  `references/shell-tray-and-notifications.md`. Coordinates work; see below.
 - **No active window.** On a Wayland session with no seat keyboard no window
   carries `ACTIVE`, so `focus-changed` waits time out.
+
+## Pointer at coordinates on Wayland
+
+```bash
+agent-desktop list-displays
+agent-desktop --headed mouse-click --xy 640,400
+agent-desktop --headed drag --from-xy 100,100 --to-xy 300,200
+```
+
+- `mouse-click`, `mouse-move`, `mouse-wheel`, `hover --xy` and `drag
+  --from-xy --to-xy` go through Mutter's RemoteDesktop session and a ScreenCast
+  stream of the monitor under each point. They need `--headed`, like on X11.
+- The coordinates are the global logical desktop space whose display bounds
+  `list-displays` prints, the same space as on X11. A point is sent to the
+  display whose bounds hold it; on a display with `scale` 2 one unit is two
+  physical pixels. A drag may cross displays when every point on its path is on
+  one. A point outside every display is `ACTION_FAILED`, `not_delivered`.
+- The result is `delivered_unverified`: Wayland does not tell a client which
+  window is under a point, so nothing proves the window that received the
+  event. Read the effect back with `snapshot`, `get` or `wait`.
+- A session without `org.gnome.Mutter.RemoteDesktop` or
+  `org.gnome.Mutter.ScreenCast` refuses before anything is sent with
+  `PLATFORM_NOT_SUPPORTED`, cause `wayland_interface_missing`, and
+  `details.missing_interface` names the one it lacks.
+- Each command opens a new compositor session, whose first motion only creates
+  the virtual pointer, so the pointer moves to the point twice and waits about
+  150 ms before the press. `--modifiers` are held with a lead Shift tap first,
+  as for keys.
 
 ## Wheel and scroll
 

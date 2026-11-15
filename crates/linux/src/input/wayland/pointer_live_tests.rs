@@ -12,6 +12,7 @@ use crate::tree::live::live_launch::Launched;
 
 const FILTER: &str = "input::wayland::pointer_send::live_tests::coordinate_pointer_input_lands_where_the_probe_windows_say";
 const MONITORS: &str = "1280x800 1600x1200";
+const SERIES_END: Duration = Duration::from_millis(500);
 const LAYOUT: &str = r#"
 import sys
 from gi.repository import Gio, GLib
@@ -49,7 +50,10 @@ impl Probe {
             .collect()
     }
 
+    /// Waits out GTK's 400 ms click series first: a series still open from
+    /// the previous leg ends during the next one and splits a double click.
     fn clear(&self) {
+        std::thread::sleep(SERIES_END);
         std::fs::write(&self.log, "").expect("the probe log clears");
     }
 
@@ -267,19 +271,25 @@ fn measure_clicks(probe: &Probe) {
 fn coordinate_pointer_input_lands_where_the_probe_windows_say() {
     assert!(std::env::var_os("AGENT_DESKTOP_PRIVATE_SESSION").is_some());
     if std::env::var_os("AD_POINTER_WAYLAND_CHILD").is_none() {
-        let output = Command::new("bash")
+        let runtime = PathBuf::from(std::env::var("XDG_RUNTIME_DIR").unwrap());
+        let report = runtime.join("pointer-live-child.log");
+        let file = std::fs::File::create(&report).unwrap();
+        let status = Command::new("bash")
             .args(["scripts/private-wayland-shell.sh", "--"])
             .arg(std::env::current_exe().unwrap())
             .args(["--ignored", "--exact", FILTER, "--nocapture"])
             .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
             .env("AD_POINTER_WAYLAND_CHILD", "1")
             .env("AGENT_DESKTOP_WAYLAND_MONITORS", MONITORS)
-            .output()
+            .stdout(file.try_clone().unwrap())
+            .stderr(file)
+            .status()
             .unwrap();
-        println!("{}", String::from_utf8_lossy(&output.stdout));
-        assert!(output.status.success(), "private Wayland child: {output:?}");
+        let output = std::fs::read_to_string(&report).unwrap();
+        println!("{output}");
+        assert!(status.success(), "private Wayland child failed");
         assert!(
-            String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+            output.contains("1 passed; 0 failed"),
             "{FILTER} must execute exactly one test"
         );
         return;
