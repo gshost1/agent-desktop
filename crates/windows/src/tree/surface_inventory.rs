@@ -7,8 +7,9 @@ use super::properties::property_ids::TreeProperty;
 use super::properties::property_outcome::PropertyOutcome;
 use super::properties::read_one;
 use crate::system::menu::menu_state::{MenuLocation, locate_menu};
+use crate::system::window::frame_identity::is_window_of_process;
 use crate::system::window::window_enum::{EnumeratedWindow, WindowHandle, enumerate_top_level};
-use crate::system::window::window_identity::{live_window_owner, live_window_title};
+use crate::system::window::window_identity::live_window_title;
 use crate::system::window::window_ops::{is_foreground_window, passes_filter};
 
 /// The surfaces the named process presents right now.
@@ -85,7 +86,7 @@ fn windows_of(pid: ProcessId, deadline: Deadline) -> Result<Vec<EnumeratedWindow
             }
         }
         seen += 1;
-        if live_window_owner(window.handle) == Some(pid) && passes_filter(&window) {
+        if passes_filter(&window) && is_window_of_process(window.handle, pid) {
             windows.push(window);
         }
         true
@@ -282,6 +283,10 @@ fn menu_item_count(menu: &MenuLocation) -> Result<usize, AdapterError> {
 #[cfg(test)]
 #[path = "surface_inventory_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "surface_inventory_hosted_tests.rs"]
+mod hosted_tests;
 
 #[cfg(test)]
 #[path = "surface_inventory_partial_tests.rs"]

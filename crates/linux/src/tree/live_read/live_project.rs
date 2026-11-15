@@ -108,7 +108,7 @@ pub(crate) fn live_element(
             &placement.toolkit,
         )
     }) {
-        available_actions.retain(|action| action != "Click");
+        available_actions.retain(|action| action != agent_desktop_core::actions::capability::CLICK);
     }
     let bounds = if global {
         live_bounds(read)

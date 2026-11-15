@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Read;
 use std::os::unix::net::UnixListener;
 
 #[test]
