@@ -71,8 +71,10 @@ collect() {
   local label=$1 dir=$RESULTS/candidates rows=heldout/runs
   if [ -n "${TASKSET:-}" ]; then local ts; ts=$(taskset_info name); dir=$dir/$ts; rows=heldout/runs/$ts; fi
   mkdir -p "$dir/raw-$label"
-  put "$U@$BENCH_HOST:$MIRROR/$rows/results-native.jsonl" "$U@$BENCH_HOST:$MIRROR/$rows/results-web.jsonl" \
-    "$dir/raw-$label/"
+  local kind
+  for kind in native web; do
+    put "$U@$BENCH_HOST:$MIRROR/$rows/results-$kind.jsonl" "$dir/raw-$label/" 2>/dev/null || echo "no $kind rows on the bench Mac"
+  done
   put "$U@$BENCH_HOST:$MIRROR/$rows/web/$label-$MODEL/runs.jsonl" "$dir/raw-$label/web-runs.jsonl" || true
   "$PY" -I - "$dir/raw-$label" "$label" "$dir" <<'PY'
 import json, sys
@@ -104,7 +106,7 @@ PY
     extra=("$dir/$label-control-results-native.jsonl")
   fi
   local base=("$RESULTS/results-native.jsonl" "$RESULTS/results-web.jsonl" "$RESULTS/ad137-results-web.jsonl")
-  [ -n "${TASKSET:-}" ] && base=("$dir"/*-results-native.jsonl "$dir"/*-results-web.jsonl)
+  [ -n "${TASKSET:-}" ] && base=()
   "$PY" -I "$HERE/report.py" --model "$MODEL" --focus "$label" --results ${base[@]+"${base[@]}"} \
     "$dir/$label-results-native.jsonl" "$dir/$label-results-web.jsonl" ${extra[@]+"${extra[@]}"} > "$dir/REPORT-$label.md"
   echo "report: $dir/REPORT-$label.md"
@@ -178,7 +180,7 @@ if [ -n "${TASKSET:-}" ]; then
   put --exclude 'feas/' --exclude '__pycache__' --exclude 'tests/' --exclude '*.swift' "$TS_DIR/" "$U@$BENCH_HOST:$BH/$TS_REMOTE/"
   TS_ARG=$TS_REMOTE/$(basename "$TASKSET")
 fi
-r "zsh $MIRROR/heldout/remote/cand_start.sh cand-$LABEL.log $LABEL $TASKS $N $MODEL ${CONTROL:-none} $TS_ARG"
+r "CAP_USD=$CAP_USD zsh $MIRROR/heldout/remote/cand_start.sh cand-$LABEL.log $LABEL $TASKS $N $MODEL ${CONTROL:-none} $TS_ARG"
 echo "started: $LABEL on $TASKS, n=$N, model $MODEL. Watch: bash $0 --status $LABEL; collect: bash $0 --collect $LABEL"
 if [ "${WAIT:-0}" = 1 ]; then
   until r "L=$LOGS/cand-$LABEL.log; tail -n +\$(grep -n 'CAND START' \$L | tail -1 | cut -d: -f1) \$L | grep -E 'CAND COMPLETE|ending the pass|SPEND CAP|API REFUSED|no candidate|does not match'" > /dev/null; do
