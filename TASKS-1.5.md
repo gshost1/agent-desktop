@@ -122,11 +122,20 @@ The fork's first call is `skills get desktop; skills get platform` = 28 KB of ou
 
 
 
+
+## Carbon static audit (control, 2026-11-15 ~00:40), against main 782dcbc48 - queue after control's list
+Order: L2 (CONFIRMED by lead: ci.yml:263 runs `dbus-run-session -- xvfb-run -a scripts/cargo-test-isolated-home.sh test ...` with no AGENT_DESKTOP_TEST_SESSION=inherit, so since #158 the isolate default points DBUS_SESSION_BUS_ADDRESS at a missing socket: our regression; linux-e2e.yml is workflow_dispatch only), L1, L3, L4, L5 (measure first; ask control before editing crates/core/src/refs/** or snapshot/**), L6 (report feasibility, no big rewrite).
+Windows, CI-provable only: W1 (UWP frame host pid in key_dispatch.rs:211), W2 (shell surfaces resolve_window_strict), W3 (select not_delivered after expand/scroll), W4 (what Windows live E2E in CI needs), W5 (WinUI 3 popups in menu_state.rs:24).
+Leave wait_selector_scope.rs alone (Mac branch fix/post-action-wait-owner-and-errors); report what the Windows side needs (Sheet -> focused_hwnd_of when not foreground; OVERLAY_SURFACES omits Menu).
+One report at the end: per item confirmed/rejected + evidence, PR links + head SHA + checks.
+
 ## Session 2026-11-15 00:00 (after the reset) - control's list
-1. Final-head review status: #173 lead MERGE (01aedc5f, unchanged); #177 independent re-review MERGE on cb5b2a13 (+clean main merge 6a4ab2bc; 3 nits: adoption needs --timeout > ~6 s undocumented, flaky X read resets the 2 s window wait, missing tests/wording); #178 independent re-review MERGE on caa854a6 (+clean main merge fda07e60); #182 review FIX open -> linux-losses fixing (NOT mergeable yet); #183 independent review running; #184 lead MERGE (test-only; nit: CStr::from_ptr on a possibly null last-error in the assert message).
-2. #169 conflicts -> since-diff merging main.
-3. #18 redo as a fresh branch off main -> queued for a worker.
-4. #34 conflicts -> queued for a worker.
+1. GREEN 00:20: #173, #177.
+1. Final-head review status: #173 lead MERGE (01aedc5f, unchanged); #177 independent re-review MERGE on cb5b2a13 (+clean main merge 6a4ab2bc; 3 nits: adoption needs --timeout > ~6 s undocumented, flaky X read resets the 2 s window wait, missing tests/wording); #178 independent re-review MERGE on caa854a6 (+clean main merge fda07e60); #182 review fixes pushed 07a1a66b (singleton fork-without-exec holder, Wayland + signal paths held, non-blocking connect; GTK3 0/12, Chrome 0/10 crashes) -> re-review FIX (blocking: SIGKILL of a recycled pid in FFI hosts with SIG_IGN/waitpid(-1); + 4 nits) -> linux-losses; #183 independent review FIX (blocking: SetFocus also runs in non-headed press <ref> / FFI focus_fallback, unrecorded focus move, repeats on retry) -> fixed at 2c042569 (headed-only SetFocus; probe run 43694237066: headed type + press --ref 7/7 WinForms+WPF vs 0/7 main) -> re-review running; #184 lead MERGE (test-only; nit: CStr::from_ptr on a possibly null last-error in the assert message).
+2. #169 DONE: main merged (e4ab045a, 2 trivial conflicts), 14/14 green, MERGEABLE -> reviewed, merge.
+3. #18 redo -> worker menu-close (a11019f645111d79e), branch fix/menu-close-wait-phase-2, worktree l15-menu-close; PR body to start 'Replaces #18'.
+4. #34 conflicts -> worker pr34 (a560ae23f7ce419c7) merged main + watching CI.
+- L2 -> hygiene (a885640e0014b9341), branch ci/linux-tests-on-the-session-bus.
 5a. DONE: Linux skill/docs said INTERNAL for an exposed state root (6 places incl. capabilities.md the audit missed) -> PERM_DENIED; skill test no_skill_names_internal_for_a_state_root_other_users_can_reach, invert-verified (failed twice on old text). PR #189 (fix/linux-state-root-perm-denied-docs).
 5b. DONE in #189: #171 fragment scoped - the menu/application-surface branch runs only where is_application_surface is true (macOS adapter); overlay surfaces per platform: macOS sheet/alert/popover, Linux sheet/alert, Windows sheet. Text-only (no meaningful test for a changelog claim).
 
