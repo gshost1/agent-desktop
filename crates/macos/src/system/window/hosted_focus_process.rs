@@ -48,7 +48,7 @@ pub(crate) fn window_owners(host: i32) -> Result<WindowOwners, AdapterError> {
         .collect();
     let host_windows = records_from_dictionaries(dictionaries, WindowRecordScope::Pid(host))?
         .into_iter()
-        .filter(|record| record.visible)
+        .filter(|record| record.presence.is_onscreen())
         .map(|record| record.bounds)
         .collect();
     Ok(WindowOwners {

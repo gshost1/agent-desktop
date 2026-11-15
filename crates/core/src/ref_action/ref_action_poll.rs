@@ -33,14 +33,7 @@ pub(crate) fn execute_poll_loop(
     deadline: Deadline,
     moved: &mut MovedLandings,
 ) -> Result<RefActionPollState, AdapterError> {
-    let mut state = RefActionPollState {
-        expected_bounds_hash: context
-            .entry
-            .geometry
-            .bounds_hash
-            .filter(|_| request.policy == crate::InteractionPolicy::headless()),
-        ..Default::default()
-    };
+    let mut state = RefActionPollState::for_entry(context.entry, request);
     loop {
         state.resolve_attempts = state.resolve_attempts.saturating_add(1);
         match land_within_deadline(context.adapter, context.entry, deadline) {
@@ -51,6 +44,7 @@ pub(crate) fn execute_poll_loop(
             ResolveAttemptOutcome::Resolved(handle) => {
                 trace_resolve_ok(context.context, context.ref_id);
                 state.note_resolved();
+                state.prime_from_live((context.entry, request), context.adapter, &handle, deadline);
                 ensure_before_deadline(deadline, &state)?;
                 let target =
                     ResolvedRefAction::new(RefActionContext::new(context, deadline), &handle);
@@ -255,3 +249,7 @@ pub(crate) fn timeout_with_last_report(last_report: serde_json::Value) -> Adapte
 #[cfg(test)]
 #[path = "ref_action_poll_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ref_action_window_space_tests.rs"]
+mod window_space_tests;

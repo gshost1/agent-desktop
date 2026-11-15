@@ -67,6 +67,7 @@ fn wait(adapter: &SurfaceAbsenceAdapter, gone: bool) -> Result<Value, AppError> 
     super::super::super::apply_post_action_wait(
         serde_json::to_value(crate::ActionResult::delivered_unverified("click")).unwrap(),
         Some(&menu_source()),
+        None,
         adapter,
         &context,
     )

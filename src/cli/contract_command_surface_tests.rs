@@ -17,6 +17,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "operation_response",
     "point_resolve",
     "pointer_action",
+    "pointer_action_capture_refusal",
     "pointer_action_focus_phase",
     "post_action_observation",
     "query",
@@ -42,6 +43,8 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "wait_event_filter",
     "wait_event_input",
     "wait_selector",
+    "wait_selector_scope",
+    "wait_selector_timeout",
     "window_target",
 ];
 

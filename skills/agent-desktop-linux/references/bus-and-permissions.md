@@ -25,7 +25,7 @@ looks missing.
 |-------|----------------|---------|
 | Answered, healthy | `accessibility` is `granted`; `supported_surfaces` lists surfaces; `list-apps` returns rows | Normal |
 | Answered, empty | `accessibility` is `granted`; `list-apps` returns no rows | The bus is up and no app registered. This is a success, not a fault. Start an app, or restart one that started before the bus existed |
-| Unavailable | `accessibility` is `denied` with a suggestion; `supported_surfaces` is empty; commands fail with `PLATFORM_NOT_SUPPORTED` | The session bus or the accessibility bus cannot be reached. The empty `supported_surfaces` list is a consequence, not a separate problem |
+| Unavailable | `accessibility` is `denied` with a suggestion; `supported_surfaces` is empty; commands that read the bus without a permission check, such as `list-apps`, fail with `PLATFORM_NOT_SUPPORTED`, and commands that check permissions first, such as `snapshot`, `launch` and every action, fail with `PERM_DENIED` and the same suggestion | The session bus or the accessibility bus cannot be reached. The empty `supported_surfaces` list is a consequence, not a separate problem. An unreachable display is the exception: see below |
 
 An app that started before the accessibility bus existed never registers on a
 bus that appears later: restart it. A false `toolkit-accessibility` GSettings
@@ -63,6 +63,15 @@ suggestion naming the next step, and the raw D-Bus error in `platform_detail`.
 | AT-SPI not installed | Install `at-spi2-core`; Flatpak: add `--talk-name=org.a11y.Bus`; snap: connect `desktop-legacy` or `unity7` | `GetAddress` answered `ServiceUnknown` or `NameHasNoOwner` |
 | Launcher cannot start | Read `systemctl --user status at-spi-dbus-bus.service` | The launcher failed to spawn |
 | Socket gone | Restart `at-spi-dbus-bus.service`, or log out and back in | The accessibility bus socket is missing or refuses connections |
+
+When `DISPLAY` or `WAYLAND_DISPLAY` names a display that does not answer, the
+AT-SPI services exit with it. Commands that read the bus, and commands that
+check permissions first, then answer the display refusal:
+`PLATFORM_NOT_SUPPORTED` with `details.display_unavailable` naming the cause and
+the bus error in `details.bus_error`, never `PERM_DENIED`. Commands that check
+permissions first answer it `not_delivered`, before anything starts. `status`
+and `permissions` still show accessibility `denied`, with the display
+suggestion. Fix the display variable or start the display server.
 
 A timeout is `TIMEOUT`, not one of these causes, and proves nothing about the
 bus. A bus that dies mid-session returns `INTERNAL` with a retry suggestion.

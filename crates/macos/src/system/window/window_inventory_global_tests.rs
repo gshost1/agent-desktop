@@ -94,7 +94,7 @@ fn window_owner_without_launch_date_uses_live_process_generation() {
             width: 100.0,
             height: 100.0,
         },
-        visible: true,
+        presence: crate::system::window::window_presence::WindowPresence::Onscreen,
         process_instance: Some(process_instance),
     }];
 
@@ -381,7 +381,7 @@ fn record(pid: i32, window_number: i64, title: &str) -> WindowRecord {
             width: 100.0,
             height: 100.0,
         },
-        visible: true,
+        presence: crate::system::window::window_presence::WindowPresence::Onscreen,
         process_instance: Some(format!("macos-proc-v1:{launch}:0")),
     }
 }

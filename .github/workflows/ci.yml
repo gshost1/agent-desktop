@@ -40,6 +40,10 @@ jobs:
           PYTHONPYCACHEPREFIX=/tmp/agent-desktop-pycache python3 -m unittest discover -s tests/real-apps -p '*_test.py'
           PYTHONPYCACHEPREFIX=/tmp/agent-desktop-pycache python3 scripts/perf_ab_probe_test.py
           python3 -I -B scripts/test-linux-live-gate.py
+      - name: Check changelog fragments
+        run: |
+          PYTHONPYCACHEPREFIX=/tmp/agent-desktop-pycache python3 scripts/changelog_fragments_test.py
+          python3 scripts/changelog_fragments.py check
       - name: Validate GitHub Actions workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
 

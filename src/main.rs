@@ -26,9 +26,8 @@ use agent_desktop_core::{
 use clap::{CommandFactory, FromArgMatches};
 use cli::{
     Cli, Commands,
-    emit::{emit_response, finish, report_output_failure},
+    emit::{emit_with_error_line, finish, report_output_failure},
 };
-use command_policy::preflight_deadline;
 use dispatch::pre_dispatch_error;
 #[cfg(target_os = "macos")]
 use std::io::{BufWriter, Write};
@@ -140,7 +139,7 @@ fn report_parse_failure(e: clap::Error) -> ExitCode {
     let summary = diagnostic::clap_error_summary(&e.to_string());
     let error = AppError::invalid_input(diagnostic::bounded_text(&summary, 512));
     let command_name = diagnostic::clap_command_name(std::env::args().skip(1));
-    if let Err(write_err) = emit_response(
+    if let Err(write_err) = emit_with_error_line(
         &Response::err(&command_name, ErrorPayload::from_app_error(&error)),
         false,
     ) {
@@ -210,7 +209,10 @@ fn build_wait_selector(cli: &Cli) -> Result<Option<WaitSelector>, AppError> {
     Ok(Some(WaitSelector {
         query_raw: query_raw.clone(),
         gone,
-        timeout_ms: cli.post_action_wait.wait_timeout.unwrap_or(30_000),
+        timeout_ms: cli
+            .post_action_wait
+            .wait_timeout
+            .unwrap_or(agent_desktop_core::DEFAULT_POST_ACTION_WAIT_MS),
     }))
 }
 
@@ -241,23 +243,8 @@ fn execute_with_adapter(
     let adapter = build_adapter();
     let adapter: &dyn agent_desktop_core::PlatformAdapter = &adapter;
     command_policy::prepare_connections(&cmd, adapter, context.session_id());
-    let report = if command_policy::requires_permission_report(&cmd) {
-        match preflight_deadline(&cmd)
-            .map_err(AppError::from)
-            .and_then(|deadline| {
-                if command_policy::requires_full_permission_report(&cmd) {
-                    adapter.permission_report(deadline)
-                } else {
-                    adapter.preflight_permission_report(deadline)
-                }
-                .map_err(AppError::from)
-            }) {
-            Ok(report) => report,
-            Err(err) => return Err(pre_dispatch_error(err)),
-        }
-    } else {
-        agent_desktop_core::PermissionReport::default()
-    };
+    let report =
+        command_policy::read_permission_report(&cmd, adapter).map_err(pre_dispatch_error)?;
     command_policy::preflight(&cmd, &report)?;
     command_policy::preflight_context(&cmd, context)?;
 

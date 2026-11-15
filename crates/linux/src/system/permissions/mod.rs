@@ -4,6 +4,7 @@ use agent_desktop_core::{AdapterError, Deadline, ErrorCode, PermissionReport, Pe
 
 use crate::system::SharedBus;
 use crate::system::bus::probe_registry;
+use crate::system::display::display_error::is_display_refusal;
 use crate::system::display::route::{Route, current};
 use crate::system::x11::capture::grab::{DisplayGrabber, Grabber};
 
@@ -12,9 +13,32 @@ use crate::system::x11::capture::grab::{DisplayGrabber, Grabber};
 /// command may overrun its timeout by, even when the display never answers.
 const CAPTURE_PROBE_SLICE: Duration = Duration::from_millis(500);
 
+type FromProbe =
+    fn(Result<(), AdapterError>, CaptureAvailability) -> Result<PermissionReport, AdapterError>;
+
+/// The report `status` and `permissions` show, where an unreachable bus is
+/// accessibility `denied` with its recovery step.
 pub(crate) fn report(
     bus: &SharedBus,
     deadline: Deadline,
+) -> Result<PermissionReport, AdapterError> {
+    read_report(bus, deadline, report_from_probe)
+}
+
+/// The report a command preflight reads. A display refusal is returned as
+/// itself instead of a `denied` report, so the command answers with the
+/// display's own error rather than a missing permission.
+pub(crate) fn preflight_report(
+    bus: &SharedBus,
+    deadline: Deadline,
+) -> Result<PermissionReport, AdapterError> {
+    read_report(bus, deadline, preflight_from_probe)
+}
+
+fn read_report(
+    bus: &SharedBus,
+    deadline: Deadline,
+    from_probe: FromProbe,
 ) -> Result<PermissionReport, AdapterError> {
     crate::input::x11::stale_release::sweep();
     let capture =
@@ -22,7 +46,7 @@ pub(crate) fn report(
     let probed = bus
         .get(deadline)
         .and_then(|connection| probe_registry(bus, &connection, deadline));
-    let report = report_from_probe(probed, capture)?;
+    let report = from_probe(probed, capture)?;
     deadline.ensure_remaining()?;
     Ok(report)
 }
@@ -87,6 +111,18 @@ pub(crate) fn report_from_probe(
         },
         automation: PermissionState::NotRequired,
     })
+}
+
+/// [`report_from_probe`] for a command preflight: a bus that failed because
+/// the session's display cannot be reached is that display refusal, unchanged.
+pub(crate) fn preflight_from_probe(
+    probed: Result<(), AdapterError>,
+    capture: CaptureAvailability,
+) -> Result<PermissionReport, AdapterError> {
+    match probed {
+        Err(error) if is_display_refusal(&error) => Err(error),
+        probed => report_from_probe(probed, capture),
+    }
 }
 
 #[cfg(test)]

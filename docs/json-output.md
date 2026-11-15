@@ -182,9 +182,20 @@ left out: `details.result_omitted` is `true` and only `total_entries`,
 kept. The
 disposition is `not_delivered` when no entry can have delivered (each entry's
 disposition is `not_delivered`, or it is a successful command that sends no
-input), and `delivery_uncertain` otherwise. Any other command whose closing
-trace record fails after it succeeded reports `delivered_unverified` unless it
-is read-only.
+input), and `delivery_uncertain` otherwise.
+
+Any other command whose closing trace record fails under `--trace-strict` (a
+full recording, a disk error, or a trace lock wait that runs out) fails with
+the trace error, which replaces the command's own result. The error carries
+the delivery that result reported: the `data.disposition` of a success, the
+`error.disposition` of a failure, and `delivered_unverified` for a successful
+command that sends input and reports none. A read-only command reports
+`not_delivered`. When the command's own result left delivery `unknown`, a
+command that sends input reports `delivery_uncertain`, because the trace
+error's code (`INVALID_ARGS` for a full recording) says nothing about whether
+input was sent; only an `INVALID_ARGS` refusal raised before any focus or
+scroll ran keeps `not_delivered`. Never retry such a failure as safe unless its
+`disposition.retry` says `safe`; read the state first.
 
 A ref action that fails after it starts waiting on the interaction lease and
 before it sends the action carries `not_delivered`. That covers a `TIMEOUT`
@@ -347,6 +358,8 @@ A complete menu lookup with no surface returns `ELEMENT_NOT_FOUND` with `details
 
 When a ref action returns `delivery_uncertain` with a post-action wait selector, `error.details.post_action_observation` records a read-only observation of the original process. Application-owned refs keep their source surface. Window-owned refs observe their original pinned window, including refs captured from `sheet`, `alert`, `popover`, `focused`, or a window-owned `menu` such as a Linux menu. A web ref, captured on the `web` surface, is observed on its page over the same DevTools endpoint rather than the window's native tree, so browser UI outside the page, such as a JavaScript dialog, is not seen; run `snapshot --surface window` with the selector to wait on it. This lets a closed overlay be observed without treating the parent window as absent. The action is never repeated, and its original error and unsafe retry disposition stay unchanged. Even `expected_state_observed` does not prove that the action caused the state. Observation uses `--wait-timeout` separately from the action timeout.
 
+A post-action `--wait-for` that follows a ref, either window-owned or on an application-owned surface such as a macOS menu bar, ends before its budget when it cannot succeed: `APP_NOT_FOUND` with `details.kind: "wait_target_gone"` and `details.process_state` (`exited` or `crashed`) when the ref's process is gone, and `APP_UNRESPONSIVE` with `details.kind: "wait_owner_unresponsive"` and `details.unresponsive_ms` when every read failed as unresponsive for 5 s and the platform's process check then reported the process unresponsive. Both carry `predicate`, `selector`, `elapsed_ms`, `timeout_ms` and `details.after_action`, and keep the action's delivery disposition. On success the snapshot may be of a window the action opened, or of a sheet, alert or popover the process has open; `data.window` names the window that holds it.
+
 | Field | Meaning |
 | --- | --- |
 | `kind` | Always `post_action_observation`. |
@@ -455,6 +468,15 @@ Earlier output synthesized a display name, falling back to `value` or
 `description`, then a `(unnamed <role>)` placeholder, so consumers that treated
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
+
+### Match order
+
+`data.matches` lists, first, the matches whose whole name equals `--name` (after the
+same case and whitespace folding the match uses), then the matches whose name only
+contains it, each group in traversal order. An item whose title grew to hold
+another item's name, such as an Edit menu's `Undo Subscript` after a Subscript
+command, so comes after `Subscript`. `--exact` returns only whole-name matches.
+`--first`, `--last` and `--nth` count in traversal order; pass `--exact` with them.
 
 ### Which match `--first` returns
 
@@ -641,3 +663,13 @@ contract; a consumer that ignores `key` reads the list as before.
 ## Exit codes
 
 `0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`). `mcp` also exits `2` when it refuses its startup flags, and writes that envelope to stderr, since its stdout carries only JSON-RPC.
+
+## Stderr summary line
+
+Stdout carries only the envelope. When the envelope is an error, the CLI also writes one line to stderr after it:
+
+```
+agent-desktop: STALE_REF: <message> -- <suggestion>
+```
+
+The line holds `error.code`, `error.message` and, when present, `error.suggestion`, with control characters replaced by spaces and each field cut at 400 characters. A successful `batch` writes one such line for each completed entry that failed, prefixed with the entry, as in `agent-desktop: batch[2] click: POLICY_DENIED: ...`; entries that did not start get no line. A successful command writes nothing. The line never changes stdout or the exit code, so a pipe such as `agent-desktop ... | jq` still shows the error. It is not part of the JSON contract: parse the envelope, never the line. Set `AGENT_DESKTOP_STDERR_SUMMARY=0` to turn it off. `agent-desktop mcp` reads its child's stdout and is unaffected.

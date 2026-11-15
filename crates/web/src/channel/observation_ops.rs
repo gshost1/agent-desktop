@@ -105,6 +105,10 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         self.inner.list_windows(filter, deadline)
     }
 
+    fn is_auxiliary_window(&self, window: &WindowInfo, deadline: Deadline) -> bool {
+        self.inner.is_auxiliary_window(window, deadline)
+    }
+
     fn list_apps(&self, deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
         self.inner.list_apps(deadline)
     }
