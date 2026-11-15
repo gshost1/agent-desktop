@@ -1,5 +1,7 @@
 #[cfg(test)]
 pub(crate) mod call_counter;
+#[cfg(all(test, target_os = "windows"))]
+pub(crate) mod hosted_settings;
 #[cfg(test)]
 pub(crate) mod live_identity;
 #[cfg(test)]

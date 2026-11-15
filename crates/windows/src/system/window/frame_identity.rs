@@ -6,7 +6,7 @@ use super::window_enum::WindowHandle;
 /// The top-level window class the shell gives a hosted application's frame
 /// (A26-8: the foreground window while a hosted Settings session is active).
 #[cfg(target_os = "windows")]
-const FRAME_WINDOW_CLASS: &str = "ApplicationFrameWindow";
+pub(crate) const FRAME_WINDOW_CLASS: &str = "ApplicationFrameWindow";
 
 /// The window class a hosted application's own surface presents inside its
 /// host's frame (A26-8: the frame's immediate children split by pid - the
@@ -48,6 +48,25 @@ pub(crate) fn hosted_application_pid(
     _handle: super::window_enum::WindowHandle,
 ) -> Option<ProcessId> {
     None
+}
+
+/// The process a window answers to under the identity the window listing
+/// reports: the hosted application when the window sits in an application
+/// frame host frame carrying one (A26-8), otherwise the window's own owner.
+///
+/// The frame is read at the window's root, so a handle inside the frame -
+/// the frame itself, its title bar, or the hosted `CoreWindow` - answers
+/// with the same hosted pid the listing gave the frame. A caller comparing a
+/// foreground or keyboard-focus handle against a listed pid uses this, never
+/// the raw owner: the raw owner of a hosted frame is the frame host, which
+/// no listed identity carries while the application is live.
+#[cfg(target_os = "windows")]
+pub(crate) fn window_identity_owner(handle: WindowHandle) -> Option<ProcessId> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor};
+
+    let root = unsafe { GetAncestor(handle, GA_ROOT) };
+    let top = if root.is_null() { handle } else { root };
+    hosted_application_pid(top).or_else(|| super::window_identity::live_window_owner(handle))
 }
 
 /// The first child `CoreWindow` whose owning process differs from the
