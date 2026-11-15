@@ -185,8 +185,16 @@ No `save` command exists. Saving is a menu path plus a dialog, and the whole
 chain is semantic, so it needs no `--headed` and no keystrokes. The same shape
 fits any app whose save flow is File, then Save As.
 
-The script runs as written against an open Notepad. Each ref comes from the JSON
-of the step before it, so the sequence stays correct when the tree shifts.
+The script runs as written against an open classic Notepad, in front of or
+behind other windows. Each ref comes from the JSON of the step before it, so the
+sequence stays correct when the tree shifts.
+
+On the Windows 11 Notepad, the menu steps work and reach the Save as dialog, but
+the save itself is not reliable. The dialog's File name field reads back the
+written path, yet in 6 of 7 measured runs the file never appeared there. The
+runs that saved anything saved the suggested name, `the document body.txt`, to
+Documents. The final `wait --window` then times out. Treat that timeout as a
+failed save and check the file on disk.
 
 ```powershell
 $out = "$env:TEMP\notepad-save-demo.txt"
@@ -215,8 +223,13 @@ agent-desktop wait --window "notepad-save-demo" --app notepad.exe
 Get-Content $out
 ```
 
-Three things that surprise a first-time caller:
+Four things that surprise a first-time caller:
 
+- **The menu item's name differs by build.** Classic Notepad says
+  `Save As...`, the Windows 11 Notepad says `Save as` and nests its items under
+  a `Popup` element of the menu surface. `find --surface menu --name "Save as"`
+  matches both, because the name match ignores case and finds substrings at any
+  depth.
 - **`find --name "File name"` returns three matches:** a `statictext` label, a
   `combobox`, and the `textfield` inside the combobox. Only the textfield
   accepts `set-value`, so match on `role` as well as name.
