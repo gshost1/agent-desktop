@@ -142,7 +142,11 @@ Parked branches (no PR; open when <10 laptop PRs are open):
 - perf/find-text-evidence 7e71822f (FIND-TEXT-SLOW-1): review fixes 1-7 pushed (probe depth 50; --text-only reduced plan; probe stops after the adapter reads unasked fields). Left: full core tests, clippy, windows cross-check, stale-ref script; wrapper-depth test (needs a wrapper-marking test tree helper); Linux re-measure with #181; Mac A/B; body ~/.cache/agent-desktop-target/pr-body-find-perf-find-text-evidence.md.
 - perf/linux-keyboard-one-session 34c4c4c9 (ADAPTERS-10): not reviewed; body ~/.cache/agent-desktop-target/pr-body-linux-losses-perf-linux-keyboard-one-session.md.
 - docs/skill-stderr-pipe-note 90db71c2 (wip): skill line nit (optional suggestion; no `2>&1 | jq`) + #178 nits could join it.
-- windows (aa34d5b134f17f2ae): FFI-SESSION-FLAKE-1 and Windows `--headed type` on fix/windows-type-focuses-field (+ any other branch it reports) at pause.
+- fix/windows-type-focuses-field d5cdca55 (HIGH): Windows headed `type`/`press <ref>` now SetFocus an unfocused field first (+ E2E leg moves focus away first). CI A/B run 43670582799: branch 7/7 WinForms + 7/7 WPF; fork main 0/7, upstream 0/7 ("lost focus"). Body ~/.cache/agent-desktop-target/pr-body-windows-fix-windows-type-focuses-field.md. Skill line for skills/agent-desktop-windows/SKILL.md + apps/docs windows.mdx: "Headed, `type` focuses the field itself when it lacks keyboard focus (a `UIElement.SetFocus` step before `SendInput.type_text`); no separate `focus` call is needed."
+- test/ffi-session-home-race f1322be6: FFI-SESSION-FLAKE-1 fixed (session test now under HOME_LOCK; HOME race reproduced 4/400k without). Body ~/.cache/agent-desktop-target/pr-body-windows-test-ffi-session-home-race.md.
+- perf/windows-competitive-latency fe1c86a5: A/B probe; needs a FINDINGS row + fragment before its PR.
+- FOUND (Windows): WPF first headed `type` typed its text but reported TIMEOUT post_action_verification after 5.3 s -> an agent retry would type twice. Not started.
+- All workers stopped at 21:50 PST.
 
 Queue after the three: ACTION-7 (wait-decidable, after #162 merges); ref_action_poll timeout() disabled suggestion (wait-decidable); #157's linux.mdx display row (small docs PR or fold into a later docs PR);
 batch `launch` PERM_DENIED on a dead display (needs a PermissionReport field across adapters); D ref-action opt-in (low value per
