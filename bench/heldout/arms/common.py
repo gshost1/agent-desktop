@@ -4,7 +4,10 @@ Each arm is one tool at one pinned version, reached through its wrapper in arms/
 logs every call's wall time. Every arm gets the same task prompt; only the tool paragraph of the
 system prompt differs, and it points the model at that tool's own guide (its skill or help).
 """
+import importlib.util
+import os
 import re
+import sys
 from pathlib import Path
 
 import shellwords
@@ -141,3 +144,24 @@ def audit_native(cmd, arm, forbidden, skills=None):
         if prog in TOOL_NAMES or prog in forbidden:
             return prog
     return None
+
+
+def load_taskset():
+    """The held-out task module: tasks_heldout, or the file HELDOUT_TASKSET names, which keeps the same contract
+    (NATIVE_TASKS, WEB_TASKS, verify_web, ...). A private task set stays outside version control this way."""
+    path = os.environ.get("HELDOUT_TASKSET")
+    if not path:
+        import tasks_heldout
+        return tasks_heldout
+    if "heldout_taskset" not in sys.modules:
+        spec = importlib.util.spec_from_file_location("heldout_taskset", path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["heldout_taskset"] = module
+        spec.loader.exec_module(module)
+    return sys.modules["heldout_taskset"]
+
+
+def taskset_runs(th):
+    """Where a task set's rows go: heldout/runs for tasks_heldout, heldout/runs/<NAME> for any other set."""
+    name = getattr(th, "NAME", None)
+    return HELDOUT / "runs" / name if name else HELDOUT / "runs"

@@ -29,20 +29,23 @@ import common  # noqa: E402
 sys.path.insert(0, str(common.BENCH))
 import driver  # noqa: E402
 import tasks  # noqa: E402
-import tasks_heldout as th  # noqa: E402
 import desktop  # noqa: E402
+
+th = common.load_taskset()
 
 desktop.install(th)
 
-RUNS = common.HELDOUT / "runs"
+RUNS = common.taskset_runs(th)
 
 
 def reset_heldout_desktop():
     """Quit System Settings (only ever read) and the bench documents' apps. An app that shows any
     window that is not a bench window stops the run before the model starts; it is never touched."""
-    tasks.quit_app("System Settings")
-    for app in ("TextEdit", "Preview"):
-        th.close_bench_app(app)
+    for app in getattr(th, "NATIVE_APPS", ["TextEdit", "Preview", "System Settings"]):
+        if app == "System Settings":
+            tasks.quit_app(app)
+        else:
+            th.close_bench_app(app)
 
 
 def post_arm_cleanup(arm, rdir):
@@ -59,6 +62,7 @@ def run_once(a):
     rdir = RUNS / "native" / run_id
     rdir.mkdir(parents=True)
     task = th.NATIVE_TASKS[a.task](run_id.replace("-", ""), str(common.VERIFY_AD))
+    task.round = a.round
     reset_heldout_desktop()
     time.sleep(1.5)
     task.setup()
@@ -143,7 +147,7 @@ def main():
     a = ap.parse_args()
     if not driver.holds_lock():
         sys.exit(f"take the bench lock first: {driver.LOCK}")
-    RUNS.mkdir(exist_ok=True)
+    RUNS.mkdir(parents=True, exist_ok=True)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     for _ in range(a.runs):
         run_once(a)

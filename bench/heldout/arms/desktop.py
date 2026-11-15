@@ -58,8 +58,8 @@ def is_panel(title):
     return title in PANEL_TITLES
 
 
-def foreign_windows(titles):
-    return [t for t in titles if not (is_bench_window(t) or is_panel(t))]
+def foreign_windows(titles, allowed=None):
+    return [t for t in titles if not (is_bench_window(t) or is_panel(t) or (allowed is not None and allowed(t)))]
 
 
 def read_windows(d, app, wait_s):
@@ -73,11 +73,11 @@ def read_windows(d, app, wait_s):
     return None
 
 
-def checked_windows(d, app, wait_s):
+def checked_windows(d, app, wait_s, allowed=None):
     titles = read_windows(d, app, wait_s)
     if titles is None:
         raise RuntimeError(f"{app} does not answer the window query; not touching it")
-    foreign = foreign_windows(titles)
+    foreign = foreign_windows(titles, allowed)
     if foreign:
         raise RuntimeError(f"{app} has a window that is not a bench window open ({len(foreign)}); not touching it")
     return titles
@@ -91,23 +91,24 @@ def wait_gone(d, app, seconds):
     return not d.pids(app)
 
 
-def close_app(d, app, wait_s=30):
-    """Quit `app` when it shows only bench documents and its own panels; raise otherwise."""
+def close_app(d, app, wait_s=30, allowed=None, discard=()):
+    """Quit `app` when it shows only bench documents, its own panels and windows `allowed(title)` accepts; raise
+    otherwise. Windows whose titles start with a bench prefix or one of `discard` are closed without saving."""
     if not d.pids(app):
         return
-    checked_windows(d, app, wait_s)
+    checked_windows(d, app, wait_s, allowed)
     for pid in d.pids(app):
         for _ in range(2):
             d.macctl("keypid", str(pid), ESCAPE_KEYCODE)
-    titles = checked_windows(d, app, wait_s)
+    titles = checked_windows(d, app, wait_s, allowed)
     panels = sorted({t for t in titles if is_panel(t)})
     if panels:
         d.macctl("close-discard", app, *panels)
-    d.macctl("close-discard", app, *BENCH_PREFIXES, timeout=60)
+    d.macctl("close-discard", app, *BENCH_PREFIXES, *discard, timeout=60)
     d.macctl("quit", app)
     if wait_gone(d, app, 10):
         return
-    checked_windows(d, app, wait_s)
+    checked_windows(d, app, wait_s, allowed)
     for sig in (signal.SIGTERM, signal.SIGKILL):
         for pid in d.pids(app):
             d.kill(pid, sig)
@@ -117,7 +118,15 @@ def close_app(d, app, wait_s=30):
 
 
 def install(th):
-    """Replace tasks_heldout.close_bench_app with close_app on the real desktop."""
+    """Replace the task set's close_bench_app with close_app on the real desktop. A task set may name the other
+    windows its apps may show (`window_allowed(app, title)`) and more title prefixes to discard (DISCARD_PREFIXES)."""
     d = Desktop(th.macctl)
-    th.close_bench_app = lambda app: close_app(d, app)
+    allowed_for = getattr(th, "window_allowed", None)
+    discard = tuple(getattr(th, "DISCARD_PREFIXES", ()))
+
+    def close(app):
+        allowed = (lambda title: allowed_for(app, title)) if allowed_for else None
+        close_app(d, app, allowed=allowed, discard=discard)
+
+    th.close_bench_app = close
     return d

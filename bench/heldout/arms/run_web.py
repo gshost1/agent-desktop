@@ -27,13 +27,13 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import common  # noqa: E402
-import tasks_heldout as th  # noqa: E402
 
 sys.path.insert(0, str(common.BROWSER_BENCH))
 import run  # noqa: E402
 
+th = common.load_taskset()
 PORT_FILE = common.HELDOUT / "out" / "web-current-port"
-RESULTS = common.HELDOUT / "runs" / "results-web.jsonl"
+RESULTS = common.taskset_runs(th) / "results-web.jsonl"
 ORIGINAL = {"prompt": run.channel_prompt, "tools": run.allowed_tools, "http": run.http_json, "run_one": run.run_one,
             "dialogs": run.bench_dialogs, "launch_cmd": run.ad_launch_command,
             "stop": run.stop_chrome}
@@ -126,7 +126,7 @@ def run_one(args, task, channel, run_idx, out):
 def main():
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--arm", required=True, choices=sorted(common.WEB_ARMS))
-    ap.add_argument("--base", default="http://127.0.0.1:8792")
+    ap.add_argument("--base", default=getattr(th, "WEB_BASE", "http://127.0.0.1:8792"))
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--host", default="mac")
     a, rest = ap.parse_known_args()
@@ -137,7 +137,7 @@ def main():
     run.TASKS = th.WEB_TASKS
     run.verify = th.verify_web
     run.real_expectations = th.web_expectations
-    out = common.HELDOUT / "runs" / "web" / f"{a.arm}-{a.model}"
+    out = common.taskset_runs(th) / "web" / f"{a.arm}-{a.model}"
     sys.argv = [sys.argv[0], *rest, "--channels", common.WEB_ARMS[a.arm], "--bin-dir", str(common.arm_bin_dir(a.arm)),
                 "--base", a.base, "--model", a.model, "--out", str(out), "--lock-title", "perf/speed-cost heldout web"]
     run.main()

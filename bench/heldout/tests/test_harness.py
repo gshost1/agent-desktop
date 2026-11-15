@@ -6,6 +6,7 @@ Run: python3.11 -I -m unittest discover -s heldout/tests -p 'test_*.py'
 import contextlib
 import io
 import json
+import os
 import signal
 import sys
 import tempfile
@@ -237,6 +238,23 @@ class CloseBenchAppTests(unittest.TestCase):
         desktop.close_app(d, "TextEdit")
         self.assertEqual(d.calls, [])
 
+    def test_windows_the_task_set_allows_are_quit_not_refused(self):
+        d = FakeDesktop([["Calculator"]])
+        desktop.close_app(d, "Calculator", allowed=lambda title: title == "Calculator")
+        self.assertFalse(d.running)
+        d = FakeDesktop([["Calculator"]])
+        with self.assertRaisesRegex(RuntimeError, "not a bench window"):
+            desktop.close_app(d, "Calculator")
+        self.assertTrue(d.running)
+
+    def test_extra_discard_prefixes_are_closed_without_saving(self):
+        d = FakeDesktop([["seed-fx-1.mov"]])
+        desktop.close_app(d, "QuickTime Player", allowed=lambda title: title.startswith("seed-fx-"), discard=("seed-fx-",))
+        closes = [c for c in d.calls if c[0] == "close-discard"]
+        self.assertEqual(len(closes), 1)
+        self.assertIn("seed-fx-", closes[0])
+        self.assertFalse(d.running)
+
     def test_install_replaces_the_frozen_function(self):
         original = th.close_bench_app
         try:
@@ -326,6 +344,37 @@ class SkillReadTests(unittest.TestCase):
     def test_run_without_skill_read(self):
         row = {"input_total": 10, "output_tokens": 1, "steps": [{"call": 0, "input_total": 10, "tools": []}]}
         self.assertEqual(skillread.run_facts(row), {"tokens": 11, "skill": False})
+
+
+
+
+class TaskSetTests(unittest.TestCase):
+    def setUp(self):
+        self.saved_env = os.environ.pop("HELDOUT_TASKSET", None)
+        self.saved_mod = sys.modules.pop("heldout_taskset", None)
+
+    def tearDown(self):
+        os.environ.pop("HELDOUT_TASKSET", None)
+        if self.saved_env is not None:
+            os.environ["HELDOUT_TASKSET"] = self.saved_env
+        sys.modules.pop("heldout_taskset", None)
+        if self.saved_mod is not None:
+            sys.modules["heldout_taskset"] = self.saved_mod
+
+    def test_default_is_the_frozen_set_and_its_rows_folder(self):
+        self.assertIs(common.load_taskset(), th)
+        self.assertEqual(common.taskset_runs(th), common.HELDOUT / "runs")
+
+    def test_named_module_is_loaded_once_and_gets_its_own_rows_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tasks_other.py"
+            path.write_text('NAME = "other"\nNATIVE_TASKS = {}\nWEB_TASKS = []\nLOADS = []\nLOADS.append(1)\n')
+            os.environ["HELDOUT_TASKSET"] = str(path)
+            first = common.load_taskset()
+            self.assertEqual(first.NAME, "other")
+            self.assertIs(common.load_taskset(), first)
+            self.assertEqual(first.LOADS, [1])
+            self.assertEqual(common.taskset_runs(first), common.HELDOUT / "runs" / "other")
 
 
 if __name__ == "__main__":

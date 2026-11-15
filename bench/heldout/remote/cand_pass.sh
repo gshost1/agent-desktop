@@ -4,11 +4,15 @@
 # bench account's GUI session (cand_start.sh starts it through benchrun). After every run it checks the API
 # refusal scanner, a STOP file, and this pass's list-price spend; past CAP_USD it writes STOP-SPEND and ends.
 #
-#   bash cand_pass.sh <label> <task ids, comma-separated or "all"> <n> [model] [control]
+#   bash cand_pass.sh <label> <task ids, comma-separated or "all"> <n> [model] [control] [taskset]
 #
 # control is <label>:<native task ids>:<n>, an already registered arm run as the same-day control: in each of
 # its first n rounds its native tasks run right after the candidate's, under the same lock hold. Its rows
 # count toward this pass's spend.
+#
+# taskset is a task module with tasks_heldout.py's contract (a path, or one relative to the bench HOME). Its
+# folder's FROZEN.md must list every file as "`<file>` sha256 `<hex>`" and every hash must match; its rows go
+# to heldout/runs/<NAME>/, and its own web server (SERVER, WEB_PORT) serves the local web tasks.
 #
 # The candidate binary is ~/.agent-desktop-bench-target/heldout-tools/candidates/<label>/ (bench HOME), put
 # there by bench_candidate.sh with its helper and a VERSION line; common.register_candidates() makes it an arm.
@@ -17,14 +21,38 @@ BT=$BENCH_REAL_HOME/bench-tools
 H=$HOME/.t3/worktrees/agent-desktop/perf-speed-cost/bench/heldout
 B=$(dirname "$H")
 P=$HELDOUT_PY
-LABEL=$1; TASKS=${2:-all}; N=${3:-5}; MODEL=${4:-claude-sonnet-5-5}; CONTROL=${5:-}; CAP_USD=${CAP_USD:-15}
+LABEL=$1; TASKS=${2:-all}; N=${3:-5}; MODEL=${4:-claude-sonnet-5-5}; CONTROL=${5:-}; [ "$CONTROL" = none ] && CONTROL=""; TASKSET=${6:-}; CAP_USD=${CAP_USD:-15}
 HOST=${HELDOUT_HOST:-friend-m1pro}
 OWNER="perf/speed-cost heldout"
 CHROME_ARGS=(--chrome-arg=--use-mock-keychain --chrome-arg=--password-store=basic)
 ALL_NATIVE=(hn1 hn2 hn3 hn4 hn5 hn6 hn7 hn8)
 ALL_WEB=(hw1 hw2 hw3 hw4 hw5 hw6 hw7 hp1 hp2 hp3)
-NATIVE_ROWS=$H/runs/results-native.jsonl
-WEB_COSTS=$H/runs/web/$LABEL-$MODEL/runs.jsonl
+ROWS_DIR=$H/runs; SERVER=$H/web/server.py; PORT=8792
+if [ -n "$TASKSET" ]; then
+  [[ $TASKSET == /* ]] || TASKSET=$HOME/$TASKSET
+  [ -f "$TASKSET" ] || { echo "no task set $TASKSET"; exit 2; }
+  export HELDOUT_TASKSET=$TASKSET
+  $P -I - "$(dirname "$TASKSET")" <<'PY' || { echo "task set $TASKSET does not match its FROZEN.md"; exit 3; }
+import hashlib, re, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+pins = re.findall(r"`([^`]+)` sha256 `([0-9a-f]{64})`", (root / "FROZEN.md").read_text())
+bad = [f for f, h in pins if hashlib.sha256((root / f).read_bytes()).hexdigest() != h]
+sys.exit(1 if not pins or bad else 0)
+PY
+  eval "$($P -I - "$TASKSET" <<'PY'
+import importlib.util, shlex, sys
+spec = importlib.util.spec_from_file_location("heldout_taskset", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+print("ALL_NATIVE=(" + " ".join(m.NATIVE_TASKS) + ")")
+print("ALL_WEB=(" + " ".join(t["id"] for t in m.WEB_TASKS) + ")")
+print(f"ROWS_DIR=$H/runs/{m.NAME} SERVER={shlex.quote(str(m.SERVER))} PORT={m.WEB_PORT}")
+PY
+)"
+fi
+NATIVE_ROWS=$ROWS_DIR/results-native.jsonl
+WEB_COSTS=$ROWS_DIR/web/$LABEL-$MODEL/runs.jsonl
 
 CANDS=$HOME/.agent-desktop-bench-target/heldout-tools/candidates
 [ -x "$CANDS/$LABEL/agent-desktop" ] || { echo "no candidate $LABEL"; exit 2; }
@@ -35,9 +63,11 @@ if [ -n "$CONTROL" ]; then
   for t in "${ALL_NATIVE[@]}"; do [[ ",$ctl_list," == *",$t,"* ]] && CTL_TASKS+=("$t"); done
   [ ${#CTL_TASKS[@]} -gt 0 ] && [[ $CTL_N =~ ^[1-9][0-9]?$ ]] || { echo "bad control spec $CONTROL"; exit 2; }
 fi
-frozen=$(grep -oE 'tasks_heldout.py sha256 `[0-9a-f]{64}`' "$H/TASKS_FROZEN.md" | grep -oE '[0-9a-f]{64}')
-actual=$(shasum -a 256 "$H/tasks_heldout.py" | cut -d' ' -f1)
-[ -n "$frozen" ] && [ "$frozen" = "$actual" ] || { echo "tasks_heldout.py sha256 $actual does not match the frozen $frozen"; exit 3; }
+if [ -z "$TASKSET" ]; then
+  frozen=$(grep -oE 'tasks_heldout.py sha256 `[0-9a-f]{64}`' "$H/TASKS_FROZEN.md" | grep -oE '[0-9a-f]{64}')
+  actual=$(shasum -a 256 "$H/tasks_heldout.py" | cut -d' ' -f1)
+  [ -n "$frozen" ] && [ "$frozen" = "$actual" ] || { echo "tasks_heldout.py sha256 $actual does not match the frozen $frozen"; exit 3; }
+fi
 
 NATIVE_TASKS=(); WEB_TASKS=()
 for t in "${ALL_NATIVE[@]}"; do [[ $TASKS == all || ",$TASKS," == *",$t,"* ]] && NATIVE_TASKS+=("$t"); done
@@ -75,8 +105,8 @@ check() {
 
 caffeinate -dims -w $$ &
 server_pid=""
-if [ ${#WEB_TASKS[@]} -gt 0 ] && ! $P -I -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8792/__state', timeout=3)" 2>/dev/null; then
-  $P -I "$H/web/server.py" 8792 > "$H/out/server.log" 2>&1 &
+if [ ${#WEB_TASKS[@]} -gt 0 ] && ! $P -I -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$PORT/__state', timeout=3)" 2>/dev/null; then
+  $P -I "$SERVER" "$PORT" > "$H/out/server-$PORT.log" 2>&1 &
   server_pid=$!
   sleep 1
 fi

@@ -18,7 +18,10 @@
 # stops itself past CAP_USD. WAIT=1 makes the command wait for the pass and collect at the end.
 # CONTROL=<arm>:<native task ids>:<n> runs an already registered candidate arm (for example ad-main) as the
 # same-day control, interleaved per round with the candidate; --collect writes its rows as <arm>-ctl.
-# Env: MODEL (claude-sonnet-5-5), CAP_USD, NOTE (one line for VERSION), CONTROL, BENCH_HOST, BENCH_USER_FILE.
+# TASKSET=<local task module> runs another task set with tasks_heldout.py's contract (for example a private one
+# outside the repo): its folder is copied to the remote bench HOME under .agent-desktop-bench-target/, owner-only,
+# and must carry a FROZEN.md that pins every file's sha256. Its rows go to results/candidates/<set NAME>/.
+# Env: MODEL (claude-sonnet-5-5), CAP_USD, NOTE (one line for VERSION), CONTROL, TASKSET, BENCH_HOST, BENCH_USER_FILE.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 BENCH_HOST=${BENCH_HOST:-100.111.59.3}
@@ -46,12 +49,31 @@ check_label() {
   [[ $BUILTIN != *" $1 "* ]] || { echo "label $1 is a built-in arm" >&2; exit 2; }
 }
 
+taskset_info() {
+  "$PY" -I - "$TASKSET" "$@" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("heldout_taskset", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+if sys.argv[2] == "name":
+    print(m.NAME)
+else:
+    native, web = list(m.NATIVE_TASKS), [t["id"] for t in m.WEB_TASKS]
+    picked = native + web if sys.argv[3] == "all" else sys.argv[3].split(",")
+    unknown = [t for t in picked if t not in native + web]
+    if unknown:
+        sys.exit(f"unknown task {unknown}")
+    print(sum(t in native for t in picked), sum(t in web for t in picked))
+PY
+}
+
 collect() {
-  local label=$1 dir=$RESULTS/candidates
+  local label=$1 dir=$RESULTS/candidates rows=heldout/runs
+  if [ -n "${TASKSET:-}" ]; then local ts; ts=$(taskset_info name); dir=$dir/$ts; rows=heldout/runs/$ts; fi
   mkdir -p "$dir/raw-$label"
-  put "$U@$BENCH_HOST:$MIRROR/heldout/runs/results-native.jsonl" "$U@$BENCH_HOST:$MIRROR/heldout/runs/results-web.jsonl" \
+  put "$U@$BENCH_HOST:$MIRROR/$rows/results-native.jsonl" "$U@$BENCH_HOST:$MIRROR/$rows/results-web.jsonl" \
     "$dir/raw-$label/"
-  put "$U@$BENCH_HOST:$MIRROR/heldout/runs/web/$label-$MODEL/runs.jsonl" "$dir/raw-$label/web-runs.jsonl" || true
+  put "$U@$BENCH_HOST:$MIRROR/$rows/web/$label-$MODEL/runs.jsonl" "$dir/raw-$label/web-runs.jsonl" || true
   "$PY" -I - "$dir/raw-$label" "$label" "$dir" <<'PY'
 import json, sys
 from pathlib import Path
@@ -81,9 +103,10 @@ print(f"control {arm}-ctl: {len(rows)} rows, list-price ${sum(float(r.get('cost_
 PY
     extra=("$dir/$label-control-results-native.jsonl")
   fi
-  "$PY" -I "$HERE/report.py" --model "$MODEL" --focus "$label" --results "$RESULTS/results-native.jsonl" \
-    "$RESULTS/results-web.jsonl" "$RESULTS/ad137-results-web.jsonl" "$dir/$label-results-native.jsonl" \
-    "$dir/$label-results-web.jsonl" ${extra[@]+"${extra[@]}"} > "$dir/REPORT-$label.md"
+  local base=("$RESULTS/results-native.jsonl" "$RESULTS/results-web.jsonl" "$RESULTS/ad137-results-web.jsonl")
+  [ -n "${TASKSET:-}" ] && base=("$dir"/*-results-native.jsonl "$dir"/*-results-web.jsonl)
+  "$PY" -I "$HERE/report.py" --model "$MODEL" --focus "$label" --results ${base[@]+"${base[@]}"} \
+    "$dir/$label-results-native.jsonl" "$dir/$label-results-web.jsonl" ${extra[@]+"${extra[@]}"} > "$dir/REPORT-$label.md"
   echo "report: $dir/REPORT-$label.md"
 }
 
@@ -103,16 +126,21 @@ HELPER=$(dirname "$BIN")/agent-desktop-macos-helper
 file -b "$BIN" | grep -q arm64 || { echo "$BIN is not an arm64 Mach-O" >&2; exit 2; }
 [[ $N =~ ^[1-9][0-9]?$ ]] || { echo "n must be 1-99" >&2; exit 2; }
 ALL="hn1 hn2 hn3 hn4 hn5 hn6 hn7 hn8 hw1 hw2 hw3 hw4 hw5 hw6 hw7 hp1 hp2 hp3"
-if [ "$TASKS" != all ]; then
-  for t in ${TASKS//,/ }; do [[ " $ALL " == *" $t "* ]] || { echo "unknown task $t" >&2; exit 2; }; done
+if [ -n "${TASKSET:-}" ]; then
+  [ -f "$TASKSET" ] && [ -f "$(dirname "$TASKSET")/FROZEN.md" ] || { echo "TASKSET needs the module and a FROZEN.md beside it" >&2; exit 2; }
+  read -r nn nw < <(taskset_info count "$TASKS") || exit 2
+else
+  if [ "$TASKS" != all ]; then
+    for t in ${TASKS//,/ }; do [[ " $ALL " == *" $t "* ]] || { echo "unknown task $t" >&2; exit 2; }; done
+  fi
+  list=${TASKS//,/ }; [ "$TASKS" = all ] && list=$ALL
+  nn=0; nw=0; for t in $list; do [[ $t == hn* ]] && nn=$((nn + 1)) || nw=$((nw + 1)); done
 fi
-list=${TASKS//,/ }; [ "$TASKS" = all ] && list=$ALL
-nn=0; nw=0; for t in $list; do [[ $t == hn* ]] && nn=$((nn + 1)) || nw=$((nw + 1)); done
 cn=0; cr=0
 if [ -n "${CONTROL:-}" ]; then
   IFS=: read -r ctl_label ctl_list cr <<< "$CONTROL"
   [[ $cr =~ ^[1-9][0-9]?$ ]] || { echo "CONTROL must be <arm>:<native task ids>:<n>" >&2; exit 2; }
-  for t in ${ctl_list//,/ }; do [[ $t == hn[1-8] ]] || { echo "control task $t is not a native task" >&2; exit 2; }; cn=$((cn + 1)); done
+  for t in ${ctl_list//,/ }; do cn=$((cn + 1)); done
 fi
 est=$("$PY" -I -c "print(round($N * ($nn * $NATIVE_USD + $nw * $WEB_USD) + $cr * $cn * $NATIVE_USD, 2))")
 echo "estimate: $N rounds x ($nn native x \$$NATIVE_USD + $nw web x \$$WEB_USD) + control $cr x $cn native = \$$est (cap \$$CAP_USD)"
@@ -138,11 +166,19 @@ put "${TMPDIR:-/tmp}/ho-cand-version" "$U@$BENCH_HOST:$CAND/VERSION"
 r "cd $CAND && LC_ALL=C shasum -a 256 agent-desktop | cut -c1-16 && ./agent-desktop --version"
 if [ -n "${CONTROL:-}" ]; then
   r "test -x $BH/.agent-desktop-bench-target/heldout-tools/candidates/$ctl_label/agent-desktop" || { echo "no registered arm $ctl_label for the control" >&2; exit 2; }
-  r "L=$MIRROR/heldout/runs/results-native.jsonl; echo $CONTROL \$( [ -f \$L ] && wc -l < \$L | tr -d ' ' || echo 0) > $LOGS/cand-$LABEL.control"
+  ROWS_REMOTE=heldout/runs; [ -n "${TASKSET:-}" ] && ROWS_REMOTE=heldout/runs/$(taskset_info name)
+  r "L=$MIRROR/$ROWS_REMOTE/results-native.jsonl; echo $CONTROL \$( [ -f \$L ] && wc -l < \$L | tr -d ' ' || echo 0) > $LOGS/cand-$LABEL.control"
 else
   r "rm -f $LOGS/cand-$LABEL.control"
 fi
-r "zsh $MIRROR/heldout/remote/cand_start.sh cand-$LABEL.log $LABEL $TASKS $N $MODEL ${CONTROL:-}"
+TS_ARG=""
+if [ -n "${TASKSET:-}" ]; then
+  TS_DIR=$(cd "$(dirname "$TASKSET")" && pwd); TS_REMOTE=.agent-desktop-bench-target/$(basename "$TS_DIR")
+  r "mkdir -p -m 700 $BH/$TS_REMOTE && chmod 700 $BH/$TS_REMOTE"
+  put --exclude 'feas/' --exclude '__pycache__' --exclude 'tests/' --exclude '*.swift' "$TS_DIR/" "$U@$BENCH_HOST:$BH/$TS_REMOTE/"
+  TS_ARG=$TS_REMOTE/$(basename "$TASKSET")
+fi
+r "zsh $MIRROR/heldout/remote/cand_start.sh cand-$LABEL.log $LABEL $TASKS $N $MODEL ${CONTROL:-none} $TS_ARG"
 echo "started: $LABEL on $TASKS, n=$N, model $MODEL. Watch: bash $0 --status $LABEL; collect: bash $0 --collect $LABEL"
 if [ "${WAIT:-0}" = 1 ]; then
   until r "L=$LOGS/cand-$LABEL.log; tail -n +\$(grep -n 'CAND START' \$L | tail -1 | cut -d: -f1) \$L | grep -E 'CAND COMPLETE|ending the pass|SPEND CAP|API REFUSED|no candidate|does not match'" > /dev/null; do
