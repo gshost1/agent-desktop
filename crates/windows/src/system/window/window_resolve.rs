@@ -56,30 +56,43 @@ fn live_window_info(
     let refusal = match found {
         Some(window) if passes_filter(&window) || window.iconic => {
             let focused = is_foreground_window(handle);
-            return Ok(WindowInfo {
-                id: expected.id.clone(),
-                title: live_window_title(handle).unwrap_or_else(|| expected.title.clone()),
-                app: expected.app.clone(),
-                pid: expected.pid,
-                process_instance: expected.process_instance.clone(),
-                bounds: Some(window.rect),
-                state: window_state(focused, window.iconic, window.visible),
-            });
+            return Ok(confirmed(
+                expected,
+                live_window_title(handle),
+                Some(window.rect),
+                window_state(focused, window.iconic, window.visible),
+            ));
         }
         Some(_) => "window is no longer an agent-visible top-level window",
         None => "window handle is no longer present in the top-level inventory",
     };
     match presented_surface_at(handle, deadline)? {
-        Some((surface, _)) if surface.pid == expected.pid => Ok(WindowInfo {
-            id: expected.id.clone(),
-            title: surface.title,
-            app: expected.app.clone(),
-            pid: expected.pid,
-            process_instance: expected.process_instance.clone(),
-            bounds: surface.bounds,
-            state: surface.state,
-        }),
+        Some((surface, _)) if surface.pid == expected.pid => Ok(confirmed(
+            expected,
+            Some(surface.title).filter(|title| !title.is_empty()),
+            surface.bounds,
+            surface.state,
+        )),
         _ => Err(AdapterError::new(ErrorCode::WindowNotFound, refusal)),
+    }
+}
+
+/// The resolved window: the stored identity with the live title (the stored
+/// one when the live read has none), bounds and state.
+fn confirmed(
+    expected: &WindowInfo,
+    title: Option<String>,
+    bounds: Option<agent_desktop_core::Rect>,
+    state: agent_desktop_core::WindowState,
+) -> WindowInfo {
+    WindowInfo {
+        id: expected.id.clone(),
+        title: title.unwrap_or_else(|| expected.title.clone()),
+        app: expected.app.clone(),
+        pid: expected.pid,
+        process_instance: expected.process_instance.clone(),
+        bounds,
+        state,
     }
 }
 

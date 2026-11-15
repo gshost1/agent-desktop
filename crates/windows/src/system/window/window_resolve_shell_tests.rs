@@ -8,7 +8,9 @@ use agent_desktop_core::commands::focus;
 use agent_desktop_core::commands::helpers::RefArgs;
 use agent_desktop_core::commands::open_system_surface::{self, OpenSystemSurfaceArgs};
 use agent_desktop_core::commands::snapshot::{self, SnapshotArgs};
-use agent_desktop_core::{AdapterError, AppError, CommandContext, SnapshotSurface};
+use agent_desktop_core::{
+    AdapterError, AppError, CommandContext, Deadline, InteractionLease, SnapshotSurface,
+};
 
 use super::resolve_window_strict;
 use crate::adapter::WindowsAdapter;
@@ -21,6 +23,7 @@ use crate::system::private_file::WindowsPrivateFile;
 use crate::system::shell::raise_oracle::{responded_since, witness_desktop};
 use crate::system::shell::shell_surface::resolve_surface;
 use crate::system::shell::shell_surface_open::close_surface;
+use crate::system::window::window_activate::focus_window;
 use crate::system::window::window_ops::{is_root_foreground_window, parse_handle};
 use crate::tree::fixture::bootstrap;
 
@@ -129,10 +132,12 @@ fn a_headed_focus_on_a_taskbar_ref_raises_the_taskbar() {
 }
 
 /// Start is an immersive surface: the shell presents it above every window
-/// while the foreground sits on another process's input window, so a headed
-/// ref action on it acts on the presented surface instead of refusing.
+/// while the foreground sits on another process's input window (measured on
+/// build 26100: `SearchHost.exe` holds it while the surface is
+/// `StartMenuExperienceHost.exe`'s), so its id resolves through the surface
+/// resolver and the presented surface counts as focused without a raise.
 #[test]
-fn a_headed_focus_on_a_start_menu_ref_acts_on_the_presented_surface() {
+fn the_presented_start_menu_resolves_strictly_and_counts_as_focused() {
     bootstrap();
     let _lock = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     with_interaction_lease_test_lock(|| {
@@ -141,7 +146,6 @@ fn a_headed_focus_on_a_start_menu_ref_acts_on_the_presented_surface() {
         let _ = close_surface(SnapshotSurface::StartMenu, deadline(5_000));
         let _cleanup = CloseOnDrop(SnapshotSurface::StartMenu);
         let witness = witness_desktop();
-        let headed = CommandContext::default().with_headed(true);
         let opened = or_skip_shell(
             "the command opens the start menu",
             open_system_surface::execute(
@@ -149,7 +153,7 @@ fn a_headed_focus_on_a_start_menu_ref_acts_on_the_presented_surface() {
                     surface: SnapshotSurface::StartMenu,
                 },
                 &WindowsAdapter::new(),
-                &headed,
+                &CommandContext::default().with_headed(true),
             )
             .map_err(adapter_error_of),
             || responded_since(&witness),
@@ -157,11 +161,17 @@ fn a_headed_focus_on_a_start_menu_ref_acts_on_the_presented_surface() {
         if opened.is_none() {
             return;
         }
-        let snapshot = surface_snapshot(SnapshotSurface::StartMenu);
+        let start = resolve_surface(SnapshotSurface::StartMenu, deadline(10_000))
+            .expect("the desktop is readable")
+            .expect("the opened start menu is presented");
 
-        let focused = focus_first_ref_headed(&snapshot)
-            .expect("a headed ref action on the presented start menu acts on it");
+        let live = resolve_window_strict(&start, deadline(10_000))
+            .expect("the presented start menu's id resolves");
+        let lease = InteractionLease::guarded(Deadline::after(10_000).expect("deadline"), ())
+            .expect("lease");
+        let focused = focus_window(&live, &lease);
 
-        assert_eq!(focused["action"], "focus", "{focused}");
+        assert_eq!(live.id, start.id);
+        focused.expect("the presented start menu counts as focused");
     });
 }

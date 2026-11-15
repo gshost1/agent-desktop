@@ -28,25 +28,59 @@ pub(crate) fn resolve_surface(
 /// taskbar is a tool window, the tray toolbar a child window, and the
 /// immersive surfaces are absent from `EnumWindows`, A26-1), so a window id a
 /// shell-surface snapshot handed out is vouched for by the resolver that
-/// handed it out, never by the inventory. A row whose resolution fails says
-/// nothing about this handle, so it is passed over rather than fatal.
+/// handed it out, never by the inventory. Only the rows whose window class
+/// is the handle's are resolved, so a handle of any other class costs one
+/// class read and a resolver failure on a matching row surfaces instead of
+/// reading as "no surface".
 pub(crate) fn presented_surface_at(
     handle: crate::system::window::window_enum::WindowHandle,
     deadline: Deadline,
 ) -> Result<Option<(WindowInfo, &'static SurfaceKindRow)>, AdapterError> {
+    let Some(class) = crate::system::window::window_ops::window_class_name(handle) else {
+        return Ok(None);
+    };
     let id = crate::system::window::window_ops::window_id(handle);
     for row in super::shell_surface_kinds::rows()
         .iter()
-        .filter(|row| row.exists_on_build)
+        .filter(|row| row.exists_on_build && row_presents_class(row, &class))
     {
-        deadline.ensure_remaining()?;
-        if let Ok(Some(info)) = resolve_present_row(row) {
-            if info.id == id {
-                return Ok(Some((info, row)));
-            }
+        let Some(info) = resolve_row(row, deadline)? else {
+            continue;
+        };
+        if info.id == id && row_window_is_shown(row) {
+            return Ok(Some((info, row)));
         }
     }
     Ok(None)
+}
+
+fn row_presents_class(row: &SurfaceKindRow, class: &str) -> bool {
+    match row.family {
+        SurfaceFamily::Win32Class(chain) => chain.last().is_some_and(|last| *last == class),
+        SurfaceFamily::Immersive { expected_class, .. } => expected_class == class,
+    }
+}
+
+/// A Win32-class surface's descendant toolbar stays materialized after
+/// dismissal while its top-level window hides, which is why the close path
+/// reads visibility from the chain's top window; the surface is presented
+/// only while that window is visible and uncloaked. The immersive resolver
+/// already requires an uncloaked surface in the UIA root (A26-2).
+#[cfg(target_os = "windows")]
+fn row_window_is_shown(row: &SurfaceKindRow) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+    match row.family {
+        SurfaceFamily::Win32Class(chain) => class_chain_top_handle(chain).is_some_and(|top| {
+            let visible = unsafe { IsWindowVisible(top) } != 0;
+            visible && !crate::system::window::window_enum::is_cloaked(top)
+        }),
+        SurfaceFamily::Immersive { .. } => true,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn row_window_is_shown(_row: &SurfaceKindRow) -> bool {
+    false
 }
 
 /// Whether `handle` is an immersive shell surface (Start, the Action Center)

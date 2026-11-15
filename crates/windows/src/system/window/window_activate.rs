@@ -46,6 +46,14 @@ const INTER_ATTEMPT_DELAY: Duration = Duration::from_millis(25);
 /// are attempt-and-verify (A21-7); budget exhaustion on a strictly-higher
 /// integrity target is activation-worded `PERM_DENIED`, otherwise
 /// `ACTION_FAILED` with `physical_delivery_started: false`.
+///
+/// A child window id raises its own process's top-level window, and a
+/// presented immersive shell surface (Start, the Action Center) succeeds
+/// without a raise, because the shell keeps it above every window while the
+/// foreground sits on another process's input window. That success licenses
+/// no blind input: the physical click and keyboard gates re-verify the
+/// element's own window foreground and the element's keyboard focus before
+/// any event is sent.
 pub(crate) fn focus_window(win: &WindowInfo, lease: &InteractionLease) -> Result<(), AdapterError> {
     lease
         .deadline()
@@ -89,11 +97,18 @@ pub(crate) fn focus_window(win: &WindowInfo, lease: &InteractionLease) -> Result
 /// shell-surface snapshot is what hands out a child id (the tray toolbar);
 /// the identity evidence stays on the child, so every ownership check still
 /// reads the window the caller named.
+/// A root another process owns is never raised for the child: the ownership
+/// checks read the child, so they could not guard a write to that root.
 #[cfg(target_os = "windows")]
 fn activation_root(handle: super::window_enum::WindowHandle) -> super::window_enum::WindowHandle {
+    use super::window_identity::live_window_owner;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor};
     let root = unsafe { GetAncestor(handle, GA_ROOT) };
-    if root.is_null() { handle } else { root }
+    if root.is_null() || live_window_owner(root) != live_window_owner(handle) {
+        handle
+    } else {
+        root
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -356,3 +371,7 @@ mod policy_tests;
 #[cfg(test)]
 #[path = "window_activate_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "window_activate_child_tests.rs"]
+mod child_tests;
