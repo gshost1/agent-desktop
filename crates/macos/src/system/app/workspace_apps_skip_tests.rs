@@ -279,3 +279,33 @@ fn scoped_lookup_skips_a_gone_duplicate_of_a_live_app() {
     );
     require_complete(&inventory.skipped).unwrap();
 }
+
+#[test]
+fn a_launch_goes_on_past_a_record_with_no_process() {
+    let processless = [
+        json!({"pid": -1, "field": "pid"}),
+        json!({"pid": 0, "field": "pid"}),
+    ];
+
+    assert!(
+        require_complete_for_launch(&processless).is_ok(),
+        "a record AppKit gave no process cannot be the instance a launch attaches to, so it \
+         must not hold the launch until its timeout"
+    );
+    assert!(require_complete(&processless).is_err());
+}
+
+#[test]
+fn a_launch_still_refuses_a_skipped_record_that_could_be_its_app() {
+    for record in [
+        json!({"pid": 42, "field": "application_name"}),
+        json!({"pid": 42, "field": "duplicate_pid"}),
+        json!({"pid": 3_000_000_000_i64, "field": "pid"}),
+    ] {
+        let error =
+            require_complete_for_launch(&[json!({"pid": -1, "field": "pid"}), record.clone()])
+                .unwrap_err();
+        assert_eq!(error.code, agent_desktop_core::ErrorCode::AppUnresponsive);
+        assert_eq!(error.details.unwrap()["skipped"], json!([record]));
+    }
+}
