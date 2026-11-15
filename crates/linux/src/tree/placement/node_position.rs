@@ -228,40 +228,39 @@ fn place_of(
 /// global positions is left as read. Anything else gets its window-coordinate
 /// rectangles moved to the window's X11 client origin, the window itself gets
 /// the rectangle its client draws, and the rectangles it cannot place are
-/// dropped.
+/// dropped. Returns the toolkit the application root named, or `None` for a
+/// shell walk or a read the observation budget cut short.
 pub(crate) fn place_nodes(
     bus: &SharedBus,
     walk: &mut Walk<ObservedRead>,
     deadline: Deadline,
-) -> Result<(), AdapterError> {
+) -> Result<Option<ToolkitId>, AdapterError> {
     let element = walk.root.payload.node.element.clone();
     if shell::is_shell_element(&element) {
-        return Ok(());
+        return Ok(None);
     }
     let connection = match bus.get(deadline) {
         Ok(connection) => connection,
         Err(error) if error.code == ErrorCode::Timeout => {
             for_each_read(&mut walk.root, &mut invalidate_position);
-            return Ok(());
+            return Ok(None);
         }
         Err(error) => return Err(error),
     };
     let app_root = AtspiElement::new(element.bus_name(), REGISTRY_ROOT_PATH, element.pid());
-    let toolkit = geometry_or_unknown(within(
-        deadline,
-        read_toolkit(connection.inner(), &app_root),
-    ))?;
-    if reports_global_position(&toolkit) {
-        return Ok(());
+    let read = within(deadline, read_toolkit(connection.inner(), &app_root));
+    let answered = read.is_ok();
+    let toolkit = geometry_or_unknown(read)?;
+    if !reports_global_position(&toolkit) {
+        let place = place_of(bus, connection.inner(), &element, &toolkit, deadline)?;
+        let elements = placed_elements(&mut walk.root);
+        let windows = geometry_or_unknown(within(
+            deadline,
+            window_rectangles(connection.inner(), &elements),
+        ))?;
+        apply(&mut walk.root, &toolkit, place, &windows);
     }
-    let place = place_of(bus, connection.inner(), &element, &toolkit, deadline)?;
-    let elements = placed_elements(&mut walk.root);
-    let windows = geometry_or_unknown(within(
-        deadline,
-        window_rectangles(connection.inner(), &elements),
-    ))?;
-    apply(&mut walk.root, &toolkit, place, &windows);
-    Ok(())
+    Ok(answered.then_some(toolkit))
 }
 
 /// A spent observation budget leaves geometry unknown; transport loss is an error.

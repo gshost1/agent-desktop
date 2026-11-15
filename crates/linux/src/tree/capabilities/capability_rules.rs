@@ -160,6 +160,19 @@ fn pointer_combo(facts: &Facts) -> bool {
     })
 }
 
+fn index_selection(facts: &Facts) -> bool {
+    facts.advertises(SELECTION) && facts.child_count.is_some_and(|count| count > 0)
+        || matches!(facts.role, LIST_ITEM | PAGE_TAB) && facts.bits.has(SELECTABLE)
+}
+
+/// Whether the rules give `Select` only because the node holds a `Selection`
+/// or is a selectable row or tab: its select writes `Selection.SelectChild`
+/// by index on the node or its container, and no popup or pointer combo route
+/// stands behind the token.
+pub(crate) fn select_rests_on_indices(facts: &Facts) -> bool {
+    index_selection(facts) && !popup_dropdown(facts) && !pointer_combo(facts)
+}
+
 /// The tokens that need more than an action name: the text and numeric
 /// writes, the disclosure pair, selection, the click of a switch that
 /// advertises only a toggle verb and the click of a disabled button, whose
@@ -194,10 +207,7 @@ pub(crate) fn rule_tokens(facts: &Facts) -> Vec<&'static str> {
         (expand, capability::EXPAND),
         (collapse, capability::COLLAPSE),
         (
-            facts.advertises(SELECTION) && facts.child_count.is_some_and(|count| count > 0)
-                || matches!(facts.role, LIST_ITEM | PAGE_TAB) && facts.bits.has(SELECTABLE)
-                || popup_dropdown(facts)
-                || pointer_combo(facts),
+            index_selection(facts) || popup_dropdown(facts) || pointer_combo(facts),
             capability::SELECT,
         ),
         (

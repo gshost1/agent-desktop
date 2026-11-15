@@ -92,7 +92,7 @@ fn observe_limited(limits: &WalkLimits, ms: u64, pause_ms: u64) -> (usize, bool)
         SettleHost {
             walker: &mut walker,
             scan: &mut super::never_scans,
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut pause,
@@ -131,7 +131,7 @@ fn observe(web: bool, document: bool, ms: u64, curve: &[Result<usize, AdapterErr
         SettleHost {
             walker: &mut walker,
             scan: &mut super::never_scans,
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(web),
             stopped: &|_| false,
             pause: &mut pause,
@@ -167,7 +167,7 @@ fn observe_element(web: bool, curve: &[Result<usize, AdapterError>]) -> usize {
         SettleHost {
             walker: &mut walker,
             scan: &mut super::never_scans,
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(web),
             stopped: &|_| false,
             pause: &mut pause,
@@ -253,7 +253,7 @@ fn a_poll_that_finds_the_window_gone_is_window_not_found() {
         SettleHost {
             walker: &mut walker,
             scan: &mut super::never_scans,
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},
@@ -303,7 +303,7 @@ fn a_shallow_web_walk_cut_at_the_requested_depth_settles() {
         SettleHost {
             walker: &mut walker,
             scan: &mut super::never_scans,
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},
@@ -346,7 +346,7 @@ fn an_identity_only_read_of_a_web_window_walks_once_without_waiting() {
         SettleHost {
             walker: &mut walker,
             scan: &mut super::never_scans,
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| panic!("an identity-only read does not ask what the process is"),
             stopped: &|_| false,
             pause: &mut pause,

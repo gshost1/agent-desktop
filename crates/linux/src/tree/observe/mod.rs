@@ -5,6 +5,7 @@ use agent_desktop_core::{
     ObservedTree, SnapshotSurface,
 };
 
+use super::capabilities::headless_routes::HeadlessRoutes;
 use super::element::ancestry;
 use super::menu::observe_menu::observe_menu;
 use super::observe::decorate::{Decorate, Plain};
@@ -15,6 +16,7 @@ use super::placement::node_position::place_nodes;
 use super::properties::read_purpose::ReadPurpose;
 use super::walk::walker::{walk_structure, walk_tree_for};
 use super::{AtspiElement, ObservedRead, Walk, WalkLimits, atspi_element};
+use crate::system::process::toolkit_id::ToolkitId;
 use crate::system::{SharedBus, process::proc_stat, shell, window::window_id};
 
 /// A window of a stopped process cannot be read, so observing it is
@@ -71,6 +73,9 @@ fn require_surface(surface: SnapshotSurface) -> Result<(), AdapterError> {
         _ => Err(AdapterError::not_supported("observe_tree for this surface")),
     }
 }
+
+type Placer<'a> =
+    dyn FnMut(&mut Walk<ObservedRead>) -> Result<Option<ToolkitId>, AdapterError> + 'a;
 
 type Walker<'a> = dyn FnMut(
         &AtspiElement,
@@ -187,7 +192,7 @@ struct SettleHost<'a> {
     is_web_process: &'a dyn Fn(&AtspiElement) -> Result<bool, AdapterError>,
     stopped: &'a dyn Fn(u32) -> bool,
     pause: &'a mut dyn FnMut(Duration),
-    place: &'a mut dyn FnMut(&mut Walk<ObservedRead>) -> Result<(), AdapterError>,
+    place: &'a mut Placer<'a>,
 }
 
 #[cfg(test)]
@@ -252,12 +257,19 @@ fn observe_decorated(
     };
     let started = Instant::now();
     let (mut walk, settled) = settled_walk(&root, &element, &limits, &request, &mut host)?;
-    if !request.observation_mode.identity_only {
-        (host.place)(&mut walk)?;
-    }
+    let toolkit = match request.observation_mode.identity_only {
+        true => None,
+        false => (host.place)(&mut walk)?,
+    };
+    let routes = match toolkit {
+        Some(toolkit) => {
+            HeadlessRoutes::of_application(walk.root.payload.node.element.bus_name(), toolkit)
+        }
+        None => HeadlessRoutes::unread(),
+    };
     let complete = walk.complete && settled;
     let displays = read_displays();
-    let (subtree, mut stats) = project_with(walk, &limits, decorate, displays.as_deref());
+    let (subtree, mut stats) = project_with(walk, &limits, decorate, displays.as_deref(), &routes);
     stats.reads.health.deadline_exhausted += u64::from(!complete && request.deadline.is_expired());
     stats.elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
     ObservedTree::from_roots(

@@ -4,6 +4,7 @@ use agent_desktop_core::{
 };
 
 use super::Decorate;
+use crate::tree::capabilities::headless_routes::HeadlessRoutes;
 use crate::tree::live::test_support::read_of;
 use crate::tree::observe::projection::{project_node, project_with};
 use crate::tree::vocabulary::role_numbers::{PANEL, PUSH_BUTTON};
@@ -113,7 +114,13 @@ impl Decorate for Recording {
 #[test]
 fn nodes_are_seen_in_document_order_with_the_index_their_children_end_at() {
     let mut hook = Recording::default();
-    project_with(walk(), &WalkLimits::default(), &mut hook, None);
+    project_with(
+        walk(),
+        &WalkLimits::default(),
+        &mut hook,
+        None,
+        &HeadlessRoutes::unread(),
+    );
     assert_eq!(hook.prepared, 1);
     assert_eq!(
         hook.seen,
@@ -128,7 +135,13 @@ fn nodes_are_seen_in_document_order_with_the_index_their_children_end_at() {
 #[test]
 fn the_hook_changes_evidence_and_appends_children_after_the_node_own() {
     let mut hook = Recording::default();
-    let (subtree, stats) = project_with(walk(), &WalkLimits::default(), &mut hook, None);
+    let (subtree, stats) = project_with(
+        walk(),
+        &WalkLimits::default(),
+        &mut hook,
+        None,
+        &HeadlessRoutes::unread(),
+    );
     let root = tree(subtree, stats);
     let names: Vec<_> = root
         .children
@@ -145,7 +158,13 @@ fn the_hook_changes_evidence_and_appends_children_after_the_node_own() {
 #[test]
 fn only_the_root_is_finished_and_it_ends_after_its_own_appended_children() {
     let mut hook = Recording::default();
-    project_with(walk(), &WalkLimits::default(), &mut hook, None);
+    project_with(
+        walk(),
+        &WalkLimits::default(),
+        &mut hook,
+        None,
+        &HeadlessRoutes::unread(),
+    );
     assert_eq!(hook.finished_at, Some(4));
     assert_eq!(hook.finishes, 1);
 }
