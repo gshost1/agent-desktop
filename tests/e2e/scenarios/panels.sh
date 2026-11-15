@@ -40,7 +40,7 @@ panel_target() {
 
 panel_suite() {
     local label="$1" open_panel window main_window chosen check height text close
-    local check_status width_status selection_status repeated code delivery
+    local check_status width_status selection_status repeated code delivery commit commit_status
     MODE_FLAG="$2"
     note "[$label] floating panel: listed, observed, acted on"
     "$bin" focus-window --app "$app" >/dev/null 2>&1
@@ -69,6 +69,12 @@ panel_suite() {
     width_status="$(main_window_value panel-width-status 768)"
     assert "set-value on a text field reaches the app's own edit handling" \
         "$([ "$width_status" = "768" ] && echo 1 || echo 0)" "linked width=$width_status"
+
+    commit="$(panel_target "$window" textfield panel-commit)"
+    act_target "$commit" set-value "committed-$label" >/dev/null 2>&1
+    commit_status="$(main_window_value panel-commit-status "committed-$label")"
+    assert "set-value commits a field that hands its text over only when editing ends" \
+        "$([ "$commit_status" = "committed-$label" ] && echo 1 || echo 0)" "committed=$commit_status"
 
     text="$(panel_target "$window" textfield panel-text)"
     act_target "$text" select gamma >/dev/null 2>&1

@@ -14,11 +14,18 @@ import SwiftUI
 //   application itself saw a value write, not only the field's cell.
 // - panel-text: a text view whose selection panel-selection-status reports as
 //   "location+length".
+// - panel-commit: a field that hands its text to the model only when editing
+//   ends, as form fields bound to a document do; panel-commit-status reads the
+//   committed text, so a write the app never committed shows the old value.
+// - panel-commit-text: a text view that commits the same way, read through
+//   panel-commit-text-status.
 final class PanelState: ObservableObject {
     static let shared = PanelState()
     @Published var checked = false
     @Published var width = "300"
     @Published var selection = "none"
+    @Published var committed = "first"
+    @Published var committedText = "first text"
 }
 
 final class FixturePanelController: NSObject, NSTextFieldDelegate, NSTextViewDelegate {
@@ -26,6 +33,8 @@ final class FixturePanelController: NSObject, NSTextFieldDelegate, NSTextViewDel
     private var panel: NSPanel?
     private let height = NSTextField(string: "200")
     private let width = NSTextField(string: "300")
+    private let commit = NSTextField(string: "first")
+    private let commitText = NSTextView(frame: NSRect(x: 0, y: 0, width: 280, height: 40))
 
     func show() {
         if panel == nil { panel = makePanel() }
@@ -34,7 +43,7 @@ final class FixturePanelController: NSObject, NSTextFieldDelegate, NSTextViewDel
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 300),
             styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -54,7 +63,14 @@ final class FixturePanelController: NSObject, NSTextFieldDelegate, NSTextViewDel
         text.string = "alpha beta gamma beta"
         text.setAccessibilityLabel("panel-text")
         text.delegate = self
-        let stack = NSStackView(views: [check, height, width, text])
+        commit.setAccessibilityLabel("panel-commit")
+        commit.delegate = self
+        commitText.string = "first text"
+        commitText.setAccessibilityLabel("panel-commit-text")
+        commitText.delegate = self
+        commitText.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        commitText.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        let stack = NSStackView(views: [check, height, width, text, commit, commitText])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
@@ -69,7 +85,18 @@ final class FixturePanelController: NSObject, NSTextFieldDelegate, NSTextViewDel
         PanelState.shared.checked = sender.state == .on
     }
 
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard notification.object as? NSTextField === commit else { return }
+        PanelState.shared.committed = commit.stringValue
+    }
+
+    func textDidEndEditing(_ notification: Notification) {
+        guard notification.object as? NSTextView === commitText else { return }
+        PanelState.shared.committedText = commitText.string
+    }
+
     func controlTextDidChange(_ notification: Notification) {
+        guard notification.object as? NSTextField === height else { return }
         guard let value = Double(height.stringValue) else { return }
         width.stringValue = String(Int(value * 1.5))
         PanelState.shared.width = width.stringValue
@@ -91,5 +118,7 @@ struct FloatingPanelControls: View {
         StatusReadout(name: "panel-check-status", value: state.checked ? "on" : "off")
         StatusReadout(name: "panel-width-status", value: state.width)
         StatusReadout(name: "panel-selection-status", value: state.selection)
+        StatusReadout(name: "panel-commit-status", value: state.committed)
+        StatusReadout(name: "panel-commit-text-status", value: state.committedText)
     }
 }
