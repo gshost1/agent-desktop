@@ -80,9 +80,10 @@ pub fn notification_action(
 /// live runs): the shell can accept the entry's dismiss invoke without acting
 /// on it, while the top-level clear-all control does act. The clear-all is
 /// only a faithful substitute for the entry's own button when the target is
-/// the center's sole entry - with any other entry present it would remove
-/// notifications nobody asked to remove, so an accepted-and-ignored invoke
-/// stays an honest `ACTION_FAILED` there.
+/// the center's sole entry and had no identical twin when it was picked -
+/// with any other entry present, or a twin the re-read cannot tell from the
+/// target, it would remove notifications nobody asked to remove, so an
+/// accepted-and-ignored invoke stays an honest `ACTION_FAILED` there.
 fn dismiss_impl(
     target: &NotificationTarget,
     hwnd: isize,
@@ -327,10 +328,10 @@ pub(crate) fn require_foreground_policy(policy: InteractionPolicy) -> Result<(),
 
 /// The listing entry a mutation targets, picked by core from a fresh read,
 /// beside that whole read - the prelude every mutation runs before it touches
-/// anything. A key that no
-/// longer names an entry, or an entry at the index that no longer carries the
-/// caller's identity, is `NOTIFICATION_NOT_FOUND`: the surface reordered
-/// under the caller, so acting anyway would hit the wrong notification.
+/// anything. A key that no longer names an entry, or an entry at the index
+/// that no longer carries the caller's identity, is `NOTIFICATION_NOT_FOUND`:
+/// the surface reordered under the caller, so acting anyway would hit the
+/// wrong notification.
 fn locate(
     target: &NotificationTarget,
     filter: &NotificationFilter,
