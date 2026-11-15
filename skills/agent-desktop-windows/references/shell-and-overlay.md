@@ -142,9 +142,11 @@ agent-desktop cursor-overlay disable
 An app hosted in `ApplicationFrameHost` is reported through its frame:
 `focused_window` and `list-windows` give the frame's handle as the window `id`,
 which every window operation targets, while `app` and `pid` name the hosted
-app, read from its `Windows.UI.Core.CoreWindow`. A suspended hosted app drops
-its `CoreWindow`, so until it resumes the entry reads as its frame host, and
-identities checked against the hosted pid fail closed.
+app, read from its `Windows.UI.Core.CoreWindow`. `list-apps` names the same
+app and pid, so `press --app SystemSettings.exe` and `press --window-id <frame
+id>` deliver to the hosted app while its frame is in front. A suspended hosted
+app drops its `CoreWindow`, so until it resumes the entry reads as its frame
+host, and identities checked against the hosted pid fail closed.
 
 ## Menu Detection Coverage
 
