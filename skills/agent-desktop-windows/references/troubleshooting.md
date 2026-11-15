@@ -114,8 +114,8 @@ notifications may have moved to the old index. Close the center with Escape.
 
 ## A Hosted (UWP) App Reads as ApplicationFrameHost
 
-Symptom: `focused_window` or `list-windows` reports a hosted UWP app (Settings
-and its peers) under the frame host's identity, or an identity verified against
+Symptom: `focused_window`, `list-windows` or `list-apps` reports a hosted UWP
+app (Settings and its peers) under the frame host's identity, or an identity verified against
 the app's pid stops resolving.
 
 Cause: the app is suspended, which drops its `CoreWindow` while the frame
@@ -185,8 +185,16 @@ No `save` command exists. Saving is a menu path plus a dialog, and the whole
 chain is semantic, so it needs no `--headed` and no keystrokes. The same shape
 fits any app whose save flow is File, then Save As.
 
-The script runs as written against an open Notepad. Each ref comes from the JSON
-of the step before it, so the sequence stays correct when the tree shifts.
+The script runs as written against an open classic Notepad, in front of or
+behind other windows. Each ref comes from the JSON of the step before it, so the
+sequence stays correct when the tree shifts.
+
+On the Windows 11 Notepad, the menu steps work and reach the Save as dialog, but
+the save itself is not reliable. The dialog's File name field reads back the
+written path, yet in 6 of 7 measured runs the file never appeared there. The
+runs that saved anything saved the suggested name, `the document body.txt`, to
+Documents. The final `wait --window` then times out. Treat that timeout as a
+failed save and check the file on disk.
 
 ```powershell
 $out = "$env:TEMP\notepad-save-demo.txt"
@@ -198,10 +206,11 @@ agent-desktop set-value $doc.ref_id "the document body"
 $file = (agent-desktop find --app notepad.exe --role menuitem --name "File" | ConvertFrom-Json).data.matches[0]
 agent-desktop expand $file.ref_id
 agent-desktop wait --menu --app notepad.exe             # the open menu is its own surface
-$menu = (agent-desktop snapshot --app notepad.exe --surface menu | ConvertFrom-Json).data.tree
-agent-desktop click ($menu.children | Where-Object name -eq 'Save As...').ref_id
+$saveAs = (agent-desktop find --app notepad.exe --surface menu --role menuitem --name "Save as" |
+    ConvertFrom-Json).data.matches[0]                   # "Save As..." or "Save as", at any depth
+agent-desktop click $saveAs.ref_id
 
-agent-desktop wait --window "Save As" --app notepad.exe # the dialog is a new window
+agent-desktop wait --window "Save" --app notepad.exe    # the dialog is a new window
 $dialog = (agent-desktop list-windows --app notepad.exe | ConvertFrom-Json).data |
     Where-Object title -eq 'Save As'
 $name = (agent-desktop find --name "File name" --window-id $dialog.id | ConvertFrom-Json).data.matches |
@@ -210,12 +219,17 @@ agent-desktop set-value $name.ref_id $out               # full path goes in the 
 
 $save = (agent-desktop find --role button --name "Save" --window-id $dialog.id | ConvertFrom-Json).data.matches[0]
 agent-desktop click $save.ref_id
-agent-desktop wait --window "notepad-save-demo - Notepad" --app notepad.exe
+agent-desktop wait --window "notepad-save-demo" --app notepad.exe
 Get-Content $out
 ```
 
-Three things that surprise a first-time caller:
+Four things that surprise a first-time caller:
 
+- **The menu item's name differs by build.** Classic Notepad says
+  `Save As...`, the Windows 11 Notepad says `Save as` and nests its items under
+  a `Popup` element of the menu surface. `find --surface menu --name "Save as"`
+  matches both, because the name match ignores case and finds substrings at any
+  depth.
 - **`find --name "File name"` returns three matches:** a `statictext` label, a
   `combobox`, and the `textfield` inside the combobox. Only the textfield
   accepts `set-value`, so match on `role` as well as name.

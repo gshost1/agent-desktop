@@ -40,6 +40,29 @@ Choose the scope:
 - With `--app` and no `--window-id`, `snapshot` and `find` take the app's only visible window, else its only focused window, and answer `AMBIGUOUS_TARGET` with the candidates when neither settles it. Pass `--window-id` when an app has several windows.
 - On macOS, `menu` and `menubar` are application-owned and skip window selection. If you pass `--window-id`, it selects the owning app for that surface.
 
+### Only what changed (`--since`)
+
+After an action, `snapshot --since <snapshot_id>` re-reads the window and prints only what differs from that earlier snapshot, not the whole tree. It is a full snapshot: it gets its own `snapshot_id`, saves its refs, and can be the `--since` of the next one. Pass the same `--app`, `--window-id`, `--surface`, `-i`, `--compact`, `--skeleton` and `--max-depth` as the snapshot you compare against.
+
+```bash
+agent-desktop snapshot --app "Text Editor" -i --compact             # prints snapshot_id s8f3k2p9
+agent-desktop click @s8f3k2p9:e4
+agent-desktop snapshot --app "Text Editor" -i --compact --since s8f3k2p9 --lines
+```
+
+`data.diff` replaces `data.tree`. `status` is `changed`, `unchanged` (both reads were whole and nothing differs), `incomplete` (one side was cut short, named in `incomplete`; rows past a cut may be missing, and it never claims no change) or `not_comparable`. Rows:
+
+- `added`: elements that appeared, with fresh refs of the new snapshot.
+- `changed`: the same element with a different name, value, description, placeholder, hint, states or focus. `changed` lists the fields and `was` holds the earlier values (`null` when there was none; `states` for a state or focus change).
+- `removed`: elements that are gone, without a ref.
+- `focused`: the element with keyboard focus now, also when nothing changed.
+
+Elements pair by the identity refs use: role plus native id, stable name and description. A value change is `changed`; a renamed button, or an element with an identical twin, shows as removed plus added, never as changed. A container with no ref, no text and no state is not reported. Elements that did not change keep working through the refs you already hold, until their snapshot is pruned.
+
+With `--lines`, `data.lines` holds `+` added, `~` changed (with `(was ...)`), `-` removed lines, a first `no change` or `incomplete (snapshot)` line, and a last `focused` line.
+
+`not_comparable` returns the whole tree in `data.tree` with `diff.reason`: `owner_changed` when the snapshot read another window or process (a dialog that opened as its own window, say), or `presentation_changed` when the flags shaping the tree differ. An unknown, pruned or other-session id, or a snapshot saved by `find`, `wait` or a `--wait-for` rather than a plain `snapshot`, fails `SNAPSHOT_NOT_FOUND` before anything is read, with `details.kind` `since_snapshot_not_found` or `diff_baseline_missing`: take a full snapshot without `--since`. `--since` cannot combine with `--root` or `--wait-for`.
+
 ### Partial trees
 
 `data.complete` is on every snapshot. When the observation budget runs out, the command still succeeds with `"complete": false`, `"truncated": true`, `"nodes_observed"`, and the tree it saw. Each node with cut descendants carries `"subtree_truncated": true`. Read `complete`; do not wait for a `TIMEOUT`. Raise `--timeout-ms` (default 3000) or drill with `--root` to finish the tree. A `--root` drill is all or nothing: an incomplete read returns `TIMEOUT`.
@@ -60,10 +83,10 @@ A command re-identifies the element from the ref before it acts. On macOS, a ref
 
 - `STALE_REF`, `details.kind: saved_ref_absent`: no live element matches the stored identity. Take a fresh snapshot. On macOS `retained_object_stale` means the recorded address is dead or no longer matches.
 - `STALE_REF`, `details.kind: identity_unproven`: the capture could not count the ref, so nothing was searched. It carries `details.retryable: false`. `details.reason` is `capture_incomplete` when the snapshot could not read the whole window in time: retake it with a larger `--timeout-ms`. It is `capture_unknown` when an element in the window left a field the ref records unread, or no capture judged the ref: a new snapshot may refuse it again, so use a different selector or `--headed mouse-click --xy`.
-- `AMBIGUOUS_TARGET`, `details.kind: saved_ref_ambiguous`: an identical element appeared, so two live elements match. `identity_not_unique`: the capture found an identical twin, so nothing was searched, and every snapshot refuses it again. A ref from a snapshot taken before version 2.7 gets it for any unproven ref, so take a new snapshot first.
+- `AMBIGUOUS_TARGET`, `details.kind: saved_ref_ambiguous`: an identical element appeared, so two live elements match. `identity_not_unique`: the capture found an identical twin, so nothing was searched. A twin is refused by every snapshot of the same surface. A menu entry (`menuitem` or `menu`) twinned in a whole-window capture can be reached by opening its menu and acting on a ref from `snapshot --surface menu`, which counts only the open menu. Otherwise only `--headed mouse-click --xy` can pick one; it takes the foreground and is unavailable on Linux Wayland. A ref from a snapshot taken before version 2.7 gets it for any unproven ref, so take a new snapshot first.
 - `TIMEOUT`, `details.kind: resolution_identity_unknown`: a live read did not answer, so identity is unproven. Nothing was sent; retry.
 
-Off macOS, identical twins have no ref path: only `--headed mouse-click --xy X,Y` can choose one. It takes the foreground, and a Linux Wayland session refuses it.
+Off macOS, identical twins have no ref path in the surface that holds both: a menu entry is reached through its open menu's `snapshot --surface menu`, and anything else only by `--headed mouse-click --xy X,Y`, which takes the foreground and which a Linux Wayland session refuses.
 
 ### Surfaces
 
@@ -89,7 +112,7 @@ agent-desktop find --app "App" --role button --count
 - Unnamed elements omit `name`. Their content is in `value`, so search it with `--value`.
 - A row, tree item or cell labelled only by one text field, as in a file list or outline, takes that field's value as its `name`, marked `"name_source": "child_field_value"` in snapshots, so `--name` finds it. That name locates and displays the element but is never ref identity. On the `web` surface, an element the page makes clickable with a script, such as a `<span>` with a click listener, takes its text as `name` the same way, marked `"name_source": "contained_text"`.
 - A large tree, such as a file dialog, can pass the 5000 ms default `--timeout-ms`. Raise it or narrow the search. A timeout here does not mean the app hangs. The walk gets the budget less up to one second kept for checking matches. When the walk runs out, find returns `TIMEOUT` at once with `details.kind: "locator_transient_incomplete"` and `details.last_incomplete.deadline_exhausted` above zero. A retry with the same budget fails the same way. When `details.last_incomplete.invalidated_elements` is above zero instead, the interface destroyed elements while find read them, as a window does while it is still loading; find walks again until its deadline, and a retry once the window settles can succeed.
-- `--first` returns the first match in traversal order. On a platform that reads list and table rows last, a match outside those rows wins and find answers without reading them, so `find --first` reaches a button beside a long file list without reading the list. There, a match whose ref would carry no element token waits for the rows as well, because only a count of the whole window proves that ref, and it comes back without a ref when that read runs out of time or the app stops answering. The platform skill says whether a platform reads rows last.
+- `--first` returns the first match whose whole name equals `--name`, and the first match in traversal order when none does; `--last` and `--nth` keep traversal order. On a platform that reads list and table rows last, a match outside those rows wins over any inside them, a whole-name one included, and find answers without reading them, so `find --first` reaches a button beside a long file list without reading the list. When the walk runs out of budget, `--first` answers where traversal order would have: the best match it saw, with `data.complete: false` and `data.truncated: true` when a whole-name match could still lie in the unread part. Pass `--exact` to rule that out. There, a match whose ref would carry no element token waits for the rows as well, because only a count of the whole window proves that ref, and it comes back without a ref when that read runs out of time or the app stops answering. The platform skill says whether a platform reads rows last.
 - `--allow-partial` turns that `TIMEOUT` into an answer: `data.complete: false`, `data.truncated: true`, the matches seen so far, and `total_matches` as a lower bound. Use it when any visible match will do, such as a button beside a long file list, or when you want to see what the walk reached before you raise `--timeout-ms`. Do not use it to prove a match is unique or absent; only `complete: true` proves either. In an incomplete answer only matches with an element token get a `ref_id` (macOS), each re-read by its token before it is published; a match without a token, or one the deadline cuts off, carries `bounds` instead. A complete walk answers exactly as without the flag, plus `data.complete: true`. An incomplete walk still spends its budget before it answers, so pair the flag with a smaller `--timeout-ms` when you want the partial answer sooner.
 
 Every non-count response returns the `snapshot_id` that owns its refs:

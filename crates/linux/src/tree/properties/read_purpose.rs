@@ -1,5 +1,5 @@
 /// Fields needed by one fresh observation; omitted fields remain unknown.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReadPurpose {
     Snapshot,
     Sampling,

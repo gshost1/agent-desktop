@@ -5,6 +5,7 @@ use serde_json::json;
 
 use super::select_exclusive::selected_child;
 use super::select_identity::with_current_row;
+use super::select_pointer::with_detail;
 use super::select_search::{Hit, Search, name_matches, search};
 use crate::actions::action_call::resolve_verb;
 use crate::actions::chain::chain_delivery_outcome::DeliveryOutcome;
@@ -213,27 +214,65 @@ pub(in crate::actions) fn select_in_popup(
         return Ok(ActionResult::satisfied_without_delivery("select")
             .with_steps(vec![satisfied_step("Action.DoAction")]));
     }
-    set_expanded(target, true)?;
-    let outcome = choose(target, display_value);
-    let still_open = target
-        .view()
-        .ok()
-        .and_then(|view| view.state(EXPANDED))
-        .unwrap_or(false);
-    if still_open {
-        let _ = set_expanded(target, false);
+    let expanded = || target.view().ok().and_then(|view| view.state(EXPANDED));
+    expand_then_choose(
+        || set_expanded(target, true).map(|_| ()),
+        || choose(target, display_value),
+        || close_and_confirm(expanded, || set_expanded(target, false).map(|_| ())),
+    )
+}
+
+/// Collapses a popup the choice left open and reads it back: whether the
+/// popup reads collapsed afterwards. A collapse that errors, a popup that
+/// still reads expanded and a state that cannot be read are not collapsed.
+fn close_and_confirm(
+    mut expanded: impl FnMut() -> Option<bool>,
+    collapse: impl FnOnce() -> Result<(), AdapterError>,
+) -> bool {
+    match expanded() {
+        Some(false) => true,
+        Some(true) => collapse().is_ok() && expanded() == Some(false),
+        None => false,
     }
-    outcome
+}
+
+/// Opens the popup, makes the choice and closes a popup the choice left open.
+/// An expand that a read shows collapsed again left nothing changed, the way
+/// a preparatory scroll does: a refusal that sent nothing stays `not_delivered`
+/// and records the expand in `preparatory_expand`. A popup that may still be
+/// open is a change the caller has to inspect, so that refusal becomes
+/// `delivered_unverified`. Every failure after the expand carries
+/// `popup_closed`, and `preparatory_focus`, because a toolkit's popup may
+/// hand keyboard focus to the control when it closes (GTK 4 does).
+fn expand_then_choose(
+    expand: impl FnOnce() -> Result<(), AdapterError>,
+    choose: impl FnOnce() -> Result<ActionResult, AdapterError>,
+    close_if_open: impl FnOnce() -> bool,
+) -> Result<ActionResult, AdapterError> {
+    expand()?;
+    let outcome = choose();
+    let closed = close_if_open();
+    outcome.map_err(|error| after_expand(error, closed))
+}
+
+fn after_expand(error: AdapterError, closed: bool) -> AdapterError {
+    let unsent = error.disposition == DeliverySemantics::not_delivered();
+    let error = with_detail(error, "popup_closed", json!(closed));
+    let error = with_detail(error, "preparatory_focus", json!("may_have_moved_focus"));
+    if !closed {
+        return if unsent {
+            error.with_disposition(DeliverySemantics::delivered_unverified())
+        } else {
+            error
+        };
+    }
+    with_detail(
+        error,
+        "preparatory_expand",
+        json!("expanded_then_collapsed"),
+    )
 }
 
 #[cfg(test)]
-mod tests {
-    use super::value_already_shown;
-
-    #[test]
-    fn a_drop_down_that_shows_the_wanted_value_needs_no_popup() {
-        assert!(value_already_shown(Some(" gamma ".to_owned()), "Gamma"));
-        assert!(!value_already_shown(Some("Beta".to_owned()), "Gamma"));
-        assert!(!value_already_shown(None, "Gamma"));
-    }
-}
+#[path = "select_popup_tests.rs"]
+mod tests;

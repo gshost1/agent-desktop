@@ -40,15 +40,29 @@ fn read_report(
     deadline: Deadline,
     from_probe: FromProbe,
 ) -> Result<PermissionReport, AdapterError> {
-    crate::input::x11::stale_release::sweep();
     let capture =
         capture_availability(current(), &DisplayGrabber, capture_probe_deadline(deadline));
+    release_stale_input(&capture, deadline, crate::input::x11::stale_release::sweep);
     let probed = bus
         .get(deadline)
         .and_then(|connection| probe_registry(bus, &connection, deadline));
     let report = from_probe(probed, capture)?;
     deadline.ensure_remaining()?;
     Ok(report)
+}
+
+/// Releases the input a dead call left held, only on a display that has just
+/// answered the capture probe. A display that did not answer cannot take the
+/// release, and waiting on it would spend the preflight's share of the second
+/// a command may overrun by; the record stays for the next command.
+fn release_stale_input(
+    capture: &CaptureAvailability,
+    deadline: Deadline,
+    sweep: impl FnOnce(Deadline),
+) {
+    if matches!(capture, CaptureAvailability::Reachable) {
+        sweep(deadline);
+    }
 }
 
 fn capture_probe_deadline(deadline: Deadline) -> Deadline {

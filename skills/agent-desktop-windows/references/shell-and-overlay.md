@@ -33,6 +33,17 @@ windows.
   `delivered_unverified` with `retry: unsafe`, because a synthesized click
   cannot confirm what the owning app did with it. A click on an overflow item
   is untested.
+- **Headed ref actions work on `taskbar` and `start-menu` refs.** With
+  `--headed`, a ref action first raises the surface's top-level window. A
+  `taskbar` ref raises the taskbar. A presented `start-menu` counts as raised
+  as it is, because the shell keeps it above every window while the
+  foreground stays on another process's input window. A physical action on
+  it, such as `right-click`, can still refuse `not_delivered` when the
+  element's own window does not hold the foreground. Only these two surfaces
+  were measured. `system-tray`, `system-tray-overflow` and `action-center`
+  refs take the same path but are untested: a tray ref raises its toolbar's
+  top-level window (the taskbar for `system-tray`, the overflow window for
+  `system-tray-overflow`), and a presented `action-center` counts as raised.
 
 ## Notifications
 
@@ -142,14 +153,17 @@ agent-desktop cursor-overlay disable
 An app hosted in `ApplicationFrameHost` is reported through its frame:
 `focused_window` and `list-windows` give the frame's handle as the window `id`,
 which every window operation targets, while `app` and `pid` name the hosted
-app, read from its `Windows.UI.Core.CoreWindow`. A suspended hosted app drops
-its `CoreWindow`, so until it resumes the entry reads as its frame host, and
-identities checked against the hosted pid fail closed.
+app, read from its `Windows.UI.Core.CoreWindow`. `list-apps` names the same
+app and pid, so `press --app SystemSettings.exe` and `press --window-id <frame
+id>` deliver to the hosted app while its frame is in front. A suspended hosted
+app drops its `CoreWindow`, so until it resumes the entry reads as its frame
+host, and identities checked against the hosted pid fail closed.
 
 ## Menu Detection Coverage
 
 The `menu` surface detector covers classic Win32 menus, WPF context menus and
-menu-bar dropdowns, and Chromium/Electron DOM context menus drawn inside the
-app's own window. WinUI3 and MSIX hosts are not evaluated. For an app outside
+menu-bar dropdowns, Chromium/Electron DOM context menus drawn inside the app's
+own window, and WinUI 3 menu flyouts such as the Windows 11 Notepad File menu.
+Other WinUI 3 and MSIX popups are not evaluated. For an app outside
 these families, read "no menu is open" as "not detected", not as proof that the
 menu is closed.

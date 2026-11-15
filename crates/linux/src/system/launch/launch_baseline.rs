@@ -10,9 +10,13 @@ use crate::system::registry::registry_frames::RootRead;
 use crate::system::registry::{Registry, read_registry_for};
 use crate::system::signal::signal_inventory::{Pass, run_pass, skipped_selected};
 
+/// What ran before a spawn: every process, the running instances of the
+/// requested executable whose windows were read, and how many instances of
+/// that executable ran, read or not.
 pub(super) struct Baseline {
     pub(super) processes: HashSet<ProcessIdentity>,
     pub(super) residents: Vec<(Running, HashSet<String>)>,
+    pub(super) instances: usize,
 }
 
 pub(super) fn same_executable(identity: Option<&ExecutableIdentity>, owner: &Running) -> bool {
@@ -27,18 +31,22 @@ pub(super) fn prepare(
     running: &[Running],
     deadline: Deadline,
 ) -> Baseline {
-    let residents = running
+    let instances: Vec<&Running> = running
         .iter()
         .filter(|owner| same_executable(identity.as_ref(), owner))
+        .collect();
+    let residents = instances
+        .iter()
         .filter_map(|owner| {
             capture(bus, owner, deadline)
                 .ok()
-                .map(|windows| (owner.clone(), windows))
+                .map(|windows| ((*owner).clone(), windows))
         })
         .collect();
     Baseline {
         processes: running.iter().map(Running::identity).collect(),
         residents,
+        instances: instances.len(),
     }
 }
 

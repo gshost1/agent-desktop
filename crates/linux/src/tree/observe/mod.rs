@@ -13,10 +13,7 @@ use super::observe::readiness::{Readiness, has_web_document};
 use super::observe::readiness_step::Step;
 use super::placement::node_position::place_nodes;
 use super::properties::read_purpose::ReadPurpose;
-use super::surfaces::nested_dialog::{
-    find_surface as find_nested, is_incomplete_surface as is_incomplete,
-};
-use super::walk::walker::walk_tree_for;
+use super::walk::walker::{walk_structure, walk_tree_for};
 use super::{AtspiElement, ObservedRead, Walk, WalkLimits, atspi_element};
 use crate::system::{SharedBus, process::proc_stat, shell, window::window_id};
 
@@ -75,14 +72,6 @@ fn require_surface(surface: SnapshotSurface) -> Result<(), AdapterError> {
     }
 }
 
-fn dialog_absent(surface: SnapshotSurface) -> AdapterError {
-    AdapterError::new(
-        ErrorCode::ElementNotFound,
-        format!("The window does not present a {} surface", surface.as_str()),
-    )
-    .with_suggestion("Open a dialog of the requested kind, or snapshot the window surface")
-}
-
 type Walker<'a> = dyn FnMut(
         &AtspiElement,
         &WalkLimits,
@@ -106,6 +95,9 @@ fn settled_walk(
     request: &ObservationRequest,
     host: &mut SettleHost<'_>,
 ) -> Result<(Walk<ObservedRead>, bool), AdapterError> {
+    if let Some(dialog) = nested_surface::discover(root, element, limits, request, host)? {
+        return Ok(dialog);
+    }
     let settles = !request.observation_mode.identity_only;
     let web_process =
         settles && matches!(root, ObservationRoot::Window(_)) && (host.is_web_process)(element)?;
@@ -130,14 +122,6 @@ fn settled_walk(
             }
             Err(error) => return Err(window_gone(root, error)),
         };
-        if matches!(
-            request.surface,
-            SnapshotSurface::Sheet | SnapshotSurface::Alert
-        ) && matches!(root, ObservationRoot::Window(_))
-            && !super::surfaces::is_surface(&walk.root.payload.node, request.surface)
-        {
-            return nested_surface(element, walk, limits, request, host);
-        }
         let waits = settles
             && matches!(root, ObservationRoot::Window(_))
             && (web_process || has_web_document(&walk.root));
@@ -184,51 +168,6 @@ fn settled_walk(
     }
 }
 
-/// The walk of a dialog drawn inside the window that was walked, rooted at
-/// the dialog, or the absence of the requested surface. The refs resolve
-/// against the dialog and not against the window. The request's depth limit
-/// bounds the surface and not the search for it: a window that limit cut short
-/// is walked again without it, because a dialog may sit below the cut.
-fn nested_surface(
-    window: &AtspiElement,
-    mut window_walk: Walk<ObservedRead>,
-    limits: &WalkLimits,
-    request: &ObservationRequest,
-    host: &mut SettleHost<'_>,
-) -> Result<(Walk<ObservedRead>, bool), AdapterError> {
-    if window_walk.complete && is_incomplete(&window_walk.root, request.surface) {
-        let whole = WalkLimits::default();
-        let uncut = WalkLimits {
-            max_raw_depth: whole.max_raw_depth,
-            max_logical_depth: whole.max_logical_depth,
-            ..*limits
-        };
-        window_walk = (host.walker)(window, &uncut, request.deadline, full_read(request))?;
-    }
-    if !window_walk.complete || is_incomplete(&window_walk.root, request.surface) {
-        return Err(AdapterError::timeout(
-            "Dialog discovery did not read the complete window",
-        ));
-    }
-    let dialogs = find_nested(&window_walk.root, request.surface);
-    let dialog = match dialogs.as_slice() {
-        [dialog] => dialog.element.clone(),
-        [] => return Err(dialog_absent(request.surface)),
-        _ => {
-            return Err(AdapterError::new(
-                ErrorCode::AmbiguousTarget,
-                format!(
-                    "The window presents multiple {} surfaces",
-                    request.surface.as_str()
-                ),
-            )
-            .with_suggestion("Snapshot the window and select a dialog by ref"));
-        }
-    };
-    let walk = (host.walker)(&dialog, limits, request.deadline, full_read(request))?;
-    Ok((walk, true))
-}
-
 /// The walk's own read: identity evidence alone when the request only
 /// resolves a saved ref, the full snapshot read otherwise.
 fn full_read(request: &ObservationRequest) -> ReadPurpose {
@@ -239,14 +178,48 @@ fn full_read(request: &ObservationRequest) -> ReadPurpose {
     }
 }
 
-/// What the settle loop needs from outside the tree: the walk itself, whether
-/// a process is a web engine or has stopped, and how to wait.
+/// What the settle loop needs from outside the tree: the walk itself, the
+/// structural scan that looks for a nested dialog and stops at web documents,
+/// whether a process is a web engine or has stopped, and how to wait.
 struct SettleHost<'a> {
     walker: &'a mut Walker<'a>,
+    scan: &'a mut Walker<'a>,
     is_web_process: &'a dyn Fn(&AtspiElement) -> Result<bool, AdapterError>,
     stopped: &'a dyn Fn(u32) -> bool,
     pause: &'a mut dyn FnMut(Duration),
     place: &'a mut dyn FnMut(&mut Walk<ObservedRead>) -> Result<(), AdapterError>,
+}
+
+#[cfg(test)]
+fn never_scans(
+    _: &AtspiElement,
+    _: &WalkLimits,
+    _: Deadline,
+    _: ReadPurpose,
+) -> Result<Walk<ObservedRead>, AdapterError> {
+    Err(AdapterError::internal(
+        "a window surface request never scans for a nested dialog",
+    ))
+}
+
+/// A scan served by a test walker that ignores depth: a probe of the root
+/// alone keeps the root and drops what it holds.
+#[cfg(test)]
+fn scan_of(
+    limits: &WalkLimits,
+    walk: impl FnOnce(&WalkLimits) -> Result<Walk<ObservedRead>, AdapterError>,
+) -> Result<Walk<ObservedRead>, AdapterError> {
+    let whole = WalkLimits {
+        max_raw_depth: limits
+            .max_raw_depth
+            .max(WalkLimits::default().max_raw_depth),
+        ..*limits
+    };
+    let mut scanned = walk(&whole)?;
+    if limits.max_raw_depth == 0 {
+        scanned.root.children.clear();
+    }
+    Ok(scanned)
 }
 
 #[cfg(test)]
@@ -338,6 +311,9 @@ pub(crate) fn observe_tree_with(
     let mut walker = |element: &AtspiElement, limits: &WalkLimits, deadline: Deadline, purpose| {
         walk_tree_for(bus, element, limits, deadline, purpose)
     };
+    let mut scan = |element: &AtspiElement, limits: &WalkLimits, deadline: Deadline, purpose| {
+        walk_structure(bus, element, limits, deadline, purpose)
+    };
     let mut pause = std::thread::sleep;
     use crate::system::x11::{self, MonitorReader, MonitorSource};
     let displays = x11::start(|| MonitorReader.read());
@@ -346,6 +322,7 @@ pub(crate) fn observe_tree_with(
         request,
         SettleHost {
             walker: &mut walker,
+            scan: &mut scan,
             place: &mut |walk| place_nodes(bus, walk, request.deadline),
             is_web_process: &|element| {
                 let connection = bus.get(request.deadline)?;
@@ -372,6 +349,7 @@ pub(crate) fn observe_tree_with(
 }
 
 pub(crate) mod decorate;
+mod nested_surface;
 pub(super) mod node_evidence;
 pub(super) mod observation;
 pub(super) mod observed_read;

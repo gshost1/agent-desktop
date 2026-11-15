@@ -1,0 +1,3 @@
+### Features
+
+* `snapshot --since <snapshot_id>` takes a normal full snapshot but prints only what changed since that earlier snapshot of the same window and session: `added`, `changed` (with the earlier values in `was`) and `removed` rows with fresh refs, the focused element, and an explicit `unchanged` status, so an agent reads one change instead of the whole tree after each action. Rows pair by the identity refs use, a read that was cut short reports `incomplete` instead of claiming no change, and `--lines` prints `+`, `~` and `-` lines. ([#169](https://github.com/gshost1/agent-desktop/pull/169))

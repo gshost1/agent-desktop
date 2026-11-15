@@ -7,17 +7,17 @@ use serde_json::{Value, json};
 
 /// Shapes the find response. A find run with `--allow-partial` also says
 /// whether its answer is complete; an incomplete one is marked truncated, and
-/// its match count is a lower bound.
+/// its match count is a lower bound. A `--first` answer whose read could hide
+/// an earlier whole-name match is marked incomplete the same way.
 pub(super) fn format_response(
     args: &FindArgs,
     query: &LocatorQuery,
     resolution: LocatorResolution,
     snapshot_id: Option<&str>,
 ) -> Result<Value, AppError> {
-    let completeness = args
-        .selection
-        .allow_partial
-        .then_some(resolution.meta.selection_complete);
+    let unproven = resolution.meta.exact_name_unproven;
+    let completeness = (args.selection.allow_partial || unproven)
+        .then_some(resolution.meta.selection_complete && !unproven);
     let mut response = shaped_response(args, query, resolution, snapshot_id)?;
     if let (Some(object), Some(complete)) = (response.as_object_mut(), completeness) {
         object.insert("complete".into(), json!(complete));

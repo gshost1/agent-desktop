@@ -166,6 +166,8 @@ impl CommandContext {
             timeout_ms: None,
             verified_point: None,
             expected_process: None,
+            default_budget_ms: crate::DEFAULT_OPERATION_TIMEOUT_MS,
+            on_default_budget: false,
         }
     }
 

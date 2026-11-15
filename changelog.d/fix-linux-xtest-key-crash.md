@@ -1,0 +1,3 @@
+### Bug Fixes
+
+* **linux:** `press`, `--headed type` and other key input no longer crash GTK 3 applications and Chrome: the accessibility event listener each agent-desktop process registers is now held by one forked child for 1 s after it sent keys (X11, Wayland, and a call stopped by a signal), instead of leaving while the application's at-spi2-atk key snooper is still answering them; `--headed press --window-id` into a GTK 3.24 `GtkEntry` crashed 3 of 8 times before and 0 of 12 after, Chrome 157 died 5 of 8 times before and 0 of 10 after, with no added command latency ([#182](https://github.com/gshost1/agent-desktop/pull/182))

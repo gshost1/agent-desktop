@@ -113,7 +113,10 @@ pub(crate) fn resolve_query_from_allowing_partial(
 
 /// Resolves through every attempt. A `--first` answer that waited for the
 /// row pass to prove its ref is kept, without that ref, when the row pass
-/// fails as `row_proof::kept_through_row_pass_failure` allows.
+/// fails as `row_proof::kept_through_row_pass_failure` allows, or when a
+/// partial resolution ends with a row pass that could not answer: the answer
+/// is then the one the default contract gives, not the row pass's partial
+/// observation.
 fn resolve_attempts(
     attempt: &Attempt<'_>,
     observe: impl FnMut(crate::Deadline, RowReading) -> Result<ObservedObservation, AppError>,
@@ -130,6 +133,10 @@ fn resolve_attempts(
                 None => Err(error),
             }
         }
+        Ok(resolution) if !resolution.meta.selection_complete => match answer_without_ref {
+            Some(answer) => finish_partial(answer, resolution.stats, started),
+            None => Ok(resolution),
+        },
         resolved => resolved,
     }
 }
@@ -260,7 +267,7 @@ fn resolve_attempts_with(
 /// first. Its first match there answers the query without the rows; with no
 /// match there, the next pass reads the rows too.
 fn first_pass_rows(request: &LocatorResolveRequest) -> RowReading {
-    if request.selection == super::LocatorSelection::First {
+    if request.selection.is_first() {
         RowReading::LeaveUnread
     } else {
         RowReading::All
@@ -332,7 +339,7 @@ fn resolve_observed_attempt(
     )?;
     let rows_left_unread = tree.rows_unread();
     let unanswered = !resolution.meta.selection_complete;
-    let unproven_first = request.selection == super::LocatorSelection::First
+    let unproven_first = request.selection.is_first()
         && request.materialization == super::LocatorMaterialization::SelectedMatches
         && !unanswered
         && (rows_left_unread || proving)
@@ -369,26 +376,5 @@ fn observation_deadline(request: &LocatorResolveRequest) -> crate::Deadline {
 }
 
 #[cfg(test)]
-mod budget_tests {
-    use super::*;
-
-    #[test]
-    fn selected_ref_hydration_has_budget_without_extending_the_operation() {
-        let request = LocatorResolveRequest {
-            selection: super::super::LocatorSelection::First,
-            deadline: crate::Deadline::after(60_000).unwrap(),
-            max_raw_depth: 50,
-            surface: None,
-            materialization: super::super::LocatorMaterialization::SelectedMatches,
-        };
-        let observation = observation_deadline(&request);
-        assert!(observation.was_capped());
-        assert!(!request.deadline.was_capped());
-        assert_eq!(observation.timeout_ms(), request.deadline.timeout_ms());
-        let count_request = LocatorResolveRequest {
-            materialization: super::super::LocatorMaterialization::None,
-            ..request
-        };
-        assert_eq!(observation_deadline(&count_request), request.deadline);
-    }
-}
+#[path = "resolve_budget_tests.rs"]
+mod budget_tests;

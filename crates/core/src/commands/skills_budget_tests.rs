@@ -212,25 +212,61 @@ fn no_skill_names_internal_for_a_state_root_other_users_can_reach() {
         let bodies = std::iter::once(("SKILL.md", skill.main))
             .chain(skill.refs.iter().map(|r| (r.rel_path, r.body)));
         for (path, body) in bodies {
-            for passage in state_root_passages(body) {
-                assert!(
-                    !passage.contains("`INTERNAL`"),
-                    "{}/{path} says a state root other users can reach fails `INTERNAL`; it fails \
-                     `PERM_DENIED` with details.kind state_directory_permission: {passage}",
-                    skill.canonical
-                );
-            }
+            assert_no_internal_state_root(&format!("{}/{path}", skill.canonical), body);
         }
     }
 }
+
+#[test]
+fn no_docs_page_names_internal_for_a_state_root_other_users_can_reach() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/docs/content");
+    let mut pending = vec![root];
+    let mut pages = 0;
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).expect("docs directory is readable") {
+            let path = entry.expect("docs entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|ext| ext == "mdx" || ext == "md")
+            {
+                let body = std::fs::read_to_string(&path).expect("docs page is readable");
+                assert_no_internal_state_root(&path.display().to_string(), &body);
+                pages += 1;
+            }
+        }
+    }
+    assert!(pages > 0, "no docs pages were found to check");
+}
+
+fn assert_no_internal_state_root(origin: &str, body: &str) {
+    for passage in state_root_passages(body) {
+        assert!(
+            !passage.contains("INTERNAL"),
+            "{origin} says a state root other users can reach fails INTERNAL; it fails \
+             `PERM_DENIED` with details.kind state_directory_permission: {passage}"
+        );
+    }
+}
+
+const STATE_ROOT_TRIGGERS: [&str; 6] = [
+    "accessible by group or other users",
+    "~/.agent-desktop",
+    "AGENT_DESKTOP_HOME",
+    "group-writable",
+    "world-readable",
+    "world-accessible",
+];
 
 fn state_root_passages(body: &str) -> Vec<String> {
     let mut passages = Vec::new();
     let mut prose = String::new();
     for line in body.replace("\r\n", "\n").lines() {
-        if line.trim_start().starts_with('|') {
+        let line = line.trim();
+        if line.starts_with('|') || line.starts_with("<tr>") {
             passages.push(line.to_string());
-        } else if line.trim().is_empty() {
+        } else if line.is_empty() {
             passages.push(std::mem::take(&mut prose));
         } else {
             prose.push_str(line);
@@ -240,9 +276,16 @@ fn state_root_passages(body: &str) -> Vec<String> {
     passages.push(prose);
     passages
         .into_iter()
+        .flat_map(|passage| {
+            passage
+                .split("- **")
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
         .filter(|passage| {
-            passage.contains("accessible by group or other users")
-                || (passage.contains("state root") && passage.contains("private"))
+            !passage.contains("foreign principal")
+                && (STATE_ROOT_TRIGGERS.iter().any(|t| passage.contains(t))
+                    || (passage.contains("state root") && passage.contains("private")))
         })
         .collect()
 }

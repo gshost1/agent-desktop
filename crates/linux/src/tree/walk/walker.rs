@@ -267,12 +267,26 @@ pub(crate) fn walk_structure(
     let connection = bus.get(deadline)?;
     let mut reader =
         LevelReader::new(connection.inner(), root, limits, deadline).for_purpose(purpose);
+    walk_structure_levels(root.clone(), limits, deadline, |level| reader.expand(level))
+}
+
+/// The level walk of a structural scan: a web document is kept, and its
+/// content is never read.
+pub(crate) fn walk_structure_levels<K>(
+    root: K,
+    limits: &WalkLimits,
+    deadline: Deadline,
+    mut expand: impl FnMut(&[K]) -> Result<Vec<Expansion<ObservedRead, K>>, AdapterError>,
+) -> Result<Walk<ObservedRead>, AdapterError>
+where
+    K: Clone + PartialEq,
+{
     walk_levels(
-        root.clone(),
+        root,
         limits,
         deadline,
         |level| {
-            let mut reads = reader.expand(level)?;
+            let mut reads = expand(level)?;
             for read in &mut reads {
                 if crate::tree::vocabulary::role_numbers::is_web_document(
                     read.payload.node.traits.role.present().copied(),
