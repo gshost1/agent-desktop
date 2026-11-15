@@ -203,3 +203,7 @@ mod budget_tests;
 #[cfg(test)]
 #[path = "skills_resolve_tests.rs"]
 mod resolve_tests;
+
+#[cfg(test)]
+#[path = "skills_guidance_tests.rs"]
+mod guidance_tests;
