@@ -257,16 +257,11 @@ mod shell_surfaces {
             let modal = ModalFixture::spawn().expect("the modal fixture spawns");
             modal.open();
             assert!(modal.wait_for_modal_state(true, STATE_TIMEOUT));
-            if stage_foreground(modal.modal_handle()) {
-                assert_roots_non_empty(
-                    SnapshotSurface::Sheet,
-                    &window_info(modal.modal_handle(), modal.process_id()),
-                );
-                covered.push(SnapshotSurface::Sheet);
-            } else {
-                eprintln!("skip sheet leg: the OS declined the modal window the foreground");
-                skipped.push(SnapshotSurface::Sheet);
-            }
+            assert_roots_non_empty(
+                SnapshotSurface::Sheet,
+                &window_info(modal.owner_handle(), modal.process_id()),
+            );
+            covered.push(SnapshotSurface::Sheet);
         }
         stage_and_assert_shell_kinds(&advertised, &mut covered, &mut skipped);
         stage_and_assert_menu(&advertised, &mut covered);

@@ -179,8 +179,10 @@ fn top_level_windows_for(pid: agent_desktop_core::ProcessId) -> Result<Vec<isize
         if handles.len() >= MAX_PROBED_WINDOWS {
             return false;
         }
-        if super::window::window_identity::live_window_owner(window.handle) == Some(pid) {
-            handles.push(window.handle as isize);
+        if let Some(answering) =
+            super::window::frame_identity::window_answering_for(window.handle, pid)
+        {
+            handles.push(answering as isize);
         }
         true
     })?;
@@ -215,3 +217,7 @@ fn close_handle(handle: windows_sys::Win32::Foundation::HANDLE) {
 #[cfg(test)]
 #[path = "process_state_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "process_state_hosted_tests.rs"]
+mod hosted_tests;

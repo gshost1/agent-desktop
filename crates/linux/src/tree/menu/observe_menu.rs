@@ -6,6 +6,7 @@ use agent_desktop_core::{
 use super::menu_identity::MenuIdentity;
 use crate::system::SharedBus;
 use crate::system::menu::menu_surface::{MenuPopup, popups_of};
+use crate::tree::capabilities::headless_routes::HeadlessRoutes;
 use crate::tree::element::ancestry;
 use crate::tree::placement::node_position::place_nodes;
 use crate::tree::properties::read_purpose::ReadPurpose;
@@ -125,7 +126,8 @@ pub(crate) fn observe_menu(
     let displays = x11::start(|| MonitorReader.read());
     let mut walk = walk_tree(bus, &root, &limits, request.deadline)?;
     let context = popup.context.clone();
-    place_nodes(bus, &mut walk, request.deadline)?;
+    let toolkit = place_nodes(bus, &mut walk, request.deadline)?;
+    let routes = HeadlessRoutes::of_walk(&walk, toolkit);
     let complete = walk.complete;
     let displays = match displays.finish(request.deadline.capped(std::time::Duration::ZERO)) {
         Some(Ok(monitors)) => Some(
@@ -141,6 +143,7 @@ pub(crate) fn observe_menu(
         &limits,
         &mut MenuIdentity::new(context),
         displays.as_deref(),
+        &routes,
     );
     stats.reads.health.deadline_exhausted += u64::from(!complete && request.deadline.is_expired());
     stats.elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);

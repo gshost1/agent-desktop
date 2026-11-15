@@ -174,13 +174,20 @@ cursor; on Wayland none is drawn.
   open, selects the choice through the popup's own list and checks the value the
   combo shows. Headless, a list refuses with `selection_index_unproven`, and a
   combo with no semantic opener with `POLICY_DENIED`, kind `pointer_required`,
-  unless the combo already shows the choice. A GTK4 drop-down that opens through
+  unless the combo already shows the choice. A snapshot leaves `Select` out of
+  `available_actions` on such a list, its rows and a GTK4 tab list and tabs,
+  and on an index-only list of an application whose toolkit does not name
+  itself, because no
+  headless route exists; `--headed select` on the row or tab still works. An
+  unnamed GTK4 tab list whose only action was `Select` gets no ref; select one
+  of its tabs instead. A GTK4 drop-down that opens through
   its own toggle takes `select` without `--headed` and checks the value it
   shows.
 - A ref can expose no safe semantic mutation route. Headless requests then
   return an unsupported-action error without inventing `hidden` or `disabled`
   state and without switching to physical input. GTK4 entry and password
-  `Activate` actions are one such case: use `type` to edit the field, or request
+  `Activate` actions are one such case, so a snapshot leaves `Click` out of
+  their `available_actions`: use `type` to edit the field, or request
   `--headed` explicitly when a pointer click is intended.
 - Opening a native Wayland Qt combo returns `ACTION_NOT_SUPPORTED`, kind
   `native_popup_requires_input`, before invoking its action. Qt needs a user

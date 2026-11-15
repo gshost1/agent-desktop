@@ -229,6 +229,7 @@ fn snapshot_and_live_agree_when_a_shown_node_is_beyond_every_display() {
             &WalkLimits::default(),
             &mut crate::tree::observe::decorate::Plain,
             displays,
+            &crate::tree::capabilities::headless_routes::HeadlessRoutes::unread(),
         );
         let window = agent_desktop_core::WindowInfo {
             id: "w-1.1-p".into(),

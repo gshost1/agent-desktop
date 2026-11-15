@@ -22,7 +22,7 @@ fn settling_places_only_the_returned_full_payload() {
             pause: &mut |_| {},
             place: &mut |_| {
                 placements.set(placements.get() + 1);
-                Ok(())
+                Ok(None)
             },
         },
     )
@@ -63,7 +63,7 @@ fn busy_document_samples_cannot_certify_a_completed_tree() {
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
         },
     )
     .unwrap();
@@ -98,7 +98,7 @@ fn an_interrupted_narrow_sample_returns_the_full_payload_as_incomplete() {
             is_web_process: &|_| Ok(true),
             stopped: &|_| false,
             pause: &mut |_| {},
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
         },
     )
     .unwrap();
