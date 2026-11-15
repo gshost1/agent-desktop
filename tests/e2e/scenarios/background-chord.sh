@@ -1,6 +1,5 @@
 safety_checkpoint || fail "ownership checkpoint failed before the background chord"
-chord_output="$(agent_exec 1 press cmd+j --app "$app" --window-id "$fixture_window_id" \
-    2>"$suite_root/background-chord.stderr")"
+chord_output="$(agent_exec 1 press cmd+j --app "$app" 2>"$suite_root/background-chord.stderr")"
 chord_exit=$?
 printf '%s' "$chord_output" > "$suite_root/background-chord.json"
 [ "$chord_exit" -eq 1 ] || fail "a background command chord must return a structured error (exit=$chord_exit): $chord_output"

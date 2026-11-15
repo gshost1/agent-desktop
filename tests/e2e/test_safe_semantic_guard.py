@@ -133,17 +133,18 @@ class CommandPolicyTests(unittest.TestCase):
             with self.subTest(argv=argv), self.assertRaises(SafetyError):
                 validate_command(argv, APP, WINDOW, True)
 
-    def test_allows_only_the_armed_unrouted_chord_on_the_owned_window(self):
-        chord = ["press", "cmd+j", "--app", APP, "--window-id", WINDOW]
+    def test_allows_only_the_armed_unrouted_chord_on_the_owned_fixture(self):
+        chord = ["press", "cmd+j", "--app", APP]
         validate_command(chord, APP, WINDOW, True)
         for armed, window, argv in [
             (False, WINDOW, chord),
             (True, "", chord),
-            (True, WINDOW, ["press", "cmd+q", "--app", APP, "--window-id", WINDOW]),
-            (True, WINDOW, ["press", "cmd+j", "--app", "Other", "--window-id", WINDOW]),
-            (True, WINDOW, ["press", "cmd+j", "--app", APP]),
-            (True, WINDOW, ["press", "cmd+j", "--app", APP, "--window-id", WINDOW, "--force"]),
-            (True, WINDOW, ["--headed", "press", "cmd+j", "--app", APP, "--window-id", WINDOW]),
+            (True, WINDOW, ["press", "cmd+q", "--app", APP]),
+            (True, WINDOW, ["press", "cmd+j", "--app", "Other"]),
+            (True, WINDOW, ["press", "cmd+j"]),
+            (True, WINDOW, ["press", "cmd+j", "--app", APP, "--force"]),
+            (True, WINDOW, ["press", "cmd+j", "--app", APP, "--window-id", WINDOW]),
+            (True, WINDOW, ["--headed", "press", "cmd+j", "--app", APP]),
         ]:
             with self.subTest(argv=argv), self.assertRaises(SafetyError):
                 validate_command(argv, APP, window, armed)

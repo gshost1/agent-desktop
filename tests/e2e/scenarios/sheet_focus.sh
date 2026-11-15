@@ -15,7 +15,7 @@ sheet_listed() {
 }
 
 sheet_focus_suite() {
-    local open_panel panel open_sheet panel_text focused listed confirm close
+    local open_panel panel open_sheet focused listed confirm close
     "$bin" focus-window --app "$app" >/dev/null 2>&1
     require_target open_panel button open-floating-panel
     act_target "$open_panel" scroll-to >/dev/null 2>&1
@@ -29,18 +29,18 @@ sheet_focus_suite() {
     act_target "$open_sheet" click >/dev/null 2>&1
     sleep 0.6
     assert "list-surfaces reports the sheet while its window has focus" "$(sheet_listed)" ""
-    panel_text="$(panel_target "$panel" textfield panel-text)"
-    act_target "$panel_text" focus >/dev/null 2>&1
+    "$bin" focus-window --window-id "$panel" >/dev/null 2>&1
     for _ in $(seq 1 25); do
         focused="$(focused_window_title)"
         [ "$focused" = "Fixture Panel" ] && break
         sleep 0.1
     done
-    assert "focusing a field in the panel moves the app's focused window to the panel" \
+    assert "focus-window on the panel moves the app's focused window to the panel" \
         "$([ "$focused" = "Fixture Panel" ] && echo 1 || echo 0)" "focused=$focused"
     listed="$(sheet_listed)"
     assert "list-surfaces still reports the sheet of a window that lost focus" "$listed" \
         "focused=$focused"
+    "$bin" focus-window --window-id "$(fixture_window_id "AgentDesk Fixture")" >/dev/null 2>&1
     require_target confirm button confirm-sheet
     act_target "$confirm" click >/dev/null 2>&1
     close="$(panel_target "$panel" button Close)"

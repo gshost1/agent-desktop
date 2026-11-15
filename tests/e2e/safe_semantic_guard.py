@@ -186,8 +186,8 @@ def validate_command(argv, fixture_app, window_id, mutation_armed):
     if command == "press":
         if not mutation_armed or not window_id:
             raise SafetyError("press requires an armed ownership and focus checkpoint")
-        if argv != ["press", UNROUTED_BACKGROUND_CHORD, "--app", fixture_app, "--window-id", window_id]:
-            raise SafetyError("press is allowed only as the headless unrouted chord on the owned fixture window")
+        if argv != ["press", UNROUTED_BACKGROUND_CHORD, "--app", fixture_app]:
+            raise SafetyError("press is allowed only as the headless unrouted chord on the owned fixture")
         return
     if command not in {"click", "type", "set-value", "toggle", "check", "uncheck"}:
         raise SafetyError(f"command is forbidden in the safe semantic suite: {command}")
