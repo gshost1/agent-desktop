@@ -35,15 +35,6 @@ fn structure_only_nodes_are_not_rows_and_rows_have_no_children() {
 }
 
 #[test]
-fn baseline_rows_drop_bounds_and_actions_but_keep_refs() {
-    let rows = baseline_rows(&tree());
-    let field = &rows[1];
-    assert_eq!(field.ref_id.as_deref(), Some("@e1"));
-    assert!(field.presentation.bounds.is_none());
-    assert!(field.presentation.available_actions.is_empty());
-}
-
-#[test]
 fn the_focused_row_is_the_deepest_focused_node() {
     let focused = focused_row(&tree()).unwrap();
     assert_eq!(focused.identity.name.as_deref(), Some("deep"));

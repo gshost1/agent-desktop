@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::{
     AppError,
     adapter::PlatformAdapter,
-    commands::snapshot::{SnapshotArgs, format_snapshot_fields, tree_options},
+    commands::snapshot::{SnapshotArgs, snapshot_fields_without_tree, tree_options},
     context::CommandContext,
     refs::{refs_store::RefStore, validate_snapshot_id},
     snapshot,
@@ -49,11 +49,9 @@ pub fn execute_since(
             .unwrap_or(snapshot::DEFAULT_SNAPSHOT_TIMEOUT_MS),
     )?;
     let diff = diff_match::compare(since, &baseline, &result, DiffPresentation::of(&opts));
-    let mut body = format_snapshot_fields(&result, None, None)?;
-    if diff.is_comparable()
-        && let Some(fields) = body.as_object_mut()
-    {
-        fields.remove("tree");
+    let mut body = snapshot_fields_without_tree(&result);
+    if !diff.is_comparable() {
+        body["tree"] = serde_json::to_value(&result.tree)?;
     }
     body["diff"] = diff.to_json()?;
     Ok(body)

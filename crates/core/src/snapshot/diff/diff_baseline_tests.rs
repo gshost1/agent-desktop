@@ -95,8 +95,14 @@ fn a_baseline_of_another_format_is_treated_as_missing() {
     let _home = HomeGuard::new();
     let store = RefStore::for_session(None).unwrap();
     let id = store.save_new_snapshot(&RefMap::new()).unwrap();
-    let mut baseline = DiffBaseline::of(&result(), &TreeOptions::default());
-    baseline.format = BASELINE_FORMAT + 1;
+    let snapshot = result();
+    let baseline = BaselineView {
+        format: BASELINE_FORMAT + 1,
+        owner: DiffOwner::of(&snapshot.owner),
+        presentation: DiffPresentation::of(&TreeOptions::default()),
+        complete: true,
+        rows: RowSeq(&snapshot.tree),
+    };
     let bytes = serde_json::to_vec(&baseline).unwrap();
     crate::refs::write_private_file(&baseline_path(&store, &id), &bytes).unwrap();
     let (_, kind) = kind_of(load_baseline(&store, &id).unwrap_err());
@@ -111,4 +117,47 @@ fn an_invalid_id_is_invalid_args() {
         panic!("expected an adapter error");
     };
     assert_eq!(err.code, ErrorCode::InvalidArgs);
+}
+
+#[test]
+fn saved_rows_keep_refs_and_drop_bounds_and_actions() {
+    let _home = HomeGuard::new();
+    let store = RefStore::for_session(None).unwrap();
+    let id = store.save_new_snapshot(&RefMap::new()).unwrap();
+    let mut snapshot = result();
+    let mut field = node("textfield", "Name");
+    field.ref_id = Some("@e1".into());
+    field.presentation.bounds = Some(crate::Rect {
+        x: 1.0,
+        y: 2.0,
+        width: 3.0,
+        height: 4.0,
+    });
+    field.presentation.available_actions = vec!["SetValue".into()];
+    field.presentation.states = vec!["focused".into()];
+    snapshot.tree.children.push(field);
+    save_baseline(&store, &id, &snapshot, &TreeOptions::default()).unwrap();
+    let rows = load_baseline(&store, &id).unwrap().rows;
+    let roles: Vec<&str> = rows.iter().map(|row| row.role.as_str()).collect();
+    assert_eq!(roles, ["window", "button", "textfield"]);
+    let saved = &rows[2];
+    assert_eq!(saved.ref_id.as_deref(), Some("@e1"));
+    assert_eq!(saved.presentation.states, ["focused"]);
+    assert!(saved.presentation.bounds.is_none());
+    assert!(saved.presentation.available_actions.is_empty());
+}
+
+#[test]
+fn a_baseline_over_its_cap_is_not_saved_and_the_snapshot_reads_as_missing_one() {
+    let _home = HomeGuard::new();
+    let store = RefStore::for_session(None).unwrap();
+    let id = store.save_new_snapshot(&RefMap::new()).unwrap();
+    let mut snapshot = result();
+    let mut document = node("textfield", "Body");
+    document.identity.value = Some("x".repeat(MAX_BASELINE_BYTES));
+    snapshot.tree.children.push(document);
+    save_baseline(&store, &id, &snapshot, &TreeOptions::default()).unwrap();
+    assert!(!baseline_path(&store, &id).exists());
+    let (_, kind) = kind_of(load_baseline(&store, &id).unwrap_err());
+    assert_eq!(kind, "diff_baseline_missing");
 }

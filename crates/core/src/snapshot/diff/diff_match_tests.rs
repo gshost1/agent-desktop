@@ -45,7 +45,10 @@ fn baseline(children: Vec<AccessibilityNode>, complete: bool) -> DiffBaseline {
         owner: DiffOwner::of(&before.owner),
         presentation: presentation(),
         complete,
-        rows: diff_rows::baseline_rows(&before.tree),
+        rows: serde_json::from_value(
+            serde_json::to_value(crate::snapshot::diff::row_view::RowSeq(&before.tree)).unwrap(),
+        )
+        .unwrap(),
     }
 }
 

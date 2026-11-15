@@ -10,17 +10,6 @@ pub(crate) fn reported_rows(tree: &AccessibilityNode) -> Vec<AccessibilityNode> 
     rows
 }
 
-/// The rows a baseline keeps: the reported rows without bounds or available
-/// actions, which never identify a node and are not compared.
-pub(crate) fn baseline_rows(tree: &AccessibilityNode) -> Vec<AccessibilityNode> {
-    let mut rows = reported_rows(tree);
-    for row in &mut rows {
-        row.presentation.bounds = None;
-        row.presentation.available_actions.clear();
-    }
-    rows
-}
-
 /// The deepest node of `tree` that reports keyboard focus, the first of them
 /// in depth-first order when two share a depth.
 pub(crate) fn focused_row(tree: &AccessibilityNode) -> Option<AccessibilityNode> {
@@ -56,7 +45,8 @@ fn find_focused<'a>(
     }
 }
 
-fn is_reported(node: &AccessibilityNode) -> bool {
+/// Whether `node` is a row: it has a ref, a non-blank text field or a state.
+pub(crate) fn is_reported(node: &AccessibilityNode) -> bool {
     let presentation = &node.presentation;
     node.ref_id.is_some()
         || !presentation.states.is_empty()

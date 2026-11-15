@@ -4,6 +4,8 @@
 //! focused element. Every full snapshot the `snapshot` command saves keeps a
 //! baseline of its rows for this, beside its refmap.
 
+pub(crate) mod baseline_view;
+pub(crate) mod capped_writer;
 pub(crate) mod changed_row;
 pub(crate) mod diff_baseline;
 pub(crate) mod diff_key;
@@ -14,4 +16,5 @@ pub(crate) mod diff_presentation;
 pub(crate) mod diff_rows;
 pub(crate) mod diff_status;
 pub(crate) mod row_content;
+pub(crate) mod row_view;
 pub(crate) mod snapshot_diff;
