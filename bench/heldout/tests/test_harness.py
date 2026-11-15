@@ -20,6 +20,7 @@ import common  # noqa: E402
 import desktop  # noqa: E402
 import reaudit  # noqa: E402
 import report  # noqa: E402
+import stats  # noqa: E402
 import shellwords  # noqa: E402
 import skillread  # noqa: E402
 import tasks_heldout as th  # noqa: E402
@@ -176,6 +177,41 @@ class ReportTests(unittest.TestCase):
         sep = text.splitlines()[text.splitlines().index(header) + 1]
         self.assertEqual(header.count("|"), sep.count("|"))
         self.assertLess(header.index("CLI"), header.index("wall"))
+
+
+class PairedReportTests(unittest.TestCase):
+    def rows(self):
+        out = []
+        for t in ("t1", "t2", "t3"):
+            out += [row("ad-15", t, True, 1, 10, tok=1000) for _ in range(3)]
+            out += [row("peekaboo", t, i < 2, 2, 20, tok=3000) for i in range(3)]
+        return out
+
+    def test_paired_counts_and_sign_test(self):
+        (x,) = report.paired_rows(self.rows(), "native", "ad-15")
+        self.assertEqual((x["focus"], x["theirs"]), ("9/9", "6/9"))
+        self.assertAlmostEqual(x["fisher"], stats.fisher(9, 9, 6, 9))
+        self.assertEqual(x["wall"][:3], (3, 0, 0))
+        self.assertAlmostEqual(x["wall"][3], 0.25)
+
+    def test_a_task_without_a_pass_on_either_side_is_not_paired(self):
+        rows = self.rows() + [row("ad-15", "t4", False, 1, 5), row("peekaboo", "t4", True, 1, 9)]
+        (x,) = report.paired_rows(rows, "native", "ad-15")
+        self.assertEqual(sum(x["tokens"][:3]), 3)
+
+    def test_rule_table_counts_foreground_and_rule_sets(self):
+        r = report.normalize({"suite": "native", "arm": "peekaboo", "task": "t1", "success": False, "rules": "v2",
+                              "violations": ["foreground --foreground"]})
+        lines = report.rule_tables(self.rows() + [r], "native")
+        self.assertIn("| peekaboo | v1 9, v2 1 | 1 | 1 |", lines)
+
+    def test_rank_header_and_separator_agree_with_the_interval_column(self):
+        text = report.render(self.rows(), 0, focus="ad-15")
+        lines = text.splitlines()
+        header = next(line for line in lines if line.startswith("| rank |"))
+        self.assertIn("95% CI", header)
+        self.assertEqual(header.count("|"), lines[lines.index(header) + 1].count("|"))
+        self.assertIn("| 1 | ad-15 | 9/9 | 100% | 70%–100% |", text)
 
 
 class FakeDesktop(desktop.Desktop):

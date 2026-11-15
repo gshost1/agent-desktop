@@ -23,6 +23,10 @@ pass rate, then tasks not passed, then per-success wall time summed over every t
 charged twice its total (as if half a run had passed). A ranked arm can never move up by failing a run, and no task
 leaves the sums because some arm failed it.
 
+Intervals and tests (stats.py): each arm's pass rate carries a Wilson 95% interval. Against the focus arm, Fisher's
+exact test compares overall pass rates, and a sign test over the tasks both arms passed compares per-task pass
+medians of wall time and tokens. Audit hits and foreground use are counted per arm from each row's violations.
+
 Usage: python3 -I heldout/report.py [--model M] [--host H] [--focus ad-14] [--arms a,b] [--results <jsonl> ...]
 """
 import argparse
@@ -34,7 +38,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pricing  # noqa: E402
+import stats  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_RESULTS = [HERE / "runs" / "results-native.jsonl", HERE / "runs" / "results-web.jsonl"]
@@ -72,6 +78,8 @@ def normalize(r):
     out["turns"] = pricing.row_turns(r)
     out["cost"], out["cost_estimated"] = pricing.row_cost(r)
     out["timed_out"] = bool(r.get("timed_out"))
+    out["rules"] = r.get("rules", "v1")
+    out["violations"] = list(r.get("violations") or [])
     return out
 
 
@@ -162,27 +170,28 @@ def summary_tables(rows, suite):
     by = group(rows)
     ranked, partial, tasks = ranking(rows, suite)
     n = len(tasks)
-    head = ("| arm | pass | rate | tasks not passed | CLI s / success | wall s / success | tokens / success | "
+    head = ("| arm | pass | rate | 95% CI | tasks not passed | CLI s / success | wall s / success | tokens / success | "
             "turns / success |")
     lines = [f"### {suite}: ranking (cannot reward failing)", "",
              f"Only arms that ran all {n} tasks are ranked. Order: pass rate, then tasks not passed, then per-success "
              "wall time. Per-success sums cover every task: a task's total over its runs divided by its passes, and "
              "a task with no pass is charged twice its total (as if half a run had passed).", "",
-             "| rank " + head, "|---" * 9 + "|"]
+             "| rank " + head, "|---" * 10 + "|"]
     for i, x in enumerate(ranked, 1):
         per = " | ".join(fmt(x["per"][m], m) for m, _ in METRICS)
         zero = ", ".join(x["zero"]) if x["zero"] else "0"
         lines.append(f"| {i} | {x['arm']} | {x['passes']}/{x['runs']} | {x['passes'] / max(x['runs'], 1):.0%} | "
-                     f"{zero} | {per} |")
+                     f"{interval(x['passes'], x['runs'])} | {zero} | {per} |")
     if partial:
         lines += ["", f"### {suite}: not ranked (ran only some of the {n} tasks)", "",
                   "Sums cover only the tasks the arm ran, so they do not compare with the ranking above.", "",
-                  "| arm | tasks run " + head[5:], "|---" * 9 + "|"]
+                  "| arm | tasks run " + head[5:], "|---" * 10 + "|"]
         for x in partial:
             per = " | ".join(fmt(x["per"][m], m) for m, _ in METRICS)
             zero = ", ".join(x["zero"]) if x["zero"] else "0"
             lines.append(f"| {x['arm']} | {len(x['ran'])}/{n}: {','.join(x['ran'])} | {x['passes']}/{x['runs']} | "
-                         f"{x['passes'] / max(x['runs'], 1):.0%} | {zero} | {per} |")
+                         f"{x['passes'] / max(x['runs'], 1):.0%} | {interval(x['passes'], x['runs'])} | {zero} | "
+                         f"{per} |")
     lines += ["", f"### {suite}: sums of per-task statistics over every task an arm ran", "",
               "Each cell: pass median / all median / p90 / max. Pass median counts passing runs only and sums only "
               "the tasks with a pass (marked * when some task has none); the other three count every valid run.", "",
@@ -196,6 +205,69 @@ def summary_tables(rows, suite):
             first = fmt(sum(pm), m) + ("*" if len(pm) < len(stats) else "")
             cells.append(" / ".join([first] + [fmt(sum(s[k] for s in stats), m) for k in ("all_med", "p90", "max")]))
         lines.append(f"| {x['arm']} | {len(x['ran'])}/{n} | " + " | ".join(cells) + " |")
+    return lines
+
+
+def interval(k, n):
+    lo, hi = stats.wilson(k, n)
+    return f"{lo:.0%}–{hi:.0%}"
+
+
+FOREGROUND_PREFIX = "foreground"
+
+
+def paired_rows(rows, suite, focus):
+    """One row per other arm: pass rates with Fisher p, and per-task sign tests on wall and tokens pass medians."""
+    by = group(rows)
+    srows = [r for r in rows if r["suite"] == suite]
+    mine = [r for r in srows if r["arm"] == focus]
+    out = []
+    for arm in arms_in(srows):
+        theirs = [r for r in srows if r["arm"] == arm]
+        if arm == focus or not mine:
+            continue
+        row = {"arm": arm, "focus": f"{passes(mine)}/{len(mine)}", "theirs": f"{passes(theirs)}/{len(theirs)}",
+               "fisher": stats.fisher(passes(mine), len(mine), passes(theirs), len(theirs))}
+        for m in ("wall", "tokens"):
+            wins = losses_ = ties = 0
+            for t in tasks_in(rows, suite):
+                a, b = by.get((suite, t, focus)), by.get((suite, t, arm))
+                if not a or not b:
+                    continue
+                ma, mb = cell_stats(a, m)["pass_med"], cell_stats(b, m)["pass_med"]
+                if ma is None or mb is None:
+                    continue
+                wins, losses_, ties = wins + (ma < mb), losses_ + (ma > mb), ties + (ma == mb)
+            row[m] = (wins, losses_, ties, stats.sign_test(wins, losses_))
+        out.append(row)
+    return out
+
+
+def paired_tables(rows, suite, focus):
+    lines = [f"### {suite}: paired against {focus}", "",
+             f"Fisher's exact p compares overall pass rates. Wall and tokens: tasks where {focus}'s pass median is "
+             "lower / higher / tied, over tasks both arms passed, with the two-sided sign-test p. A p above 0.05 is "
+             "inside the noise.", "",
+             f"| arm | {focus} pass | arm pass | Fisher p | wall {focus} lower/higher/tie | p | "
+             f"tokens {focus} lower/higher/tie | p |", "|---" * 8 + "|"]
+    for x in paired_rows(rows, suite, focus):
+        w, t = x["wall"], x["tokens"]
+        lines.append(f"| {x['arm']} | {x['focus']} | {x['theirs']} | {x['fisher']:.3g} | {w[0]}/{w[1]}/{w[2]} | "
+                     f"{w[3]:.3g} | {t[0]}/{t[1]}/{t[2]} | {t[3]:.3g} |")
+    return lines
+
+
+def rule_tables(rows, suite):
+    srows = [r for r in rows if r["suite"] == suite]
+    lines = [f"### {suite}: rules and audit", "",
+             "Runs per audit rule set, runs with an audit hit, and runs that used the tool's foreground mode.", "",
+             "| arm | rules | runs with an audit hit | of them foreground |", "|---|---|---|---|"]
+    for arm in arms_in(srows):
+        rs = [r for r in srows if r["arm"] == arm]
+        sets = ", ".join(f"{k} {sum(r['rules'] == k for r in rs)}" for k in sorted({r["rules"] for r in rs}))
+        hit = sum(bool(r["violations"]) for r in rs)
+        fg = sum(any(v.startswith(FOREGROUND_PREFIX) for v in r["violations"]) for r in rs)
+        lines.append(f"| {arm} | {sets} | {hit} | {fg} |")
     return lines
 
 
@@ -271,6 +343,7 @@ def render(rows, skipped, focus="ad-14"):
     for suite in ("native", "web"):
         if any(r["suite"] == suite for r in rows):
             lines += summary_tables(rows, suite) + [""]
+            lines += paired_tables(rows, suite, focus) + [""] + rule_tables(rows, suite) + [""]
     lines += [f"## Where {focus} loses (pass rate, then pass medians against arms at least as reliable)", ""]
     lines += losses(rows, focus) + [""]
     for suite in ("native", "web"):
