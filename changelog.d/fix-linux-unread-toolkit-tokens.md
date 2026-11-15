@@ -1,0 +1,3 @@
+### Bug Fixes
+
+* Linux: a snapshot whose read of the application's toolkit did not answer no longer lists `Select` on an index-only list, row, tab list or tab, which a headless `select` then refused with `selection_index_unproven`; it now withholds what the action path refuses for a toolkit it cannot name, and keeps `Click` on an entry, which that path still dispatches. `docs/json-output.md` now says what `available_actions` promises on each platform ([#PR](https://github.com/gshost1/agent-desktop/pull/PR))
