@@ -376,7 +376,7 @@ Each of these commands now returns the adapter's own report inside `data`:
 ```
 
 - `disposition.delivery` is `delivered_verified` only after the adapter read back the postcondition it names, `delivered_unverified` after a completed dispatch without that proof, and `not_delivered` only when the adapter observed that the operation was already satisfied (for example `close-app` on an application that had already exited). `ok: true` means the command returned a delivered or already-satisfied result, not that the application effect was verified.
-- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value` on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone.
+- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value`, and for a headless `clear`, which writes through the accessibility API, on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone.
 - `target.kind` is `window` (`id`, `title`, `process`), `app` (`name`, `process`), `pointer` (`point`), `drag` (`from`, `to`) or `clipboard`. The adapter supplies the identity it validated and used. A pointer target is the dispatch coordinate and does not prove which application received the input.
 - Request context (`x`, `y`, `count`, `dx`, `dy`, `width`, `height`, drag endpoints, `drop_delay_ms`, `type`, `app`, `method`, and a confirmed `focused`) keeps its earlier meaning. These fields echo the request and are not observed post-state.
 - Errors keep `error.disposition`. A failed `--wait-for` after a delivered operation keeps the operation's own delivery (verified, unverified, or not delivered) in `error.disposition` and carries the report under `details.after_action`.
@@ -586,6 +586,31 @@ could hide an earlier whole-name match (see above):
   a token, has no ref and carries `bounds` when the platform reports them.
 - Without the flag the data has no `complete` field, and an incomplete walk is
   still `TIMEOUT`.
+
+### Scroll search
+
+`find --scroll` adds `data.scroll` to the usual find data. It says how far the
+search paged the `--root` scroll area and why it stopped:
+
+```json
+{ "data": { "snapshot_id": "s8f3k2p9",
+  "match": { "ref_id": "@s8f3k2p9:e1", "role": "button", "name": "Row 300" },
+  "scroll": { "pages": 48, "view_moved": true, "directions": ["down"],
+              "stopped": "found" } } }
+```
+
+- `pages` counts the pages sent, `directions` the directions searched in order,
+  and `view_moved` whether any page was observed to move the area. A search
+  that matched on its first look sends nothing: `pages: 0`, `directions: []`.
+- `unconfirmed_pages` appears when some pages were sent but their movement
+  could not be read; such a page may have moved the view.
+- `stopped` is `found`, `both_ends` (no match between the two ends of the
+  area: `match` is `null`, or `matches` is empty) or `page_cap` (200 pages).
+  `found` always comes with a match.
+- The view stays where the search stopped.
+- An error that ends the search carries the same object in
+  `details.scroll_search`, with `stopped` `deadline` or `error`. Once a page may
+  have moved the view, the error's disposition is `delivered_unverified`.
 
 ## Derived names
 

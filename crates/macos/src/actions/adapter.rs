@@ -51,6 +51,19 @@ impl ActionOps for MacOSAdapter {
             lease.deadline(),
         )
     }
+
+    fn scroll_page(
+        &self,
+        handle: &NativeHandle,
+        direction: &agent_desktop_core::Direction,
+        lease: &InteractionLease,
+    ) -> Result<agent_desktop_core::ScrollPage, AdapterError> {
+        crate::actions::scroll::scroll_search::page_scroll_area(
+            ax_element(handle)?,
+            direction,
+            lease.deadline(),
+        )
+    }
 }
 
 fn execute_global_action(

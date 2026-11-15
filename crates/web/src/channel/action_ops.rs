@@ -1,6 +1,6 @@
 use agent_desktop_core::{
-    ActionOps, ActionRequest, ActionResult, AdapterError, Deadline, HeadedRequirement,
-    InteractionLease, NativeHandle, PlatformAdapter, RefEntry,
+    ActionOps, ActionRequest, ActionResult, AdapterError, Deadline, Direction, HeadedRequirement,
+    InteractionLease, NativeHandle, PlatformAdapter, RefEntry, ScrollPage,
 };
 
 use super::ref_routing::{platform_entry, web_token};
@@ -58,6 +58,20 @@ impl<P: PlatformAdapter> ActionOps for WebChannelAdapter<P> {
         }
     }
 
+    /// Paging a page's own scroll area for a search is not built: a web ref
+    /// refuses before anything is sent, and a native one pages natively.
+    fn scroll_page(
+        &self,
+        handle: &NativeHandle,
+        direction: &Direction,
+        lease: &InteractionLease,
+    ) -> Result<ScrollPage, AdapterError> {
+        match WebHandle::of(handle) {
+            Some(_) => Err(AdapterError::not_supported("scroll_page on a web ref")),
+            None => self.inner.scroll_page(handle, direction, lease),
+        }
+    }
+
     fn scroll_ref_into_view(
         &self,
         entry: &RefEntry,
@@ -87,3 +101,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "action_ops_tests.rs"]
+mod tests;

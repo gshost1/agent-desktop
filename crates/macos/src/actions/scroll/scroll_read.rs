@@ -20,17 +20,7 @@ pub(crate) fn children(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<Vec<AXElement>, AdapterError> {
-    prepare(element, deadline)?;
-    let result = crate::tree::properties::attributes::copy_ax_array_prefix_result(
-        element,
-        "AXChildren",
-        MAX_SCROLL_CHILDREN,
-        deadline,
-    );
-    deadline.ensure_remaining()?;
-    let children = result
-        .map(|children| children.unwrap_or_default())
-        .map_err(|error| read_error("AXChildren", error))?;
+    let children = children_up_to(element, MAX_SCROLL_CHILDREN, deadline)?;
     if children.len() == MAX_SCROLL_CHILDREN {
         return Err(AdapterError::new(
             ErrorCode::AppUnresponsive,
@@ -39,6 +29,26 @@ pub(crate) fn children(
         .with_details(serde_json::json!({ "complete": false })));
     }
     Ok(children)
+}
+
+/// The first `max` children, with no error when there are more: for a
+/// reader that needs only the first or the farthest loaded ones.
+pub(crate) fn children_up_to(
+    element: &AXElement,
+    max: usize,
+    deadline: Deadline,
+) -> Result<Vec<AXElement>, AdapterError> {
+    prepare(element, deadline)?;
+    let result = crate::tree::properties::attributes::copy_ax_array_prefix_result(
+        element,
+        "AXChildren",
+        max,
+        deadline,
+    );
+    deadline.ensure_remaining()?;
+    result
+        .map(|children| children.unwrap_or_default())
+        .map_err(|error| read_error("AXChildren", error))
 }
 
 pub(crate) fn string(

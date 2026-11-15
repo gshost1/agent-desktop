@@ -5,10 +5,14 @@ use agent_desktop_core::{
 use crate::tree::AXElement;
 
 pub(crate) mod scroll_into_view;
+mod scroll_loaded_items;
 mod scroll_page;
 mod scroll_plan;
 mod scroll_read;
 mod scroll_reveal;
+pub(crate) mod scroll_search;
+mod scroll_search_step;
+mod scroll_search_value;
 mod scroll_signals;
 
 const MAX_SCROLL_AMOUNT: u32 = 1_000;

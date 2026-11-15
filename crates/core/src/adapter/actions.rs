@@ -40,6 +40,19 @@ pub trait ActionOps: Send + Sync {
         Err(AdapterError::not_supported("scroll_into_view"))
     }
 
+    /// Pages the scroll area at `handle`, or the nearest one that holds it,
+    /// once toward `direction` without physical input, and reports whether
+    /// its content moved.
+    fn scroll_page(
+        &self,
+        handle: &NativeHandle,
+        direction: &crate::Direction,
+        lease: &InteractionLease,
+    ) -> Result<crate::ScrollPage, AdapterError> {
+        let _ = (handle, direction, lease);
+        Err(AdapterError::not_supported("scroll_page"))
+    }
+
     /// Prepare a ref for dispatch. An adapter may return a strictly verified
     /// handle when its own scroll supplies independent evidence of the same
     /// native object's movement. Otherwise the caller resolves the original

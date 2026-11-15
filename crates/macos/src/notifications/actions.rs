@@ -56,7 +56,14 @@ fn dismiss_impl(
 
     let info = entry.info.clone();
     let matching_before = super::dismiss_verify::matching_count(&entries, entry);
-    dismiss_entry(entry, policy, &filter, matching_before, pid, deadline)?;
+    dismiss_entry(&LiveDismiss {
+        entry,
+        filter: &filter,
+        matching_before,
+        pid,
+        policy,
+        deadline,
+    })?;
     Ok(info)
 }
 
@@ -71,9 +78,11 @@ fn dismiss_all_impl(
 
     let mut dismissed = Vec::new();
     let mut failures = Vec::new();
+    let mut delivery = crate::actions::DeliveryTracker::default();
 
     for original in entries.iter().rev() {
-        let current_entries = super::list::list_entries(&filter, pid, deadline)?;
+        let current_entries = super::list::list_entries(&filter, pid, deadline)
+            .map_err(|error| delivery.annotate(error))?;
         let Some(current) = current_entries
             .iter()
             .find(|entry| super::dismiss_verify::matches(original, entry))
@@ -85,7 +94,16 @@ fn dismiss_all_impl(
             continue;
         };
         let matching_before = super::dismiss_verify::matching_count(&current_entries, current);
-        match dismiss_entry(current, policy, &filter, matching_before, pid, deadline) {
+        let outcome = dismiss_entry(&LiveDismiss {
+            entry: current,
+            filter: &filter,
+            matching_before,
+            pid,
+            policy,
+            deadline,
+        });
+        super::dismiss_strategy::record(&mut delivery, outcome.as_ref().map(|()| true));
+        match outcome {
             Ok(()) => dismissed.push(original.info.clone()),
             Err(e) => failures.push(format!("#{}: {}", original.info.index, e)),
         }
@@ -94,64 +112,68 @@ fn dismiss_all_impl(
     Ok((dismissed, failures))
 }
 
-fn dismiss_entry(
-    entry: &super::list::NotificationEntry,
-    policy: InteractionPolicy,
-    filter: &NotificationFilter,
+/// One notification to dismiss, with what verifying its removal needs.
+struct LiveDismiss<'a> {
+    entry: &'a super::list::NotificationEntry,
+    filter: &'a NotificationFilter,
     matching_before: usize,
     pid: i32,
+    policy: InteractionPolicy,
     deadline: Deadline,
-) -> Result<(), AdapterError> {
-    for action in ["AXDismiss", "AXRemoveFromParent"] {
-        let outcome =
-            crate::actions::ax_helpers::try_ax_action_or_err(&entry.element, action, deadline);
-        if strategy_verified(outcome, entry, filter, matching_before, pid, deadline)? {
-            return Ok(());
+}
+
+fn dismiss_entry(target: &LiveDismiss<'_>) -> Result<(), AdapterError> {
+    super::dismiss_strategy::run_dismiss(target, target.deadline)
+}
+
+impl super::dismiss_strategy::DismissOps for LiveDismiss<'_> {
+    fn perform(&self, action: &str) -> Result<bool, AdapterError> {
+        crate::actions::ax_helpers::try_ax_action_or_err(&self.entry.element, action, self.deadline)
+    }
+
+    fn press_close_button(
+        &self,
+        delivery: &mut crate::actions::DeliveryTracker,
+    ) -> Result<bool, AdapterError> {
+        let children = strategy_read(
+            crate::notifications::read::children(&self.entry.element, self.deadline),
+            self.deadline,
+        )?
+        .unwrap_or_default();
+        try_dismiss_button(&children, delivery, self.deadline)
+    }
+
+    fn is_gone(&self) -> Result<bool, AdapterError> {
+        super::dismiss_verify::disappeared(
+            self.entry,
+            self.filter,
+            self.matching_before,
+            self.pid,
+            self.deadline,
+        )
+    }
+
+    fn may_reveal(&self) -> Result<(), AdapterError> {
+        if !crate::system::permissions::preflight_accessibility() {
+            return Err(AdapterError::permission_denied());
         }
+        if !self.policy.allow_cursor_move {
+            return Err(AdapterError::policy_denied_for_policy(
+                "Notification dismissal requires revealing its close control with the pointer",
+                self.policy,
+            ));
+        }
+        Ok(())
     }
 
-    let children = strategy_read(
-        crate::notifications::read::children(&entry.element, deadline),
-        deadline,
-    )?
-    .unwrap_or_default();
-    let pressed = try_dismiss_button(&children, deadline)?;
-    if strategy_verified(Ok(pressed), entry, filter, matching_before, pid, deadline)? {
-        return Ok(());
+    fn hover(&self) -> Result<(), AdapterError> {
+        hover_over(&self.entry.element, self.deadline)
     }
-
-    deadline.ensure_remaining()?;
-    if !crate::system::permissions::preflight_accessibility() {
-        return Err(AdapterError::permission_denied());
-    }
-
-    if !policy.allow_cursor_move {
-        return Err(AdapterError::policy_denied_for_policy(
-            "Notification dismissal requires revealing its close control with the pointer",
-            policy,
-        ));
-    }
-    if let Err(error) = hover_over(&entry.element, deadline) {
-        strategy_succeeded(Err(error), deadline)?;
-        return Err(all_dismiss_strategies_failed());
-    }
-    std::thread::sleep(std::time::Duration::from_millis(300));
-
-    let children = strategy_read(
-        crate::notifications::read::children(&entry.element, deadline),
-        deadline,
-    )?
-    .unwrap_or_default();
-    let pressed = try_dismiss_button(&children, deadline)?;
-    if strategy_verified(Ok(pressed), entry, filter, matching_before, pid, deadline)? {
-        return Ok(());
-    }
-
-    Err(all_dismiss_strategies_failed())
 }
 
 fn try_dismiss_button(
     children: &[crate::tree::AXElement],
+    delivery: &mut crate::actions::DeliveryTracker,
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
     for child in children {
@@ -174,12 +196,12 @@ fn try_dismiss_button(
         .to_lowercase();
         let is_dismiss =
             name.contains("close") || name.contains("clear") || name.contains("dismiss");
-        if is_dismiss
-            && strategy_succeeded(
-                crate::actions::ax_helpers::try_ax_action_or_err(child, "AXPress", deadline),
-                deadline,
-            )?
-        {
+        if !is_dismiss {
+            continue;
+        }
+        let pressed = crate::actions::ax_helpers::try_ax_action_or_err(child, "AXPress", deadline);
+        super::dismiss_strategy::record(delivery, pressed.as_ref().copied());
+        if strategy_succeeded(pressed, deadline)? {
             return Ok(true);
         }
     }
@@ -294,30 +316,4 @@ fn strategy_read<T>(
             Ok(None)
         }
     }
-}
-
-fn strategy_verified(
-    outcome: Result<bool, AdapterError>,
-    entry: &super::list::NotificationEntry,
-    filter: &NotificationFilter,
-    matching_before: usize,
-    pid: i32,
-    deadline: Deadline,
-) -> Result<bool, AdapterError> {
-    super::dismiss_verify::verified_after_strategy(outcome, deadline, || {
-        match super::dismiss_verify::disappeared(entry, filter, matching_before, pid, deadline) {
-            Ok(disappeared) => Ok(disappeared),
-            Err(error) => {
-                crate::notifications::read::tolerate_ax_strategy_error(error, deadline)?;
-                Ok(false)
-            }
-        }
-    })
-}
-
-fn all_dismiss_strategies_failed() -> AdapterError {
-    AdapterError::new(
-        ErrorCode::ActionFailed,
-        "All dismiss strategies failed (AXDismiss, AXRemoveFromParent, close button, hover+close)",
-    )
 }

@@ -324,10 +324,11 @@ pub trait SystemOps: Send + Sync {
         )
     }
 
+    /// Polls the menu of `process` and feeds each whole read to `wait`, which decides.
     fn wait_for_menu(
         &self,
         _process: ProcessIdentity,
-        _open: bool,
+        _wait: crate::MenuWait,
         _deadline: Deadline,
     ) -> Result<(), AdapterError> {
         Err(AdapterError::not_supported("wait_for_menu"))

@@ -98,6 +98,9 @@ check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/interaction.sh
 source "$here/scenarios/interaction.sh"
 check_fixture_contention || { finish; exit 1; }
+# shellcheck source=tests/e2e/scenarios/scroll_search.sh
+source "$here/scenarios/scroll_search.sh"
+check_fixture_contention || { finish; exit 1; }
 # shellcheck source=tests/e2e/scenarios/acceptance.sh
 source "$here/scenarios/acceptance.sh"
 check_fixture_contention || { finish; exit 1; }

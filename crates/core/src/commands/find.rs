@@ -38,6 +38,9 @@ pub struct FindScopeArgs {
     pub window_id: Option<String>,
     pub root: Option<String>,
     pub surface: crate::SnapshotSurface,
+    /// Page the root's scroll area toward this direction, then back, until a
+    /// match loads.
+    pub scroll: Option<crate::Direction>,
 }
 
 pub struct FindArgs {
@@ -63,6 +66,10 @@ pub fn execute(
     let query = locator_query_from_args(&args)?;
     query.validate_states().map_err(AppError::Adapter)?;
 
+    if args.scope.scroll.is_some() {
+        return find_scroll::execute(&args, &query, adapter, context)
+            .map_err(name_the_traversal_remedy);
+    }
     live::execute(&args, &query, adapter, context).map_err(name_the_traversal_remedy)
 }
 
@@ -152,6 +159,12 @@ mod live;
 
 #[path = "find_response.rs"]
 mod find_response;
+
+#[path = "find_scroll.rs"]
+mod find_scroll;
+
+#[path = "find_scroll_report.rs"]
+mod find_scroll_report;
 
 #[cfg(test)]
 #[path = "find_tests.rs"]
