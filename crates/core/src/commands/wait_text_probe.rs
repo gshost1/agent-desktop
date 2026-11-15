@@ -5,27 +5,42 @@ use crate::{
     adapter::{PlatformAdapter, TreeOptions},
     locator::live_locator::{
         LocatorMaterialization, LocatorResolution, LocatorResolveRequest, LocatorSelection,
-        ObservationRequest, evaluate_locator_tree,
+        ObservationRequest, ObservedTree, evaluate_locator_tree,
     },
     snapshot::{surface_target, window_capture},
 };
 
 const MAX_RAW_DEPTH: u8 = 50;
 
-/// Whether one locator read of the window the snapshot would capture shows
-/// the text is absent from every node the snapshot would hold. The read asks
-/// only for role, name, description and value, which an adapter that honors
-/// the evidence plan reads far faster than a snapshot, and it is cut at the
-/// snapshot's own depth. Any failure, any match and any incompleteness other
-/// than that depth cut answers `false`, so the poll builds its snapshot as
-/// before and a match is always judged from the snapshot.
-pub(crate) fn rules_out_text(
+/// What one text read told the poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TextProbe {
+    /// The text is in no node the snapshot could hold, so this poll needs no
+    /// snapshot.
+    pub(crate) ruled_out: bool,
+    /// The adapter read only the fields the probe asked for. One that reads
+    /// every field anyway makes the probe cost a snapshot's walk, so the wait
+    /// stops probing.
+    pub(crate) read_less: bool,
+}
+
+const UNDECIDED: TextProbe = TextProbe {
+    ruled_out: false,
+    read_less: true,
+};
+
+/// Reads the window the snapshot would capture for role, name, description
+/// and value only, as deep as a locator walk reads, which is at least as deep
+/// as any snapshot. Any failure, any match and any incompleteness other than
+/// the raw depth cut a snapshot shares leaves the text possible, so the poll
+/// builds its snapshot as before and a match is always judged from it.
+pub(crate) fn probe_text(
     adapter: &dyn PlatformAdapter,
     text: &str,
     app: Option<&str>,
     opts: &TreeOptions,
     deadline: crate::Deadline,
-) -> bool {
+) -> TextProbe {
     let query = LocatorQuery {
         has_text: Some(text.to_string()),
         ..LocatorQuery::default()
@@ -39,24 +54,38 @@ pub(crate) fn rules_out_text(
     };
     let Ok(owners) = surface_target::resolve_owners(adapter, app, None, opts.surface, deadline)
     else {
-        return false;
+        return UNDECIDED;
     };
-    window_capture::first_surface_owner(owners, |owner| {
+    let read = window_capture::first_surface_owner(owners, |owner| {
         let root = owner.observation_root(opts.surface);
-        let mut observation =
-            ObservationRequest::locator_for_root(&query, &request, root, deadline);
-        observation.max_logical_depth = ObservationRequest::snapshot_logical_depth(opts);
-        let observation = observation.validate()?;
+        let observation =
+            ObservationRequest::locator_for_root(&query, &request, root, deadline).validate()?;
         let tree =
             crate::tree::renderer_accessibility::observe_tree(adapter, root, &observation, None)?;
-        Ok(evaluate_locator_tree(tree, &query, &request)?)
-    })
-    .is_ok_and(|(_, resolution)| absent_within_depth(&resolution))
+        let read_less = read_only_what_was_asked(&tree);
+        Ok((evaluate_locator_tree(tree, &query, &request)?, read_less))
+    });
+    match read {
+        Ok((_, (resolution, read_less))) => TextProbe {
+            ruled_out: absent_from_the_read(&resolution),
+            read_less,
+        },
+        Err(_) => UNDECIDED,
+    }
 }
 
-/// No match, and nothing left unread except what lies past the depth cut,
-/// which the snapshot does not hold either.
-fn absent_within_depth(resolution: &LocatorResolution) -> bool {
+/// The probe asks for no states, so an adapter that honors the request
+/// leaves every node's states unread.
+fn read_only_what_was_asked(tree: &ObservedTree) -> bool {
+    tree.nodes
+        .iter()
+        .all(|node| node.evidence.states.is_unknown())
+}
+
+/// No match, and nothing left unread but what lies past the raw depth cut,
+/// which no snapshot reads either: no budget, child, text or label limit, no
+/// failed or invalidated read and no unrecorded cause.
+fn absent_from_the_read(resolution: &LocatorResolution) -> bool {
     if resolution.meta.total_matches > 0 {
         return false;
     }
@@ -69,9 +98,11 @@ fn absent_within_depth(resolution: &LocatorResolution) -> bool {
         && limits.node_hits == 0
         && limits.edge_hits == 0
         && limits.child_hits == 0
+        && limits.child_label_hits == 0
         && limits.text_hits == 0
         && limits.child_count_changes == 0
         && health.cannot_complete == 0
+        && health.native_read_failures == 0
         && health.deadline_exhausted == 0
         && health.invalidated_elements == 0
 }

@@ -223,23 +223,20 @@ fn wait_for_text(
     );
     let mut last_error = None;
     let mut polled = false;
+    let mut probing = expected_count.is_none();
 
     loop {
-        if polled
-            && expected_count.is_none()
-            && super::wait_text_probe::rules_out_text(
-                adapter,
-                &text,
-                app.as_deref(),
-                &opts,
-                deadline,
-            )
-        {
-            if deadline.is_expired() {
-                return wait_timeout::text(&text, timeout_ms, expected_count, last_error);
+        if polled && probing {
+            let probe =
+                super::wait_text_probe::probe_text(adapter, &text, app.as_deref(), &opts, deadline);
+            probing = probe.read_less;
+            if probe.ruled_out {
+                if deadline.is_expired() {
+                    return wait_timeout::text(&text, timeout_ms, expected_count, last_error);
+                }
+                scheduler.wait(deadline);
+                continue;
             }
-            scheduler.wait(deadline);
-            continue;
         }
         polled = true;
         match snapshot::build(adapter, &opts, app.as_deref(), None, deadline) {

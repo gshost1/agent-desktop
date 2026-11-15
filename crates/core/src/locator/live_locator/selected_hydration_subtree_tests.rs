@@ -42,8 +42,15 @@ impl ObservationOps for SubtreeHydrationAdapter {
                     super::EvidenceRequirements::snapshot()
                 );
                 let descendants = request.descendant_evidence();
-                assert!(descendants.identifiers && descendants.ref_evidence.bounds);
-                assert!(!descendants.states && !descendants.ref_evidence.actions);
+                if matches!(
+                    self.mode,
+                    Mode::TextFullyObserved | Mode::TextWitnessRemoved
+                ) {
+                    assert!(descendants.identifiers && descendants.ref_evidence.bounds);
+                    assert!(!descendants.states && !descendants.ref_evidence.actions);
+                } else {
+                    assert_eq!(descendants, super::EvidenceRequirements::snapshot());
+                }
                 Ok(initial_tree(self.mode))
             }
             ObservationRoot::Element { .. } => {

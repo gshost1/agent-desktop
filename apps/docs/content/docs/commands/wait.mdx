@@ -86,7 +86,7 @@ The result is `{ "elapsed_ms", "found": true, "window": WINDOW }`, where `WINDOW
 
 ### Text
 
-`--text TEXT` snapshots the app's window each poll and looks for the text in node names, values, and descriptions, as a case-insensitive substring.
+`--text TEXT` looks for the text in the node names, values, and descriptions of the app's window, as a case-insensitive substring. The first poll snapshots the window. Where the platform reads only the fields asked for (macOS), each later poll first reads names, values, and descriptions alone, and snapshots the window only when that read cannot rule the text out. The match is always judged from a snapshot, and `--count` snapshots every poll.
 
 ```bash
 agent-desktop wait --text Calculator --app gnome-calculator --timeout 3000

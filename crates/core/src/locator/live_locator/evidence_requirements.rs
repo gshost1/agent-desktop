@@ -49,12 +49,15 @@ impl EvidenceRequirements {
     }
 
     /// The evidence a locator walk reads below its root. A `--first`,
-    /// `--last` or `--nth` text or containment query publishes one match, so
-    /// only the root keeps snapshot evidence: a root match publishes from the
-    /// window read, and any deeper match is hydrated over its own subtree,
-    /// the re-read that checks its witness. Every other node is read for the
-    /// query, its identity and its bounds, as a role-and-name walk reads it,
-    /// instead of for the actions and states only a published match uses.
+    /// `--last` or `--nth` text query publishes one match, so only the root
+    /// keeps snapshot evidence: a root match publishes from the window read,
+    /// and any deeper match is hydrated over its own subtree, the re-read
+    /// that checks its witness. Every other node is read for the query, its
+    /// identity and its bounds, as a role-and-name walk reads it, instead of
+    /// for the actions and states only a published match uses. A text query
+    /// reads every node's name and description, so the root's capture proof
+    /// still counts its twins; a containment query without text may not, so
+    /// it keeps snapshot evidence everywhere.
     pub(crate) fn locator_descendants(
         query: &LocatorQuery,
         request: &LocatorResolveRequest,
@@ -65,7 +68,7 @@ impl EvidenceRequirements {
         );
         if publishes_one
             && request.materialization == LocatorMaterialization::SelectedMatches
-            && query.reads_subtrees()
+            && query.has_text.is_some()
         {
             let mut requirements = Self::query(query);
             requirements.identifiers = true;
@@ -211,5 +214,36 @@ mod tests {
                 "{selection:?} publishes one match and must not read every node's actions"
             );
         }
+    }
+
+    /// A containment query without text need not read names or descriptions,
+    /// which the root's capture proof counts, so it keeps snapshot evidence
+    /// on every node.
+    #[test]
+    fn a_containment_query_without_text_keeps_snapshot_evidence_below_the_root() {
+        let query = LocatorQuery {
+            containment: crate::ContainmentPredicate {
+                has: Some(Box::new(LocatorQuery {
+                    identity: crate::IdentityPredicate {
+                        role: Some("button".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })),
+                has_not: None,
+            },
+            ..Default::default()
+        };
+        let request = LocatorResolveRequest {
+            selection: LocatorSelection::First,
+            deadline: crate::Deadline::after(500).unwrap(),
+            max_raw_depth: 50,
+            surface: None,
+            materialization: LocatorMaterialization::SelectedMatches,
+        };
+        assert_eq!(
+            EvidenceRequirements::locator_descendants(&query, &request),
+            EvidenceRequirements::snapshot()
+        );
     }
 }
