@@ -53,7 +53,10 @@ def parse_fragment(path):
             "file name must be the branch name with / replaced by -, "
             "lowercase, ending in .md"
         )
-    raw = path.read_bytes()
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise FragmentError(f"{path}: cannot read it: {error.strerror or error}")
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -231,7 +234,7 @@ def main(argv):
             paths = [Path(p) for p in options.paths] or fragment_paths(root)
             failures = check(paths)
             if failures:
-                print("\n".join(failures), file=sys.stderr)
+                print("\n".join(f"FAIL: {failure}" for failure in failures), file=sys.stderr)
                 return 1
             print(f"OK: {len(paths)} changelog fragment(s) are well formed")
             return 0
