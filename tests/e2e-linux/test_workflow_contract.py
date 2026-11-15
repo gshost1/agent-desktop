@@ -30,10 +30,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('AGENT_DESKTOP_EXPECT_SESSION_BUS: "1"', runs[0])
         self.assertIn('AGENT_DESKTOP_EXPECT_ATSPI_BUS: "1"', runs[0])
 
-    def test_live_workflow_runs_on_pull_requests_and_main(self):
+    def test_live_workflow_runs_on_every_push_to_main(self):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
         triggers = workflow.split("\npermissions:", 1)[0]
-        self.assertIn("\n  pull_request:", triggers)
         self.assertIn("\n  push:\n    branches: [main]", triggers)
         self.assertIn("--tier x11-openbox", workflow)
 
