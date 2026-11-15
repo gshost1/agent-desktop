@@ -732,6 +732,14 @@ entry wherever it now sits. An index with only `--expected-app` or
 `--expected-title` checks just those fields, so it cannot tell two entries
 with the same app and title apart. A bare index is `INVALID_ARGS`.
 
+When agent-desktop opened the notification surface itself and could not close
+it again or restore the previous focus after a mutation was sent, the
+mutation's result stands and says so: `notification-action` adds
+`details.list_restore: "unverified"`, and on macOS `dismiss-notification` and
+`dismiss-all-notifications` add `data.list_restore: "unverified"` beside
+`dismissed`. The field is absent when the cleanup succeeded. List again
+instead of repeating the old index, and close the surface with Escape.
+
 The `key` field and the `--key` flag are additive and belong to the 2.7
 contract; a consumer that ignores `key` reads the list as before.
 

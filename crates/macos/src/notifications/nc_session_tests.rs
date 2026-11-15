@@ -2,7 +2,8 @@ use super::{
     NcSession, NcSessionOps, closed_center_policy_error, merge_session_result, nc_pid_from_output,
 };
 use agent_desktop_core::{
-    ActionResult, AdapterError, DeliverySemantics, ErrorCode, NotificationInfo, ProcessIdentity,
+    ActionResult, AdapterError, DeliverySemantics, ErrorCode, ListRestore, NotificationInfo,
+    NotificationOutcome, ProcessIdentity,
 };
 
 #[test]
@@ -78,7 +79,9 @@ fn operation_failure_wins_when_cleanup_also_fails() {
     let operation = AdapterError::new(ErrorCode::ElementNotFound, "operation failed");
     let cleanup = AdapterError::timeout("cleanup failed");
 
-    let error = merge_session_result::<NotificationInfo>(Err(operation), Err(cleanup)).unwrap_err();
+    let error =
+        merge_session_result::<NotificationOutcome<NotificationInfo>>(Err(operation), Err(cleanup))
+            .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ElementNotFound);
 }
@@ -114,21 +117,26 @@ fn a_delivered_action_keeps_its_result_when_cleanup_fails() {
 
 #[test]
 fn a_delivered_dismissal_keeps_the_dismissed_entry_when_cleanup_fails() {
-    let kept = merge_session_result(Ok(notification("a")), restore_failure())
-        .expect("a delivered dismissal must not become a retry-safe error");
+    let kept = merge_session_result(
+        Ok(NotificationOutcome::from(notification("a"))),
+        restore_failure(),
+    )
+    .expect("a delivered dismissal must not become a retry-safe error");
 
-    assert_eq!(kept.title, "a");
+    assert_eq!(kept.value.title, "a");
+    assert_eq!(kept.list_restore, Some(ListRestore::Unverified));
 }
 
 #[test]
 fn a_dismiss_all_keeps_its_counts_when_cleanup_fails() {
     let swept = (vec![notification("a")], vec!["#2: failed".to_owned()]);
 
-    let (dismissed, failures) = merge_session_result(Ok(swept), restore_failure())
+    let kept = merge_session_result(Ok(NotificationOutcome::from(swept)), restore_failure())
         .expect("a delivered sweep must not become a retry-safe error");
 
-    assert_eq!(dismissed.len(), 1);
-    assert_eq!(failures.len(), 1);
+    assert_eq!(kept.value.0.len(), 1);
+    assert_eq!(kept.value.1.len(), 1);
+    assert_eq!(kept.list_restore, Some(ListRestore::Unverified));
 }
 
 #[test]
@@ -143,8 +151,11 @@ fn an_operation_error_names_the_unverified_restore_when_cleanup_also_fails() {
     let operation = AdapterError::new(ErrorCode::ActionFailed, "operation failed")
         .with_disposition(DeliverySemantics::delivered_unverified());
 
-    let error =
-        merge_session_result::<NotificationInfo>(Err(operation), restore_failure()).unwrap_err();
+    let error = merge_session_result::<NotificationOutcome<NotificationInfo>>(
+        Err(operation),
+        restore_failure(),
+    )
+    .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ActionFailed);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
@@ -271,4 +282,12 @@ fn close_delay_does_not_consume_focus_restoration_budget() {
     assert!(restore_attempted);
     assert!(session.previous_app.is_none());
     session.close_pending = false;
+}
+
+#[test]
+fn a_clean_cleanup_reports_no_restore_marker() {
+    let kept =
+        merge_session_result(Ok(NotificationOutcome::from(notification("a"))), Ok(())).unwrap();
+
+    assert_eq!(kept.list_restore, None);
 }

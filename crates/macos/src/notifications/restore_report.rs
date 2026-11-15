@@ -1,4 +1,4 @@
-use agent_desktop_core::{ActionResult, AdapterError, NotificationInfo};
+use agent_desktop_core::{ActionResult, AdapterError, NotificationInfo, NotificationOutcome};
 use serde_json::{Map, Value};
 
 const LIST_RESTORE: &str = "list_restore";
@@ -11,8 +11,9 @@ const LIST_RESTORE: &str = "list_restore";
 /// would carry the cleanup's own retry-safe disposition and invite a retry
 /// that presses or dismisses whichever notification now holds the index. A
 /// mutation result with room for evidence names the cleanup as
-/// `list_restore: "unverified"`; one without keeps its shape. A read changed
-/// nothing, so its cleanup failure stays the error and a retry is harmless.
+/// `list_restore: "unverified"`, in an action result's details or beside a
+/// dismissal's own data. A read changed nothing, so its cleanup failure stays
+/// the error and a retry is harmless.
 pub(crate) trait RestoreReport: Sized {
     fn after_failed_restore(self, cleanup: AdapterError) -> Result<Self, AdapterError>;
 }
@@ -25,17 +26,10 @@ impl RestoreReport for ActionResult {
     }
 }
 
-impl RestoreReport for NotificationInfo {
+impl<T> RestoreReport for NotificationOutcome<T> {
     fn after_failed_restore(self, cleanup: AdapterError) -> Result<Self, AdapterError> {
         warn_kept(&cleanup);
-        Ok(self)
-    }
-}
-
-impl RestoreReport for (Vec<NotificationInfo>, Vec<String>) {
-    fn after_failed_restore(self, cleanup: AdapterError) -> Result<Self, AdapterError> {
-        warn_kept(&cleanup);
-        Ok(self)
+        Ok(NotificationOutcome::with_unverified_restore(self.value))
     }
 }
 

@@ -1,9 +1,9 @@
 use agent_desktop_core::{
-    ActionResult, AdapterError, Deadline, DismissAllNotificationsRequest,
+    ActionResult, AdapterError, Deadline, DismissAllNotificationsRequest, DismissAllOutcome,
     DismissNotificationRequest, ImageBuffer, InteractionLease, NotificationActionRequest,
-    NotificationFilter, NotificationInfo, OperationReport, PermissionReport, ProcessIdentity,
-    ScreenshotTarget, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps, WindowInfo,
-    WindowOp,
+    NotificationFilter, NotificationInfo, NotificationOutcome, OperationReport, PermissionReport,
+    ProcessIdentity, ScreenshotTarget, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps,
+    WindowInfo, WindowOp,
 };
 
 use crate::adapter::MacOSAdapter;
@@ -283,11 +283,8 @@ impl SystemOps for MacOSAdapter {
         request: DismissNotificationRequest<'_>,
         lease: &InteractionLease,
     ) -> Result<NotificationInfo, AdapterError> {
-        crate::notifications::actions::dismiss_notification(
-            request.target,
-            request.policy,
-            lease.deadline(),
-        )
+        self.dismiss_notification_reported(request, lease)
+            .map(|outcome| outcome.value)
     }
 
     fn dismiss_all_notifications(
@@ -295,6 +292,27 @@ impl SystemOps for MacOSAdapter {
         request: DismissAllNotificationsRequest<'_>,
         lease: &InteractionLease,
     ) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
+        self.dismiss_all_notifications_reported(request, lease)
+            .map(|outcome| outcome.value)
+    }
+
+    fn dismiss_notification_reported(
+        &self,
+        request: DismissNotificationRequest<'_>,
+        lease: &InteractionLease,
+    ) -> Result<NotificationOutcome<NotificationInfo>, AdapterError> {
+        crate::notifications::actions::dismiss_notification(
+            request.target,
+            request.policy,
+            lease.deadline(),
+        )
+    }
+
+    fn dismiss_all_notifications_reported(
+        &self,
+        request: DismissAllNotificationsRequest<'_>,
+        lease: &InteractionLease,
+    ) -> Result<DismissAllOutcome, AdapterError> {
         crate::notifications::actions::dismiss_all(
             request.app_filter,
             request.policy,

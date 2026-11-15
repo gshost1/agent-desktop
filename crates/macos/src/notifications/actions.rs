@@ -1,6 +1,6 @@
 use agent_desktop_core::{
-    ActionResult, AdapterError, Deadline, ErrorCode, InteractionPolicy, NotificationFilter,
-    NotificationInfo, NotificationTarget,
+    ActionResult, AdapterError, Deadline, DismissAllOutcome, ErrorCode, InteractionPolicy,
+    NotificationFilter, NotificationInfo, NotificationOutcome, NotificationTarget,
 };
 
 use super::nc_session::{NcSession, close_session};
@@ -13,10 +13,11 @@ pub(crate) fn dismiss_notification(
     target: &NotificationTarget,
     policy: InteractionPolicy,
     deadline: Deadline,
-) -> Result<NotificationInfo, AdapterError> {
+) -> Result<NotificationOutcome<NotificationInfo>, AdapterError> {
     require_foreground_policy(policy)?;
     let session = NcSession::open(policy, deadline)?;
-    let result = dismiss_impl(target, policy, session.pid(), deadline);
+    let result =
+        dismiss_impl(target, policy, session.pid(), deadline).map(NotificationOutcome::from);
     close_session(session, result)
 }
 
@@ -24,10 +25,11 @@ pub(crate) fn dismiss_all(
     app_filter: Option<&str>,
     policy: InteractionPolicy,
     deadline: Deadline,
-) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
+) -> Result<DismissAllOutcome, AdapterError> {
     require_foreground_policy(policy)?;
     let session = NcSession::open(policy, deadline)?;
-    let result = dismiss_all_impl(app_filter, policy, session.pid(), deadline);
+    let result = dismiss_all_impl(app_filter, policy, session.pid(), deadline)
+        .map(NotificationOutcome::from);
     close_session(session, result)
 }
 
