@@ -28,7 +28,10 @@ fn a_diff_matches_its_golden_json() {
     let _home = HomeGuard::new();
     let (data, since) = changed_window_diff();
     let golden = include_str!("../../../../tests/fixtures/snapshot-since-diff.json");
-    assert_eq!(normalized(&data, &since), golden.trim_end());
+    assert_eq!(
+        normalized(&data, &since),
+        golden.replace("\r\n", "\n").trim_end()
+    );
 }
 
 #[test]
