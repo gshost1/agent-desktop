@@ -20,6 +20,8 @@ enum Window {
     Plain,
     HoldingADialog,
     ItselfTheSheet,
+    SheetWhoseProbeFailedItsStates,
+    ProbeOfASheetWithFailedStates,
     HoldingAPage,
 }
 
@@ -27,11 +29,16 @@ fn node(key: u32, shape: Window) -> Expansion<ObservedRead, u32> {
     let showing = Field::Present(words(&[SHOWING]));
     if key == 0 {
         let mut frame = match shape {
-            Window::ItselfTheSheet => read_of(DIALOG, "w", &[]),
+            Window::ItselfTheSheet
+            | Window::SheetWhoseProbeFailedItsStates
+            | Window::ProbeOfASheetWithFailedStates => read_of(DIALOG, "w", &[]),
             _ => read_of(FRAME, "w", &[]),
         };
         frame.node.traits.states = match shape {
-            Window::ItselfTheSheet => Field::Present(words(&[SHOWING, MODAL])),
+            Window::ItselfTheSheet | Window::SheetWhoseProbeFailedItsStates => {
+                Field::Present(words(&[SHOWING, MODAL]))
+            }
+            Window::ProbeOfASheetWithFailedStates => Field::Failed("states".to_owned()),
             _ => showing,
         };
         return Expansion::read(frame, vec![1u32]);
@@ -96,9 +103,15 @@ fn observe_sheet(shape: Window) -> (Result<(), AdapterError>, Reads) {
                 reads
                     .scans
                     .push((element.path().to_owned(), limits.max_raw_depth));
+                let read = match shape {
+                    Window::SheetWhoseProbeFailedItsStates if limits.max_raw_depth == 0 => {
+                        Window::ProbeOfASheetWithFailedStates
+                    }
+                    other => other,
+                };
                 walk_structure_levels(0u32, limits, deadline(), |level| {
                     reads.scanned.extend_from_slice(level);
-                    Ok(level.iter().map(|key| node(*key, shape)).collect())
+                    Ok(level.iter().map(|key| node(*key, read)).collect())
                 })
             },
             place: &mut |_| Ok(()),
@@ -154,4 +167,15 @@ fn discovery_never_reads_into_a_web_document() {
         [0, 0, 1],
         "the page below the document is never read"
     );
+}
+
+#[test]
+fn a_sheet_whose_root_probe_failed_its_states_is_never_answered_absent() {
+    let (result, reads) = observe_sheet(Window::SheetWhoseProbeFailedItsStates);
+    result.expect("the deep scan reads the window as the sheet");
+    assert_eq!(
+        reads.scans,
+        [("/a".to_owned(), 0), ("/a".to_owned(), whole_depth())]
+    );
+    assert_eq!(reads.full, [("/a".to_owned(), ReadPurpose::Snapshot)]);
 }

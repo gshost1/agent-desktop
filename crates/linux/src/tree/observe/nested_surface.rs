@@ -83,6 +83,9 @@ pub(super) fn discover(
         ReadPurpose::Structure,
     )
     .map_err(|error| window_gone(root, error))?;
+    if is_surface(&scan.root.payload.node, surface) {
+        return Ok(None);
+    }
     if !scan.complete || is_incomplete(&scan.root, surface) {
         return Err(AdapterError::timeout(
             "Dialog discovery did not read the complete window",
