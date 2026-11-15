@@ -86,3 +86,64 @@ fn confirmed_window_absence_survives_default_process_state_capability() {
     .unwrap();
     assert_eq!(result["target_absent"], true);
 }
+
+struct SurfaceRecordingAdapter {
+    surfaces: std::sync::Mutex<Vec<crate::SnapshotSurface>>,
+}
+
+impl ObservationOps for SurfaceRecordingAdapter {
+    fn observe_tree(
+        &self,
+        _root: crate::locator::live_locator::ObservationRoot<'_>,
+        request: &crate::locator::live_locator::ObservationRequest,
+    ) -> Result<crate::locator::live_locator::ObservedTree, AdapterError> {
+        self.surfaces.lock().unwrap().push(request.surface);
+        Err(AdapterError::new(ErrorCode::ActionFailed, "recorded"))
+    }
+}
+impl ActionOps for SurfaceRecordingAdapter {}
+impl InputOps for SurfaceRecordingAdapter {}
+impl SystemOps for SurfaceRecordingAdapter {
+    fn resolve_window_strict(
+        &self,
+        expected: &WindowInfo,
+        _deadline: crate::Deadline,
+    ) -> Result<WindowInfo, AdapterError> {
+        Ok(expected.clone())
+    }
+}
+
+#[test]
+fn a_web_ref_wait_reads_the_page_and_a_window_ref_wait_reads_the_window() {
+    let _home = HomeGuard::new();
+    for (surface, observed) in [
+        (crate::SnapshotSurface::Web, crate::SnapshotSurface::Web),
+        (
+            crate::SnapshotSurface::Window,
+            crate::SnapshotSurface::Window,
+        ),
+    ] {
+        let adapter = SurfaceRecordingAdapter {
+            surfaces: std::sync::Mutex::new(Vec::new()),
+        };
+        let mut entry = crate::adapter::minimal_ref_entry("textfield", Some("Search"));
+        entry.source.source_window_id = Some("w-1".into());
+        entry.source.source_window_title = Some("Weather - Browser".into());
+        entry.source.source_surface = surface;
+        let _ = execute_with_ref(
+            WaitSelectorInput {
+                timeout_ms: 30,
+                ..base_input("statictext:Honolulu", false)
+            },
+            Some(&entry),
+            &adapter,
+            &CommandContext::default(),
+        );
+        let surfaces = adapter.surfaces.lock().unwrap();
+        assert!(!surfaces.is_empty(), "{surface:?}: the wait never read");
+        assert!(
+            surfaces.iter().all(|read| *read == observed),
+            "{surface:?} ref read {surfaces:?}"
+        );
+    }
+}
