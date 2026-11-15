@@ -69,6 +69,20 @@ fn a_modal_dialog_that_took_the_focus_is_named_and_never_a_success() {
 }
 
 #[test]
+fn a_modal_dialog_already_active_over_the_window_is_refused_before_any_request() {
+    let mut world = World::new(Some(OTHER));
+    world.grant = Grant::Now;
+    world.open_modal = Some("About".to_owned());
+    let error = failure(&world);
+    assert_refused(&error, "blocked_by_modal_dialog");
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    let details = error.details.as_ref().expect("details");
+    assert_eq!(details["dialog"], "About");
+    assert_eq!(details["physical_delivery_started"], false);
+    assert!(writes(&world).is_empty(), "{:?}", writes(&world));
+}
+
+#[test]
 fn a_window_on_another_desktop_gets_the_desktop_switched_before_the_request() {
     for send_fails in [false, true] {
         let mut world = World::new(Some(OTHER));

@@ -45,6 +45,7 @@ pub(super) struct World {
     pub(super) writes: RefCell<Vec<String>>,
     pub(super) untimed_grants: bool,
     pub(super) modal: Option<String>,
+    pub(super) open_modal: Option<String>,
     pub(super) stopped: bool,
     pub(super) desktop: DesktopPlacement,
     pub(super) current_desktop: Option<u32>,
@@ -105,6 +106,7 @@ impl World {
             writes: RefCell::new(Vec::new()),
             untimed_grants: false,
             modal: None,
+            open_modal: None,
             stopped: false,
             desktop: DesktopPlacement::On(0),
             current_desktop: Some(0),
@@ -227,6 +229,10 @@ impl FocusWorld for World {
 
     fn modal_over(&self, _client: u32) -> Option<String> {
         self.modal.clone()
+    }
+
+    fn open_modal_over(&self, _client: u32) -> Option<String> {
+        self.open_modal.clone()
     }
 
     fn lift(&self, _client: u32) -> Result<Lifted, AdapterError> {
