@@ -80,4 +80,5 @@ fn the_holder_keeps_only_null_standard_streams_and_the_socket() {
 fn the_fallback_close_loop_is_bounded_when_the_limit_is_infinite() {
     assert_eq!(super::close_ceiling(libc::RLIM_INFINITY), 1 << 20);
     assert_eq!(super::close_ceiling(1024), 1024);
+    assert_eq!(super::close_ceiling(1 << 30), 1 << 20);
 }

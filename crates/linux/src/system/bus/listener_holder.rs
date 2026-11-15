@@ -4,7 +4,7 @@
 
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
-/// The holder's pid and, where the kernel has pidfds (Linux 5.3 and later), a
+/// The holder's pid and, where the kernel supports pidfds, a
 /// pidfd opened right after the fork, while the child is still asleep.
 pub(crate) struct HolderHandle {
     pid: libc::pid_t,
