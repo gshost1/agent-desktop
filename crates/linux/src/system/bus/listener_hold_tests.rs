@@ -79,9 +79,10 @@ fn a_unix_address_is_remembered_and_any_other_forgets_it() {
         "unix:path={},guid=0123456789abcdef0123456789abcdef",
         path.display()
     );
-    futures_lite::future::block_on(builder(&address)).expect("connected builder");
+    let _connected = futures_lite::future::block_on(builder(&address)).expect("connected builder");
     assert!(shared().socket.is_some());
-    futures_lite::future::block_on(builder("tcp:host=127.0.0.1,port=9")).expect("zbus builder");
+    let _other =
+        futures_lite::future::block_on(builder("tcp:host=127.0.0.1,port=9")).expect("zbus builder");
     assert!(shared().socket.is_none());
     std::fs::remove_dir_all(dir).unwrap();
 }
