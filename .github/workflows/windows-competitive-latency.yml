@@ -1,0 +1,50 @@
+name: Windows competitive latency
+
+on:
+  workflow_dispatch:
+    inputs:
+      arms:
+        description: 'Comma-separated arms to build and compare, first arm is the numerator of the ratio: fork, upstream, forkmain'
+        required: false
+        default: 'fork,upstream'
+
+concurrency:
+  group: windows-competitive-latency-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  competitive-latency:
+    name: A/B the release CLI on the hosted Windows runner
+    runs-on: windows-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned Rust toolchain
+        run: rustup show
+
+      - name: Build every arm and measure it against the Win32 and WPF fixtures
+        shell: powershell
+        env:
+          ARMS: ${{ inputs.arms }}
+        run: |
+          $arms = @($env:ARMS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          .\probes\windows\27-competitive-latency.ps1 -Label ci -Build -Arm $arms
+
+      - name: Redact and gate the measured captures
+        id: redaction-gate
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-capture-redaction.ps1
+
+      - name: Upload the measured captures
+        if: ${{ !cancelled() && steps.redaction-gate.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-competitive-latency
+          path: probes/windows/captures/27-competitive-latency/*-ci.json
+          if-no-files-found: error

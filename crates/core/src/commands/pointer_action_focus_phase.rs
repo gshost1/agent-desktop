@@ -90,7 +90,7 @@ pub(crate) fn retry_leased_point_phase<T>(
             ));
         }
         refusal = Some(error.into_adapter_error());
-        std::thread::sleep(POLL_INTERVAL.min(remaining));
+        crate::wait::deadline::sleep(POLL_INTERVAL.min(remaining));
     }
 }
 
