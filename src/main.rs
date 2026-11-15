@@ -28,7 +28,6 @@ use cli::{
     Cli, Commands,
     emit::{emit_response, finish, report_output_failure},
 };
-use command_policy::preflight_deadline;
 use dispatch::pre_dispatch_error;
 #[cfg(target_os = "macos")]
 use std::io::{BufWriter, Write};
@@ -241,23 +240,8 @@ fn execute_with_adapter(
     let adapter = build_adapter();
     let adapter: &dyn agent_desktop_core::PlatformAdapter = &adapter;
     command_policy::prepare_connections(&cmd, adapter, context.session_id());
-    let report = if command_policy::requires_permission_report(&cmd) {
-        match preflight_deadline(&cmd)
-            .map_err(AppError::from)
-            .and_then(|deadline| {
-                if command_policy::requires_full_permission_report(&cmd) {
-                    adapter.permission_report(deadline)
-                } else {
-                    adapter.preflight_permission_report(deadline)
-                }
-                .map_err(AppError::from)
-            }) {
-            Ok(report) => report,
-            Err(err) => return Err(pre_dispatch_error(err)),
-        }
-    } else {
-        agent_desktop_core::PermissionReport::default()
-    };
+    let report =
+        command_policy::read_permission_report(&cmd, adapter).map_err(pre_dispatch_error)?;
     command_policy::preflight(&cmd, &report)?;
     command_policy::preflight_context(&cmd, context)?;
 
