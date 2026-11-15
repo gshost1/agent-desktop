@@ -9,6 +9,10 @@ pub(super) struct ScrollSearchReport {
     pub(super) view_moved: bool,
     #[serde(skip_serializing_if = "is_zero")]
     pub(super) unconfirmed_pages: u32,
+    /// Pages sent that read unchanged at an end of the area. They are not in
+    /// `pages`, but they were sent, so a later failure is not retry-safe.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(super) pages_at_end: u32,
     pub(super) directions: Vec<&'static str>,
     /// `found`, `both_ends` or `page_cap`.
     pub(super) stopped: &'static str,
@@ -16,7 +20,7 @@ pub(super) struct ScrollSearchReport {
 
 impl ScrollSearchReport {
     pub(super) fn may_have_moved(&self) -> bool {
-        self.view_moved || self.unconfirmed_pages > 0
+        self.view_moved || self.unconfirmed_pages > 0 || self.pages_at_end > 0
     }
 }
 

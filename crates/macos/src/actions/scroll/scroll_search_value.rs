@@ -6,7 +6,7 @@
 //! it: a tiny write, the distance one loaded item moved, then a write that
 //! moves the content by a fixed share of the viewport.
 
-use agent_desktop_core::{AdapterError, Deadline, Direction, Rect};
+use agent_desktop_core::{AdapterError, Deadline, Direction, ErrorCode, Rect};
 
 use super::scroll_loaded_items::LoadedItems;
 use super::scroll_search_step::SearchStep;
@@ -55,9 +55,11 @@ pub(super) fn calibrated_value_step(
 
 /// Writes a probe shift, waits for the probe item to move, then writes the
 /// shift that moves the content by the viewport share. A probe the reads
-/// never see move sizes no page, so the bar is put back where it started and
-/// the step counts as not sent: a probe shift left in place would read as a
-/// page that moved a fraction of a pixel.
+/// never see move sizes no page, and a page write that fails or is not
+/// taken leaves the probe in place, so in both cases the bar is put back
+/// where it started first: a probe shift left in place would read as a page
+/// that moved a fraction of a pixel. A bar that cannot be put back is
+/// displaced, never a sent page.
 pub(super) fn calibrate(
     (start, viewport): (f64, f64),
     direction: &Direction,
@@ -74,14 +76,35 @@ pub(super) fn calibrate(
         match write(shifted(start, page, direction)) {
             Ok(true) => return SearchStep::Sent,
             Ok(false) => {}
-            Err(error) => return SearchStep::Refused(error),
+            Err(error) => return restored(write(start), SearchStep::Refused(error)),
         }
     }
-    match write(start) {
-        Ok(true) => SearchStep::Skipped,
-        Ok(false) => SearchStep::Sent,
-        Err(error) => SearchStep::Refused(error),
+    restored(write(start), SearchStep::Skipped)
+}
+
+/// What the step amounts to once the probe was to be put back: `after` when
+/// the restore was taken, otherwise a displaced bar, whose error cannot
+/// claim nothing was sent because the probe write was.
+fn restored(restore: Result<bool, AdapterError>, after: SearchStep) -> SearchStep {
+    match restore {
+        Ok(true) => after,
+        Ok(false) => SearchStep::Displaced(probe_left_in_place()),
+        Err(error) => SearchStep::Displaced(
+            crate::actions::DeliveryTracker::from_delivered_units(1).annotate(error),
+        ),
     }
+}
+
+fn probe_left_in_place() -> AdapterError {
+    AdapterError::new(
+        ErrorCode::ActionFailed,
+        "The scroll bar did not take back the probe step a search page measured with",
+    )
+    .with_details(serde_json::json!({ "kind": "scroll_search_probe_not_restored" }))
+    .with_suggestion(
+        "The list moved by a small step. Take a fresh snapshot and read the list before searching again.",
+    )
+    .with_disposition(agent_desktop_core::DeliverySemantics::delivered_unverified())
 }
 
 /// The value change that moves the content by the viewport share, from the

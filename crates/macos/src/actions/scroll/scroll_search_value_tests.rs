@@ -80,3 +80,80 @@ fn an_item_that_moves_down_the_screen_during_a_search_down_went_backward() {
     assert!(!moved_backward(340.0, 560.0, &Direction::Up));
     assert!(moved_backward(80.0, 200.0, &Direction::Right));
 }
+
+fn uncertain_write() -> agent_desktop_core::AdapterError {
+    agent_desktop_core::AdapterError::new(
+        agent_desktop_core::ErrorCode::AppUnresponsive,
+        "AXValue returned kAXErrorCannotComplete; mutation outcome is uncertain",
+    )
+    .with_disposition(agent_desktop_core::DeliverySemantics::uncertain())
+}
+
+#[test]
+fn a_refused_page_write_puts_the_probe_back_before_it_is_settled() {
+    let mut writes = Vec::new();
+    let step = calibrate(
+        (0.4, 160.0),
+        &Direction::Down,
+        |value| {
+            writes.push(value);
+            match writes.len() {
+                2 => Err(uncertain_write()),
+                _ => Ok(true),
+            }
+        },
+        || Some(22.0),
+    );
+    assert!(matches!(step, SearchStep::Refused(_)), "{step:?}");
+    assert_eq!(writes.len(), 3, "{writes:?}");
+    assert_eq!(writes[2], 0.4);
+}
+
+#[test]
+fn a_probe_the_restore_did_not_put_back_is_not_a_sent_page() {
+    let mut writes = Vec::new();
+    let step = calibrate(
+        (0.4, 160.0),
+        &Direction::Down,
+        |value| {
+            writes.push(value);
+            Ok(writes.len() == 1)
+        },
+        || Some(0.0),
+    );
+    assert!(
+        !matches!(step, SearchStep::Sent | SearchStep::Skipped),
+        "{step:?}"
+    );
+    assert_eq!(writes.len(), 2);
+}
+
+#[test]
+fn a_restore_that_fails_keeps_the_probe_write_unsafe_to_retry() {
+    let mut writes = 0;
+    let step = calibrate(
+        (0.4, 160.0),
+        &Direction::Down,
+        |_| {
+            writes += 1;
+            if writes == 1 {
+                Ok(true)
+            } else {
+                Err(agent_desktop_core::AdapterError::new(
+                    agent_desktop_core::ErrorCode::StaleRef,
+                    "bar went away",
+                )
+                .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered()))
+            }
+        },
+        || Some(0.0),
+    );
+    let SearchStep::Displaced(error) = step else {
+        panic!("a failed restore is displaced: {step:?}");
+    };
+    assert_eq!(error.code, agent_desktop_core::ErrorCode::StaleRef);
+    assert_eq!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::delivered_unverified()
+    );
+}
