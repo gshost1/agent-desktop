@@ -114,3 +114,62 @@ fn without_an_exact_name_the_limit_keeps_the_first_matches_in_traversal_order() 
     assert_eq!(response["total_matches"], SUBSTRING_MATCHES);
     assert_eq!(response["truncated"], true);
 }
+
+fn single_by_name(name: &str, pick: fn(&mut FindSelectionArgs)) -> FindArgs {
+    let mut args = find_by_name(name, None);
+    pick(&mut args.selection);
+    args
+}
+
+fn single_name(args: FindArgs, adapter: &LiveFindAdapter) -> String {
+    let response =
+        execute(args, adapter, &CommandContext::default()).expect("find should succeed");
+    response["match"]["name"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_default()
+}
+
+#[test]
+fn first_returns_the_exact_name_over_a_longer_name_found_earlier() {
+    let _guard = HomeGuard::new();
+    let adapter = LiveFindAdapter::with_buttons(&longer_names_then_the_exact_one());
+
+    let found = single_name(
+        single_by_name("Save", |selection| selection.first = true),
+        &adapter,
+    );
+
+    assert_eq!(found, "Save");
+}
+
+#[test]
+fn first_without_an_exact_name_returns_the_first_match_in_traversal_order() {
+    let _guard = HomeGuard::new();
+    let adapter = LiveFindAdapter::with_buttons(&longer_names_then_the_exact_one());
+
+    let found = single_name(
+        single_by_name("Save As", |selection| selection.first = true),
+        &adapter,
+    );
+
+    assert_eq!(found, "Save As 0");
+}
+
+#[test]
+fn last_and_nth_keep_traversal_order() {
+    let _guard = HomeGuard::new();
+    let adapter = LiveFindAdapter::with_buttons(&longer_names_then_the_exact_one());
+
+    let nth = single_name(
+        single_by_name("Save", |selection| selection.nth = Some(0)),
+        &adapter,
+    );
+    let last = single_name(
+        single_by_name("Save As", |selection| selection.last = true),
+        &adapter,
+    );
+
+    assert_eq!(nth, "Save As 0");
+    assert_eq!(last, format!("Save As {}", SUBSTRING_MATCHES - 1));
+}
