@@ -1,4 +1,4 @@
-use std::io::{BufWriter, ErrorKind, Write};
+use std::io::ErrorKind;
 use std::path::PathBuf;
 
 use serde::Deserialize;
@@ -37,14 +37,13 @@ pub(crate) struct DiffBaseline {
 }
 
 /// Saves the baseline of a snapshot that was just saved as `snapshot_id`,
-/// streaming its rows from the tree into a new private file.
+/// serializing its rows straight from the tree.
 ///
-/// The write is not flushed to the device and not replaced atomically: the
-/// snapshot id is not printed until it returns, so nothing reads the file
-/// while it is written, and a file cut short by a crash does not parse and is
-/// refused as missing. A baseline that would pass `MAX_BASELINE_BYTES` stops
-/// at the cap and is removed; the snapshot itself is unaffected and only a
-/// diff against it is refused.
+/// The baseline is a cache: it is replaced atomically but not flushed to the
+/// device, because a file lost or cut short by a crash does not parse and is
+/// refused as missing, the same as a snapshot that never had one. A baseline
+/// that would pass `MAX_BASELINE_BYTES` stops at the cap and is not written;
+/// the snapshot itself is unaffected and only a diff against it is refused.
 pub(crate) fn save_baseline(
     store: &RefStore,
     snapshot_id: &str,
@@ -52,7 +51,6 @@ pub(crate) fn save_baseline(
     opts: &TreeOptions,
 ) -> Result<(), AppError> {
     validate_snapshot_id(snapshot_id)?;
-    let path = baseline_path(store, snapshot_id);
     let view = BaselineView {
         format: BASELINE_FORMAT,
         owner: DiffOwner::of(&result.owner),
@@ -60,28 +58,16 @@ pub(crate) fn save_baseline(
         complete: result.complete,
         rows: RowSeq(&result.tree),
     };
-    match std::fs::remove_file(&path) {
-        Ok(()) => {}
-        Err(err) if err.kind() == ErrorKind::NotFound => {}
-        Err(err) => return Err(err.into()),
-    }
-    let file = crate::storage::private_file::open_private_append(&path)?;
-    let mut writer = CappedWriter::new(BufWriter::new(file), MAX_BASELINE_BYTES);
-    let written = serde_json::to_writer(&mut writer, &view)
-        .map_err(std::io::Error::from)
-        .and_then(|()| writer.flush());
-    drop(writer.into_inner());
-    match written {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            let _ = std::fs::remove_file(&path);
-            if err.kind() == ErrorKind::FileTooLarge {
-                tracing::debug!(snapshot_id, "snapshot: diff baseline over its cap, not saved");
-                return Ok(());
-            }
-            Err(err.into())
+    let mut writer = CappedWriter::new(Vec::new(), MAX_BASELINE_BYTES);
+    if let Err(err) = serde_json::to_writer(&mut writer, &view) {
+        let err = std::io::Error::from(err);
+        if err.kind() == ErrorKind::FileTooLarge {
+            tracing::debug!(snapshot_id, "snapshot: diff baseline over its cap, not saved");
+            return Ok(());
         }
+        return Err(err.into());
     }
+    crate::refs::write_private_cache_file(&baseline_path(store, snapshot_id), &writer.into_inner())
 }
 
 /// Loads the baseline of `snapshot_id` from `store`'s session namespace only.

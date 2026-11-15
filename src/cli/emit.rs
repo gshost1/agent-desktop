@@ -73,10 +73,11 @@ fn present_lines(
     }
 }
 
-/// Replaces the snapshot tree or `snapshot --since` diff rows in `data`, and
-/// in each completed entry of a batch, with their lines. A tree that cannot be rendered stays a tree and
-/// gains `lines_error`, so a delivered action's report is never turned into
-/// an error and the caller can tell why `lines` is missing.
+/// Replaces the snapshot tree, or the rows of a `snapshot --since` diff, in
+/// `data` and in each completed entry of a batch with their lines. A tree or
+/// diff that cannot be rendered stays as it was and gains `lines_error`, so a
+/// delivered action's report is never turned into an error and the caller can
+/// tell why `lines` is missing.
 pub(crate) fn apply_lines_output(cmd_name: &str, data: &mut Value) -> bool {
     let mut replaced = replace_or_mark(data);
     if cmd_name == "batch"

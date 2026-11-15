@@ -70,3 +70,14 @@ fn a_row_that_does_not_read_back_changes_nothing() {
     assert!(replace_diff_with_lines(&mut data).is_err());
     assert_eq!(data, before);
 }
+
+#[test]
+fn an_incomplete_diff_says_which_read_was_cut_before_its_rows() {
+    let mut data = json!({ "diff": { "since": "s1", "status": "incomplete", "incomplete": ["snapshot"],
+        "focused": { "ref_id": "@s2:e1", "role": "button", "name": "OK", "states": ["focused"] } } });
+    assert!(replace_diff_with_lines(&mut data).unwrap());
+    assert_eq!(
+        data["lines"],
+        json!(["incomplete (snapshot)", "focused @s2:e1 button \"OK\" [focused]"])
+    );
+}

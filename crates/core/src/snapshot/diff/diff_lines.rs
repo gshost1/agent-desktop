@@ -1,5 +1,6 @@
 //! The `--lines` reading form of a `snapshot --since` diff: one line per row,
-//! marked `+` added, `~` changed and `-` removed, then the focused element.
+//! marked `+` added, `~` changed and `-` removed, then the focused element,
+//! after a first line that says `no change` or which read was cut short.
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -38,8 +39,19 @@ pub fn replace_diff_with_lines(data: &mut Value) -> Result<bool, AppError> {
 
 fn diff_lines(diff: &Map<String, Value>) -> Result<Vec<String>, AppError> {
     let mut lines = Vec::new();
-    if diff.get("status").and_then(Value::as_str) == Some("unchanged") {
-        lines.push("no change".to_owned());
+    match diff.get("status").and_then(Value::as_str) {
+        Some("unchanged") => lines.push("no change".to_owned()),
+        Some("incomplete") => {
+            let sides: Vec<&str> = diff
+                .get("incomplete")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            lines.push(format!("incomplete ({})", sides.join(", ")));
+        }
+        _ => {}
     }
     for (key, marker) in ROW_KEYS {
         for row in diff

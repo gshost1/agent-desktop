@@ -57,9 +57,9 @@ agent-desktop snapshot --app "Text Editor" -i --compact --since s8f3k2p9 --lines
 - `removed`: elements that are gone, without a ref.
 - `focused`: the element with keyboard focus now, also when nothing changed.
 
-Elements pair by the identity refs use: role plus native id, stable name and description. A value change is `changed`; a renamed button, or an element with an identical twin, shows as removed plus added, never as changed. A container with no ref, no text and no state is not reported. Elements that did not change keep working through the refs you already hold.
+Elements pair by the identity refs use: role plus native id, stable name and description. A value change is `changed`; a renamed button, or an element with an identical twin, shows as removed plus added, never as changed. A container with no ref, no text and no state is not reported. Elements that did not change keep working through the refs you already hold, until their snapshot is pruned.
 
-With `--lines`, `data.lines` holds `+` added, `~` changed (with `(was ...)`), `-` removed lines, `no change` when unchanged, and a last `focused` line.
+With `--lines`, `data.lines` holds `+` added, `~` changed (with `(was ...)`), `-` removed lines, a first `no change` or `incomplete (snapshot)` line, and a last `focused` line.
 
 `not_comparable` returns the whole tree in `data.tree` with `diff.reason`: `owner_changed` when the snapshot read another window or process (a dialog that opened as its own window, say), or `presentation_changed` when the flags shaping the tree differ. An unknown, pruned or other-session id, or a snapshot saved by `find`, `wait` or a `--wait-for` rather than a plain `snapshot`, fails `SNAPSHOT_NOT_FOUND` before anything is read, with `details.kind` `since_snapshot_not_found` or `diff_baseline_missing`: take a full snapshot without `--since`. `--since` cannot combine with `--root` or `--wait-for`.
 

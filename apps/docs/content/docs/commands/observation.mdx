@@ -40,7 +40,8 @@ agent-desktop snapshot [--app NAME] [--window-id ID] [-i] [--compact] [--skeleto
 
 `data` carries `app`, `snapshot_id`, `ref_count`, `complete`, and `tree`. Window-owned snapshots also carry `window`; macOS application-owned `menu` and `menubar` snapshots, and process-owned snapshots of a background app with no window, omit it. [Snapshots and refs](/desktop/snapshots-and-refs) shows the window-owned shape. With a post-action `--wait-for` ([Configuration](/desktop/configuration#post-action-wait-flags)), a successful snapshot adds `elapsed_ms` and `matched_selector`.
 
-Errors specific to `snapshot`: `INVALID_ARGS` for `--root` with `--surface` or `--wait-for`, `--since` with `--root` or `--wait-for`, a bare ref, `--max-depth` above 50, or an unsupported `--surface` when the platform supports other surfaces; `PLATFORM_NOT_SUPPORTED` when the adapter supports no surfaces; `WINDOW_NOT_FOUND` when a window-owned surface has no window; `APP_NOT_FOUND` when an application-owned surface has no matching app; `AMBIGUOUS_TARGET` when a window-owned lookup has several candidate windows; `ELEMENT_NOT_FOUND` when a macOS application-owned menu surface is absent; `STALE_REF`, `SNAPSHOT_NOT_FOUND`, or `TIMEOUT` for a `--root` drill. See [What a drill refuses](/desktop/skeleton-and-drill-down#what-a-drill-refuses). `SNAPSHOT_NOT_FOUND` for a `--since` id with no saved tree in this session.
+Errors specific to `snapshot`: `INVALID_ARGS` for `--root` with `--surface` or `--wait-for`, `--since` with `--root` or `--wait-for`, a bare ref, `--max-depth` above 50, or an unsupported `--surface` when the platform supports other surfaces; `PLATFORM_NOT_SUPPORTED` when the adapter supports no surfaces; `WINDOW_NOT_FOUND` when a window-owned surface has no window; `APP_NOT_FOUND` when an application-owned surface has no matching app; `AMBIGUOUS_TARGET` when a window-owned lookup has several candidate windows; `ELEMENT_NOT_FOUND` when a macOS application-owned menu surface is absent; `STALE_REF`, `SNAPSHOT_NOT_FOUND`, or `TIMEOUT` for a `--root` drill. See [What a drill refuses](/desktop/skeleton-and-drill-down#what-a-drill-refuses). A `--since` id with no saved tree in this session fails `SNAPSHOT_NOT_FOUND`.
+
 ### Only what changed
 
 After an action, re-read the window with `--since` and the id of the snapshot you acted from. The command takes a normal full snapshot, with its own `snapshot_id` and saved refs, and replaces `data.tree` with `data.diff`:
@@ -63,9 +64,9 @@ agent-desktop snapshot --app "Text Editor" -i --compact --since s8f3k2p9
 
 - `status` is `changed`, `unchanged`, `incomplete` or `not_comparable`. `unchanged` needs both reads to be complete; when either was cut short the status is `incomplete` and `incomplete` names `baseline`, `snapshot` or both.
 - Rows pair through the identity refs use: role plus native id, stable name and description. A value, state or focus change is `changed`. A renamed button, or an element with an identical twin, is reported as removed plus added. Containers with no ref, no text and no state are left out.
-- `added` and `changed` rows carry refs of the new snapshot; `removed` rows carry none. Refs you already hold for unchanged elements keep working.
+- `added` and `changed` rows carry refs of the new snapshot; `removed` rows carry none. Refs you already hold for unchanged elements keep working until their snapshot is pruned.
 - `not_comparable` returns the whole tree with `reason` `owner_changed` (another window or process) or `presentation_changed` (different `-i`, `--compact`, `--skeleton`, `--max-depth` or `--surface`).
-- With `--lines`, `data.lines` holds `+`, `~` and `-` lines, `no change` when unchanged, and a final `focused` line.
+- With `--lines`, `data.lines` holds `+`, `~` and `-` lines, a first `no change` or `incomplete (baseline)`/`incomplete (snapshot)` line, and a final `focused` line.
 - An unknown, pruned or other-session id, and a snapshot saved by `find`, `wait` or `--wait-for`, fail `SNAPSHOT_NOT_FOUND` before the window is read; take a full snapshot without `--since`. `--since` cannot combine with `--root` or `--wait-for`.
 
 [JSON output](/desktop/json-output) has the full contract.
