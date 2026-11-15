@@ -77,6 +77,13 @@ mod imp {
                     request,
                     deadline,
                 )?);
+                if let Some(hint) =
+                    crate::actions::edit_commit::read_edit_commit(el, deadline).hint()
+                {
+                    return Ok(
+                        ActionResult::from_execution(action, steps).with_commit_unobserved(hint)
+                    );
+                }
             }
 
             Action::SetFocus => {

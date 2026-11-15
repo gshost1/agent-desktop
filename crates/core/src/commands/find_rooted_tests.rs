@@ -49,10 +49,12 @@ fn find_refs_are_proven_by_the_observation_that_produced_them() {
 
 fn find_args(root: Option<String>, name: Option<&str>, role: Option<&str>) -> FindArgs {
     FindArgs {
-        app: None,
-        window_id: root.is_none().then(|| "w-2".into()),
-        root,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: root.is_none().then(|| "w-2".into()),
+            root,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             role: role.map(Into::into),
             name: name.map(Into::into),

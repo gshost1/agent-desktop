@@ -98,10 +98,12 @@ fn default_limit_caps_materialized_matches() {
     let adapter = super::test_support::LiveFindAdapter::with_button_count(60);
     let response = execute(
         FindArgs {
-            app: None,
-            window_id: Some("w-1".into()),
-            root: None,
-            surface: crate::SnapshotSurface::Window,
+            scope: FindScopeArgs {
+                app: None,
+                window_id: Some("w-1".into()),
+                root: None,
+                surface: crate::SnapshotSurface::Window,
+            },
             filter: FindFilterArgs {
                 role: Some("button".into()),
                 ..no_filter()
@@ -123,10 +125,12 @@ fn default_limit_caps_materialized_matches() {
 #[test]
 fn limit_conflicts_with_single_result_modes_for_batch_too() {
     let err = validate_find_mode(&FindArgs {
-        app: None,
-        window_id: None,
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: None,
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: no_filter(),
         states: vec![],
         timeout_ms: None,
@@ -151,10 +155,12 @@ fn role_node(role: &str, name: Option<&str>) -> AccessibilityNode {
 #[test]
 fn role_alias_is_preserved_until_live_validation() {
     let query = query_from_args(&FindArgs {
-        app: None,
-        window_id: None,
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: None,
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             role: Some("textarea".into()),
             ..no_filter()
@@ -173,10 +179,12 @@ fn role_alias_is_preserved_until_live_validation() {
 #[test]
 fn unknown_role_is_preserved_until_validation() {
     let query = query_from_args(&FindArgs {
-        app: None,
-        window_id: None,
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: None,
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             role: Some("navbar".into()),
             ..no_filter()
@@ -204,10 +212,12 @@ fn roles_present_hint_is_omitted_when_a_match_is_found() {
     for selection in [no_selection(), first] {
         let response = execute(
             FindArgs {
-                app: None,
-                window_id: Some("w-1".into()),
-                root: None,
-                surface: crate::SnapshotSurface::Window,
+                scope: FindScopeArgs {
+                    app: None,
+                    window_id: Some("w-1".into()),
+                    root: None,
+                    surface: crate::SnapshotSurface::Window,
+                },
                 filter: FindFilterArgs {
                     role: Some("button".into()),
                     ..no_filter()
@@ -231,10 +241,12 @@ fn roles_present_hint_is_omitted_when_a_match_is_found() {
 
 fn find_args_scoped_to_window(window_id: &str) -> FindArgs {
     FindArgs {
-        app: None,
-        window_id: Some(window_id.into()),
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: Some(window_id.into()),
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             name: Some("OnlyInWindowTwo".into()),
             ..no_filter()

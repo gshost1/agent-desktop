@@ -1,10 +1,11 @@
 use agent_desktop_core::{
-    AdapterError, DismissAllNotificationsRequest, InteractionLease, NotificationInfo,
+    AdapterError, DismissAllNotificationsRequest, InteractionLease, NotificationFilter,
+    NotificationInfo,
 };
 
 use super::close::close_entry;
 use super::extract::Entry;
-use super::list::{matches_app, read_listing};
+use super::list::read_listing;
 use super::session::{Session, require_headed};
 use super::verify::{holds, unconfirmed_read};
 use super::world::{LiveWorld, ShellWorld};
@@ -33,13 +34,10 @@ pub(crate) fn dismiss_all_in(
     lease: &InteractionLease,
 ) -> Result<Outcome, AdapterError> {
     require_headed(request.policy)?;
+    let scope = NotificationFilter::for_app(request.app_filter);
     let captured: Vec<Entry> = read_listing(world, lease.deadline())?
         .into_iter()
-        .filter(|entry| {
-            request
-                .app_filter
-                .is_none_or(|app| matches_app(&entry.info, app))
-        })
+        .filter(|entry| scope.admits(&entry.info))
         .collect();
     if captured.is_empty() {
         return Ok((Vec::new(), Vec::new()));

@@ -35,7 +35,8 @@ pub(super) fn dismiss(
 ) -> Result<Value, AppError> {
     dismiss_notification::execute(
         dismiss_notification::DismissNotificationArgs {
-            index: notification_index(args.index)?,
+            index: args.index.map(notification_index).transpose()?,
+            key: args.key,
             app: args.app,
             expected_app: args.expected_app,
             expected_title: args.expected_title,
@@ -65,6 +66,7 @@ pub(super) fn action(
     notification_action::execute(
         notification_action::NotificationActionArgs {
             index: notification_index(args.index)?,
+            key: args.key,
             action: args.action,
             expected_app: args.expected_app,
             expected_title: args.expected_title,
@@ -92,7 +94,8 @@ mod tests {
     fn dismiss_notification_rejects_zero_index_before_adapter() {
         let err = dismiss(
             DismissNotificationCliArgs {
-                index: 0,
+                index: Some(0),
+                key: None,
                 app: None,
                 expected_app: None,
                 expected_title: None,
@@ -111,6 +114,7 @@ mod tests {
             NotificationActionCliArgs {
                 index: 0,
                 action: "Reply".into(),
+                key: None,
                 expected_app: None,
                 expected_title: None,
             },

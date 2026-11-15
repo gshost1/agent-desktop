@@ -75,13 +75,15 @@ impl Cause {
     pub(crate) fn suggestion(self) -> &'static str {
         match self {
             Self::ActivationNotGranted => {
-                "The window manager granted no activation and no cause could be read; close any overview or lock screen, then retry, or focus the window yourself"
+                "The window manager granted no activation and no cause could be read; close any overview or lock screen, or focus the window yourself, and read 'list-windows' before you focus it again"
             }
-            Self::OverviewOpen => "Close the Activities Overview (press Escape), then retry",
+            Self::OverviewOpen => {
+                "Close the Activities Overview (press Escape), then read 'list-windows' before you focus the window again"
+            }
             Self::WaylandSession | Self::NoDisplay | Self::NoWindowManager => {
                 "Run the desktop session on X11 with a window manager, or focus the window yourself"
             }
-            _ => "Run 'list-windows' to confirm the window, then retry",
+            _ => "Run 'list-windows' to confirm the window before you focus it again",
         }
     }
 }
@@ -90,15 +92,15 @@ fn manager_hint(manager: &str) -> String {
     let lower = manager.to_ascii_lowercase();
     if lower.contains("openbox") {
         format!(
-            "{manager} lists minimized windows in the client list menu on a middle click of the desktop; choose the window there, then retry"
+            "{manager} lists minimized windows in the client list menu on a middle click of the desktop; choose the window there, and read 'list-windows' before you focus it again"
         )
     } else if lower.contains("gnome") || lower.contains("mutter") {
         format!(
-            "{manager} shows minimized windows in the Activities Overview; choose the window there, then retry"
+            "{manager} shows minimized windows in the Activities Overview; choose the window there, and read 'list-windows' before you focus it again"
         )
     } else {
         format!(
-            "{manager} did not bring the window back; bring it back through {manager}, then retry"
+            "{manager} did not bring the window back; bring it back through {manager}, and read 'list-windows' before you focus it again"
         )
     }
 }
@@ -135,7 +137,9 @@ pub(crate) fn modal_refusal(dialog: &str) -> AdapterError {
         ErrorCode::ActionFailed,
         format!("{} named '{dialog}'", Cause::BlockedByModalDialog.message()),
     )
-    .with_suggestion(format!("Answer or close the dialog '{dialog}', then retry"))
+    .with_suggestion(format!(
+        "Answer or close the dialog '{dialog}', then read 'list-windows' before you focus the window again"
+    ))
     .with_details(json!({
         "physical_delivery_started": false,
         "cause": Cause::BlockedByModalDialog.as_str(),

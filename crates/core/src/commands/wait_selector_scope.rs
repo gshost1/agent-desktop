@@ -7,9 +7,10 @@
 //! windows its process opened since the action, and every window of the
 //! process once two reads in a row found the ref's window closed. A ref on an
 //! application surface, such as a menu bar item, reads that surface, then the
-//! process's focused window and the windows opened since the action. A sheet,
-//! alert or popover is not part of its window's tree, so a read no window
-//! satisfies goes on to the overlays the process has open. A process
+//! process's focused window, or its front window when none is focused, and
+//! the windows opened since the action. A sheet, alert or popover is not part
+//! of its window's tree, so a read no window satisfies goes on to the
+//! overlays open on the process's windows. A process
 //! that exited or crashed can show nothing more, so the wait ends at once; one
 //! whose reads keep failing ends only once the platform's own process check
 //! says it is unresponsive.
@@ -27,9 +28,17 @@ use crate::{
     wait::{
         ref_wait::RefWait,
         unresponsive_spell::UnresponsiveSpell,
-        window_baseline::{WINDOW_BASELINE_BUDGET, WindowBaseline, process_windows},
+        window_baseline::{self, WINDOW_BASELINE_BUDGET, process_windows},
     },
 };
+
+#[path = "wait_selector_reads.rs"]
+mod reads;
+use reads::{Unmatched, observe_each, observe_owner, read_overlays};
+
+/// A read of the poll's window phase: `Some` where it matched, `None` where
+/// nothing did, with what it saw recorded in the poll's [`Unmatched`].
+type WindowPhase = Result<Option<Matched>, AppError>;
 
 const TARGET_GONE: &str = "wait_target_gone";
 const OWNER_UNRESPONSIVE: &str = "wait_owner_unresponsive";
@@ -38,14 +47,11 @@ const PROCESS_STATE_BUDGET: Duration = Duration::from_secs(1);
 
 /// One read of the wait: `Some((matches, owner))` for a complete read, with
 /// the owner and surface that matched, or `None` for an incomplete one.
-pub(crate) type Observed =
-    Result<Option<(bool, Option<(SnapshotOwner, SnapshotSurface)>)>, AppError>;
+pub(crate) type Observed = Result<Option<(bool, Matched)>, AppError>;
 
-const OVERLAY_SURFACES: [SnapshotSurface; 3] = [
-    SnapshotSurface::Sheet,
-    SnapshotSurface::Alert,
-    SnapshotSurface::Popover,
-];
+/// Where a read matched: the owner and surface, or `None` for the ref's own
+/// application surface.
+pub(crate) type Matched = Option<(SnapshotOwner, SnapshotSurface)>;
 
 /// The scope an appear wait follows from a window-owned ref, and what it
 /// remembers between reads.
@@ -94,17 +100,21 @@ impl<'a> FollowedScope<'a> {
         (query, query_raw): (&LocatorQuery, &str),
         deadline: Deadline,
     ) -> Observed {
-        let observed = if adapter.is_application_surface(self.target.entry.source.source_surface) {
-            self.read_application_ref(adapter, (query, query_raw), deadline)?
+        let mut unmatched = Unmatched::new();
+        let found = if adapter.is_application_surface(self.target.entry.source.source_surface) {
+            self.read_application_ref(adapter, (query, query_raw), deadline, &mut unmatched)?
         } else {
-            self.read_windows(adapter, (query, query_raw), deadline)?
+            self.read_windows(adapter, (query, query_raw), deadline, &mut unmatched)?
         };
-        if matches!(observed, Some((true, _))) {
-            return Ok(observed);
+        if let Some(found) = found {
+            return Ok(Some((true, found)));
         }
-        Ok(read_overlays(adapter, self.target.entry, query, deadline)
-            .map(|found| Some((true, Some(found))))
-            .unwrap_or(observed))
+        if let Some(found) =
+            read_overlays(adapter, self.target.entry, query, deadline, &mut unmatched)
+        {
+            return Ok(Some((true, Some(found))));
+        }
+        unmatched.finish()
     }
 
     /// Reads the ref's own application surface, then the windows its command
@@ -114,62 +124,68 @@ impl<'a> FollowedScope<'a> {
         adapter: &dyn PlatformAdapter,
         (query, query_raw): (&LocatorQuery, &str),
         deadline: Deadline,
-    ) -> Observed {
-        let own_complete =
-            match SelectorObservation::observe_ref(adapter, self.target.entry, query, deadline) {
-                Ok(SelectorObservation::Selector {
-                    matches: true,
-                    complete: true,
-                }) => return Ok(Some((true, None))),
-                Ok(SelectorObservation::Selector { complete, .. }) => complete,
-                Ok(SelectorObservation::OwnerUnavailable(
-                    state @ (ProcessState::Exited { .. } | ProcessState::Crashed { .. }),
-                )) => return Err(process_gone(query_raw, state, deadline)),
-                Ok(SelectorObservation::OwnerUnavailable(state)) => {
-                    return Err(super::owner_unavailable(state));
-                }
-                Err(error) => closed_meanwhile(&error) || is_surface_absent(&error),
-            };
-        let windows = self
-            .target
-            .baseline
-            .and_then(|baseline| {
-                baseline
-                    .acted_on(adapter, deadline.capped(WINDOW_BASELINE_BUDGET))
-                    .ok()
-            })
-            .unwrap_or_default()
-            .into_iter()
-            .map(SnapshotOwner::Window)
-            .collect();
-        observe_each(adapter, windows, query, deadline, own_complete)
+        unmatched: &mut Unmatched,
+    ) -> WindowPhase {
+        match SelectorObservation::observe_ref(adapter, self.target.entry, query, deadline) {
+            Ok(SelectorObservation::Selector {
+                matches: true,
+                complete: true,
+            }) => return Ok(Some(None)),
+            Ok(SelectorObservation::Selector { complete, .. }) => unmatched.record_read(complete),
+            Ok(SelectorObservation::OwnerUnavailable(
+                state @ (ProcessState::Exited { .. } | ProcessState::Crashed { .. }),
+            )) => return Err(process_gone(query_raw, state, deadline)),
+            Ok(SelectorObservation::OwnerUnavailable(state)) => {
+                return Err(super::owner_unavailable(state));
+            }
+            Err(error) => unmatched.record_error(error),
+        }
+        let budget = deadline.capped(WINDOW_BASELINE_BUDGET);
+        let windows = unmatched.listed(match self.target.baseline {
+            Some(baseline) => baseline.acted_on(adapter, budget),
+            None => window_baseline::acted_on_without_baseline(adapter, self.target.entry, budget),
+        });
+        Ok(observe_each(adapter, windows, query, deadline, unmatched))
     }
 
+    /// Reads the ref's own window, then the windows opened since the action.
+    /// An own window the application cannot read is kept for the end of the
+    /// poll, so a window it opened can still match; any other failed read of
+    /// it ends the poll as before.
     fn read_windows(
         &mut self,
         adapter: &dyn PlatformAdapter,
         (query, query_raw): (&LocatorQuery, &str),
         deadline: Deadline,
-    ) -> Observed {
+        unmatched: &mut Unmatched,
+    ) -> WindowPhase {
         match surface_target::resolve_ref_owner(adapter, self.target.entry, deadline)? {
             RefOwnerObservation::Present(owner) => {
                 self.absent_reads = 0;
-                let (matched, complete) = observe_owner(adapter, &owner, query, deadline)?;
-                if matched {
-                    return Ok(Some((true, Some((owner, SnapshotSurface::Window)))));
+                match observe_owner(adapter, &owner, query, deadline) {
+                    Ok((true, _)) => return Ok(Some(Some((owner, SnapshotSurface::Window)))),
+                    Ok((false, complete)) => unmatched.record_read(complete),
+                    Err(error) => unmatched.keep_unreadable(error)?,
                 }
-                let opened = opened_windows(adapter, self.target.baseline, deadline);
-                observe_each(adapter, opened, query, deadline, complete)
+                let opened = match self.target.baseline {
+                    Some(baseline) => unmatched.listed(
+                        baseline.opened_since(adapter, deadline.capped(WINDOW_BASELINE_BUDGET)),
+                    ),
+                    None => Vec::new(),
+                };
+                Ok(observe_each(adapter, opened, query, deadline, unmatched))
             }
             RefOwnerObservation::Absent(None) => {
                 self.absent_reads = self.absent_reads.saturating_add(1);
                 if self.absent_reads < ABSENT_READS_BEFORE_WIDENING {
-                    return Ok(Some((false, None)));
+                    return Ok(None);
                 }
-                match every_window(adapter, self.target.entry, deadline) {
-                    Some(owners) => observe_each(adapter, owners, query, deadline, true),
-                    None => Ok(None),
-                }
+                Ok(every_window(
+                    adapter,
+                    self.target.entry,
+                    (query, deadline),
+                    unmatched,
+                ))
             }
             RefOwnerObservation::Absent(Some(state)) => {
                 Err(process_gone(query_raw, state, deadline))
@@ -179,117 +195,25 @@ impl<'a> FollowedScope<'a> {
     }
 }
 
-/// `(matched, complete)` for one owner; a match counts only from a complete
-/// read.
-fn observe_owner(
-    adapter: &dyn PlatformAdapter,
-    owner: &SnapshotOwner,
-    query: &LocatorQuery,
-    deadline: Deadline,
-) -> Result<(bool, bool), AppError> {
-    let observed = SelectorObservation::observe_owners(
-        adapter,
-        vec![owner.clone()],
-        SnapshotSurface::Window,
-        query,
-        deadline,
-    )?;
-    Ok(match observed {
-        SelectorObservation::Selector { matches, complete } => (matches && complete, complete),
-        SelectorObservation::OwnerUnavailable(_) => (false, false),
-    })
-}
-
-fn observe_each(
-    adapter: &dyn PlatformAdapter,
-    owners: Vec<SnapshotOwner>,
-    query: &LocatorQuery,
-    deadline: Deadline,
-    mut complete: bool,
-) -> Observed {
-    for owner in owners {
-        match observe_owner(adapter, &owner, query, deadline) {
-            Ok((true, _)) => return Ok(Some((true, Some((owner, SnapshotSurface::Window))))),
-            Ok((false, read)) => complete &= read,
-            Err(error) => complete &= closed_meanwhile(&error),
-        }
-    }
-    Ok(complete.then_some((false, None)))
-}
-
-fn opened_windows(
-    adapter: &dyn PlatformAdapter,
-    baseline: Option<&WindowBaseline>,
-    deadline: Deadline,
-) -> Vec<SnapshotOwner> {
-    baseline
-        .and_then(|baseline| {
-            baseline
-                .opened_since(adapter, deadline.capped(WINDOW_BASELINE_BUDGET))
-                .ok()
-        })
-        .unwrap_or_default()
-        .into_iter()
-        .map(SnapshotOwner::Window)
-        .collect()
-}
-
+/// Every window of the ref's process instance, once its own window closed.
 fn every_window(
     adapter: &dyn PlatformAdapter,
     entry: &RefEntry,
-    deadline: Deadline,
-) -> Option<Vec<SnapshotOwner>> {
-    let app = entry.source.source_app.as_deref()?;
-    let process = entry.process.identity()?;
-    let windows = process_windows(
+    (query, deadline): (&LocatorQuery, Deadline),
+    unmatched: &mut Unmatched,
+) -> Option<Matched> {
+    let (Some(app), Some(process)) = (entry.source.source_app.as_deref(), entry.process.identity())
+    else {
+        unmatched.record_read(false);
+        return None;
+    };
+    let windows = unmatched.listed(process_windows(
         adapter,
         app,
         &process,
         deadline.capped(WINDOW_BASELINE_BUDGET),
-    )
-    .ok()?;
-    Some(windows.into_iter().map(SnapshotOwner::Window).collect())
-}
-
-/// The first sheet, alert or popover of the ref's application that holds the
-/// selector, read through each surface the platform supports.
-fn read_overlays(
-    adapter: &dyn PlatformAdapter,
-    entry: &RefEntry,
-    query: &LocatorQuery,
-    deadline: Deadline,
-) -> Option<(SnapshotOwner, SnapshotSurface)> {
-    let app = entry.source.source_app.as_deref()?;
-    OVERLAY_SURFACES.into_iter().find_map(|surface| {
-        adapter.check_surface_support(surface).ok()?;
-        let owners =
-            surface_target::resolve_owners(adapter, Some(app), None, surface, deadline).ok()?;
-        let owner = owners.first().cloned()?;
-        match SelectorObservation::observe_owners(adapter, owners, surface, query, deadline) {
-            Ok(SelectorObservation::Selector {
-                matches: true,
-                complete: true,
-            }) => Some((owner, surface)),
-            _ => None,
-        }
-    })
-}
-
-fn is_surface_absent(error: &AppError) -> bool {
-    matches!(
-        error,
-        AppError::Adapter(error) if error.details.as_ref().is_some_and(|details| {
-            details["kind"] == "surface_absent" || details["kind"] == "menu_closed"
-        })
-    )
-}
-
-fn closed_meanwhile(error: &AppError) -> bool {
-    matches!(
-        error,
-        AppError::Adapter(error)
-            if matches!(error.code, ErrorCode::WindowNotFound | ErrorCode::ElementNotFound)
-    )
+    ));
+    observe_each(adapter, windows, query, deadline, unmatched)
 }
 
 fn read_unresponsive(observed: &Observed) -> bool {
@@ -375,3 +299,7 @@ fn owner_unresponsive(
 #[cfg(test)]
 #[path = "wait_selector_scope_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "wait_selector_owner_tests.rs"]
+mod owner_tests;

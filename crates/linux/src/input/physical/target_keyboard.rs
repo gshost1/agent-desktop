@@ -117,7 +117,7 @@ fn worded_for(
     } else {
         (
             "The target application's active window could not be confirmed and focus changes are not allowed, so no key was sent",
-            "Retry with --headed so the target can be activated first, or bring the target to the front yourself",
+            "Bring the target to the front yourself and retry, or, if the user allows physical input, retry with --headed so the target can be activated first",
         )
     };
     error.message = message.to_owned();

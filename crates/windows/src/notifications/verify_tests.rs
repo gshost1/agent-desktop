@@ -160,6 +160,11 @@ fn a_surviving_dismiss_is_action_failed_and_delivered_unverified() {
     assert_eq!(error.code, ErrorCode::ActionFailed);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     assert!(error.message.contains("index 3"));
+    let suggestion = error.suggestion.as_deref().expect("a suggestion");
+    assert!(
+        suggestion.starts_with("Run list-notifications before deciding"),
+        "{suggestion}"
+    );
     assert!(
         !error.is_explicitly_retryable(),
         "the disposition is the retry contract: a delivered-unverified envelope serializes \

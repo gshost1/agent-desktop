@@ -2,13 +2,14 @@ use std::cell::Cell;
 use std::time::Duration;
 
 use agent_desktop_core::{
-    AdapterError, Deadline, ErrorCode, InteractionPolicy, WindowInfo, WindowState,
+    AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionPolicy, WindowInfo,
+    WindowState,
 };
 
 use crate::system::shell::kinds::ShellKind;
 use crate::system::shell::light::Light;
 use crate::system::shell::located::Located;
-use crate::system::shell::open::{Opened, Surface, open_with, showing_of};
+use crate::system::shell::open::{Opened, Surface, close_with, open_with, showing_of};
 use crate::tree::AtspiElement;
 
 struct World {
@@ -200,6 +201,53 @@ fn an_open_that_never_shows_is_a_timeout_after_the_click_was_sent() {
         error.details.expect("details")["physical_delivery_started"],
         true
     );
+    assert_eq!(world.presses(), 1);
+}
+
+fn assert_reads_before_pressing_again(error: &AdapterError) {
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let suggestion = error.suggestion.as_deref().expect("a suggestion");
+    assert!(
+        suggestion.contains("before you open or close it again"),
+        "{suggestion}"
+    );
+}
+
+#[test]
+fn an_open_that_never_shows_after_the_click_is_not_safe_to_repeat() {
+    let mut world = World::closed();
+    world.opens_on_press = false;
+    let error = open_standard(&world).expect_err("the surface never shows");
+
+    assert_reads_before_pressing_again(&error);
+}
+
+#[test]
+fn a_window_read_that_fails_after_the_click_is_not_safe_to_repeat() {
+    let mut world = World::closed();
+    world.window_fails = true;
+    let error = open_standard(&world).expect_err("window info failed");
+
+    assert_reads_before_pressing_again(&error);
+}
+
+#[test]
+fn a_window_read_that_fails_on_an_adopted_surface_keeps_its_own_disposition() {
+    let mut world = World::open();
+    world.window_fails = true;
+    let error = open_standard(&world).expect_err("window info failed");
+
+    assert_eq!(error.disposition, DeliverySemantics::unknown());
+    assert_eq!(world.presses(), 0);
+}
+
+#[test]
+fn a_close_that_never_hides_after_the_click_is_not_safe_to_repeat() {
+    let world = World::open();
+    let error =
+        close_with(&world, ShellKind::MessageList, deadline(60)).expect_err("the surface stays up");
+
+    assert_reads_before_pressing_again(&error);
     assert_eq!(world.presses(), 1);
 }
 

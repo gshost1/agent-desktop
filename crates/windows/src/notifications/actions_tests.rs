@@ -1,8 +1,10 @@
-use agent_desktop_core::{ErrorCode, InteractionPolicy, NotificationIdentity, NotificationInfo};
+use agent_desktop_core::{
+    ErrorCode, InteractionPolicy, NotificationIdentity, NotificationInfo, NotificationTarget,
+};
 
 use super::{
-    dismiss_all_failures, is_sole_target, require_foreground_policy, unknown_action_error,
-    verify_notification_identity,
+    dismiss_all_failures, is_sole_target, require_foreground_policy, take_target,
+    unknown_action_error,
 };
 
 fn info(app: &str, title: &str) -> NotificationInfo {
@@ -13,55 +15,6 @@ fn info(app: &str, title: &str) -> NotificationInfo {
         body: None,
         actions: Vec::new(),
     }
-}
-
-#[test]
-fn an_empty_identity_defers_to_the_index() {
-    let identity = NotificationIdentity::default();
-
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Reminder")).is_ok());
-    assert!(verify_notification_identity(1, None, &info("App A", "Reminder")).is_ok());
-}
-
-#[test]
-fn a_matching_identity_is_accepted() {
-    let identity = NotificationIdentity {
-        expected_app: Some("App A".into()),
-        expected_title: Some("Reminder".into()),
-    };
-
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Reminder")).is_ok());
-}
-
-#[test]
-fn a_mismatched_identity_is_notification_not_found_and_names_only_the_index() {
-    let identity = NotificationIdentity {
-        expected_app: Some("App A".into()),
-        expected_title: Some("Reminder".into()),
-    };
-
-    let error =
-        verify_notification_identity(2, Some(&identity), &info("App B", "Moved in underneath"))
-            .expect_err("the surface reordered under the caller");
-
-    assert_eq!(error.code, ErrorCode::NotificationNotFound);
-    assert!(error.message.contains("index 2"));
-    assert!(
-        !error.message.contains("App B"),
-        "the mismatch message is built from the index alone and must never carry the entry that actually sits there"
-    );
-    assert!(!error.message.contains("Moved in underneath"));
-}
-
-#[test]
-fn a_title_only_identity_is_verified_against_the_title() {
-    let identity = NotificationIdentity {
-        expected_app: None,
-        expected_title: Some("Reminder".into()),
-    };
-
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Reminder")).is_ok());
-    assert!(verify_notification_identity(1, Some(&identity), &info("App A", "Other")).is_err());
 }
 
 #[test]
@@ -184,14 +137,16 @@ fn the_dismiss_reaches_the_windows_override_not_the_trait_default() {
     let adapter = crate::adapter::WindowsAdapter::new();
     let lease = InteractionLease::guarded(Deadline::detached_after(5_000).expect("deadline"), ())
         .expect("lease");
-    let identity = NotificationIdentity::default();
+    let identity = NotificationIdentity {
+        expected_app: Some("App A".into()),
+        expected_title: None,
+    };
+    let target = NotificationTarget::new(Some(1), None, identity).expect("target");
 
     let error = SystemOps::dismiss_notification(
         &adapter,
         DismissNotificationRequest {
-            index: 1,
-            app_filter: None,
-            identity: &identity,
+            target: &target,
             policy: InteractionPolicy::headless(),
         },
         &lease,
@@ -202,5 +157,51 @@ fn the_dismiss_reaches_the_windows_override_not_the_trait_default() {
         error.code,
         ErrorCode::PolicyDenied,
         "the trait default would answer PLATFORM_NOT_SUPPORTED instead"
+    );
+}
+
+fn shifted_twins() -> (Vec<NotificationInfo>, String, Vec<NotificationInfo>) {
+    let before = vec![entry(1, "App A", "Ping"), entry(2, "App A", "Ping")];
+    let oldest_key = agent_desktop_core::notification_keys(&before)[1].clone();
+    let after = vec![
+        entry(1, "App A", "Ping"),
+        entry(2, "App A", "Ping"),
+        entry(3, "App A", "Ping"),
+    ];
+    (before, oldest_key, after)
+}
+
+#[test]
+fn a_key_follows_its_entry_after_an_identical_newcomer_shifts_the_list() {
+    let (_, oldest_key, after) = shifted_twins();
+    let target = NotificationTarget::new(None, Some(&oldest_key), NotificationIdentity::default())
+        .expect("target");
+
+    let taken = take_target(&target, after, |info| info).expect("the keyed entry is taken");
+
+    assert_eq!(
+        taken.index, 3,
+        "the oldest twin sat at 2 when listed and moved to 3; index 2 now holds a newer twin"
+    );
+}
+
+#[test]
+fn a_key_pinned_to_its_old_index_after_a_shift_is_refused_not_delivered() {
+    let (before, oldest_key, after) = shifted_twins();
+    let listed_at = before.len();
+    let identity = NotificationIdentity {
+        expected_app: Some("App A".into()),
+        expected_title: Some("Ping".into()),
+    };
+    let target =
+        NotificationTarget::new(Some(listed_at), Some(&oldest_key), identity).expect("target");
+
+    let error = take_target(&target, after, |info| info)
+        .expect_err("index 2 now holds a different same-app twin");
+
+    assert_eq!(error.code, ErrorCode::NotificationNotFound);
+    assert_eq!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::not_delivered()
     );
 }

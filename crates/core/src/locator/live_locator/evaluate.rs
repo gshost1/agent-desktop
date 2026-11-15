@@ -6,7 +6,7 @@ use super::{
     match_verdict::MatchVerdict,
     materialize::{materialize_refmap, ref_entry},
     predicate::{normalize_query, self_text_verdict, self_verdict},
-    select::{match_data, selected_indices},
+    select::{is_exact_name, match_data, selected_indices},
     selection_completeness::first_is_authoritative,
     validate::{validate_query, validate_request},
 };
@@ -83,7 +83,14 @@ pub(super) fn evaluate_locator_tree_in(
         }
     }
     stats.evaluation.matched_nodes = matched_indices.len() as u64;
-    let (selected, truncated) = selected_indices(&matched_indices, request.selection);
+    let (selected, truncated) = selected_indices(&matched_indices, request.selection, |index| {
+        tree.nodes.get(index).is_some_and(|node| {
+            is_exact_name(
+                &normalized,
+                &node.evidence.display_name().unwrap_or_default(),
+            )
+        })
+    });
     let mut complete = tree.structurally_complete && !unknown;
     let refmap = match request.materialization {
         LocatorMaterialization::None => None,

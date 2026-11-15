@@ -168,7 +168,9 @@ fn restore_refused_while_the_overview_is_open_names_the_overview_as_the_cause() 
     assert!(error.message.contains("GNOME Shell"));
     assert_eq!(
         error.suggestion.as_deref(),
-        Some("Close the Activities Overview (press Escape), then retry")
+        Some(
+            "Close the Activities Overview (press Escape), then read the window with 'list-windows' before you restore it again: the request was sent and can still show it"
+        )
     );
     assert_eq!(error.details.expect("details")["manager"], "GNOME Shell");
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());

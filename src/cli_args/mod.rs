@@ -135,7 +135,10 @@ pub(crate) struct FindFilterArgs {
     pub name: Option<String>,
     #[arg(long, help = "Match by current value")]
     pub value: Option<String>,
-    #[arg(long, help = "Match by text in name, value, title, or description")]
+    #[arg(
+        long,
+        help = "Match by text in name, value, title, or description; ancestors whose subtree holds the text match too"
+    )]
     pub text: Option<String>,
     #[arg(long, help = "Match by accessible description")]
     pub description: Option<String>,

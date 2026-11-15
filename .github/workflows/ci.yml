@@ -116,6 +116,9 @@ jobs:
       - name: Enforce the stale_ref constructors take only ref ids
         run: scripts/check-stale-ref-constructor-misuse.sh
 
+      - name: Enforce no retry advice on delivered errors
+        run: scripts/check-retry-advice.sh
+
       - name: Clippy
         run: cargo clippy --locked -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web --all-targets -- -D warnings
 

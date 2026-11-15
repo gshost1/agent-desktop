@@ -6,3 +6,4 @@ pub(crate) mod shell_surface_immersive;
 pub(crate) mod shell_surface_kinds;
 pub(crate) mod shell_surface_open;
 pub(crate) mod shell_surface_raise;
+pub(crate) mod shell_surface_refusal;
