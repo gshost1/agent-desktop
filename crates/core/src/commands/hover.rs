@@ -94,11 +94,7 @@ pub fn execute(
         })
     })?;
     let baseline = resolved.source_entry.as_ref().and_then(|entry| {
-        crate::wait::window_baseline::WindowBaseline::before_action(
-            adapter,
-            entry,
-            context.wait_selector(),
-        )
+        crate::wait::window_baseline::WindowBaseline::before_action(adapter, entry, context)
     });
     let result = crate::cursor_overlay::dispatch_mouse_event_with_cursor(
         adapter,

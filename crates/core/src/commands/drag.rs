@@ -148,11 +148,7 @@ pub fn execute(
         WaitForScope::From => from.source_entry.as_ref().or(to.source_entry.as_ref()),
     };
     let baseline = wait_entry.and_then(|entry| {
-        crate::wait::window_baseline::WindowBaseline::before_action(
-            adapter,
-            entry,
-            context.wait_selector(),
-        )
+        crate::wait::window_baseline::WindowBaseline::before_action(adapter, entry, context)
     });
     crate::cursor_overlay::submit_travel(adapter, context, from.point.clone(), &lease, false);
     let drag_tracking = crate::cursor_overlay::submit_drag(

@@ -1,4 +1,4 @@
-use crate::wait::{unresponsive_spell::UnresponsiveSpell, window_baseline::WindowBaseline};
+use crate::wait::{ref_wait::RefWait, window_baseline::WindowBaseline};
 use crate::{
     AppError, ErrorCode,
     adapter::{PlatformAdapter, TreeOptions},
@@ -10,7 +10,7 @@ use crate::{
     system::process_state::ProcessState,
     trace::trace_artifacts,
 };
-use scope::RefWait;
+use scope::FollowedScope;
 use serde_json::{Value, json};
 
 #[path = "wait_selector_scope.rs"]
@@ -33,20 +33,7 @@ pub fn execute(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    execute_with_ref(input, None, adapter, context)
-}
-
-pub(crate) fn execute_with_ref(
-    input: WaitSelectorInput,
-    entry: Option<&crate::RefEntry>,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    let target = entry.map(|entry| RefWait {
-        entry,
-        baseline: None,
-    });
-    execute_for_target(input, target, adapter, context)
+    execute_for_target(input, None, adapter, context)
 }
 
 /// Waits after an action on a ref, following it into the windows its process
@@ -72,12 +59,13 @@ fn execute_for_target(
     if let Some(entry) = entry {
         input.opts.surface = snapshot::surface_target::ref_observation_surface(adapter, entry);
     }
-    let following = target.filter(|target| target.follows(adapter, input.gone));
+    let mut following = target
+        .filter(|target| target.follows(adapter, input.gone))
+        .map(FollowedScope::new);
 
     let deadline = crate::Deadline::at(crate::wait::deadline::now(), input.timeout_ms)?;
     let mut last_error = None;
     let mut last_built = None;
-    let mut unresponsive = UnresponsiveSpell::default();
     let result = poll_selector(
         adapter,
         crate::SignalFilter {
@@ -86,26 +74,11 @@ fn execute_for_target(
         },
         deadline,
         |poll_deadline| {
-            let observed = match following {
-                Some(target) => scope::observe_followed(
-                    adapter,
-                    target,
-                    (&query, &input.query_raw),
-                    poll_deadline,
-                ),
+            let observed = match following.as_mut() {
+                Some(scope) => scope.observe(adapter, (&query, &input.query_raw), poll_deadline),
                 None => observe_selector(adapter, &input, entry, &query, poll_deadline)
                     .map(|matches| matches.map(|matches| (matches, None))),
             };
-            if let Some(spell) = unresponsive.record(scope::observed_unresponsive(&observed))
-                && let Some(entry) = entry
-            {
-                return Err(scope::owner_unresponsive(
-                    entry,
-                    &input.query_raw,
-                    spell,
-                    deadline,
-                ));
-            }
             let completion = match observed {
                 Ok(Some((true, _))) if input.gone => None,
                 Ok(Some((true, owner))) => {

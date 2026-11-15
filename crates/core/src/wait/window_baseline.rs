@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use crate::{
-    AdapterError, Deadline, PlatformAdapter, ProcessIdentity, RefEntry, WaitSelector, WindowFilter,
-    WindowInfo,
+    AdapterError, CommandContext, Deadline, PlatformAdapter, ProcessIdentity, RefEntry,
+    WindowFilter, WindowInfo,
 };
 
 /// The longest an action spends listing its process's windows before it is
@@ -28,11 +28,10 @@ impl WindowBaseline {
     pub(crate) fn before_action(
         adapter: &dyn PlatformAdapter,
         entry: &RefEntry,
-        wait: Option<&WaitSelector>,
+        context: &CommandContext,
     ) -> Option<Self> {
-        if wait.is_none_or(|wait| wait.gone)
-            || adapter.is_application_surface(entry.source.source_surface)
-            || entry.source.is_process_owned()
+        if context.wait_selector().is_none_or(|wait| wait.gone)
+            || !crate::wait::ref_wait::follows_windows(adapter, entry)
         {
             return None;
         }

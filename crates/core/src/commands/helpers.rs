@@ -119,7 +119,7 @@ pub(crate) fn execute_ref_action_dispatching(
         super::point_resolve::require_pointer_capability(adapter)?;
     }
     let entry = load_ref_entry(&args.ref_id, context)?;
-    let baseline = WindowBaseline::before_action(adapter, &entry, context.wait_selector());
+    let baseline = std::cell::RefCell::new(None);
     let action_result = crate::ref_action::ref_action_wait::execute_with_auto_wait_and_lease(
         RefActionWaitContext {
             adapter,
@@ -128,8 +128,16 @@ pub(crate) fn execute_ref_action_dispatching(
             context,
         },
         request,
-        dispatch,
+        |target, request, lease| {
+            baseline.replace(WindowBaseline::before_action(
+                adapter,
+                target.entry,
+                context,
+            ));
+            dispatch(target, request, lease)
+        },
     );
+    let baseline = baseline.into_inner();
     let (result, lease, artifacts, lease_started) = match action_result {
         Ok(result) => result,
         Err(mut error) => {

@@ -56,12 +56,13 @@ fn unsupported_strict_resolution_does_not_fall_back_to_window_listing() {
     let _home = HomeGuard::new();
     let mut entry = crate::adapter::minimal_ref_entry("button", None);
     entry.source.source_window_id = Some("w-1".into());
-    let error = execute_with_ref(
+    let error = execute_after_action(
         WaitSelectorInput {
             timeout_ms: 30,
             ..base_input("button:Close", true)
         },
-        Some(&entry),
+        &entry,
+        None,
         &CodeErrorAdapter {
             code: ErrorCode::WindowNotFound,
         },
@@ -77,9 +78,10 @@ fn confirmed_window_absence_survives_default_process_state_capability() {
     let _home = HomeGuard::new();
     let mut entry = crate::adapter::minimal_ref_entry("button", None);
     entry.source.source_window_id = Some("closed-window".into());
-    let result = execute_with_ref(
+    let result = execute_after_action(
         base_input("button:Close", true),
-        Some(&entry),
+        &entry,
+        None,
         &StrictDiagnosticAdapter,
         &CommandContext::default(),
     )

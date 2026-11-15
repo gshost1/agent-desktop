@@ -29,6 +29,7 @@ struct ScriptedApp {
     field: (&'static str, Duration),
     exits: Duration,
     unresponsive: (Duration, Duration),
+    process_check_agrees: bool,
 }
 
 impl ScriptedApp {
@@ -39,6 +40,7 @@ impl ScriptedApp {
             field,
             exits: NEVER,
             unresponsive: (NEVER, NEVER),
+            process_check_agrees: true,
         }
     }
 
@@ -170,7 +172,7 @@ impl SystemOps for ScriptedApp {
         if self.at() >= self.exits {
             return Ok(ProcessState::Exited { code: None });
         }
-        if self.unresponsive_now() {
+        if self.unresponsive_now() && self.process_check_agrees {
             return Ok(ProcessState::Unresponsive);
         }
         Ok(ProcessState::Running)
@@ -193,14 +195,19 @@ fn entry() -> crate::RefEntry {
     entry
 }
 
-fn wait_after_action(app: &ScriptedApp, timeout_ms: u64) -> Result<Value, AppError> {
-    let entry = entry();
-    let selector = crate::WaitSelector {
+fn selector(timeout_ms: u64) -> crate::WaitSelector {
+    crate::WaitSelector {
         query_raw: ":Width".into(),
         gone: false,
         timeout_ms,
-    };
-    let baseline = WindowBaseline::before_action(app, &entry, Some(&selector));
+    }
+}
+
+fn wait_after_action(app: &ScriptedApp, timeout_ms: u64) -> Result<Value, AppError> {
+    let entry = entry();
+    let selector = selector(timeout_ms);
+    let context = CommandContext::default().with_wait_selector(Some(selector.clone()));
+    let baseline = WindowBaseline::before_action(app, &entry, &context);
     execute_after_action(
         WaitSelectorInput {
             query_raw: selector.query_raw.clone(),
@@ -348,3 +355,6 @@ fn the_default_budget_ends_an_effect_that_never_comes_at_ten_seconds() {
 fn ms(value: u64) -> Duration {
     Duration::from_millis(value)
 }
+
+#[path = "wait_selector_scope_outcome_tests.rs"]
+mod outcome_tests;
