@@ -178,7 +178,7 @@ mod imp {
             .map_err(after_delivery)
     }
 
-    pub(super) fn declined_without_delivery(error: &AdapterError) -> bool {
+    pub(crate) fn declined_without_delivery(error: &AdapterError) -> bool {
         error.code == ErrorCode::ActionNotSupported
             && matches!(
                 error.disposition,
@@ -186,7 +186,7 @@ mod imp {
             )
     }
 
-    pub(super) fn bar_at_limit(
+    pub(crate) fn bar_at_limit(
         area: &AXElement,
         direction: &Direction,
         deadline: Deadline,
@@ -343,8 +343,8 @@ mod imp {
     }
 }
 
+pub(crate) use imp::{bar_at_limit, declined_without_delivery};
 pub(crate) use imp::{scroll_into_view_impl, scroll_into_view_outcome};
-pub(super) use imp::{bar_at_limit, declined_without_delivery};
 
 #[cfg(test)]
 pub(crate) use imp::{rect_has_area, scroll_effect_observed};

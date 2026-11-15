@@ -8,6 +8,8 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "execute_by_ref",
     "find_live",
     "find_response",
+    "find_scroll",
+    "find_scroll_report",
     "helpers",
     "helpers_test_support",
     "input_hold_policy",

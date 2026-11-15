@@ -118,6 +118,6 @@ fn a_refusal_before_any_page_moved_stays_not_delivered() {
     let Err(AppError::Adapter(error)) = search(&mut list, Direction::Down, deadline()) else {
         panic!("an unsupported page ends the search");
     };
-    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(error.code, ErrorCode::PlatformNotSupported);
     assert_ne!(error.disposition, DeliverySemantics::delivered_unverified());
 }
