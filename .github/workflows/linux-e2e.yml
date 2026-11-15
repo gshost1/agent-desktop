@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            at-spi2-core dbus dbus-x11 libglib2.0-bin x11-utils xvfb fuse3 \
+            at-spi2-core dbus dbus-x11 libglib2.0-bin x11-apps x11-utils xvfb fuse3 \
             openbox xdotool wmctrl xclip \
             python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 python3-pyqt6 \
             gnome-calculator gnome-text-editor nautilus gnome-terminal gnome-control-center
