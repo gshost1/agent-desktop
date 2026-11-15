@@ -1,9 +1,16 @@
 name: linux-e2e
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions: {}
+
+concurrency:
+  group: linux-e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,13 +19,66 @@ env:
 jobs:
   linux-e2e:
     name: Linux live e2e
-    runs-on: ${{ vars.LINUX_E2E_RUNNER }}
+    # A pull request, which can come from a fork, never runs on the self-hosted runner.
+    runs-on: ${{ (github.event_name != 'pull_request' && vars.LINUX_E2E_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 90
+    # The hosted lane is non-blocking until every x11-openbox leg is green; the harness step still
+    # fails and the summary step lists each failing leg. The self-hosted lane stays blocking.
+    continue-on-error: ${{ github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Live harness (the gate exits 2 without a session)
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install the private-session tools and the GNOME and Qt apps the legs drive
+        if: ${{ github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            at-spi2-core dbus dbus-x11 libglib2.0-bin x11-apps x11-utils xvfb fuse3 \
+            openbox xdotool wmctrl xclip \
+            python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 gir1.2-gtk-4.0 python3-pyqt6 \
+            gnome-calculator gnome-text-editor nautilus gnome-terminal gnome-control-center
+          if ! command -v fusermount >/dev/null && command -v fusermount3 >/dev/null; then
+            sudo ln -s "$(command -v fusermount3)" /usr/local/bin/fusermount
+          fi
+
+      - name: Cache cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'src/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Live harness on the x11-openbox tier (the gate exits 2 without a prerequisite)
+        if: ${{ github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER }}
+        env:
+          AGENT_DESKTOP_SESSION_BASE: ${{ runner.temp }}/ad-sessions
+        run: bash tests/e2e-linux/run.sh --tier x11-openbox
+
+      - name: Write the harness summary
+        if: ${{ always() && (github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER) }}
+        run: python3 -I tests/e2e-linux/runner/step_summary.py "$RUNNER_TEMP"/ad-sessions/e2e-suite-*/report.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the failed suite's report and evidence
+        if: ${{ failure() && (github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-e2e-x11-openbox
+          path: |
+            ${{ runner.temp }}/ad-sessions/e2e-suite-*/report.txt
+            ${{ runner.temp }}/ad-sessions/e2e-suite-*/evidence/
+          if-no-files-found: warn
+
+      - name: Live harness, every tier (the gate exits 2 without a session)
+        if: ${{ github.event_name != 'pull_request' && vars.LINUX_E2E_RUNNER }}
         run: bash tests/e2e-linux/run.sh
+
       - name: Private session checks
         run: bash scripts/test-private-session.sh
