@@ -165,12 +165,16 @@ fn index_selection(facts: &Facts) -> bool {
         || matches!(facts.role, LIST_ITEM | PAGE_TAB) && facts.bits.has(SELECTABLE)
 }
 
-/// Whether the rules give `Select` only because the node holds a `Selection`
-/// or is a selectable row or tab: its select writes `Selection.SelectChild`
-/// by index on the node or its container, and no popup or pointer combo route
-/// stands behind the token.
+/// Whether the rules give `Select` because the node holds a `Selection` or
+/// is a selectable row or tab, whose select writes `Selection.SelectChild` by
+/// index on the node or its container. The popup and pointer combo routes
+/// never hold: both need a combo box without `Selection`.
 pub(crate) fn select_rests_on_indices(facts: &Facts) -> bool {
-    index_selection(facts) && !popup_dropdown(facts) && !pointer_combo(facts)
+    index_selection(facts)
+}
+
+pub(crate) fn holds_selection_interface(facts: &Facts) -> bool {
+    facts.advertises(SELECTION)
 }
 
 /// The tokens that need more than an action name: the text and numeric

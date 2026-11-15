@@ -1,23 +1,29 @@
 //! The capability tokens a snapshot withholds because the application's
 //! toolkit refuses their headless route. A snapshot's `available_actions`
-//! promise a headless semantic action, so a token whose only route the action
-//! path refuses before writing is not printed. Live evidence keeps the token:
-//! the action's preflight still needs it to reach a route that an explicit
-//! `--headed` request opens, such as the row click of a headed select.
+//! promise a headless semantic action, so a token whose every route the
+//! action path refuses before writing is not printed. A node read for an
+//! action is projected without this pass: its live evidence keeps `Select`,
+//! which the preflight of a `--headed select` needs to reach the row click,
+//! and a `--headed click` passes preflight without a `Click` token.
 
 use agent_desktop_core::{LocatorEvidence, LocatorField, actions::capability};
 
-use super::action_names::{names_select, unsupported_entry_activation};
-use super::capability_rules::{Facts, select_rests_on_indices};
+use super::action_names::{click_verbs, names_select, unsupported_entry_activation};
+use super::capability_rules::{Facts, holds_selection_interface, select_rests_on_indices};
 use crate::system::process::toolkit_id::ToolkitId;
-use crate::tree::properties::toolkit_trust::selection_indices_are_accessible;
-use crate::tree::{ObservedRead, RawNode};
+use crate::tree::properties::toolkit_trust::{ToolkitKind, kind, selection_indices_are_accessible};
+use crate::tree::{ObservedRead, Walk, WalkedNode};
 
 /// The toolkit a snapshot read for the application it observed, keyed by
-/// that application's bus name. A node of another application, or a
-/// snapshot whose toolkit read did not answer, keeps every token.
+/// that application's bus name. A node of another application, a toolkit
+/// that refuses none of these routes, or a snapshot whose toolkit read did
+/// not answer keeps every token.
 pub(crate) struct HeadlessRoutes {
     application: Option<(String, ToolkitId)>,
+}
+
+fn may_refuse(toolkit: &ToolkitId) -> bool {
+    kind(toolkit) == ToolkitKind::Gtk4 || !selection_indices_are_accessible(toolkit)
 }
 
 impl HeadlessRoutes {
@@ -27,31 +33,90 @@ impl HeadlessRoutes {
 
     pub(crate) fn of_application(bus_name: &str, toolkit: ToolkitId) -> Self {
         Self {
-            application: Some((bus_name.to_owned(), toolkit)),
+            application: may_refuse(&toolkit).then(|| (bus_name.to_owned(), toolkit)),
         }
     }
 
-    pub(crate) fn withhold(&self, read: &ObservedRead, evidence: &mut LocatorEvidence) {
+    /// The routes of a walk whose placement read `toolkit` from the walked
+    /// application's root.
+    pub(crate) fn of_walk(walk: &Walk<ObservedRead>, toolkit: Option<ToolkitId>) -> Self {
+        match toolkit {
+            Some(toolkit) => {
+                Self::of_application(walk.root.payload.node.element.bus_name(), toolkit)
+            }
+            None => Self::unread(),
+        }
+    }
+
+    pub(crate) fn withhold(&self, node: &WalkedNode<ObservedRead>, evidence: &mut LocatorEvidence) {
         let Some((bus_name, toolkit)) = &self.application else {
             return;
         };
-        if read.node.element.bus_name() != bus_name {
+        if node.payload.node.element.bus_name() != bus_name {
             return;
         }
-        let withheld = withheld_tokens(&read.node, toolkit);
+        let withheld = withheld_tokens(node, toolkit);
         if let LocatorField::Known(tokens) = &mut evidence.ref_evidence.available_actions {
             tokens.retain(|token| !withheld.contains(&token.as_str()));
         }
     }
 }
 
-/// The tokens of `node` whose every route the action path refuses headless on
-/// `toolkit`: `Click` of a GTK 4 entry whose only click verb is `activate`
+enum OwnRoute {
+    Offered,
+    Absent,
+    Unread,
+}
+
+fn holds_selection(node: &WalkedNode<ObservedRead>) -> bool {
+    Facts::of(&node.payload.node).is_some_and(|facts| holds_selection_interface(&facts))
+}
+
+fn own_route(node: &ObservedRead, row: bool) -> OwnRoute {
+    let Some(facts) = Facts::of(&node.node) else {
+        return OwnRoute::Unread;
+    };
+    let clicks = click_verbs(Some(facts.role));
+    let clickable = row
+        && facts
+            .names
+            .iter()
+            .any(|name| clicks.iter().any(|verb| name.eq_ignore_ascii_case(verb)));
+    match names_select(&facts) || clickable {
+        true => OwnRoute::Offered,
+        false => OwnRoute::Absent,
+    }
+}
+
+/// Whether a select on this node can still land through the action of an
+/// item below it that the search can match: an item that names a select
+/// verb, or a row (a child of a `Selection` holder) that names a click verb,
+/// the verb a select of a row falls back to. An item whose actions could not
+/// be read might offer one.
+fn an_item_offers_its_own_route(root: &WalkedNode<ObservedRead>) -> bool {
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        let rows = holds_selection(node);
+        for child in &node.children {
+            if !matches!(own_route(&child.payload, rows), OwnRoute::Absent) {
+                return true;
+            }
+            pending.push(child);
+        }
+    }
+    false
+}
+
+/// The tokens of `node` whose every headless route the action path refuses
+/// on `toolkit`: `Click` of a GTK 4 entry whose only click verb is `activate`
 /// (L41-22), and `Select` that rests on `Selection` indices the toolkit does
-/// not map to accessible children (L40-2, L41-12) with no select verb of the
-/// node's own.
-pub(crate) fn withheld_tokens(node: &RawNode, toolkit: &ToolkitId) -> Vec<&'static str> {
-    let Some(facts) = Facts::of(node) else {
+/// not map to accessible children (L40-2, L41-12), when neither the node nor
+/// an item a select on it can match offers an action of its own.
+pub(crate) fn withheld_tokens(
+    node: &WalkedNode<ObservedRead>,
+    toolkit: &ToolkitId,
+) -> Vec<&'static str> {
+    let Some(facts) = Facts::of(&node.payload.node) else {
         return Vec::new();
     };
     let mut withheld = Vec::new();
@@ -61,6 +126,7 @@ pub(crate) fn withheld_tokens(node: &RawNode, toolkit: &ToolkitId) -> Vec<&'stat
     if !selection_indices_are_accessible(toolkit)
         && select_rests_on_indices(&facts)
         && !names_select(&facts)
+        && !an_item_offers_its_own_route(node)
     {
         withheld.push(capability::SELECT);
     }

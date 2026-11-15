@@ -126,12 +126,8 @@ pub(crate) fn observe_menu(
     let displays = x11::start(|| MonitorReader.read());
     let mut walk = walk_tree(bus, &root, &limits, request.deadline)?;
     let context = popup.context.clone();
-    let routes = match place_nodes(bus, &mut walk, request.deadline)? {
-        Some(toolkit) => {
-            HeadlessRoutes::of_application(walk.root.payload.node.element.bus_name(), toolkit)
-        }
-        None => HeadlessRoutes::unread(),
-    };
+    let toolkit = place_nodes(bus, &mut walk, request.deadline)?;
+    let routes = HeadlessRoutes::of_walk(&walk, toolkit);
     let complete = walk.complete;
     let displays = match displays.finish(request.deadline.capped(std::time::Duration::ZERO)) {
         Some(Ok(monitors)) => Some(

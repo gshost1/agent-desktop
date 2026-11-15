@@ -153,7 +153,7 @@ impl Projector<'_> {
     ) -> ObservedSubtree {
         let mut evidence = self.evidence_of(&node.payload, node.in_web_document);
         visibility.append(&node.payload, &mut evidence);
-        self.routes.withhold(&node.payload, &mut evidence);
+        self.routes.withhold(&node, &mut evidence);
         let wrapper = crate::tree::walk::wrapper::classify(&node.payload).wrapper;
         let WalkedNode {
             payload,

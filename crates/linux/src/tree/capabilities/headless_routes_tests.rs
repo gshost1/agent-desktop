@@ -4,11 +4,13 @@ use super::{HeadlessRoutes, withheld_tokens};
 use crate::system::process::toolkit_id::ToolkitId;
 use crate::tree::live::test_support::{read_of, words};
 use crate::tree::observe::projection::project_node;
-use crate::tree::vocabulary::role_numbers::{COMBO_BOX, ENTRY, LIST, LIST_ITEM, PAGE_TAB};
+use crate::tree::vocabulary::role_numbers::{
+    COMBO_BOX, ENTRY, LIST, LIST_ITEM, PAGE_TAB, PUSH_BUTTON,
+};
 use crate::tree::vocabulary::state_bits::{
     CHECKABLE, EDITABLE, FOCUSABLE, HAS_POPUP, SELECTABLE, SENSITIVE,
 };
-use crate::tree::{Field, ObservedRead, WalkLimits};
+use crate::tree::{Field, ObservedRead, WalkLimits, WalkedNode};
 
 const PAGE_TAB_LIST: u32 = 38;
 const SELECTION: &str = "org.a11y.atspi.Selection";
@@ -67,9 +69,31 @@ fn list() -> ObservedRead {
     read(LIST, &[SENSITIVE], &[SELECTION], &[], 3)
 }
 
+fn leaf(payload: ObservedRead) -> WalkedNode<ObservedRead> {
+    holding(payload, Vec::new())
+}
+
+fn holding(
+    payload: ObservedRead,
+    children: Vec<WalkedNode<ObservedRead>>,
+) -> WalkedNode<ObservedRead> {
+    WalkedNode {
+        payload,
+        children,
+        truncated: false,
+        child_count: None,
+        source_index: 0,
+        in_web_document: false,
+    }
+}
+
+fn withheld(read: ObservedRead, toolkit: &ToolkitId) -> Vec<&'static str> {
+    withheld_tokens(&leaf(read), toolkit)
+}
+
 fn tokens(read: &ObservedRead, routes: &HeadlessRoutes) -> Vec<String> {
     let mut evidence = project_node(read, false, &WalkLimits::default());
-    routes.withhold(read, &mut evidence);
+    routes.withhold(&leaf(read.clone()), &mut evidence);
     match evidence.ref_evidence.available_actions {
         LocatorField::Known(tokens) => tokens,
         other => panic!("tokens unread: {other:?}"),
@@ -115,29 +139,26 @@ fn toolkits_with_index_safe_selection_keep_select() {
         toolkit("Gecko", "128"),
     ] {
         for node in [tab(), tab_list(), row(), list()] {
-            assert!(
-                withheld_tokens(&node.node, &toolkit).is_empty(),
-                "{toolkit:?}"
-            );
+            assert!(withheld(node, &toolkit).is_empty(), "{toolkit:?}");
         }
-        assert!(withheld_tokens(&entry().node, &toolkit).is_empty());
+        assert!(withheld(entry(), &toolkit).is_empty());
     }
 }
 
 #[test]
 fn a_toolkit_that_names_nothing_refuses_index_selects_as_the_action_does() {
     let unnamed = ToolkitId::default();
-    assert_eq!(withheld_tokens(&tab().node, &unnamed), vec!["Select"]);
-    assert!(withheld_tokens(&entry().node, &unnamed).is_empty());
+    assert_eq!(withheld(tab(), &unnamed), vec!["Select"]);
+    assert!(withheld(entry(), &unnamed).is_empty());
 }
 
 #[test]
 fn gtk4_routes_that_land_headless_stay_promised() {
     let gtk = gtk4();
     let own_verb = read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &["select"], 1);
-    assert!(withheld_tokens(&own_verb.node, &gtk).is_empty());
+    assert!(withheld(own_verb, &gtk).is_empty());
     let toggled_row = read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &["toggle"], 1);
-    assert!(withheld_tokens(&toggled_row.node, &gtk).is_empty());
+    assert!(withheld(toggled_row, &gtk).is_empty());
     let checkable_row = read(
         LIST_ITEM,
         &[SENSITIVE, SELECTABLE, CHECKABLE],
@@ -145,11 +166,11 @@ fn gtk4_routes_that_land_headless_stay_promised() {
         &["toggle"],
         1,
     );
-    assert_eq!(withheld_tokens(&checkable_row.node, &gtk), vec!["Select"]);
+    assert_eq!(withheld(checkable_row, &gtk), vec!["Select"]);
     let dropdown = read(COMBO_BOX, &[SENSITIVE, HAS_POPUP], &[], &[], 1);
-    assert!(withheld_tokens(&dropdown.node, &gtk).is_empty());
+    assert!(withheld(dropdown, &gtk).is_empty());
     let pointer_combo = read(COMBO_BOX, &[SENSITIVE], &[], &[], 2);
-    assert!(withheld_tokens(&pointer_combo.node, &gtk).is_empty());
+    assert!(withheld(pointer_combo, &gtk).is_empty());
     let entry_with_click = read(
         ENTRY,
         &[SENSITIVE, EDITABLE],
@@ -157,7 +178,7 @@ fn gtk4_routes_that_land_headless_stay_promised() {
         &["activate", "click"],
         0,
     );
-    assert!(withheld_tokens(&entry_with_click.node, &gtk).is_empty());
+    assert!(withheld(entry_with_click, &gtk).is_empty());
 }
 
 fn snapshot_actions(routes: &HeadlessRoutes) -> Vec<Vec<String>> {
@@ -165,7 +186,7 @@ fn snapshot_actions(routes: &HeadlessRoutes) -> Vec<Vec<String>> {
     use crate::tree::observe::projection::project_with;
     use crate::tree::{Walk, WalkCounts, WalkedNode};
     use agent_desktop_core::{ObservationSource, ObservedTree, WindowInfo, WindowState};
-    let leaf = |payload, source_index| WalkedNode {
+    let leaf_at = |payload, source_index| WalkedNode {
         payload,
         children: Vec::new(),
         truncated: false,
@@ -175,8 +196,8 @@ fn snapshot_actions(routes: &HeadlessRoutes) -> Vec<Vec<String>> {
     };
     let walk = Walk {
         root: WalkedNode {
-            children: vec![leaf(entry(), 0), leaf(tab(), 1)],
-            ..leaf(read(LIST, &[SENSITIVE], &[], &[], 2), 0)
+            children: vec![leaf_at(entry(), 0), leaf_at(tab(), 1)],
+            ..leaf_at(read(LIST, &[SENSITIVE], &[], &[], 2), 0)
         },
         complete: true,
         node_count: 3,
@@ -219,4 +240,51 @@ fn a_gtk4_snapshot_prints_only_the_tokens_a_headless_request_can_deliver() {
     let unread = snapshot_actions(&HeadlessRoutes::unread());
     assert!(unread[0].contains(&"Click".to_owned()), "{unread:?}");
     assert!(unread[1].contains(&"Select".to_owned()), "{unread:?}");
+}
+
+fn label(names: &[&str]) -> WalkedNode<ObservedRead> {
+    leaf(read(PUSH_BUTTON, &[SENSITIVE], &[], names, 0))
+}
+
+#[test]
+fn a_gtk4_container_keeps_select_when_an_item_it_can_match_acts_on_its_own() {
+    let gtk = gtk4();
+    let row_of = |names: &[&str]| {
+        holding(
+            read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], names, 1),
+            vec![label(&[])],
+        )
+    };
+    let plain = holding(list(), vec![row_of(&[]), row_of(&[])]);
+    assert_eq!(withheld_tokens(&plain, &gtk), vec!["Select"]);
+    let activatable = holding(list(), vec![row_of(&[]), row_of(&["activate"])]);
+    assert!(withheld_tokens(&activatable, &gtk).is_empty());
+    let nested_select = holding(
+        list(),
+        vec![holding(
+            read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &[], 1),
+            vec![label(&["select"])],
+        )],
+    );
+    assert!(withheld_tokens(&nested_select, &gtk).is_empty());
+    let nested_click = holding(
+        list(),
+        vec![holding(
+            read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &[], 1),
+            vec![label(&["click"])],
+        )],
+    );
+    assert_eq!(withheld_tokens(&nested_click, &gtk), vec!["Select"]);
+    let mut unread = read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &[], 1);
+    unread.node.actions = Field::Failed("timed out".into());
+    let unread_row = holding(list(), vec![leaf(unread)]);
+    assert!(withheld_tokens(&unread_row, &gtk).is_empty());
+    let clickable_label_in_row = holding(
+        read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &[], 1),
+        vec![label(&["click"])],
+    );
+    assert_eq!(
+        withheld_tokens(&clickable_label_in_row, &gtk),
+        vec!["Select"]
+    );
 }
