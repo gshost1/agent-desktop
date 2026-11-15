@@ -455,6 +455,15 @@ Earlier output synthesized a display name, falling back to `value` or
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
 
+### Match order
+
+`data.matches` lists, first, the matches whose whole name equals `--name` (after the
+same case and whitespace folding the match uses), then the matches whose name only
+contains it, each group in traversal order. An item whose title grew to hold
+another item's name, such as an Edit menu's `Undo Subscript` after a Subscript
+command, so comes after `Subscript`. `--exact` returns only whole-name matches.
+`--first`, `--last` and `--nth` count in traversal order; pass `--exact` with them.
+
 ### Which match `--first` returns
 
 `--first` returns the first match in traversal order, not in document order.

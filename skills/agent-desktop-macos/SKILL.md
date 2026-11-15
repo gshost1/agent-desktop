@@ -38,17 +38,28 @@ Run `agent-desktop permissions`. If Accessibility is denied, run `agent-desktop 
 
 ## Format the selection, then save
 
-1. Click the format's menu item: `find --app <App> --surface menubar --name "<Item>" --exact`, then `click` the ref. A shortcut such as `press cmd+b --app <App>` also runs it.
+1. Click the format's menu item: `find --app <App> --surface menubar --name "<Item>" --exact`, then `click` the ref. Always pass `--exact` here: once a format is applied, Edit > `Undo <Item>` also contains the name, and clicking it undoes your work. A shortcut such as `press cmd+b --app <App>` also runs it. Repeat steps from `select` for each occurrence, then save once.
 2. A format with no menu item, such as strikethrough in TextEdit, is in the Fonts panel. Open it with `press cmd+t --app <App>`, which toggles the panel, so check `list-windows` first. Then follow Floating panels below. In the panel, `select` `Single` on its strikethrough pop-up, or `click` the Font Attributes menu button and then `click` the `Strikethrough` item in `--surface menu`. Click that item headless: a headed `click` on a pop-up menu item outside the menu bar fails `ACTION_FAILED` before any input.
 3. Save with `press cmd+s --app <App>`. The step `AXPress menu shortcut` with `data.details.menu_shortcut.item: "Save"` ran File > Save, which writes a document that already has a file in place.
 
 ```bash
 agent-desktop snapshot --app TextEdit -i --compact --lines
+agent-desktop select @s8f3k2p9:e2 "H2O and"
+agent-desktop press left --app TextEdit
+agent-desktop press right --app TextEdit
+agent-desktop press shift+right --app TextEdit
+agent-desktop find --app TextEdit --surface menubar --name "Subscript" --exact
+agent-desktop click @s3k9d2m1:e1
+agent-desktop press cmd+s --app TextEdit
+```
+
+A format in the Fonts panel:
+
+```bash
 agent-desktop select @s8f3k2p9:e2 "The final paragraph, word for word."
 agent-desktop press cmd+t --app TextEdit
 agent-desktop list-windows --app TextEdit
 agent-desktop snapshot --window-id w-4521 -i --compact --lines
-agent-desktop press cmd+s --app TextEdit
 ```
 
 ## Floating panels
