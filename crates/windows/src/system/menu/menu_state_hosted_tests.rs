@@ -1,12 +1,12 @@
-//! Windows-only: the tool-window menu pool for a hosted application (A26-8)
-//! reads windows under the hosted identity, which credits the frame but never
-//! the frame host's own windows, so the frame host's title bar menus and
-//! popups stay out of the hosted application's menu state.
+//! Windows-only: the tool-window menu pool for a hosted application (A26-8).
+//! The hosted identity credits a hosted application with exactly one window
+//! beyond those it owns, its frame, and a frame is neither a tool window nor a
+//! popup, so the pool reads raw ownership and loses nothing: this pins that
+//! the frame and every frame host window stay out of it.
 
 use super::*;
 use crate::system::fixture::hosted_settings::stage_hosted_settings;
 use crate::system::fixture::test_support::SHELL_SURFACE_LOCK;
-use crate::system::window::frame_identity::is_window_of_process;
 use crate::tree::fixture::bootstrap;
 
 #[test]
@@ -22,7 +22,10 @@ fn a_hosted_application_menu_pool_holds_no_frame_host_window() {
     let candidates = tool_window_candidates(pid).expect("the window walk answers");
     for handle in &candidates {
         let handle = *handle as crate::system::window::window_enum::WindowHandle;
-        assert!(is_window_of_process(handle, pid));
+        assert_eq!(
+            crate::system::window::window_identity::live_window_owner(handle),
+            Some(pid)
+        );
         assert_ne!(
             crate::system::window::window_identity::live_window_owner(handle),
             Some(frame_host),

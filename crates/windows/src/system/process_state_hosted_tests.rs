@@ -27,7 +27,7 @@ fn a_hosted_application_is_probed_through_its_own_core_window() {
         !probed.contains(&frame.handle),
         "the frame's thread belongs to the frame host and never answers for the hosted application"
     );
-    let core_window = hosted_core_window_child(frame.handle);
+    let core_window = hosted_core_window_child(frame);
     assert!(
         probed.contains(&core_window),
         "the hosted CoreWindow under the frame is probed: {probed:?} lacks {core_window}"
@@ -44,20 +44,14 @@ fn a_hosted_application_is_probed_through_its_own_core_window() {
     assert_eq!(state, ProcessState::Running);
 }
 
-fn hosted_core_window_child(frame: isize) -> isize {
-    use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowExW;
-    let class: Vec<u16> = "Windows.UI.Core.CoreWindow"
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    let child = unsafe {
-        FindWindowExW(
-            frame as _,
-            std::ptr::null_mut(),
-            class.as_ptr(),
-            std::ptr::null(),
-        )
-    };
-    assert!(!child.is_null(), "the staged frame hosts a CoreWindow");
-    child as isize
+fn hosted_core_window_child(
+    frame: &crate::system::fixture::hosted_settings::HostedFrameLive,
+) -> isize {
+    let (core_window, owner) = crate::system::window::frame_identity::hosted_core_window(
+        frame.handle as _,
+        agent_desktop_core::ProcessId::from(frame.frame_host_pid),
+    )
+    .expect("the staged frame hosts a CoreWindow");
+    assert_eq!(u32::from(owner), frame.hosted_pid);
+    core_window as isize
 }

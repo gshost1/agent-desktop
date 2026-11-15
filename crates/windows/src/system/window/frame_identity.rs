@@ -35,18 +35,22 @@ const CORE_WINDOW_CLASS: &str = "Windows.UI.Core.CoreWindow";
 /// `CoreWindow` child owned by the frame's own process.
 #[cfg(target_os = "windows")]
 pub(crate) fn hosted_application_pid(handle: WindowHandle) -> Option<ProcessId> {
-    hosted_core_window(handle).map(|(_, pid)| pid)
+    let frame_pid = super::window_identity::live_window_owner(handle)?;
+    hosted_core_window(handle, frame_pid).map(|(_, pid)| pid)
 }
 
 /// The hosted application's own `CoreWindow` under an application frame host
-/// frame, with the process that owns it (A26-8). `None` under the same
-/// conditions as [`hosted_application_pid`].
+/// frame owned by `frame_pid`, with the process that owns it (A26-8). `None`
+/// under the same conditions as [`hosted_application_pid`]. The caller passes
+/// the frame's owner it already read, so one decision reads it once.
 #[cfg(target_os = "windows")]
-fn hosted_core_window(handle: WindowHandle) -> Option<(WindowHandle, ProcessId)> {
+pub(crate) fn hosted_core_window(
+    handle: WindowHandle,
+    frame_pid: ProcessId,
+) -> Option<(WindowHandle, ProcessId)> {
     if super::window_ops::window_class_name(handle)?.as_str() != FRAME_WINDOW_CLASS {
         return None;
     }
-    let frame_pid = super::window_identity::live_window_owner(handle)?;
     let core_window = foreign_owned_core_window_child(handle, frame_pid)?;
     Some((
         core_window,
@@ -65,10 +69,11 @@ fn hosted_core_window(handle: WindowHandle) -> Option<(WindowHandle, ProcessId)>
 /// application's own state.
 #[cfg(target_os = "windows")]
 pub(crate) fn window_answering_for(handle: WindowHandle, pid: ProcessId) -> Option<WindowHandle> {
-    if super::window_identity::live_window_owner(handle) == Some(pid) {
+    let owner = super::window_identity::live_window_owner(handle)?;
+    if owner == pid {
         return Some(handle);
     }
-    hosted_core_window(handle)
+    hosted_core_window(handle, owner)
         .filter(|(_, hosted)| *hosted == pid)
         .map(|(core_window, _)| core_window)
 }
@@ -93,8 +98,11 @@ pub(crate) fn hosted_application_pid(
 /// hosted application.
 #[cfg(target_os = "windows")]
 pub(crate) fn is_window_of_process(handle: WindowHandle, pid: ProcessId) -> bool {
-    super::window_identity::live_window_owner(handle) == Some(pid)
-        || hosted_application_pid(handle) == Some(pid)
+    match super::window_identity::live_window_owner(handle) {
+        Some(owner) if owner == pid => true,
+        Some(owner) => hosted_core_window(handle, owner).map(|(_, hosted)| hosted) == Some(pid),
+        None => false,
+    }
 }
 
 #[cfg(not(target_os = "windows"))]

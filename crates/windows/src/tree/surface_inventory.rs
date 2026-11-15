@@ -86,7 +86,7 @@ fn windows_of(pid: ProcessId, deadline: Deadline) -> Result<Vec<EnumeratedWindow
             }
         }
         seen += 1;
-        if is_window_of_process(window.handle, pid) && passes_filter(&window) {
+        if passes_filter(&window) && is_window_of_process(window.handle, pid) {
             windows.push(window);
         }
         true

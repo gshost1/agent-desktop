@@ -17,14 +17,18 @@ use crate::tree::fixture::bootstrap;
 fn close_app_closes_a_hosted_application_through_its_frame() {
     bootstrap();
     let _shell = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let staged = stage_hosted_settings();
-    let Some(frame) = staged.frame.as_ref() else {
+    let mut staged = stage_hosted_settings();
+    let Some((handle, hosted_pid)) = staged
+        .frame
+        .as_ref()
+        .map(|frame| (frame.handle, frame.hosted_pid))
+    else {
         return;
     };
-    let pid = ProcessId::from(frame.hosted_pid);
+    let pid = ProcessId::from(hosted_pid);
     let windows = top_level_windows_for_pid(pid).expect("the window walk answers");
     assert!(
-        windows.contains(&frame.handle),
+        windows.contains(&handle),
         "the hosted frame is a close target"
     );
     assert!(
@@ -37,7 +41,7 @@ fn close_app_closes_a_hosted_application_through_its_frame() {
         eprintln!("skip closing hosted Settings: it was open before the test staged it");
         return;
     }
-    let identity = hosted_process_identity(frame.hosted_pid);
+    let identity = hosted_process_identity(hosted_pid);
     let app = AppInfo {
         name: HOSTED_APP_IMAGE.into(),
         pid,
@@ -48,4 +52,5 @@ fn close_app_closes_a_hosted_application_through_its_frame() {
     let outcome = close_app_impl(&app, false, deadline(20_000))
         .expect("a graceful close reaches the hosted application");
     assert_eq!(outcome, CloseOutcome::Exited);
+    staged.frame = None;
 }
