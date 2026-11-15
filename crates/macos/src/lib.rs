@@ -1,5 +1,8 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+#[cfg(not(target_os = "macos"))]
+compile_error!("agent-desktop-macos only builds for macOS targets");
+
 mod actions;
 mod adapter;
 mod input;

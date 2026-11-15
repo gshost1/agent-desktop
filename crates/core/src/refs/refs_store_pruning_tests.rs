@@ -85,7 +85,6 @@ fn snapshot_pruning_preserves_trace_segments_and_refmaps() {
         store
             .save_snapshot(&snapshot_id, &map_with(&snapshot_id))
             .unwrap();
-        store.set_latest(&snapshot_id).unwrap();
     }
     store
         .save_new_snapshot(&map_with("Trigger pruning"))

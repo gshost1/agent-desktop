@@ -9,7 +9,6 @@ pub(crate) mod name_source;
 pub(crate) mod node;
 pub(crate) mod node_descriptor;
 pub(crate) mod node_identity;
-pub(crate) mod node_match_context;
 pub(crate) mod node_presentation;
 pub(crate) mod point;
 pub(crate) mod rect;

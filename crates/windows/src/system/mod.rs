@@ -12,7 +12,6 @@ pub(crate) mod fixture;
 pub(crate) mod interaction_lease;
 pub(crate) mod key_dispatch;
 pub(crate) mod launch;
-mod launch_path;
 pub(crate) mod lifecycle_envelope_parity;
 #[cfg(all(test, target_os = "windows"))]
 pub(crate) mod lifecycle_test_support;

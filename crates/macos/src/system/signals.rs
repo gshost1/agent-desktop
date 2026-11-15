@@ -4,7 +4,6 @@ use agent_desktop_core::{
 };
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
 pub(crate) fn supported_surfaces_impl() -> Vec<SnapshotSurface> {
     vec![
         SnapshotSurface::Window,
@@ -19,12 +18,6 @@ pub(crate) fn supported_surfaces_impl() -> Vec<SnapshotSurface> {
     ]
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn supported_surfaces_impl() -> Vec<SnapshotSurface> {
-    vec![SnapshotSurface::Window]
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn capture_signal_baseline_impl(
     filter: &SignalFilter,
     deadline: Instant,
@@ -49,20 +42,14 @@ pub(crate) fn capture_signal_baseline_impl(
     Ok(SignalBaseline {
         windows,
         apps,
-        surfaces,
-        completeness: SignalCompleteness::complete(),
+        surfaces: surfaces.signals,
+        completeness: SignalCompleteness {
+            surfaces: surfaces.complete,
+            ..SignalCompleteness::complete()
+        },
     })
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn capture_signal_baseline_impl(
-    _filter: &SignalFilter,
-    _deadline: Instant,
-) -> Result<SignalBaseline, AdapterError> {
-    Err(AdapterError::not_supported("capture_signal_baseline"))
-}
-
-#[cfg(target_os = "macos")]
 fn matching_apps(filter: &SignalFilter, deadline: Instant) -> Result<Vec<AppInfo>, AdapterError> {
     if let Some(name) = &filter.app {
         return crate::system::app::app_inventory::list_apps_scoped_until(name, None, deadline);
@@ -82,7 +69,6 @@ fn matching_apps(filter: &SignalFilter, deadline: Instant) -> Result<Vec<AppInfo
     Ok(filter_apps(filter, all))
 }
 
-#[cfg(target_os = "macos")]
 fn filter_apps(filter: &SignalFilter, all: Vec<AppInfo>) -> Vec<AppInfo> {
     if let Some(name) = &filter.app {
         return all
@@ -102,7 +88,6 @@ fn filter_apps(filter: &SignalFilter, all: Vec<AppInfo>) -> Vec<AppInfo> {
     all
 }
 
-#[cfg(target_os = "macos")]
 fn cap_ax_messaging(apps: &[AppInfo], deadline: Instant) -> Result<(), AdapterError> {
     for app in apps {
         remaining_before_deadline(deadline)?;
@@ -113,16 +98,26 @@ fn cap_ax_messaging(apps: &[AppInfo], deadline: Instant) -> Result<(), AdapterEr
     ensure_before_deadline(deadline)
 }
 
-#[cfg(target_os = "macos")]
+struct SurfaceCapture {
+    signals: Vec<SurfaceSignal>,
+    complete: bool,
+}
+
+/// A surface kind the adapter could not read leaves the capture incomplete, so
+/// core neither reports its surfaces as dismissed nor, once they are read
+/// again, as appeared.
 fn surfaces_for_apps(
     filter: &SignalFilter,
     apps: &[AppInfo],
     deadline: Instant,
-) -> Result<Vec<SurfaceSignal>, AdapterError> {
+) -> Result<SurfaceCapture, AdapterError> {
+    let mut capture = SurfaceCapture {
+        signals: Vec::new(),
+        complete: true,
+    };
     if filter.app.is_none() && filter.process.is_none() {
-        return Ok(Vec::new());
+        return Ok(capture);
     }
-    let mut surfaces = Vec::new();
     for app in apps {
         ensure_before_deadline(deadline)?;
         let instance = app.process_instance.as_deref().ok_or_else(|| {
@@ -131,23 +126,33 @@ fn surfaces_for_apps(
         let identity = crate::system::process::process_identity::require_core(
             &agent_desktop_core::ProcessIdentity::new(app.pid, instance),
         )?;
-        for info in crate::tree::surface_inventory::list_surfaces_for_process(identity, deadline)? {
-            if let Some(kind) = map_surface_kind(&info.kind) {
-                surfaces.push(SurfaceSignal {
-                    kind,
-                    app: app.name.clone(),
-                    pid: app.pid,
-                    process_instance: instance.to_owned(),
-                    id: info.id,
-                    title: info.title,
-                });
-            }
-        }
+        let infos = crate::tree::surface_inventory::list_surfaces_for_process(identity, deadline)?;
+        record_surfaces(&mut capture, app, instance, infos);
     }
-    Ok(surfaces)
+    Ok(capture)
 }
 
-#[cfg(target_os = "macos")]
+fn record_surfaces(
+    capture: &mut SurfaceCapture,
+    app: &AppInfo,
+    instance: &str,
+    infos: Vec<agent_desktop_core::SurfaceInfo>,
+) {
+    for info in infos {
+        capture.complete &= info.unclassified.is_empty();
+        if let Some(kind) = map_surface_kind(&info.kind) {
+            capture.signals.push(SurfaceSignal {
+                kind,
+                app: app.name.clone(),
+                pid: app.pid,
+                process_instance: instance.to_owned(),
+                id: info.id,
+                title: info.title,
+            });
+        }
+    }
+}
+
 fn map_surface_kind(raw: &str) -> Option<SnapshotSurface> {
     match raw {
         "sheet" => Some(SnapshotSurface::Sheet),
@@ -158,7 +163,6 @@ fn map_surface_kind(raw: &str) -> Option<SnapshotSurface> {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn remaining_before_deadline(deadline: Instant) -> Result<Duration, AdapterError> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
@@ -167,7 +171,6 @@ fn remaining_before_deadline(deadline: Instant) -> Result<Duration, AdapterError
     Ok(remaining)
 }
 
-#[cfg(target_os = "macos")]
 fn ensure_before_deadline(deadline: Instant) -> Result<(), AdapterError> {
     remaining_before_deadline(deadline).map(|_| ())
 }

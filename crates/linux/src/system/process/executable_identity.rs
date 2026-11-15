@@ -1,4 +1,4 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 
@@ -45,6 +45,22 @@ impl ExecutableIdentity {
         Some(Self { executable, argv })
     }
 
+    /// Whether a command written as `words` (a desktop entry's expanded
+    /// Exec, before PATH resolution) could match this running process, from
+    /// the words alone: the program's name is the invocation's name and the
+    /// arguments are equal. Every command [`Self::matches`] accepts for this
+    /// process passes, so a caller can skip resolving the ones that fail.
+    pub(crate) fn could_be_run_by(&self, words: &[String]) -> bool {
+        let (Some((program, arguments)), Some((invocation, actual_arguments))) = (
+            words.split_first(),
+            self.argv.as_deref().and_then(<[_]>::split_first),
+        ) else {
+            return false;
+        };
+        Path::new(program).file_name() == Path::new(invocation).file_name()
+            && arguments_equal(arguments.iter().map(OsStr::new), actual_arguments)
+    }
+
     pub(crate) fn matches(&self, running: &Self) -> bool {
         self.executable == running.executable
             && self.argv.as_ref().is_some_and(|argv| {
@@ -62,8 +78,15 @@ fn argv_matches(expected: &[OsString], actual: &[OsString]) -> bool {
     else {
         return false;
     };
-    arguments == actual_arguments
+    arguments_equal(arguments.iter().map(OsString::as_os_str), actual_arguments)
         && (program == invocation
             || (!invocation.as_encoded_bytes().contains(&b'/')
                 && Path::new(program).file_name() == Some(invocation.as_os_str())))
+}
+
+fn arguments_equal<'a>(
+    expected: impl ExactSizeIterator<Item = &'a OsStr>,
+    actual: &[OsString],
+) -> bool {
+    expected.len() == actual.len() && expected.zip(actual).all(|(left, right)| left == right)
 }

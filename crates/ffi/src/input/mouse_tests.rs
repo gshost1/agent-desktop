@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::AdPoint;
+use crate::types::{AdModifier, AdPoint};
 
 #[test]
 fn test_mouse_button_mapping() {
@@ -57,7 +57,10 @@ fn modifiers_from_c_rejects_null_pointer_with_positive_count() {
 fn modifiers_from_c_rejects_count_exceeding_cap() {
     let raw: [i32; 5] = [0, 1, 2, 3, 0];
     let result = unsafe { modifiers_from_c(raw.as_ptr(), 5) };
-    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        "modifier_count exceeds MAX_MOUSE_MODIFIERS (4)"
+    );
 }
 
 #[test]

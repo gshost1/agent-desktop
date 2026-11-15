@@ -1,8 +1,9 @@
-use super::{AXElement, properties::element::element_for_pid, surface_read};
+use super::{
+    AXElement, menu_search::find_menu_descendant_with, properties::element::element_for_pid,
+    surface_read,
+};
 use agent_desktop_core::{AdapterError, ErrorCode, SnapshotSurface};
 use std::time::Instant;
-
-const MAX_SURFACE_NODES: usize = 2_048;
 
 pub(crate) fn observe<T>(
     identity: crate::system::process::process_identity::ProcessIdentity,
@@ -63,7 +64,7 @@ fn reacquire_once<T>(
     }
 }
 
-fn invalidated(error: &AdapterError) -> bool {
+pub(super) fn invalidated(error: &AdapterError) -> bool {
     error
         .details
         .as_ref()
@@ -91,7 +92,6 @@ pub(super) fn require_root<T>(
     read?.ok_or_else(|| AdapterError::surface_absent(surface, message))
 }
 
-#[cfg(target_os = "macos")]
 fn menubar_for_pid(pid: i32, deadline: Instant) -> Result<Option<AXElement>, AdapterError> {
     let app = element_for_pid(pid);
     let Some(menubar) = surface_read::element(&app, "AXMenuBar", deadline)? else {
@@ -103,7 +103,6 @@ fn menubar_for_pid(pid: i32, deadline: Instant) -> Result<Option<AXElement>, Ada
     Ok(Some(menubar))
 }
 
-#[cfg(target_os = "macos")]
 fn menu_element_for_pid(pid: i32, deadline: Instant) -> Result<Option<AXElement>, AdapterError> {
     Ok(open_menus_for_pid(pid, deadline)?
         .into_iter()
@@ -162,7 +161,6 @@ fn open_menubar_menus_with<T>(
     Ok(menus)
 }
 
-#[cfg(target_os = "macos")]
 fn context_menu_from_app(
     pid: i32,
     deadline: Instant,
@@ -176,8 +174,14 @@ fn context_menu_from_app(
             return Ok(Some((format!("app/menus/{index}"), menu)));
         }
     }
-    if let Some(focused) = surface_read::element(&app, "AXFocusedUIElement", deadline)?
-        && let Some(menu) = find_menu_descendant(focused, "app/focused-element".into(), deadline)?
+    let focused = surface_read::element(&app, "AXFocusedUIElement", deadline)?;
+    if let Some(focused) = &focused
+        && let Some(menu) = find_menu_descendant(
+            focused.clone(),
+            "app/focused-element".into(),
+            deadline,
+            None,
+        )?
     {
         return Ok(Some(menu));
     }
@@ -185,33 +189,37 @@ fn context_menu_from_app(
         .into_iter()
         .enumerate()
     {
-        if let Some(menu) = find_menu_descendant(child, format!("app/children/{index}"), deadline)?
-        {
+        let source = format!("app/children/{index}");
+        if let Some(menu) = find_menu_descendant(child, source, deadline, focused.as_ref())? {
             return Ok(Some(menu));
         }
     }
     Ok(None)
 }
 
-#[cfg(target_os = "macos")]
 fn find_menu_descendant(
     root: AXElement,
     source: String,
     deadline: Instant,
+    searched: Option<&AXElement>,
 ) -> Result<Option<(String, AXElement)>, AdapterError> {
     let names = super::menu_search_node::attribute_names();
+    let inspect =
+        |element: &AXElement| match super::menu_search_node::read(element, &names, deadline)? {
+            Some(node) => Ok((node.is_menu, node.children)),
+            None => inspect_by_attribute(element, deadline),
+        };
+    let already_searched = |element: &AXElement| {
+        searched.is_some_and(|searched| super::same_element(element, searched))
+    };
     find_menu_descendant_with(
         root,
         source,
         deadline,
-        |element| match super::menu_search_node::read(element, &names, deadline)? {
-            Some(node) => Ok((node.is_menu, node.children)),
-            None => inspect_by_attribute(element, deadline),
-        },
+        super::menu_search::outside_searched(already_searched, inspect),
     )
 }
 
-#[cfg(target_os = "macos")]
 fn inspect_by_attribute(
     element: &AXElement,
     deadline: Instant,
@@ -231,49 +239,11 @@ fn inspect_by_attribute(
     ))
 }
 
-fn find_menu_descendant_with<T>(
-    root: T,
-    source: String,
-    deadline: Instant,
-    mut inspect: impl FnMut(&T) -> Result<(bool, Vec<T>), AdapterError>,
-) -> Result<Option<(String, T)>, AdapterError> {
-    let mut pending = std::collections::VecDeque::from([(source, root)]);
-    let mut incomplete = None;
-    let mut visited = 0_usize;
-    while let Some((path, element)) = pending.pop_front() {
-        surface_read::ensure_before_deadline(deadline)?;
-        visited += 1;
-        if visited > MAX_SURFACE_NODES {
-            return Err(surface_limit_error());
-        }
-        let (is_menu, children) = match inspect(&element) {
-            Ok(observed) => observed,
-            Err(error) if error.code == ErrorCode::AppUnresponsive && !invalidated(&error) => {
-                incomplete.get_or_insert(error);
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        if is_menu {
-            return Ok(Some((path, element)));
-        }
-        pending.extend(
-            children
-                .into_iter()
-                .enumerate()
-                .map(|(index, child)| (format!("{path}/children/{index}"), child)),
-        );
-    }
-    incomplete.map_or(Ok(None), Err)
-}
-
-#[cfg(target_os = "macos")]
 fn displayed_menu(element: &AXElement, deadline: Instant) -> Result<bool, AdapterError> {
     Ok(has_role(element, "AXMenu", deadline)?
         && surface_read::boolean(element, "AXVisible", deadline)? != Some(false))
 }
 
-#[cfg(target_os = "macos")]
 fn has_role(element: &AXElement, expected: &str, deadline: Instant) -> Result<bool, AdapterError> {
     Ok(surface_read::string(element, "AXRole", deadline)?.as_deref() == Some(expected))
 }
@@ -287,20 +257,6 @@ fn invalid_root_error() -> AdapterError {
         "kind": "surface_root_invalid", "surface": "menubar", "complete": false,
         "retryable": false,
     }))
-}
-
-fn surface_limit_error() -> AdapterError {
-    AdapterError::new(
-        ErrorCode::AppUnresponsive,
-        "Accessibility surface search exceeded its node budget",
-    )
-    .with_details(serde_json::json!({
-        "kind": "surface_search_limit",
-        "limit": MAX_SURFACE_NODES,
-        "complete": false,
-        "retryable": false,
-    }))
-    .with_suggestion("Retry with the target application in a more stable UI state")
 }
 
 #[cfg(test)]

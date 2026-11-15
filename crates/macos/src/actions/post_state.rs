@@ -208,13 +208,5 @@ fn hidden_state(reported: Option<bool>, canonical: &LocatorField<Vec<String>>) -
 }
 
 #[cfg(test)]
-fn normalized_role(ax_role: Option<&str>, ax_subrole: Option<&str>) -> String {
-    ax_role
-        .map(|role| crate::tree::roles::ax_role_and_subrole_to_str(role, ax_subrole))
-        .unwrap_or("unknown")
-        .to_string()
-}
-
-#[cfg(test)]
 #[path = "post_state_tests.rs"]
 mod tests;

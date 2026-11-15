@@ -6,9 +6,9 @@ use crate::{
         operation_response::operation_response,
         point_resolve::{PointResolveArgs, require_cursor_policy, require_pointer_capability},
         pointer_action::{
-            PointResolveAttempt, before_first_event, ensure_point_deadline,
-            focus_point_under_lease, point_deadline, resolve_point_under_lease,
-            retry_leased_point_phase, wait_for_point_with_deadline,
+            CommandFocus, PointResolveAttempt, before_first_event, ensure_point_deadline,
+            point_deadline, resolve_point_under_lease, retry_leased_point_phase,
+            wait_for_point_with_focus,
         },
     },
     context::CommandContext,
@@ -67,77 +67,81 @@ pub fn execute(
     };
     let auto_wait = args.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let cursor = crate::cursor_overlay::hold_cursor(context, deadline);
+    let mut focus = CommandFocus::default();
     let (from, to, lease, params) = before_first_event(|| {
-        if auto_wait {
-            wait_for_point_with_deadline(from_args, deadline, adapter, context)?;
-            wait_for_point_with_deadline(to_args, deadline, adapter, context)?;
-        }
-        let (from, to, lease) = retry_leased_point_phase(args.timeout_ms, deadline, || {
-            let lease = adapter.acquire_interaction_lease(deadline)?;
-            let focused = focus_point_under_lease(from_args, &lease, adapter, context)?;
-            let from = resolve_point_under_lease(
-                PointResolveAttempt {
-                    args: from_args,
-                    stability: None,
-                    allow_scroll: !auto_wait,
-                },
+        focus.marking(|focus| {
+            if auto_wait {
+                wait_for_point_with_focus(from_args, deadline, adapter, context, focus)?;
+                wait_for_point_with_focus(to_args, deadline, adapter, context, focus)?;
+            }
+            let (from, to, lease) =
+                retry_leased_point_phase(args.timeout_ms, deadline, focus, |focus| {
+                    let lease = adapter.acquire_interaction_lease(deadline)?;
+                    let focused = focus.run(from_args, &lease, adapter, context)?;
+                    let from = resolve_point_under_lease(
+                        PointResolveAttempt {
+                            args: from_args,
+                            stability: None,
+                            allow_scroll: !auto_wait,
+                        },
+                        deadline,
+                        &lease,
+                        adapter,
+                        context,
+                    )?;
+                    let to = resolve_point_under_lease(
+                        PointResolveAttempt {
+                            args: to_args,
+                            stability: None,
+                            allow_scroll: !auto_wait,
+                        },
+                        deadline,
+                        &lease,
+                        adapter,
+                        context,
+                    )?;
+                    let mut from = resolve_point_under_lease(
+                        PointResolveAttempt {
+                            args: from_args,
+                            stability: Some(from.bounds_hash),
+                            allow_scroll: false,
+                        },
+                        deadline,
+                        &lease,
+                        adapter,
+                        context,
+                    )?;
+                    let to = resolve_point_under_lease(
+                        PointResolveAttempt {
+                            args: to_args,
+                            stability: Some(to.bounds_hash),
+                            allow_scroll: false,
+                        },
+                        deadline,
+                        &lease,
+                        adapter,
+                        context,
+                    )?;
+                    from.focused = focused;
+                    Ok((from, to, lease))
+                })?;
+            ensure_point_deadline(
                 deadline,
-                &lease,
-                adapter,
-                context,
+                Some(json!({
+                    "status": "actionable",
+                    "from": { "x": from.point.x, "y": from.point.y },
+                    "to": { "x": to.point.x, "y": to.point.y }
+                })),
             )?;
-            let to = resolve_point_under_lease(
-                PointResolveAttempt {
-                    args: to_args,
-                    stability: None,
-                    allow_scroll: !auto_wait,
-                },
-                deadline,
-                &lease,
-                adapter,
-                context,
-            )?;
-            let mut from = resolve_point_under_lease(
-                PointResolveAttempt {
-                    args: from_args,
-                    stability: Some(from.bounds_hash),
-                    allow_scroll: false,
-                },
-                deadline,
-                &lease,
-                adapter,
-                context,
-            )?;
-            let to = resolve_point_under_lease(
-                PointResolveAttempt {
-                    args: to_args,
-                    stability: Some(to.bounds_hash),
-                    allow_scroll: false,
-                },
-                deadline,
-                &lease,
-                adapter,
-                context,
-            )?;
-            from.focused = focused;
-            Ok((from, to, lease))
-        })?;
-        ensure_point_deadline(
-            deadline,
-            Some(json!({
-                "status": "actionable",
-                "from": { "x": from.point.x, "y": from.point.y },
-                "to": { "x": to.point.x, "y": to.point.y }
-            })),
-        )?;
-        let params = DragParams {
-            from: from.point.clone(),
-            to: to.point.clone(),
-            duration_ms: args.duration_ms,
-            drop_delay_ms: args.drop_delay_ms,
-        };
-        params.validate(deadline)?;
-        Ok((from, to, lease, params))
+            let params = DragParams {
+                from: from.point.clone(),
+                to: to.point.clone(),
+                duration_ms: args.duration_ms,
+                drop_delay_ms: args.drop_delay_ms,
+            };
+            params.validate(deadline)?;
+            Ok((from, to, lease, params))
+        })
     })?;
     crate::cursor_overlay::submit_travel(adapter, context, from.point.clone(), &lease, false);
     let drag_tracking = crate::cursor_overlay::submit_drag(

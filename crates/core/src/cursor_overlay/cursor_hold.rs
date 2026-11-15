@@ -32,8 +32,11 @@ pub(crate) fn hold_cursor(
         return Ok(None);
     }
     let directory = store.base_dir().join("cursor");
-    crate::storage::private_file_parent::ensure_private(&directory)
-        .map_err(|error| AdapterError::internal(format!("cursor lock directory: {error}")))?;
+    crate::storage::private_file_parent::ensure_private(&directory).map_err(|error| {
+        crate::storage::state_io_error::exposure_or(error, |error| {
+            AdapterError::internal(format!("cursor lock directory: {error}"))
+        })
+    })?;
     let name = match super::submit::agent_route(context) {
         Some(agent_id) => format!("agent-{agent_id}.lock"),
         None => "session.lock".to_owned(),

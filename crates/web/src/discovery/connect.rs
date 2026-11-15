@@ -38,13 +38,7 @@ fn classify(endpoint: &BrowserEndpoint, deadline: Deadline, error: AdapterError)
     if is_timeout(&error) {
         return approval_pending(endpoint.port(), deadline.elapsed().as_millis());
     }
-    let closed = error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(Value::as_str)
-        == Some("cdp_transport_closed");
-    if closed {
+    if crate::cdp::protocol_error::error_kind(&error) == Some("cdp_transport_closed") {
         let detail = error.platform_detail.clone().unwrap_or_default();
         return connection_declined(endpoint.port(), &detail);
     }

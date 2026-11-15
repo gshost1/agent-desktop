@@ -3,7 +3,6 @@ use agent_desktop_core::{
     parse_png_dimensions,
 };
 
-#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
     use std::ffi::OsString;
@@ -326,36 +325,8 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::*;
+pub(crate) use imp::{capture_display, capture_screen, capture_window, capture_window_frame};
 
-    pub fn capture_screen(_index: usize, _deadline: Deadline) -> Result<ImageBuffer, AdapterError> {
-        Err(AdapterError::not_supported("capture_screen"))
-    }
-
-    pub fn capture_display(
-        _index: usize,
-        _expected: &DisplayInfo,
-        _deadline: Deadline,
-    ) -> Result<ImageBuffer, AdapterError> {
-        Err(AdapterError::not_supported("capture_display"))
-    }
-
-    pub fn capture_window(
-        _window: &WindowInfo,
-        _deadline: Deadline,
-    ) -> Result<ImageBuffer, AdapterError> {
-        Err(AdapterError::not_supported("capture_window"))
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) use imp::capture_window as capture_window_frame;
-#[cfg(target_os = "macos")]
-pub(crate) use imp::capture_window_frame;
-pub(crate) use imp::{capture_display, capture_screen, capture_window};
-
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "screenshot_tests.rs"]
 mod tests;

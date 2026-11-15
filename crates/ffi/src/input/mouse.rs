@@ -1,15 +1,12 @@
 use crate::AdAdapter;
 use crate::error::{self, AdResult};
 use crate::ffi_try::trap_panic;
-use crate::types::{AdModifier, AdMouseButton, AdMouseEvent, AdMouseEventKind};
+use crate::types::{AdMouseButton, AdMouseEvent, AdMouseEventKind};
 use agent_desktop_core::{
     Modifier as CoreModifier, MouseButton as CoreMouseButton, MouseEvent as CoreMouseEvent,
     MouseEventKind as CoreMouseEventKind, Point as CorePoint,
 };
 
-/// Four modifier keys exist (`AdModifier::{Meta, Ctrl, Alt, Shift}`), so a
-/// chord can name at most four. Anything larger must be bogus input — bail
-/// out instead of trusting it into `from_raw_parts`.
 const MAX_MOUSE_MODIFIERS: u32 = 4;
 const ALL_MODIFIER_BITS: u32 = 0b1111;
 
@@ -21,9 +18,8 @@ pub(crate) fn mouse_button_from_c(b: AdMouseButton) -> CoreMouseButton {
     }
 }
 
-/// Parses a `modifiers` array + count pair into a `Vec<Modifier>`, mirroring
-/// `AdKeyCombo`'s `modifiers`/`modifier_count` contract so mouse chords and
-/// key chords validate identically at the C boundary.
+/// Parses a mouse chord's `modifiers` array + count pair. The count check
+/// stays here so the error names the mouse limit, not the key-combo one.
 ///
 /// # Safety
 /// `modifiers` must point to `count` valid `int32_t` values, or be null when
@@ -35,23 +31,7 @@ pub(crate) unsafe fn modifiers_from_c(
     if count > MAX_MOUSE_MODIFIERS {
         return Err("modifier_count exceeds MAX_MOUSE_MODIFIERS (4)");
     }
-    if count > 0 && modifiers.is_null() {
-        return Err("modifier_count > 0 but modifiers pointer is null");
-    }
-    let mut out = Vec::with_capacity(count as usize);
-    if count > 0 {
-        let slice = unsafe { std::slice::from_raw_parts(modifiers, count as usize) };
-        for raw_modifier in slice {
-            let m = AdModifier::from_c(*raw_modifier).ok_or("invalid modifier discriminant")?;
-            out.push(match m {
-                AdModifier::Meta => CoreModifier::Meta,
-                AdModifier::Ctrl => CoreModifier::Ctrl,
-                AdModifier::Alt => CoreModifier::Alt,
-                AdModifier::Shift => CoreModifier::Shift,
-            });
-        }
-    }
-    Ok(out)
+    unsafe { crate::actions::conversion::modifiers_from_c(modifiers, count) }
 }
 
 fn modifiers_from_mask(mask: u32) -> Result<Vec<CoreModifier>, &'static str> {

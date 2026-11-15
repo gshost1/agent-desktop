@@ -12,10 +12,6 @@ impl PermissionReport {
         matches!(self.accessibility, PermissionState::Granted)
     }
 
-    pub fn screen_recording_granted(&self) -> bool {
-        matches!(self.screen_recording, PermissionState::Granted)
-    }
-
     pub fn accessibility_denied(&self) -> bool {
         matches!(self.accessibility, PermissionState::Denied { .. })
     }

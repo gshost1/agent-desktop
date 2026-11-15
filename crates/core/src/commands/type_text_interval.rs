@@ -264,9 +264,6 @@ fn extends_previous(character: char) -> bool {
 }
 
 fn after_partial_delivery(error: AppError, typed: usize, total: usize) -> AppError {
-    if typed == 0 {
-        return error;
-    }
     let adapter_error = match error {
         AppError::Adapter(error) => error,
         other => AdapterError::internal(other.to_string()),

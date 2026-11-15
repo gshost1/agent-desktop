@@ -61,7 +61,7 @@ fn pre_dispatch_failures_are_always_safe_to_retry() {
 fn a_top_level_batch_preflight_gets_the_batch_budget_capped_not_five_seconds() {
     let deadline_of = |args: &[&str]| {
         let cli = crate::Cli::try_parse_from(args).expect("parses");
-        crate::preflight_deadline(&cli.command.expect("a command"), None)
+        crate::preflight_deadline(&cli.command.expect("a command"))
             .expect("a deadline builds")
             .remaining()
     };

@@ -37,12 +37,8 @@ pub fn parse_selector(raw: &str) -> LocatorQuery {
     }
 }
 
-pub fn node_matches(node: &AccessibilityNode, query: &LocatorQuery) -> bool {
-    accessibility_node_matches(node, query)
-}
-
 pub fn tree_has_match(tree: &AccessibilityNode, query: &LocatorQuery) -> bool {
-    if node_matches(tree, query) {
+    if accessibility_node_matches(tree, query) {
         return true;
     }
     tree.children

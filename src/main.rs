@@ -28,7 +28,6 @@ use cli::{
     Cli, Commands,
     emit::{emit_response, finish, report_output_failure},
 };
-use cli_args::skills::SkillsAction;
 use command_policy::preflight_deadline;
 use dispatch::pre_dispatch_error;
 #[cfg(target_os = "macos")]
@@ -152,38 +151,13 @@ fn report_parse_failure(e: clap::Error) -> ExitCode {
 }
 
 fn execute(cli: Cli, cmd: Commands) -> Result<serde_json::Value, AppError> {
-    execute_with_deadline(cli, cmd, None, None)
-}
-
-fn execute_with_deadline(
-    cli: Cli,
-    cmd: Commands,
-    deadline: Option<agent_desktop_core::Deadline>,
-    baseline: Option<agent_desktop_core::SignalBaseline>,
-) -> Result<serde_json::Value, AppError> {
-    if let Some(deadline) = deadline.filter(|deadline| deadline.is_expired()) {
-        return Err(pre_dispatch_error(deadline.timeout_error().into()));
-    }
     cli.visual_debug.validate(&cmd)?;
     agent_desktop_core::validate_state_root_env().map_err(pre_dispatch_error)?;
     match cmd {
         Commands::Version => {
             agent_desktop_core::commands::version::execute().map_err(pre_dispatch_error)
         }
-        Commands::Skills(a) => {
-            let result = match a.action.unwrap_or(SkillsAction::List) {
-                SkillsAction::List => agent_desktop_core::commands::skills::list(),
-                SkillsAction::Path => agent_desktop_core::commands::skills::path(),
-                SkillsAction::Get(g) => agent_desktop_core::commands::skills::get(
-                    agent_desktop_core::commands::skills::GetArgs {
-                        name: g.name,
-                        full: g.full,
-                        reference: g.reference,
-                    },
-                ),
-            };
-            result.map_err(pre_dispatch_error)
-        }
+        Commands::Skills(a) => dispatch::system::skills(a).map_err(pre_dispatch_error),
         cmd => {
             let wait_selector = build_wait_selector(&cli)?;
             let session_id = resolve_active_session(
@@ -201,17 +175,13 @@ fn execute_with_deadline(
                 .agent_id
                 .clone()
                 .or_else(|| std::env::var("AGENT_DESKTOP_AGENT_ID").ok());
-            let mut context = context
+            let context = context
                 .with_agent_id(agent_id)
                 .map_err(pre_dispatch_error)?;
-            if let Some(deadline) = deadline {
-                context = context.with_inherited_deadline(deadline);
-            }
-            context = context.with_event_baseline(baseline.map(Ok));
             if let Some(wait) = wait_selector.as_ref() {
                 validate_wait_for_command(&cmd, wait)?;
             }
-            execute_with_adapter(cmd, &context, &cli.visual_debug, deadline)
+            execute_with_adapter(cmd, &context, &cli.visual_debug)
         }
     }
 }
@@ -262,7 +232,6 @@ fn execute_with_adapter(
     mut cmd: Commands,
     context: &CommandContext,
     debug: &visual_debug::options::DebugOptions,
-    deadline: Option<agent_desktop_core::Deadline>,
 ) -> Result<serde_json::Value, AppError> {
     #[cfg(target_os = "windows")]
     if let Err(bootstrap_error) = agent_desktop_windows::ensure_owned_process_mta_and_dpi() {
@@ -273,7 +242,7 @@ fn execute_with_adapter(
     let adapter: &dyn agent_desktop_core::PlatformAdapter = &adapter;
     command_policy::prepare_connections(&cmd, adapter, context.session_id());
     let report = if command_policy::requires_permission_report(&cmd) {
-        match preflight_deadline(&cmd, deadline)
+        match preflight_deadline(&cmd)
             .map_err(AppError::from)
             .and_then(|deadline| {
                 if command_policy::requires_full_permission_report(&cmd) {
@@ -310,9 +279,6 @@ fn execute_with_adapter(
         Ok(capture) => capture,
         Err(error) => return Err(pre_dispatch_error(error)),
     };
-    if let Some(deadline) = deadline.filter(|deadline| deadline.is_expired()) {
-        return Err(pre_dispatch_error(deadline.timeout_error().into()));
-    }
     let mut result = dispatch::dispatch(cmd, adapter, &report, context);
     if let Some(capture) = capture {
         capture.finish(&mut result, adapter, context);

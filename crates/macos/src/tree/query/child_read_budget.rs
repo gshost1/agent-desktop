@@ -60,6 +60,27 @@ pub(super) fn whole_list_page(
     (count > 0 && count <= max_elements && count < page_size).then_some(count + 1)
 }
 
+/// Reads a counted list and says whether the read itself proved the count.
+/// Only a page that answered the longer `whole_page` range proves it: when the
+/// responder refuses that range, the exact-range read that stands in stops at
+/// the count and cannot see a child added since, so it is never proof and the
+/// second count stays.
+pub(super) fn read_counted_list<T, S>(
+    state: &mut S,
+    count: usize,
+    whole_page: Option<usize>,
+    read_whole: impl FnOnce(&mut S, usize) -> Option<Result<Vec<T>, i32>>,
+    read_exact: impl FnOnce(&mut S) -> Result<Vec<T>, i32>,
+) -> (Result<Vec<T>, i32>, bool) {
+    match whole_page.and_then(|page_len| read_whole(state, page_len)) {
+        Some(read) => {
+            let proven = read.as_ref().is_ok_and(|elements| elements.len() == count);
+            (read, proven)
+        }
+        None => (read_exact(state), false),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +165,61 @@ mod tests {
             "requesting a handful of label children at a boundary must keep the 25 ms count \
              slice, not fall back to the generous half-deadline budget"
         );
+    }
+
+    #[test]
+    fn an_exact_range_read_after_a_refused_whole_page_is_never_proof() {
+        let mut exact_reads = 0;
+
+        let (read, proven) = read_counted_list(
+            &mut exact_reads,
+            3,
+            whole_list_page(3, 4_096, 128),
+            |_, _| None::<Result<Vec<u8>, i32>>,
+            |reads| {
+                *reads += 1;
+                Ok(vec![0, 1, 2])
+            },
+        );
+
+        assert_eq!(read, Ok(vec![0, 1, 2]));
+        assert_eq!(exact_reads, 1);
+        assert!(
+            !proven,
+            "an exact-range read stops at the count, so a child added since the count is \
+             invisible to it; only the second count can prove the list did not grow"
+        );
+    }
+
+    #[test]
+    fn only_a_whole_page_holding_exactly_the_count_proves_it() {
+        let whole = |page: Result<Vec<u8>, i32>| {
+            read_counted_list(&mut (), 3, Some(4), |_, _| Some(page), |_| Ok(Vec::new())).1
+        };
+
+        assert!(whole(Ok(vec![0, 1, 2])));
+        assert!(
+            !whole(Ok(vec![0, 1, 2, 3])),
+            "a grown list shows its extra child"
+        );
+        assert!(
+            !whole(Ok(vec![0, 1])),
+            "a shrunk list is not the counted list"
+        );
+        assert!(!whole(Err(i32::MIN)));
+    }
+
+    #[test]
+    fn a_list_with_no_whole_page_reads_the_exact_range_unproven() {
+        let (read, proven) = read_counted_list(
+            &mut (),
+            500,
+            None,
+            |_, _| -> Option<Result<Vec<u8>, i32>> { panic!("no whole page was planned") },
+            |_| Ok(vec![0; 500]),
+        );
+
+        assert_eq!(read.map(|elements| elements.len()), Ok(500));
+        assert!(!proven);
     }
 }

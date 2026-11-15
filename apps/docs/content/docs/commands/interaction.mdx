@@ -101,7 +101,7 @@ A failed check list appears in `error.details.checks`, each with a `status` of `
     <tr><td><code>TIMEOUT</code>, <code>details.kind: actionability_timeout</code></td><td>The target never became actionable within <code>--timeout-ms</code>. <code>details.last_report</code> names the failing check.</td></tr>
     <tr><td><code>ACTION_FAILED</code></td><td>The action was rejected, blocked, or contradicted by the readback.</td></tr>
     <tr><td><code>APP_UNRESPONSIVE</code></td><td>The app stopped responding.</td></tr>
-    <tr><td><code>PERM_DENIED</code></td><td>Accessibility permission is not granted.</td></tr>
+    <tr><td><code>PERM_DENIED</code></td><td>Accessibility permission is not granted, or, with <code>details.kind: "state_directory_permission"</code>, the state path in <code>details.path</code> is open to other users.</td></tr>
   </tbody>
 </table>
 
@@ -147,7 +147,7 @@ Opens an element's context menu. Afterward, `data.surfaces` lists the open `menu
 agent-desktop right-click <REF> [--timeout-ms MS]
 ```
 
-Headless delivery needs a context-menu action on the element. On a GTK entry without one, it returns `POLICY_DENIED` with `supported_action` failing. On macOS, `AXShowMenu` times out while the menu it opened is tracking; agent-desktop reads the menu surface and reports a menu it sees as success. If none appears within 1.5 s it returns `ACTION_FAILED` (`menu_observed: false`) or `APP_UNRESPONSIVE` with an unsafe disposition: look before you retry.
+Headless delivery needs a context-menu action on the element. On a GTK entry without one, it returns `POLICY_DENIED` with `supported_action` failing. On macOS, `AXShowMenu` times out while the menu it opened is tracking; agent-desktop reads the menu surface and reports a menu it sees as success. If none appears within 1.5 s it returns `ACTION_FAILED` (`menu_observed: false`) or `APP_UNRESPONSIVE` with an unsafe disposition: look before you retry. Each fallback step first reads whether a menu is open and sends nothing more unless the read answers closed, so an app that stops answering while its menu tracks never gets a second menu. An unreadable read is read again a few times before it refuses. A pop-up menu window of the app on screen also counts as a menu being up. In a window too large for the menu search (2,048 nodes), a step acts only when the window server lists no pop-up menu window of the app. A fallback that selects the row first counts that selection as delivered: a later failure, or no menu, ends with `retry: unsafe` (`delivered_unverified`, or `delivery_uncertain` when the menu action itself timed out).
 
 Platform limits: Windows always needs `--headed`. See [Windows](/desktop/platforms/windows).
 

@@ -45,6 +45,7 @@ mod predicate;
 mod ref_evidence_requirements;
 mod resolve;
 mod resolve_errors;
+mod row_proof;
 mod row_reading;
 mod select;
 mod selection_completeness;

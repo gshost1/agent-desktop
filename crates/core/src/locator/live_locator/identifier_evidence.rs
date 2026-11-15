@@ -90,10 +90,6 @@ impl IdentifierEvidence {
         self.preferred.and_then(|index| self.identifiers.get(index))
     }
 
-    pub fn preferred_index(&self) -> Option<usize> {
-        self.preferred
-    }
-
     pub fn is_complete(&self) -> bool {
         self.complete
     }
@@ -108,7 +104,6 @@ mod tests {
         let evidence = IdentifierEvidence::new([String::new(), "dom-id".into()], Some(1), true);
 
         assert_eq!(evidence.values(), ["dom-id"]);
-        assert_eq!(evidence.preferred_index(), Some(0));
         assert_eq!(evidence.preferred_value(), Some("dom-id"));
     }
 
@@ -121,7 +116,6 @@ mod tests {
         );
 
         assert_eq!(later.values(), ["shared", "other"]);
-        assert_eq!(later.preferred_index(), Some(0));
         assert_eq!(later.preferred_value(), Some("shared"));
 
         let first = IdentifierEvidence::new(

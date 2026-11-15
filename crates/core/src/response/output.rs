@@ -97,6 +97,12 @@ fn recovery_for_code(
 
 impl ErrorPayload {
     pub fn from_app_error(err: &AppError) -> Self {
+        if let AppError::Io(io) = err
+            && let Some(exposure) = crate::storage::state_exposure::find(io)
+        {
+            let error = AppError::Adapter(crate::storage::state_io_error::exposure_error(exposure));
+            return Self::from_app_error(&error);
+        }
         let mut payload = Self::new(err.code(), err.to_string());
         if let Some(suggestion) = err.suggestion() {
             payload = payload.with_suggestion(suggestion);

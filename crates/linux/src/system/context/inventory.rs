@@ -19,7 +19,7 @@ pub(crate) fn matches(query: AppInventoryQuery<'_>, app: &RegistryApp) -> bool {
             query.matches_display_name(&app.name) || app.matches(name)
         }
         AppInventoryQuery::Exact { name, bundle_id } => match bundle_id {
-            Some(id) => crate::system::app::app_name::desktop_id(&app.facts)
+            Some(id) => crate::system::app::app_name::desktop_id(app.root.pid(), &app.facts)
                 .is_some_and(|actual| actual.eq_ignore_ascii_case(id)),
             None => app.matches(name),
         },

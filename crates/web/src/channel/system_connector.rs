@@ -33,10 +33,7 @@ impl SystemConnector {
     pub fn new() -> Self {
         Self {
             registry: registry_file().ok(),
-            user_data_dirs: default_user_data_dirs()
-                .into_iter()
-                .map(|entry| entry.path)
-                .collect(),
+            user_data_dirs: default_user_data_dirs(),
         }
     }
 
@@ -100,7 +97,6 @@ impl CdpConnector for SystemConnector {
             CandidateOrigin::Registry { websocket_url, .. } => BrowserEndpoint {
                 websocket_url: WebSocketUrl::parse(websocket_url)?,
                 source: EndpointSource::JsonVersion,
-                product: None,
             },
             CandidateOrigin::ActivePort { websocket_path } => {
                 match endpoint_from_port(candidate.port, deadline.capped(VERSION_PROBE)) {
@@ -108,7 +104,6 @@ impl CdpConnector for SystemConnector {
                     Err(_) if may_prompt => BrowserEndpoint {
                         websocket_url: WebSocketUrl::loopback(candidate.port, websocket_path)?,
                         source: EndpointSource::DevToolsActivePort,
-                        product: None,
                     },
                     Err(_) => return Err(approval_needed(candidate.port)),
                 }

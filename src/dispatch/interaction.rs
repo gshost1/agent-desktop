@@ -1,13 +1,8 @@
 use agent_desktop_core::{
     AppError, PlatformAdapter,
     commands::{
-        check as check_command, clear as clear_command, click as click_command,
-        collapse as collapse_command, double_click as double_click_command,
-        expand as expand_command, focus as focus_command, helpers,
-        right_click as right_click_command, scroll as scroll_command,
-        scroll_to as scroll_to_command, select as select_command, set_value as set_value_command,
-        toggle as toggle_command, triple_click as triple_click_command,
-        type_text as type_text_command, uncheck as uncheck_command,
+        helpers, scroll as scroll_command, select as select_command,
+        set_value as set_value_command, type_text as type_text_command,
     },
     context::CommandContext,
 };
@@ -18,38 +13,6 @@ use crate::cli_args::{
     actions::{ScrollArgs, SelectArgs, SetValueArgs, TypeArgs},
 };
 use crate::dispatch::parse::parse_direction;
-
-pub(super) fn click(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    click_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn double_click(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    double_click_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn triple_click(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    triple_click_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn right_click(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    right_click_command::execute(ref_args(args), adapter, context)
-}
 
 pub(super) fn type_text(
     args: TypeArgs,
@@ -94,62 +57,6 @@ pub(super) fn set_value(
     )
 }
 
-pub(super) fn clear(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    clear_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn focus(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    focus_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn toggle(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    toggle_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn check(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    check_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn uncheck(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    uncheck_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn expand(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    expand_command::execute(ref_args(args), adapter, context)
-}
-
-pub(super) fn collapse(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    collapse_command::execute(ref_args(args), adapter, context)
-}
-
 pub(super) fn select(
     args: SelectArgs,
     adapter: &dyn PlatformAdapter,
@@ -183,15 +90,7 @@ pub(super) fn scroll(
     )
 }
 
-pub(super) fn scroll_to(
-    args: RefArgs,
-    adapter: &dyn PlatformAdapter,
-    context: &CommandContext,
-) -> Result<Value, AppError> {
-    scroll_to_command::execute(ref_args(args), adapter, context)
-}
-
-fn ref_args(args: RefArgs) -> helpers::RefArgs {
+pub(super) fn ref_args(args: RefArgs) -> helpers::RefArgs {
     helpers::RefArgs {
         ref_id: args.ref_id,
         timeout_ms: helpers::normalize_action_timeout_ms(args.timeout_ms),

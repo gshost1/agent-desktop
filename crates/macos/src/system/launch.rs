@@ -6,7 +6,6 @@ use agent_desktop_core::{
 };
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
 use self::launch_settle::{SettleProbes, launch_target_gone, settle_window};
 use self::launch_window::LaunchWindow;
 use crate::system::launch_plan::{LaunchPlan, plan_launch};
@@ -16,7 +15,6 @@ const MAX_ARGUMENT_COUNT: usize = 256;
 const MAX_ENVIRONMENT_COUNT: usize = 256;
 const MAX_LAUNCH_TEXT_BYTES: usize = 1024 * 1024;
 
-#[cfg(target_os = "macos")]
 pub(crate) fn launch_app_impl(
     id: &str,
     options: &LaunchOptions,
@@ -44,7 +42,9 @@ pub(crate) fn launch_app_impl(
     validate_launched_target(&target, &launched).map_err(after_launch)?;
     let window =
         settled_window(launched.0, &launched.1, options, deadline).map_err(after_launch)?;
-    result_from_launched(&launched, window, id, path).map_err(after_launch)
+    let mut result = result_from_launched(&launched, window, id, path).map_err(after_launch)?;
+    launch_off_space::explain_off_space(&mut result, launched.0, deadline);
+    Ok(result)
 }
 
 /// A running application is reported, and brought forward when asked, without
@@ -52,7 +52,6 @@ pub(crate) fn launch_app_impl(
 /// reopen event, and an application with no window responds to that by opening
 /// one the caller never asked for. Activation reads whatever windows already
 /// exist: it creates none.
-#[cfg(target_os = "macos")]
 fn use_running_app(
     app: &AppInfo,
     plan: LaunchPlan,
@@ -81,10 +80,10 @@ fn use_running_app(
     };
     let mut result = result_from_app(app, window, path);
     result.notes.suggestion = joined_notes([several, ignored_inputs_hint(options)]);
+    launch_off_space::explain_off_space(&mut result, pid, deadline);
     Ok(result)
 }
 
-#[cfg(target_os = "macos")]
 fn activate_running(pid: i32, instance: &str, deadline: Deadline) -> Result<(), AdapterError> {
     if !super::process::process_identity::matches_instance(pid, instance).map_err(before_launch)? {
         return Err(AdapterError::new(
@@ -97,7 +96,6 @@ fn activate_running(pid: i32, instance: &str, deadline: Deadline) -> Result<(), 
     crate::system::focus::ensure_app_focused(pid, deadline)
 }
 
-#[cfg(target_os = "macos")]
 fn joined_notes(notes: [Option<String>; 2]) -> Option<String> {
     let notes: Vec<String> = notes.into_iter().flatten().collect();
     (!notes.is_empty()).then(|| notes.join(" "))
@@ -106,7 +104,6 @@ fn joined_notes(notes: [Option<String>; 2]) -> Option<String> {
 /// A running application receives no launch arguments or environment, because
 /// they apply only to the process Launch Services starts. Saying so beats
 /// dropping them without a word.
-#[cfg(target_os = "macos")]
 fn ignored_inputs_hint(options: &LaunchOptions) -> Option<String> {
     (!options.args.is_empty() || !options.env.is_empty()).then(|| {
         "--arg and --env apply only to a fresh process, and the app was already running, so \
@@ -117,7 +114,6 @@ fn ignored_inputs_hint(options: &LaunchOptions) -> Option<String> {
 
 /// Waits for the launch's window while the launched process lives. See
 /// `settle_window` for when the wait ends.
-#[cfg(target_os = "macos")]
 fn settled_window(
     pid: i32,
     process_instance: &str,
@@ -138,7 +134,6 @@ fn settled_window(
 /// Whether the application reports that it finished starting up. The window
 /// server keeps no record of a process that exited, and none of one that has
 /// not registered yet, so libproc decides which happened.
-#[cfg(target_os = "macos")]
 fn startup_finished(pid: i32, process_instance: &str) -> Result<bool, AdapterError> {
     use crate::system::appkit_bridge::StartupState;
     match crate::system::appkit_bridge::startup_state(pid) {
@@ -149,7 +144,6 @@ fn startup_finished(pid: i32, process_instance: &str) -> Result<bool, AdapterErr
 }
 
 /// `Err` once the launched process instance no longer runs.
-#[cfg(target_os = "macos")]
 fn ensure_launched_alive(pid: i32, process_instance: &str) -> Result<(), AdapterError> {
     if super::process::process_identity::matches_instance(pid, process_instance)? {
         Ok(())
@@ -161,14 +155,12 @@ fn ensure_launched_alive(pid: i32, process_instance: &str) -> Result<(), Adapter
 /// The attaching path reports the display name, so the launching path has to
 /// report the same thing for the same field. A window already carries it; the
 /// requested identifier is the fallback when there is no window to ask.
-#[cfg(target_os = "macos")]
 fn launched_display_name(window: Option<&WindowInfo>, id: &str) -> String {
     window
         .map(|window| window.app.clone())
         .unwrap_or_else(|| id.to_owned())
 }
 
-#[cfg(target_os = "macos")]
 fn result_from_app(app: &AppInfo, window: Option<WindowInfo>, path: LaunchPath) -> LaunchResult {
     let renderer = super::process::process_identity::to_pid_t(app.pid)
         .ok()
@@ -187,7 +179,6 @@ fn result_from_app(app: &AppInfo, window: Option<WindowInfo>, path: LaunchPath) 
     }
 }
 
-#[cfg(target_os = "macos")]
 fn result_from_launched(
     launched: &(i32, String),
     window: LaunchWindow,
@@ -211,29 +202,18 @@ fn result_from_launched(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn launch_app_impl(
-    _id: &str,
-    _options: &LaunchOptions,
-    _deadline: Deadline,
-) -> Result<LaunchResult, AdapterError> {
-    Err(AdapterError::not_supported("launch_app"))
-}
-
-#[cfg(target_os = "macos")]
 fn matching_apps(id: &str, deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
     ensure_launch_budget(deadline, id)?;
     let until = deadline_instant(deadline)?;
     crate::system::app::app_inventory::stabilize_apps_until(until, || {
         let inventory = super::app::workspace_scoped_apps::list_apps_scoped_until(id, None, until)?;
         if inventory.apps.is_empty() {
-            super::app::workspace_apps::require_complete(&inventory.skipped)?;
+            super::app::workspace_apps::require_complete_for_launch(&inventory.skipped)?;
         }
         Ok(inventory.apps)
     })
 }
 
-#[cfg(target_os = "macos")]
 fn exact_window(
     pid: i32,
     process_instance: &str,
@@ -256,7 +236,6 @@ fn exact_window(
     Ok(LaunchWindow::pick(windows))
 }
 
-#[cfg(target_os = "macos")]
 fn ensure_launch_budget(deadline: Deadline, id: &str) -> Result<(), AdapterError> {
     if deadline.is_expired() {
         return Err(deadline
@@ -266,12 +245,10 @@ fn ensure_launch_budget(deadline: Deadline, id: &str) -> Result<(), AdapterError
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 fn before_launch(error: AdapterError) -> AdapterError {
     error.with_disposition(DeliverySemantics::not_delivered())
 }
 
-#[cfg(target_os = "macos")]
 fn validate_app_identifier(id: &str) -> Result<(), AdapterError> {
     let safe_bundle_id = !looks_like_bundle_id(id)
         || id.chars().all(|character| {
@@ -293,7 +270,6 @@ fn validate_app_identifier(id: &str) -> Result<(), AdapterError> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 fn validate_launch_options(options: &LaunchOptions) -> Result<(), AdapterError> {
     if options.cwd.is_some() {
         return Err(AdapterError::new(
@@ -336,17 +312,14 @@ fn validate_launch_options(options: &LaunchOptions) -> Result<(), AdapterError> 
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn looks_like_bundle_id(id: &str) -> bool {
     id.contains('.') && !id.ends_with(".app") && !id.contains(' ')
 }
 
-#[cfg(target_os = "macos")]
 fn after_launch(error: AdapterError) -> AdapterError {
     error.with_disposition(DeliverySemantics::delivered_unverified())
 }
 
-#[cfg(target_os = "macos")]
 fn deadline_instant(deadline: Deadline) -> Result<Instant, AdapterError> {
     Instant::now()
         .checked_add(deadline.remaining())
@@ -362,3 +335,6 @@ pub(crate) mod launch_settle;
 
 #[path = "launch_window.rs"]
 pub(crate) mod launch_window;
+
+#[path = "launch_off_space.rs"]
+pub(crate) mod launch_off_space;

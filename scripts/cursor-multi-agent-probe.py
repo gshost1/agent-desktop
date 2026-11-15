@@ -118,7 +118,6 @@ def main():
                 stream.sendall(json.dumps(control).encode())
                 stream.shutdown(socket.SHUT_WR)
                 assert stream.recv(1) == b"\x01"
-        subprocess.run(["screencapture", "-x", str(args.out / "three-cursors.png")], check=True)
         report = {"session_id": session_id, "cursor_count": len(before), "headed": args.headed,
                   "renderer_pids": sorted(pids), "rss_kib": memory,
                   "shared_ref": target, "state_root": str(state),

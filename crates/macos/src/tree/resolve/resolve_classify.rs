@@ -4,7 +4,6 @@ use crate::tree::AXElement;
 
 /// Turns the role-matching landings into a handle: one is the element core
 /// then confirms by its full predicate, none is not found, more is ambiguous.
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn classify_candidates(
     mut matches: Vec<AXElement>,
     entry: &RefEntry,
@@ -16,7 +15,6 @@ pub(in crate::tree) fn classify_candidates(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn ambiguous_target_error(matches: &[AXElement], entry: &RefEntry) -> AdapterError {
     let count = matches.len();
     AdapterError::ambiguous_target(format!(
@@ -36,7 +34,6 @@ fn ambiguous_target_error(matches: &[AXElement], entry: &RefEntry) -> AdapterErr
     }))
 }
 
-#[cfg(target_os = "macos")]
 pub(in crate::tree) fn identity_summary_for_message(entry: &RefEntry) -> String {
     format!(
         "role={}, name_chars={}, description_chars={}",
@@ -46,12 +43,10 @@ pub(in crate::tree) fn identity_summary_for_message(entry: &RefEntry) -> String 
     )
 }
 
-#[cfg(target_os = "macos")]
 fn text_len(value: Option<&str>) -> usize {
     value.unwrap_or("").chars().count()
 }
 
-#[cfg(target_os = "macos")]
 fn retained_handle(candidate: AXElement) -> Result<NativeHandle, AdapterError> {
     if candidate.0.is_null() {
         #[cfg(test)]
@@ -62,7 +57,6 @@ fn retained_handle(candidate: AXElement) -> Result<NativeHandle, AdapterError> {
     Ok(candidate.into_native_handle())
 }
 
-#[cfg(target_os = "macos")]
 fn candidate_summaries(matches: &[AXElement], entry: &RefEntry) -> Vec<serde_json::Value> {
     matches
         .iter()

@@ -102,12 +102,7 @@ fn background_tab(link: &mut BrowserLink, deadline: Deadline) -> Result<String, 
 }
 
 fn is_no_page_target(error: &AdapterError) -> bool {
-    error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(serde_json::Value::as_str)
-        == Some(NO_PAGE_TARGET)
+    crate::cdp::protocol_error::error_kind(error) == Some(NO_PAGE_TARGET)
 }
 
 fn opened_page(

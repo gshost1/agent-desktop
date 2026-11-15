@@ -4,7 +4,7 @@ use crate::{
     tree::search_text,
     tree::state::{self, STATE_VOCABULARY},
 };
-pub(crate) use crate::{ContainmentPredicate, IdentityPredicate, NodeMatchContext, StatePredicate};
+pub(crate) use crate::{ContainmentPredicate, IdentityPredicate, StatePredicate};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -62,70 +62,59 @@ impl LocatorQuery {
     }
 }
 
-pub fn node_context(node: &AccessibilityNode) -> NodeMatchContext<'_> {
-    NodeMatchContext {
-        role: &node.role,
-        name: node.identity.name.as_deref(),
-        description: node.identity.description.as_deref(),
-        native_id: node
-            .identity
-            .native_id
-            .as_ref()
-            .map(|identifier| identifier.value.as_str()),
-        value: node.identity.value.as_deref(),
-        states: &node.presentation.states,
-        children: &node.children,
-    }
-}
-
-pub fn node_matches(query: &LocatorQuery, ctx: NodeMatchContext<'_>) -> bool {
-    if !role_matches(query, ctx.role) {
-        return false;
-    }
-    if !text_field_matches(query.identity.name.as_deref(), ctx.name, query.exact) {
+pub fn accessibility_node_matches(node: &AccessibilityNode, query: &LocatorQuery) -> bool {
+    if !role_matches(query, &node.role) {
         return false;
     }
     if !text_field_matches(
-        query.identity.description.as_deref(),
-        ctx.description,
+        query.identity.name.as_deref(),
+        node.identity.name.as_deref(),
         query.exact,
     ) {
         return false;
     }
-    if !native_id_matches(query.identity.native_id.as_deref(), ctx.native_id) {
+    if !text_field_matches(
+        query.identity.description.as_deref(),
+        node.identity.description.as_deref(),
+        query.exact,
+    ) {
         return false;
     }
-    if !text_field_matches(query.identity.value.as_deref(), ctx.value, query.exact) {
+    let native_id = node
+        .identity
+        .native_id
+        .as_ref()
+        .map(|identifier| identifier.value.as_str());
+    if !native_id_matches(query.identity.native_id.as_deref(), native_id) {
         return false;
     }
-    if !has_text_matches(query.has_text.as_deref(), &ctx, query.exact) {
+    if !text_field_matches(
+        query.identity.value.as_deref(),
+        node.identity.value.as_deref(),
+        query.exact,
+    ) {
         return false;
     }
-    if !state_predicates_match(&query.states, ctx.states) {
+    if !has_text_matches(query.has_text.as_deref(), node, query.exact) {
+        return false;
+    }
+    if !state_predicates_match(&query.states, &node.presentation.states) {
         return false;
     }
     if let Some(has) = &query.containment.has {
-        if !subtree_contains(has, ctx.children) {
+        if !subtree_contains(has, &node.children) {
             return false;
         }
     }
     if let Some(has_not) = &query.containment.has_not {
-        if subtree_contains(has_not, ctx.children) {
+        if subtree_contains(has_not, &node.children) {
             return false;
         }
     }
     true
 }
 
-pub fn accessibility_node_matches(node: &AccessibilityNode, query: &LocatorQuery) -> bool {
-    node_matches(query, node_context(node))
-}
-
-/// Cheap standalone role predicate, factored out of [`node_matches`] so
-/// callers building a full match context (states, children, name/value
-/// text) can short-circuit before paying for that work when the role alone
-/// already rules a candidate out.
-pub fn role_matches(query: &LocatorQuery, role: &str) -> bool {
+fn role_matches(query: &LocatorQuery, role: &str) -> bool {
     query
         .identity
         .role
@@ -150,18 +139,22 @@ fn native_id_matches(expected: Option<&str>, actual: Option<&str>) -> bool {
     actual == Some(expected)
 }
 
-fn has_text_matches(expected: Option<&str>, ctx: &NodeMatchContext<'_>, exact: bool) -> bool {
+fn has_text_matches(expected: Option<&str>, node: &AccessibilityNode, exact: bool) -> bool {
     let Some(expected) = expected else {
         return true;
     };
-    [ctx.name, ctx.description, ctx.value]
-        .into_iter()
-        .flatten()
-        .any(|text| text_matches(text, expected, exact))
-        || ctx
+    [
+        node.identity.name.as_deref(),
+        node.identity.description.as_deref(),
+        node.identity.value.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|text| text_matches(text, expected, exact))
+        || node
             .children
             .iter()
-            .any(|child| has_text_matches(Some(expected), &node_context(child), exact))
+            .any(|child| has_text_matches(Some(expected), child, exact))
 }
 
 fn text_matches(actual: &str, expected: &str, exact: bool) -> bool {

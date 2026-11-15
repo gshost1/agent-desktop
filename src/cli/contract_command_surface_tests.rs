@@ -13,21 +13,21 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "input_hold_policy",
     "launch_cdp_test_support",
     "mod",
-    "notification_identity",
     "notification_policy",
     "operation_response",
     "point_resolve",
     "pointer_action",
+    "pointer_action_focus_phase",
     "post_action_observation",
     "query",
     "find_live_test_support",
     "selector_observation",
+    "skills_catalog",
     "surface_scope",
     "type_text_interval",
     "type_text_interval_verify",
     "stale_retry_test_support",
     "wait_element",
-    "wait_latest_ref_cache",
     "wait_mode",
     "wait_download",
     "wait_notification",
@@ -133,8 +133,9 @@ fn every_core_command_module_is_registered_or_declared_helper() {
         .into_iter()
         .map(|name| command_module_name(&name))
         .collect();
+    let files = command_module_files();
 
-    for module in command_module_files() {
+    for module in &files {
         if module.ends_with("_tests") {
             continue;
         }
@@ -142,6 +143,12 @@ fn every_core_command_module_is_registered_or_declared_helper() {
             command_modules.contains(module.as_str())
                 || NON_COMMAND_MODULES.contains(&module.as_str()),
             "{module}.rs is not registered as a CLI command module or declared helper"
+        );
+    }
+    for declared in NON_COMMAND_MODULES {
+        assert!(
+            files.iter().any(|module| module == declared),
+            "{declared}.rs in NON_COMMAND_MODULES does not exist under crates/core/src/commands"
         );
     }
 }

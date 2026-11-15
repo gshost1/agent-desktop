@@ -102,12 +102,16 @@ struct ContentView: View {
                 .accessibilityLabel("primary-button")
             StatusReadout(name: "click-status", value: clickStatus)
 
+            // Plain style: a bordered button's AppKit tracking loop consumes the
+            // mouse-up, so a simultaneous multi-tap gesture never completes.
             Button("Double Target") { }
+                .buttonStyle(.plain)
                 .accessibilityLabel("double-target")
                 .simultaneousGesture(TapGesture(count: 2).onEnded { doubleStatus = "double-clicked" })
             StatusReadout(name: "double-status", value: doubleStatus)
 
             Button("Triple Target") { }
+                .buttonStyle(.plain)
                 .accessibilityLabel("triple-target")
                 .simultaneousGesture(TapGesture(count: 3).onEnded { tripleStatus = "triple-clicked" })
             StatusReadout(name: "triple-status", value: tripleStatus)
@@ -366,6 +370,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let frame = FixtureLaunchFrame.requested() {
+            FixtureLaunchFrame.keepFramesOutOfDefaults()
+            FixtureLaunchFrame.apply(frame)
+        }
         if isBackgroundFixture {
             return
         }

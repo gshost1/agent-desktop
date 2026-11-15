@@ -7,12 +7,14 @@ use agent_desktop_core::{
 use super::launch_window::LaunchWindow;
 
 pub(crate) const STARTUP_GRACE: Duration = Duration::from_millis(1500);
-const FIRST_POLL: Duration = Duration::from_millis(25);
+const FIRST_POLL: Duration = Duration::from_millis(10);
 /// The longest gap between two reads of a launching application's windows.
 /// The launch returns at the first read that shows its window placed, so the
 /// gap is latency added after the window appears; one read costs a window
-/// list and an accessibility state read of a few milliseconds.
-const POLL_LIMIT: Duration = Duration::from_millis(50);
+/// list and an accessibility state read of a few milliseconds, and a cold
+/// launch takes hundreds, so reading twice as often costs little next to
+/// the wait it shortens.
+const POLL_LIMIT: Duration = Duration::from_millis(25);
 
 /// The probes one launch wait reads on every poll.
 pub(crate) struct SettleProbes<R, S, A> {

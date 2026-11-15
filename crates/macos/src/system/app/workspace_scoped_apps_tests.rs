@@ -97,14 +97,24 @@ fn a_failed_named_read_fails_the_lookup() {
     assert_eq!(error.code, agent_desktop_core::ErrorCode::Timeout);
 }
 
-#[test]
-fn a_name_no_app_has_reads_every_record_in_the_same_read() {
-    crate::system::cocoa_runtime::ensure_cocoa_multithreaded().unwrap();
-    let bytes = crate::system::appkit_bridge::named_workspace_snapshot_json(&|_| false).unwrap();
-    let all = record_names(&crate::system::appkit_bridge::workspace_snapshot_json().unwrap());
+/// Reads the live app list, runs `read` and reads the list again until both
+/// lists agree, so an app or helper that starts or quits during one attempt
+/// cannot decide the test.
+fn with_stable_app_list<T>(mut read: impl FnMut() -> T) -> (Vec<String>, T) {
+    for _ in 0..8 {
+        let before = sorted_record_names();
+        let result = read();
+        if sorted_record_names() == before {
+            return (before, result);
+        }
+    }
+    panic!("the running-app list changed during every attempt");
+}
 
-    assert!(!selected_only(&bytes));
-    assert_eq!(record_names(&bytes).len(), all.len());
+fn sorted_record_names() -> Vec<String> {
+    let mut names = record_names(&crate::system::appkit_bridge::workspace_snapshot_json().unwrap());
+    names.sort();
+    names
 }
 
 fn record_names(bytes: &[u8]) -> Vec<String> {
@@ -118,24 +128,31 @@ fn record_names(bytes: &[u8]) -> Vec<String> {
 }
 
 #[test]
+fn a_name_no_app_has_reads_every_record_in_the_same_read() {
+    crate::system::cocoa_runtime::ensure_cocoa_multithreaded().unwrap();
+    let (all, bytes) = with_stable_app_list(|| {
+        crate::system::appkit_bridge::named_workspace_snapshot_json(&|_| false).unwrap()
+    });
+
+    assert!(!selected_only(&bytes));
+    let mut named = record_names(&bytes);
+    named.sort();
+    assert_eq!(named, all);
+}
+
+#[test]
 fn the_named_workspace_read_returns_records_only_for_selected_names() {
     crate::system::cocoa_runtime::ensure_cocoa_multithreaded().unwrap();
-    let all = record_names(&crate::system::appkit_bridge::workspace_snapshot_json().unwrap());
-    let Some(target) = all.first().cloned() else {
+    let Some(target) = sorted_record_names().first().cloned() else {
         return;
     };
+    let (all, bytes) = with_stable_app_list(|| {
+        crate::system::appkit_bridge::named_workspace_snapshot_json(&|name| name == target).unwrap()
+    });
+    let named = record_names(&bytes);
 
-    let named = record_names(
-        &crate::system::appkit_bridge::named_workspace_snapshot_json(&|name| name == target)
-            .unwrap(),
-    );
-
-    assert!(!named.is_empty());
+    assert!(selected_only(&bytes));
     assert!(named.iter().all(|name| *name == target));
-    assert!(selected_only(
-        &crate::system::appkit_bridge::named_workspace_snapshot_json(&|name| name == target)
-            .unwrap()
-    ));
     assert_eq!(
         named.len(),
         all.iter().filter(|name| **name == target).count()

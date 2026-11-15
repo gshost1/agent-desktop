@@ -23,7 +23,7 @@ pub fn click(
 
 /// [`click`] repeated `count` times at one point, each press carrying its
 /// running click count, so two presses make the page's `dblclick`.
-pub fn click_times(
+pub(crate) fn click_times(
     connection: &mut CdpConnection,
     session: &PageSession,
     token: &ElementToken,

@@ -1,5 +1,5 @@
 os_volume() { osascript -e "output volume of (get volume settings)" 2>/dev/null; }
-os_ref() { printf '%s' "$1" | python3 "$json_tool" tree "$2" ref 2>/dev/null; }
+os_ref() { printf '%s' "$1" | "$e2e_python" "$json_tool" tree "$2" ref 2>/dev/null; }
 
 os_wait_volume() {
     local value=""
@@ -95,14 +95,18 @@ assert "snapshot --app Dock lists the Dock items" \
     "ok=$(json_field "$dock_process" ok) error=$(json_field "$dock_process" error.code)"
 
 dock_launch=""
-for candidate in TextEdit Calculator Notes; do
+dock_candidates=(TextEdit Calculator Notes)
+if private_skip_enabled; then
+    dock_candidates=(Calculator)
+fi
+for candidate in "${dock_candidates[@]}"; do
     if ! pgrep -x "$candidate" >/dev/null 2>&1 && [ -n "$(os_ref "$dock_surface" "$candidate")" ]; then
         dock_launch="$candidate"
         break
     fi
 done
 if [ -z "$dock_launch" ]; then
-    skipmsg "Dock launch of a stopped app unavailable: no stopped TextEdit, Calculator or Notes item is pinned in the Dock"
+    skipmsg "Dock launch of a stopped app unavailable: no stopped ${dock_candidates[*]} item is pinned in the Dock"
 else
     dock_click="$("$bin" click "$(os_ref "$dock_surface" "$dock_launch")" 2>/dev/null)"
     dock_launched=0

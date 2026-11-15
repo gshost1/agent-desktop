@@ -76,23 +76,6 @@ pub fn resolve_description(
     }
 }
 
-/// The name a caller with no uncertainty channel gets.
-///
-/// It delegates rather than repeating the order, so the two cannot drift apart
-/// again: there is one array of sources in this file and both entry points read
-/// it.
-pub fn compute_name(evidence: &NameEvidence) -> Option<String> {
-    resolve_name(evidence, &NameSlotStatus::default())
-        .known()
-        .cloned()
-}
-
-pub fn compute_description(evidence: &NameEvidence) -> Option<String> {
-    resolve_description(evidence, &NameSlotStatus::default())
-        .known()
-        .cloned()
-}
-
 /// The precedence itself: strongest first.
 fn ordered_sources<'a>(
     evidence: &'a NameEvidence,

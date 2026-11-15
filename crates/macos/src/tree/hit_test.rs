@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 mod imp {
     use crate::tree::{
         AXElement, element_bounds::read_bounds_with_deadline,
@@ -46,27 +45,45 @@ mod imp {
         point: Point,
         deadline: std::time::Instant,
     ) -> Result<HitTestResult, AdapterError> {
+        let result = accessibility_hit(target, &point, deadline)?;
+        if result != HitTestResult::Unknown {
+            return Ok(result);
+        }
+        let Ok(pid) = crate::tree::properties::ax_ipc::pid(target, deadline) else {
+            return Ok(result);
+        };
+        Ok(
+            crate::system::window::window_stack_occluder::intercepting_window(&point, pid)
+                .unwrap_or(result),
+        )
+    }
+
+    fn accessibility_hit(
+        target: &AXElement,
+        point: &Point,
+        deadline: std::time::Instant,
+    ) -> Result<HitTestResult, AdapterError> {
         let Some(bounds) = read_bounds_with_deadline(target, deadline)? else {
             return Ok(HitTestResult::Unknown);
         };
         if bounds.width <= 0.0 || bounds.height <= 0.0 {
             return Ok(HitTestResult::Unknown);
         }
-        if !clipping_is_complete(target, &point, deadline)? {
+        if !clipping_is_complete(target, point, deadline)? {
             return Ok(HitTestResult::Unknown);
         }
         let system = crate::tree::system_wide::element();
         if system.0.is_null() {
             return Ok(HitTestResult::Unknown);
         }
-        let Some(hit) = hit_at_position(&system, &point, deadline) else {
+        let Some(hit) = hit_at_position(&system, point, deadline) else {
             return Ok(HitTestResult::Unknown);
         };
         let Some(classification) = classify_hit(target, &hit, deadline) else {
             return Ok(HitTestResult::Unknown);
         };
         if needs_application_retry(classification) {
-            return Ok(hit_test_in_application(target, &point, deadline));
+            return Ok(hit_test_in_application(target, point, deadline));
         }
         Ok(classification_result(classification, &hit, deadline))
     }
@@ -267,9 +284,22 @@ mod imp {
             if ends_clipping_walk(role.as_deref()) {
                 return Ok(Some(visible));
             }
-            if role.as_deref().is_some_and(clips_descendants) {
-                let Some(bounds) = read_bounds_with_deadline(&current, deadline)? else {
+            if let Some(clipping_role) = role.as_deref().filter(|role| clips_descendants(role)) {
+                let Some(reported) = read_bounds_with_deadline(&current, deadline)? else {
                     return Ok(None);
+                };
+                let bounds = if crate::tree::element_bounds::contains_rect(reported, visible) {
+                    reported
+                } else {
+                    match crate::tree::element_bounds::clip_bounds(
+                        &current,
+                        clipping_role,
+                        Some(reported),
+                        deadline,
+                    ) {
+                        Some(bounds) => bounds,
+                        None => return Ok(None),
+                    }
                 };
                 let Some(intersection) = intersect_rects(visible, bounds) else {
                     return Ok(None);
@@ -336,26 +366,8 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use agent_desktop_core::{
-        AdapterError, Point, adapter::hit_test::HitTestResult, adapter::native_handle::NativeHandle,
-    };
+pub(crate) use imp::{hit_test_ax_element, hit_test_impl, visible_bounds_ax_element};
 
-    pub fn hit_test_impl(
-        _handle: &NativeHandle,
-        _point: Point,
-        _deadline: agent_desktop_core::Deadline,
-    ) -> Result<HitTestResult, AdapterError> {
-        Err(AdapterError::not_supported("hit_test"))
-    }
-}
-
-pub(crate) use imp::hit_test_impl;
-
-#[cfg(target_os = "macos")]
-pub(crate) use imp::{hit_test_ax_element, visible_bounds_ax_element};
-
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 #[path = "hit_test_tests.rs"]
 mod tests;

@@ -31,7 +31,7 @@ error_contract_suite() {
 }
 
 batch_payload_for() {
-    python3 - "$1" "$2" "$3" <<'PY'
+    "$e2e_python" - "$1" "$2" "$3" <<'PY'
 import json, sys
 ref, tail, first_value = sys.argv[1:4]
 malformed = {"command": "click", "args": {"ref_id": "@e1"}}

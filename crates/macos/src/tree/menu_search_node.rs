@@ -65,14 +65,29 @@ pub(crate) fn read(
     names: &CFArray<CFString>,
     deadline: Instant,
 ) -> Result<Option<MenuSearchNode>, AdapterError> {
+    read_with(
+        || {
+            super::properties::ax_ipc::copy_multiple_attribute_values(
+                element,
+                names.as_concrete_TypeRef(),
+                deadline,
+            )
+        },
+        || super::surface_read::boolean(element, "AXVisible", deadline),
+        deadline,
+    )
+}
+
+/// The batch is asked once. A busy element is not asked again here, because
+/// the one-at-a-time read the caller falls back to retries each attribute
+/// on its own, and retrying the batch first would pay for both.
+fn read_with(
+    mut copy: impl FnMut() -> (i32, core_foundation_sys::base::CFTypeRef),
+    visible: impl FnOnce() -> Result<Option<bool>, AdapterError>,
+    deadline: Instant,
+) -> Result<Option<MenuSearchNode>, AdapterError> {
     super::surface_read::ensure_before_deadline(deadline)?;
-    let (error, values) = super::read_recovery::read_owned(deadline, || {
-        super::properties::ax_ipc::copy_multiple_attribute_values(
-            element,
-            names.as_concrete_TypeRef(),
-            deadline,
-        )
-    });
+    let (error, values) = copy();
     let values = super::properties::cf_type::created_cf_array(values);
     if error == accessibility_sys::kAXErrorAPIDisabled {
         return Err(super::surface_read::map_error("AXRole", error));
@@ -87,8 +102,7 @@ pub(crate) fn read(
     else {
         return Ok(None);
     };
-    let displayed_menu = batch.role.as_deref() == Some("AXMenu")
-        && super::surface_read::boolean(element, "AXVisible", deadline)? != Some(false);
+    let displayed_menu = batch.role.as_deref() == Some("AXMenu") && visible()? != Some(false);
     Ok(search_node(batch, displayed_menu))
 }
 
@@ -167,3 +181,7 @@ fn is_absent_children_error(error: i32) -> bool {
 #[cfg(test)]
 #[path = "menu_search_node_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "menu_search_node_read_tests.rs"]
+mod read_tests;

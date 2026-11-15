@@ -9,7 +9,6 @@ fn endpoint(source: EndpointSource) -> BrowserEndpoint {
     BrowserEndpoint {
         websocket_url: WebSocketUrl::loopback(9222, "/devtools/browser/x").unwrap(),
         source,
-        product: None,
     }
 }
 

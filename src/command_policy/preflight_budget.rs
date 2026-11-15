@@ -13,17 +13,13 @@ const BATCH_PREFLIGHT_CAP_MS: u64 = 15_000;
 /// a healthy read, a cold bus connection included, always gets this long.
 const PREFLIGHT_SLACK_MS: u64 = 900;
 
-/// The preflight deadline: the caller's, a batch's capped budget, else the
-/// standard one, cut to the command's own timeout plus [`PREFLIGHT_SLACK_MS`]
-/// when that is shorter.
-pub(crate) fn preflight_deadline(
-    cmd: &Commands,
-    deadline: Option<Deadline>,
-) -> Result<Deadline, AdapterError> {
-    match (cmd, deadline) {
-        (_, Some(deadline)) => Ok(deadline),
-        (Commands::Batch(a), None) => Deadline::after(a.timeout_ms.min(BATCH_PREFLIGHT_CAP_MS)),
-        (_, None) => Deadline::after(own_timeout_ms(cmd).map_or(
+/// The preflight deadline: a batch's capped budget, else the standard one, cut
+/// to the command's own timeout plus [`PREFLIGHT_SLACK_MS`] when that is
+/// shorter.
+pub(crate) fn preflight_deadline(cmd: &Commands) -> Result<Deadline, AdapterError> {
+    match cmd {
+        Commands::Batch(a) => Deadline::after(a.timeout_ms.min(BATCH_PREFLIGHT_CAP_MS)),
+        _ => Deadline::after(own_timeout_ms(cmd).map_or(
             DEFAULT_OPERATION_TIMEOUT_MS,
             |timeout_ms| {
                 timeout_ms

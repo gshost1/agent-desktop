@@ -9,7 +9,6 @@ fn a_loopback_debugger_url_on_the_same_port_is_accepted() {
     let endpoint = parse_version_body(9222, body).unwrap();
     assert_eq!(endpoint.port(), 9222);
     assert_eq!(endpoint.source, EndpointSource::JsonVersion);
-    assert_eq!(endpoint.product.as_deref(), Some("Chrome/144.0.0.0"));
     assert_eq!(endpoint.websocket_url.path(), "/devtools/browser/abc");
 }
 

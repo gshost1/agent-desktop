@@ -2,6 +2,7 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::storage::state_io_error::state_io_error;
 use crate::{AdapterError, Deadline, ErrorCode};
 
 /// A private state-file lock held until this guard is dropped.
@@ -16,7 +17,8 @@ pub struct FileLock {
 
 impl FileLock {
     pub fn acquire(path: &Path, deadline: Deadline, purpose: &str) -> Result<Self, AdapterError> {
-        let file = crate::storage::private_file::open_private_lock(path, true).map_err(io_error)?;
+        let file =
+            crate::storage::private_file::open_private_lock(path, true).map_err(state_io_error)?;
         lock_file(file, deadline, purpose, path)
     }
 
@@ -45,7 +47,7 @@ impl FileLock {
 
         let duplicated = unsafe { libc::fcntl(self._file.as_raw_fd(), libc::F_DUPFD, 3) };
         if duplicated < 0 {
-            return Err(io_error(std::io::Error::last_os_error()));
+            return Err(state_io_error(std::io::Error::last_os_error()));
         }
         Ok(unsafe { std::os::fd::OwnedFd::from_raw_fd(duplicated) })
     }
@@ -62,21 +64,26 @@ impl FileLock {
 
         let duplicated = unsafe { libc::fcntl(raw_fd, libc::F_DUPFD_CLOEXEC, 3) };
         if duplicated < 0 {
-            return Err(io_error(std::io::Error::last_os_error()));
+            return Err(state_io_error(std::io::Error::last_os_error()));
         }
         let original_flags = unsafe { libc::fcntl(raw_fd, libc::F_GETFD) };
         if original_flags < 0
             || unsafe { libc::fcntl(raw_fd, libc::F_SETFD, original_flags | libc::FD_CLOEXEC) } != 0
         {
             unsafe { libc::close(duplicated) };
-            return Err(io_error(std::io::Error::last_os_error()));
+            return Err(state_io_error(std::io::Error::last_os_error()));
         }
         let inherited = File::from(unsafe { OwnedFd::from_raw_fd(duplicated) });
-        let inherited_meta =
-            crate::storage::private_file::validate_private_regular(&inherited).map_err(io_error)?;
+        let inherited_meta = crate::storage::private_file::validate_private_regular(&inherited)
+            .map_err(|error| {
+                state_io_error(crate::storage::state_exposure::with_exposed_path(
+                    error,
+                    canonical_path,
+                ))
+            })?;
         let canonical = crate::storage::private_file::open_private_lock(canonical_path, false)
-            .map_err(io_error)?;
-        let canonical_meta = canonical.metadata().map_err(io_error)?;
+            .map_err(state_io_error)?;
+        let canonical_meta = canonical.metadata().map_err(state_io_error)?;
         if inherited_meta.dev() != canonical_meta.dev()
             || inherited_meta.ino() != canonical_meta.ino()
         {
@@ -143,8 +150,4 @@ fn lock_timeout(
         "path": path.file_name().map(|name| name.to_string_lossy().into_owned()),
         "contention_count": contention_count,
     }))
-}
-
-fn io_error(error: std::io::Error) -> AdapterError {
-    AdapterError::new(ErrorCode::Internal, error.to_string())
 }

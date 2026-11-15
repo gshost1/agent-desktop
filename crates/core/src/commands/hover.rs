@@ -8,9 +8,9 @@ use crate::{
             PointResolveArgs, ResolvedPoint, require_cursor_policy, require_pointer_capability,
         },
         pointer_action::{
-            PointResolveAttempt, before_first_event, ensure_point_deadline,
-            focus_point_under_lease, point_deadline, resolve_point_under_lease,
-            retry_leased_point_phase, wait_for_point_with_deadline,
+            CommandFocus, PointResolveAttempt, before_first_event, ensure_point_deadline,
+            point_deadline, resolve_point_under_lease, retry_leased_point_phase,
+            wait_for_point_with_focus,
         },
     },
     context::CommandContext,
@@ -47,47 +47,51 @@ pub fn execute(
     };
     let auto_wait = args.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let cursor = crate::cursor_overlay::hold_cursor(context, deadline);
+    let mut focus = CommandFocus::default();
     let (resolved, lease) = before_first_event(|| {
-        if auto_wait {
-            wait_for_point_with_deadline(point_args, deadline, adapter, context)?;
-        }
-        let (resolved, lease) = retry_leased_point_phase(args.timeout_ms, deadline, || {
-            let lease = adapter.acquire_interaction_lease(deadline)?;
-            let focused = focus_point_under_lease(point_args, &lease, adapter, context)?;
-            let first = resolve_point_under_lease(
-                PointResolveAttempt {
-                    args: point_args,
-                    stability: None,
-                    allow_scroll: !auto_wait,
-                },
+        focus.marking(|focus| {
+            if auto_wait {
+                wait_for_point_with_focus(point_args, deadline, adapter, context, focus)?;
+            }
+            let (resolved, lease) =
+                retry_leased_point_phase(args.timeout_ms, deadline, focus, |focus| {
+                    let lease = adapter.acquire_interaction_lease(deadline)?;
+                    let focused = focus.run(point_args, &lease, adapter, context)?;
+                    let first = resolve_point_under_lease(
+                        PointResolveAttempt {
+                            args: point_args,
+                            stability: None,
+                            allow_scroll: !auto_wait,
+                        },
+                        deadline,
+                        &lease,
+                        adapter,
+                        context,
+                    )?;
+                    let mut resolved = resolve_point_under_lease(
+                        PointResolveAttempt {
+                            args: point_args,
+                            stability: Some(first.bounds_hash),
+                            allow_scroll: false,
+                        },
+                        deadline,
+                        &lease,
+                        adapter,
+                        context,
+                    )?;
+                    resolved.focused = focused;
+                    Ok((resolved, lease))
+                })?;
+            confirm_receiver(&resolved, deadline, adapter)?;
+            ensure_point_deadline(
                 deadline,
-                &lease,
-                adapter,
-                context,
+                Some(json!({
+                    "status": "actionable",
+                    "point": { "x": resolved.point.x, "y": resolved.point.y }
+                })),
             )?;
-            let mut resolved = resolve_point_under_lease(
-                PointResolveAttempt {
-                    args: point_args,
-                    stability: Some(first.bounds_hash),
-                    allow_scroll: false,
-                },
-                deadline,
-                &lease,
-                adapter,
-                context,
-            )?;
-            resolved.focused = focused;
             Ok((resolved, lease))
-        })?;
-        confirm_receiver(&resolved, deadline, adapter)?;
-        ensure_point_deadline(
-            deadline,
-            Some(json!({
-                "status": "actionable",
-                "point": { "x": resolved.point.x, "y": resolved.point.y }
-            })),
-        )?;
-        Ok((resolved, lease))
+        })
     })?;
     let result = crate::cursor_overlay::dispatch_mouse_event_with_cursor(
         adapter,

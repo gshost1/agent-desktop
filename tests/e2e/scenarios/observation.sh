@@ -15,7 +15,7 @@ require_target text_input textfield text-input
 okmsg "find textfield by accessible name returns ref_id + snapshot_id"
 
 textarea_json="$("$bin" find --app "$app" --role textarea --name text-input --first 2>/dev/null)"
-textarea_target="$(printf '%s' "$textarea_json" | python3 "$json_tool" target 2>/dev/null)" || textarea_target=""
+textarea_target="$(printf '%s' "$textarea_json" | "$e2e_python" "$json_tool" target 2>/dev/null)" || textarea_target=""
 assert "textarea alias resolves the textfield" "$([ -n "$textarea_target" ] && echo 1 || echo 0)" \
     "target='$(target_ref "$textarea_target")' snapshot='$(target_snapshot "$textarea_target")'"
 

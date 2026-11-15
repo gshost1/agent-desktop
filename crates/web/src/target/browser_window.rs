@@ -7,14 +7,14 @@ use crate::transport::transport_error::transport_failed;
 /// The browser window that holds a page target, as `Browser.getWindowForTarget`
 /// reports it: the browser's window id and its screen bounds in DIPs.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BrowserWindow {
-    pub window_id: i64,
-    pub bounds: Rect,
+pub(crate) struct BrowserWindow {
+    pub(crate) window_id: i64,
+    pub(crate) bounds: Rect,
 }
 
 impl BrowserWindow {
     /// The window that shows `target_id`. Reading it raises nothing.
-    pub fn of_target(
+    pub(crate) fn of_target(
         connection: &mut CdpConnection,
         target_id: &str,
         deadline: Deadline,

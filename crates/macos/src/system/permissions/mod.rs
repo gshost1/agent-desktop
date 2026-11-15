@@ -10,7 +10,6 @@ const PROC_NOT_FOUND: i32 = -600;
 const ERR_AE_EVENT_NOT_PERMITTED: i32 = -1743;
 const ERR_AE_EVENT_WOULD_REQUIRE_USER_CONSENT: i32 = -1744;
 
-#[cfg(target_os = "macos")]
 mod imp {
     use accessibility_sys::{
         AXIsProcessTrusted, AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
@@ -105,28 +104,6 @@ mod imp {
 
     pub(super) fn request_automation_permission() -> bool {
         determine_automation_permission(1) == 0
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    pub fn is_trusted() -> bool {
-        false
-    }
-    pub fn request_trust() -> bool {
-        false
-    }
-    pub fn screen_recording_granted() -> bool {
-        false
-    }
-    pub fn request_screen_recording() -> bool {
-        false
-    }
-    pub fn probe_automation_permission() -> i32 {
-        -600
-    }
-    pub fn request_automation_permission() -> bool {
-        false
     }
 }
 

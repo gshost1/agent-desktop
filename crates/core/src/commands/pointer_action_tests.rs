@@ -43,7 +43,22 @@ fn app_unresponsive_requires_explicit_retry_evidence() {
     assert!(!is_retryable_point_error(&err));
 }
 
-fn point_ref_snapshot() -> String {
+pub(super) fn wait_for_point_with_deadline(
+    args: crate::commands::point_resolve::PointResolveArgs<'_>,
+    deadline: crate::Deadline,
+    adapter: &dyn PlatformAdapter,
+    context: &CommandContext,
+) -> Result<crate::commands::point_resolve::ResolvedPoint, AppError> {
+    wait_for_point_with_focus(
+        args,
+        deadline,
+        adapter,
+        context,
+        &mut CommandFocus::default(),
+    )
+}
+
+pub(super) fn point_ref_snapshot() -> String {
     let store = RefStore::new().unwrap();
     let mut refmap = RefMap::new();
     refmap.allocate(RefEntry {

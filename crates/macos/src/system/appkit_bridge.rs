@@ -11,14 +11,12 @@ pub(crate) enum TerminationOutcome {
     IdentityMismatch,
 }
 
-#[cfg(target_os = "macos")]
 #[repr(C)]
 struct TerminateResult {
     status: u8,
     delivery_started: u8,
 }
 
-#[cfg(target_os = "macos")]
 #[repr(C)]
 struct BytesResult {
     status: u8,
@@ -34,7 +32,6 @@ struct BytesResult {
 /// a process it did not start, and the bridge passes that absence
 /// separately, so any present value — epoch, negative, or infinite — keeps
 /// the same refusal rule the direct comparison applied.
-#[cfg(target_os = "macos")]
 pub(crate) fn termination_launch_time_conflict(
     expected: f64,
     observed: f64,
@@ -43,7 +40,6 @@ pub(crate) fn termination_launch_time_conflict(
     present && (observed - expected).abs() > MAX_LAUNCH_TIME_DELTA_SECONDS
 }
 
-#[cfg(target_os = "macos")]
 extern "C" fn termination_launch_time_conflict_ffi(
     expected: f64,
     observed: f64,
@@ -53,7 +49,6 @@ extern "C" fn termination_launch_time_conflict_ffi(
         .unwrap_or(true)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn terminate(
     pid: i32,
     expected_launch_time: f64,
@@ -81,7 +76,6 @@ pub(crate) fn terminate(
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn ensure_cocoa_multithreaded() -> Result<(), String> {
     let status = unsafe { agent_desktop_ensure_cocoa_multithreaded() };
     match status {
@@ -94,19 +88,16 @@ pub(crate) fn ensure_cocoa_multithreaded() -> Result<(), String> {
     }
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn workspace_snapshot_json() -> Result<Vec<u8>, AdapterError> {
     copy_workspace_snapshot_json(0)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn focused_snapshot_json() -> Result<Vec<u8>, AdapterError> {
     copy_workspace_snapshot_json(1)
 }
 
 /// The workspace snapshot restricted to applications whose display name `selects` accepts; the
 /// others are never read past their name, so their identity fields cost nothing.
-#[cfg(target_os = "macos")]
 pub(crate) fn named_workspace_snapshot_json(
     selects: &dyn Fn(&str) -> bool,
 ) -> Result<Vec<u8>, AdapterError> {
@@ -116,7 +107,6 @@ pub(crate) fn named_workspace_snapshot_json(
     })
 }
 
-#[cfg(target_os = "macos")]
 extern "C" fn select_name(context: *mut std::ffi::c_void, name: *const u8, length: usize) -> u8 {
     if context.is_null() || name.is_null() {
         return 1;
@@ -126,12 +116,10 @@ extern "C" fn select_name(context: *mut std::ffi::c_void, name: *const u8, lengt
     std::str::from_utf8(name).map_or(1, |name| u8::from(selects(name)))
 }
 
-#[cfg(target_os = "macos")]
 fn copy_workspace_snapshot_json(frontmost_only: u8) -> Result<Vec<u8>, AdapterError> {
     workspace_snapshot_bytes(unsafe { agent_desktop_copy_workspace_snapshot_json(frontmost_only) })
 }
 
-#[cfg(target_os = "macos")]
 fn workspace_snapshot_bytes(result: BytesResult) -> Result<Vec<u8>, AdapterError> {
     let bytes = BridgeBytes(result.bytes);
     if result.status != 0 {
@@ -146,7 +134,6 @@ fn workspace_snapshot_bytes(result: BytesResult) -> Result<Vec<u8>, AdapterError
     Ok(unsafe { std::slice::from_raw_parts(bytes.0, result.length) }.to_vec())
 }
 
-#[cfg(target_os = "macos")]
 fn workspace_snapshot_error(result: &BytesResult) -> AdapterError {
     let field = if result.failure_field.is_null() {
         None
@@ -172,17 +159,14 @@ fn workspace_snapshot_error(result: &BytesResult) -> AdapterError {
     bridge_error("workspace_snapshot", result.status, false).with_details(details)
 }
 
-#[cfg(target_os = "macos")]
 struct BridgeBytes(*mut u8);
 
-#[cfg(target_os = "macos")]
 impl Drop for BridgeBytes {
     fn drop(&mut self) {
         unsafe { agent_desktop_free_bridge_bytes(self.0) };
     }
 }
 
-#[cfg(target_os = "macos")]
 fn bridge_error(operation: &str, status: u8, delivery_started: bool) -> AdapterError {
     let disposition = if delivery_started {
         DeliverySemantics::uncertain()
@@ -216,7 +200,6 @@ pub(crate) enum StartupState {
 
 /// An application that finished starting up has already created whatever
 /// windows its launch produces.
-#[cfg(target_os = "macos")]
 pub(crate) fn startup_state(pid: i32) -> StartupState {
     match unsafe { agent_desktop_app_finished_launching(pid) } {
         0 => StartupState::Starting,
@@ -225,12 +208,6 @@ pub(crate) fn startup_state(pid: i32) -> StartupState {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn startup_state(_pid: i32) -> StartupState {
-    StartupState::NoRecord
-}
-
-#[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn agent_desktop_terminate_application(
         pid: i32,
@@ -248,41 +225,10 @@ unsafe extern "C" {
     fn agent_desktop_free_bridge_bytes(bytes: *mut u8);
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn terminate(
-    _pid: i32,
-    _expected_launch_time: f64,
-    _force: bool,
-) -> Result<TerminationOutcome, AdapterError> {
-    Err(AdapterError::not_supported("terminate application"))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn ensure_cocoa_multithreaded() -> Result<(), String> {
-    Err("AppKit is unavailable".into())
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn named_workspace_snapshot_json(
-    _selects: &dyn Fn(&str) -> bool,
-) -> Result<Vec<u8>, AdapterError> {
-    Err(AdapterError::not_supported(
-        "workspace application snapshot",
-    ))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn workspace_snapshot_json() -> Result<Vec<u8>, AdapterError> {
-    Err(AdapterError::not_supported(
-        "workspace application snapshot",
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn workspace_snapshot_bridge_failures_are_structured() {
         let error = bridge_error("workspace_snapshot", 2, false);
@@ -296,7 +242,6 @@ mod tests {
         assert_eq!(details["retryable"], true);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn workspace_snapshot_failure_identifies_field_without_exposing_application_name() {
         let field = b"application_name\0";
@@ -319,7 +264,6 @@ mod tests {
         assert_eq!(details["retryable"], true);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn workspace_snapshot_failure_without_context_omits_the_unset_fields() {
         let result = BytesResult {
@@ -338,7 +282,6 @@ mod tests {
         assert_eq!(details["status"], 1);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn absent_launch_date_never_conflicts_with_termination() {
         assert!(!termination_launch_time_conflict(
@@ -353,7 +296,6 @@ mod tests {
         ));
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn present_launch_date_keeps_the_five_second_refusal() {
         let expected = 1_700_000_000.25;
@@ -379,7 +321,6 @@ mod tests {
         assert!(!termination_launch_time_conflict(expected, f64::NAN, true));
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn post_selector_exception_is_delivery_uncertain() {
         let error = bridge_error("termination", 3, true);

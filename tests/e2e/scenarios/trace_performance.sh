@@ -31,7 +31,7 @@ trace_target() {
     local role="$1" name="$2" output
     output="$("$bin" --session "$trace_session" find --app "$app" \
         --role "$role" --name "$name" --first 2>/dev/null)"
-    printf '%s' "$output" | python3 "$json_tool" target 2>/dev/null
+    printf '%s' "$output" | "$e2e_python" "$json_tool" target 2>/dev/null
 }
 trace_primary="$(trace_target button primary-button)"
 trace_text="$(trace_target textfield text-input)"
@@ -43,14 +43,14 @@ trace_session_type="$("$bin" --headed --session "$trace_session" type "$(target_
     trace-e2e 2>/dev/null)"
 sleep 0.5
 trace_show="$("$bin" --session "$trace_session" trace show --limit 0 2>/dev/null)"
-trace_events="$(printf '%s' "$trace_show" | python3 -c '
+trace_events="$(printf '%s' "$trace_show" | "$e2e_python" -c '
 import json,sys
 data=json.load(sys.stdin)
 events=[entry.get("event") for entry in data.get("data",{}).get("events",[])]
 required={"command.start","command.end","snapshot.saved","action.artifacts"}
 print(1 if required.issubset(events) else 0)
 ' 2>/dev/null)"
-trace_artifact_skips="$(printf '%s' "$trace_show" | python3 -c '
+trace_artifact_skips="$(printf '%s' "$trace_show" | "$e2e_python" -c '
 import json,sys
 data=json.load(sys.stdin)
 keys=("skipped","skipped_pre","skipped_post")
@@ -131,3 +131,8 @@ fi
 assert "force close removes the fixture process" \
     "$([ "$running_before" = "True" ] && [ "$running_after" = "False" ] && echo 1 || echo 0)" \
     "before=$running_before after=$running_after"
+
+note "Fixture relaunch after the force-close observation"
+if [ "$running_after" = "False" ]; then
+    launch_fixture || abort_suite "the fixture could not be relaunched after the force-close observation"
+fi

@@ -131,12 +131,7 @@ fn release(
 
 /// Whether `error` is the refusal [`confirm_hit`] gives a covered point.
 pub(crate) fn is_intercepted(error: &AdapterError) -> bool {
-    error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(Value::as_str)
-        == Some(INTERCEPTED)
+    crate::cdp::protocol_error::error_kind(error) == Some(INTERCEPTED)
 }
 
 fn intercepted(token: &ElementToken, point: &Point, hit: Option<i64>) -> AdapterError {

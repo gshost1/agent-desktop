@@ -11,6 +11,7 @@ pub(crate) mod dom_facts;
 pub(crate) mod dom_ids;
 pub(crate) mod element_token;
 pub(crate) mod flatten;
+pub(crate) mod frame_budget;
 pub(crate) mod frame_build;
 pub(crate) mod frame_context;
 pub(crate) mod frame_entry;

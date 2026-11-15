@@ -38,7 +38,7 @@ impl ActionOps for MacOSAdapter {
         if handle.is_null() {
             return execute_global_action(request, lease);
         }
-        execute_action_impl(handle, request, lease)
+        crate::actions::perform_action(ax_element(handle)?, &request, lease.deadline())
     }
 
     fn scroll_into_view(
@@ -46,19 +46,11 @@ impl ActionOps for MacOSAdapter {
         handle: &NativeHandle,
         lease: &InteractionLease,
     ) -> Result<(), AdapterError> {
-        crate::actions::scroll_into_view::scroll_into_view_impl(
+        crate::actions::scroll::scroll_into_view::scroll_into_view_impl(
             ax_element(handle)?,
             lease.deadline(),
         )
     }
-}
-
-fn execute_action_impl(
-    handle: &NativeHandle,
-    request: ActionRequest,
-    lease: &InteractionLease,
-) -> Result<ActionResult, AdapterError> {
-    crate::actions::perform_action(ax_element(handle)?, &request, lease.deadline())
 }
 
 fn execute_global_action(

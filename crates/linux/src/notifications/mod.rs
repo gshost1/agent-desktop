@@ -6,6 +6,7 @@ mod dismiss;
 mod dismiss_all;
 mod extract;
 mod list;
+mod restore_report;
 mod session;
 mod signal;
 mod target;

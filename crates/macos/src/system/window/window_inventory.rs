@@ -2,30 +2,7 @@ use agent_desktop_core::{AdapterError, WindowFilter, WindowInfo};
 use std::time::Instant;
 
 use crate::system::window::cg_window;
-
-#[cfg(test)]
-fn apps_from_window_records(
-    records: &[cg_window::WindowRecord],
-) -> Vec<agent_desktop_core::AppInfo> {
-    let mut seen_pids = rustc_hash::FxHashSet::default();
-    let mut apps = Vec::new();
-
-    for record in records {
-        if !seen_pids.insert(record.pid) {
-            continue;
-        }
-        apps.push(agent_desktop_core::AppInfo {
-            name: record.app_name.clone(),
-            pid: agent_desktop_core::ProcessId::try_from(record.pid)
-                .expect("fixture pid must be positive"),
-            bundle_id: None,
-            process_instance: record.process_instance.clone(),
-            presentation: None,
-        });
-    }
-
-    apps
-}
+use crate::system::window::window_inventory_global::{OwnerGeneration, OwnerSnapshotView};
 
 pub(crate) fn list_windows_until(
     filter: &WindowFilter,
@@ -38,43 +15,109 @@ pub(crate) fn list_windows_until(
         );
     };
     crate::system::window::window_inventory_global::stabilize_global_with(deadline, || {
-        crate::system::window::window_inventory_global::capture_validated_with(
+        let owners = crate::system::app::workspace_apps::named_window_owner_snapshot_until(
+            app_filter, deadline,
+        )?;
+        owners.require_match(app_filter)?;
+        let pids = owners.matching_pids(app_filter);
+        require_running_app(&pids, app_filter)?;
+        let records =
+            cg_window::window_records_until(deadline, cg_window::WindowRecordScope::Pids(&pids))?;
+        let windows = windows_from_records_with_focus(
+            records.clone(),
+            filter.focused_only,
+            |pid| crate::system::window::window_ax_state::read_until(pid, deadline),
+            crate::system::process::process_identity::matches_instance,
+        );
+        validate_scoped_owners(
+            ScopedRead {
+                owners: &owners,
+                selected: &pids,
+                records: &records,
+            },
+            owner_still_running,
             || {
-                let owners =
-                    crate::system::app::workspace_apps::window_owner_snapshot_until(deadline)?;
-                owners.require_match(app_filter)?;
-                Ok(owners)
-            },
-            |owners| owners.matching_pids(app_filter),
-            |pids| {
-                require_running_app(pids, app_filter)?;
-                cg_window::window_records_until(deadline, cg_window::WindowRecordScope::Pids(pids))
-            },
-            |records, _| {
-                let mut windows = windows_from_records_with_focus(
-                    records,
-                    filter.focused_only,
-                    |pid| crate::system::window::window_ax_state::read_until(pid, deadline),
-                    crate::system::process::process_identity::matches_instance,
+                let after = crate::system::app::workspace_apps::named_window_owner_snapshot_until(
+                    app_filter, deadline,
                 )?;
-                narrow_to_real_windows(&mut windows);
-                Ok(windows)
-            },
-            |before, after, before_pids, records| {
                 let after_pids = after.matching_pids(app_filter);
-                crate::system::window::window_inventory_global::validate_scoped_snapshot_pair(
-                    before,
-                    after,
-                    before_pids,
-                    &after_pids,
-                    records,
-                )
+                Ok((after, after_pids))
             },
-        )
+        )?;
+        windows.map(|mut windows| {
+            narrow_to_real_windows(&mut windows);
+            windows
+        })
     })
 }
 
-#[cfg(target_os = "macos")]
+/// What one scoped read saw: the AppKit snapshot, the pids it selected, and
+/// the CoreGraphics records read for them.
+struct ScopedRead<'a, S> {
+    owners: &'a S,
+    selected: &'a rustc_hash::FxHashSet<i32>,
+    records: &'a [cg_window::WindowRecord],
+}
+
+/// Confirms, after a scoped read, that every selected owner is still the
+/// process the AppKit snapshot named, so an owner that exited or relaunched
+/// during the read makes the read retry instead of reporting it windowless.
+/// Libproc answers this per selected pid. When it cannot answer for one, a
+/// second AppKit snapshot decides, as it always did before.
+fn validate_scoped_owners<S: OwnerSnapshotView>(
+    read: ScopedRead<'_, S>,
+    mut still_running: impl FnMut(i32, OwnerGeneration) -> Result<bool, AdapterError>,
+    recapture: impl FnOnce() -> Result<(S, rustc_hash::FxHashSet<i32>), AdapterError>,
+) -> Result<(), AdapterError> {
+    let mut pids = read.selected.iter().copied().collect::<Vec<_>>();
+    pids.sort_unstable();
+    let mut unconfirmed = false;
+    for pid in pids {
+        let changed = match read
+            .owners
+            .generation(pid)
+            .map(|generation| still_running(pid, generation))
+        {
+            Some(Ok(running)) => !running,
+            Some(Err(_)) => {
+                unconfirmed = true;
+                false
+            }
+            None => true,
+        };
+        if changed {
+            return Err(
+                crate::system::window::window_inventory_global::owner_churn_error(
+                    Some(pid),
+                    "selected_owner_changed",
+                ),
+            );
+        }
+    }
+    if unconfirmed {
+        let (after, after_pids) = recapture()?;
+        return crate::system::window::window_inventory_global::validate_scoped_snapshot_pair(
+            read.owners,
+            &after,
+            read.selected,
+            &after_pids,
+            read.records,
+        );
+    }
+    crate::system::window::window_inventory_global::validate_record_generations(
+        read.records,
+        read.owners,
+    )
+}
+
+fn owner_still_running(pid: i32, generation: OwnerGeneration) -> Result<bool, AdapterError> {
+    let identity = crate::system::process::process_identity::ProcessIdentity::capture(pid)?;
+    Ok(identity.is_some_and(|identity| match generation {
+        OwnerGeneration::LaunchTime(launch_time) => identity.matches_launch_time(launch_time),
+        OwnerGeneration::LiveProcess => true,
+    }))
+}
+
 pub(crate) fn focused_window_until(deadline: Instant) -> Result<Option<WindowInfo>, AdapterError> {
     let Some(pid) = focused_application_pid(deadline)? else {
         return Ok(None);
@@ -95,18 +138,12 @@ pub(crate) fn focused_window_until(deadline: Instant) -> Result<Option<WindowInf
     Ok(windows.into_iter().next())
 }
 
-#[cfg(target_os = "macos")]
 fn focused_application_pid(deadline: Instant) -> Result<Option<i32>, AdapterError> {
     let system = crate::tree::system_wide::element();
     crate::tree::surface_read::element(&system, "AXFocusedApplication", deadline)?
         .map(|app| crate::tree::properties::ax_ipc::pid(&app, deadline))
         .transpose()
         .map_err(|error| crate::system::focus::map_ax_read_error(error, "read focused application"))
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn focused_window_until(_deadline: Instant) -> Result<Option<WindowInfo>, AdapterError> {
-    Err(AdapterError::not_supported("focused_window"))
 }
 
 fn require_running_app(
@@ -317,3 +354,7 @@ mod tests;
 #[cfg(test)]
 #[path = "window_inventory_title_tests.rs"]
 mod title_tests;
+
+#[cfg(test)]
+#[path = "window_inventory_scoped_tests.rs"]
+mod scoped_tests;

@@ -90,7 +90,7 @@ impl RefStore {
     ) -> Result<(T, RefMap), AppError> {
         validate_snapshot_id(snapshot_id)?;
         self.with_observed_save_lock(|| {
-            let mut current = self.load_snapshot_from_base(&self.base_dir, snapshot_id)?;
+            let mut current = self.load_snapshot(snapshot_id)?;
             if current.get(expected_ref_id) != Some(expected_entry) {
                 return Err(AppError::Adapter(AdapterError::stale_ref(expected_ref_id)));
             }
@@ -117,7 +117,7 @@ impl RefStore {
 
     pub fn load_latest(&self) -> Result<RefMap, AppError> {
         if let Some(id) = self.read_latest_snapshot_id()? {
-            return self.load_snapshot_from_base(&self.base_dir, &id);
+            return self.load_snapshot(&id);
         }
         if let Some(refmap) = self.migrate_legacy_latest()? {
             return Ok(refmap);
@@ -129,72 +129,26 @@ impl RefStore {
 
     pub fn load_snapshot(&self, snapshot_id: &str) -> Result<RefMap, AppError> {
         validate_snapshot_id(snapshot_id)?;
-        self.load_snapshot_from_base(&self.base_dir, snapshot_id)
-    }
-
-    fn load_snapshot_from_base(
-        &self,
-        base_dir: &Path,
-        snapshot_id: &str,
-    ) -> Result<RefMap, AppError> {
-        validate_snapshot_id(snapshot_id)?;
-        self.read_snapshot_if_present(base_dir, snapshot_id)?
-            .ok_or_else(|| AppError::Adapter(AdapterError::snapshot_not_found(snapshot_id)))
-    }
-
-    fn read_snapshot_if_present(
-        &self,
-        base_dir: &Path,
-        snapshot_id: &str,
-    ) -> Result<Option<RefMap>, AppError> {
-        let path = Self::snapshot_path_for_base(base_dir, snapshot_id);
+        let path = self.snapshot_path(snapshot_id);
         let json = match crate::storage::private_file::read_private_bounded(
             &path,
             crate::refs::MAX_REFMAP_BYTES,
         ) {
             Ok(json) => json,
-            Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(err) if err.kind() == ErrorKind::NotFound => {
+                return Err(AppError::Adapter(AdapterError::snapshot_not_found(
+                    snapshot_id,
+                )));
+            }
             Err(err) => return Err(err.into()),
         };
         let refmap: RefMap = serde_json::from_slice(&json)?;
         refmap.validate()?;
-        Ok(Some(refmap))
-    }
-
-    pub fn set_latest(&self, snapshot_id: &str) -> Result<(), AppError> {
-        self.with_write_lock(|| self.set_latest_unlocked(snapshot_id))
+        Ok(refmap)
     }
 
     pub fn latest_snapshot_id(&self) -> Result<Option<String>, AppError> {
         self.read_latest_snapshot_id()
-    }
-
-    pub fn retained_object_tokens(&self) -> Result<std::collections::HashSet<String>, AppError> {
-        self.with_write_lock(|| {
-            let entries = match std::fs::read_dir(self.snapshots_dir()) {
-                Ok(entries) => entries,
-                Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Default::default()),
-                Err(error) => return Err(error.into()),
-            };
-            let mut tokens = std::collections::HashSet::new();
-            let mut candidates = 0_usize;
-            for entry in entries {
-                let entry = entry?;
-                let id = entry.file_name().to_string_lossy().into_owned();
-                if validate_snapshot_id(&id).is_err() {
-                    continue;
-                }
-                candidates += 1;
-                if candidates > MAX_SAVED_SNAPSHOTS {
-                    return Err(AppError::invalid_input(
-                        "Snapshot inventory exceeds retention limit",
-                    ));
-                }
-                let map = self.load_snapshot(&id)?;
-                tokens.extend(map.retained_object_tokens().map(str::to_owned));
-            }
-            Ok(tokens)
-        })
     }
 
     fn save_snapshot_unlocked(&self, snapshot_id: &str, refmap: &RefMap) -> Result<(), AppError> {
@@ -232,14 +186,7 @@ impl RefStore {
     }
 
     fn snapshot_path(&self, snapshot_id: &str) -> PathBuf {
-        Self::snapshot_path_for_base(&self.base_dir, snapshot_id)
-    }
-
-    fn snapshot_path_for_base(base_dir: &Path, snapshot_id: &str) -> PathBuf {
-        base_dir
-            .join("snapshots")
-            .join(snapshot_id)
-            .join("refmap.json")
+        self.snapshots_dir().join(snapshot_id).join("refmap.json")
     }
 
     pub(crate) fn base_dir(&self) -> &Path {
@@ -278,7 +225,7 @@ impl RefStore {
         }
         self.with_write_lock(|| {
             if let Some(id) = self.read_latest_snapshot_id()? {
-                return self.load_snapshot_from_base(&self.base_dir, &id).map(Some);
+                return self.load_snapshot(&id).map(Some);
             }
             let refmap = match RefMap::load() {
                 Ok(refmap) => refmap,
@@ -314,7 +261,3 @@ mod trace_tests;
 #[cfg(test)]
 #[path = "refs_store_transaction_tests.rs"]
 mod transaction_tests;
-
-#[cfg(test)]
-#[path = "refs_store_retained_tests.rs"]
-mod retained_tests;

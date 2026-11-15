@@ -4,8 +4,7 @@ use crate::{EndpointSource, WebSocketUrl};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrowserEndpoint {
     pub websocket_url: WebSocketUrl,
-    pub source: EndpointSource,
-    pub product: Option<String>,
+    pub(crate) source: EndpointSource,
 }
 
 impl BrowserEndpoint {

@@ -10,7 +10,7 @@ printf '%s' "$silent_output" > "$suite_root/silent-text.json"
 silent_state="$(agent_exec 0 get "$(target_ref "$silent_field")" \
     --property value)" \
     || fail "silent setter readback failed"
-printf '%s' "$silent_state" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d["data"]["value"] == ""' \
+printf '%s' "$silent_state" | "$e2e_python" -c 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d["data"]["value"] == ""' \
     || fail "silent fixture readback was unexpected: $silent_state"
 safety_checkpoint || fail "ownership checkpoint failed after silent setter"
 pass "AXSelectedText silent no-op is rejected without retry or focus stealing"

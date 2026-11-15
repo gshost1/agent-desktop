@@ -2,10 +2,6 @@ pub(crate) fn meaningful_native_id(raw: Option<String>) -> Option<String> {
     raw.filter(|id| !id.trim().is_empty())
 }
 
-pub(crate) fn meaningful_dom_id(raw: Option<String>) -> Option<String> {
-    raw.filter(|id| !id.trim().is_empty())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -29,9 +25,9 @@ mod tests {
     #[test]
     fn chromium_dom_id_is_kept_and_blank_is_rejected() {
         assert_eq!(
-            meaningful_dom_id(Some("compose-message".into())),
+            meaningful_native_id(Some("compose-message".into())),
             Some("compose-message".into())
         );
-        assert_eq!(meaningful_dom_id(Some("  ".into())), None);
+        assert_eq!(meaningful_native_id(Some("  ".into())), None);
     }
 }

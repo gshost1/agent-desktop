@@ -53,7 +53,6 @@ fn has_name_without_child_content(evidence: &agent_desktop_core::NameEvidence) -
     .any(|value| value.is_some_and(|value| !value.trim().is_empty()))
 }
 
-#[cfg(target_os = "macos")]
 fn label_from_children(
     children: &[AXElement],
     deadline: std::time::Instant,
@@ -136,22 +135,6 @@ fn label_read_completeness(reads_complete: bool, capped: bool, label_found: bool
     reads_complete && (!capped || !label_found)
 }
 
-#[cfg(not(target_os = "macos"))]
-fn label_from_children(
-    _children: &[AXElement],
-    _deadline: std::time::Instant,
-    _sinks: &mut NameEvidenceSinks<'_>,
-) -> Result<crate::tree::child_label_read::ChildLabelRead, agent_desktop_core::AdapterError> {
-    Ok(crate::tree::child_label_read::ChildLabelRead {
-        label: None,
-        complete: true,
-        capped: false,
-        text_fields: Vec::new(),
-        secure_fields: 0,
-    })
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn timed_string(
     element: &AXElement,
     attribute: &str,
@@ -171,7 +154,6 @@ pub(crate) fn timed_string(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn push_static_text(
     labels: &mut Vec<String>,
     element: &AXElement,
@@ -203,7 +185,6 @@ fn push_static_text(
     Ok(complete)
 }
 
-#[cfg(target_os = "macos")]
 pub(crate) fn degrade_transient_read(
     error: i32,
     phase: &str,
@@ -235,7 +216,6 @@ pub(crate) fn complete_text(
     }
 }
 
-#[cfg(target_os = "macos")]
 fn record_child_read(
     read: &crate::tree::query::child_read::ChildRead,
     stats: &mut agent_desktop_core::LocatorStats,

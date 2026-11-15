@@ -84,7 +84,7 @@ release may add codes.
 | Name                                  | i32   | Meaning                                    |
 |---------------------------------------|-------|--------------------------------------------|
 | `AD_RESULT_OK`                        |   0   | Success                                    |
-| `AD_RESULT_ERR_PERM_DENIED`           |  -1   | Accessibility / input permission missing   |
+| `AD_RESULT_ERR_PERM_DENIED`           |  -1   | OS permission missing or state not private |
 | `AD_RESULT_ERR_ELEMENT_NOT_FOUND`     |  -2   | Ref resolve / find miss                    |
 | `AD_RESULT_ERR_APP_NOT_FOUND`         |  -3   | Bundle/PID lookup miss                     |
 | `AD_RESULT_ERR_ACTION_FAILED`         |  -4   | Action dispatched but rejected             |

@@ -55,31 +55,67 @@ assert "menu bar exposes the custom Fixture menu" \
     "menuitems=$menu_items fixture_menu=$has_fixture_menu"
 
 note "Source-tracked drag gesture"
+drag_canvas_points() {
+    "$bin" snapshot --app "$app" --include-bounds --max-depth 30 2>/dev/null | \
+        "$e2e_python" "$json_tool" tree drag-canvas drag 2>/dev/null
+}
+points_inside_window() {
+    local window="$1" points="$2"
+    [ -n "$window" ] && [ -n "$points" ] || return 2
+    "$e2e_python" -c '
+import sys
+x, y, w, h = (float(v) for v in sys.argv[1].split(","))
+points = [tuple(float(v) for v in point.split(",")) for point in sys.argv[2].split(" ")]
+sys.exit(0 if all(x <= px <= x + w and y <= py <= y + h for px, py in points) else 1)
+' "$window" "$points"
+}
+drag_canvas_offscreen() {
+    local status
+    points_inside_window "$(fixture_window_frame)" "$(drag_canvas_points)"
+    status=$?
+    [ "$status" -eq 1 ]
+}
 require_value drag_before drag-canvas-status
-drag_anchor="$(find_target_by_id group drag-canvas || find_target group drag-canvas || true)"
-if [ -n "$drag_anchor" ]; then
-    act_target "$drag_anchor" scroll-to >/dev/null 2>&1
+drag_pushed=0
+if ! drag_canvas_offscreen; then
+    require_target drag_top button primary-button
+    "$bin" scroll-to "$(target_ref "$drag_top")" >/dev/null 2>&1
     sleep 0.3
+    drag_pushed=1
 fi
+assert "drag canvas starts scrolled off the window before scroll-to" \
+    "$(drag_canvas_offscreen && echo 1 || echo 0)" \
+    "pushed_off_by_scrolling_to_the_top=$drag_pushed window=$(fixture_window_frame)"
+require_target drag_anchor button row-drag-source
+drag_scroll="$("$bin" scroll-to "$(target_ref "$drag_anchor")" 2>/dev/null)"
+sleep 0.3
 drag_focus="$("$bin" focus-window --app "$app" 2>/dev/null)"
 if [ "$(json_field "$drag_focus" ok)" != "True" ]; then
     abort_suite "drag fixture focus failed: $(json_field "$drag_focus" error.code)"
 fi
-drag_snapshot="$("$bin" snapshot --app "$app" --include-bounds --max-depth 30 2>/dev/null)"
-drag_points="$(printf '%s' "$drag_snapshot" | python3 "$json_tool" tree drag-canvas drag 2>/dev/null)" || drag_points=""
+drag_points="$(drag_canvas_points)" || drag_points=""
 if [ -z "$drag_points" ]; then
     abort_suite "required drag-canvas bounds are missing"
 fi
 drag_from="${drag_points%% *}"
 drag_to="${drag_points#* }"
-drag_output="$("$bin" --headed drag --from-xy "$drag_from" --to-xy "$drag_to" \
-    --duration 400 --drop-delay 300 2>/dev/null)"
-sleep 0.4
-require_value drag_after drag-canvas-status
-drag_effect="$(printf '%s' "$drag_after" | grep -q '^dragged-' && echo 1 || echo 0)"
-assert "headed drag delivers one source-tracked gesture" \
-    "$([ "$(json_field "$drag_output" ok)" = "True" ] && [ "$drag_effect" = "1" ] && echo 1 || echo 0)" \
-    "from=$drag_from to=$drag_to before=$drag_before after=$drag_after"
+drag_window="$(fixture_window_frame)"
+drag_in_view="$(points_inside_window "$drag_window" "$drag_points" && echo 1 || echo 0)"
+assert "scroll-to on the drag card's row brings the drag canvas into the window" \
+    "$([ "$(json_field "$drag_scroll" ok)" = "True" ] && [ "$drag_in_view" = "1" ] && echo 1 || echo 0)" \
+    "ok=$(json_field "$drag_scroll" ok) error=$(json_field "$drag_scroll" error.code) from=$drag_from to=$drag_to window=$drag_window"
+if [ "$drag_in_view" = "1" ]; then
+    drag_output="$("$bin" --headed drag --from-xy "$drag_from" --to-xy "$drag_to" \
+        --duration 400 --drop-delay 300 2>/dev/null)"
+    sleep 0.4
+    require_value drag_after drag-canvas-status
+    drag_effect="$(printf '%s' "$drag_after" | grep -q '^dragged-' && echo 1 || echo 0)"
+    assert "headed drag delivers one source-tracked gesture" \
+        "$([ "$(json_field "$drag_output" ok)" = "True" ] && [ "$drag_effect" = "1" ] && echo 1 || echo 0)" \
+        "from=$drag_from to=$drag_to before=$drag_before after=$drag_after"
+else
+    badmsg "headed drag delivers one source-tracked gesture  [not attempted: drag points $drag_points are outside the window $drag_window]"
+fi
 
 note "Disclosure collapse and expand"
 # SwiftUI DisclosureGroup does not expose expanded-state via AXValue; the honest

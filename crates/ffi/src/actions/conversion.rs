@@ -7,31 +7,41 @@ use agent_desktop_core::{Action, Direction, KeyCombo as CoreKeyCombo, Modifier};
 /// input — bail out instead of trusting it into `from_raw_parts`.
 const MAX_MODIFIERS_PER_COMBO: u32 = 4;
 
+/// Parses a `modifiers` array + count pair into a `Vec<Modifier>`.
+///
+/// # Safety
+/// `modifiers` must point to `count` valid `int32_t` values, or be null when
+/// `count` is 0.
+pub(crate) unsafe fn modifiers_from_c(
+    modifiers: *const i32,
+    count: u32,
+) -> Result<Vec<Modifier>, &'static str> {
+    if count > MAX_MODIFIERS_PER_COMBO {
+        return Err("modifier_count exceeds MAX_MODIFIERS_PER_COMBO (4)");
+    }
+    if count > 0 && modifiers.is_null() {
+        return Err("modifier_count > 0 but modifiers pointer is null");
+    }
+    let mut out = Vec::with_capacity(count as usize);
+    if count > 0 {
+        let slice = unsafe { std::slice::from_raw_parts(modifiers, count as usize) };
+        for raw_modifier in slice {
+            let m = AdModifier::from_c(*raw_modifier).ok_or("invalid modifier discriminant")?;
+            out.push(match m {
+                AdModifier::Meta => Modifier::Meta,
+                AdModifier::Ctrl => Modifier::Ctrl,
+                AdModifier::Alt => Modifier::Alt,
+                AdModifier::Shift => Modifier::Shift,
+            });
+        }
+    }
+    Ok(out)
+}
+
 pub(crate) unsafe fn key_combo_from_c(k: &AdKeyCombo) -> Result<CoreKeyCombo, &'static str> {
     unsafe {
         let key = c_to_string(k.key).ok_or("key is null or invalid UTF-8")?;
-
-        if k.modifier_count > MAX_MODIFIERS_PER_COMBO {
-            return Err("modifier_count exceeds MAX_MODIFIERS_PER_COMBO (4)");
-        }
-        if k.modifier_count > 0 && k.modifiers.is_null() {
-            return Err("modifier_count > 0 but modifiers pointer is null");
-        }
-
-        let mut modifiers = Vec::with_capacity(k.modifier_count as usize);
-        if k.modifier_count > 0 {
-            let slice = std::slice::from_raw_parts(k.modifiers, k.modifier_count as usize);
-            for raw_modifier in slice {
-                let m = AdModifier::from_c(*raw_modifier).ok_or("invalid modifier discriminant")?;
-                let modifier = match m {
-                    AdModifier::Meta => Modifier::Meta,
-                    AdModifier::Ctrl => Modifier::Ctrl,
-                    AdModifier::Alt => Modifier::Alt,
-                    AdModifier::Shift => Modifier::Shift,
-                };
-                modifiers.push(modifier);
-            }
-        }
+        let modifiers = modifiers_from_c(k.modifiers, k.modifier_count)?;
         Ok(CoreKeyCombo { key, modifiers })
     }
 }

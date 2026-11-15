@@ -97,6 +97,21 @@ Fix: hold the center open yourself across the staging window, so the polls
 adopt it without closing it, or confirm the toast with a `list-notifications`
 taken while the center is open.
 
+## The Action Center Stays Open After a Notification Mutation
+
+Symptom: `dismiss-notification`, `notification-action` or
+`dismiss-all-notifications` succeeded, and the Action Center it raised is still
+showing.
+
+Cause: the mutation was delivered, and dismissing the center afterwards failed.
+The mutation's result stands. `notification-action` names the failed close as
+`details.list_restore: "unverified"`, and so does the error of a mutation that
+failed when the close failed too. After `list-notifications` the failed close is
+still the error, because a read changes nothing.
+
+Fix: re-list instead of repeating the mutation, because the remaining
+notifications may have moved to the old index. Close the center with Escape.
+
 ## A Hosted (UWP) App Reads as ApplicationFrameHost
 
 Symptom: `focused_window` or `list-windows` reports a hosted UWP app (Settings
