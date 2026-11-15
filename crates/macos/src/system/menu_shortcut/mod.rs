@@ -6,6 +6,7 @@
 //! item, except that a background app's disabled item is refused: its command
 //! would not run, and neither would a keystroke to a background app.
 
+pub(crate) mod background_chord;
 pub(crate) mod menu_item_shortcut;
 pub(crate) mod menu_match;
 pub(crate) mod menu_node;

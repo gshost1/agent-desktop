@@ -166,6 +166,7 @@ pub(super) mod chain_def;
 pub(crate) mod chain_defs;
 pub(super) mod chain_delivery;
 pub(crate) mod chain_disclosure_steps;
+pub(crate) mod chain_edit_focus;
 pub(crate) mod chain_menu_steps;
 pub(super) mod chain_step;
 pub(crate) mod chain_step_exec;

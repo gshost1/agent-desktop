@@ -1,0 +1,3 @@
+### Testing
+
+* Five tests that failed CI on loaded Windows, Windows ARM64 and macOS runners no longer depend on host speed or on a Windows file-deletion rule: the reaped-session test removes only the session manifest, the cross-session cursor test holds the other session's cursor for the whole command, the continuously moving target gets a 5 s budget (a 40 ms live read per call reproduced the 60 ms TIMEOUT), the vanished partial download gets a 30 s budget against its 1.5 s grace, and the Windows U7 self-test pays `powershell.exe`'s cold start before its first case. ([#166](https://github.com/gshost1/agent-desktop/pull/166))

@@ -468,6 +468,15 @@ Earlier output synthesized a display name, falling back to `value` or
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
 
+### Match order
+
+`data.matches` lists, first, the matches whose whole name equals `--name` (after the
+same case and whitespace folding the match uses), then the matches whose name only
+contains it, each group in traversal order. An item whose title grew to hold
+another item's name, such as an Edit menu's `Undo Subscript` after a Subscript
+command, so comes after `Subscript`. `--exact` returns only whole-name matches.
+`--first`, `--last` and `--nth` count in traversal order; pass `--exact` with them.
+
 ### Which match `--first` returns
 
 `--first` returns the first match in traversal order, not in document order.
@@ -621,3 +630,13 @@ A refusal without `details.retryable: true` ends every wait at once. With it, wh
 ## Exit codes
 
 `0` success, `1` structured error (JSON on stdout), `2` command-line parse error (the envelope is still printed, with `INVALID_ARGS`). `mcp` also exits `2` when it refuses its startup flags, and writes that envelope to stderr, since its stdout carries only JSON-RPC.
+
+## Stderr summary line
+
+Stdout carries only the envelope. When the envelope is an error, the CLI also writes one line to stderr after it:
+
+```
+agent-desktop: STALE_REF: <message> -- <suggestion>
+```
+
+The line holds `error.code`, `error.message` and, when present, `error.suggestion`, with control characters replaced by spaces and each field cut at 400 characters. A successful `batch` writes one such line for each completed entry that failed, prefixed with the entry, as in `agent-desktop: batch[2] click: POLICY_DENIED: ...`; entries that did not start get no line. A successful command writes nothing. The line never changes stdout or the exit code, so a pipe such as `agent-desktop ... | jq` still shows the error. It is not part of the JSON contract: parse the envelope, never the line. Set `AGENT_DESKTOP_STDERR_SUMMARY=0` to turn it off. `agent-desktop mcp` reads its child's stdout and is unaffected.

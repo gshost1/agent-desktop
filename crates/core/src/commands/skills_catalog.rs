@@ -17,6 +17,10 @@ const SKILL_DESKTOP_REF_ROUND_TRIPS: &str =
 const SKILL_MACOS_MAIN: &str = include_str!("../../../../skills/agent-desktop-macos/SKILL.md");
 const SKILL_MACOS_REF_TROUBLESHOOTING: &str =
     include_str!("../../../../skills/agent-desktop-macos/references/troubleshooting.md");
+const SKILL_MACOS_REF_ACTIONS: &str =
+    include_str!("../../../../skills/agent-desktop-macos/references/actions.md");
+const SKILL_MACOS_REF_APPS: &str =
+    include_str!("../../../../skills/agent-desktop-macos/references/apps-and-windows.md");
 
 const SKILL_WINDOWS_MAIN: &str = include_str!("../../../../skills/agent-desktop-windows/SKILL.md");
 const SKILL_WINDOWS_REF_PERMISSIONS: &str = include_str!(
@@ -105,10 +109,20 @@ const SKILL_DESKTOP_REFS: &[SkillRef] = &[
     },
 ];
 
-const SKILL_MACOS_REFS: &[SkillRef] = &[SkillRef {
-    rel_path: "references/troubleshooting.md",
-    body: SKILL_MACOS_REF_TROUBLESHOOTING,
-}];
+const SKILL_MACOS_REFS: &[SkillRef] = &[
+    SkillRef {
+        rel_path: "references/actions.md",
+        body: SKILL_MACOS_REF_ACTIONS,
+    },
+    SkillRef {
+        rel_path: "references/apps-and-windows.md",
+        body: SKILL_MACOS_REF_APPS,
+    },
+    SkillRef {
+        rel_path: "references/troubleshooting.md",
+        body: SKILL_MACOS_REF_TROUBLESHOOTING,
+    },
+];
 
 const SKILL_FFI_REFS: &[SkillRef] = &[
     SkillRef {
