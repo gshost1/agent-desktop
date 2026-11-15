@@ -58,6 +58,26 @@ pub(crate) fn list_apps_inventory_until(deadline: Instant) -> Result<AppInventor
     list_apps_with(deadline, workspace_snapshot_json, |_| true, true)
 }
 
+/// Fails when a skipped record could be a running instance of the app being
+/// launched. A record AppKit gave no process (`pid` at or below zero, as for
+/// an app still starting or already gone) names nothing a launch could attach
+/// to; `list-apps` reports it and a launch goes on without it, where waiting
+/// for it to resolve only ran the launch into its timeout.
+pub(crate) fn require_complete_for_launch(
+    skipped: &[serde_json::Value],
+) -> Result<(), AdapterError> {
+    let attachable = skipped
+        .iter()
+        .filter(|record| !is_processless(record))
+        .cloned()
+        .collect::<Vec<_>>();
+    require_complete(&attachable)
+}
+
+fn is_processless(record: &serde_json::Value) -> bool {
+    record["field"] == "pid" && record["pid"].as_i64().is_some_and(|pid| pid <= 0)
+}
+
 pub(crate) fn require_complete(skipped: &[serde_json::Value]) -> Result<(), AdapterError> {
     if skipped.is_empty() {
         return Ok(());

@@ -19,9 +19,12 @@ impl RefWait<'_> {
     }
 }
 
-/// Whether a ref is owned by one window, so following it can reach other
-/// windows. Refs owned by an application surface or a process root already
-/// observe their whole owner.
+/// Whether a ref is observed through one window's native tree, so following
+/// it can reach other windows. Refs owned by an application surface or a
+/// process root already observe their whole owner, and a web ref is observed
+/// on its page.
 pub(crate) fn follows_windows(adapter: &dyn PlatformAdapter, entry: &RefEntry) -> bool {
-    !adapter.is_application_surface(entry.source.source_surface) && !entry.source.is_process_owned()
+    !entry.source.is_process_owned()
+        && crate::snapshot::surface_target::ref_observation_surface(adapter, entry)
+            == crate::SnapshotSurface::Window
 }
