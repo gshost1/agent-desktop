@@ -41,7 +41,8 @@ pub(crate) fn run(
     let display = display.to_owned();
     let journal = HeldJournal::in_runtime_dir(&display);
     let cutoff = deadline.remaining() + RELEASE_ALLOWANCE;
-    run_journaled(
+    let sends_keys = sends_keys(&plans);
+    let delivery = run_journaled(
         move || XtestSink::connect(&display, deadline, cutoff),
         plans,
         gate,
@@ -52,7 +53,21 @@ pub(crate) fn run(
             release_on_signal: true,
             lease: Some(lease),
         },
-    )
+    );
+    if sends_keys {
+        crate::system::bus::listener_hold::outlive_sent_keys();
+    }
+    delivery
+}
+
+/// Whether any plan presses a key: the applications that take the keys may
+/// still be answering them through their accessibility bridge when the call
+/// returns, so the event listener must not leave with the process.
+pub(crate) fn sends_keys(plans: &[Plan]) -> bool {
+    plans
+        .iter()
+        .flat_map(|plan| &plan.steps)
+        .any(|step| matches!(step, crate::input::step::Step::Key { .. }))
 }
 
 pub(crate) fn live_keymap(display: &str, lease: &InteractionLease) -> Result<Keymap, AdapterError> {
