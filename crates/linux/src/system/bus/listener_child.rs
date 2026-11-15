@@ -5,8 +5,12 @@
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::time::Duration;
 
+use super::listener_holder::HolderHandle;
+
 const HELD_FD: RawFd = 3;
 const SLEEP_ROUNDS: usize = 64;
+const CLOSE_CEILING: RawFd = 1 << 20;
+const LAST_SIGNAL: libc::c_int = 64;
 
 /// What the child needs, opened before the fork so the child itself only
 /// makes async-signal-safe calls.
@@ -17,7 +21,7 @@ struct ChildPlan {
     hold: libc::timespec,
 }
 
-pub(super) fn fork_holder(socket: RawFd, hold: Duration) -> std::io::Result<libc::pid_t> {
+pub(super) fn fork_holder(socket: RawFd, hold: Duration) -> std::io::Result<HolderHandle> {
     let null = std::fs::File::open("/dev/null")?;
     let plan = ChildPlan {
         null: OwnedFd::from(null),
@@ -31,7 +35,7 @@ pub(super) fn fork_holder(socket: RawFd, hold: Duration) -> std::io::Result<libc
     match unsafe { libc::fork() } {
         -1 => Err(std::io::Error::last_os_error()),
         0 => unsafe { run_child(&plan) },
-        child => Ok(child),
+        child => Ok(HolderHandle::of(child)),
     }
 }
 
@@ -43,14 +47,32 @@ fn descriptor_limit() -> RawFd {
     if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
         return 1024;
     }
-    RawFd::try_from(limit.rlim_cur).unwrap_or(RawFd::MAX)
+    close_ceiling(limit.rlim_cur)
 }
 
-/// The child: null standard streams, the socket as descriptor 3, every other
-/// descriptor closed, then a sleep and `_exit`. It never returns and runs no
-/// destructor or exit handler of the parent.
+/// The last descriptor the fallback close loop reaches: the soft limit, but
+/// never more than 2^20 closes, also when the limit is `RLIM_INFINITY`.
+fn close_ceiling(soft_limit: libc::rlim_t) -> RawFd {
+    RawFd::try_from(soft_limit)
+        .unwrap_or(CLOSE_CEILING)
+        .min(CLOSE_CEILING)
+}
+
+/// The child: default signal dispositions and an empty signal mask, so none
+/// of the parent's handlers runs in it and `SIGTERM` ends it; null standard
+/// streams, the socket as descriptor 3, every other descriptor closed, then a
+/// sleep and `_exit`. It never returns and runs no destructor or exit handler
+/// of the parent.
 unsafe fn run_child(plan: &ChildPlan) -> ! {
     unsafe {
+        let mut default: libc::sigaction = std::mem::zeroed();
+        default.sa_sigaction = libc::SIG_DFL;
+        for signal in 1..=LAST_SIGNAL {
+            libc::sigaction(signal, &default, std::ptr::null_mut());
+        }
+        let mut unblocked: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut unblocked);
+        libc::sigprocmask(libc::SIG_SETMASK, &unblocked, std::ptr::null_mut());
         libc::setpgid(0, 0);
         let null = plan.null.as_raw_fd();
         for standard in 0..HELD_FD {

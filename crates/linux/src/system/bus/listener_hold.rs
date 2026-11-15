@@ -18,6 +18,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::listener_child::fork_holder;
+use super::listener_holder::HolderHandle;
 use super::listener_socket;
 
 const LISTENER_HOLD: Duration = Duration::from_millis(1_000);
@@ -28,7 +29,7 @@ const SOCKET_FLOOR: RawFd = 10;
 #[derive(Default)]
 pub(crate) struct ListenerHold {
     socket: Option<OwnedFd>,
-    child: Option<libc::pid_t>,
+    child: Option<HolderHandle>,
     keys_sent: Option<Instant>,
 }
 
@@ -65,12 +66,20 @@ pub(crate) fn hold_after<T>(sends_keys: bool, send: impl FnOnce() -> T, hold: im
 /// be remembered for a holder; any other address is left to zbus, never held,
 /// and forgets an earlier socket.
 pub(crate) async fn builder(address: &str) -> zbus::Result<zbus::connection::Builder<'static>> {
+    builder_with(address, &HOLD).await
+}
+
+async fn builder_with(
+    address: &str,
+    hold: &Mutex<ListenerHold>,
+) -> zbus::Result<zbus::connection::Builder<'static>> {
+    let lock = || hold.lock().unwrap_or_else(PoisonError::into_inner);
     let Some(target) = listener_socket::target_of(address) else {
-        shared().forget();
+        lock().forget();
         return zbus::connection::Builder::address(address);
     };
     let stream = listener_socket::connect(&target).await?;
-    shared().remember(&stream, LISTENER_HOLD);
+    lock().remember(&stream, LISTENER_HOLD);
     Ok(zbus::connection::Builder::async_io_unix_stream(stream))
 }
 
@@ -99,13 +108,11 @@ impl ListenerHold {
         self.keys_sent = Some(Instant::now());
         let socket = self.socket.as_ref()?.as_raw_fd();
         let started = fork_holder(socket, hold).ok()?;
+        let pid = started.pid();
         if let Some(previous) = self.child.replace(started) {
-            unsafe {
-                libc::kill(previous, libc::SIGKILL);
-                libc::waitpid(previous, std::ptr::null_mut(), 0);
-            }
+            previous.retire();
         }
-        Some(started)
+        Some(pid)
     }
 }
 

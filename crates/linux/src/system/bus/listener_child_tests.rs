@@ -31,7 +31,9 @@ fn descriptors(pid: libc::pid_t) -> BTreeMap<i32, String> {
 #[test]
 fn the_holder_keeps_the_socket_open_after_the_caller_drops_it() {
     let (held, mut peer) = UnixStream::pair().unwrap();
-    let child = fork_holder(held.as_raw_fd(), Duration::from_millis(400)).unwrap();
+    let child = fork_holder(held.as_raw_fd(), Duration::from_millis(400))
+        .unwrap()
+        .pid();
     drop(held);
     let started = Instant::now();
     peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
@@ -54,7 +56,9 @@ fn the_holder_keeps_only_null_standard_streams_and_the_socket() {
     let (held, _peer) = UnixStream::pair().unwrap();
     let (_stray, _stray_peer) = UnixStream::pair().unwrap();
     let socket = std::fs::read_link(format!("/proc/self/fd/{}", held.as_raw_fd())).unwrap();
-    let child = fork_holder(held.as_raw_fd(), Duration::from_secs(5)).unwrap();
+    let child = fork_holder(held.as_raw_fd(), Duration::from_secs(5))
+        .unwrap()
+        .pid();
     let wanted: BTreeMap<i32, String> = [
         (0, "/dev/null".to_owned()),
         (1, "/dev/null".to_owned()),
@@ -70,4 +74,10 @@ fn the_holder_keeps_only_null_standard_streams_and_the_socket() {
     }
     finish(child);
     assert_eq!(seen, wanted);
+}
+
+#[test]
+fn the_fallback_close_loop_is_bounded_when_the_limit_is_infinite() {
+    assert_eq!(super::close_ceiling(libc::RLIM_INFINITY), 1 << 20);
+    assert_eq!(super::close_ceiling(1024), 1024);
 }

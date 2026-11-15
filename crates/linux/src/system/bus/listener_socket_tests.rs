@@ -46,3 +46,13 @@ fn a_missing_socket_is_an_error_and_not_a_hang() {
     let missing = std::env::temp_dir().join("ad-listener-missing-socket-path");
     assert!(futures_lite::future::block_on(connect(&SocketTarget::Path(missing))).is_err());
 }
+
+#[test]
+fn an_abstract_name_may_fill_the_whole_path_and_a_file_path_leaves_room_for_its_nul() {
+    use super::socket_address;
+    assert!(socket_address(&SocketTarget::Abstract(vec![b'a'; 107])).is_ok());
+    assert!(socket_address(&SocketTarget::Abstract(vec![b'a'; 108])).is_err());
+    let path = |n| SocketTarget::Path(PathBuf::from("/".repeat(n)));
+    assert!(socket_address(&path(107)).is_ok());
+    assert!(socket_address(&path(108)).is_err());
+}

@@ -78,7 +78,11 @@ fn socket_address(target: &SocketTarget) -> std::io::Result<(libc::sockaddr_un, 
         SocketTarget::Abstract(name) => (name.as_slice(), 1),
     };
     let end = start + bytes.len();
-    if end >= address.sun_path.len() {
+    let room = match target {
+        SocketTarget::Path(_) => address.sun_path.len() - 1,
+        SocketTarget::Abstract(_) => address.sun_path.len(),
+    };
+    if end > room {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     for (slot, byte) in address.sun_path[start..end].iter_mut().zip(bytes) {

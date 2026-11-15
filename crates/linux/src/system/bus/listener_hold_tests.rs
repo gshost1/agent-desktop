@@ -2,7 +2,9 @@ use std::cell::Cell;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::Duration;
 
-use super::{ListenerHold, builder, hold_after, shared};
+use std::sync::Mutex;
+
+use super::{ListenerHold, builder_with, hold_after};
 
 fn alive(pid: libc::pid_t) -> bool {
     unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) == 0 }
@@ -61,7 +63,7 @@ fn a_listener_registered_right_after_keys_is_held_at_once() {
         "nothing to hold yet"
     );
     hold.remember(&held, Duration::from_secs(5));
-    let child = hold.child.expect("the new listener is held");
+    let child = hold.child.as_ref().expect("the new listener is held").pid();
     assert!(alive(child));
     finish(child);
 }
@@ -81,14 +83,16 @@ fn a_unix_address_is_remembered_and_any_other_forgets_it() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("bus");
     let _listener = UnixListener::bind(&path).unwrap();
+    let hold = Mutex::new(ListenerHold::default());
     let address = format!(
         "unix:path={},guid=0123456789abcdef0123456789abcdef",
         path.display()
     );
-    let _connected = futures_lite::future::block_on(builder(&address)).expect("connected builder");
-    assert!(shared().socket.is_some());
-    let _other =
-        futures_lite::future::block_on(builder("tcp:host=127.0.0.1,port=9")).expect("zbus builder");
-    assert!(shared().socket.is_none());
+    let _connected =
+        futures_lite::future::block_on(builder_with(&address, &hold)).expect("connected builder");
+    assert!(hold.lock().unwrap().socket.is_some());
+    let _other = futures_lite::future::block_on(builder_with("tcp:host=127.0.0.1,port=9", &hold))
+        .expect("zbus builder");
+    assert!(hold.lock().unwrap().socket.is_none());
     std::fs::remove_dir_all(dir).unwrap();
 }

@@ -395,5 +395,6 @@ pub(super) mod bus_slice {
 pub(super) mod bus_stage;
 pub(crate) mod listener_child;
 pub(crate) mod listener_hold;
+pub(crate) mod listener_holder;
 pub(crate) mod listener_socket;
 pub(crate) mod session_bus;

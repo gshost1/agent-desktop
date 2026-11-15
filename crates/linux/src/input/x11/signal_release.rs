@@ -131,11 +131,14 @@ fn watch(read_end: OwnedFd) {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
+        let stopped_a_call = target.is_some();
         if let Some(target) = target {
             release_before(&target.progress, &target.slot, RELEASE_WAIT, || {});
-            crate::system::bus::listener_hold::outlive_sent_keys();
         }
         restore();
+        if stopped_a_call {
+            crate::system::bus::listener_hold::outlive_sent_keys();
+        }
         unsafe {
             libc::raise(c_int::from(byte));
         }

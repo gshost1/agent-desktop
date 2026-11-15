@@ -136,6 +136,14 @@ The child holds a copy of the accessibility-bus socket for 1 s, then exits; it
 keeps no other descriptor of the host. The host therefore gets one `SIGCHLD`
 about 1 s after such a call. One child lives at a time: the next keyboard call
 kills and reaps the previous one, and the last child stays a zombie until the
-next keyboard call or the host's own `waitpid(-1, ...)` reaps it. A host that
-reaps every child with `waitpid(-1, ...)` from a `SIGCHLD` handler is safe; the
-library's own `waitpid` on that pid then returns `ECHILD`, which it ignores.
+next keyboard call or the host's own `waitpid(-1, ...)` reaps it. The library
+addresses the child through a pidfd opened right after the fork (Linux 5.3 and
+later), so when the host reaps it first, with a `waitpid(-1, ...)` reaper or
+`SIGCHLD` set to `SIG_IGN`, the next keyboard call sends no signal and cannot
+reach another process that reused the pid. On a kernel without pidfds it checks
+with `waitpid(pid, WNOHANG)` first and signals the pid only while it is still a
+running child of the host process. If the host reaps children itself on such a
+kernel, a later child of the host that happens to reuse that pid could be
+signalled.
+The child resets every signal to its default disposition, so the host's
+handlers never run in it.
