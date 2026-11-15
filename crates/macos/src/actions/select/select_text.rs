@@ -4,7 +4,9 @@
 //! selection never lands on a guess: no occurrence and several occurrences are
 //! refused before anything is written. The range is written to
 //! `AXSelectedTextRange` in UTF-16 code units, the unit AppKit text ranges use,
-//! and the selection is read back until it equals the requested range.
+//! and the selection is read back until it equals the requested range. A
+//! read-back that names a different range fails the action; only a selection
+//! that cannot be read at all leaves the write delivered but unverified.
 
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 use std::ops::Range;
@@ -79,7 +81,13 @@ pub(crate) fn select_text(
         )
         .with_disposition(DeliverySemantics::not_delivered()));
     }
-    let text = crate::tree::copy_value_typed(element, deadline).unwrap_or_default();
+    let mut usage = crate::tree::observation_usage::ObservationUsage::new(
+        agent_desktop_core::ObservationBudget::default(),
+    );
+    let read = crate::tree::properties::attributes::copy_value_typed_bounded_result(
+        element, deadline, &mut usage,
+    );
+    let text = searchable_text(read)?;
     let range = unique_range(&text, wanted)?;
     write_range(element, &range, deadline)?;
     verify_range(element, &range, deadline)
@@ -146,10 +154,78 @@ fn verify_range(
             return Ok(true);
         }
         if std::time::Instant::now() >= settle || deadline.is_expired() {
-            return Ok(false);
+            return settled_selection(selected, range);
         }
         let pause = deadline.remaining_slice(std::time::Duration::from_millis(15))?;
         std::thread::sleep(pause.min(std::time::Duration::from_millis(15)));
+    }
+}
+
+/// The element's text to search, or the refusal when it cannot be read whole.
+#[cfg(target_os = "macos")]
+pub(crate) fn searchable_text(
+    read: Result<Option<crate::tree::properties::bounded_string::BoundedString>, i32>,
+) -> Result<String, AdapterError> {
+    use accessibility_sys::{
+        kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement,
+    };
+
+    match read {
+        Ok(None) => Ok(String::new()),
+        Ok(Some(text)) if text.complete => Ok(text.value),
+        Ok(Some(_)) => Err(AdapterError::new(
+            ErrorCode::ActionFailed,
+            "The text element's value is too long to search for the text to select",
+        )
+        .with_details(serde_json::json!({ "kind": "text_value_truncated" }))
+        .with_suggestion(
+            "Select the text with the keyboard instead: click into the field, then move with arrow keys while holding shift.",
+        )
+        .with_disposition(DeliverySemantics::not_delivered())),
+        Err(ax_error) => {
+            let code = if ax_error == kAXErrorAPIDisabled {
+                ErrorCode::PermDenied
+            } else if ax_error == kAXErrorInvalidUIElement {
+                ErrorCode::StaleRef
+            } else if ax_error == kAXErrorCannotComplete {
+                ErrorCode::AppUnresponsive
+            } else {
+                ErrorCode::ActionFailed
+            };
+            Err(
+                AdapterError::new(code, "Could not read the text element's value to find the text to select")
+                    .with_details(serde_json::json!({
+                        "kind": "text_value_unreadable",
+                        "ax_error": ax_error,
+                    }))
+                    .with_suggestion("Take a fresh snapshot and retry with the new element reference.")
+                    .with_disposition(DeliverySemantics::not_delivered()),
+            )
+        }
+    }
+}
+
+/// What a selection read back after the settle window proves about the write.
+pub(crate) fn settled_selection(
+    observed: Option<Range<usize>>,
+    requested: &Range<usize>,
+) -> Result<bool, AdapterError> {
+    match observed {
+        None => Ok(false),
+        Some(range) if range == *requested => Ok(true),
+        Some(range) => Err(AdapterError::new(
+            ErrorCode::ActionFailed,
+            "The selection write completed but the element reports a different selection",
+        )
+        .with_details(serde_json::json!({
+            "kind": "selection_not_observed",
+            "requested": { "start": requested.start, "end": requested.end },
+            "observed": { "start": range.start, "end": range.end },
+        }))
+        .with_suggestion(
+            "Focus the text element first, then retry the select; read the field with a fresh snapshot before retrying.",
+        )
+        .with_disposition(DeliverySemantics::delivered_unverified())),
     }
 }
 
