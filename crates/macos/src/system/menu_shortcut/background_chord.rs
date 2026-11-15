@@ -59,8 +59,8 @@ pub(crate) fn unrouted_in_background(combo: &KeyCombo, menu: &MenuShortcutOutcom
     }))
     .with_suggestion(
         "Click the command's menu item: 'find --app <app> --surface menubar --name <item>' then \
-         'click <ref>'. If the user allows physical input, retry with --headed so the app comes \
-         to the front.",
+         'click <ref>'. If the user allows physical input, retry with --headed instead, so the \
+         app comes to the front; do not do both.",
     )
     .with_disposition(DeliverySemantics::not_delivered())
 }

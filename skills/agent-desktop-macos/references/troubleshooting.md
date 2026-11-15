@@ -103,7 +103,7 @@ Replace `@s1:e1` and `@s2:e1` with the `ref_id` each `find` returns. While a pan
 
 **Cause.** `press` sent a real key and then the field's confirm action, and the sheet's window stayed on screen. A sheet in an app that is not in front can ignore keys sent to it, and the confirm action only ends editing in the field.
 
-**Fix.** Do not repeat the same press; the disposition is `retry: unsafe`. Run `snapshot --app <App> --surface sheet -i`. Click the default button by ref when `default_button` is `true`. Otherwise click its Close or Cancel button to dismiss the sheet. Only if the user allows physical input, send the key once more with `--headed`, which brings the window forward before the real key.
+**Fix.** Do not repeat the same press; the disposition is `retry: unsafe`. Run `snapshot --app <App> --surface sheet -i`. Click the default button by ref when `default_button` is `true`. Otherwise click the button that confirms the sheet, such as OK, Go or Save, by ref. Do not click Close or Cancel: that discards the path. Instead of the click, and only if the user allows physical input, you can send the key once with `--headed`, which brings the window forward before the real key.
 
 ## select does not find the menu
 

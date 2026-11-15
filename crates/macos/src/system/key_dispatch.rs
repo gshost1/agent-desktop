@@ -221,8 +221,8 @@ fn no_focused_element_error(policy: InteractionPolicy) -> AdapterError {
         "Ensure the target field has keyboard focus before retrying, or run the menu command without keys: find the item with 'snapshot --app <app> --surface menubar' and click its ref."
     } else {
         "Run the menu command without keys: find the item with 'snapshot --app <app> --surface \
-         menubar' and click its ref. If the user allows physical input, retry with --headed so \
-         the app can take focus."
+         menubar' and click its ref. If the user allows physical input, retry with --headed \
+         instead, so the app can take focus; do not do both."
     })
 }
 

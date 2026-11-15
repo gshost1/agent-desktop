@@ -153,7 +153,18 @@ fn an_ignored_confirm_fails_unsafe_to_retry_and_names_the_ref_route() {
     let suggestion = error.suggestion.expect("suggestion");
     assert!(suggestion.contains("Do not repeat the key"), "{suggestion}");
     assert!(suggestion.contains("--surface sheet"), "{suggestion}");
-    assert_headed_comes_last_and_needs_permission(&suggestion, "Close or Cancel");
+    assert_headed_comes_last_and_needs_permission(&suggestion, "OK, Go or Save");
+    assert!(
+        !suggestion.contains("click its Close or Cancel button"),
+        "{suggestion}"
+    );
+}
+
+#[test]
+fn an_ignored_escape_without_a_cancel_button_dismisses_by_ref() {
+    let hint = ignored_suggestion("sheet", ("cancel_button", false));
+    assert_headed_comes_last_and_needs_permission(&hint, "Close or Cancel");
+    assert!(hint.contains("instead"), "{hint}");
 }
 
 fn assert_headed_comes_last_and_needs_permission(suggestion: &str, headless_route: &str) {
