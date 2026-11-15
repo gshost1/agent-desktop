@@ -68,25 +68,82 @@ pub(crate) fn unique_range(text: &str, wanted: &str) -> Result<Range<usize>, Ada
     }
 }
 
+/// What `select_text` reads from and writes to a text element.
+#[cfg(target_os = "macos")]
+pub(crate) trait TextSelectionTarget {
+    fn accepts_selection(&self, deadline: Deadline) -> Result<bool, AdapterError>;
+
+    fn read_value(
+        &self,
+        deadline: Deadline,
+    ) -> Result<Option<crate::tree::properties::bounded_string::BoundedString>, i32>;
+
+    fn write_selection(&self, range: &Range<usize>, deadline: Deadline)
+    -> Result<(), AdapterError>;
+
+    fn read_selection(&self, deadline: Deadline) -> Option<Range<usize>>;
+}
+
+#[cfg(target_os = "macos")]
+struct LiveTextElement<'a>(&'a crate::tree::AXElement);
+
+#[cfg(target_os = "macos")]
+impl TextSelectionTarget for LiveTextElement<'_> {
+    fn accepts_selection(&self, deadline: Deadline) -> Result<bool, AdapterError> {
+        crate::actions::ax_helpers::is_attr_settable(self.0, SELECTED_RANGE, deadline)
+    }
+
+    fn read_value(
+        &self,
+        deadline: Deadline,
+    ) -> Result<Option<crate::tree::properties::bounded_string::BoundedString>, i32> {
+        let mut usage = crate::tree::observation_usage::ObservationUsage::new(
+            agent_desktop_core::ObservationBudget::default(),
+        );
+        crate::tree::properties::attributes::copy_value_typed_bounded_result(
+            self.0, deadline, &mut usage,
+        )
+    }
+
+    fn write_selection(
+        &self,
+        range: &Range<usize>,
+        deadline: Deadline,
+    ) -> Result<(), AdapterError> {
+        write_range(self.0, range, deadline)
+    }
+
+    fn read_selection(&self, deadline: Deadline) -> Option<Range<usize>> {
+        crate::tree::properties::attributes::selected_text_range(self.0, deadline)
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) fn select_text(
     element: &crate::tree::AXElement,
     wanted: &str,
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
-    if !crate::actions::ax_helpers::is_attr_settable(element, SELECTED_RANGE, deadline)? {
+    select_text_in(&LiveTextElement(element), wanted, deadline)
+}
+
+/// Selects `wanted` in `target`: refuses before writing when the value cannot
+/// be read whole or the text does not occur exactly once, then writes the
+/// range and reads the selection back.
+#[cfg(target_os = "macos")]
+pub(crate) fn select_text_in(
+    target: &impl TextSelectionTarget,
+    wanted: &str,
+    deadline: Deadline,
+) -> Result<bool, AdapterError> {
+    if !target.accepts_selection(deadline)? {
         return Err(AdapterError::new(
             ErrorCode::ActionNotSupported,
             "This text element does not accept a text selection",
         )
         .with_disposition(DeliverySemantics::not_delivered()));
     }
-    let mut usage = crate::tree::observation_usage::ObservationUsage::new(
-        agent_desktop_core::ObservationBudget::default(),
-    );
-    let read = crate::tree::properties::attributes::copy_value_typed_bounded_result(
-        element, deadline, &mut usage,
-    );
+    let read = target.read_value(deadline);
     if read.is_err() && deadline.is_expired() {
         return Err(deadline
             .timeout_error()
@@ -94,8 +151,8 @@ pub(crate) fn select_text(
     }
     let text = searchable_text(read)?;
     let range = unique_range(&text, wanted)?;
-    write_range(element, &range, deadline)?;
-    verify_range(element, &range, deadline)
+    target.write_selection(&range, deadline)?;
+    verify_range(target, &range, deadline)
 }
 
 #[cfg(target_os = "macos")]
@@ -148,13 +205,13 @@ fn write_range(
 
 #[cfg(target_os = "macos")]
 fn verify_range(
-    element: &crate::tree::AXElement,
+    target: &impl TextSelectionTarget,
     range: &Range<usize>,
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
     let settle = std::time::Instant::now() + std::time::Duration::from_millis(300);
     loop {
-        let selected = crate::tree::properties::attributes::selected_text_range(element, deadline);
+        let selected = target.read_selection(deadline);
         if selected.as_ref() == Some(range) {
             return Ok(true);
         }
@@ -241,7 +298,7 @@ pub(crate) fn settled_selection(
             "observed": { "start": range.start, "end": range.end },
         }))
         .with_suggestion(
-            "Focus the text element first, then retry the select; read the field with a fresh snapshot before retrying.",
+            "The selection write was sent but not observed. Take a fresh snapshot, read the field's selection, and decide the next step from what it shows.",
         )
         .with_disposition(DeliverySemantics::delivered_unverified())),
     }
