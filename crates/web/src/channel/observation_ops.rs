@@ -28,6 +28,10 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         self.inner.menu_open(process, deadline)
     }
 
+    fn menu_opener_grace(&self) -> std::time::Duration {
+        self.inner.menu_opener_grace()
+    }
+
     fn is_nonspatial_target(&self, handle: &NativeHandle) -> bool {
         WebHandle::of(handle).is_some() || self.inner.is_nonspatial_target(handle)
     }
