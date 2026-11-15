@@ -45,17 +45,29 @@ mod imp {
         point: Point,
         deadline: std::time::Instant,
     ) -> Result<HitTestResult, AdapterError> {
-        let result = accessibility_hit(target, &point, deadline)?;
+        decide_hit(
+            || accessibility_hit(target, &point, deadline),
+            || crate::tree::properties::ax_ipc::pid(target, deadline).ok(),
+            |pid| crate::system::window::window_stack_occluder::intercepting_window(&point, pid),
+        )
+    }
+
+    /// The accessibility hit test's answer when it decides the point;
+    /// otherwise the window server's covering window of another process, read
+    /// for the target's pid, or `Unknown` when there is no such evidence.
+    pub(super) fn decide_hit(
+        accessibility: impl FnOnce() -> Result<HitTestResult, AdapterError>,
+        target_pid: impl FnOnce() -> Option<i32>,
+        window_stack: impl FnOnce(i32) -> Option<HitTestResult>,
+    ) -> Result<HitTestResult, AdapterError> {
+        let result = accessibility()?;
         if result != HitTestResult::Unknown {
             return Ok(result);
         }
-        let Ok(pid) = crate::tree::properties::ax_ipc::pid(target, deadline) else {
+        let Some(pid) = target_pid() else {
             return Ok(result);
         };
-        Ok(
-            crate::system::window::window_stack_occluder::intercepting_window(&point, pid)
-                .unwrap_or(result),
-        )
+        Ok(window_stack(pid).unwrap_or(result))
     }
 
     fn accessibility_hit(

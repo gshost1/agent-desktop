@@ -179,46 +179,18 @@ mod imp {
                 );
             }
         };
-        let requested = count.min(max_elements);
-        let whole_page =
-            super::super::child_read_budget::whole_list_page(count, max_elements, CHILD_PAGE_SIZE);
-        let mut complete = true;
-        let (read, proven) = super::super::child_read_budget::read_counted_list(
-            &mut status,
-            count,
-            whole_page,
-            |status, page_len| {
-                super::super::child_values_read::read_whole_page(
-                    element, attribute, page_len, deadline, status,
-                )
-            },
-            |status| read_prefix(element, attribute, requested, deadline, status),
-        );
-        let mut elements = match read {
-            Ok(elements) => elements,
-            Err(error) => {
-                telemetry::record(&mut status, attribute, "prefix", error, Some(count));
-                complete = false;
-                Vec::new()
-            }
+        let children = LiveChildren {
+            element,
+            attribute,
+            deadline,
         };
-        elements.truncate(requested);
-        complete &= elements.len() == requested;
-        let recount = (super::super::child_read_budget::recount_after_prefix(requested) && !proven)
-            .then(|| stable_count(element, attribute, deadline, &mut status));
-        let final_count = match recount.unwrap_or(Ok(count)) {
-            Ok(final_count) => final_count,
-            Err(error) => {
-                telemetry::record(&mut status, attribute, "stable_count", error, Some(count));
-                complete = false;
-                count
-            }
-        };
-        if count != final_count {
-            status.count_changed = true;
-            complete = false;
-            elements.truncate(final_count);
-        }
+        let (elements, final_count, complete) =
+            super::super::child_read_budget::settle_counted_read(
+                &children,
+                &mut status,
+                count,
+                (max_elements, CHILD_PAGE_SIZE),
+            );
         ChildRead {
             elements,
             total_count: final_count,
@@ -226,6 +198,52 @@ mod imp {
             source_availability: ChildSourceAvailability::Available,
             prefix_certain: complete,
             status,
+        }
+    }
+
+    struct LiveChildren<'a> {
+        element: &'a AXElement,
+        attribute: &'a str,
+        deadline: std::time::Instant,
+    }
+
+    impl super::super::child_read_budget::CountedChildren for LiveChildren<'_> {
+        type Element = AXElement;
+
+        fn attribute(&self) -> &str {
+            self.attribute
+        }
+
+        fn read_whole(
+            &self,
+            status: &mut ChildReadStatus,
+            page_len: usize,
+        ) -> Option<Result<Vec<AXElement>, i32>> {
+            super::super::child_values_read::read_whole_page(
+                self.element,
+                self.attribute,
+                page_len,
+                self.deadline,
+                status,
+            )
+        }
+
+        fn read_exact(
+            &self,
+            status: &mut ChildReadStatus,
+            requested: usize,
+        ) -> Result<Vec<AXElement>, i32> {
+            read_prefix(
+                self.element,
+                self.attribute,
+                requested,
+                self.deadline,
+                status,
+            )
+        }
+
+        fn recount(&self, status: &mut ChildReadStatus) -> Result<usize, i32> {
+            stable_count(self.element, self.attribute, self.deadline, status)
         }
     }
 

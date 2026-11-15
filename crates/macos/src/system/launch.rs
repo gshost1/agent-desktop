@@ -10,6 +10,7 @@ use self::launch_settle::{SettleProbes, launch_target_gone, settle_window};
 use self::launch_window::LaunchWindow;
 use crate::system::launch_plan::{LaunchPlan, plan_launch};
 use crate::system::launch_target::{launch_target, required_instance, validate_launched_target};
+use crate::system::window::cg_window::WindowRecord;
 
 const MAX_ARGUMENT_COUNT: usize = 256;
 const MAX_ENVIRONMENT_COUNT: usize = 256;
@@ -42,9 +43,8 @@ pub(crate) fn launch_app_impl(
     validate_launched_target(&target, &launched).map_err(after_launch)?;
     let window =
         settled_window(launched.0, &launched.1, options, deadline).map_err(after_launch)?;
-    let mut result = result_from_launched(&launched, window, id, path).map_err(after_launch)?;
-    launch_off_space::explain_off_space(&mut result, launched.0, deadline);
-    Ok(result)
+    let off_space = launch_off_space::process_windows(launched.0, deadline);
+    result_from_launched(&launched, window, id, path, off_space).map_err(after_launch)
 }
 
 /// A running application is reported, and brought forward when asked, without
@@ -78,10 +78,9 @@ fn use_running_app(
     } else {
         LaunchPath::AttachedRunning
     };
-    let mut result = result_from_app(app, window, path);
-    result.notes.suggestion = joined_notes([several, ignored_inputs_hint(options)]);
-    launch_off_space::explain_off_space(&mut result, pid, deadline);
-    Ok(result)
+    let notes = joined_notes([several, ignored_inputs_hint(options)]);
+    let off_space = launch_off_space::process_windows(pid, deadline);
+    Ok(result_from_app(app, (window, notes), path, off_space))
 }
 
 fn activate_running(pid: i32, instance: &str, deadline: Deadline) -> Result<(), AdapterError> {
@@ -161,11 +160,18 @@ fn launched_display_name(window: Option<&WindowInfo>, id: &str) -> String {
         .unwrap_or_else(|| id.to_owned())
 }
 
-fn result_from_app(app: &AppInfo, window: Option<WindowInfo>, path: LaunchPath) -> LaunchResult {
+/// The result of a launch that used a running application. A windowless result
+/// with no other note explains an off-Space window from `off_space`.
+fn result_from_app(
+    app: &AppInfo,
+    (window, suggestion): (Option<WindowInfo>, Option<String>),
+    path: LaunchPath,
+    off_space: impl FnOnce() -> Result<Vec<WindowRecord>, AdapterError>,
+) -> LaunchResult {
     let renderer = super::process::process_identity::to_pid_t(app.pid)
         .ok()
         .and_then(crate::system::renderer_kind::detect_chromium);
-    LaunchResult {
+    let mut result = LaunchResult {
         app: app.name.clone(),
         pid: app.pid,
         process_instance: app.process_instance.clone(),
@@ -173,21 +179,26 @@ fn result_from_app(app: &AppInfo, window: Option<WindowInfo>, path: LaunchPath) 
         cdp: None,
         renderer,
         notes: LaunchNotes {
-            suggestion: None,
+            suggestion,
             launch_path: Some(path),
         },
-    }
+    };
+    launch_off_space::explain_off_space(&mut result, off_space);
+    result
 }
 
+/// The result of a fresh launch. A windowless result with no other note
+/// explains an off-Space window from `off_space`.
 fn result_from_launched(
     launched: &(i32, String),
     window: LaunchWindow,
     id: &str,
     path: LaunchPath,
+    off_space: impl FnOnce() -> Result<Vec<WindowRecord>, AdapterError>,
 ) -> Result<LaunchResult, AdapterError> {
     let renderer = crate::system::renderer_kind::detect_chromium(launched.0);
     let (window, several) = window.into_parts();
-    Ok(LaunchResult {
+    let mut result = LaunchResult {
         app: launched_display_name(window.as_ref(), id),
         pid: agent_desktop_core::ProcessId::try_from(launched.0)
             .map_err(|_| AdapterError::internal("Launched process identifier is out of range"))?,
@@ -199,7 +210,9 @@ fn result_from_launched(
             suggestion: several,
             launch_path: Some(path),
         },
-    })
+    };
+    launch_off_space::explain_off_space(&mut result, off_space);
+    Ok(result)
 }
 
 fn matching_apps(id: &str, deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
