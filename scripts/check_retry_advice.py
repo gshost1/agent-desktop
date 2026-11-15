@@ -22,6 +22,16 @@ says to look first: "before ...", "only if/when ...", "if it is still ...",
 It cannot see a suggestion passed in as a parameter or a disposition chosen at
 run time; those sites need their own unit tests.
 
+It also reads every skill page under `skills/`. A passage (a table row, a list
+item or a paragraph) that names, in backticks, a `details.kind` some delivered
+or uncertain chain stamps, and advises a retry without a look-first step,
+fails. Kinds come from the chains the Rust scan reads plus
+`RUNTIME_DELIVERED_KINDS`, which lists the kinds whose disposition is chosen
+in a variable or whose kind is not a literal in the chain. The skill scan
+does not see a kind named without backticks, retry advice in a different
+passage from the kind it concerns, or advice whose passage carries an
+unrelated look-first word such as "before".
+
 Run with `--self-test` to check the scanner against planted cases.
 """
 
@@ -336,6 +346,10 @@ def production_files(root: Path):
 
 
 RUNTIME_DELIVERED_KINDS = {
+    "chain_deadline",
+    "chain_step_limit",
+    "popup_not_observed",
+    "scroll_into_view_unsupported",
     "shell_container_unproven",
 }
 CODE_SPAN = re.compile(r"`[^`]*`")
