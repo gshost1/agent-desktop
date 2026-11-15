@@ -87,6 +87,42 @@ fn self_acquire_succeeds_and_drop_releases_it() {
 }
 
 #[test]
+fn a_free_lock_file_under_a_spent_deadline_reports_a_deadline_expiry() {
+    with_interaction_lease_test_lock(|| {
+        let root = scratch_root("spent-free");
+        let path = lock_path_under(&root).unwrap();
+        directory::ensure_private(lock_directory(&path).unwrap()).unwrap();
+
+        let error = match acquire_file_handle(&path, Deadline::after(0).unwrap()) {
+            Ok(_) => panic!("a spent deadline must not hand out the lock file"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, ErrorCode::Timeout);
+        let details = error.details.as_ref().unwrap();
+        assert_eq!(details["kind"], "deadline");
+        assert_eq!(details["timeout_ms"], 0);
+        assert!(details.get("contention_count").is_none());
+        acquire_file_handle(&path, Deadline::after(1_000).unwrap()).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+    });
+}
+
+#[test]
+fn an_expiry_after_contention_keeps_the_lock_timeout_label() {
+    let deadline = Deadline::after(0).unwrap();
+    let path = Path::new(r"C:\state\interaction.lock");
+
+    let contended = expiry_error(deadline, path, 3).details.unwrap();
+    let uncontended = expiry_error(deadline, path, 0).details.unwrap();
+
+    assert_eq!(contended["kind"], "lock_timeout");
+    assert_eq!(contended["contention_count"], 3);
+    assert_eq!(uncontended["kind"], "deadline");
+    assert!(uncontended.get("contention_count").is_none());
+}
+
+#[test]
 fn cross_process_contention_times_out_with_lock_timeout_kind() {
     with_interaction_lease_test_lock(|| {
         let root = scratch_root("cross-process");

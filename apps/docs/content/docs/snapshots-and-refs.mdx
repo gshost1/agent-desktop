@@ -188,7 +188,7 @@ The full `STALE_REF` envelope after a re-drill is in [Skeleton and drill-down](/
 Refs describe one observation. Re-read after anything that can change the tree, and act only on refs from the latest read of the region:
 
 - `snapshot` returns a new snapshot id and a new ref map.
-- `find` with matches also saves a new snapshot, and its `data.snapshot_id` qualifies the refs it returns.
+- `find` that returns at least one ref also saves a new snapshot, and its `data.snapshot_id` qualifies those refs. A `find` whose matches carry no ref saves none and has no `snapshot_id`.
 - `snapshot --root` re-reads one region inside an existing snapshot. See [Skeleton and drill-down](/desktop/skeleton-and-drill-down#re-drill-after-a-change).
 
 An older snapshot stays on disk until it is pruned, and its refs keep resolving while their elements still match. Do not rely on that: after the UI changes, an old ref can fail, or match an element that is no longer the one you meant.
@@ -197,7 +197,7 @@ An older snapshot stays on disk until it is pruned, and its refs keep resolving 
 
 `RefStore` keeps one file per snapshot at `snapshots/<snapshot_id>/refmap.json` under the [state root](/desktop/configuration#state-root). Inside a [session](/desktop/sessions), the same layout sits under `sessions/<session_id>/`, and a lookup never searches another session's snapshots.
 
-Each ref map is written to a temporary file, synced and renamed into place, so another command, a killed process or a crashed system finds the old map or the new one whole. On macOS the sync is `fsync`, not a full drive-cache flush. A power loss before the drive empties its cache can lose the newest snapshot (`SNAPSHOT_NOT_FOUND`) or leave its ref map unreadable (`INTERNAL`). Take a new snapshot to recover.
+A ref map and the `latest_snapshot_id` pointer are each written to a temporary file and renamed into place, so another command or a killed process finds the old file or the new one whole. On Linux and macOS they are not synced to disk. A ref names one running process instance, and a power loss or kernel crash ends it, so a sync would only keep refs that can no longer resolve. After such a crash, a ref map that is missing, empty, cut short or unparsable reads as a missing snapshot: the command fails with `SNAPSHOT_NOT_FOUND` before it reads the application, and never resolves the ref against a different map. A torn `latest_snapshot_id` reads as no latest snapshot. Take a new snapshot to recover. On Windows both files are still flushed, and on every platform session manifests, agent profiles and trace files are synced as before.
 
 <table>
   <thead>

@@ -13,6 +13,10 @@ use crate::actionability::pointer_timeout::point_actionability_timeout;
 mod focus_phase;
 pub(crate) use focus_phase::{CommandFocus, retry_leased_point_phase};
 
+#[path = "pointer_action_capture_refusal.rs"]
+mod capture_refusal;
+pub(crate) use capture_refusal::refuse_unproven_refs;
+
 struct EntryPointResolve<'a> {
     ref_id: &'a str,
     entry: &'a RefEntry,

@@ -83,3 +83,13 @@ pub(crate) fn display_cause_error(cause: &DisplayCause) -> AdapterError {
     details["retryable"] = matches!(cause, DisplayCause::Silent).into();
     error.with_details(details)
 }
+
+/// Whether an error is a display refusal: it names, in
+/// `details.display_unavailable`, why the session's display server cannot be
+/// reached.
+pub(crate) fn is_display_refusal(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .is_some_and(|details| details.get("display_unavailable").is_some())
+}
