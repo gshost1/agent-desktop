@@ -114,8 +114,8 @@ notifications may have moved to the old index. Close the center with Escape.
 
 ## A Hosted (UWP) App Reads as ApplicationFrameHost
 
-Symptom: `focused_window` or `list-windows` reports a hosted UWP app (Settings
-and its peers) under the frame host's identity, or an identity verified against
+Symptom: `focused_window`, `list-windows` or `list-apps` reports a hosted UWP
+app (Settings and its peers) under the frame host's identity, or an identity verified against
 the app's pid stops resolving.
 
 Cause: the app is suspended, which drops its `CoreWindow` while the frame
