@@ -139,7 +139,7 @@ Open laptop PRs (head, state):
 Merged today: #142 #143 #156 #157 #159 #160 #161 #163 #165 #167 #170 #174.
 
 Parked branches (no PR; open when <10 laptop PRs are open):
-- perf/find-text-evidence (FIND-TEXT-SLOW-1): pre-review FIX being fixed by find (a36b7a33aca7c5903) at pause; body ~/.cache/agent-desktop-target/pr-body-find-perf-find-text-evidence.md.
+- perf/find-text-evidence 7e71822f (FIND-TEXT-SLOW-1): review fixes 1-7 pushed (probe depth 50; --text-only reduced plan; probe stops after the adapter reads unasked fields). Left: full core tests, clippy, windows cross-check, stale-ref script; wrapper-depth test (needs a wrapper-marking test tree helper); Linux re-measure with #181; Mac A/B; body ~/.cache/agent-desktop-target/pr-body-find-perf-find-text-evidence.md.
 - perf/linux-keyboard-one-session 34c4c4c9 (ADAPTERS-10): not reviewed; body ~/.cache/agent-desktop-target/pr-body-linux-losses-perf-linux-keyboard-one-session.md.
 - docs/skill-stderr-pipe-note 90db71c2 (wip): skill line nit (optional suggestion; no `2>&1 | jq`) + #178 nits could join it.
 - windows (aa34d5b134f17f2ae): FFI-SESSION-FLAKE-1 and Windows `--headed type` on fix/windows-type-focuses-field (+ any other branch it reports) at pause.
