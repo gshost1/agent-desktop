@@ -321,6 +321,7 @@ pub(crate) fn ref_observation_surface(
 ) -> SnapshotSurface {
     if adapter.is_application_surface(entry.source.source_surface)
         || entry.source.is_process_owned()
+        || entry.source.source_surface == SnapshotSurface::Web
     {
         entry.source.source_surface
     } else {

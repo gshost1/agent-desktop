@@ -50,9 +50,13 @@ else
     HAS_FFI_CHANGES=0
 fi
 
-if staged_matches '^CHANGELOG\.md$' "$staged_files" && ! staged_matches '^Cargo\.toml$' "$staged_files"; then
-    echo "pre-commit: CHANGELOG.md is staged outside a release pull request" >&2
+staged_deletions="$(git diff --cached --name-only --diff-filter=D)"
+if staged_matches '^CHANGELOG\.md$' "$staged_files" \
+    && ! staged_matches '^Cargo\.toml$' "$staged_files" \
+    && ! staged_matches '^changelog\.d/.+\.md$' "$staged_deletions"; then
+    echo "pre-commit: CHANGELOG.md is staged outside a release" >&2
     echo "pre-commit: add a fragment under changelog.d/ instead; scripts/changelog_fragments.py assemble writes CHANGELOG.md at release." >&2
+    echo "pre-commit: a release commit stages the version bump (Cargo.toml) or the fragments assemble deleted." >&2
     exit 1
 fi
 
@@ -70,6 +74,12 @@ if staged_matches '^(changelog\.d/|scripts/changelog_fragments|scripts/fixtures/
     trap 'rm -rf -- "$fragment_dir"' EXIT
     staged_fragments=()
     while IFS= read -r fragment; do
+        case "$fragment" in
+            changelog.d/*/*)
+                echo "pre-commit: $fragment is in a subfolder; a fragment sits directly in changelog.d/" >&2
+                exit 1
+                ;;
+        esac
         if [ -n "$fragment" ] && [ "$(basename "$fragment")" != ".gitkeep" ]; then
             git show ":$fragment" >"$fragment_dir/$(basename "$fragment")"
             staged_fragments+=("$fragment_dir/$(basename "$fragment")")
