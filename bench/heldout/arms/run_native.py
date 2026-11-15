@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import common  # noqa: E402
+import run_audit  # noqa: E402
 
 sys.path.insert(0, str(common.BENCH))
 import driver  # noqa: E402
@@ -54,7 +55,9 @@ def post_arm_cleanup(arm, rdir):
         env = dict(os.environ, HO_ARM_HOME=str(rdir / "arm-home"))
         subprocess.run([str(HERE / "bin/peekaboo/peekaboo"), "daemon", "stop"], env=env, capture_output=True, timeout=30)
     if arm == "cua":
-        subprocess.run([str(HERE / "bin/cua/cua-driver"), "call", "end_session", "{}"], capture_output=True, timeout=30)
+        env = dict(os.environ, HO_ARM_HOME=str(rdir / "arm-home"))
+        for args in (["call", "end_session", "{}"], ["stop"]):
+            subprocess.run([str(HERE / "bin/cua/cua-driver"), *args], env=env, capture_output=True, timeout=30)
 
 
 def run_once(a):
@@ -63,6 +66,7 @@ def run_once(a):
     rdir.mkdir(parents=True)
     task = th.NATIVE_TASKS[a.task](run_id.replace("-", ""), str(common.VERIFY_AD))
     task.round = a.round
+    allow_fg = bool(getattr(task, "allows_foreground", False))
     reset_heldout_desktop()
     time.sleep(1.5)
     task.setup()
@@ -78,7 +82,7 @@ def run_once(a):
     cmd = ["claude", "-p", common.TASK_PREFIX + task.prompt(), "--output-format", "stream-json", "--verbose",
            "--setting-sources", "project", "--strict-mcp-config", "--tools", "Bash",
            "--permission-mode", "bypassPermissions", "--model", a.model, "--no-session-persistence",
-           "--append-system-prompt", common.native_system_prompt(a.arm, a.screen_recording)]
+           "--append-system-prompt", common.native_system_prompt(a.arm, a.screen_recording, allow_fg)]
     t0 = time.time()
     events = []
     proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -111,7 +115,11 @@ def run_once(a):
         ok, why = task.verify(answer)
     except Exception as exc:
         ok, why = False, f"verify error {exc}"
-    forbidden = [f for f in (common.audit_native(c, a.arm, th.FORBIDDEN) for c in summary["commands"]) if f]
+    if common.RULES == "v2":
+        audit = run_audit.RunAudit(a.arm, th.FORBIDDEN, allow_fg)
+        forbidden = [f for f in (audit.check(c) for c in summary["commands"]) if f]
+    else:
+        forbidden = [f for f in (common.audit_native(c, a.arm, th.FORBIDDEN) for c in summary["commands"]) if f]
     if forbidden:
         ok, why = False, f"forbidden command {forbidden[0]}; {why}"
     if capped.is_set():
@@ -120,6 +128,7 @@ def run_once(a):
     summary.update({"suite": "native", "arm": a.arm, "arm_version": common.ARM_VERSIONS[a.arm], "run_id": run_id,
                     "task": a.task, "round": a.round, "model": a.model, "success": ok, "verify": why,
                     "cap_s": th.NATIVE_CAP_S, "timed_out": capped.is_set(), "screen_recording": a.screen_recording,
+                    "rules": common.RULES, "violations": forbidden[:5],
                     "host": a.host})
     summary.update(driver.validity(stderr, rdir))
     (rdir / "summary.json").write_text(json.dumps(summary, indent=1))

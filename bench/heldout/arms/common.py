@@ -101,10 +101,22 @@ def arm_bin_dir(arm, root=CANDIDATES):
 register_candidates()
 
 
-def native_system_prompt(arm, screen_recording=False):
+RULES = os.environ.get("HO_RULES", "v2")
+"""v1: the forbidden-program audit only. v2 (default): also run_audit.RunAudit and the background-only rule."""
+FOREGROUND_TEXT = {"agent-desktop": "`--headed`", "peekaboo": "`--foreground`",
+                   "cua-driver": "`bring_to_front` or a foreground delivery mode"}
+
+
+def native_system_prompt(arm, screen_recording=False, allow_foreground=False):
     rules = ("Use Bash only to run the tool named above; piping its output through jq, grep or head is fine. Do not use "
              "any other program to do the task or to read the answer (no open, osascript, defaults, mkdir, ls, cat other "
              "than the tool's guide, python, or any other GUI tool). ")
+    if RULES == "v2":
+        rules += ("Do not start another shell (sh, bash, eval), use the clipboard, or read files other than the tool's "
+                  "guide and output you saved yourself. ")
+        if not allow_foreground:
+            rules += (f"Work in the background only: do not use {FOREGROUND_TEXT[NATIVE_TOOL[arm]]}, which takes over "
+                      "the shared screen, keyboard or mouse. A run that breaks these rules fails. ")
     return NATIVE_TOOL_TEXT[arm] + " " + rules + ("" if screen_recording else SCREEN_OFF + " ") + \
         "When the task is complete, reply with the final answer only."
 

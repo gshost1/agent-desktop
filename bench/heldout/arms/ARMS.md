@@ -12,7 +12,7 @@ Every arm runs through `claude -p` on the subscription with Bash only. Each arm 
 | `pw` | web (`cdp` channel) | @playwright/cli 0.1.24 (microsoft/playwright-cli) | `cat …/skills/playwright-cli/SKILL.md` | ready; installed and `--help` checked; never driven yet, so the first round doubles as its smoke run |
 | `ab` | web (`cdp` channel) | agent-browser 0.42.0 (vercel-labs/agent-browser, npm) | `agent-browser skills get core`; the prompt is run.py's own `cdp` prompt, which has it pass `--cdp <port>` | added 2026-11-11 after the Sonnet pass; runs alone (`WEB_ARMS=ab`), same rounds, rotation, seeds and caps |
 | `peekaboo` | native | Peekaboo CLI 4.9.8 (openclaw/Peekaboo) | `cat …/skills/peekaboo/SKILL.md` (tag v4.9.8) | needs preflight, see below |
-| `cua` | native | Cua Driver 0.46.1 (trycua/cua `cua-driver-rs-v0.46.1`) | `cat …/skills/cua-driver/SKILL.md` and its other guides (tag `cua-driver-rs-v0.46.1`) | **blocked on the Mac**, see below; ready on AWS |
+| `cua` | native | Cua Driver 0.47.7 (trycua/cua `cua-driver-rs-v0.47.7`) | `cat …/skills/cua-driver/SKILL.md` and its other guides (the v0.46.1 copy; the v0.47.7 guides differ only in SKILL.md's `version:` line) | ran on the bench Mac (40 tuned runs, 2026-11-10/11) |
 
 ## Install record
 
@@ -72,12 +72,15 @@ shasum -a 256 $T/agent-browser-0.42.0/node_modules/agent-browser/bin/agent-brows
 - Whole-screen and whole-desktop reads are refused (`peekaboo … --mode screen|multi`, `cua-driver call get_desktop_state`). They would read windows outside the bench. agent-desktop has no whole-screen tree read, and screenshots fail for every arm on the Mac because Screen Recording is off.
 - `cat` is allowed only for the arm's own guide folder (native audit) and for `.playwright-cli/` snapshot files (web; `cat` is allowed for every web arm alike).
 - Any other GUI tool on PATH (agent-desktop, peekaboo, cua-driver, browser-harness, playwright-cli, agent-browser) fails the run if the arm calls it.
+- Every peekaboo command runs with `--no-remote` (the wrapper adds it unless the model did, and skips help, version and `daemon`): the bench runs no Bridge or daemon, and without the flag each run's first commands failed until the model found it (120 calls, 22.2 s over the 40 tuned runs).
+- Each cua run gets its own `CUA_DRIVER_RS_HOME` under the run's `arm-home`, and the run ends with `end_session` and `stop`, so no driver state carries into the next run.
+- Native rules v2 (`HO_RULES`, default v2; rows record `rules`): `arms/run_audit.py` reads the whole run in order and also fails another shell, the clipboard, a text tool or `<` reading any file other than the guide, a spill file or the run's own saved output, `sed -i`, and the arm's foreground mode (`--headed`, `--foreground`, `bring_to_front` or a foreground delivery mode) unless the task allows it. The system prompt states the same rules and names only the arm's own foreground flag.
 
 ## Why peekaboo needs a preflight
 
 The pinned CLI is signed by `FWJYW4S8P8` with identifier `boo.peekaboo.peekaboo`. Peekaboo's own docs say macOS treats its signed CLI as its own TCC client. No Peekaboo Bridge socket exists on the Mac (none of the three documented sockets is present), so the wrapper's per-run daemon or the local process does the work. Not confirmed: whether macOS charges its Accessibility use to the terminal that runs the bench, as it does for agent-desktop, or to the CLI itself. `preflight.sh` prints `peekaboo permissions status --all-sources --json`; its docs say that path never prompts. If it reports Accessibility missing, George grants Accessibility to `~/.agent-desktop-bench-target/heldout-tools/peekaboo-4.9.8/peekaboo-macos-arm64/peekaboo`, or the arm is dropped on the Mac.
 
-## Why cua is blocked on the Mac
+## Why cua was blocked on the Mac (2026-11-10; superseded, cua then ran there)
 
 Cua Driver 0.46.1 needs Accessibility for its own app identity, `com.trycua.driver` (team `YCK386LBJ7`). Its macOS guide says the CLI relaunches "the installed CuaDriver.app by its exact path" when it is started from an IDE-spawned shell such as Claude Code, so that TCC attributes the process to the app. The pinned app sits in `heldout-tools/`, not `/Applications`. Not confirmed: whether the CLI finds an app outside `/Applications`. Two things are George's call: a TCC grant, and possibly an install outside `heldout-tools`. Options:
 1. George grants Accessibility to `heldout-tools/cua-driver-0.46.1/cua-driver-rs-0.46.1-darwin-arm64/CuaDriver.app`. Preflight (`cua-driver permissions status --json`, read-only) then shows whether the CLI uses it. If it insists on `/Applications`, George approves copying the app there.
