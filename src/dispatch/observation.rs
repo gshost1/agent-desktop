@@ -47,10 +47,12 @@ pub(super) fn find(
         .collect::<Result<Vec<_>, _>>()?;
     find_command::execute(
         find_command::FindArgs {
-            app: args.scope.app,
-            window_id: args.scope.window_id,
-            root: args.root,
-            surface: args.surface.to_core(),
+            scope: find_command::FindScopeArgs {
+                app: args.scope.app,
+                window_id: args.scope.window_id,
+                root: args.root,
+                surface: args.surface.to_core(),
+            },
             timeout_ms: args.timeout_ms,
             filter: find_command::FindFilterArgs {
                 role: args.filter.role,

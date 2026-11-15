@@ -13,10 +13,12 @@ use crate::{
 
 fn named_find(window_id: &str, name: &str) -> FindArgs {
     FindArgs {
-        app: None,
-        window_id: Some(window_id.into()),
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: Some(window_id.into()),
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             name: Some(name.into()),
             role: None,
@@ -41,10 +43,12 @@ fn named_find(window_id: &str, name: &str) -> FindArgs {
 
 fn unfiltered_find(window_id: &str, selection: FindSelectionArgs) -> FindArgs {
     FindArgs {
-        app: None,
-        window_id: Some(window_id.into()),
-        root: None,
-        surface: crate::SnapshotSurface::Window,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: Some(window_id.into()),
+            root: None,
+            surface: crate::SnapshotSurface::Window,
+        },
         filter: FindFilterArgs {
             role: None,
             name: None,

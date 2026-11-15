@@ -35,7 +35,7 @@ pub(crate) struct LiveFindAdapter {
     token_root: bool,
     token_matches: bool,
     unread_member: bool,
-    extra_buttons: usize,
+    extra_buttons: Vec<String>,
     window_reads: std::sync::atomic::AtomicUsize,
 }
 
@@ -47,14 +47,24 @@ impl LiveFindAdapter {
             token_root: false,
             token_matches: false,
             unread_member: false,
-            extra_buttons: 0,
+            extra_buttons: Vec::new(),
             window_reads: Default::default(),
         }
     }
 
     pub(crate) fn with_button_count(total_buttons: usize) -> Self {
         Self {
-            extra_buttons: total_buttons.saturating_sub(1),
+            extra_buttons: (0..total_buttons.saturating_sub(1))
+                .map(|index| format!("Extra {index}"))
+                .collect(),
+            ..Self::complete()
+        }
+    }
+
+    /// A window holding these buttons, in this order, after its marker button.
+    pub(crate) fn with_buttons(names: &[String]) -> Self {
+        Self {
+            extra_buttons: names.to_vec(),
             ..Self::complete()
         }
     }
@@ -173,8 +183,8 @@ impl ObservationOps for LiveFindAdapter {
             "OnlyInWindowOne"
         };
         let mut children = vec![self.node(self.button(marker), Vec::new())];
-        for index in 0..self.extra_buttons {
-            children.push(self.node(self.button(&format!("Extra {index}")), Vec::new()));
+        for name in &self.extra_buttons {
+            children.push(self.node(self.button(name), Vec::new()));
         }
         if self.framed_label {
             let mut label = Self::evidence("statictext", Some(FRAMED_LABEL));

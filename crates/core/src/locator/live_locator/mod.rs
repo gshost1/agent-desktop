@@ -93,6 +93,7 @@ pub(crate) use resolve::{
     resolve_query_allowing_partial, resolve_query_from, resolve_query_from_allowing_partial,
 };
 pub(crate) use row_reading::RowReading;
+pub(crate) use select::is_exact_name;
 pub use validate::{validate_query, validate_request};
 
 #[cfg(test)]
