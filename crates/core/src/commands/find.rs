@@ -157,3 +157,7 @@ mod rooted_tests;
 #[cfg(test)]
 #[path = "find_live_tests.rs"]
 mod live_tests;
+
+#[cfg(test)]
+#[path = "find_exact_name_tests.rs"]
+mod exact_name_tests;
