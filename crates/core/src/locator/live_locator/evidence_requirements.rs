@@ -1,6 +1,8 @@
 use crate::locator::LocatorQuery;
 
-use super::{LocatorMaterialization, LocatorResolveRequest, RefEvidenceRequirements};
+use super::{
+    LocatorMaterialization, LocatorResolveRequest, LocatorSelection, RefEvidenceRequirements,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EvidenceRequirements {
@@ -44,6 +46,33 @@ impl EvidenceRequirements {
             requirements.ref_evidence.bounds = true;
         }
         requirements
+    }
+
+    /// The evidence a locator walk reads below its root. A `--first`,
+    /// `--last` or `--nth` text or containment query publishes one match, so
+    /// only the root keeps snapshot evidence: a root match publishes from the
+    /// window read, and any deeper match is hydrated over its own subtree,
+    /// the re-read that checks its witness. Every other node is read for the
+    /// query, its identity and its bounds, as a role-and-name walk reads it,
+    /// instead of for the actions and states only a published match uses.
+    pub(crate) fn locator_descendants(
+        query: &LocatorQuery,
+        request: &LocatorResolveRequest,
+    ) -> Self {
+        let publishes_one = matches!(
+            request.selection,
+            LocatorSelection::First | LocatorSelection::Last | LocatorSelection::Nth(_)
+        );
+        if publishes_one
+            && request.materialization == LocatorMaterialization::SelectedMatches
+            && query.reads_subtrees()
+        {
+            let mut requirements = Self::query(query);
+            requirements.identifiers = true;
+            requirements.ref_evidence.bounds = true;
+            return requirements;
+        }
+        Self::locator(query, request)
     }
 
     pub(crate) fn query(query: &LocatorQuery) -> Self {
@@ -142,5 +171,45 @@ mod tests {
             ..request
         };
         assert!(!EvidenceRequirements::locator(&query, &unpublished).states);
+        assert_eq!(
+            EvidenceRequirements::locator_descendants(&query, &request),
+            EvidenceRequirements::snapshot(),
+            "a query that publishes many matches still reads them whole"
+        );
+    }
+
+    /// A text query that publishes one match reads actions and states only at
+    /// the root. Reading them on every node made `find --text --first`
+    /// several times a role-and-name find on a platform that honors the plan.
+    #[test]
+    fn a_single_subtree_match_reads_snapshot_evidence_only_at_the_root() {
+        let query = LocatorQuery {
+            has_text: Some("needle".into()),
+            ..Default::default()
+        };
+        for selection in [
+            LocatorSelection::First,
+            LocatorSelection::Last,
+            LocatorSelection::Nth(2),
+        ] {
+            let request = LocatorResolveRequest {
+                selection,
+                deadline: crate::Deadline::after(500).unwrap(),
+                max_raw_depth: 50,
+                surface: None,
+                materialization: LocatorMaterialization::SelectedMatches,
+            };
+            assert_eq!(
+                EvidenceRequirements::locator(&query, &request),
+                EvidenceRequirements::snapshot()
+            );
+            let descendants = EvidenceRequirements::locator_descendants(&query, &request);
+            assert!(descendants.name && descendants.description && descendants.value);
+            assert!(descendants.identifiers && descendants.ref_evidence.bounds);
+            assert!(
+                !descendants.states && !descendants.ref_evidence.actions,
+                "{selection:?} publishes one match and must not read every node's actions"
+            );
+        }
     }
 }

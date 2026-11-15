@@ -38,9 +38,12 @@ impl ObservationOps for SubtreeHydrationAdapter {
             ObservationRoot::Window(_) => {
                 self.window_observations.fetch_add(1, Ordering::SeqCst);
                 assert_eq!(
-                    request.descendant_evidence(),
+                    request.evidence_for_raw_depth(0),
                     super::EvidenceRequirements::snapshot()
                 );
+                let descendants = request.descendant_evidence();
+                assert!(descendants.identifiers && descendants.ref_evidence.bounds);
+                assert!(!descendants.states && !descendants.ref_evidence.actions);
                 Ok(initial_tree(self.mode))
             }
             ObservationRoot::Element { .. } => {

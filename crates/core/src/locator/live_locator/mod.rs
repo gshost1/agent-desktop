@@ -118,6 +118,8 @@ mod resolve_query_tests;
 #[cfg(test)]
 mod resolve_tests;
 #[cfg(test)]
+mod resolve_text_first_tests;
+#[cfg(test)]
 mod retained_identity_tests;
 #[cfg(test)]
 mod scrollarea_name_tests;

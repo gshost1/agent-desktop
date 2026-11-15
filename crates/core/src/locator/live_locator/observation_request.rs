@@ -111,7 +111,10 @@ impl ObservationRequest {
             max_raw_depth: request.max_raw_depth,
             max_logical_depth: request.max_raw_depth,
             surface: SnapshotSurface::Window,
-            evidence_plan: EvidencePlan::uniform(EvidenceRequirements::locator(query, request)),
+            evidence_plan: EvidencePlan::rooted(
+                EvidenceRequirements::locator(query, request),
+                EvidenceRequirements::locator_descendants(query, request),
+            ),
             budget: ObservationBudget::default(),
             observation_mode: ObservationMode::default(),
         }
