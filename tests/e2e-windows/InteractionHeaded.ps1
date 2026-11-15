@@ -112,20 +112,17 @@ function Invoke-HeadedInteractionLegs {
             } catch { Add-Fail -Leg 'headed-drag' -Reason $_.Exception.Message }
 
             try {
-                <# Physical `type` is a pure keyboard-focus check
-                   (ensure_keyboard_delivery_ready in
-                   crates/windows/src/actions/physical_target.rs), never a
-                   focus-establishing action itself - unlike physical click,
-                   which focuses its target as an OS side effect of the
-                   click. Measured live: 'type' on an unfocused text-input
-                   returns ACTION_FAILED "lost focus before physical input
-                   delivery" every time; an explicit 'focus' first (the same
-                   action Invoke-FocusOracleLeg already uses) is what
-                   establishes the precondition this leg's physical delivery
-                   depends on. #>
+                <# Headed `type` gives its target keyboard focus itself
+                   (crates/windows/src/actions/keyboard_focus.rs) when the
+                   field does not hold it, so this leg types into the
+                   text-input without a prior 'focus': a regression to the
+                   old pure focus check fails it with ACTION_FAILED "lost
+                   focus before physical input delivery". Something else is
+                   focused first so the leg always starts unfocused. #>
                 $textInput = Require-Target -Target (Find-Target -App $App -NativeId 'text-input' -TimeoutSeconds 10) -Description 'text-input'
                 Invoke-Target -Target $textInput -Action 'scroll-to' -RequireOk -Description 'text-input (scroll into view)' | Out-Null
-                Invoke-Target -Target $textInput -Action 'focus' -Headed -RequireOk -Description 'text-input (establish keyboard focus)' | Out-Null
+                $elsewhere = Require-Target -Target (Find-Target -App $App -NativeId 'primary-button' -TimeoutSeconds 10) -Description 'primary-button'
+                Invoke-Target -Target $elsewhere -Action 'focus' -Headed -RequireOk -Description 'primary-button (move keyboard focus off the field)' | Out-Null
                 $status = Require-Target -Target (Find-Target -App $App -NativeId 'text-status' -TimeoutSeconds 10) -Description 'text-status'
                 Assert-Effect -Target $textInput -StatusTarget $status -Property 'value' -Expected 'changed' -ExpectedIsPrefix -AnyChange -Action 'type' -ActionArgs @('typed') -Headed -ExpectedMechanism 'physical_synthetic' | Out-Null
                 Add-Pass -Leg 'headed-type'

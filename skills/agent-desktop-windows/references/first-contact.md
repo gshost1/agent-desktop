@@ -28,9 +28,14 @@ observation, actions and capture there fail or return nothing.
   `meta+c` is a shell shortcut. Write `ctrl+c` to copy.
 - **`type` needs `--headed`.** It is keystroke synthesis through `SendInput`,
   so a strict-headless `type` returns `POLICY_DENIED`. Use `set-value`, or pass
-  `--headed`. It ends `delivered_unverified` (`verification_scope:
-  "unavailable"`) when the field exposes no readable Text selection, and can
-  verify when one is readable: confirm with a fresh `get`.
+  `--headed`. Headed, it raises the window and, when the field does not hold
+  keyboard focus, focuses it with UI Automation `SetFocus` first (a
+  `UIElement.SetFocus` step before `SendInput.type_text`); no separate `focus`
+  call is needed. A field that refuses focus fails `ACTION_FAILED` with no
+  keystrokes sent. Element-scoped `press <ref>` does the same. It ends
+  `delivered_unverified` (`verification_scope: "unavailable"`) when the field
+  exposes no readable Text selection, and can verify when one is readable:
+  confirm with a fresh `get`.
 - **`press --app` writes to the foreground queue** with no per-process
   targeting. A headless press to a non-frontmost app fails closed. A
   non-interactive caller (service, scheduled task, CI job) gets

@@ -1,0 +1,3 @@
+### Bug Fixes
+
+* On Windows, headed `type` and `press <ref>` give the target keyboard focus with UI Automation `SetFocus` when it lacks it, then send the keystrokes. Before, raising the window left focus on another control, so `--headed type` into a field that was not already focused failed `ACTION_FAILED` "Target element lost focus before physical input delivery" every time, on the WinForms and WPF fixtures alike, and needed a separate `focus` call first. The result carries a `UIElement.SetFocus` step before `SendInput.type_text` when focus moved. ([#NNN](https://github.com/gshost1/agent-desktop/pull/NNN))
