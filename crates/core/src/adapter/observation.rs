@@ -366,6 +366,16 @@ pub trait ObservationOps: Send + Sync {
         let _ = (handle, point, deadline);
         Ok(())
     }
+
+    /// One whole read of whether `process` shows an open menu, with the same
+    /// detector `SystemOps::wait_for_menu` polls.
+    fn menu_open(
+        &self,
+        _process: crate::ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        Err(AdapterError::not_supported("menu_open"))
+    }
 }
 
 #[cfg(test)]

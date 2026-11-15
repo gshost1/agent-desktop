@@ -1,6 +1,9 @@
 pub(crate) mod baseline_once;
 pub(crate) mod deadline;
 pub(crate) mod event_kind;
+pub(crate) mod menu_seed;
+pub(crate) mod menu_wait;
+pub(crate) mod menu_wait_phase;
 pub(crate) mod ref_wait;
 pub(crate) mod signal_baseline;
 pub(crate) mod signal_completeness;

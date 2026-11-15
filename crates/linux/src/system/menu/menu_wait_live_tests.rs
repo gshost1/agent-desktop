@@ -66,9 +66,11 @@ struct Legs<'a> {
 fn both_directions(rig: &Rig, legs: &Legs) {
     assert!(!(legs.is_open)(), "{}: the menu starts closed", legs.label);
     let closed = wait_menu(rig, legs.app, false, MENU_MS);
+    let grace = u64::try_from(agent_desktop_core::MENU_OPENER_GRACE.as_millis()).unwrap_or(0);
+    let held = elapsed_ms(&closed);
     assert!(
-        elapsed_ms(&closed) < 1_500,
-        "{}: a closed menu satisfies --menu-closed at once: {}",
+        held >= grace && held < grace + 1_500,
+        "{}: a menu never seen open satisfies --menu-closed once the opener grace has passed: {}",
         legs.label,
         outcome(&closed)
     );

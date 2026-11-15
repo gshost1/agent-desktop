@@ -30,6 +30,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "type_text_interval_verify",
     "stale_retry_test_support",
     "wait_element",
+    "wait_menu",
     "wait_mode",
     "wait_download",
     "wait_notification",

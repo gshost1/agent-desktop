@@ -6,6 +6,14 @@ use agent_desktop_core::{
 };
 
 impl ObservationOps for MacOSAdapter {
+    fn menu_open(
+        &self,
+        process: agent_desktop_core::ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        crate::system::wait::menu_open(&process, deadline)
+    }
+
     fn is_application_surface(&self, surface: agent_desktop_core::SnapshotSurface) -> bool {
         matches!(
             surface,

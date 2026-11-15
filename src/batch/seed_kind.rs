@@ -3,12 +3,13 @@
 use crate::{cli::Commands, cli_args::system::WaitArgs};
 
 /// The read a seeded wait entry diffs against: an event baseline for a
-/// `wait` with `event`, or a notification listing for a `wait` with
-/// `notification`.
+/// `wait` with `event`, a notification listing for a `wait` with
+/// `notification`, or one menu reading for a `wait` with `menu_closed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SeedKind {
     Notification,
     Event,
+    MenuClosed,
 }
 
 impl SeedKind {
@@ -18,7 +19,9 @@ impl SeedKind {
         let Commands::Wait(args) = command else {
             return None;
         };
-        if args.surface.notification {
+        if args.surface.menu_closed {
+            Some((Self::MenuClosed, args))
+        } else if args.surface.notification {
             Some((Self::Notification, args))
         } else if args.event.event.is_some() {
             Some((Self::Event, args))

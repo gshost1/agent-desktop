@@ -97,8 +97,13 @@ fn wait_for_menu_reaches_the_windows_override_instead_of_the_not_supported_defau
     let adapter = WindowsAdapter::new();
     let process = ProcessIdentity::new(1u32, "windows-proc-v1:0:0");
 
-    let error = SystemOps::wait_for_menu(&adapter, process, true, Deadline::after(1_000).unwrap())
-        .expect_err("a bogus process identity must not report a satisfied wait");
+    let error = SystemOps::wait_for_menu(
+        &adapter,
+        process,
+        agent_desktop_core::MenuWait::opened(),
+        Deadline::after(1_000).unwrap(),
+    )
+    .expect_err("a bogus process identity must not report a satisfied wait");
 
     assert_ne!(error.code, ErrorCode::PlatformNotSupported);
 }

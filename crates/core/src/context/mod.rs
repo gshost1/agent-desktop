@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 pub(crate) mod command_scope;
 mod cursor;
+mod menu_seeding;
 mod options;
 mod session_scope;
 mod wait_selector;

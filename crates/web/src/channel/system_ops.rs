@@ -296,10 +296,10 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
     fn wait_for_menu(
         &self,
         process: ProcessIdentity,
-        open: bool,
+        wait: agent_desktop_core::MenuWait,
         deadline: Deadline,
     ) -> Result<(), AdapterError> {
-        self.inner.wait_for_menu(process, open, deadline)
+        self.inner.wait_for_menu(process, wait, deadline)
     }
 
     fn window_op(

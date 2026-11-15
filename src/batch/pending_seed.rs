@@ -2,22 +2,29 @@
 //! was read before and the wait it belongs to.
 
 use agent_desktop_core::{
-    AdapterError, Deadline, NotificationSeed, PlatformAdapter, SignalBaseline, SignalFilter,
-    commands::wait_notification as notification_wait, context::CommandContext,
+    AdapterError, Deadline, MenuSeed, NotificationSeed, PlatformAdapter, SignalBaseline,
+    SignalFilter,
+    commands::{wait_menu, wait_notification as notification_wait},
+    context::CommandContext,
 };
 
 use super::{preparation::PreparedCommand, seed_kind::SeedKind};
 
-/// What a batch read hands its wait: an event baseline or a notification
-/// listing.
-pub(super) type SeedValues = (Option<SignalBaseline>, Option<NotificationSeed>);
+/// What a batch read hands its wait: an event baseline, a notification
+/// listing or a menu reading.
+pub(super) type SeedValues = (
+    Option<SignalBaseline>,
+    Option<NotificationSeed>,
+    Option<MenuSeed>,
+);
 
 /// What an entry's context is seeded with: an event baseline, possibly a
-/// failed one handed down by the batch's own context, and a notification
-/// listing.
+/// failed one handed down by the batch's own context, a notification listing
+/// and a menu reading.
 pub(super) type EntrySeed = (
     Option<Result<SignalBaseline, AdapterError>>,
     Option<NotificationSeed>,
+    Option<MenuSeed>,
 );
 
 /// A read taken for one wait before the action at `read_at`. A failed read
@@ -48,6 +55,13 @@ impl PendingSeed {
 /// absorbed into the wait's own first read. Only an event baseline failure is
 /// an error: a notification seed that cannot be read falls back to the
 /// wait's own first list and never fails.
+///
+/// A `wait --menu-closed` gets one menu reading of its app. A menu open
+/// before the action tells the wait that the action closes it; without the
+/// reading the wait cannot tell a menu the action closed from one it is about
+/// to open, and holds for the opener grace. Every action kind gets the same
+/// reading, so a raw `mouse-click` and a ref `click` seed the wait alike. A
+/// reading that fails or is slow leaves no seed and never fails.
 pub(super) fn read_seed(
     wait: &PreparedCommand,
     adapter: &dyn PlatformAdapter,
@@ -63,7 +77,7 @@ pub(super) fn read_seed(
             };
             let context = wait.context.clone().with_inherited_deadline(deadline);
             let seed = notification_wait::pre_action_seed(&core_args, deadline, adapter, &context);
-            Ok(Some((None, seed)))
+            Ok(Some((None, seed, None)))
         }
         SeedKind::Event => {
             let filter = SignalFilter {
@@ -71,15 +85,18 @@ pub(super) fn read_seed(
                 process: None,
             };
             let baseline = adapter.capture_signal_baseline(&filter, deadline)?;
-            Ok(Some((Some(baseline), None)))
+            Ok(Some((Some(baseline), None, None)))
         }
+        SeedKind::MenuClosed => Ok(wait_menu::menu_seed(args.app.as_deref(), adapter, deadline)
+            .map(|seed| (None, None, Some(seed)))),
     }
 }
 
 /// Gives `context` the seed in `seed`, or none.
 pub(super) fn seed_context(seed: Option<EntrySeed>, context: CommandContext) -> CommandContext {
-    let (event, notification) = seed.unwrap_or_default();
+    let (event, notification, menu) = seed.unwrap_or_default();
     context
         .with_event_baseline(event)
         .with_notification_seed(notification)
+        .with_menu_seed(menu)
 }

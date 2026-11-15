@@ -20,6 +20,14 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         self.inner.focused_app(deadline)
     }
 
+    fn menu_open(
+        &self,
+        process: ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        self.inner.menu_open(process, deadline)
+    }
+
     fn is_nonspatial_target(&self, handle: &NativeHandle) -> bool {
         WebHandle::of(handle).is_some() || self.inner.is_nonspatial_target(handle)
     }
