@@ -7,6 +7,7 @@ use zbus::zvariant::DynamicType;
 use zbus::zvariant::OwnedObjectPath;
 
 use super::key_session::KeySession;
+use super::stream_point::StreamPoint;
 use crate::system::bus::session_bus::{SessionBus, is_transport_failure};
 use crate::system::{NAME_HAS_NO_OWNER, SERVICE_UNKNOWN, within};
 
@@ -37,7 +38,7 @@ pub(crate) struct RemoteDesktop {
     connection: Connection,
     session: Option<OwnedObjectPath>,
     started: bool,
-    stream: Option<OwnedObjectPath>,
+    streams: Vec<OwnedObjectPath>,
 }
 
 impl RemoteDesktop {
@@ -82,7 +83,7 @@ impl RemoteDesktop {
             connection,
             session: None,
             started: false,
-            stream: None,
+            streams: Vec::new(),
         }
     }
 
@@ -139,6 +140,8 @@ impl RemoteDesktop {
 impl RemoteDesktop {
     /// Links a screen-cast stream of the monitor on `connector` to the created
     /// session, which is what lets the pointer move to an absolute position.
+    /// Each call adds one stream; motion names a stream by the order of these
+    /// calls.
     pub(crate) fn attach_stream(
         &mut self,
         connector: &str,
@@ -194,20 +197,20 @@ impl RemoteDesktop {
                 .deserialize::<OwnedObjectPath>()
                 .map_err(|error| self.failed(&error))
         });
-        self.stream = Some(stream.map_err(|error| self.forget_on_timeout(error))?);
+        let stream = stream.map_err(|error| self.forget_on_timeout(error))?;
+        self.streams.push(stream);
         Ok(())
     }
 
     pub(crate) fn pointer_motion_absolute(
         &mut self,
-        x: f64,
-        y: f64,
+        at: &StreamPoint,
         deadline: Deadline,
     ) -> Result<(), AdapterError> {
         let path = self.session_path()?;
         let stream = self
-            .stream
-            .as_ref()
+            .streams
+            .get(at.stream)
             .ok_or_else(|| AdapterError::internal("No screen-cast stream is linked"))?
             .as_str();
         within(deadline, async {
@@ -215,7 +218,28 @@ impl RemoteDesktop {
                 &self.connection,
                 path,
                 "NotifyPointerMotionAbsolute",
-                &(stream, x, y),
+                &(stream, at.x, at.y),
+            )
+            .await
+            .map_err(|error| classify_call(&error))
+        })
+    }
+
+    /// Turns the wheel by whole detents: `axis` 0 is vertical, where a
+    /// positive count scrolls down, and 1 is horizontal, positive to the right.
+    pub(crate) fn pointer_axis_discrete(
+        &mut self,
+        axis: u32,
+        steps: i32,
+        deadline: Deadline,
+    ) -> Result<(), AdapterError> {
+        let path = self.session_path()?;
+        within(deadline, async {
+            call_session_method(
+                &self.connection,
+                path,
+                "NotifyPointerAxisDiscrete",
+                &(axis, steps),
             )
             .await
             .map_err(|error| classify_call(&error))
@@ -275,7 +299,7 @@ impl KeySession for RemoteDesktop {
         let stopped = self.call_session("Stop", deadline);
         self.session = None;
         self.started = false;
-        self.stream = None;
+        self.streams.clear();
         if stopped.is_err() {
             SessionBus::forget(&self.connection);
         }

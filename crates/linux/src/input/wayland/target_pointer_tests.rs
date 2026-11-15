@@ -4,8 +4,9 @@ use agent_desktop_core::{
     AdapterError, Deadline, DeliverySemantics, DisplayInfo, ErrorCode, MouseButton, Point, Rect,
 };
 
-use super::{PointerSession, monitor_under, run_pointer};
+use super::{PointerSession, run_pointer};
 use crate::input::wayland::key_session::KeySession;
+use crate::input::wayland::stream_point::StreamPoint;
 
 #[derive(Default)]
 struct Recording {
@@ -58,9 +59,12 @@ impl PointerSession for Recording {
             ))
         }
     }
-    fn motion_absolute(&mut self, x: f64, y: f64, _: Deadline) -> Result<(), AdapterError> {
-        self.pos = (x, y);
+    fn motion_absolute(&mut self, at: &StreamPoint, _: Deadline) -> Result<(), AdapterError> {
+        self.pos = (at.x, at.y);
         self.step("absolute")
+    }
+    fn axis_discrete(&mut self, _: u32, steps: i32, _: Deadline) -> Result<(), AdapterError> {
+        self.step(&format!("axis:{steps}"))
     }
 }
 fn deadline() -> Deadline {
@@ -116,7 +120,7 @@ fn receiver_loss_before_a_button_stops_dispatch_and_preserves_prior_motion() {
                 .iter()
                 .filter(|event| *event == "absolute")
                 .count(),
-            usize::from(allowed > 0)
+            if allowed > 0 { 2 } else { 0 }
         );
         assert_eq!(
             session.log.iter().filter(|event| *event == "down").count(),
@@ -234,7 +238,7 @@ fn pointer_routing_and_failures() {
     assert_eq!(
         session.log,
         [
-            "create", "attach", "start", "absolute", "down", "up", "stop"
+            "create", "attach", "start", "absolute", "absolute", "down", "up", "stop"
         ]
     );
     assert_eq!(session.pos, (77., 21.));
@@ -281,20 +285,4 @@ fn pointer_routing_and_failures() {
             assert_eq!(error.details.unwrap()["physical_delivery_started"], true);
         }
     }
-}
-
-#[test]
-fn monitor_routing() {
-    let ds = [
-        display("DP-1", 100., 50.),
-        display("HDMI-1+DP-2", 1380., 50.),
-    ];
-    for (p, expected) in [
-        (Point { x: 140., y: 70. }, ("DP-1", 40., 20.)),
-        (Point { x: 1500., y: 70. }, ("HDMI-1", 120., 20.)),
-    ] {
-        let (c, q) = monitor_under(&p, &ds).unwrap();
-        assert_eq!((c.as_str(), q.x, q.y), expected);
-    }
-    assert!(monitor_under(&Point { x: 1., y: 1. }, &ds).is_none());
 }
