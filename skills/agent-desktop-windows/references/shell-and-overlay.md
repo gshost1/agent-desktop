@@ -1,6 +1,6 @@
 # Shell surfaces, notifications and cursor overlay
 
-Open this file to raise shell surfaces, read or drive notifications, use the cursor overlay, or handle hosted (UWP) window identity and menu detection.
+Open this file to raise shell surfaces, read or drive notifications, use the cursor overlay, or handle hosted (UWP) window identity, menu detection and the sheet surface.
 
 ## Shell Surfaces
 
@@ -167,3 +167,10 @@ own window, and WinUI 3 menu flyouts such as the Windows 11 Notepad File menu.
 Other WinUI 3 and MSIX popups are not evaluated. For an app outside
 these families, read "no menu is open" as "not detected", not as proof that the
 menu is closed.
+
+## Sheet Surface
+
+`snapshot --surface sheet` reads the window it names, foreground or not. The
+sheet is that window when it is modal, as a Chromium modal is, or else the
+modal dialog that window owns. With neither, it returns `ELEMENT_NOT_FOUND`
+with `details.kind: "surface_absent"`, so `--wait-for` keeps waiting.

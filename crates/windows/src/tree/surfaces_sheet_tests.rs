@@ -10,11 +10,11 @@ use agent_desktop_core::{
     AdapterError, Deadline, ObservationRoot, ProcessId, SnapshotSurface, WindowInfo,
 };
 
-use crate::tree::surfaces::{surface_root, window_is_modal_sheet};
 use crate::system::fixture::test_support::{FIXTURE_APP_NAME_LOCK, stage_foreground};
 use crate::tree::element::UIAElement;
 use crate::tree::fixture::fixture_modal::ModalFixture;
 use crate::tree::fixture::{HostedFixture, bootstrap};
+use crate::tree::surfaces::{surface_root, window_is_modal_sheet};
 
 const STATE_TIMEOUT: Duration = Duration::from_secs(5);
 
