@@ -140,3 +140,7 @@ pub(crate) fn select_window(
 #[cfg(test)]
 #[path = "window_lookup_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "window_lookup_auxiliary_tests.rs"]
+mod auxiliary_tests;
