@@ -1,4 +1,5 @@
 use super::{CommandFocus, retry_leased_point_phase};
+use crate::wait::deadline::VirtualClock;
 use crate::{AdapterError, AppError, ErrorCode};
 use serde_json::json;
 
@@ -31,6 +32,7 @@ fn leased_wait<T>(
     timeout_ms: u64,
     mut attempt: impl FnMut(u32) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
+    let _clock = VirtualClock::freeze();
     let deadline = crate::Deadline::after(timeout_ms).unwrap();
     let mut attempts = 0;
     retry_leased_point_phase(

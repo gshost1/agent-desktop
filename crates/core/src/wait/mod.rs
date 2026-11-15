@@ -1,3 +1,4 @@
+pub(crate) mod baseline_once;
 pub(crate) mod deadline;
 pub(crate) mod event_kind;
 pub(crate) mod ref_wait;

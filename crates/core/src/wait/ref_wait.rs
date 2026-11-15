@@ -21,9 +21,15 @@ impl RefWait<'_> {
 }
 
 /// Whether following a ref can reach windows its own read does not: a ref
-/// owned by one window, or one on an application surface such as a menu bar
-/// item, whose read covers only that surface. A ref on a process root's
-/// window surface already reads every window of its process.
+/// observed through one window's native tree, or one on an application
+/// surface such as a menu bar item, whose read covers only that surface. A
+/// process root already observes its whole process, and a web ref is
+/// observed on its page.
 pub(crate) fn follows_windows(adapter: &dyn PlatformAdapter, entry: &RefEntry) -> bool {
-    adapter.is_application_surface(entry.source.source_surface) || !entry.source.is_process_owned()
+    if adapter.is_application_surface(entry.source.source_surface) {
+        return true;
+    }
+    !entry.source.is_process_owned()
+        && crate::snapshot::surface_target::ref_observation_surface(adapter, entry)
+            == crate::SnapshotSurface::Window
 }

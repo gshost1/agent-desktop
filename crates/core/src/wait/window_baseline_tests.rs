@@ -35,6 +35,10 @@ fn window(id: &str, pid: u32, instance: Option<&str>) -> WindowInfo {
     }
 }
 
+fn long() -> Deadline {
+    Deadline::after(5_000).unwrap()
+}
+
 fn process() -> ProcessIdentity {
     ProcessIdentity::new(1, "test-instance")
 }
@@ -88,17 +92,19 @@ fn a_baseline_is_taken_only_for_an_appear_wait_on_a_window_ref() {
         listed: Mutex::new(vec![window("w-main", 1, Some("test-instance"))]),
     };
     let entry = entry();
-    assert!(WindowBaseline::before_action(&windows, &entry, &appear(false)).is_some());
-    assert!(WindowBaseline::before_action(&windows, &entry, &appear(true)).is_none());
+    assert!(WindowBaseline::before_action(&windows, &entry, &appear(false), long()).is_some());
+    assert!(WindowBaseline::before_action(&windows, &entry, &appear(true), long()).is_none());
     assert!(
-        WindowBaseline::before_action(&windows, &entry, &crate::CommandContext::default())
+        WindowBaseline::before_action(&windows, &entry, &crate::CommandContext::default(), long())
             .is_none()
     );
 
     let mut process_owned = entry.clone();
     process_owned.source.source_window_id = None;
     process_owned.source.source_window_title = Some(String::new());
-    assert!(WindowBaseline::before_action(&windows, &process_owned, &appear(false)).is_none());
+    assert!(
+        WindowBaseline::before_action(&windows, &process_owned, &appear(false), long()).is_none()
+    );
 }
 
 #[test]
@@ -109,5 +115,5 @@ fn a_platform_that_cannot_list_windows_leaves_no_baseline() {
     impl InputOps for NoWindows {}
     impl SystemOps for NoWindows {}
 
-    assert!(WindowBaseline::before_action(&NoWindows, &entry(), &appear(false)).is_none());
+    assert!(WindowBaseline::before_action(&NoWindows, &entry(), &appear(false), long()).is_none());
 }
