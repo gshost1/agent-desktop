@@ -67,7 +67,10 @@ fn the_read_after_a_slow_resolution_gets_only_what_the_command_has_left() {
     let _guard = HomeGuard::new();
     let _clock = crate::wait::deadline::VirtualClock::freeze();
     let mut refmap = RefMap::new();
-    refmap.allocate(crate::adapter::minimal_ref_entry("textfield", Some("Search")));
+    refmap.allocate(crate::adapter::minimal_ref_entry(
+        "textfield",
+        Some("Search"),
+    ));
     let snapshot_id = RefStore::new().unwrap().save_new_snapshot(&refmap).unwrap();
     let adapter = SlowWindowAdapter::default();
 

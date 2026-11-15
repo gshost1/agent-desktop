@@ -74,7 +74,10 @@ impl ActionOps for LandingAdapter {}
 impl InputOps for LandingAdapter {}
 impl SystemOps for LandingAdapter {}
 
-fn wait_for_ready(adapter: &LandingAdapter, timeout_ms: u64) -> Result<serde_json::Value, crate::AppError> {
+fn wait_for_ready(
+    adapter: &LandingAdapter,
+    timeout_ms: u64,
+) -> Result<serde_json::Value, crate::AppError> {
     wait_for_element_test(
         "@e1".into(),
         Some(snapshot_with_one_ref()),
