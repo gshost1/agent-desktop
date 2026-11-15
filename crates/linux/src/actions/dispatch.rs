@@ -78,26 +78,51 @@ fn falls_back_to_semantic(error: &AdapterError) -> bool {
         && (error.code == ErrorCode::ActionNotSupported || unaimable)
 }
 
+/// A refusal raised before any pointer event left the adapter because the aim
+/// point could not be proven inside the target's visible area. The semantic
+/// call does not use that point, so it can still act on the element.
+fn point_unproven(error: &AdapterError) -> bool {
+    error.disposition == DeliverySemantics::not_delivered()
+        && error.details.as_ref().is_some_and(|details| {
+            details.get("kind").and_then(serde_json::Value::as_str)
+                == Some("pointer_target_not_visible")
+                && details
+                    .get("physical_delivery_started")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(false)
+                && details
+                    .get("delivered_clicks")
+                    .is_none_or(|clicks| clicks.as_u64() == Some(0))
+        })
+}
+
 pub(crate) fn physical_first(
     physical: impl FnOnce() -> Result<ActionResult, AdapterError>,
     semantic: impl FnOnce() -> Result<ActionResult, AdapterError>,
 ) -> Result<ActionResult, AdapterError> {
     match physical() {
-        Err(error) if falls_back_to_semantic(&error) => semantic().map(|mut result| {
-            result.steps.insert(
-                0,
-                ActionStep::skipped("physical_input")
-                    .with_mechanism(StepMechanism::PhysicalSynthetic),
-            );
-            result.details.get_or_insert_with(|| json!({}))["physical_fallback"] = json!({
-                "code": error.code,
-                "message": error.message,
-                "details": error.details,
-            });
-            result
-        }),
+        Err(error) if point_unproven(&error) => match semantic() {
+            Err(semantic_error) if has_no_verb(&semantic_error) => Err(error),
+            other => other.map(|result| with_physical_fallback(result, &error)),
+        },
+        Err(error) if falls_back_to_semantic(&error) => {
+            semantic().map(|result| with_physical_fallback(result, &error))
+        }
         other => other,
     }
+}
+
+fn with_physical_fallback(mut result: ActionResult, error: &AdapterError) -> ActionResult {
+    result.steps.insert(
+        0,
+        ActionStep::skipped("physical_input").with_mechanism(StepMechanism::PhysicalSynthetic),
+    );
+    result.details.get_or_insert_with(|| json!({}))["physical_fallback"] = json!({
+        "code": error.code,
+        "message": error.message,
+        "details": error.details,
+    });
+    result
 }
 
 fn right_click_dispatch(
