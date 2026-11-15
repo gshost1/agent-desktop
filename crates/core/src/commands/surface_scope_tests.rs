@@ -56,6 +56,7 @@ fn supported_surface_requests_do_not_discover_unrelated_capabilities() {
                 window_id: None,
                 root: None,
                 surface: SnapshotSurface::Window,
+                scroll: None,
             },
             filter: crate::commands::find::FindFilterArgs {
                 role: Some("button".into()),

@@ -190,3 +190,16 @@ fn stdin_input_is_not_exposed_to_mcp_calls() {
         );
     }
 }
+
+#[test]
+fn the_find_scroll_direction_is_offered_as_its_four_values() {
+    let find = tools()
+        .into_iter()
+        .find(|tool| tool.path == ["find"])
+        .expect("find tool");
+    let definition = find.definition();
+    assert_eq!(
+        definition["inputSchema"]["properties"]["scroll"]["enum"],
+        serde_json::json!(["up", "down", "left", "right"])
+    );
+}

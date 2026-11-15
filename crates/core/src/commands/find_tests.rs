@@ -103,6 +103,7 @@ fn default_limit_caps_materialized_matches() {
                 window_id: Some("w-1".into()),
                 root: None,
                 surface: crate::SnapshotSurface::Window,
+                scroll: None,
             },
             filter: FindFilterArgs {
                 role: Some("button".into()),
@@ -130,6 +131,7 @@ fn limit_conflicts_with_single_result_modes_for_batch_too() {
             window_id: None,
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: no_filter(),
         states: vec![],
@@ -160,6 +162,7 @@ fn role_alias_is_preserved_until_live_validation() {
             window_id: None,
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             role: Some("textarea".into()),
@@ -184,6 +187,7 @@ fn unknown_role_is_preserved_until_validation() {
             window_id: None,
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             role: Some("navbar".into()),
@@ -217,6 +221,7 @@ fn roles_present_hint_is_omitted_when_a_match_is_found() {
                     window_id: Some("w-1".into()),
                     root: None,
                     surface: crate::SnapshotSurface::Window,
+                    scroll: None,
                 },
                 filter: FindFilterArgs {
                     role: Some("button".into()),
@@ -246,6 +251,7 @@ fn find_args_scoped_to_window(window_id: &str) -> FindArgs {
             window_id: Some(window_id.into()),
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             name: Some("OnlyInWindowTwo".into()),

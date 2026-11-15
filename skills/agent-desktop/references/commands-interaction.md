@@ -8,7 +8,7 @@ Each line is a runnable example. The comment after it is the command's full form
 
 ```
 agent-desktop press cmd+s --app "TextEdit"                   # COMBO [--ref REF | [--app NAME] [--window-id ID]] [--force]
-agent-desktop find --app "Finder" --role textfield --name "Name"   # [--app NAME] [--window-id ID] [--role R] [--name N] [--value V] [--text T] [--description D] [--native-id ID] [--state TOKEN[=BOOL]]... [--exact] [--root REF | --surface S] [--timeout-ms N] [--allow-partial] [--first | --last | --nth N | --limit N | --count]
+agent-desktop find --app "Finder" --role textfield --name "Name"   # [--app NAME] [--window-id ID] [--role R] [--name N] [--value V] [--text T] [--description D] [--native-id ID] [--state TOKEN[=BOOL]]... [--exact] [--root REF [--scroll [DIRECTION]] | --surface S] [--timeout-ms N] [--allow-partial] [--first | --last | --nth N | --limit N | --count]
 agent-desktop type @s8f3k2p9:e2 "hello"                      # REF (TEXT | --stdin) [--interval-ms N] [--timeout-ms N]
 agent-desktop select @s8f3k2p9:e4 "Option B"                 # REF VALUE [--timeout-ms N]
 agent-desktop set-value @s8f3k2p9:e2 "new value"             # REF (VALUE | --stdin) [--timeout-ms N]

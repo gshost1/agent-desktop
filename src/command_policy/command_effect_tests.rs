@@ -37,6 +37,7 @@ fn read_only_commands_and_their_inline_forms_are_read_only() {
         &["trace", "show"],
         &["list-windows"],
         &["permissions"],
+        &["find", "--root", "@s1:e4", "--name", "Row"],
     ] {
         assert_eq!(effect(arguments), CommandEffect::ReadOnly, "{arguments:?}");
     }
@@ -53,6 +54,7 @@ fn commands_that_reach_applications_or_shared_state_are_app_input() {
         &["session", "end", "run_1"],
         &["cursor-overlay", "disable"],
         &["batch", "[]"],
+        &["find", "--root", "@s1:e4", "--name", "Row", "--scroll"],
     ] {
         assert_eq!(effect(arguments), CommandEffect::AppInput, "{arguments:?}");
     }
