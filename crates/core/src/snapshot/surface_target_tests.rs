@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::resolve_window_for_surface;
+use super::{ref_observation_surface, resolve_window_for_surface};
 use crate::{
     AdapterError, AppError, AppInfo, Deadline, ErrorCode, ProcessIdentity, SnapshotSurface,
     WindowInfo, adapter::WindowFilter,
@@ -131,4 +131,22 @@ fn a_listed_window_owns_the_web_surface_without_reading_the_endpoint_record() {
     let owner = resolve(&browser, SnapshotSurface::Web).unwrap();
     assert_eq!(owner.id, "w1");
     assert_eq!(browser.endpoint_reads.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_web_ref_from_a_browser_window_is_observed_on_the_web_surface() {
+    let adapter = crate::adapter::NoopAdapter;
+    let mut entry = crate::adapter::minimal_ref_entry("textfield", Some("Search"));
+    entry.source.source_window_id = Some("w-1".into());
+    entry.source.source_window_title = Some("Weather - Browser".into());
+    assert_eq!(
+        ref_observation_surface(&adapter, &entry),
+        SnapshotSurface::Window
+    );
+
+    entry.source.source_surface = SnapshotSurface::Web;
+    assert_eq!(
+        ref_observation_surface(&adapter, &entry),
+        SnapshotSurface::Web
+    );
 }

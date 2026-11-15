@@ -42,8 +42,11 @@ pub(crate) fn capture_signal_baseline_impl(
     Ok(SignalBaseline {
         windows,
         apps,
-        surfaces,
-        completeness: SignalCompleteness::complete(),
+        surfaces: surfaces.signals,
+        completeness: SignalCompleteness {
+            surfaces: surfaces.complete,
+            ..SignalCompleteness::complete()
+        },
     })
 }
 
@@ -95,15 +98,26 @@ fn cap_ax_messaging(apps: &[AppInfo], deadline: Instant) -> Result<(), AdapterEr
     ensure_before_deadline(deadline)
 }
 
+struct SurfaceCapture {
+    signals: Vec<SurfaceSignal>,
+    complete: bool,
+}
+
+/// A surface kind the adapter could not read leaves the capture incomplete, so
+/// core neither reports its surfaces as dismissed nor, once they are read
+/// again, as appeared.
 fn surfaces_for_apps(
     filter: &SignalFilter,
     apps: &[AppInfo],
     deadline: Instant,
-) -> Result<Vec<SurfaceSignal>, AdapterError> {
+) -> Result<SurfaceCapture, AdapterError> {
+    let mut capture = SurfaceCapture {
+        signals: Vec::new(),
+        complete: true,
+    };
     if filter.app.is_none() && filter.process.is_none() {
-        return Ok(Vec::new());
+        return Ok(capture);
     }
-    let mut surfaces = Vec::new();
     for app in apps {
         ensure_before_deadline(deadline)?;
         let instance = app.process_instance.as_deref().ok_or_else(|| {
@@ -112,20 +126,31 @@ fn surfaces_for_apps(
         let identity = crate::system::process::process_identity::require_core(
             &agent_desktop_core::ProcessIdentity::new(app.pid, instance),
         )?;
-        for info in crate::tree::surface_inventory::list_surfaces_for_process(identity, deadline)? {
-            if let Some(kind) = map_surface_kind(&info.kind) {
-                surfaces.push(SurfaceSignal {
-                    kind,
-                    app: app.name.clone(),
-                    pid: app.pid,
-                    process_instance: instance.to_owned(),
-                    id: info.id,
-                    title: info.title,
-                });
-            }
+        let infos = crate::tree::surface_inventory::list_surfaces_for_process(identity, deadline)?;
+        record_surfaces(&mut capture, app, instance, infos);
+    }
+    Ok(capture)
+}
+
+fn record_surfaces(
+    capture: &mut SurfaceCapture,
+    app: &AppInfo,
+    instance: &str,
+    infos: Vec<agent_desktop_core::SurfaceInfo>,
+) {
+    for info in infos {
+        capture.complete &= info.unclassified.is_empty();
+        if let Some(kind) = map_surface_kind(&info.kind) {
+            capture.signals.push(SurfaceSignal {
+                kind,
+                app: app.name.clone(),
+                pid: app.pid,
+                process_instance: instance.to_owned(),
+                id: info.id,
+                title: info.title,
+            });
         }
     }
-    Ok(surfaces)
 }
 
 fn map_surface_kind(raw: &str) -> Option<SnapshotSurface> {
