@@ -227,6 +227,11 @@ const KINDS: &[SurfaceKindRow] = &[
     },
 ];
 
+/// Every row of the kind table, in the order the resolver tries them.
+pub(crate) fn rows() -> &'static [SurfaceKindRow] {
+    KINDS
+}
+
 pub(crate) fn row_for(kind: SnapshotSurface) -> Option<&'static SurfaceKindRow> {
     KINDS.iter().find(|row| row.kind == kind)
 }
