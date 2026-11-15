@@ -1,7 +1,8 @@
 //! Windows-only: a WinUI 3 menu flyout reads as an open menu. The test
 //! drives the Store Notepad, which Windows 11 carries and the hosted
 //! Windows 11 runner has (Microsoft.WindowsNotepad 11.2605 on build 26200);
-//! a host without the package launches nothing and the test says so.
+//! a host without the package launches nothing and the test says so. A host
+//! with the package that shows no new Notepad window fails the test.
 
 use agent_desktop_core::commands::helpers::RefArgs;
 use agent_desktop_core::commands::snapshot::{self, SnapshotArgs};
@@ -71,7 +72,10 @@ fn launch_store_notepad() -> Option<LaunchedNotepad> {
             return Some(LaunchedNotepad(window));
         }
     }
-    None
+    panic!(
+        "the Store Notepad package is installed but no new Notepad process showed a window \
+         within 30 s; a running Notepad may have taken the launch"
+    );
 }
 
 fn find_ref(value: &serde_json::Value, role: &str, name: &str) -> Option<String> {
@@ -126,7 +130,7 @@ fn a_winui_menu_flyout_reads_as_an_open_menu_and_closes_again() {
     bootstrap();
     let _shell = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let Some(notepad) = launch_store_notepad() else {
-        eprintln!("skip winui menu: this host has no Store Notepad to launch");
+        eprintln!("skip winui menu: the Store Notepad package is not installed");
         return;
     };
     let _home = HomeIsolation::enter("agent-desktop-winui-menu-home");

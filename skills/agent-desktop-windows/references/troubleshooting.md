@@ -198,10 +198,11 @@ agent-desktop set-value $doc.ref_id "the document body"
 $file = (agent-desktop find --app notepad.exe --role menuitem --name "File" | ConvertFrom-Json).data.matches[0]
 agent-desktop expand $file.ref_id
 agent-desktop wait --menu --app notepad.exe             # the open menu is its own surface
-$menu = (agent-desktop snapshot --app notepad.exe --surface menu | ConvertFrom-Json).data.tree
-agent-desktop click ($menu.children | Where-Object name -eq 'Save As...').ref_id
+$saveAs = (agent-desktop find --app notepad.exe --surface menu --role menuitem --name "Save as" |
+    ConvertFrom-Json).data.matches[0]                   # "Save As..." or "Save as", at any depth
+agent-desktop click $saveAs.ref_id
 
-agent-desktop wait --window "Save As" --app notepad.exe # the dialog is a new window
+agent-desktop wait --window "Save" --app notepad.exe    # the dialog is a new window
 $dialog = (agent-desktop list-windows --app notepad.exe | ConvertFrom-Json).data |
     Where-Object title -eq 'Save As'
 $name = (agent-desktop find --name "File name" --window-id $dialog.id | ConvertFrom-Json).data.matches |
@@ -210,7 +211,7 @@ agent-desktop set-value $name.ref_id $out               # full path goes in the 
 
 $save = (agent-desktop find --role button --name "Save" --window-id $dialog.id | ConvertFrom-Json).data.matches[0]
 agent-desktop click $save.ref_id
-agent-desktop wait --window "notepad-save-demo - Notepad" --app notepad.exe
+agent-desktop wait --window "notepad-save-demo" --app notepad.exe
 Get-Content $out
 ```
 
