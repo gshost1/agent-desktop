@@ -30,6 +30,7 @@ pub use actions::headed_focus::saved_ref_focus_window;
 pub use actions::headed_requirement::HeadedRequirement;
 pub use actions::interaction_policy::InteractionPolicy;
 pub use actions::post_action::execute_verified_action;
+pub use actions::scroll_page::ScrollPage;
 pub use actions::step_mechanism::StepMechanism;
 pub use adapter::PlatformAdapter;
 pub use adapter::actions::ActionOps;

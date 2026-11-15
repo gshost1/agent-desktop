@@ -330,6 +330,7 @@ impl Commands {
             | Self::CursorOverlay(_)
             | Self::Batch(_) => AppInput,
             Self::Permissions(args) if args.request => AppInput,
+            Self::Find(args) if args.place.scroll.is_some() => AppInput,
             Self::Screenshot(args) if args.output_path.is_some() => LocalWrite,
             Self::ClipboardGet(args) if args.out.is_some() => LocalWrite,
             Self::Session(args) => match &args.action {

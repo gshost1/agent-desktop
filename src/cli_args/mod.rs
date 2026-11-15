@@ -200,15 +200,10 @@ pub(crate) struct FindSelectionArgs {
     pub allow_partial: bool,
 }
 
-#[derive(Parser, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FindArgs {
-    #[command(flatten)]
-    #[serde(flatten)]
-    pub scope: WindowScope,
-    #[command(flatten)]
-    #[serde(flatten)]
-    pub filter: FindFilterArgs,
+/// Where in the window a find looks, and whether it may page a list to load
+/// more of it.
+#[derive(Args, Debug, Deserialize)]
+pub(crate) struct FindPlaceArgs {
     #[arg(
         long,
         help = "Search only inside this ref's subtree, not the whole window"
@@ -222,6 +217,29 @@ pub(crate) struct FindArgs {
     )]
     #[serde(default)]
     pub surface: Surface,
+    #[arg(
+        long,
+        value_name = "DIRECTION",
+        num_args = 0..=1,
+        default_missing_value = "down",
+        requires = "root",
+        help = "Page the --root list or scroll area toward DIRECTION (default down), then back, until a match loads; scrolls the view headlessly and leaves it where the match is"
+    )]
+    pub scroll: Option<String>,
+}
+
+#[derive(Parser, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FindArgs {
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub scope: WindowScope,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub filter: FindFilterArgs,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub place: FindPlaceArgs,
     #[arg(
         long = "state",
         value_name = "TOKEN[=BOOL]",

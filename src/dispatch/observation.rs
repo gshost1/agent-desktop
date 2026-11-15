@@ -50,8 +50,14 @@ pub(super) fn find(
             scope: find_command::FindScopeArgs {
                 app: args.scope.app,
                 window_id: args.scope.window_id,
-                root: args.root,
-                surface: args.surface.to_core(),
+                root: args.place.root,
+                surface: args.place.surface.to_core(),
+                scroll: args
+                    .place
+                    .scroll
+                    .as_deref()
+                    .map(super::parse::parse_direction)
+                    .transpose()?,
             },
             timeout_ms: args.timeout_ms,
             filter: find_command::FindFilterArgs {
