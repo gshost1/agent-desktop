@@ -176,7 +176,7 @@ fn retire_legacy(control: &CursorOverlayControl, deadline: Instant) {
     let _ = send_until(&socket, &disable, deadline);
 }
 
-fn send_until(
+pub(super) fn send_until(
     socket: &Path,
     control: &CursorOverlayControl,
     deadline: Instant,
