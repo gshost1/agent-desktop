@@ -193,10 +193,7 @@ fn process_owns_foreground(pid: ProcessId, instance: &str) -> Result<bool, Adapt
     if force_focus_lost::is_active() {
         return Ok(false);
     }
-    let Some(foreground_pid) = foreground_process_id() else {
-        return Ok(false);
-    };
-    if foreground_pid != pid {
+    if !foreground_window_is_of(pid) {
         return Ok(false);
     }
     process_identity::matches_instance(pid, instance)
@@ -230,7 +227,9 @@ fn process_holds_keyboard_focus(pid: ProcessId) -> Result<bool, AdapterError> {
     } else {
         return Ok(false);
     };
-    Ok(super::window::frame_identity::window_identity_owner(focus) == Some(pid))
+    Ok(super::window::frame_identity::is_window_of_process(
+        focus, pid,
+    ))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -239,14 +238,11 @@ fn process_holds_keyboard_focus(_pid: ProcessId) -> Result<bool, AdapterError> {
 }
 
 #[cfg(target_os = "windows")]
-fn foreground_process_id() -> Option<ProcessId> {
+fn foreground_window_is_of(pid: ProcessId) -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
     let foreground = unsafe { GetForegroundWindow() };
-    if foreground.is_null() {
-        return None;
-    }
-    super::window::frame_identity::window_identity_owner(foreground)
+    !foreground.is_null() && super::window::frame_identity::is_window_of_process(foreground, pid)
 }
 
 #[cfg(all(test, target_os = "windows"))]

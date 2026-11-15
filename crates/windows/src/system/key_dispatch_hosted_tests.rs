@@ -5,11 +5,17 @@
 //! identity, not under the frame host that owns the frame's handle.
 
 use super::*;
-use crate::system::fixture::hosted_settings::{stage_hosted_settings, staged_frame};
-use crate::system::fixture::test_support::SHELL_SURFACE_LOCK;
+use crate::adapter::WindowsAdapter;
+use crate::system::capture::capture_test_support::HomeIsolation;
+use crate::system::fixture::hosted_settings::{
+    HOSTED_APP_IMAGE, stage_hosted_settings, staged_frame,
+};
+use crate::system::fixture::test_support::{SHELL_SURFACE_LOCK, with_interaction_lease_test_lock};
 use crate::system::fixture::test_time::deadline;
+use crate::system::private_file::WindowsPrivateFile;
 use crate::tree::fixture::bootstrap;
-use agent_desktop_core::{KeyCombo, ProcessIdentity};
+use agent_desktop_core::commands::press::{self, PressArgs};
+use agent_desktop_core::{CommandContext, KeyCombo, ProcessIdentity};
 
 fn hosted_identity(pid: u32) -> ProcessIdentity {
     let pid = ProcessId::from(pid);
@@ -73,4 +79,41 @@ fn press_for_app_delivers_to_a_foreground_hosted_application() {
         1,
         "the key is synthesized exactly once"
     );
+}
+
+/// The whole command path: `press --app` resolves the hosted application by
+/// the name `list-apps` reports and delivers to it, which needs the app
+/// inventory and the focus gates to agree on the hosted identity.
+#[test]
+fn the_press_command_delivers_to_a_foreground_hosted_application_by_name() {
+    bootstrap();
+    let _shell = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _stage = crate::tree::fixture::fixture_window::on_screen_stage();
+    let staged = stage_hosted_settings();
+    let Some(frame) = staged_frame(&staged) else {
+        return;
+    };
+    let apps = crate::system::app_ops::list_apps_live(deadline(10_000)).expect("apps list");
+    assert!(
+        apps.iter().any(|app| u32::from(app.pid) == frame.hosted_pid
+            && app.name.eq_ignore_ascii_case(HOSTED_APP_IMAGE)),
+        "list-apps names the hosted application under its own pid"
+    );
+    with_interaction_lease_test_lock(|| {
+        let _home = HomeIsolation::enter("agent-desktop-hosted-press-home");
+        let _ = agent_desktop_core::install_private_file_ops(Box::new(WindowsPrivateFile::new()));
+        let result = press::execute(
+            PressArgs {
+                combo: "shift".into(),
+                app: Some(HOSTED_APP_IMAGE.into()),
+                window_id: None,
+                ref_id: None,
+                force: false,
+            },
+            &WindowsAdapter::new(),
+            &CommandContext::default(),
+        )
+        .expect("press --app reaches the foreground hosted application");
+        assert_eq!(result["action"], "press_key", "{result}");
+    });
 }

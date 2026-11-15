@@ -50,23 +50,21 @@ pub(crate) fn hosted_application_pid(
     None
 }
 
-/// The process a window answers to under the identity the window listing
-/// reports: the hosted application when the window sits in an application
-/// frame host frame carrying one (A26-8), otherwise the window's own owner.
+/// Whether a window answers to `pid` under the identity the window listing
+/// reports: the window's own owner is `pid`, or the window is an application
+/// frame host frame hosting `pid`'s live application (A26-8).
 ///
-/// The frame is read at the window's root, so a handle inside the frame -
-/// the frame itself, its title bar, or the hosted `CoreWindow` - answers
-/// with the same hosted pid the listing gave the frame. A caller comparing a
-/// foreground or keyboard-focus handle against a listed pid uses this, never
-/// the raw owner: the raw owner of a hosted frame is the frame host, which
-/// no listed identity carries while the application is live.
+/// A caller comparing a foreground or keyboard-focus handle against a listed
+/// pid uses this, never the raw owner alone: the raw owner of a hosted frame
+/// is the frame host, which no listed identity carries while the application
+/// is live. Only the frame itself is credited to the hosted application; the
+/// frame host's own children, such as the title bar, keep the frame host's
+/// identity, so a key aimed at them is never reported as delivered to the
+/// hosted application.
 #[cfg(target_os = "windows")]
-pub(crate) fn window_identity_owner(handle: WindowHandle) -> Option<ProcessId> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor};
-
-    let root = unsafe { GetAncestor(handle, GA_ROOT) };
-    let top = if root.is_null() { handle } else { root };
-    hosted_application_pid(top).or_else(|| super::window_identity::live_window_owner(handle))
+pub(crate) fn is_window_of_process(handle: WindowHandle, pid: ProcessId) -> bool {
+    super::window_identity::live_window_owner(handle) == Some(pid)
+        || hosted_application_pid(handle) == Some(pid)
 }
 
 /// The first child `CoreWindow` whose owning process differs from the
