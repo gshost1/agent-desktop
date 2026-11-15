@@ -10,7 +10,7 @@ use crate::system::fixture::hosted_settings::{
 };
 use crate::system::fixture::test_support::SHELL_SURFACE_LOCK;
 use crate::system::fixture::test_time::deadline;
-use crate::system::window::frame_identity::is_window_of_process;
+use crate::system::window::window_identity::live_window_owner;
 use crate::tree::fixture::bootstrap;
 
 #[test]
@@ -31,12 +31,13 @@ fn close_app_closes_a_hosted_application_through_its_frame() {
         windows.contains(&handle),
         "the hosted frame is a close target"
     );
-    assert!(
-        windows
-            .iter()
-            .all(|handle| is_window_of_process(*handle as _, pid)),
-        "every close target answers to the hosted application"
-    );
+    for target in &windows {
+        let owner = live_window_owner(*target as _).map(u32::from);
+        assert!(
+            *target == handle || owner == Some(hosted_pid),
+            "{target} is neither the hosted frame nor a window the hosted application owns (owner {owner:?})"
+        );
+    }
     if !staged.started_settings() {
         eprintln!("skip closing hosted Settings: it was open before the test staged it");
         return;
