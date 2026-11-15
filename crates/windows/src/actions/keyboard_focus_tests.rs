@@ -1,8 +1,11 @@
 use super::{KeyboardFocus, establish_with, set_focus_refusal};
-use crate::system::runtime::hresult::{UIA_E_ELEMENTNOTAVAILABLE, UIA_E_NOTSUPPORTED};
+use crate::system::runtime::hresult::{
+    UIA_E_ELEMENTNOTAVAILABLE, UIA_E_NOTSUPPORTED, UIA_E_TIMEOUT,
+};
 use crate::tree::automation::UiaFailure;
 use agent_desktop_core::{
-    ActionStep, AdapterError, Deadline, DeliveryDisposition, ErrorCode, StepMechanism,
+    ActionStep, AdapterError, Deadline, DeliveryDisposition, ErrorCode, InteractionPolicy,
+    StepMechanism,
 };
 use std::cell::Cell;
 use std::time::{Duration, Instant};
@@ -21,7 +24,7 @@ fn a_target_already_holding_focus_is_not_refocused() {
 
     let focus = establish_with(
         deadline(5_000),
-        true,
+        InteractionPolicy::headed(),
         || {
             asked.set(true);
             Ok(())
@@ -45,7 +48,7 @@ fn a_headed_keystroke_focuses_an_unfocused_target_first() {
 
     let focus = establish_with(
         deadline(5_000),
-        true,
+        InteractionPolicy::headed(),
         || {
             asked.set(true);
             Ok(())
@@ -72,7 +75,7 @@ fn a_focus_fallback_keystroke_never_moves_focus() {
 
     let focus = establish_with(
         deadline(5_000),
-        false,
+        InteractionPolicy::focus_fallback(),
         || {
             asked.set(true);
             Ok(())
@@ -87,10 +90,29 @@ fn a_focus_fallback_keystroke_never_moves_focus() {
 }
 
 #[test]
+fn a_headless_keystroke_never_moves_focus() {
+    let asked = Cell::new(false);
+
+    let focus = establish_with(
+        deadline(5_000),
+        InteractionPolicy::headless(),
+        || {
+            asked.set(true);
+            Ok(())
+        },
+        |_| Ok(false),
+    )
+    .expect("focus");
+
+    assert_eq!(focus, KeyboardFocus::NotFocused);
+    assert!(!asked.get());
+}
+
+#[test]
 fn a_set_focus_refusal_is_returned_as_it_is() {
     let error = establish_with(
         deadline(5_000),
-        true,
+        InteractionPolicy::headed(),
         || Err(AdapterError::new(ErrorCode::StaleRef, "element gone")),
         |_| Ok(false),
     )
@@ -103,8 +125,13 @@ fn a_set_focus_refusal_is_returned_as_it_is() {
 fn focus_that_never_lands_is_refused_after_the_settle_window() {
     let started = Instant::now();
 
-    let error = establish_with(deadline(10_000), true, || Ok(()), |_| Ok(false))
-        .expect_err("never focused");
+    let error = establish_with(
+        deadline(10_000),
+        InteractionPolicy::headed(),
+        || Ok(()),
+        |_| Ok(false),
+    )
+    .expect_err("never focused");
 
     assert!(started.elapsed() >= Duration::from_millis(400));
     assert_eq!(error.code, ErrorCode::ActionFailed);
@@ -124,7 +151,7 @@ fn the_settle_window_is_cut_to_a_shorter_deadline() {
 
     let error = establish_with(
         deadline(120),
-        true,
+        InteractionPolicy::headed(),
         || Ok(()),
         |_| {
             reads.set(reads.get() + 1);
@@ -143,7 +170,7 @@ fn a_failed_focus_read_is_returned_without_moving_focus() {
 
     let error = establish_with(
         deadline(5_000),
-        true,
+        InteractionPolicy::headed(),
         || {
             asked.set(true);
             Ok(())
@@ -180,4 +207,18 @@ fn a_target_without_a_focus_affordance_did_not_take_focus() {
     );
     let detail = error.platform_detail.expect("hresult detail");
     assert!(detail.contains("UIElement.SetFocus"), "{detail}");
+}
+
+#[test]
+fn an_uncertain_set_focus_failure_is_refused_as_focus_not_taken() {
+    let error = set_focus_refusal(&UiaFailure::Hresult(UIA_E_TIMEOUT));
+
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.message, "Target did not take keyboard focus");
+    assert!(!error.message.contains("uncertain"));
+    assert_eq!(
+        error.disposition.delivery(),
+        DeliveryDisposition::NotDelivered
+    );
+    assert!(error.platform_detail.is_some());
 }

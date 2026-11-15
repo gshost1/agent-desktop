@@ -32,8 +32,10 @@ observation, actions and capture there fail or return nothing.
   keyboard focus, focuses it with UI Automation `SetFocus` first (a
   `UIElement.SetFocus` step before `SendInput.type_text`); no separate `focus`
   call is needed. A field that refuses focus fails `ACTION_FAILED` ("Target
-  did not take keyboard focus", the HRESULT in `platform_detail`), or
-  `STALE_REF` when the element is gone, with no keystrokes sent. Headed element-scoped `press --ref` does the same. Without
+  did not take keyboard focus"; `platform_detail` holds the HRESULT when
+  `SetFocus` itself failed), `STALE_REF` when the element is gone, or
+  `PERM_DENIED` when access is denied, with no keystrokes sent. Headed
+  element-scoped `press --ref` does the same. Without
   `--headed`, `press --ref` moves no focus: it presses only into a target that
   already holds keyboard focus and refuses one that does not. `type` ends
   `delivered_unverified` (`verification_scope: "unavailable"`) when the field

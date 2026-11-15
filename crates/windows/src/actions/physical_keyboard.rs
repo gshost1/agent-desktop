@@ -1,8 +1,8 @@
 //! Physical keyboard legs for `TypeText` and `PressKey`: focus-fallback
 //! policy, keyboard focus given to the target when it lacks it under a headed
 //! policy, keyboard-focus verification, elevation gate, then `SendInput`
-//! synthesis. Null-handle
-//! `PressKey` synthesizes globally with no element gate.
+//! synthesis. Null-handle `PressKey` synthesizes globally with no element
+//! gate.
 
 use agent_desktop_core::{
     Action, ActionResult, ActionStep, AdapterError, Deadline, InteractionPolicy, KeyCombo,

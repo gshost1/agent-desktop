@@ -16,7 +16,8 @@
 //! only once the focus check passes.
 
 use agent_desktop_core::{
-    ActionStep, AdapterError, Deadline, DeliverySemantics, ErrorCode, StepMechanism,
+    ActionStep, AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionPolicy,
+    StepMechanism,
 };
 use std::time::Duration;
 
@@ -60,20 +61,19 @@ impl KeyboardFocus {
 
 /// The focus decision with its two live reads injected: `request_focus` asks
 /// the provider to focus the target, `focus_ready` reports whether it holds
-/// keyboard focus. `may_move_focus` is false outside headed mode, where an
-/// unfocused target is reported `NotFocused` without `request_focus` being
-/// called. A `request_focus` error is returned as it is, and a target that
+/// keyboard focus. Outside a headed `policy` an unfocused target is reported
+/// `NotFocused` without `request_focus` being called. A `request_focus` error is returned as it is, and a target that
 /// accepted `SetFocus` but never reports focus is refused as not delivered.
 pub(crate) fn establish_with(
     deadline: Deadline,
-    may_move_focus: bool,
+    policy: InteractionPolicy,
     request_focus: impl FnOnce() -> Result<(), AdapterError>,
     mut focus_ready: impl FnMut(Deadline) -> Result<bool, AdapterError>,
 ) -> Result<KeyboardFocus, AdapterError> {
     if focus_ready(deadline)? {
         return Ok(KeyboardFocus::AlreadyFocused);
     }
-    if !may_move_focus {
+    if !policy.is_headed() {
         return Ok(KeyboardFocus::NotFocused);
     }
     deadline.ensure_remaining()?;
@@ -91,14 +91,15 @@ pub(crate) fn establish_with(
 }
 
 /// The refusal for a failed `SetFocus`, through the same classifier every UIA
-/// write uses: an element that is gone is `STALE_REF`, a denied one
-/// `PERM_DENIED`, and one with no focus affordance is refused as not taking
-/// focus. No keystroke has been sent, so the action is always not delivered,
-/// and the HRESULT stays in `platform_detail`.
+/// write uses: an element that is gone is `STALE_REF` and a denied one
+/// `PERM_DENIED`. Every other failure, including one the classifier calls
+/// uncertain, is refused as not taking focus: whether or not focus moved, no
+/// keystroke has been sent, so the action is always not delivered, and the
+/// HRESULT stays in `platform_detail`.
 pub(crate) fn set_focus_refusal(failure: &UiaFailure) -> AdapterError {
     let error = match classify_mutation(SET_FOCUS_OP, SET_FOCUS_LABEL, failure) {
-        Ok(_) => focus_not_taken(Some(failure_detail(failure))),
-        Err(error) => error,
+        Err(error) if matches!(error.code, ErrorCode::StaleRef | ErrorCode::PermDenied) => error,
+        _ => focus_not_taken(Some(failure_detail(failure))),
     };
     error.with_disposition(DeliverySemantics::not_delivered())
 }
@@ -133,12 +134,12 @@ fn failure_detail(failure: &UiaFailure) -> String {
 #[cfg(target_os = "windows")]
 pub(crate) fn establish_keyboard_focus(
     element: &crate::tree::element::UIAElement,
-    policy: agent_desktop_core::InteractionPolicy,
+    policy: InteractionPolicy,
     deadline: Deadline,
 ) -> Result<KeyboardFocus, AdapterError> {
     establish_with(
         deadline,
-        policy.is_headed(),
+        policy,
         || {
             element
                 .0
