@@ -84,3 +84,115 @@ fn mark_deadline_elapsed_fills_missing_details() {
 
     assert_eq!(stamped.details, Some(json!({ "deadline_elapsed": true })));
 }
+
+fn captured(role: &str, verdict: CaptureVerdict, surface: crate::SnapshotSurface) -> RefEntry {
+    let mut entry = entry_with_role(role);
+    entry.identity.capture = verdict;
+    entry.source.source_surface = surface;
+    entry
+}
+
+fn refusal(role: &str, verdict: CaptureVerdict, surface: crate::SnapshotSurface) -> AdapterError {
+    refused_before_reading(&captured(role, verdict, surface)).expect("refused before reading")
+}
+
+#[test]
+fn a_unique_capture_is_not_refused() {
+    let entry = captured(
+        "button",
+        CaptureVerdict::Unique,
+        crate::SnapshotSurface::Window,
+    );
+
+    assert!(refused_before_reading(&entry).is_none());
+}
+
+#[test]
+fn a_twin_control_names_what_the_capture_saw_and_no_older_refmap() {
+    let error = refusal(
+        "button",
+        CaptureVerdict::Ambiguous,
+        crate::SnapshotSurface::Window,
+    );
+
+    assert_eq!(error.code, ErrorCode::AmbiguousTarget);
+    assert_eq!(
+        error.details.as_ref().unwrap()["kind"],
+        "identity_not_unique"
+    );
+    let hint = error.suggestion.unwrap();
+    assert!(hint.contains("another element in its window"), "{hint}");
+    assert!(hint.contains("--headed mouse-click --xy"), "{hint}");
+    assert!(!hint.contains("earlier version"), "{hint}");
+    assert!(!hint.contains("--surface menu"), "{hint}");
+}
+
+#[test]
+fn a_twin_menu_entry_from_a_window_capture_points_at_the_menu_surface() {
+    for role in ["menuitem", "menu"] {
+        for surface in [
+            crate::SnapshotSurface::Window,
+            crate::SnapshotSurface::Menubar,
+        ] {
+            let error = refusal(role, CaptureVerdict::Ambiguous, surface);
+
+            assert_eq!(error.code, ErrorCode::AmbiguousTarget);
+            let hint = error.suggestion.unwrap();
+            assert!(
+                hint.contains("snapshot --surface menu --app <app> -i"),
+                "{role} {surface:?}: {hint}"
+            );
+            assert!(!hint.contains("earlier version"), "{hint}");
+        }
+    }
+}
+
+#[test]
+fn a_twin_inside_the_open_menu_does_not_send_the_caller_back_to_the_menu_surface() {
+    let error = refusal(
+        "menuitem",
+        CaptureVerdict::Ambiguous,
+        crate::SnapshotSurface::Menu,
+    );
+
+    let hint = error.suggestion.unwrap();
+    assert!(hint.contains("open menu"), "{hint}");
+    assert!(hint.contains("arrow keys"), "{hint}");
+    assert!(!hint.contains("--surface menu"), "{hint}");
+}
+
+#[test]
+fn an_incomplete_capture_asks_for_a_larger_budget_not_a_twin_workaround() {
+    let error = refusal(
+        "menuitem",
+        CaptureVerdict::Incomplete,
+        crate::SnapshotSurface::Window,
+    );
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(
+        error.details.as_ref().unwrap()["reason"],
+        "capture_incomplete"
+    );
+    let hint = error.suggestion.unwrap();
+    assert!(hint.contains("--timeout-ms"), "{hint}");
+    assert!(!hint.contains("twin"), "{hint}");
+}
+
+#[test]
+fn an_unknown_capture_says_identity_cannot_be_read() {
+    let error = refusal(
+        "button",
+        CaptureVerdict::Unknown,
+        crate::SnapshotSurface::Window,
+    );
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(error.details.as_ref().unwrap()["reason"], "capture_unknown");
+    assert!(
+        error
+            .suggestion
+            .unwrap()
+            .contains("cannot be read reliably")
+    );
+}

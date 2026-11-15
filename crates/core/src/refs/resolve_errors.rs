@@ -47,25 +47,51 @@ pub(crate) fn refused_before_reading(entry: &RefEntry) -> Option<AdapterError> {
     }
 }
 
-/// A tokenless ref whose capture found another element matching it, or whose
-/// refmap predates the verdict and recorded only that it was not unique.
+/// A tokenless ref whose capture found another element matching it. A refmap
+/// written before the capture verdict existed loads its "not unique" flag as
+/// the same verdict, so it gets this refusal too.
 fn identity_not_unique(entry: &RefEntry) -> AdapterError {
     AdapterError::new(
         ErrorCode::AmbiguousTarget,
         "Saved ref was not proven unique when it was captured, so it cannot be re-identified safely",
     )
-    .with_suggestion(
-        "Another element in the window matched it when it was captured; a refmap from an \
-         earlier version does not record why, so take a new snapshot for one. Identical twins \
-         are refused again by every snapshot; where headed pointer input is available, an \
-         explicit --headed coordinate click can pick one.",
-    )
+    .with_suggestion(twin_suggestion(entry))
     .with_details(json!({
         "kind": "identity_not_unique",
         "retryable": false,
         "role": entry.identity.role,
     }))
     .with_disposition(crate::DeliverySemantics::not_delivered())
+}
+
+const TWIN_SUGGESTION: &str = "When this ref was captured, another element in its window had the \
+     same role, name, description and native id, so every new snapshot refuses it the same way. \
+     Act on a control that is unique in the window, reach this one with the keyboard, or, where \
+     headed pointer input is available, pick it with --headed mouse-click --xy X,Y.";
+
+const MENU_TWIN_SUGGESTION: &str = "This menu entry has a twin with the same role and name \
+     elsewhere in the window, often because the application exposes its menus more than once, so \
+     every snapshot of the whole window refuses it. Open the menu that holds it (click its \
+     menu-bar entry), run snapshot --surface menu --app <app> -i, and act on the ref from that \
+     snapshot, which counts only the open menu.";
+
+const OPEN_MENU_TWIN_SUGGESTION: &str = "The open menu holds another entry with the same role, \
+     name, description and native id, so every snapshot of it refuses this ref. Move to the entry \
+     with the arrow keys and press Return, or, where headed pointer input is available, pick it \
+     with --headed mouse-click --xy X,Y.";
+
+/// Picks the way out from where the twin was counted: a menu entry seen in a
+/// whole-window capture can be told apart once its own menu is open and
+/// snapshotted as the menu surface, while a twin inside the open menu, or any
+/// other control, has no ref path.
+fn twin_suggestion(entry: &RefEntry) -> &'static str {
+    let menu_entry = matches!(entry.identity.role.as_str(), "menuitem" | "menu");
+    match entry.source.source_surface {
+        crate::SnapshotSurface::Menu if menu_entry => OPEN_MENU_TWIN_SUGGESTION,
+        crate::SnapshotSurface::Menu => TWIN_SUGGESTION,
+        _ if menu_entry => MENU_TWIN_SUGGESTION,
+        _ => TWIN_SUGGESTION,
+    }
 }
 
 /// A tokenless ref whose capture was not a complete read of the whole window
