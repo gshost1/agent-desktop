@@ -20,6 +20,23 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(discover), 1, discover)
         self.assertIn("AGENT_DESKTOP_E2E_SKIP_LIVE=1", discover[0])
 
+    def test_hosted_lane_tests_run_on_the_bus_they_start(self):
+        ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
+        steps = ci.split("\n      - name: ")
+        runs = [step for step in steps
+                if "dbus-run-session" in step and "cargo-test-isolated-home.sh test" in step]
+        self.assertEqual(len(runs), 1, runs)
+        self.assertIn("AGENT_DESKTOP_TEST_SESSION: inherit", runs[0])
+        self.assertIn('AGENT_DESKTOP_EXPECT_SESSION_BUS: "1"', runs[0])
+        self.assertIn('AGENT_DESKTOP_EXPECT_ATSPI_BUS: "1"', runs[0])
+
+    def test_live_workflow_runs_on_pull_requests_and_main(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        triggers = workflow.split("\npermissions:", 1)[0]
+        self.assertIn("\n  pull_request:", triggers)
+        self.assertIn("\n  push:\n    branches: [main]", triggers)
+        self.assertIn("--tier x11-openbox", workflow)
+
 
 
 class SourceRuleTests(unittest.TestCase):
