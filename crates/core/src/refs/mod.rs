@@ -347,6 +347,7 @@ pub(crate) fn home_override_active() -> bool {
 
 pub(crate) mod capture_verdict;
 pub mod ref_alloc;
+pub(crate) mod ref_alloc_compact;
 pub(crate) mod ref_alloc_config;
 pub(crate) mod ref_alloc_options;
 pub(crate) mod ref_alloc_scope;
