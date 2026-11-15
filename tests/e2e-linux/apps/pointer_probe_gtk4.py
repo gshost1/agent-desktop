@@ -35,7 +35,8 @@ def main(argv):
     def pressed(gesture, count, x, y):
         state = gesture.get_current_event_state()
         emit(ev="press", n=count, x=x, y=y, button=gesture.get_current_button(),
-             ctrl=bool(state & Gdk.ModifierType.CONTROL_MASK))
+             ctrl=bool(state & Gdk.ModifierType.CONTROL_MASK),
+             t=gesture.get_current_event_time())
 
     def scrolled(_controller, dx, dy):
         emit(ev="scroll", dx=dx, dy=dy)
@@ -47,6 +48,8 @@ def main(argv):
         window.set_child(area)
         click = Gtk.GestureClick(button=0)
         click.connect("pressed", pressed)
+        click.connect("released", lambda g, n, x, y: emit(
+            ev="release", n=n, t=g.get_current_event_time()))
         area.add_controller(click)
         motion = Gtk.EventControllerMotion()
         motion.connect("motion", lambda _c, x, y: emit(ev="motion", x=x, y=y))
