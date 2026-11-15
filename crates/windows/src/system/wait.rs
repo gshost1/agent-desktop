@@ -97,13 +97,16 @@ pub(crate) fn wait_for_menu(
 }
 
 /// One read of the [`menu_is_open`] predicate for core's pre-action menu
-/// reading, after the same liveness check the poll loop makes.
+/// reading, between the same liveness checks the poll loop makes, so a
+/// process that exits during the read never yields an open reading.
 pub(crate) fn menu_open(
     process: &ProcessIdentity,
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
     verify_process_alive(process)?;
-    menu_is_open(process.pid, deadline)
+    let open = menu_is_open(process.pid, deadline)?;
+    verify_process_alive(process)?;
+    Ok(open)
 }
 
 fn direction_message(open: bool) -> &'static str {
