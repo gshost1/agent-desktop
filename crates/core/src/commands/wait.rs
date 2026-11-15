@@ -191,6 +191,11 @@ fn wait_for_window(
     }
 }
 
+/// How deep a text wait reads, the depth `find --text` searches. The snapshot
+/// default of 10 left a text view nested deeper than that, as an editor's
+/// document body is, invisible to the wait while `find --text` found it.
+const TEXT_SEARCH_DEPTH: u8 = 50;
+
 struct TextWaitInput {
     text: String,
     expected_count: Option<usize>,
@@ -211,7 +216,10 @@ fn wait_for_text(
     } = input;
     let start = Instant::now();
     let deadline = crate::Deadline::at(start, timeout_ms)?;
-    let opts = crate::adapter::TreeOptions::default();
+    let opts = crate::adapter::TreeOptions {
+        max_depth: TEXT_SEARCH_DEPTH,
+        ..crate::adapter::TreeOptions::default()
+    };
     let normalized_text = search_text::normalize(&text);
     let mut scheduler = super::wait_scheduler::WaitScheduler::new(
         adapter,
@@ -336,6 +344,10 @@ mod scenario_menu_tests;
 #[cfg(test)]
 #[path = "wait_scenario_tests.rs"]
 mod scenario_tests;
+
+#[cfg(test)]
+#[path = "wait_text_depth_tests.rs"]
+mod text_depth_tests;
 
 #[cfg(test)]
 #[path = "wait_element_tests.rs"]
