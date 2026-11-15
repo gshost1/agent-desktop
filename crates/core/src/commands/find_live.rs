@@ -65,8 +65,9 @@ pub(super) fn execute(
     if !args.selection.allow_partial {
         require_complete(&resolution)?;
     }
-    let ref_count = resolution.refmap.as_ref().map(RefMap::len);
-    let snapshot_id = match resolution.refmap.take() {
+    let published = resolution.refmap.take().filter(|refmap| !refmap.is_empty());
+    let ref_count = published.as_ref().map(RefMap::len);
+    let snapshot_id = match published {
         Some(refmap) => Some(persist_refmap(context, &refmap)?),
         None => None,
     };

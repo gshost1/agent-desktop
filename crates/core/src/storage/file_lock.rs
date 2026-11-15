@@ -107,12 +107,12 @@ fn lock_file(
     let mut contention_count = 0_u64;
     loop {
         if deadline.is_expired() {
-            return Err(lock_timeout(deadline, purpose, path, contention_count));
+            return Err(expiry_error(deadline, purpose, path, contention_count));
         }
         match file.try_lock() {
             Ok(()) => {
                 if deadline.is_expired() {
-                    return Err(lock_timeout(deadline, purpose, path, contention_count));
+                    return Err(expiry_error(deadline, purpose, path, contention_count));
                 }
                 return Ok(FileLock {
                     _file: file,
@@ -138,6 +138,19 @@ fn lock_file(
     }
 }
 
+fn expiry_error(
+    deadline: Deadline,
+    purpose: &str,
+    path: &Path,
+    contention_count: u64,
+) -> AdapterError {
+    if contention_count == 0 {
+        deadline.timeout_error()
+    } else {
+        lock_timeout(deadline, purpose, path, contention_count)
+    }
+}
+
 fn lock_timeout(
     deadline: Deadline,
     purpose: &str,
@@ -151,3 +164,7 @@ fn lock_timeout(
         "contention_count": contention_count,
     }))
 }
+
+#[cfg(test)]
+#[path = "file_lock_tests.rs"]
+mod tests;

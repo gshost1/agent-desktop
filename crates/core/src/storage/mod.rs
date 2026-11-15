@@ -7,3 +7,4 @@ pub(crate) mod state_file;
 pub(crate) mod state_io_error;
 pub(crate) mod state_root;
 pub(crate) mod unwritable_output;
+pub(crate) mod write_durability;

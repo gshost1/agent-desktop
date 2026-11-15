@@ -181,3 +181,65 @@ fn the_display_probe_leaves_most_of_the_second_a_command_may_overrun_by() {
         probe.remaining()
     );
 }
+
+fn display_refusals() -> Vec<AdapterError> {
+    use crate::system::display::display_error::{DisplayCause, display_cause_error};
+    [
+        DisplayCause::Missing {
+            address: "DISPLAY=:1987 names a server that is not running".into(),
+        },
+        DisplayCause::Refused {
+            detail: "DISPLAY=:1987 refused the connection".into(),
+        },
+        DisplayCause::AuthRefused {
+            reason: "No protocol specified".into(),
+        },
+        DisplayCause::NotConfigured,
+    ]
+    .iter()
+    .map(display_cause_error)
+    .collect()
+}
+
+#[test]
+fn the_preflight_answers_a_display_refusal_as_itself() {
+    for refusal in display_refusals() {
+        let error = preflight_from_probe(Err(refusal.clone()), CaptureAvailability::Unknown)
+            .expect_err("a display refusal is not a permission");
+        assert_eq!(error.code, refusal.code);
+        assert_eq!(error.message, refusal.message);
+        assert_eq!(error.suggestion, refusal.suggestion);
+        assert_eq!(error.details, refusal.details);
+    }
+}
+
+#[test]
+fn status_keeps_a_display_refusal_as_denied_with_the_display_step() {
+    for refusal in display_refusals() {
+        let report = report_from_probe(Err(refusal.clone()), CaptureAvailability::Unknown)
+            .expect("status reports the state");
+        assert!(report.accessibility_denied());
+        assert_eq!(
+            report.accessibility_suggestion(),
+            refusal.suggestion.as_deref()
+        );
+    }
+}
+
+#[test]
+fn the_preflight_keeps_every_other_unreachable_bus_denied() {
+    let exited = BusFault::ServiceExited.into_error(&io_error(ErrorKind::ConnectionReset));
+    let gone = BusFault::SocketGone.into_error(&io_error(ErrorKind::NotFound));
+    for unreachable in [exited, gone] {
+        let report = preflight_from_probe(Err(unreachable), CaptureAvailability::Unknown)
+            .expect("an unreachable bus is a denied report");
+        assert!(report.accessibility_denied());
+    }
+    let granted = preflight_from_probe(Ok(()), CaptureAvailability::Unknown)
+        .expect("a granted probe is a report");
+    assert!(granted.accessibility_granted());
+    let timeout = AdapterError::timeout("The accessibility bus did not answer in time");
+    let error = preflight_from_probe(Err(timeout), CaptureAvailability::Unknown)
+        .expect_err("a timeout teaches nothing");
+    assert_eq!(error.code, ErrorCode::Timeout);
+}

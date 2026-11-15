@@ -1,3 +1,4 @@
+use crate::system::window::popup_menu_window::searched_past_budget;
 use crate::tree::surface_window_ids::{SurfaceRead, WindowSurfaces, surfaces_from_windows};
 use crate::tree::{AXElement, properties::element::element_for_pid};
 use agent_desktop_core::{AdapterError, ErrorCode, SurfaceInfo};
@@ -89,21 +90,12 @@ fn settle_by_window_server(
     menu_windows: impl FnOnce() -> Result<Vec<i64>, AdapterError>,
 ) -> Result<Vec<SurfaceInfo>, AdapterError> {
     match menus {
-        Err(error) if stopped_at_node_cap(&error) => match menu_windows() {
+        Err(error) if searched_past_budget(&error) => match menu_windows() {
             Ok(windows) if windows.is_empty() => Ok(Vec::new()),
             _ => Err(error),
         },
         menus => menus,
     }
-}
-
-fn stopped_at_node_cap(error: &AdapterError) -> bool {
-    error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(serde_json::Value::as_str)
-        == Some("surface_search_limit")
 }
 
 /// Proving that no context menu is open takes a walk of the whole application
