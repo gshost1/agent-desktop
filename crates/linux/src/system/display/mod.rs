@@ -164,7 +164,10 @@ pub(crate) fn list_wayland_displays(deadline: Deadline) -> Result<Vec<DisplayInf
 /// stream unit of a pointer gesture is on each display.
 pub(crate) fn wayland_layout(deadline: Deadline) -> Result<DisplayLayout, AdapterError> {
     let state = display_mutter::current_state(deadline)?;
-    let stream_scaled = state.as_ref().is_some_and(|state| state.layout_is_logical);
+    let stream_scaled = match &state {
+        Some(state) => state.layout_is_logical.ok_or_else(unknown_layout_mode)?,
+        None => false,
+    };
     let displays = decide(
         DisplayServer::Wayland,
         None,
@@ -174,6 +177,15 @@ pub(crate) fn wayland_layout(deadline: Deadline) -> Result<DisplayLayout, Adapte
         displays,
         stream_scaled,
     })
+}
+
+fn unknown_layout_mode() -> AdapterError {
+    AdapterError::new(
+        agent_desktop_core::ErrorCode::PlatformNotSupported,
+        "Mutter reported a monitor layout mode that is neither logical nor physical",
+    )
+    .with_details(serde_json::json!({ "cause": "unknown_layout_mode" }))
+    .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
 }
 
 /// Lists the session's displays. On X11 the monitor list comes from RandR

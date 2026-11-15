@@ -52,7 +52,7 @@ fn reply(layout_mode: u32) -> Reply {
 #[test]
 fn a_logical_layout_divides_the_mode_by_the_scale_and_says_so() {
     let state = assemble(reply(1));
-    assert!(state.layout_is_logical);
+    assert_eq!(state.layout_is_logical, Some(true));
     let sizes: Vec<_> = state
         .monitors
         .iter()
@@ -64,7 +64,7 @@ fn a_logical_layout_divides_the_mode_by_the_scale_and_says_so() {
 #[test]
 fn a_physical_layout_keeps_the_mode_size_and_says_so() {
     let state = assemble(reply(2));
-    assert!(!state.layout_is_logical);
+    assert_eq!(state.layout_is_logical, Some(false));
     let sizes: Vec<_> = state
         .monitors
         .iter()
@@ -74,9 +74,15 @@ fn a_physical_layout_keeps_the_mode_size_and_says_so() {
 }
 
 #[test]
-fn a_reply_without_a_layout_mode_is_read_as_physical() {
+fn a_reply_without_a_layout_mode_is_read_as_logical_as_the_interface_states() {
     let (serial, monitors, logical, _) = reply(1);
     let state = assemble((serial, monitors, logical, HashMap::new()));
-    assert!(!state.layout_is_logical);
-    assert_eq!(state.monitors[0].width, 1600);
+    assert_eq!(state.layout_is_logical, Some(true));
+    assert_eq!(state.monitors[0].width, 800);
+}
+
+#[test]
+fn a_layout_mode_neither_logical_nor_physical_is_unknown() {
+    let state = assemble(reply(7));
+    assert_eq!(state.layout_is_logical, None);
 }
