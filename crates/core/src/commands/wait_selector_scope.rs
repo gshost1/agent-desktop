@@ -1,11 +1,15 @@
-//! What a post-action `--wait-for` observes for a window-owned ref, and the
+//! What a post-action `--wait-for` observes for a ref it follows, and the
 //! outcomes that end it before its budget.
 //!
 //! An action often shows its effect outside the window it was sent to: a
 //! button opens a dialog, a menu item opens a new window, an OK button closes
 //! its own dialog. The wait therefore reads the ref's window first, then the
 //! windows its process opened since the action, and every window of the
-//! process once two reads in a row found the ref's window closed. A process
+//! process once two reads in a row found the ref's window closed. A ref on an
+//! application surface, such as a menu bar item, reads that surface, then the
+//! process's focused window and the windows opened since the action. A sheet,
+//! alert or popover is not part of its window's tree, so a read no window
+//! satisfies goes on to the overlays the process has open. A process
 //! that exited or crashed can show nothing more, so the wait ends at once; one
 //! whose reads keep failing ends only once the platform's own process check
 //! says it is unresponsive.
@@ -33,8 +37,15 @@ const ABSENT_READS_BEFORE_WIDENING: u32 = 2;
 const PROCESS_STATE_BUDGET: Duration = Duration::from_secs(1);
 
 /// One read of the wait: `Some((matches, owner))` for a complete read, with
-/// the owner that matched, or `None` for an incomplete one.
-pub(crate) type Observed = Result<Option<(bool, Option<SnapshotOwner>)>, AppError>;
+/// the owner and surface that matched, or `None` for an incomplete one.
+pub(crate) type Observed =
+    Result<Option<(bool, Option<(SnapshotOwner, SnapshotSurface)>)>, AppError>;
+
+const OVERLAY_SURFACES: [SnapshotSurface; 3] = [
+    SnapshotSurface::Sheet,
+    SnapshotSurface::Alert,
+    SnapshotSurface::Popover,
+];
 
 /// The scope an appear wait follows from a window-owned ref, and what it
 /// remembers between reads.
@@ -83,12 +94,69 @@ impl<'a> FollowedScope<'a> {
         (query, query_raw): (&LocatorQuery, &str),
         deadline: Deadline,
     ) -> Observed {
+        let observed = if adapter.is_application_surface(self.target.entry.source.source_surface) {
+            self.read_application_ref(adapter, (query, query_raw), deadline)?
+        } else {
+            self.read_windows(adapter, (query, query_raw), deadline)?
+        };
+        if matches!(observed, Some((true, _))) {
+            return Ok(observed);
+        }
+        Ok(read_overlays(adapter, self.target.entry, query, deadline)
+            .map(|found| Some((true, Some(found))))
+            .unwrap_or(observed))
+    }
+
+    /// Reads the ref's own application surface, then the windows its command
+    /// acts in. A menu item's effect never shows in the menu bar it came from.
+    fn read_application_ref(
+        &self,
+        adapter: &dyn PlatformAdapter,
+        (query, query_raw): (&LocatorQuery, &str),
+        deadline: Deadline,
+    ) -> Observed {
+        let own_complete =
+            match SelectorObservation::observe_ref(adapter, self.target.entry, query, deadline) {
+                Ok(SelectorObservation::Selector {
+                    matches: true,
+                    complete: true,
+                }) => return Ok(Some((true, None))),
+                Ok(SelectorObservation::Selector { complete, .. }) => complete,
+                Ok(SelectorObservation::OwnerUnavailable(
+                    state @ (ProcessState::Exited { .. } | ProcessState::Crashed { .. }),
+                )) => return Err(process_gone(query_raw, state, deadline)),
+                Ok(SelectorObservation::OwnerUnavailable(state)) => {
+                    return Err(super::owner_unavailable(state));
+                }
+                Err(error) => closed_meanwhile(&error) || is_surface_absent(&error),
+            };
+        let windows = self
+            .target
+            .baseline
+            .and_then(|baseline| {
+                baseline
+                    .acted_on(adapter, deadline.capped(WINDOW_BASELINE_BUDGET))
+                    .ok()
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .map(SnapshotOwner::Window)
+            .collect();
+        observe_each(adapter, windows, query, deadline, own_complete)
+    }
+
+    fn read_windows(
+        &mut self,
+        adapter: &dyn PlatformAdapter,
+        (query, query_raw): (&LocatorQuery, &str),
+        deadline: Deadline,
+    ) -> Observed {
         match surface_target::resolve_ref_owner(adapter, self.target.entry, deadline)? {
             RefOwnerObservation::Present(owner) => {
                 self.absent_reads = 0;
                 let (matched, complete) = observe_owner(adapter, &owner, query, deadline)?;
                 if matched {
-                    return Ok(Some((true, Some(owner))));
+                    return Ok(Some((true, Some((owner, SnapshotSurface::Window)))));
                 }
                 let opened = opened_windows(adapter, self.target.baseline, deadline);
                 observe_each(adapter, opened, query, deadline, complete)
@@ -141,7 +209,7 @@ fn observe_each(
 ) -> Observed {
     for owner in owners {
         match observe_owner(adapter, &owner, query, deadline) {
-            Ok((true, _)) => return Ok(Some((true, Some(owner)))),
+            Ok((true, _)) => return Ok(Some((true, Some((owner, SnapshotSurface::Window))))),
             Ok((false, read)) => complete &= read,
             Err(error) => complete &= closed_meanwhile(&error),
         }
@@ -181,6 +249,39 @@ fn every_window(
     )
     .ok()?;
     Some(windows.into_iter().map(SnapshotOwner::Window).collect())
+}
+
+/// The first sheet, alert or popover of the ref's application that holds the
+/// selector, read through each surface the platform supports.
+fn read_overlays(
+    adapter: &dyn PlatformAdapter,
+    entry: &RefEntry,
+    query: &LocatorQuery,
+    deadline: Deadline,
+) -> Option<(SnapshotOwner, SnapshotSurface)> {
+    let app = entry.source.source_app.as_deref()?;
+    OVERLAY_SURFACES.into_iter().find_map(|surface| {
+        adapter.check_surface_support(surface).ok()?;
+        let owners =
+            surface_target::resolve_owners(adapter, Some(app), None, surface, deadline).ok()?;
+        let owner = owners.first().cloned()?;
+        match SelectorObservation::observe_owners(adapter, owners, surface, query, deadline) {
+            Ok(SelectorObservation::Selector {
+                matches: true,
+                complete: true,
+            }) => Some((owner, surface)),
+            _ => None,
+        }
+    })
+}
+
+fn is_surface_absent(error: &AppError) -> bool {
+    matches!(
+        error,
+        AppError::Adapter(error) if error.details.as_ref().is_some_and(|details| {
+            details["kind"] == "surface_absent" || details["kind"] == "menu_closed"
+        })
+    )
 }
 
 fn closed_meanwhile(error: &AppError) -> bool {
