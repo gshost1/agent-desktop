@@ -316,3 +316,7 @@ mod tests;
 #[cfg(all(test, target_os = "windows"))]
 #[path = "menu_state_chromium_tests.rs"]
 mod chromium_tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "menu_state_winui_probe_tests.rs"]
+mod winui_probe_tests;
