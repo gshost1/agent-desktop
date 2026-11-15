@@ -175,8 +175,8 @@ cursor; on Wayland none is drawn.
   combo with no semantic opener with `POLICY_DENIED`, kind `pointer_required`,
   unless the combo already shows the choice. A snapshot leaves `Select` out of
   `available_actions` on such a list, its rows and a GTK4 tab list and tabs,
-  and on an index-only list of an application whose toolkit does not name
-  itself or could not be read during the snapshot, because no
+  and on an index-only list of an application whose toolkit is not GTK 3,
+  Qt, Chromium or Gecko or could not be read during the snapshot, because no
   headless route exists; `--headed select` on the row or tab still works. An
   unnamed GTK4 tab list whose only action was `Select` gets no ref; select one
   of its tabs instead. A GTK4 drop-down that opens through
