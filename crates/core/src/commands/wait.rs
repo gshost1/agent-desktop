@@ -222,8 +222,26 @@ fn wait_for_text(
         deadline,
     );
     let mut last_error = None;
+    let mut polled = false;
 
     loop {
+        if polled
+            && expected_count.is_none()
+            && super::wait_text_probe::rules_out_text(
+                adapter,
+                &text,
+                app.as_deref(),
+                &opts,
+                deadline,
+            )
+        {
+            if deadline.is_expired() {
+                return wait_timeout::text(&text, timeout_ms, expected_count, last_error);
+            }
+            scheduler.wait(deadline);
+            continue;
+        }
+        polled = true;
         match snapshot::build(adapter, &opts, app.as_deref(), None, deadline) {
             Ok(mut result) => {
                 let matches = wait_text_match::find(&result.tree, &normalized_text, expected_count);

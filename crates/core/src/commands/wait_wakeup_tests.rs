@@ -228,7 +228,10 @@ fn text_and_selector_subscribe_before_reading_and_resample_after_wakes() {
         .unwrap();
         assert!(result["snapshot_id"].is_string());
         let state = state.lock().unwrap();
-        assert_eq!(state.reads, if selector { 3 } else { 2 });
+        assert_eq!(
+            state.reads, 3,
+            "a text wait's woken poll reads its probe, then the snapshot"
+        );
         assert_eq!(state.waits, 1);
         assert!(state.dropped);
     }
