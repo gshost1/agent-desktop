@@ -19,9 +19,9 @@ fn incomplete(code: ErrorCode) -> AdapterError {
 #[test]
 fn shared_menu_discovery_preserves_other_surfaces_and_existing_menu_ids() {
     let window_surfaces = vec![
-        surface("focused-window", "sheet"),
-        surface("focused-window/children/2", "popover"),
-        surface("focused-window/children/4", "alert"),
+        surface("w-31", "sheet"),
+        surface("w-30/popover/0", "popover"),
+        surface("w-32", "alert"),
     ];
     for menus in [
         vec![],
@@ -40,7 +40,7 @@ fn shared_menu_discovery_preserves_other_surfaces_and_existing_menu_ids() {
 #[test]
 fn an_unfinished_menu_scan_keeps_the_sheets_and_marks_menus_unread() {
     for code in [ErrorCode::AppUnresponsive, ErrorCode::Timeout] {
-        let sheet = surface("focused-window", "sheet");
+        let sheet = surface("w-31", "sheet");
 
         let surfaces = combine_surfaces(vec![sheet.clone()], Err(incomplete(code))).unwrap();
 
@@ -69,7 +69,7 @@ fn a_menu_scan_that_lost_the_process_or_permission_still_fails() {
     ] {
         let code = error.code.clone();
 
-        let failure = combine_surfaces(vec![surface("focused-window", "sheet")], Err(error))
+        let failure = combine_surfaces(vec![surface("w-31", "sheet")], Err(error))
             .expect_err("terminal menu errors propagate");
 
         assert_eq!(failure.code, code);
@@ -86,4 +86,43 @@ fn expired_deadline_fails_before_accessibility_inventory() {
     let error =
         list_surfaces_for_process(identity, deadline).expect_err("expired surface inventory");
     assert_eq!(error.code.as_str(), "TIMEOUT");
+}
+
+fn node_cap() -> AdapterError {
+    AdapterError::new(
+        ErrorCode::AppUnresponsive,
+        "Accessibility surface search exceeded its node budget",
+    )
+    .with_details(serde_json::json!({ "kind": "surface_search_limit", "complete": false }))
+}
+
+#[test]
+fn a_capped_menu_search_with_no_menu_window_on_screen_reads_as_no_menu() {
+    let settled = settle_by_window_server(Err(node_cap()), || Ok(Vec::new())).unwrap();
+
+    assert!(settled.is_empty());
+}
+
+#[test]
+fn a_capped_menu_search_with_a_menu_window_on_screen_stays_unfinished() {
+    for menu_windows in [
+        Ok(vec![88]),
+        Err(AdapterError::internal("window list unavailable")),
+    ] {
+        let settled = settle_by_window_server(Err(node_cap()), || menu_windows);
+
+        let surfaces = combine_surfaces(Vec::new(), settled).unwrap();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[0].unclassified, ["menu"]);
+    }
+}
+
+#[test]
+fn a_timed_out_menu_search_is_not_settled_by_the_window_server() {
+    let settled = settle_by_window_server(Err(incomplete(ErrorCode::Timeout)), || Ok(Vec::new()));
+
+    assert_eq!(
+        settled.expect_err("timeout stays unfinished").code,
+        ErrorCode::Timeout
+    );
 }

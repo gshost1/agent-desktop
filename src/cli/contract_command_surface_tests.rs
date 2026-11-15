@@ -23,6 +23,7 @@ const NON_COMMAND_MODULES: &[&str] = &[
     "query",
     "find_live_test_support",
     "selector_observation",
+    "skills_catalog",
     "snapshot_since",
     "surface_scope",
     "type_text_interval",

@@ -157,7 +157,7 @@ Lists displays as `{ id, bounds, is_primary, scale }`, primary first. Use the ar
 agent-desktop list-surfaces --app "Finder"
 ```
 
-Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent. On macOS menus belong to the application, and proving none is open walks the whole app tree; when that walk cannot finish, the sheets and alerts already read are kept and an `app/menubar` entry carries `"unclassified": ["menu"]`.
+Lists the overlay surfaces an app presents now, the values `snapshot --surface` accepts. Shell surfaces belong to the OS and never appear here. If a window entry carries `"unclassified": ["sheet"]` or `["menu"]`, the check could not read that window (often a busy app). Treat the missing entry as unknown, not absent. On macOS a sheet, popover or alert is listed under the id of its own window, `w-<n>` as `list-windows` reports it, or as `w-<n>/<type>/<index>` under its parent window when it has no window of its own, so the id stays the same while focus moves between windows. Menus belong to the application, and proving none is open walks the whole app tree. When that walk stops at its node limit and the window server shows no open menu window for the app, no menu is open and the read is complete. Otherwise the sheets and alerts already read are kept and an `app/menubar` entry carries `"unclassified": ["menu"]`. A window the window server gives no number makes an `app/windows` entry with `"unclassified": ["sheet", "popover", "alert"]`.
 
 ## open-system-surface
 
