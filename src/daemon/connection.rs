@@ -54,13 +54,11 @@ pub(crate) fn serve_connection(
         command: admitted.command.to_owned(),
         rerun_safe: admitted.rerun_safe,
     };
-    if write_message(&mut stream, &ready).is_err()
-        || !received_go(stream.as_mut())
-        || stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err()
-    {
+    if write_message(&mut stream, &ready).is_err() || !received_go(stream.as_mut()) {
         server.release();
         return;
     }
+    let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
     let Ok(watch) = stream.try_clone_stream() else {
         server.release();
         return;
@@ -82,20 +80,22 @@ pub(crate) fn serve_connection(
 fn read_request(
     mut stream: Box<dyn DaemonStream>,
 ) -> Option<(Box<dyn DaemonStream>, DaemonRequest)> {
-    stream.set_read_timeout(Some(REQUEST_READ_TIMEOUT)).ok()?;
+    let _ = stream.set_read_timeout(Some(REQUEST_READ_TIMEOUT));
     let request = read_message::<DaemonRequest>(&mut stream, REQUEST_LIMIT).ok()?;
     Some((stream, request))
 }
 
 /// Whether the client said go within `GO_TIMEOUT`. A client that hangs up, stalls or sends
-/// anything else has not committed, so the command never runs here.
+/// anything else has not committed, so the command never runs here. A failed timeout change
+/// never discards a frame: macOS refuses `SO_RCVTIMEO` with `EINVAL` once the peer has closed,
+/// while a go it sent before closing is still readable, and a read from a closed peer cannot
+/// block.
 fn received_go(stream: &mut dyn DaemonStream) -> bool {
-    if stream.set_read_timeout(Some(GO_TIMEOUT)).is_err() {
-        return false;
-    }
+    let _ = stream.set_read_timeout(Some(GO_TIMEOUT));
     let mut reader = &mut *stream;
     let go = read_message::<String>(&mut reader, REQUEST_LIMIT).is_ok_and(|word| word == GO);
-    go && stream.set_read_timeout(None).is_ok()
+    let _ = stream.set_read_timeout(None);
+    go
 }
 
 pub(crate) fn decline(stream: &mut dyn DaemonStream, reason: &str) {
@@ -110,11 +110,11 @@ pub(crate) fn decline(stream: &mut dyn DaemonStream, reason: &str) {
 
 /// A client sends nothing after its go, so a read returns only when it closes. Between reads
 /// the running command's client gets a heartbeat. A client that vanishes while its command runs
-/// stops the daemon, exactly as killing a one-shot CLI stops the command it was running.
+/// stops the daemon, exactly as killing a one-shot CLI stops the command it was running. Where
+/// the heartbeat timeout cannot be set (macOS, after the peer closed) the read blocks until the
+/// hangup it then reports at once.
 fn watch_while_running(mut watch: Box<dyn DaemonStream>, writer: &SharedWriter, state: &JobState) {
-    if watch.set_read_timeout(Some(HEARTBEAT)).is_err() {
-        return;
-    }
+    let _ = watch.set_read_timeout(Some(HEARTBEAT));
     let mut byte = [0_u8; 1];
     loop {
         match watch.read(&mut byte) {
