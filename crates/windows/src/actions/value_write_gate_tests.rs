@@ -52,6 +52,7 @@ fn secure_is_password_skips_get_value_and_reports_unobserved() {
             value: "secret-marker-zz",
             value_writable: true,
             range_available: false,
+            edit_control: false,
         },
         || Ok(DeliveryOutcome::from_observation(None)),
         || Ok(DeliveryOutcome::NotDelivered),

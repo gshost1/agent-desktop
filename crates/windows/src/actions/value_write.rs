@@ -1,5 +1,9 @@
 //! ValuePattern / RangeValuePattern writes for `SetValue` and `Clear`.
 //!
+//! A classic Win32 edit, or a combo box's edit, takes the text through
+//! [`crate::actions::edit_control`] instead of `ValuePattern.SetValue`, so its
+//! owner is told that the text changed.
+//!
 //! Verification re-reads route through [`gated_pattern_value_equals`] /
 //! [`gated_pattern_range_equals`] so an `IsPassword` element never calls
 //! `get_value` (A19-3). Error echoes carry `value_chars` counts, never text.
@@ -30,6 +34,8 @@ pub(crate) struct SetValuePlan<'a> {
     pub(crate) value: &'a str,
     pub(crate) value_writable: bool,
     pub(crate) range_available: bool,
+    /// The text rung writes a classic edit through `EM_REPLACESEL`.
+    pub(crate) edit_control: bool,
 }
 
 #[cfg(target_os = "windows")]
@@ -40,6 +46,7 @@ mod imp {
         VALUE_LABEL, VALUE_WRITE_CHAIN, execute_chain,
     };
     use crate::actions::chain::{after_delivery, gated};
+    use crate::actions::edit_control::{EDIT_LABEL, EditTarget, edit_target, replace_text};
     use crate::actions::mutation::{classify_success, classify_write};
     use crate::tree::properties::element_properties::ElementProperties;
     use crate::tree::properties::property_ids::TreeProperty;
@@ -54,15 +61,25 @@ mod imp {
         deadline: Deadline,
     ) -> Result<Vec<ActionStep>, AdapterError> {
         let parsed = parse_finite_f64(value);
+        let writable = value_writable(element);
+        let edit = if writable {
+            edit_target(element, value, deadline)
+        } else {
+            EditTarget::NotEdit
+        };
         set_value_judged_for(
             deadline,
             policy,
             SetValuePlan {
                 value,
-                value_writable: value_writable(element),
+                value_writable: writable,
                 range_available: range_available(element),
+                edit_control: edit.handle().is_some(),
             },
-            || invoke_value_set(element, value),
+            || match edit.handle() {
+                Some(handle) => invoke_edit_replace(element, handle, value, deadline),
+                None => invoke_value_set(element, value),
+            },
             || match parsed {
                 Some(target) => invoke_range_set(element, target),
                 None => Ok(DeliveryOutcome::NotDelivered),
@@ -97,7 +114,11 @@ mod imp {
             policy,
             &mut [
                 ChainRung {
-                    label: VALUE_LABEL,
+                    label: if plan.edit_control {
+                        EDIT_LABEL
+                    } else {
+                        VALUE_LABEL
+                    },
                     requires_headed: false,
                     run: &mut value_run,
                 },
@@ -159,6 +180,19 @@ mod imp {
             Err(error) => classify_write("get_pattern", VALUE_LABEL, &error)?,
         };
         if !delivered {
+            return Ok(DeliveryOutcome::NotDelivered);
+        }
+        let verified = gated_pattern_value_equals(element, value).map_err(after_delivery)?;
+        Ok(DeliveryOutcome::from_observation(verified))
+    }
+
+    fn invoke_edit_replace(
+        element: &UIAElement,
+        handle: isize,
+        value: &str,
+        deadline: Deadline,
+    ) -> Result<DeliveryOutcome, AdapterError> {
+        if !replace_text(handle, value, deadline)? {
             return Ok(DeliveryOutcome::NotDelivered);
         }
         let verified = gated_pattern_value_equals(element, value).map_err(after_delivery)?;
