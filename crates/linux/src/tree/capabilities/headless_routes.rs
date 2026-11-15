@@ -23,7 +23,15 @@ pub(crate) struct HeadlessRoutes {
 }
 
 fn may_refuse(toolkit: &ToolkitId) -> bool {
-    kind(toolkit) == ToolkitKind::Gtk4 || !selection_indices_are_accessible(toolkit)
+    matches!(kind(toolkit), ToolkitKind::Gtk4 | ToolkitKind::Qt)
+        || !selection_indices_are_accessible(toolkit)
+}
+
+/// Whether a select on this node reaches only the pointer: a Qt item inside
+/// a combo box, whose choice `select` makes by clicking the row of the popup
+/// the pointer opened, and refuses with `pointer_required` without it.
+fn qt_combo_choice(node: &WalkedNode<ObservedRead>, toolkit: &ToolkitId) -> bool {
+    kind(toolkit) == ToolkitKind::Qt && node.payload.node.element.ancestry().combo_owner().is_some()
 }
 
 impl HeadlessRoutes {
@@ -109,9 +117,10 @@ fn an_item_offers_its_own_route(root: &WalkedNode<ObservedRead>) -> bool {
 
 /// The tokens of `node` whose every headless route the action path refuses
 /// on `toolkit`: `Click` of a GTK 4 entry whose only click verb is `activate`
-/// (L41-22), and `Select` that rests on `Selection` indices the toolkit does
+/// (L41-22), `Select` that rests on `Selection` indices the toolkit does
 /// not map to accessible children (L40-2, L41-12), when neither the node nor
-/// an item a select on it can match offers an action of its own.
+/// an item a select on it can match offers an action of its own, and `Select`
+/// of a choice inside a Qt combo box, which only the pointer can make.
 pub(crate) fn withheld_tokens(
     node: &WalkedNode<ObservedRead>,
     toolkit: &ToolkitId,
@@ -123,10 +132,11 @@ pub(crate) fn withheld_tokens(
     if unsupported_entry_activation(Some(facts.role), facts.names, toolkit) {
         withheld.push(capability::CLICK);
     }
-    if !selection_indices_are_accessible(toolkit)
-        && select_rests_on_indices(&facts)
-        && !names_select(&facts)
-        && !an_item_offers_its_own_route(node)
+    if qt_combo_choice(node, toolkit)
+        || (!selection_indices_are_accessible(toolkit)
+            && select_rests_on_indices(&facts)
+            && !names_select(&facts)
+            && !an_item_offers_its_own_route(node))
     {
         withheld.push(capability::SELECT);
     }

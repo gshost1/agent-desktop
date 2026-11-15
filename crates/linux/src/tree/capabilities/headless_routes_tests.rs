@@ -288,3 +288,27 @@ fn a_gtk4_container_keeps_select_when_an_item_it_can_match_acts_on_its_own() {
         vec!["Select"]
     );
 }
+
+fn combo_choice() -> ObservedRead {
+    use crate::tree::AtspiElement;
+    use crate::tree::element::ancestry;
+    let combo = AtspiElement::new(":1.1", "/combo", 1);
+    let mut choice = read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &[], 0);
+    choice.node.element = AtspiElement::new(":1.1", "/combo/alpha", 1);
+    choice
+        .node
+        .element
+        .set_ancestry(ancestry::child(&combo, Some(COMBO_BOX)));
+    choice
+}
+
+#[test]
+fn a_qt_combo_choice_is_not_promised_a_headless_select() {
+    let qt = toolkit("Qt", "6.6.1");
+    assert!(tokens(&combo_choice(), &HeadlessRoutes::unread()).contains(&"Select".to_owned()));
+    let routes = HeadlessRoutes::of_application(":1.1", qt.clone());
+    assert!(!tokens(&combo_choice(), &routes).contains(&"Select".to_owned()));
+    assert_eq!(withheld(combo_choice(), &qt), vec!["Select"]);
+    assert!(withheld(row(), &qt).is_empty());
+    assert!(withheld(combo_choice(), &toolkit("GTK", "3.24.41")).is_empty());
+}

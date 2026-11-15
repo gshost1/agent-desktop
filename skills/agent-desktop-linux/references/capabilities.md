@@ -166,7 +166,9 @@ cursor; on Wayland none is drawn.
 - `select` tries the semantic route first and the pointer second; the pointer
   route needs an explicit `--headed` request on X11. A Qt combo's semantic
   selection only highlights its popup row, so headless selection refuses with
-  `POLICY_DENIED`, kind `pointer_required`, before changing that highlight.
+  `POLICY_DENIED`, kind `pointer_required`, before changing that highlight, and
+  a snapshot leaves `Select` out of the `available_actions` of the choices
+  inside a Qt combo; `--headed select` on the choice still works.
   Headed, on a list whose toolkit index cannot be mapped to the
   row (a GTK4 list) it clicks the row and checks its `selected` state; on a
   combo with no semantic opener (a libadwaita combo row) it clicks the combo
