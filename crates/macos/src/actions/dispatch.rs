@@ -70,20 +70,14 @@ mod imp {
                     )?;
                     return Ok(awaiting_commit(action, steps));
                 }
-                steps.extend(run_chain(
+                let steps = run_chain(
                     el,
                     &chain_defs::SET_VALUE_CHAIN,
                     Some(val),
                     request,
                     deadline,
-                )?);
-                if let Some(hint) =
-                    crate::actions::edit_commit::read_edit_commit(el, deadline).hint()
-                {
-                    return Ok(
-                        ActionResult::from_execution(action, steps).with_commit_unobserved(hint)
-                    );
-                }
+                )?;
+                return Ok(value_write_result(action, el, steps, deadline));
             }
 
             Action::SetFocus => {
@@ -196,13 +190,8 @@ mod imp {
             }
 
             Action::Clear => {
-                steps.extend(run_chain(
-                    el,
-                    &chain_defs::CLEAR_CHAIN,
-                    Some(""),
-                    request,
-                    deadline,
-                )?);
+                let steps = run_chain(el, &chain_defs::CLEAR_CHAIN, Some(""), request, deadline)?;
+                return Ok(value_write_result(action, el, steps, deadline));
             }
 
             Action::KeyDown(_) | Action::KeyUp(_) | Action::Hover | Action::Drag(_) => {
@@ -218,6 +207,17 @@ mod imp {
         }
 
         Ok(ActionResult::from_execution(action, steps))
+    }
+
+    fn value_write_result(
+        action: &Action,
+        el: &AXElement,
+        steps: Vec<ActionStep>,
+        deadline: Deadline,
+    ) -> ActionResult {
+        crate::actions::edit_commit::value_write_result(action, steps, || {
+            crate::actions::edit_commit::read_edit_commit(el, deadline)
+        })
     }
 
     fn awaiting_commit(action: &Action, steps: Vec<ActionStep>) -> ActionResult {
