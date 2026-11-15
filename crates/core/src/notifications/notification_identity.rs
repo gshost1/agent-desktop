@@ -12,14 +12,15 @@ impl NotificationIdentity {
             && self.expected_title.as_deref().is_none_or(str::is_empty)
     }
 
+    /// Whether `info` carries every non-empty expected field; an empty
+    /// field expects nothing, as in [`Self::is_empty`].
     pub fn matches(&self, info: &NotificationInfo) -> bool {
-        self.expected_app
-            .as_ref()
-            .is_none_or(|expected| expected == &info.app_name)
-            && self
-                .expected_title
-                .as_ref()
-                .is_none_or(|expected| expected == &info.title)
+        let agrees = |expected: &Option<String>, actual: &str| {
+            expected
+                .as_deref()
+                .is_none_or(|expected| expected.is_empty() || expected == actual)
+        };
+        agrees(&self.expected_app, &info.app_name) && agrees(&self.expected_title, &info.title)
     }
 }
 

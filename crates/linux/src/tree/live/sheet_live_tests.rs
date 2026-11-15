@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use agent_desktop_core::commands::find::{FindArgs, FindFilterArgs, FindSelectionArgs};
+use agent_desktop_core::commands::find::{
+    FindArgs, FindFilterArgs, FindScopeArgs, FindSelectionArgs,
+};
 use agent_desktop_core::{
     Action, ActionOps, ActionRequest, CommandContext, ErrorCode, ObservationOps, RefEntry,
     RefStore, SnapshotSurface, TreeOptions, snapshot,
@@ -45,10 +47,12 @@ Gtk.main()
 
 fn find_sheet(scene: &Scene, window: &str) -> RefEntry {
     let args = FindArgs {
-        app: None,
-        window_id: Some(window.to_owned()),
-        root: None,
-        surface: SnapshotSurface::Sheet,
+        scope: FindScopeArgs {
+            app: None,
+            window_id: Some(window.to_owned()),
+            root: None,
+            surface: SnapshotSurface::Sheet,
+        },
         filter: FindFilterArgs {
             role: Some("button".to_owned()),
             name: Some("Save".to_owned()),

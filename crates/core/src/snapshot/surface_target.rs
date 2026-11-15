@@ -104,37 +104,13 @@ fn select_app_window(
     app: &str,
     deadline: Deadline,
 ) -> Result<WindowInfo, AppError> {
-    let select = |candidates| {
-        crate::system::window_lookup::select_window(
-            candidates,
-            crate::AdapterError::app_has_no_window(app),
-            "More than one window matches the target",
-        )
-    };
-    match select(windows.clone()) {
-        Err(AppError::Adapter(error)) if error.code == crate::ErrorCode::AmbiguousTarget => {
-            match primary_windows(adapter, windows, deadline) {
-                Some(primary) => select(primary),
-                None => Err(AppError::Adapter(error)),
-            }
-        }
-        chosen => chosen,
-    }
-}
-
-/// The windows among `windows` that are not auxiliary, when the adapter
-/// reports at least one auxiliary window and at least one other.
-fn primary_windows(
-    adapter: &dyn PlatformAdapter,
-    windows: Vec<WindowInfo>,
-    deadline: Deadline,
-) -> Option<Vec<WindowInfo>> {
-    let count = windows.len();
-    let primary: Vec<_> = windows
-        .into_iter()
-        .filter(|window| !adapter.is_auxiliary_window(window, deadline))
-        .collect();
-    (!primary.is_empty() && primary.len() < count).then_some(primary)
+    crate::system::window_lookup::select_app_window(
+        adapter,
+        windows,
+        crate::AdapterError::app_has_no_window(app),
+        "More than one window matches the target",
+        deadline,
+    )
 }
 
 pub(crate) fn surface_windows(
