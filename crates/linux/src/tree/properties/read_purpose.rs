@@ -32,6 +32,11 @@ impl ReadPurpose {
         )
     }
 
+    /// Whether the read needs the Accessible property group.
+    pub(in crate::tree) fn property_group(self) -> bool {
+        self.identity() || self == Self::Actions
+    }
+
     pub(in crate::tree) fn vocabulary(self) -> bool {
         self.identity() || matches!(self, Self::State | Self::Actions | Self::Value)
     }

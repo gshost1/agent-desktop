@@ -7,6 +7,7 @@ use agent_desktop_core::Deadline;
 
 use super::projection::project_node;
 use crate::tree::placement::node_position::place_single;
+use crate::tree::properties::property_read::PropertyRead;
 use crate::tree::properties::read_purpose::ReadPurpose;
 use crate::tree::walk::walker_expand::read_observed;
 use crate::tree::{AtspiElement, ObservedRead, WalkLimits};
@@ -70,6 +71,7 @@ pub(crate) async fn read_evidence(
         element,
         WalkLimits::default().max_field_bytes,
         purpose,
+        PropertyRead::Separate,
     )
     .await?;
     let evidence = evidence_for(&read, element);

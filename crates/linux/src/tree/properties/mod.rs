@@ -8,6 +8,8 @@ pub(crate) mod liveness;
 pub(super) mod node_properties;
 pub(super) mod node_read;
 pub(super) mod node_traits;
+pub(super) mod property_group;
+pub(crate) mod property_read;
 pub(crate) mod read_failure;
 pub(super) mod read_purpose;
 pub(crate) mod toolkit_trust;

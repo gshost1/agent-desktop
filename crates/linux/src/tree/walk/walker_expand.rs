@@ -5,18 +5,21 @@ use futures_util::future::join;
 use futures_util::stream::{self, StreamExt};
 use zbus::Connection;
 
-use crate::system::{process_id, within};
+use crate::system::{REGISTRY_ROOT_PATH, process_id, within};
 use crate::tree::capabilities::value_read::read_value;
 use crate::tree::element::ancestry;
 use crate::tree::element::bounded::collect_bounded;
 use crate::tree::properties::liveness::Liveness;
-use crate::tree::properties::node_read::read_node_for;
+use crate::tree::properties::node_read::read_node_with;
+use crate::tree::properties::property_read::PropertyRead;
 use crate::tree::properties::read_purpose::ReadPurpose;
+use crate::tree::properties::toolkit_trust::{property_read, read_toolkit};
 use crate::tree::vocabulary::label_read::read_label_if_needed;
 use crate::tree::{AtspiElement, Expansion, ObservedRead, RawNode, WalkLimits};
 
 const NODES_IN_FLIGHT: usize = 32;
 const PID_LOOKUPS_IN_FLIGHT: usize = 64;
+const TOOLKIT_LOOKUPS_IN_FLIGHT: usize = 8;
 
 /// Stands in for the process id of a bus name whose lookup failed. Process
 /// id 0 is never an application, so a child carrying it is recorded as
@@ -62,6 +65,38 @@ pub(in crate::tree) fn record_pids(
     Ok(())
 }
 
+/// Learns, for each bus name of the level not seen before, how its nodes read
+/// the property group: from the toolkit its application root names, read one
+/// property at a time. A root that cannot be read keeps the separate reads;
+/// bus loss fails the level.
+pub(in crate::tree) async fn learn_property_reads(
+    connection: &Connection,
+    styles: &mut HashMap<String, PropertyRead>,
+    level: &[AtspiElement],
+) -> Result<(), AdapterError> {
+    let mut unseen: Vec<&AtspiElement> = Vec::new();
+    for element in level {
+        let bus = element.bus_name();
+        if element.pid() != UNKNOWN_PID
+            && !styles.contains_key(bus)
+            && !unseen.iter().any(|seen| seen.bus_name() == bus)
+        {
+            unseen.push(element);
+        }
+    }
+    let lookups = unseen.into_iter().map(|element| async move {
+        let root = AtspiElement::new(element.bus_name(), REGISTRY_ROOT_PATH, element.pid());
+        (
+            element.bus_name().to_owned(),
+            read_toolkit(connection, &root).await,
+        )
+    });
+    for (bus, toolkit) in collect_bounded(TOOLKIT_LOOKUPS_IN_FLIGHT, lookups).await {
+        styles.insert(bus, property_read(&toolkit?));
+    }
+    Ok(())
+}
+
 pub(in crate::tree) fn child_elements(
     node: &RawNode,
     pids: &HashMap<String, u32>,
@@ -89,6 +124,7 @@ pub(in crate::tree) struct LevelReader<'a> {
     deadline: Deadline,
     at_root: bool,
     purpose: ReadPurpose,
+    property_reads: HashMap<String, PropertyRead>,
 }
 
 impl<'a> LevelReader<'a> {
@@ -105,6 +141,7 @@ impl<'a> LevelReader<'a> {
             deadline,
             at_root: true,
             purpose: ReadPurpose::Snapshot,
+            property_reads: HashMap::new(),
         }
     }
 
@@ -124,14 +161,23 @@ impl<'a> LevelReader<'a> {
         let at_root = std::mem::replace(&mut self.at_root, false);
         let (connection, max_bytes) = (self.connection, self.max_field_bytes);
         let pids = &mut self.pids;
+        let styles = &mut self.property_reads;
         let purpose = self.purpose;
         within(self.deadline, async {
+            if purpose.property_group() {
+                learn_property_reads(connection, styles, level).await?;
+            }
+            let styles = &*styles;
             let reads: Vec<Result<ObservedRead, AdapterError>> =
                 stream::iter(level.iter().map(|element| async move {
                     if !at_root && element.pid() == UNKNOWN_PID {
                         Err(AdapterError::new(ErrorCode::ElementNotFound, UNIDENTIFIED))
                     } else {
-                        read_observed(connection, element, max_bytes, purpose)
+                        let style = styles
+                            .get(element.bus_name())
+                            .copied()
+                            .unwrap_or(PropertyRead::Separate);
+                        read_observed(connection, element, max_bytes, purpose, style)
                             .await
                             .map(|(read, _)| read)
                     }
@@ -181,8 +227,9 @@ pub(in crate::tree) async fn read_observed(
     element: &AtspiElement,
     max_field_bytes: usize,
     purpose: ReadPurpose,
+    style: PropertyRead,
 ) -> Result<(ObservedRead, Liveness), AdapterError> {
-    let (node, liveness) = read_node_for(connection, element, purpose).await?;
+    let (node, liveness) = read_node_with(connection, element, purpose, style).await?;
     let (label, value) = join(
         async {
             if purpose.identity() {

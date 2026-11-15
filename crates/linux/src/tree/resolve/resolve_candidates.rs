@@ -3,6 +3,7 @@ use zbus::Connection;
 
 use crate::system::within;
 use crate::tree::element::bounded::collect_bounded;
+use crate::tree::properties::property_read::PropertyRead;
 use crate::tree::properties::read_purpose::ReadPurpose;
 use crate::tree::vocabulary::roles::may_resolve_to;
 use crate::tree::walk::walker_expand::read_observed;
@@ -60,9 +61,15 @@ pub(in crate::tree) fn read_candidates(
         Ok(collect_bounded(
             NODES_IN_FLIGHT,
             elements.iter().map(|element| async move {
-                read_observed(connection, element, max_bytes, ReadPurpose::Resolve)
-                    .await
-                    .map(|(read, _)| read)
+                read_observed(
+                    connection,
+                    element,
+                    max_bytes,
+                    ReadPurpose::Resolve,
+                    PropertyRead::Separate,
+                )
+                .await
+                .map(|(read, _)| read)
             }),
         )
         .await)

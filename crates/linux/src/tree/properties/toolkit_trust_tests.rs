@@ -68,3 +68,37 @@ fn toolkit_policy_matrix() {
         assert_eq!(actual, expected, "toolkit {name:?} {version:?}");
     }
 }
+
+#[test]
+fn only_measured_toolkits_read_the_property_group_in_one_call() {
+    let rows = [
+        (
+            Some("gtk"),
+            Some("3.24.52"),
+            PropertyRead::GroupedWithAttributes,
+        ),
+        (Some("GTK"), Some("4.22.4"), PropertyRead::Grouped),
+        (
+            Some("Chromium"),
+            Some("1.0"),
+            PropertyRead::GroupedWithAttributes,
+        ),
+        (Some("Qt"), Some("6.10.2"), PropertyRead::Separate),
+        (Some("Qt"), Some("6.4.2"), PropertyRead::Separate),
+        (Some("Gecko"), Some("158.0"), PropertyRead::Separate),
+        (Some("gtk"), None, PropertyRead::Separate),
+        (Some("clutter"), Some("1.0"), PropertyRead::Separate),
+        (None, None, PropertyRead::Separate),
+    ];
+    for (name, version, expected) in rows {
+        let toolkit = ToolkitId {
+            name: name.map(str::to_owned),
+            version: version.map(str::to_owned),
+        };
+        assert_eq!(
+            property_read(&toolkit),
+            expected,
+            "toolkit {name:?} {version:?}"
+        );
+    }
+}

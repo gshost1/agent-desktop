@@ -4,6 +4,7 @@ use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
 use super::node_read::call;
+use super::property_read::PropertyRead;
 use crate::system::process::toolkit_id::ToolkitId;
 use crate::system::process::web_family::WebFamily;
 use crate::system::{PROPERTIES_INTERFACE, REGISTRY_ROOT_PATH};
@@ -120,6 +121,20 @@ pub(crate) fn kind(toolkit: &ToolkitId) -> ToolkitKind {
         ToolkitKind::Chromium
     } else {
         ToolkitKind::Other
+    }
+}
+
+/// How a walk reads the Accessible property group on this toolkit. GTK 3,
+/// GTK 4 and Chromium answer `GetAll(Accessible)` with the values of the four
+/// `Get` calls on every node measured (L44-1); GTK 3 and Chromium also carry
+/// `Attributes`, equal to `GetAttributes` (L44-2). Qt refuses `GetAll` on
+/// every node (L44-1) and has crashed on it (L41-7), and a toolkit that was
+/// not measured or could not be read keeps the separate reads.
+pub(crate) fn property_read(toolkit: &ToolkitId) -> PropertyRead {
+    match kind(toolkit) {
+        ToolkitKind::Gtk3 | ToolkitKind::Chromium => PropertyRead::GroupedWithAttributes,
+        ToolkitKind::Gtk4 => PropertyRead::Grouped,
+        ToolkitKind::Qt | ToolkitKind::Other => PropertyRead::Separate,
     }
 }
 

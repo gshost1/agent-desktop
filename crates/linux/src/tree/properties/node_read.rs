@@ -9,15 +9,14 @@ use zbus::{Connection, Message};
 use super::absence::gone_error;
 use super::interface_reads::{read_actions, read_extents};
 use super::liveness::Liveness;
+use super::property_group::{CarriedAttributes, GroupRead, finish_group, send_group};
+use super::property_read::PropertyRead;
 use super::read_purpose::ReadPurpose;
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
 use crate::tree::{AtspiElement, ChildAddress, Field, NodeProperties, NodeTraits, RawNode};
 
 pub(crate) const COMPONENT_INTERFACE: &str = "org.a11y.atspi.Component";
 pub(in crate::tree) const NAME: &str = "Name";
-const DESCRIPTION: &str = "Description";
-const CHILD_COUNT: &str = "ChildCount";
-const ACCESSIBLE_ID: &str = "AccessibleId";
 const NULL_PATH: &str = "/org/a11y/atspi/null";
 
 pub(in crate::tree) type Reply = Result<Message, zbus::Error>;
@@ -83,16 +82,32 @@ fn count_value(value: &OwnedValue) -> Field<i32> {
     }
 }
 
-fn read_property<T>(
-    reply: Reply,
+fn property_field<T>(
+    value: Result<OwnedValue, zbus::Error>,
     convert: fn(&OwnedValue) -> Field<T>,
     liveness: Liveness,
 ) -> Result<Field<T>, AdapterError> {
-    Ok(match field(deserialize::<OwnedValue>(reply), liveness)? {
+    Ok(match field(value, liveness)? {
         Field::Present(value) => convert(&value),
         Field::Absent => Field::Absent,
         Field::Failed(detail) => Field::Failed(detail),
     })
+}
+
+fn group_properties(
+    read: GroupRead,
+    liveness: Liveness,
+) -> Result<(NodeProperties, CarriedAttributes), AdapterError> {
+    let [name, description, child_count, accessible_id] = read.values;
+    Ok((
+        NodeProperties {
+            name: property_field(name, string_value, liveness)?,
+            description: property_field(description, string_value, liveness)?,
+            child_count: property_field(child_count, count_value, liveness)?,
+            accessible_id: property_field(accessible_id, string_value, liveness)?,
+        },
+        read.attributes,
+    ))
 }
 
 pub(in crate::tree) async fn get_one<T>(
@@ -145,18 +160,30 @@ where
     }
 }
 
-/// L41-7: individual property reads avoid toolkit crashes in bulk reads.
-/// Reads one node. All fixed calls are in flight together; extents and
-/// actions follow only when the interface list names them. The node's own
-/// `GetRole` outcome, which every live node answers, decides what a failure
-/// of any other call means: an error that shows the application or the object
-/// gone fails the read; any other failure stays on the field it hit. The
-/// second value is `Alive`, or `TimedOut` when the role call did not answer
-/// in time, which says nothing about the object.
+/// Reads one node with the property group read separately. L41-7: a bulk
+/// read can crash a toolkit, so every caller that has not established the
+/// toolkit uses this.
 pub(crate) async fn read_node_for(
     connection: &Connection,
     element: &AtspiElement,
     purpose: ReadPurpose,
+) -> Result<(RawNode, Liveness), AdapterError> {
+    read_node_with(connection, element, purpose, PropertyRead::Separate).await
+}
+
+/// Reads one node. All fixed calls are in flight together; extents and
+/// actions follow only when the interface list names them, and a grouped
+/// property read follows with the separate reads it could not stand for.
+/// The node's own `GetRole` outcome, which every live node answers, decides
+/// what a failure of any other call means: an error that shows the
+/// application or the object gone fails the read; any other failure stays on
+/// the field it hit. The second value is `Alive`, or `TimedOut` when the role
+/// call did not answer in time, which says nothing about the object.
+pub(in crate::tree) async fn read_node_with(
+    connection: &Connection,
+    element: &AtspiElement,
+    purpose: ReadPurpose,
+    style: PropertyRead,
 ) -> Result<(RawNode, Liveness), AdapterError> {
     let accessible = |method: &'static str, needed| async move {
         if needed {
@@ -165,43 +192,13 @@ pub(crate) async fn read_node_for(
             None
         }
     };
+    let group_needed = purpose.property_group();
+    let carry_attributes = group_needed && style == PropertyRead::GroupedWithAttributes;
     let (first, second) = join(
         join4(
             async {
-                if purpose.identity() || purpose == ReadPurpose::Actions {
-                    Some(
-                        join4(
-                            call(
-                                connection,
-                                element,
-                                PROPERTIES_INTERFACE,
-                                "Get",
-                                &(ACCESSIBLE_INTERFACE, NAME),
-                            ),
-                            call(
-                                connection,
-                                element,
-                                PROPERTIES_INTERFACE,
-                                "Get",
-                                &(ACCESSIBLE_INTERFACE, DESCRIPTION),
-                            ),
-                            call(
-                                connection,
-                                element,
-                                PROPERTIES_INTERFACE,
-                                "Get",
-                                &(ACCESSIBLE_INTERFACE, CHILD_COUNT),
-                            ),
-                            call(
-                                connection,
-                                element,
-                                PROPERTIES_INTERFACE,
-                                "Get",
-                                &(ACCESSIBLE_INTERFACE, ACCESSIBLE_ID),
-                            ),
-                        )
-                        .await,
-                    )
+                if group_needed {
+                    Some(send_group(connection, element, style).await)
                 } else {
                     None
                 }
@@ -218,29 +215,27 @@ pub(crate) async fn read_node_for(
                     ReadPurpose::Structure | ReadPurpose::Shape | ReadPurpose::Gate
                 ),
             ),
-            accessible("GetAttributes", purpose.vocabulary()),
+            accessible("GetAttributes", purpose.vocabulary() && !carry_attributes),
             accessible("GetChildren", purpose.children()),
         ),
     )
     .await;
-    let (properties, role, role_name, state) = first;
+    let (group, role, role_name, state) = first;
     let (interfaces, attributes, child_reply) = second;
     let role = role.map(deserialize::<u32>);
     let liveness = Liveness::of(role.as_ref().and_then(|read| read.as_ref().err()));
-    let properties = match properties {
-        Some((name, description, child_count, accessible_id)) => NodeProperties {
-            name: read_property(name, string_value, liveness)?,
-            description: read_property(description, string_value, liveness)?,
-            child_count: read_property(child_count, count_value, liveness)?,
-            accessible_id: read_property(accessible_id, string_value, liveness)?,
-        },
+    let (properties, carried) = match group {
+        Some(reply) => group_properties(
+            finish_group(connection, element, reply, carry_attributes).await,
+            liveness,
+        )?,
         None => {
             let mut properties = NodeProperties::failed("field not requested");
             if matches!(purpose, ReadPurpose::Frame | ReadPurpose::Structure) {
                 properties.name =
                     get_one(connection, element, NAME, string_value, liveness).await?;
             }
-            properties
+            (properties, None)
         }
     };
     let interfaces = selected(interfaces, liveness)?;
@@ -273,7 +268,10 @@ pub(crate) async fn read_node_for(
             states: selected(state, liveness)?,
             interfaces,
         },
-        attributes: selected::<BTreeMap<String, String>>(attributes, liveness)?,
+        attributes: match carried {
+            Some(read) => field(read, liveness)?,
+            None => selected::<BTreeMap<String, String>>(attributes, liveness)?,
+        },
         extents: extents?,
         actions: actions?,
         children: match child_reply {
