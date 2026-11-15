@@ -99,6 +99,27 @@ pub(super) fn shifted(start: f64, shift: f64, direction: &Direction) -> f64 {
     }
 }
 
+/// Where `item` sits along `direction`'s axis, when its bounds can be read.
+pub(super) fn item_offset(
+    item: &AXElement,
+    direction: &Direction,
+    deadline: Deadline,
+) -> Option<f64> {
+    bounds(item, deadline)
+        .ok()
+        .flatten()
+        .map(|rect| offset(&rect, direction))
+}
+
+/// Whether an item that stayed loaded moved the way content moves when the
+/// area scrolls back against `direction`: down the screen for a search down.
+pub(super) fn moved_backward(before: f64, after: f64, direction: &Direction) -> bool {
+    match direction {
+        Direction::Down | Direction::Right => after > before + MIN_MEASURED_PIXELS,
+        Direction::Up | Direction::Left => after < before - MIN_MEASURED_PIXELS,
+    }
+}
+
 fn offset(rect: &Rect, direction: &Direction) -> f64 {
     match direction {
         Direction::Up | Direction::Down => rect.y,

@@ -69,3 +69,14 @@ fn a_refused_probe_write_sends_nothing() {
     );
     assert!(matches!(step, SearchStep::Skipped), "{step:?}");
 }
+
+#[test]
+fn an_item_that_moves_down_the_screen_during_a_search_down_went_backward() {
+    use super::moved_backward;
+    assert!(moved_backward(540.0, 730.0, &Direction::Down));
+    assert!(!moved_backward(540.0, 340.0, &Direction::Down));
+    assert!(!moved_backward(540.0, 540.2, &Direction::Down));
+    assert!(moved_backward(340.0, 120.0, &Direction::Up));
+    assert!(!moved_backward(340.0, 560.0, &Direction::Up));
+    assert!(moved_backward(80.0, 200.0, &Direction::Right));
+}

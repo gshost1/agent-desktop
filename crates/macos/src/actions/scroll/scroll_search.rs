@@ -38,6 +38,10 @@ pub(crate) fn page_scroll_area(
         return Ok(ScrollPage::AtEnd { delivered: false });
     }
     let before = super::scroll_page::capture(&area, direction, deadline);
+    let anchor = match room {
+        None => backward_anchor(&area, direction, deadline),
+        Some(_) => None,
+    };
     let mut farthest = || reveal_farthest_item(&area, direction, deadline);
     let mut page_part = || press_bar_part(&area, direction, deadline);
     let mut page_action =
@@ -55,13 +59,41 @@ pub(crate) fn page_scroll_area(
         ],
         room == Some(true),
         || {
-            settle(
+            let page = settle(
                 before,
                 || super::scroll_page::capture(&area, direction, deadline),
                 || pause(deadline),
-            )
+            );
+            match (&page, &anchor) {
+                (ScrollPage::Moved, Some((item, was))) => {
+                    match super::scroll_search_value::item_offset(item, direction, deadline) {
+                        Some(now)
+                            if super::scroll_search_value::moved_backward(*was, now, direction) =>
+                        {
+                            ScrollPage::AtEnd { delivered: true }
+                        }
+                        _ => page,
+                    }
+                }
+                _ => page,
+            }
         },
     )
+}
+
+/// A loaded item and its position, read before the steps of an area with no
+/// readable bar. Its frames say only that something moved; this item says
+/// which way. A page action at the end of a SwiftUI lazy stack scrolls back
+/// several rows, which is no page toward the end.
+fn backward_anchor(
+    area: &AXElement,
+    direction: &Direction,
+    deadline: Deadline,
+) -> Option<(AXElement, f64)> {
+    let items = LoadedItems::read(area, deadline).ok()?;
+    let item = items.middle()?.clone();
+    let offset = super::scroll_search_value::item_offset(&item, direction, deadline)?;
+    Some((item, offset))
 }
 
 /// Sends steps in order until one moves the area, and settles what it did.
