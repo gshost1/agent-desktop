@@ -56,6 +56,14 @@ impl Default for WindowsAdapter {
 }
 
 impl ObservationOps for WindowsAdapter {
+    fn menu_open(
+        &self,
+        process: ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        crate::system::wait::menu_open(&process, deadline)
+    }
+
     fn observe_tree(
         &self,
         root: ObservationRoot<'_>,

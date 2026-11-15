@@ -27,6 +27,10 @@ impl ObservationOps for PreparingPlatform {
     fn is_auxiliary_window(&self, window: &agent_desktop_core::WindowInfo, _: Deadline) -> bool {
         window.id == "w-2"
     }
+
+    fn menu_opener_grace(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(300)
+    }
 }
 impl ActionOps for PreparingPlatform {}
 impl InputOps for PreparingPlatform {}
@@ -76,4 +80,21 @@ fn whether_a_window_is_auxiliary_is_the_platform_answer() {
     assert!(web.is_auxiliary_window(&window, deadline));
     window.id = "w-1".into();
     assert!(!web.is_auxiliary_window(&window, deadline));
+}
+
+#[test]
+fn the_closed_menu_wait_grace_is_the_platform_answer() {
+    let web = WebChannelAdapter::with_connector(
+        PreparingPlatform::default(),
+        Box::new(ScriptedConnector::default()),
+    )
+    .with_download_ledger(None);
+    assert_ne!(
+        agent_desktop_core::MENU_OPENER_GRACE,
+        std::time::Duration::from_millis(300)
+    );
+    assert_eq!(
+        web.menu_opener_grace(),
+        std::time::Duration::from_millis(300)
+    );
 }
