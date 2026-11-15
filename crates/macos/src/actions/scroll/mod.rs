@@ -67,7 +67,8 @@ pub(crate) fn ax_scroll(
     }))
     .with_suggestion(
         "The application publishes the scroll actions without implementing them. \
-         Try the parent container, or use '--headed' for a physical wheel scroll.",
+         Try the parent container; if the user allows physical input, use '--headed' for a \
+         physical wheel scroll.",
     ))
 }
 

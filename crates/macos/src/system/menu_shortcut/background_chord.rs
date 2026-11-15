@@ -58,8 +58,9 @@ pub(crate) fn unrouted_in_background(combo: &KeyCombo, menu: &MenuShortcutOutcom
         "physical_delivery_started": false,
     }))
     .with_suggestion(
-        "Retry with --headed so the app comes to the front, or click the command's menu item: \
-         'find --app <app> --surface menubar --name <item>' then 'click <ref>'.",
+        "Click the command's menu item: 'find --app <app> --surface menubar --name <item>' then \
+         'click <ref>'. If the user allows physical input, retry with --headed so the app comes \
+         to the front.",
     )
     .with_disposition(DeliverySemantics::not_delivered())
 }

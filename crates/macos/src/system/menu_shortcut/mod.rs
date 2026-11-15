@@ -136,8 +136,9 @@ fn disabled_in_background(walk: &menu_walk::MenuWalk) -> AdapterError {
         "physical_delivery_started": false,
     }))
     .with_suggestion(
-        "Retry with --headed, or bring the app's window forward with focus-window and press again; \
-         the app enables window commands only while it is frontmost",
+        "Bring the app's window forward with focus-window and press again; the app enables window \
+         commands only while it is frontmost. If the user allows physical input, retry with \
+         --headed instead",
     )
     .with_disposition(DeliverySemantics::not_delivered())
 }

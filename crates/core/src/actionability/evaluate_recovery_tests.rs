@@ -67,6 +67,13 @@ fn unsupported_text_write_names_typing_for_the_actual_mode_and_a_paste_fallback(
             );
             assert!(hint.contains("clipboard-set"), "{hint}");
             assert!(hint.contains("paste shortcut"), "{hint}");
+            if let Some(headed) = hint.find("--headed type") {
+                let paste = hint.find("clipboard-set").unwrap_or(usize::MAX);
+                let permission = hint
+                    .find("If the user allows physical input")
+                    .unwrap_or(usize::MAX);
+                assert!(paste < permission && permission < headed, "{hint}");
+            }
         }
     }
 }

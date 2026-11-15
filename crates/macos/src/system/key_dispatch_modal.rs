@@ -275,7 +275,7 @@ fn ignored_suggestion(kind: &str, (button, present): (&str, bool)) -> String {
         (true, "cancel_button") => "click its cancel button by ref",
         (true, _) => "click its default button by ref",
         (false, _) => {
-            "send the key once more with --headed so its window takes focus first, or click its Close or Cancel button by ref to dismiss it"
+            "click its Close or Cancel button by ref to dismiss it; if the user allows physical input, send the key once more with --headed so its window takes focus first"
         }
     };
     format!(
