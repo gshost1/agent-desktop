@@ -37,8 +37,9 @@ fn shaped_response(
     let total_matches = resolution.meta.total_matches;
     let truncated = resolution.meta.truncated;
     let roles_present = resolution.meta.roles_present;
-    let matches = resolution
-        .matches
+    let mut found = resolution.matches;
+    order_exact_names_first(&mut found, query, |found| found.data.name.as_str());
+    let matches = found
         .into_iter()
         .map(|found| format_match(found.data, found.screen_bounds))
         .collect::<Result<Vec<_>, _>>()?;
@@ -56,6 +57,25 @@ fn shaped_response(
     attach_roles_present(&mut response, is_empty, query, roles_present);
     attach_snapshot_id(&mut response, snapshot_id);
     Ok(response)
+}
+
+/// A name query matches by substring, so an item whose title grew to hold
+/// another item's name, such as an Edit menu's "Undo Subscript" after a
+/// Subscript command, can come before the item the caller named. Matches whose
+/// whole name equals the query come first; otherwise the order stays the
+/// traversal order. `--first`, `--last` and `--nth` keep traversal order.
+pub(super) fn order_exact_names_first<T>(
+    items: &mut [T],
+    query: &LocatorQuery,
+    name_of: impl Fn(&T) -> &str,
+) {
+    let Some(wanted) = query.identity.name.as_deref() else {
+        return;
+    };
+    if query.exact {
+        return;
+    }
+    items.sort_by_key(|item| crate::tree::search_text::normalize(name_of(item)) != wanted);
 }
 
 pub(super) fn format_match(

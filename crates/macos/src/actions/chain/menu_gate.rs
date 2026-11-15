@@ -59,39 +59,18 @@ fn gate_read(pid: i32, deadline: Deadline) -> MenuObservation {
     )
 }
 
-/// Answers from two reads. The window server goes first: it never waits on
-/// the application, and a pop-up menu window of the process is a menu on
-/// screen whatever the accessibility tree says. The accessibility read then
-/// decides, except that a menu search that ran out of its node budget proves
-/// nothing alone; it counts as no menu only when the window server answered
-/// and listed no menu window, since the menu bar was read before the search
-/// and showed none. Every other failed read refuses.
+/// The window server and accessibility answer as
+/// [`menu_shown_from`](crate::system::window::popup_menu_window::menu_shown_from)
+/// describes; a read that still fails refuses.
 fn gate_answer(
     menu_windows: Result<Vec<i64>, AdapterError>,
     accessibility: impl FnOnce() -> Result<bool, AdapterError>,
 ) -> MenuObservation {
-    let window_server_saw_none = match &menu_windows {
-        Ok(windows) if !windows.is_empty() => return MenuObservation::Open,
-        Ok(_) => true,
-        Err(_) => false,
-    };
-    match accessibility() {
+    match crate::system::window::popup_menu_window::menu_shown_from(menu_windows, accessibility) {
         Ok(true) => MenuObservation::Open,
         Ok(false) => MenuObservation::Closed,
-        Err(error) if window_server_saw_none && searched_past_budget(&error) => {
-            MenuObservation::Closed
-        }
         Err(_) => MenuObservation::Unreadable,
     }
-}
-
-fn searched_past_budget(error: &AdapterError) -> bool {
-    error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("kind"))
-        .and_then(serde_json::Value::as_str)
-        == Some("surface_search_limit")
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ fn record(app_name: &str, pid: i32, title: &str, window_number: i64) -> WindowRe
             width: 10.0,
             height: 10.0,
         },
-        visible: true,
+        presence: crate::system::window::window_presence::WindowPresence::Onscreen,
         process_instance: Some(instance(pid)),
     }
 }
@@ -115,7 +115,7 @@ fn source_identity_survives_window_move_and_resize() {
     live.bounds.x += 50.0;
     live.bounds.width += 25.0;
     live.title = Some("Renamed document".into());
-    live.visible = false;
+    live.presence = crate::system::window::window_presence::WindowPresence::Offscreen;
     let process_instance = instance(pid);
 
     assert!(window_record_matches_source(

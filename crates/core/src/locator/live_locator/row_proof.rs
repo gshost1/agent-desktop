@@ -27,7 +27,8 @@ pub(super) fn has_unproven_tokenless_match(
 }
 
 /// Keeps the hydrated matches and drops every ref that is still unproven,
-/// so a `--first` answer never publishes a ref every action would refuse.
+/// so a `--first` answer never publishes a ref every action would refuse. A
+/// resolution left with no ref publishes no refmap, so it saves no snapshot.
 pub(super) fn withhold_unproven_refs(resolution: &mut LocatorResolution) -> Result<(), AppError> {
     let mut refmap = RefMap::new();
     for found in &mut resolution.matches {
@@ -40,7 +41,7 @@ pub(super) fn withhold_unproven_refs(resolution: &mut LocatorResolution) -> Resu
             Some(refmap.try_allocate(found.entry.clone())?)
         };
     }
-    resolution.refmap = Some(refmap);
+    resolution.refmap = (!refmap.is_empty()).then_some(refmap);
     Ok(())
 }
 

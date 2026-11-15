@@ -177,5 +177,7 @@ pub use wait::signal_filter::SignalFilter;
 pub use wait::signals::diff_signals;
 pub use wait::surface_signal::SurfaceSignal;
 pub use wait::ui_event::UiEvent;
-pub use wait::wait_budget::{MAX_WAIT_TIMEOUT_MS, wait_timeout_duration};
+pub use wait::wait_budget::{
+    DEFAULT_POST_ACTION_WAIT_MS, MAX_WAIT_TIMEOUT_MS, wait_timeout_duration,
+};
 pub use wait::wait_wakeup::WaitWakeup;

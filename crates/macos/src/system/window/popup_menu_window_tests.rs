@@ -52,3 +52,41 @@ fn a_window_without_a_layer_is_not_a_menu() {
 
     assert!(menu_numbers_from(&[bare], 41).is_empty());
 }
+
+fn search_past_budget() -> agent_desktop_core::AdapterError {
+    agent_desktop_core::AdapterError::new(
+        agent_desktop_core::ErrorCode::AppUnresponsive,
+        "Accessibility surface search exceeded its node budget",
+    )
+    .with_details(serde_json::json!({ "kind": "surface_search_limit", "limit": 2048 }))
+}
+
+fn other_failure() -> agent_desktop_core::AdapterError {
+    agent_desktop_core::AdapterError::timeout("menu read did not finish")
+}
+
+#[test]
+fn a_menu_window_on_screen_is_a_menu_without_asking_accessibility() {
+    let shown = super::menu_shown_from(Ok(vec![12]), || panic!("the window server answered"));
+
+    assert!(shown.unwrap());
+}
+
+#[test]
+fn a_search_past_its_budget_is_no_menu_when_the_window_server_lists_none() {
+    assert!(!super::menu_shown_from(Ok(Vec::new()), || Err(search_past_budget())).unwrap());
+}
+
+#[test]
+fn a_search_past_its_budget_stays_an_error_when_the_window_server_failed() {
+    let failed = Err(other_failure());
+
+    assert!(super::menu_shown_from(failed, || Err(search_past_budget())).is_err());
+}
+
+#[test]
+fn other_accessibility_answers_pass_through() {
+    assert!(super::menu_shown_from(Ok(Vec::new()), || Ok(true)).unwrap());
+    assert!(!super::menu_shown_from(Ok(Vec::new()), || Ok(false)).unwrap());
+    assert!(super::menu_shown_from(Ok(Vec::new()), || Err(other_failure())).is_err());
+}

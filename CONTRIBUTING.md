@@ -64,7 +64,7 @@ cargo tree -p agent-desktop-core               # must name no platform crate
 AGENT_DESKTOP_E2E_EXCLUSIVE=1 bash tests/e2e/run.sh   # macOS only; needs an exclusive desktop and Accessibility permission
 ```
 
-CI runs its test steps through `scripts/cargo-test-isolated-home.sh`, which gives cargo a throwaway `HOME`, so tests never touch `~/.agent-desktop`. The pre-commit hook does the same for its `--lib` step. Run the script locally for the same isolation:
+CI runs its test steps through `scripts/cargo-test-isolated-home.sh`, which gives cargo a throwaway `HOME` and cuts it off from the desktop session (no `WAYLAND_DISPLAY` or `AT_SPI_BUS_ADDRESS`, a missing session bus, a private `XDG_RUNTIME_DIR`; `AGENT_DESKTOP_TEST_SESSION=inherit` opts out), so tests never touch `~/.agent-desktop` or the user's session. The pre-commit hook does the same for its `--lib` step. Run the script locally for the same isolation:
 
 ```bash
 scripts/cargo-test-isolated-home.sh test "${HOST_PKGS[@]}" --lib

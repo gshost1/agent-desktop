@@ -359,7 +359,7 @@ fn moved_semantic_target_dispatches_without_positional_wait() {
 #[test]
 fn continuously_moving_semantic_target_dispatches_exactly_once() {
     let adapter = DispatchGuardAdapter::new("moving_continuously", 0);
-    execute(&adapter, 60).unwrap();
+    execute(&adapter, 5_000).unwrap();
     assert_eq!(adapter.live_calls.load(Ordering::SeqCst), 2);
     assert_eq!(adapter.dispatch_calls.load(Ordering::SeqCst), 1);
 }

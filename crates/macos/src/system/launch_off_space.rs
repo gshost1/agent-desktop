@@ -14,6 +14,8 @@ use std::time::Instant;
 
 use agent_desktop_core::{Deadline, system::launch_result::LaunchResult};
 
+use crate::system::window::window_presence::WindowPresence;
+
 use crate::system::window::cg_window::{WindowRecord, WindowRecordScope, window_records_until};
 
 pub(crate) const OFF_SPACE_NOTE: &str = "No window is reported, but the window server lists an off-screen window of this process that macOS gives no accessibility tree: it may be on another Space (for example behind a full-screen app), belong to a hidden app, or be kept hidden by the app until it is brought forward. Commands on the app fail WINDOW_NOT_FOUND until the window is on the current Space. A launch with --activate of an app that is not running yet opens its window on the current Space; for a running app, leave full screen in the front app or switch to the window's Space, then retry.";
@@ -36,9 +38,11 @@ pub(crate) fn explain_off_space(result: &mut LaunchResult, pid: i32, deadline: D
 /// A window the window server lists off screen with a real size. A window
 /// that is still being created has no size yet.
 pub(crate) fn has_off_space_window(records: &[WindowRecord]) -> bool {
-    records
-        .iter()
-        .any(|record| !record.visible && record.bounds.width > 0.0 && record.bounds.height > 0.0)
+    records.iter().any(|record| {
+        record.presence == WindowPresence::Offscreen
+            && record.bounds.width > 0.0
+            && record.bounds.height > 0.0
+    })
 }
 
 #[cfg(test)]
