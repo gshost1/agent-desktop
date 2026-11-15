@@ -186,7 +186,7 @@ mod imp {
             )
     }
 
-    pub(crate) fn bar_at_limit(
+    fn bar_at_limit(
         area: &AXElement,
         direction: &Direction,
         deadline: Deadline,
@@ -343,7 +343,7 @@ mod imp {
     }
 }
 
-pub(crate) use imp::{bar_at_limit, declined_without_delivery};
+pub(crate) use imp::declined_without_delivery;
 pub(crate) use imp::{scroll_into_view_impl, scroll_into_view_outcome};
 
 #[cfg(test)]

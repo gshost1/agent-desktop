@@ -82,7 +82,8 @@ fn both_ends_without_a_match_is_a_clear_not_found() {
 
 #[test]
 fn the_page_cap_ends_an_endless_list() {
-    let mut list = ScriptedList::new(vec![Ok(ScrollPage::Moved); 100], None);
+    let endless = vec![Ok(ScrollPage::Moved); MAX_SCROLL_PAGES as usize + 10];
+    let mut list = ScriptedList::new(endless, None);
     let report = search(&mut list, Direction::Down, deadline()).unwrap();
     assert_eq!(report.stopped, "page_cap");
     assert_eq!(report.pages, MAX_SCROLL_PAGES);
@@ -109,6 +110,23 @@ fn a_failure_after_the_view_moved_cannot_claim_nothing_was_sent() {
     let details = error.details.expect("details");
     assert_eq!(details["scroll_search"]["pages"], 1);
     assert_eq!(details["scroll_search"]["view_moved"], true);
+    assert_eq!(details["scroll_search"]["stopped"], "error");
+}
+
+#[test]
+fn a_spent_deadline_ends_the_search_and_says_so() {
+    let spent = Deadline::after(1).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let mut list = ScriptedList::new(vec![Ok(ScrollPage::Moved)], None);
+    let Err(AppError::Adapter(error)) = search(&mut list, Direction::Down, spent) else {
+        panic!("a spent deadline ends the search");
+    };
+    assert_eq!(error.code, ErrorCode::Timeout);
+    assert!(list.sent.is_empty());
+    assert_eq!(
+        error.details.expect("details")["scroll_search"]["stopped"],
+        "deadline"
+    );
 }
 
 #[test]
@@ -120,4 +138,28 @@ fn a_refusal_before_any_page_moved_stays_not_delivered() {
     };
     assert_eq!(error.code, ErrorCode::PlatformNotSupported);
     assert_ne!(error.disposition, DeliverySemantics::delivered_unverified());
+}
+
+#[test]
+fn a_look_that_runs_out_of_time_is_reported_as_the_deadline() {
+    struct SlowLook(bool);
+    impl ScrollSearch for SlowLook {
+        fn look(&mut self) -> Result<bool, AppError> {
+            if std::mem::replace(&mut self.0, true) {
+                return Err(AdapterError::new(ErrorCode::Timeout, "look ran out").into());
+            }
+            Ok(false)
+        }
+        fn page(&mut self, _: &Direction) -> Result<ScrollPage, AdapterError> {
+            Ok(ScrollPage::Moved)
+        }
+    }
+    let Err(AppError::Adapter(error)) = search(&mut SlowLook(false), Direction::Down, deadline())
+    else {
+        panic!("the timed-out look ends the search");
+    };
+    let details = error.details.expect("details");
+    assert_eq!(details["scroll_search"]["stopped"], "deadline");
+    assert_eq!(details["scroll_search"]["pages"], 1);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }

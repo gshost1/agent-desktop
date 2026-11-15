@@ -10,6 +10,7 @@ mod scroll_plan;
 mod scroll_read;
 mod scroll_reveal;
 pub(crate) mod scroll_search;
+mod scroll_search_value;
 mod scroll_signals;
 
 const MAX_SCROLL_AMOUNT: u32 = 1_000;

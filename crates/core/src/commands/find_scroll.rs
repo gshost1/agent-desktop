@@ -9,16 +9,16 @@
 
 use super::{FindArgs, find_scroll_report::ScrollSearchReport, live};
 use crate::{
-    AdapterError, AppError, Deadline, DeliverySemantics, Direction, LocatorQuery, ScrollPage,
+    AdapterError, AppError, Deadline, DeliverySemantics, Direction, ErrorCode, LocatorQuery,
+    ScrollPage,
     adapter::{NativeHandle, PlatformAdapter},
     context::CommandContext,
 };
 use serde_json::{Value, json};
 use std::time::Duration;
 
-const MAX_SCROLL_PAGES: u32 = 40;
+const MAX_SCROLL_PAGES: u32 = 200;
 const SCROLL_SEARCH_TIMEOUT: Duration = Duration::from_secs(20);
-const LOOK_BUDGET: Duration = Duration::from_secs(5);
 
 /// What the search reads from and does to one scroll area.
 pub(super) trait ScrollSearch {
@@ -47,7 +47,7 @@ pub(super) fn search(
                 return Ok(report);
             }
             if deadline.is_expired() {
-                return Err(stopped(deadline.timeout_error().into(), &report));
+                return Err(stopped(deadline.timeout_error().into(), report, deadline));
             }
             match area.page(&direction) {
                 Ok(ScrollPage::Moved) => {
@@ -59,10 +59,12 @@ pub(super) fn search(
                     report.unconfirmed_pages += 1;
                 }
                 Ok(ScrollPage::AtEnd { .. }) => break,
-                Err(error) => return Err(stopped(error.into(), &report)),
+                Err(error) => return Err(stopped(error.into(), report, deadline)),
             }
-            if area.look().map_err(|error| stopped(error, &report))? {
-                return Ok(report);
+            match area.look() {
+                Ok(true) => return Ok(report),
+                Ok(false) => {}
+                Err(error) => return Err(stopped(error, report, deadline)),
             }
         }
     }
@@ -70,11 +72,16 @@ pub(super) fn search(
     Ok(report)
 }
 
-/// An error that ends the search after it paged carries how far it got, and
-/// cannot claim nothing was sent.
-fn stopped(error: AppError, report: &ScrollSearchReport) -> AppError {
+/// An error that ends the search after it paged carries how far it got and
+/// why it stopped, and cannot claim nothing was sent.
+fn stopped(error: AppError, mut report: ScrollSearchReport, deadline: Deadline) -> AppError {
     let AppError::Adapter(error) = error else {
         return error;
+    };
+    report.stopped = if deadline.is_expired() || error.code == ErrorCode::Timeout {
+        "deadline"
+    } else {
+        "error"
     };
     let mut error = error.with_detail("scroll_search", json!(report));
     if report.may_have_moved()
@@ -117,8 +124,7 @@ struct LiveScrollSearch<'a> {
 impl ScrollSearch for LiveScrollSearch<'_> {
     fn look(&mut self) -> Result<bool, AppError> {
         let (args, query) = self.find;
-        let budget = self.deadline.capped(LOOK_BUDGET);
-        let (response, matched) = live::execute_within(args, query, self.env, budget)?;
+        let (response, matched) = live::execute_within(args, query, self.env, self.deadline)?;
         self.last = Some(response);
         Ok(matched)
     }
