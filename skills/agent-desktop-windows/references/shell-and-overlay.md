@@ -149,7 +149,8 @@ identities checked against the hosted pid fail closed.
 ## Menu Detection Coverage
 
 The `menu` surface detector covers classic Win32 menus, WPF context menus and
-menu-bar dropdowns, and Chromium/Electron DOM context menus drawn inside the
-app's own window. WinUI3 and MSIX hosts are not evaluated. For an app outside
+menu-bar dropdowns, Chromium/Electron DOM context menus drawn inside the app's
+own window, and WinUI 3 menu flyouts such as the Windows 11 Notepad File menu.
+Other WinUI 3 and MSIX popups are not evaluated. For an app outside
 these families, read "no menu is open" as "not detected", not as proof that the
 menu is closed.

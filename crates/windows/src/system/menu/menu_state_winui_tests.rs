@@ -158,6 +158,36 @@ fn a_winui_menu_flyout_reads_as_an_open_menu_and_closes_again() {
             .is_some(),
         "the menu surface can root at the open flyout"
     );
+    let menu = snapshot::execute(
+        SnapshotArgs {
+            app: Some(notepad.0.app.clone()),
+            window_id: None,
+            max_depth: 12,
+            include_bounds: false,
+            interactive_only: true,
+            compact: true,
+            surface: SnapshotSurface::Menu,
+            skeleton: false,
+            root_ref: None,
+            timeout_ms: Some(15_000),
+            force_electron_a11y: false,
+        },
+        &WindowsAdapter::new(),
+        &CommandContext::default(),
+    )
+    .expect("the menu surface roots at the open flyout");
+    let names: Vec<String> = menu["tree"]["children"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|child| child["name"].as_str().map(str::to_owned))
+        .collect();
+    eprintln!("menu surface direct children: {names:?}");
+    assert!(
+        find_ref(&menu["tree"], "menuitem", "Save as").is_some(),
+        "the menu surface holds the flyout's items: {}",
+        menu["tree"]
+    );
     collapse::execute(
         RefArgs {
             ref_id: file,
