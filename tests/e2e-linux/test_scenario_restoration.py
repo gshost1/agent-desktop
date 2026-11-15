@@ -23,7 +23,7 @@ class RestorationTests(unittest.TestCase):
                     ctx = LegContext(tier, "headed", legs.leg_by_id(leg_id),
                                      member_reader=lambda _: frozenset())
                     def product(tier, argv, **kw):
-                        if argv[0] == "type" and "\n" in argv[-1]:
+                        if argv[0] == "type" and kw.get("headed") and "\n" in argv[-1]:
                             return Envelope(False, None, {"code": "INVALID_ARGS"}, "{}", 1, argv)
                         if argv[0] == "type":
                             document[0] += argv[-1]
