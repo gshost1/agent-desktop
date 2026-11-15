@@ -234,10 +234,10 @@ impl SystemOps for MacOSAdapter {
     fn wait_for_menu(
         &self,
         process: ProcessIdentity,
-        open: bool,
+        wait: agent_desktop_core::MenuWait,
         deadline: Deadline,
     ) -> Result<(), AdapterError> {
-        crate::system::wait::wait_for_menu(process, open, deadline)
+        crate::system::wait::wait_for_menu(process, wait, deadline)
     }
 
     fn resolve_window_strict(

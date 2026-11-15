@@ -183,6 +183,14 @@ form_suite() {
     plain_status="$(main_window_value form-plain-status written-plain)"
     assert "focus on another field in the window commits the written field" \
         "$([ "$plain_status" = "written-plain" ] && echo 1 || echo 0)" "committed=$plain_status"
+
+    target="$(panel_target "$form" textfield form-plain)"
+    written="$(act_target "$target" clear 2>/dev/null)"
+    report="$(written_report "$written")"
+    plain_status="$(main_window_value form-plain-status written-plain)"
+    assert "clear on a commit-on-end-editing field leaves the commit to the caller like set-value" \
+        "$([ "$report" = "True/delivered_unverified/unobserved" ] && [ "$plain_status" = "written-plain" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report committed=$plain_status"
     act_target "$(panel_target "$form" button Close)" click >/dev/null 2>&1
 }
 
