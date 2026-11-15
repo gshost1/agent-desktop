@@ -29,9 +29,9 @@ pub(crate) struct WindowBaseline {
 impl WindowBaseline {
     /// The baseline an appear wait after an action on `entry` follows, taken
     /// before the action is sent within the action's own `deadline`. `None`
-    /// without such a wait, for a ref that already observes its whole owner,
-    /// when less than [`WINDOW_BASELINE_RESERVE`] is left, or when the windows
-    /// cannot be listed.
+    /// without such a wait, for a ref the wait does not follow, when less
+    /// than [`WINDOW_BASELINE_RESERVE`] is left, or when the windows cannot be
+    /// listed.
     pub(crate) fn before_action(
         adapter: &dyn PlatformAdapter,
         entry: &RefEntry,
@@ -87,6 +87,24 @@ impl WindowBaseline {
                 .filter(|window| !self.open.contains(&window.id))
                 .collect(),
         )
+    }
+
+    /// The windows an application-level command such as a menu item acts in:
+    /// the process's focused window, where a sheet it opens attaches, then the
+    /// windows it opened since the action.
+    pub(crate) fn acted_on(
+        &self,
+        adapter: &dyn PlatformAdapter,
+        deadline: Deadline,
+    ) -> Result<Vec<WindowInfo>, AdapterError> {
+        let (focused, rest): (Vec<_>, Vec<_>) =
+            process_windows(adapter, &self.app, &self.process, deadline)?
+                .into_iter()
+                .partition(|window| window.state.is_focused);
+        let opened = rest
+            .into_iter()
+            .filter(|window| !self.open.contains(&window.id));
+        Ok(focused.into_iter().chain(opened).collect())
     }
 }
 
