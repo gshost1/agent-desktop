@@ -87,6 +87,11 @@ pub(crate) fn select_text(
     let read = crate::tree::properties::attributes::copy_value_typed_bounded_result(
         element, deadline, &mut usage,
     );
+    if read.is_err() && deadline.is_expired() {
+        return Err(deadline
+            .timeout_error()
+            .with_disposition(DeliverySemantics::not_delivered()));
+    }
     let text = searchable_text(read)?;
     let range = unique_range(&text, wanted)?;
     write_range(element, &range, deadline)?;
@@ -183,24 +188,37 @@ pub(crate) fn searchable_text(
         )
         .with_disposition(DeliverySemantics::not_delivered())),
         Err(ax_error) => {
-            let code = if ax_error == kAXErrorAPIDisabled {
-                ErrorCode::PermDenied
+            let (code, suggestion) = if ax_error == kAXErrorAPIDisabled {
+                (
+                    ErrorCode::PermDenied,
+                    "Grant Accessibility permission to the terminal running agent-desktop, then retry.",
+                )
             } else if ax_error == kAXErrorInvalidUIElement {
-                ErrorCode::StaleRef
+                (
+                    ErrorCode::StaleRef,
+                    "Take a fresh snapshot and retry with the new element reference.",
+                )
             } else if ax_error == kAXErrorCannotComplete {
-                ErrorCode::AppUnresponsive
+                (
+                    ErrorCode::AppUnresponsive,
+                    "Wait until the application responds, then retry.",
+                )
             } else {
-                ErrorCode::ActionFailed
+                (
+                    ErrorCode::ActionFailed,
+                    "Take a fresh snapshot and retry with the new element reference.",
+                )
             };
-            Err(
-                AdapterError::new(code, "Could not read the text element's value to find the text to select")
-                    .with_details(serde_json::json!({
-                        "kind": "text_value_unreadable",
-                        "ax_error": ax_error,
-                    }))
-                    .with_suggestion("Take a fresh snapshot and retry with the new element reference.")
-                    .with_disposition(DeliverySemantics::not_delivered()),
+            Err(AdapterError::new(
+                code,
+                "Could not read the text element's value to find the text to select",
             )
+            .with_details(serde_json::json!({
+                "kind": "text_value_unreadable",
+                "ax_error": ax_error,
+            }))
+            .with_suggestion(suggestion)
+            .with_disposition(DeliverySemantics::not_delivered()))
         }
     }
 }
