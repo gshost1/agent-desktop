@@ -1,6 +1,6 @@
 # Shell surfaces, notifications and cursor overlay
 
-Open this file to raise shell surfaces, read or drive notifications, use the cursor overlay, or handle hosted (UWP) window identity and menu detection.
+Open this file to raise shell surfaces, read or drive notifications, use the cursor overlay, or handle hosted (UWP) window identity, menu detection and the sheet surface.
 
 ## Shell Surfaces
 
@@ -155,7 +155,12 @@ An app hosted in `ApplicationFrameHost` is reported through its frame:
 which every window operation targets, while `app` and `pid` name the hosted
 app, read from its `Windows.UI.Core.CoreWindow`. `list-apps` names the same
 app and pid, so `press --app SystemSettings.exe` and `press --window-id <frame
-id>` deliver to the hosted app while its frame is in front. A suspended hosted
+id>` deliver to the hosted app while its frame is in front.
+`list-surfaces --app SystemSettings.exe` lists the frame as the app's `window`
+surface. `close-app SystemSettings.exe` closes the app through its frame,
+without `--force`. The unresponsive-app check reads the hosted `CoreWindow`,
+whose thread is the app's own. The frame host's title bar and every other
+hosted app's frame stay under the frame host's identity. A suspended hosted
 app drops its `CoreWindow`, so until it resumes the entry reads as its frame
 host, and identities checked against the hosted pid fail closed.
 
@@ -167,3 +172,10 @@ own window, and WinUI 3 menu flyouts such as the Windows 11 Notepad File menu.
 Other WinUI 3 and MSIX popups are not evaluated. For an app outside
 these families, read "no menu is open" as "not detected", not as proof that the
 menu is closed.
+
+## Sheet Surface
+
+`snapshot --surface sheet` reads the window it names, foreground or not. The
+sheet is that window when it is modal, as a Chromium modal is, or else the
+modal dialog that window owns. With neither, it returns `ELEMENT_NOT_FOUND`
+with `details.kind: "surface_absent"`, so `--wait-for` keeps waiting.

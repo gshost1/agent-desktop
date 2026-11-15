@@ -1,6 +1,7 @@
 pub(crate) mod chain;
 pub(crate) mod disclosure;
 pub(crate) mod dispatch;
+pub(crate) mod edit_control;
 pub(crate) mod envelope_parity;
 pub(crate) mod focus;
 pub(crate) mod input_envelope_parity;

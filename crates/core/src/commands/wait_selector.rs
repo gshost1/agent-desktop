@@ -111,7 +111,7 @@ fn execute_for_target(
                                 || is_target_gone_error(&err)
                                 || snapshot::surface_target::is_confirmed_surface_absence(
                                     &err,
-                                    input.opts.surface,
+                                    opts.surface,
                                 ) =>
                         {
                             last_error = Some(poll_error_json(&err));

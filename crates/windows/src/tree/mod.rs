@@ -9,6 +9,7 @@ pub mod name_evidence;
 pub(crate) mod observe;
 pub(crate) mod resolve;
 pub mod roles;
+pub(crate) mod sheet_root;
 pub mod states;
 pub(crate) mod surface_inventory;
 pub mod surfaces;

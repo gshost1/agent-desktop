@@ -191,6 +191,18 @@ pub(crate) fn stops_above_target(toolkit: &ToolkitId) -> bool {
     kind(toolkit) == ToolkitKind::Gtk4
 }
 
+/// Whether a `Selection` index of the toolkit names the accessible child at
+/// that index. GTK 4 indexes the native rows and pages, which include rows
+/// and tabs the accessible child list leaves out (L40-2, L41-12), and a
+/// toolkit that could not be read is not assumed to agree; Gecko is measured.
+pub(crate) fn selection_indices_are_accessible(toolkit: &ToolkitId) -> bool {
+    match kind(toolkit) {
+        ToolkitKind::Gtk4 => false,
+        ToolkitKind::Other => is_gecko(toolkit),
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 #[path = "toolkit_trust_tests.rs"]
 mod tests;
