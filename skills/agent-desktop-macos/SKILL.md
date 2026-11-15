@@ -68,7 +68,7 @@ A panel that floats above an app's documents, such as Fonts, Colors or an inspec
 
 ## Long lists
 
-A snapshot prints a long list or grid before the toolbar below it. Read all of it, or filter it with `grep -i "<name>"`, never with `head`, and look for the item by name before you search or scroll. After `set-value` on a search field, snapshot again and act on the refs the filtered list shows, which may name an item differently, such as `group "Show <name>"`; do not type the text again.
+A snapshot prints a long list or grid before the toolbar below it. Read all of it, or filter it with `grep -i "<name>"`, never with `head`, and look for the item by name before you search or scroll. After `set-value` on a search field, snapshot again and act on the refs the filtered list shows, which may name an item differently, such as `group "Show <name>"`; do not type the text again. If the filtered list does not show the item, clear the search with `clear @ref` and read the full list, still without `type` or `--headed`.
 
 ## Wait for the effect in the same call
 
@@ -82,7 +82,7 @@ Add `-w ":<text>"` or `-w "<role>:<text>"` to a ref action: it polls until the t
 
 - With `cmd` and `--app`, `press` first looks for a menu item with that shortcut and presses it with `AXPress`, headless included: `data.details.menu_shortcut` names the `menu` and `item`.
 - If no enabled item matches and the app is in the background, a character chord such as `cmd+b` fails `ACTION_FAILED` `command_chord_unrouted_in_background`, and nothing is sent. `click` the menu item instead. Arrows and navigation chords still reach a background app's focused text view.
-- A disabled match in a background app fails with `menu_item_disabled_in_background`: the item needs the app in front, so it needs physical input.
+- A disabled match in a background app fails with `menu_item_disabled_in_background`, and nothing is sent. The app enables the item only while it is frontmost: run `focus-window --app <App>` and `press` again. Use `--headed` instead only if the user allows physical input.
 - Quit chords return `POLICY_DENIED`. Use `close-app`.
 
 ## Headed or headless
