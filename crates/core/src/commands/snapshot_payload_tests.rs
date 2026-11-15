@@ -36,3 +36,20 @@ fn a_refmap_cut_is_reported_beside_the_partial_fields() {
     assert_eq!(capped["nodes_observed"], 42);
     assert_eq!(capped["tree"]["subtree_truncated"], true);
 }
+
+#[test]
+fn a_drill_carries_no_contents_and_a_window_snapshot_does() {
+    let mut result = partial_result();
+    result.tree.children = (0..85)
+        .map(|i| {
+            let mut button = crate::adapter::minimal_accessibility_node("button", "Row");
+            button.ref_id = Some(format!("@e{i}"));
+            button
+        })
+        .collect();
+    let window = format_result(result).unwrap();
+    assert!(window.get("contents").is_some());
+    let drill = without_contents(window);
+    assert!(drill.get("contents").is_none());
+    assert!(drill.get("tree").is_some());
+}
