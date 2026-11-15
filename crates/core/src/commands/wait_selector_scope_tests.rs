@@ -30,6 +30,7 @@ struct ScriptedApp {
     exits: Duration,
     unresponsive: (Duration, Duration),
     process_check_agrees: bool,
+    sheet: (&'static str, Duration),
 }
 
 impl ScriptedApp {
@@ -41,6 +42,7 @@ impl ScriptedApp {
             exits: NEVER,
             unresponsive: (NEVER, NEVER),
             process_check_agrees: true,
+            sheet: (MAIN, NEVER),
         }
     }
 
@@ -106,20 +108,27 @@ fn window_info(id: &str) -> WindowInfo {
         pid: crate::ProcessId::new(1),
         process_instance: Some("test-instance".into()),
         bounds: None,
-        state: Default::default(),
+        state: crate::WindowState {
+            is_focused: id == MAIN,
+            ..Default::default()
+        },
     }
 }
 
 impl ObservationOps for ScriptedApp {
+    fn is_application_surface(&self, surface: crate::SnapshotSurface) -> bool {
+        surface == crate::SnapshotSurface::Menubar
+    }
+
     fn observe_tree(
         &self,
         root: crate::locator::live_locator::ObservationRoot<'_>,
-        _request: &crate::locator::live_locator::ObservationRequest,
+        request: &crate::locator::live_locator::ObservationRequest,
     ) -> Result<crate::locator::live_locator::ObservedTree, AdapterError> {
         let crate::locator::live_locator::ObservationRoot::Window(window) = root else {
             return Err(AdapterError::not_supported("observe_tree"));
         };
-        crate::adapter::observed_tree(&root, self.tree(&window.id)?)
+        crate::adapter::observed_tree(&root, self.surface_tree(&window.id, request.surface)?)
     }
 
     fn list_windows(
@@ -138,10 +147,10 @@ impl ObservationOps for ScriptedApp {
     fn get_tree(
         &self,
         window: &WindowInfo,
-        _opts: &crate::adapter::TreeOptions,
+        opts: &crate::adapter::TreeOptions,
         _deadline: crate::Deadline,
     ) -> Result<AccessibilityNode, AdapterError> {
-        self.tree(&window.id)
+        self.surface_tree(&window.id, opts.surface)
     }
 }
 
@@ -150,6 +159,13 @@ impl ActionOps for ScriptedApp {}
 impl InputOps for ScriptedApp {}
 
 impl SystemOps for ScriptedApp {
+    fn supported_surfaces(&self) -> Vec<crate::SnapshotSurface> {
+        vec![
+            crate::SnapshotSurface::Window,
+            crate::SnapshotSurface::Sheet,
+        ]
+    }
+
     fn resolve_window_strict(
         &self,
         expected: &WindowInfo,
@@ -204,7 +220,14 @@ fn selector(timeout_ms: u64) -> crate::WaitSelector {
 }
 
 fn wait_after_action(app: &ScriptedApp, timeout_ms: u64) -> Result<Value, AppError> {
-    let entry = entry();
+    wait_after_action_on(app, entry(), timeout_ms)
+}
+
+fn wait_after_action_on(
+    app: &ScriptedApp,
+    entry: crate::RefEntry,
+    timeout_ms: u64,
+) -> Result<Value, AppError> {
     let selector = selector(timeout_ms);
     let context = CommandContext::default().with_wait_selector(Some(selector.clone()));
     let baseline = WindowBaseline::before_action(
@@ -363,3 +386,6 @@ fn ms(value: u64) -> Duration {
 
 #[path = "wait_selector_scope_outcome_tests.rs"]
 mod outcome_tests;
+
+#[path = "wait_selector_scope_surface_tests.rs"]
+mod surface_tests;
