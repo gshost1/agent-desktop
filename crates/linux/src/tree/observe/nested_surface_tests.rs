@@ -114,7 +114,7 @@ fn observe_sheet(shape: Window) -> (Result<(), AdapterError>, Reads) {
                     Ok(level.iter().map(|key| node(*key, read)).collect())
                 })
             },
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(false),
             stopped: &|_| false,
             pause: &mut |_| {},
