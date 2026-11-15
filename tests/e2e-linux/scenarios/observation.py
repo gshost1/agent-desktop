@@ -10,6 +10,8 @@ from runner.verdict import LegContext
 from scenarios.menus import _toggle, _visible
 from scenarios.surfaces import prepare_about
 
+MENU_ITEM = 35
+
 EXPECTED_STALE_CODE = "STALE_REF"
 STALE_KIND = "menu_closed"
 
@@ -109,7 +111,9 @@ def stale_ref_after_ui_change(ctx: LegContext) -> None:
 
 
 def preferences_showing(tree) -> bool:
-    return any("SHOWING" in node.states for node in tree.find(name="Preferences"))
+    """GTK 4 leaves a menu item's own `Name` empty, so the item is found by its label."""
+    return any("SHOWING" in node.states for node in tree.find(role=MENU_ITEM)
+               if node.label() == "Preferences")
 
 
 @implementation("observation.selector_wait_resolves")

@@ -144,6 +144,7 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
     if "code" in Path(command[0]).name:
         env["ACCESSIBILITY_ENABLED"] = "1"
     log = tier.runtime_dir / "app-launch.log"
+    offset = log.stat().st_size if log.exists() else 0
     with log.open("ab") as stream:
         child = subprocess.Popen(command + list(args), env=env, stdout=stream, stderr=stream,
                                  start_new_session=True)
@@ -159,10 +160,14 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
         return None
 
     deadline = time.monotonic() + settle_s
-    with raw.bounded_until(deadline):
-        found = raw.poll(locate, settle_s)
+    try:
+        with raw.bounded_until(deadline):
+            found = raw.poll(locate, settle_s)
+    except TimeoutError:
+        found = None
     if not found:
-        raise AssertionError(f"no new private window for {app}; launcher exit={child.poll()}; log={log}")
+        raise AssertionError(f"no new private window for {app} within {settle_s:g}s; "
+                             f"{launch_failure(child, log, offset)}")
     _TIERS[found.pid, found.start_time] = tier
     try:
         if time.monotonic() >= deadline:
@@ -173,6 +178,31 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
         stop(found)
         raise
     return found
+
+
+LOG_TAIL = 1200
+
+
+def launch_failure(child: subprocess.Popen, log: Path, offset: int) -> str:
+    """The launcher's exit and the output it wrote, so a launch that never maps a window names why."""
+    code = child.poll()
+    if code is None:
+        exit_text = "launcher still running"
+    elif code < 0:
+        try:
+            exit_text = f"launcher killed by {signal.Signals(-code).name}"
+        except ValueError:
+            exit_text = f"launcher killed by signal {-code}"
+    else:
+        exit_text = f"launcher exit={code}"
+    try:
+        with log.open("rb") as stream:
+            stream.seek(offset)
+            output = stream.read().decode("utf-8", "replace")
+    except OSError as error:
+        output = f"<launch log unreadable: {error}>"
+    lines = " | ".join(line.strip() for line in output.splitlines() if line.strip())
+    return f"{exit_text}; output: {lines[-LOG_TAIL:] or '<none>'}"
 
 
 def stop(app: OwnedApp) -> None:

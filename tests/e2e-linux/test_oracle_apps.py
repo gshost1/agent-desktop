@@ -66,6 +66,34 @@ class ProcessOracleTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "no new private window for Calculator"):
                     apps.launch(tier, "Calculator")
 
+    def test_a_launch_that_maps_no_window_names_the_exit_and_its_own_output(self):
+        for expired in (False, True):
+            with self.subTest(deadline_expired=expired), tempfile.TemporaryDirectory() as directory:
+                tier = SimpleNamespace(name="x11-openbox", runtime_dir=Path(directory), env={})
+                log = Path(directory) / "app-launch.log"
+                log.write_bytes(b"an earlier launch wrote this\n")
+
+                def spawn(*_args, stdout, **_kwargs):
+                    stdout.write(b"GLib:ERROR:panel.c: assertion failed\n")
+                    return SimpleNamespace(pid=999, poll=lambda: -5)
+
+                def poll(predicate, *_args, **_kwargs):
+                    if expired:
+                        raise TimeoutError("oracle responsiveness deadline expired")
+                    return predicate()
+
+                with patch.object(apps.raw, "registry", return_value=[]), \
+                     patch.object(apps.raw, "poll", side_effect=poll), \
+                     patch.object(apps.subprocess, "Popen", side_effect=spawn), \
+                     patch.dict(apps._SPAWNED, clear=True), patch.dict(apps._TIERS, clear=True):
+                    with self.assertRaises(AssertionError) as raised:
+                        apps.launch(tier, "Settings", ("multitasking",))
+                message = str(raised.exception)
+                self.assertIn("no new private window for Settings", message)
+                self.assertIn("launcher killed by SIGTRAP", message)
+                self.assertIn("GLib:ERROR:panel.c: assertion failed", message)
+                self.assertNotIn("an earlier launch", message)
+
     def test_warmup_waits_for_transient_extraction_and_keeps_a_deadline(self):
         tier = SimpleNamespace(display=None, runtime_dir=Path("/private/a"))
         for exits in (True, False):

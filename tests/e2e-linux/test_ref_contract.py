@@ -68,6 +68,14 @@ class RefContractTests(unittest.TestCase):
             self.assertEqual(row_verdict("refuse", succeeded=False, refused=unsupported(error), log_effect=False,
                                          raw_effect=False, log_unchanged=log, raw_unchanged=raw), "fail")
 
+    def test_a_twin_ref_refusal_counts_only_when_it_sent_nothing(self):
+        twin = {"code": "AMBIGUOUS_TARGET", "details": {"kind": "identity_not_unique", "retryable": False},
+                "disposition": {"delivery": "not_delivered", "retry": "unsafe"}}
+        self.assertTrue(unsupported(twin))
+        self.assertFalse(unsupported(dict(twin, details={"kind": "saved_ref_ambiguous"})))
+        self.assertFalse(unsupported(dict(twin, disposition={"delivery": "delivered_unverified"})))
+        self.assertFalse(unsupported(dict(twin, code="STALE_REF")))
+
     def test_advertised_action_refusal_cannot_rewrite_the_snapshot_promise(self):
         node = {"name": "Alpha", "role": "combobox", "available_actions": ["Expand"]}
         error = {"code": "ACTION_NOT_SUPPORTED", "details": {"kind": "native_popup_requires_input"},

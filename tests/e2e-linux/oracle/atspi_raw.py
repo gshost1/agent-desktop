@@ -117,6 +117,23 @@ class RawNode:
             pending.extend(reversed(node.children()))
         return result
 
+    def labels(self) -> list[str]:
+        """The visible text of the nodes that label this one (relation 2, labelled-by): each
+        target's `Name`, else its `Text`. GTK 4 leaves a menu item's own `Name` empty and keeps
+        its visible label in the text of the label node the relation names."""
+        found = []
+        for kind, targets in self.invoke(ACCESSIBLE, "GetRelationSet")[0]:
+            if kind != 2:
+                continue
+            for bus, path in targets:
+                target = RawNode(self.connection, bus or self.bus, path)
+                found.append(target.name or target.text() or "")
+        return found
+
+    def label(self) -> str:
+        """The node's own `Name`, else the first nonblank text its labels show."""
+        return self.name or next((text for text in self.labels() if text.strip()), "")
+
     def find(self, *, role: int | None = None, name: str | None = None) -> list["RawNode"]:
         return [node for node in self.walk()
                 if (role is None or node.role == role) and (name is None or node.name == name)]

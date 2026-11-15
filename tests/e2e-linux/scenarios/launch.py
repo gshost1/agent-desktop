@@ -67,12 +67,17 @@ def launch_text_editor_new_window(ctx: LegContext) -> None:
         stop(first)
 
 
+# `launch` waits up to its own 30 s default for a window; the harness waits longer, so a slow
+# launch ends in the product's own answer rather than a harness kill.
+LAUNCH_HARNESS_TIMEOUT_S = 45.0
+
+
 @implementation("launch.launch_terminal_owner")
 def launch_terminal_owner(ctx: LegContext) -> None:
     read = lambda: [member[2] for member in members(ctx.tier.runtime_dir) if "gnome-terminal" in member[2]]
     before = read()
     ctx.before("proc.terminal_owner", before)
-    envelope = ctx.product(["launch", TERMINAL])
+    envelope = ctx.product(["launch", TERMINAL], timeout_s=LAUNCH_HARNESS_TIMEOUT_S)
     assert envelope.ok, envelope.raw
     owners = read()
     ctx.after("proc.terminal_owner", owners)

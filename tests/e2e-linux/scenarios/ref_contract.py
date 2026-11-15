@@ -31,9 +31,14 @@ def expected_outcomes(node):
 
 
 def unsupported(error):
+    """A refusal that sent nothing because the ref offers no route for the action: an
+    unsupported verb, a pointer-only route under the headless policy, or a ref whose
+    capture found an identical twin, which every ref action refuses (skill: Refs)."""
     if not error or error.get("disposition", {}).get("delivery") != "not_delivered":
         return False
     details = error.get("details", {})
+    if error.get("code") == "AMBIGUOUS_TARGET":
+        return details.get("kind") == "identity_not_unique"
     return ((error.get("code") == "ACTION_NOT_SUPPORTED" and
              (details.get("kind") in ("selection_index_unproven", "native_popup_requires_input") or
               details.get("semantic_verb") == "absent")) or
