@@ -169,10 +169,13 @@ empty insertion is dispatched.
   navigation or submission. On Wayland, `--headed type` sends a newline as
   `Return` and a tab as `Tab`, which can submit a form or move focus; other
   control characters are refused with `character_outside_layout`.
-- X11 physical text checks the live keyboard state before each chunk. If that
-  state is unsupported, the physical route refuses before that chunk's keys; the
-  semantic fallback applies only if no key was sent, since earlier chunks report
-  `delivered_unverified`.
+- X11 physical text and `press` read the keymap on the same X connection that
+  sends the keys. Before each text chunk the live keyboard state is checked: the
+  first layout group, no held modifier, Caps Lock off (`check: keyboard_state`),
+  and every keycode the chunk presses still carrying the keysyms it was planned
+  for (`check: keyboard_layout`, a layout switched mid-call). An unsupported
+  state refuses before that chunk's keys; the semantic fallback applies only if
+  no key was sent, since earlier chunks report `delivered_unverified`.
 - The first `type` into a fresh document changes the window title, but the ref
   from the snapshot still resolves: `get` on it reads the typed value. Take a
   fresh snapshot only when the UI you address has changed for another reason.
