@@ -1,0 +1,3 @@
+### Bug Fixes
+
+* **linux:** a command that checks permissions first, such as `launch`, `snapshot`, `find` or any action, now answers an unreachable display as the display refusal (`PLATFORM_NOT_SUPPORTED` with `details.display_unavailable` and the bus error in `details.bus_error`, `not_delivered`) instead of `PERM_DENIED` "Accessibility permission not granted". The permission preflight passes a refusal that the adapter raises while reading permissions through unchanged. `status` and `permissions` still show accessibility `denied` with the display suggestion, and macOS and Windows answers are unchanged. ([#157](https://github.com/gshost1/agent-desktop/pull/157))

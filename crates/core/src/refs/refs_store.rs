@@ -3,7 +3,7 @@ use crate::{
     context::validate_session_id,
     refs::ref_persist_budget::PersistBudget,
     refs::refs_lock::RefStoreLock,
-    refs::{RefMap, new_snapshot_id, validate_snapshot_id, write_private_file},
+    refs::{RefMap, new_snapshot_id, validate_snapshot_id, write_private_cache_file},
 };
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -142,9 +142,13 @@ impl RefStore {
             }
             Err(err) => return Err(err.into()),
         };
-        let refmap: RefMap = serde_json::from_slice(&json)?;
-        refmap.validate()?;
-        Ok(refmap)
+        parse_stored_refmap(&json).map_err(|reason| {
+            tracing::debug!("snapshot {snapshot_id} has an unreadable ref map: {reason}");
+            AppError::Adapter(
+                AdapterError::snapshot_not_found(snapshot_id)
+                    .with_platform_detail(format!("refmap.json is unreadable: {reason}")),
+            )
+        })
     }
 
     pub fn latest_snapshot_id(&self) -> Result<Option<String>, AppError> {
@@ -155,12 +159,12 @@ impl RefStore {
         validate_snapshot_id(snapshot_id)?;
         let json = refmap.serialize_with_size_check()?;
         let path = self.snapshot_path(snapshot_id);
-        write_private_file(&path, json.as_bytes())
+        write_private_cache_file(&path, json.as_bytes())
     }
 
     fn set_latest_unlocked(&self, snapshot_id: &str) -> Result<(), AppError> {
         validate_snapshot_id(snapshot_id)?;
-        write_private_file(&self.latest_path(), snapshot_id.as_bytes())
+        write_private_cache_file(&self.latest_path(), snapshot_id.as_bytes())
     }
 
     fn latest_path(&self) -> PathBuf {
@@ -174,15 +178,7 @@ impl RefStore {
                 Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
                 Err(err) => return Err(err.into()),
             };
-        let id = std::str::from_utf8(&bytes)
-            .map_err(|_| AppError::invalid_input("latest_snapshot_id must be UTF-8"))?
-            .trim()
-            .to_string();
-        if id.is_empty() {
-            return Ok(None);
-        }
-        validate_snapshot_id(&id)?;
-        Ok(Some(id))
+        Ok(parse_latest_snapshot_id(&bytes))
     }
 
     fn snapshot_path(&self, snapshot_id: &str) -> PathBuf {
@@ -242,6 +238,24 @@ impl RefStore {
     }
 }
 
+/// Ref maps are written without a flush to disk, so a power loss or kernel
+/// crash can leave one empty, zero-filled or cut short. Any content that does
+/// not parse and validate is reported as a missing snapshot, never as a
+/// different ref map.
+fn parse_stored_refmap(json: &[u8]) -> Result<RefMap, String> {
+    let refmap: RefMap = serde_json::from_slice(json).map_err(|err| err.to_string())?;
+    refmap.validate().map_err(|err| err.to_string())?;
+    Ok(refmap)
+}
+
+/// The latest-snapshot pointer is written like a ref map, so content that is
+/// not one valid snapshot id reads as no pointer at all.
+fn parse_latest_snapshot_id(bytes: &[u8]) -> Option<String> {
+    let id = std::str::from_utf8(bytes).ok()?.trim();
+    validate_snapshot_id(id).ok()?;
+    Some(id.to_string())
+}
+
 /// Pruning logic is a sibling `#[path]` module rather than a separate crate
 /// module so it can access `base_dir`/`snapshots_dir` directly, without
 /// widening those fields' visibility beyond this module tree. The module
@@ -261,3 +275,7 @@ mod trace_tests;
 #[cfg(test)]
 #[path = "refs_store_transaction_tests.rs"]
 mod transaction_tests;
+
+#[cfg(test)]
+#[path = "refs_store_durability_tests.rs"]
+mod durability_tests;

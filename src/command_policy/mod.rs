@@ -6,10 +6,12 @@ use crate::cli::Commands;
 
 mod command_effect;
 mod connection_hint;
+mod permission_read;
 mod preflight_budget;
 
 pub(crate) use command_effect::CommandEffect;
 pub(crate) use connection_hint::prepare_connections;
+pub(crate) use permission_read::read_permission_report;
 pub(crate) use preflight_budget::preflight_deadline;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

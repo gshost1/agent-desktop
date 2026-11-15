@@ -271,12 +271,13 @@ fn absent_window_reconciliation_preserves_original_process_exit_and_crash() {
             delivered_wait(&adapter, &entry(), true).unwrap()["target_absent"],
             true
         );
-        assert_eq!(
-            delivered_wait(&adapter, &entry(), false)
-                .unwrap_err()
-                .code(),
-            "TIMEOUT"
-        );
+        let AppError::Adapter(gone) = delivered_wait(&adapter, &entry(), false).unwrap_err() else {
+            panic!("expected an adapter error");
+        };
+        assert_eq!(gone.code, ErrorCode::AppNotFound);
+        let details = gone.details.unwrap();
+        assert_eq!(details["kind"], "wait_target_gone");
+        assert_eq!(details["process_state"], state.label());
         assert!(adapter.observed.lock().unwrap().is_empty());
         assert_eq!(adapter.inventory_queries.load(Ordering::SeqCst), 0);
     }
