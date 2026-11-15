@@ -197,7 +197,7 @@ An older snapshot stays on disk until it is pruned, and its refs keep resolving 
 
 `RefStore` keeps one file per snapshot at `snapshots/<snapshot_id>/refmap.json` under the [state root](/desktop/configuration#state-root). Inside a [session](/desktop/sessions), the same layout sits under `sessions/<session_id>/`, and a lookup never searches another session's snapshots.
 
-Each ref map is written to a temporary file, synced and renamed into place, so another command, a killed process or a crashed system finds the old map or the new one whole. On macOS the sync is `fsync`, not a full drive-cache flush. A power loss before the drive empties its cache can lose the newest snapshot (`SNAPSHOT_NOT_FOUND`) or leave its ref map unreadable (`INTERNAL`). Take a new snapshot to recover.
+A ref map and the `latest_snapshot_id` pointer are each written to a temporary file and renamed into place, so another command or a killed process finds the old file or the new one whole. On Linux and macOS they are not synced to disk. A ref names one running process instance, and a power loss or kernel crash ends it, so a sync would only keep refs that can no longer resolve. After such a crash, a ref map that is missing, empty, cut short or unparsable reads as a missing snapshot: the command fails with `SNAPSHOT_NOT_FOUND` before it reads the application, and never resolves the ref against a different map. A torn `latest_snapshot_id` reads as no latest snapshot. Take a new snapshot to recover. On Windows both files are still flushed, and on every platform session manifests, agent profiles and trace files are synced as before.
 
 <table>
   <thead>

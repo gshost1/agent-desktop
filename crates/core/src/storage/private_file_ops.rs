@@ -49,7 +49,7 @@ pub fn temporary_file_name(name: &OsStr) -> OsString {
     temporary
 }
 
-/// Platform seam for the five private-file primitives.
+/// Platform seam for the six private-file primitives.
 ///
 /// Every method defaults to the portable behavior used when no platform
 /// implementation is installed, so an implementation overrides only the
@@ -59,6 +59,14 @@ pub trait PrivateFileOps: Send + Sync {
     /// creation, handle lifetime, and replace ordering end to end.
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         crate::storage::private_file::write_atomic_portable(path, bytes)
+    }
+
+    /// Writes `bytes` to `path` as one atomic replacement that need not survive
+    /// a power loss: the file caches state that a restart invalidates anyway.
+    /// Defaults to [`write_atomic`](Self::write_atomic), so an implementation
+    /// that owns replacement keeps its own semantics until it opts in.
+    fn write_atomic_cache(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        self.write_atomic(path, bytes)
     }
 
     /// Opens `path` for private appends; the returned handle must be lockable.
@@ -84,7 +92,11 @@ pub trait PrivateFileOps: Send + Sync {
 
 struct PortablePrivateFileOps;
 
-impl PrivateFileOps for PortablePrivateFileOps {}
+impl PrivateFileOps for PortablePrivateFileOps {
+    fn write_atomic_cache(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        crate::storage::private_file::write_atomic_cache_portable(path, bytes)
+    }
+}
 
 static INSTALLED_OPS: OnceLock<Box<dyn PrivateFileOps>> = OnceLock::new();
 

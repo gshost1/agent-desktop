@@ -3,6 +3,8 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::storage::write_durability::WriteDurability;
+
 pub(crate) fn open_private_lock(path: &Path, create: bool) -> std::io::Result<File> {
     crate::storage::private_file_ops::with_active_ops(|ops| ops.open_private_lock(path, create))
 }
@@ -73,7 +75,23 @@ pub(crate) fn write_atomic_portable(path: &Path, bytes: &[u8]) -> std::io::Resul
         path,
         bytes,
         crate::storage::private_file_parent::ensure_private_portable,
-        sync_directory,
+        WriteDurability::Durable(sync_directory),
+        validate_private_destination,
+    )
+}
+
+/// Writes a private file that only caches observed state, such as a snapshot's
+/// refmap, without waiting for it to reach the disk.
+pub(crate) fn write_atomic_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    crate::storage::private_file_ops::with_active_ops(|ops| ops.write_atomic_cache(path, bytes))
+}
+
+pub(crate) fn write_atomic_cache_portable(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomic_with(
+        path,
+        bytes,
+        crate::storage::private_file_parent::ensure_private_portable,
+        WriteDurability::CacheOnly,
         validate_private_destination,
     )
 }
@@ -98,7 +116,7 @@ pub(crate) fn write_user_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()
         path,
         bytes,
         crate::storage::private_file_parent::ensure_user,
-        sync_user_directory,
+        WriteDurability::Durable(sync_user_directory),
         validate_user_destination,
     )
 }
@@ -106,13 +124,13 @@ pub(crate) fn write_user_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()
 /// `Path::parent` yields `Some("")` for a bare relative filename, and both
 /// `std::fs::metadata("")` and opening `""` fail with `NotFound`, so the empty
 /// parent is normalized to the current directory before `ensure_parent` and
-/// `sync_parent` see it; without that, a legitimate relative output path such
+/// the parent sync see it; without that, a legitimate relative output path such
 /// as `--out report.html` is rejected.
 fn write_atomic_with(
     path: &Path,
     bytes: &[u8],
     ensure_parent: fn(&Path) -> std::io::Result<()>,
-    sync_parent: fn(&Path) -> std::io::Result<()>,
+    durability: WriteDurability,
     validate_destination: fn(&Path) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     let parent = path
@@ -126,14 +144,16 @@ fn write_atomic_with(
     ensure_parent(parent)?;
     validate_destination(path)?;
     let (temporary, mut file) = create_temporary(path)?;
-    let written = file.write_all(bytes).and_then(|()| sync_to_device(&file));
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| durability.sync_file(&file));
     drop(file);
     let result = written.and_then(|()| {
         #[cfg(test)]
         crash_before_rename_if_requested(path);
         replace_atomic(&temporary, path)?;
         validate_private_regular(&open_private_read(path)?)?;
-        sync_parent(parent)
+        durability.sync_parent(parent)
     });
     if result.is_err() {
         let _ = std::fs::remove_file(&temporary);
@@ -260,7 +280,7 @@ fn sync_user_directory(path: &Path) -> std::io::Result<()> {
 /// so a killed process or a kernel panic leaves the old or the new file whole. A power loss before
 /// the drive empties its cache can lose the newest write or leave it unreadable.
 #[cfg(target_os = "macos")]
-fn sync_to_device(file: &File) -> std::io::Result<()> {
+pub(crate) fn sync_to_device(file: &File) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
     loop {
         if unsafe { libc::fsync(file.as_raw_fd()) } == 0 {
@@ -274,7 +294,7 @@ fn sync_to_device(file: &File) -> std::io::Result<()> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn sync_to_device(file: &File) -> std::io::Result<()> {
+pub(crate) fn sync_to_device(file: &File) -> std::io::Result<()> {
     file.sync_all()
 }
 
