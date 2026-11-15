@@ -10,7 +10,7 @@ use agent_desktop_core::{
     AdapterError, Deadline, ObservationRoot, ProcessId, SnapshotSurface, WindowInfo,
 };
 
-use super::{surface_root, window_is_modal_sheet};
+use crate::tree::surfaces::{surface_root, window_is_modal_sheet};
 use crate::system::fixture::test_support::{FIXTURE_APP_NAME_LOCK, stage_foreground};
 use crate::tree::element::UIAElement;
 use crate::tree::fixture::fixture_modal::ModalFixture;
