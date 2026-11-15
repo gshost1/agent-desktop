@@ -46,40 +46,62 @@ fn cut_after(first: &str) -> ObservedTree {
     )
 }
 
-fn settled(tree: ObservedTree, selection: LocatorSelection) -> (String, bool) {
+fn settled(tree: ObservedTree, selection: LocatorSelection) -> (String, bool, bool) {
     let resolution = evaluate_locator_tree(tree, &by_name("Save"), &request(selection)).unwrap();
     let name = resolution
         .matches
         .first()
         .map(|found| found.data.name.clone())
         .unwrap_or_default();
-    (name, resolution.meta.selection_complete)
+    (
+        name,
+        resolution.meta.selection_complete,
+        resolution.meta.exact_name_unproven,
+    )
+}
+
+fn preferring(tree: ObservedTree) -> (String, bool, bool) {
+    settled(tree, LocatorSelection::FirstPreferringExactName)
 }
 
 #[test]
-fn a_longer_name_first_in_a_cut_read_does_not_settle_a_whole_name_first() {
+fn a_cut_read_settles_a_longer_name_where_traversal_order_did_and_marks_it_unproven() {
     assert_eq!(
-        settled(
-            cut_after("Save As"),
-            LocatorSelection::FirstPreferringExactName
-        ),
-        ("Save As".to_string(), false)
+        preferring(cut_after("Save As")),
+        ("Save As".to_string(), true, true)
     );
     assert_eq!(
         settled(cut_after("Save As"), LocatorSelection::First),
-        ("Save As".to_string(), true)
+        ("Save As".to_string(), true, false)
     );
 }
 
 #[test]
-fn a_whole_name_first_in_a_cut_read_settles_it() {
+fn a_whole_name_first_in_a_cut_read_is_proven() {
     assert_eq!(
-        settled(
-            cut_after("Save"),
-            LocatorSelection::FirstPreferringExactName
-        ),
-        ("Save".to_string(), true)
+        preferring(cut_after("Save")),
+        ("Save".to_string(), true, false)
     );
+}
+
+#[test]
+fn a_whole_name_past_the_cut_is_the_pick_but_stays_unproven() {
+    let mut root = node(0, evidence("window", None), vec![1, 2, 3], &[]);
+    root.completeness.subtree_complete = false;
+    let mut list = node(2, evidence("list", None), Vec::new(), &[1]);
+    list.completeness.subtree_complete = false;
+    list.children_count = Some(100);
+    let cut_between = tree(
+        vec![
+            root,
+            node(1, evidence("button", Some("Save As")), Vec::new(), &[0]),
+            list,
+            node(3, evidence("button", Some("Save")), Vec::new(), &[2]),
+        ],
+        vec![0],
+        false,
+    );
+    assert_eq!(preferring(cut_between), ("Save".to_string(), true, true));
 }
 
 #[test]
@@ -87,8 +109,8 @@ fn a_longer_name_outside_unread_rows_settles_it_without_the_rows() {
     let mut rows_unread = cut_after("Save As");
     rows_unread.mark_rows_unread();
     assert_eq!(
-        settled(rows_unread, LocatorSelection::FirstPreferringExactName),
-        ("Save As".to_string(), true)
+        preferring(rows_unread),
+        ("Save As".to_string(), true, false)
     );
 }
 
@@ -103,8 +125,5 @@ fn a_whole_name_after_a_longer_one_is_the_pick_in_a_complete_read() {
         vec![0],
         true,
     );
-    assert_eq!(
-        settled(complete, LocatorSelection::FirstPreferringExactName),
-        ("Save".to_string(), true)
-    );
+    assert_eq!(preferring(complete), ("Save".to_string(), true, false));
 }

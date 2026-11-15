@@ -494,9 +494,12 @@ browsers and lists), a match outside those rows comes before any match inside
 them, and `find --first` answers it without reading the rows. Only when nothing
 outside the rows matches does it read them, and then it returns the first
 whole-name match inside them, or the first match there. A read that ran out of
-budget answers `--first` with a match whose name only contains `--name` only
-when it saw the whole tree outside the rows; otherwise find returns `TIMEOUT`,
-or with `--allow-partial` that match with `complete: false`. Platforms that read the tree in document order return the first
+budget answers `--first` exactly when the traversal-first match is settled, as
+it did before whole-name matches came first. It returns the first whole-name
+match it saw, or the first match when it saw none. When a whole-name match
+could still lie in the unread part, `data` carries `"complete": false` and
+`"truncated": true`, with or without `--allow-partial`; pass `--exact` to rule
+that out. Platforms that read the tree in document order return the first
 match in document order. A ref from such an answer re-identifies by element
 token. A platform without one keeps its usual rule: an element whose capture
 saw a twin gets the `identity_not_unique` refusal when you act on it, and one
@@ -506,7 +509,9 @@ the capture could not count gets `identity_unproven`.
 
 By default a `find` that cannot finish its walk within `--timeout-ms` returns
 `TIMEOUT`. With `--allow-partial` it returns the matches it observed instead.
-The data then carries `complete`:
+The data then carries `complete`. A `--first --name` answer carries
+`complete: false` and `truncated: true` without the flag too, when its read
+could hide an earlier whole-name match (see above):
 
 ```json
 { "data": { "complete": false, "truncated": true, "total_matches": 3,

@@ -83,17 +83,10 @@ pub(super) fn evaluate_locator_tree_in(
         }
     }
     stats.evaluation.matched_nodes = matched_indices.len() as u64;
-    let is_exact = |index: usize| {
-        tree.nodes.get(index).is_some_and(|node| {
-            is_exact_name(
-                &normalized,
-                &node.evidence.display_name().unwrap_or_default(),
-            )
-        })
-    };
-    let (selected, truncated) = selected_indices(&matched_indices, request.selection, is_exact);
-    let settled_without_rows = !prefers_exact_name(request.selection, &normalized)
-        || selected.first().is_some_and(|index| is_exact(*index));
+    let (selected, truncated) = selected_indices(&matched_indices, request.selection, |index| {
+        is_exact_at(&tree, &normalized, index)
+    });
+    let pick = selected.first().copied();
     let mut complete = tree.structurally_complete && !unknown;
     let refmap = match request.materialization {
         LocatorMaterialization::None => None,
@@ -152,21 +145,25 @@ pub(super) fn evaluate_locator_tree_in(
         && tree.rows_unread()
         && !unknown
         && !selected_matches.is_empty();
-    let selection_complete = complete || first_outside_unread_rows || {
-        request.selection.is_first()
-            && settled_without_rows
-            && selected_matches.first().is_some_and(|selected| {
-                let root_verdicts = (0..tree.nodes.len())
-                    .map(|index| matches[cell(index, root_clause, clauses.len())])
-                    .collect::<Vec<_>>();
-                first_is_authoritative(
-                    &tree,
-                    selected.document_order as usize,
-                    &parents,
-                    &root_verdicts,
-                )
-            })
+    let root_verdicts = || {
+        (0..tree.nodes.len())
+            .map(|index| matches[cell(index, root_clause, clauses.len())])
+            .collect::<Vec<_>>()
     };
+    let proven_first = |index: usize| {
+        request.selection.is_first()
+            && first_is_authoritative(&tree, index, &parents, &root_verdicts())
+    };
+    let selection_complete = complete
+        || first_outside_unread_rows
+        || matched_indices
+            .first()
+            .is_some_and(|index| proven_first(*index));
+    let exact_name_unproven = selection_complete
+        && !complete
+        && !first_outside_unread_rows
+        && prefers_exact_name(request.selection, &normalized)
+        && !pick.is_some_and(|pick| is_exact_at(&tree, &normalized, pick) && proven_first(pick));
     Ok((
         LocatorResolution {
             matches: selected_matches,
@@ -178,6 +175,7 @@ pub(super) fn evaluate_locator_tree_in(
                 selection_complete,
                 truncated,
                 roles_present,
+                exact_name_unproven,
             },
         },
         tree,
@@ -303,9 +301,15 @@ fn cell(node: usize, clause: usize, clause_count: usize) -> usize {
 /// Whether a node sits inside the subtree a rooted query is scoped to. The scope
 /// is the matched root's own path in the same observation, so the root itself and
 /// its descendants are in and nothing else is.
-/// A pick by whole name over a partial read is final only when the pick is a
-/// whole-name match: a match whose name only contains the query could be
-/// passed over by a whole-name match the read has not reached.
+fn is_exact_at(tree: &ObservedTree, query: &LocatorQuery, index: usize) -> bool {
+    tree.nodes
+        .get(index)
+        .is_some_and(|node| is_exact_name(query, &node.evidence.display_name().unwrap_or_default()))
+}
+
+/// Whether a pick over a partial read can be passed over by a whole-name
+/// match the read has not reached. Such a read settles `--first` exactly
+/// where plain traversal order would, and the pick is marked unproven.
 fn prefers_exact_name(selection: super::LocatorSelection, query: &LocatorQuery) -> bool {
     selection == super::LocatorSelection::FirstPreferringExactName
         && exact_name_wanted(query).is_some()

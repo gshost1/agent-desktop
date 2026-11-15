@@ -306,6 +306,7 @@ mod tests {
                 selection_complete: true,
                 truncated: true,
                 roles_present: vec!["button".into()],
+                exact_name_unproven: false,
             },
         };
         let response =
