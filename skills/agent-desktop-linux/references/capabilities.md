@@ -102,7 +102,7 @@ Observation and semantic actions need no helper tool.
   need a StatusNotifierWatcher.
 - **The state root must be private.** A group-writable or world-accessible
   `AGENT_DESKTOP_HOME` or `~/.agent-desktop` makes `snapshot` fail with
-  `INTERNAL`; run `chmod 700` on it or let the tool create it.
+  `PERM_DENIED` with `details.kind: "state_directory_permission"`; run `chmod 700` on it or let the tool create it.
 
 ## Wait for a window
 

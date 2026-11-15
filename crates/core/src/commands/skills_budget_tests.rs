@@ -205,3 +205,44 @@ fn each_short_guide_names_its_topics_before_any_other_section() {
         assert_eq!(topics, first_section, "{name} must list its topics first");
     }
 }
+
+#[test]
+fn no_skill_names_internal_for_a_state_root_other_users_can_reach() {
+    for skill in SKILLS {
+        let bodies = std::iter::once(("SKILL.md", skill.main))
+            .chain(skill.refs.iter().map(|r| (r.rel_path, r.body)));
+        for (path, body) in bodies {
+            for passage in state_root_passages(body) {
+                assert!(
+                    !passage.contains("`INTERNAL`"),
+                    "{}/{path} says a state root other users can reach fails `INTERNAL`; it fails \
+                     `PERM_DENIED` with details.kind state_directory_permission: {passage}",
+                    skill.canonical
+                );
+            }
+        }
+    }
+}
+
+fn state_root_passages(body: &str) -> Vec<String> {
+    let mut passages = Vec::new();
+    let mut prose = String::new();
+    for line in body.replace("\r\n", "\n").lines() {
+        if line.trim_start().starts_with('|') {
+            passages.push(line.to_string());
+        } else if line.trim().is_empty() {
+            passages.push(std::mem::take(&mut prose));
+        } else {
+            prose.push_str(line);
+            prose.push(' ');
+        }
+    }
+    passages.push(prose);
+    passages
+        .into_iter()
+        .filter(|passage| {
+            passage.contains("accessible by group or other users")
+                || (passage.contains("state root") && passage.contains("private"))
+        })
+        .collect()
+}
