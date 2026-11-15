@@ -176,7 +176,7 @@ fn acquire_file_handle(
     let mut contention = 0_u64;
     loop {
         if deadline.is_expired() {
-            return Err(lock_timeout(deadline, path, contention));
+            return Err(expiry_error(deadline, path, contention));
         }
         let handle = unsafe {
             CreateFileW(
@@ -192,7 +192,7 @@ fn acquire_file_handle(
         if handle != INVALID_HANDLE_VALUE {
             if deadline.is_expired() {
                 unsafe { CloseHandle(handle) };
-                return Err(lock_timeout(deadline, path, contention));
+                return Err(expiry_error(deadline, path, contention));
             }
             return Ok((OwnedLockHandle(handle), contention));
         }
@@ -296,6 +296,14 @@ struct WindowsLeaseGuard {
     handle: OwnedLockHandle,
     #[allow(dead_code)]
     _process: ProcessLeaseGuard,
+}
+
+fn expiry_error(deadline: Deadline, path: &Path, contention_count: u64) -> AdapterError {
+    if contention_count == 0 {
+        deadline.timeout_error()
+    } else {
+        lock_timeout(deadline, path, contention_count)
+    }
 }
 
 fn lock_timeout(deadline: Deadline, path: &Path, contention_count: u64) -> AdapterError {
