@@ -137,6 +137,61 @@ Each line, in order:
 - A tree that cannot be rendered stays `data.tree`, and the envelope stays on one line, so a delivered action's report is never replaced by an error. Check for `data.lines` before reading it.
 - `agent-desktop mcp --lines` applies the flag to every call the server runs. A result whose top-level `data` holds `lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope. A `batch` result keeps each entry's lines inside the envelope text.
 
+## Snapshot diffs (`--since`)
+
+`snapshot --since <snapshot_id>` is an additive flag: without it, every envelope is what it was. With it, the command takes a full snapshot exactly as `snapshot` does, with its own `snapshot_id`, saved refmap and trace, and returns `data.diff` in place of `data.tree`. Every other `data` field keeps its meaning: `app`, `window`, `snapshot_id`, `ref_count`, `complete`, and `truncated`, `nodes_observed`, `refmap_capped` and `identity_unproven` when they apply to the new snapshot.
+
+```json
+{
+  "version": "2.7",
+  "ok": true,
+  "command": "snapshot",
+  "data": {
+    "app": "Notes",
+    "complete": true,
+    "diff": {
+      "added": [
+        { "name": "Saved", "role": "statictext" },
+        { "name": "Close", "ref_id": "@s4m7q1x2:e3", "role": "button" }
+      ],
+      "changed": [
+        { "changed": ["value"], "name": "Title", "ref_id": "@s4m7q1x2:e1", "role": "textfield",
+          "states": ["focused"], "value": "draft 2", "was": { "value": "draft" } }
+      ],
+      "focused": { "name": "Title", "ref_id": "@s4m7q1x2:e1", "role": "textfield", "states": ["focused"], "value": "draft 2" },
+      "removed": [ { "name": "Unsaved", "role": "statictext" } ],
+      "since": "s8f3k2p9",
+      "status": "changed"
+    },
+    "ref_count": 3,
+    "snapshot_id": "s4m7q1x2",
+    "window": { "id": "w-1", "title": "Notes" }
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `since` | The snapshot compared against. |
+| `status` | `changed`, `unchanged`, `incomplete` or `not_comparable`. |
+| `incomplete` | With `incomplete` only: `"baseline"`, `"snapshot"` or both, naming the read that was cut short (`complete: false`, including a refmap cap). |
+| `reason` | With `not_comparable` only: `owner_changed` or `presentation_changed`. |
+| `added` | Nodes that appeared, in tree order, each with the ref of the new snapshot when it has one. |
+| `changed` | Nodes paired by identity whose visible fields differ, with `changed` and `was`. |
+| `removed` | Nodes that are gone, in the earlier tree order, with no `ref_id`. |
+| `focused` | The deepest node of the new tree with the `focused` state, the first in tree order on a tie. Omitted when none has it. |
+
+- Each row is a tree node as `data.tree` prints it, without `children`. `added`, `changed` and `removed` are omitted when empty.
+- `changed` lists the fields that differ, in this order: `name`, `value`, `description`, `placeholder`, `hint`, `states` (any state other than focus) and `focus`. `was` holds each changed field's earlier value, `null` when it had none; `states` and `focus` both report the earlier `states` list.
+- Rows pair only through the identity a ref records: role plus native id, stable name and description (a derived name, and a name that mirrors a control's value, are not identity). A row pairs when that identity names exactly one row in each tree; uniqueness is counted over rows, not over the structure-only nodes that are never rows. Values, states and bounds never pair rows. Every row that does not pair is cancelled by an earlier row with the same identity and the same visible fields, and otherwise reported as `removed` or `added`. A renamed control, or an element with an identical twin, is never `changed`.
+- A node with no ref, no non-blank name, value, description, placeholder or hint, and no state is structure only and is never a row.
+- `unchanged` means both reads were complete and no row differs. When either read was cut short the status is `incomplete`, whatever the rows say, because a node past a cut may be missing from either side.
+- `not_comparable` means the two snapshots observed different owners (`owner_changed`: another pid, process instance or window id, as when a dialog opens as its own window) or were shaped differently (`presentation_changed`: `--surface`, `--max-depth`, `-i`, `--compact` or `--skeleton` differ). `data.tree` is then present as in a plain snapshot, and `diff` holds only `since`, `status` and `reason`.
+- With `--lines`, `added`, `changed`, `removed` and `focused` move out of `diff` into `data.lines`: `+ <line>`, `~ <line> (was ...)`, `- <line>`, a first line `no change` when unchanged or `incomplete (baseline)`, `incomplete (snapshot)` or `incomplete (baseline, snapshot)` when a read was cut short, and `focused <line>` last. Each `<line>` is a `--lines` node line at depth 0. The `(was ...)` part lists `name=`, `value=`, `desc=`, `placeholder=`, `hint=` with the earlier quoted text, `no <field>` when there was none, and the earlier states in brackets. A `not_comparable` diff prints its tree as lines.
+- The baseline, `snapshots/<id>/diff_baseline.json`, is saved beside the refmap of every snapshot the `snapshot` command takes, in the same session namespace, and is pruned with it. It is capped at 1 MB like the refmap; a snapshot whose rows do not fit keeps no baseline. It is not synced to disk on Linux and macOS, and one that is missing or unparsable reads as `diff_baseline_missing`. Snapshots saved by `find`, `wait` and `--wait-for` keep none.
+
+Errors: an id that is not a valid snapshot id is `INVALID_ARGS`. An id this session's namespace does not hold, including a pruned one and one from another session, fails `SNAPSHOT_NOT_FOUND` with `details.kind: "since_snapshot_not_found"`, and a snapshot saved without a baseline with `details.kind: "diff_baseline_missing"`. Both carry `details.since`, a `not_delivered` disposition and the `refresh_snapshot_then_retry_original` recovery: take a full snapshot without `--since`, and pass its id to `--since` after the next action. Nothing is read from the application before either refusal. `--since` with `--root`, `--wait-for` or `--wait-for-gone` is `INVALID_ARGS`.
+
 ## Disposition values
 
 Every error carries `disposition`, and commands that act on a target may also
