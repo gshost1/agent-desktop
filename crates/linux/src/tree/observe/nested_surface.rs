@@ -32,14 +32,25 @@ fn discovery_limits(limits: &WalkLimits) -> WalkLimits {
     }
 }
 
+/// The window root alone, which says whether the window is itself the
+/// requested surface without reading what it holds.
+fn root_alone(limits: &WalkLimits) -> WalkLimits {
+    WalkLimits {
+        max_raw_depth: 0,
+        ..*limits
+    }
+}
+
 /// For a sheet or alert request on a window, the walk of the dialog drawn
 /// inside that window, rooted at the dialog so its refs resolve against it.
 /// `None` means the window itself is the requested surface and is observed as
 /// usual. Any other request is `None` without a read.
 ///
-/// The search is a structural read that stops at web documents: a nested
-/// dialog is never looked for inside page content, so a browser window costs
-/// its own frame and not its page. Only a found dialog gets the full read. A
+/// The window root is read alone first, so a window that is itself the surface
+/// pays one node before its usual observation. The search is a structural read
+/// that stops at web documents: a nested dialog is never looked for inside page
+/// content, so a browser window costs its own frame and not its page. Only a
+/// found dialog gets the full read. A
 /// search that could not read the whole window proves neither absence nor
 /// uniqueness and is a timeout.
 pub(super) fn discover(
@@ -55,16 +66,23 @@ pub(super) fn discover(
     {
         return Ok(None);
     }
-    let scan = (host.walker)(
+    let probe = (host.scan)(
+        window,
+        &root_alone(limits),
+        request.deadline,
+        ReadPurpose::Structure,
+    )
+    .map_err(|error| window_gone(root, error))?;
+    if is_surface(&probe.root.payload.node, surface) {
+        return Ok(None);
+    }
+    let scan = (host.scan)(
         window,
         &discovery_limits(limits),
         request.deadline,
         ReadPurpose::Structure,
     )
     .map_err(|error| window_gone(root, error))?;
-    if is_surface(&scan.root.payload.node, surface) {
-        return Ok(None);
-    }
     if !scan.complete || is_incomplete(&scan.root, surface) {
         return Err(AdapterError::timeout(
             "Dialog discovery did not read the complete window",

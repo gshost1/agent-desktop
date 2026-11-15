@@ -178,14 +178,48 @@ fn full_read(request: &ObservationRequest) -> ReadPurpose {
     }
 }
 
-/// What the settle loop needs from outside the tree: the walk itself, whether
-/// a process is a web engine or has stopped, and how to wait.
+/// What the settle loop needs from outside the tree: the walk itself, the
+/// structural scan that looks for a nested dialog and stops at web documents,
+/// whether a process is a web engine or has stopped, and how to wait.
 struct SettleHost<'a> {
     walker: &'a mut Walker<'a>,
+    scan: &'a mut Walker<'a>,
     is_web_process: &'a dyn Fn(&AtspiElement) -> Result<bool, AdapterError>,
     stopped: &'a dyn Fn(u32) -> bool,
     pause: &'a mut dyn FnMut(Duration),
     place: &'a mut dyn FnMut(&mut Walk<ObservedRead>) -> Result<(), AdapterError>,
+}
+
+#[cfg(test)]
+fn never_scans(
+    _: &AtspiElement,
+    _: &WalkLimits,
+    _: Deadline,
+    _: ReadPurpose,
+) -> Result<Walk<ObservedRead>, AdapterError> {
+    Err(AdapterError::internal(
+        "a window surface request never scans for a nested dialog",
+    ))
+}
+
+/// A scan served by a test walker that ignores depth: a probe of the root
+/// alone keeps the root and drops what it holds.
+#[cfg(test)]
+fn scan_of(
+    limits: &WalkLimits,
+    walk: impl FnOnce(&WalkLimits) -> Result<Walk<ObservedRead>, AdapterError>,
+) -> Result<Walk<ObservedRead>, AdapterError> {
+    let whole = WalkLimits {
+        max_raw_depth: limits
+            .max_raw_depth
+            .max(WalkLimits::default().max_raw_depth),
+        ..*limits
+    };
+    let mut scanned = walk(&whole)?;
+    if limits.max_raw_depth == 0 {
+        scanned.root.children.clear();
+    }
+    Ok(scanned)
 }
 
 #[cfg(test)]
@@ -275,11 +309,10 @@ pub(crate) fn observe_tree_with(
     decorate: &mut dyn Decorate,
 ) -> Result<ObservedTree, AdapterError> {
     let mut walker = |element: &AtspiElement, limits: &WalkLimits, deadline: Deadline, purpose| {
-        if purpose == ReadPurpose::Structure {
-            walk_structure(bus, element, limits, deadline, purpose)
-        } else {
-            walk_tree_for(bus, element, limits, deadline, purpose)
-        }
+        walk_tree_for(bus, element, limits, deadline, purpose)
+    };
+    let mut scan = |element: &AtspiElement, limits: &WalkLimits, deadline: Deadline, purpose| {
+        walk_structure(bus, element, limits, deadline, purpose)
     };
     let mut pause = std::thread::sleep;
     use crate::system::x11::{self, MonitorReader, MonitorSource};
@@ -289,6 +322,7 @@ pub(crate) fn observe_tree_with(
         request,
         SettleHost {
             walker: &mut walker,
+            scan: &mut scan,
             place: &mut |walk| place_nodes(bus, walk, request.deadline),
             is_web_process: &|element| {
                 let connection = bus.get(request.deadline)?;
