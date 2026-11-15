@@ -1,0 +1,3 @@
+### Performance
+
+* `snapshot`, `find` and every other command that saves a snapshot no longer sync `refmap.json` and `latest_snapshot_id` to disk on Linux and macOS, which removes 4 of the 4 fsyncs a save issued. Both files are still written to a temporary and renamed into place, so a killed process leaves the old file or the new one whole. After a power loss or kernel crash, a ref map or pointer that is missing, empty, cut short or unparsable now reads as a missing snapshot (`SNAPSHOT_NOT_FOUND`, retry safe after a new snapshot) instead of `INTERNAL`. Windows, session manifests, agent profiles and trace files keep their flushes. ([#NNN](https://github.com/gshost1/agent-desktop/pull/NNN))
