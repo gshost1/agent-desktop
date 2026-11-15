@@ -22,6 +22,16 @@ says to look first: "before ...", "only if/when ...", "if it is still ...",
 It cannot see a suggestion passed in as a parameter or a disposition chosen at
 run time; those sites need their own unit tests.
 
+It also reads every skill page under `skills/`. A passage (a table row, a list
+item or a paragraph) that names, in backticks, a `details.kind` some delivered
+or uncertain chain stamps, and advises a retry without a look-first step,
+fails. Kinds come from the chains the Rust scan reads plus
+`RUNTIME_DELIVERED_KINDS`, which lists the kinds whose disposition is chosen
+in a variable or whose kind is not a literal in the chain. The skill scan
+does not see a kind named without backticks, retry advice in a different
+passage from the kind it concerns, or advice whose passage carries an
+unrelated look-first word such as "before".
+
 Run with `--self-test` to check the scanner against planted cases.
 """
 
@@ -335,6 +345,64 @@ def production_files(root: Path):
             yield path
 
 
+RUNTIME_DELIVERED_KINDS = {
+    "chain_deadline",
+    "chain_step_limit",
+    "popup_not_observed",
+    "scroll_into_view_unsupported",
+    "shell_container_unproven",
+}
+CODE_SPAN = re.compile(r"`[^`]*`")
+KIND_SPAN = re.compile(r"`(?:details\.kind: )?\"?([a-z][a-z0-9_]+)\"?`")
+
+
+def delivered_kinds(text: str) -> set[str]:
+    """The `details.kind` names that a delivered or uncertain chain stamps."""
+    tokens, depth, _ = prepared(text)
+    kinds = set()
+    for lo, hi in delivered_chains(tokens, depth):
+        for k in range(lo, min(hi, len(tokens) - 2)):
+            if (
+                tokens[k] == ("str", "kind")
+                and tokens[k + 1] == ("punct", ":")
+                and tokens[k + 2][0] == "str"
+            ):
+                kinds.add(tokens[k + 2][1])
+    return kinds
+
+
+def skill_passages(text: str):
+    """Table rows, list items and paragraphs of a skill page."""
+    passage: list[str] = []
+    for line in text.replace("\r\n", "\n").split("\n"):
+        stripped = line.strip()
+        starts_item = stripped.startswith(("|", "- ", "* ")) or stripped.startswith("#")
+        if not stripped or starts_item:
+            if passage:
+                yield " ".join(passage)
+            passage = []
+        if stripped.startswith("|"):
+            yield stripped
+        elif stripped:
+            passage.append(stripped)
+    if passage:
+        yield " ".join(passage)
+
+
+def skill_violations(text: str, kinds: set[str]) -> list[str]:
+    """Passages that name a may-be-delivered error kind and advise a blind retry."""
+    found = []
+    for passage in skill_passages(text):
+        named = {match.group(1) for match in KIND_SPAN.finditer(passage)}
+        if named & kinds and needs_look_first(CODE_SPAN.sub("", passage)):
+            found.append(passage)
+    return found
+
+
+def skill_files(root: Path):
+    yield from sorted((root / "skills").rglob("*.md"))
+
+
 SELF_TEST_BAD = [
     """fn a() -> AdapterError {
         AdapterError::new(ErrorCode::ActionFailed, "x")
@@ -410,7 +478,35 @@ def self_test() -> int:
         if violations(case):
             print(f"self-test: flagged a compliant case:\n{case}", file=sys.stderr)
             failed += 1
+    planted = {"popup_not_observed"}
+    if delivered_kinds(SELF_TEST_KIND_CHAIN) != planted:
+        print("self-test: missed the kind of a delivered chain", file=sys.stderr)
+        failed += 1
+    for page, expected in SELF_TEST_SKILL_PAGES:
+        if bool(skill_violations(page, planted)) != expected:
+            print(f"self-test: skill passage misjudged:\n{page}", file=sys.stderr)
+            failed += 1
     return failed
+
+
+SELF_TEST_KIND_CHAIN = """fn a() -> AdapterError {
+    AdapterError::new(ErrorCode::ActionFailed, "x")
+        .with_details(json!({ "kind": "popup_not_observed" }))
+        .with_disposition(DeliverySemantics::delivered_unverified())
+}
+fn b() -> AdapterError {
+    AdapterError::new(ErrorCode::ActionFailed, "y")
+        .with_details(json!({ "kind": "safe_refusal" }))
+        .with_disposition(DeliverySemantics::not_delivered())
+}"""
+
+SELF_TEST_SKILL_PAGES = [
+    ("| `ACTION_FAILED` | A click that showed no popup (`popup_not_observed`). Close it and retry |", True),
+    ("- A `popup_not_observed` click may have landed. Retry it.", True),
+    ("| `ACTION_FAILED` | `popup_not_observed`: take a snapshot before you decide whether to retry |", False),
+    ("- `popup_not_observed` carries `retry: unsafe`.", False),
+    ("| `ACTION_FAILED` `other_kind` | Close it and retry |", False),
+]
 
 
 def main(argv: list[str]) -> int:
@@ -427,9 +523,15 @@ def main(argv: list[str]) -> int:
         tokens, depth, _ = prepared(text)
         helpers.update(suggestion_helpers(tokens, depth))
     found = 0
+    kinds = set(RUNTIME_DELIVERED_KINDS)
     for path, text in sources.items():
+        kinds |= delivered_kinds(text)
         for suggestion in violations(text, helpers):
             print(f"{path.relative_to(root)}: {suggestion}", file=sys.stderr)
+            found += 1
+    for path in skill_files(root):
+        for passage in skill_violations(path.read_text(encoding="utf-8"), kinds):
+            print(f"{path.relative_to(root)}: {passage}", file=sys.stderr)
             found += 1
     if found:
         print(
@@ -438,7 +540,7 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    print("OK: no retry advice on delivered or uncertain errors (self-test passed)")
+    print("OK: no retry advice on delivered or uncertain errors, in code or skills (self-test passed)")
     return 0
 
 
