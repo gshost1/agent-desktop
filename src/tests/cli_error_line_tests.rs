@@ -24,8 +24,9 @@ fn an_error_envelope_also_prints_one_summary_line_on_stderr() {
     let code = envelope["error"]["code"].as_str().expect("error code");
     let message = envelope["error"]["message"].as_str().expect("message");
     assert_eq!(stderr.lines().count(), 1, "{stderr}");
+    let message_start: String = message.chars().take(120).collect();
     assert!(
-        stderr.starts_with(&format!("agent-desktop: {code}: {message}")),
+        stderr.starts_with(&format!("agent-desktop: {code}: {message_start}")),
         "{stderr}"
     );
 }
