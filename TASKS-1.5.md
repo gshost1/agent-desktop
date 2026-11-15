@@ -61,7 +61,7 @@ Set `upstream` push URL to DISABLED in the main clone.
 
 ## READY for control (CI green, needs second-worker review)
 - 18:40 control CI rules: no main merges into open PRs unless CONFLICTING; push once; no new PRs while >=10 laptop PRs open (17 open). #166 3x proof-run loop STOPPED (it re-queued all 14 jobs per run); the PR's own CI run is the proof for now.
-- GREEN: #160 (18:45), #157, #163, #165 , #174 (all merged); #170 merged.
+- GREEN: #160 (18:45), #157, #163, #165 , #174 (all merged); #170, #158, #162, #164, #175 merged.
 - STATUS sent 20:10 (asked to open fix/wait-text-depth despite cap). windows worker: FFI-SESSION-FLAKE-1 + Windows --headed type (branches, no PR).
 - #173 G4 (01aedc5f): first-pass --first answer kept under --allow-partial; test confirmed the bug first. Lead review MERGE.
 - PARKED (branch, no PR; queue rule): perf/find-text-evidence 03ea513c (FIND-TEXT-SLOW-1: selected text queries read full evidence only at root; wait --text polls gated by a cheap probe; Linux equal within noise, win expected on macOS; body ~/.cache/agent-desktop-target/pr-body-find-perf-find-text-evidence.md). Mac check: Weather wait --text 7/7 timeouts may be max_depth 10 in wait vs 50 in find.
@@ -142,6 +142,7 @@ Parked branches (no PR; open when <10 laptop PRs are open):
 - perf/find-text-evidence 7e71822f (FIND-TEXT-SLOW-1): review fixes 1-7 pushed (probe depth 50; --text-only reduced plan; probe stops after the adapter reads unasked fields). Left: full core tests, clippy, windows cross-check, stale-ref script; wrapper-depth test (needs a wrapper-marking test tree helper); Linux re-measure with #181; Mac A/B; body ~/.cache/agent-desktop-target/pr-body-find-perf-find-text-evidence.md.
 - perf/linux-keyboard-one-session 34c4c4c9 (ADAPTERS-10): not reviewed; body ~/.cache/agent-desktop-target/pr-body-linux-losses-perf-linux-keyboard-one-session.md.
 - docs/skill-stderr-pipe-note 90db71c2 (wip): skill line nit (optional suggestion; no `2>&1 | jq`) + #178 nits could join it.
+- OPENED 22:00 (laptop PRs dropped to 8 after merges of #158 #162 #164 #175 #176): #183 fix/windows-type-focuses-field and #184 test/ffi-session-home-race. Neither has a second-worker review yet -> review after the reset.
 - fix/windows-type-focuses-field d5cdca55 (HIGH): Windows headed `type`/`press <ref>` now SetFocus an unfocused field first (+ E2E leg moves focus away first). CI A/B run 43670582799: branch 7/7 WinForms + 7/7 WPF; fork main 0/7, upstream 0/7 ("lost focus"). Body ~/.cache/agent-desktop-target/pr-body-windows-fix-windows-type-focuses-field.md. Skill line for skills/agent-desktop-windows/SKILL.md + apps/docs windows.mdx: "Headed, `type` focuses the field itself when it lacks keyboard focus (a `UIElement.SetFocus` step before `SendInput.type_text`); no separate `focus` call is needed."
 - test/ffi-session-home-race f1322be6: FFI-SESSION-FLAKE-1 fixed (session test now under HOME_LOCK; HOME race reproduced 4/400k without). Body ~/.cache/agent-desktop-target/pr-body-windows-test-ffi-session-home-race.md.
 - perf/windows-competitive-latency fe1c86a5: A/B probe; needs a FINDINGS row + fragment before its PR.
