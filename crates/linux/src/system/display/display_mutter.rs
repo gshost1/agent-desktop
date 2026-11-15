@@ -14,6 +14,7 @@ const SERVICE: &str = "org.gnome.Mutter.DisplayConfig";
 const PATH: &str = "/org/gnome/Mutter/DisplayConfig";
 const INTERFACE: &str = "org.gnome.Mutter.DisplayConfig";
 const LOGICAL_LAYOUT: u32 = 1;
+const PHYSICAL_LAYOUT: u32 = 2;
 
 /// The share of an X11 listing Mutter may take to supply scales.
 pub(crate) const OPTIONAL_SLICE: Duration = Duration::from_millis(500);
@@ -45,11 +46,18 @@ fn flag(properties: &Properties, key: &str) -> Option<bool> {
         .and_then(|value| value.downcast_ref::<bool>().ok())
 }
 
-fn logical_layout(properties: &Properties) -> bool {
-    properties
-        .get("layout-mode")
-        .and_then(|value| value.downcast_ref::<u32>().ok())
-        == Some(LOGICAL_LAYOUT)
+/// Whether the layout is logical: a missing `layout-mode` is logical, as
+/// Mutter's `DisplayConfig` interface states for a mode that cannot change;
+/// a value other than logical or physical is unknown (`None`).
+fn logical_layout(properties: &Properties) -> Option<bool> {
+    match properties.get("layout-mode") {
+        None => Some(true),
+        Some(value) => match value.downcast_ref::<u32>().ok() {
+            Some(LOGICAL_LAYOUT) => Some(true),
+            Some(PHYSICAL_LAYOUT) => Some(false),
+            _ => None,
+        },
+    }
 }
 
 fn current_size(modes: &[Mode]) -> Option<(i32, i32)> {
@@ -80,7 +88,8 @@ fn assemble(reply: Reply) -> MutterState {
     let monitors = logical
         .into_iter()
         .map(|(x, y, scale, _, primary, specs, _)| {
-            let (width, height) = logical_size(&monitors, &specs, scale, layout_is_logical);
+            let logical_sizes = layout_is_logical.unwrap_or(true);
+            let (width, height) = logical_size(&monitors, &specs, scale, logical_sizes);
             LogicalMonitor {
                 x,
                 y,
@@ -127,7 +136,7 @@ pub(crate) fn current_state(deadline: Deadline) -> Result<Option<MutterState>, A
     within(deadline, async { Ok(get_current_state(session).await) })
 }
 
-/// Like `logical_monitors`, but a Mutter that does not answer within `slice`
+/// Like `current_state`, but a Mutter that does not answer within `slice`
 /// is reported as absent instead of spending the caller's budget.
 pub(crate) fn logical_monitors_within(
     deadline: Deadline,
