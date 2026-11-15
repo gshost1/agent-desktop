@@ -695,7 +695,6 @@ jobs:
   #     documented ErrPermDenied for ad_check_permissions
   ffi-panic-guard:
     name: FFI Panic Guard (${{ matrix.target }})
-    if: github.event_name != 'pull_request' || matrix.target != 'x86_64-apple-darwin'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.target == 'aarch64-apple-darwin' && 30 || 20 }}
     permissions:
