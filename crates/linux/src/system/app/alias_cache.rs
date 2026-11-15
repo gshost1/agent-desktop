@@ -1,6 +1,7 @@
 use super::app_alias::AliasIndex;
 use crate::system::launch::desktop_lookup::{read_all, stamps};
 use crate::system::launch::desktop_stamp::DesktopStamp;
+use crate::system::launch::entry_commands::service_stamps;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -27,7 +28,8 @@ impl AliasCache {
     }
 
     fn index_at(&self, dirs: &[PathBuf], built_at: SystemTime) -> Arc<AliasIndex> {
-        let now = stamps(dirs);
+        let mut now = stamps(dirs);
+        now.extend(service_stamps(dirs));
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some((seen, _, hashes, index)) = state.as_ref()
             && *seen == now
