@@ -1,0 +1,3 @@
+### Bug Fixes
+
+* A ref refused with `AMBIGUOUS_TARGET` `identity_not_unique` no longer says the refmap came from an earlier version and to take a new snapshot. That was wrong for a fresh ref, and a new snapshot refuses the same twin again. The suggestion now says what the capture saw. For a menu entry from a whole-window snapshot (role `menuitem` or `menu`), it says to open the menu and act on the ref from `snapshot --surface menu`, which a GTK3 menu with two `Close` entries confirms resolves and clicks. A twin inside the open menu gets the keyboard or `--headed mouse-click --xy`. ([#NNN](https://github.com/gshost1/agent-desktop/pull/NNN))

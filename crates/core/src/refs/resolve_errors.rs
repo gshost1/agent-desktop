@@ -70,10 +70,10 @@ const TWIN_SUGGESTION: &str = "When this ref was captured, another element in it
      headed pointer input is available, pick it with --headed mouse-click --xy X,Y.";
 
 const MENU_TWIN_SUGGESTION: &str = "This menu entry has a twin with the same role and name \
-     elsewhere in the window, often because the application exposes its menus more than once, so \
-     every snapshot of the whole window refuses it. Open the menu that holds it (click its \
-     menu-bar entry), run snapshot --surface menu --app <app> -i, and act on the ref from that \
-     snapshot, which counts only the open menu.";
+     elsewhere in the window, such as the same entry in another menu or a second copy of the menu \
+     bar, so every snapshot of the whole window refuses it. Open the menu that holds it (click \
+     its menu-bar entry), run snapshot --surface menu --app <app> -i, and act on the ref from \
+     that snapshot, which counts only the open menu.";
 
 const OPEN_MENU_TWIN_SUGGESTION: &str = "The open menu holds another entry with the same role, \
      name, description and native id, so every snapshot of it refuses this ref. Move to the entry \
