@@ -139,9 +139,11 @@ Each line, in order:
 
 ## Available actions
 
-`available_actions` names the actions an element offers through its accessibility interfaces, the routes a request without `--headed` uses. On macOS and Windows a snapshot, `find` and the read an action makes of its target before it runs (the actionability preflight) list the same tokens from the same read.
+`available_actions` names the actions an element offers through its accessibility interfaces, the routes a request without `--headed` uses. A snapshot and `find` list the same tokens. The read an action makes of its target before it runs (the actionability preflight) can differ:
 
-On Linux a snapshot and `find` also leave out a token whose every headless route the application's toolkit refuses: `Click` on a GTK 4 entry whose only action is `activate`, and `Select` on a list, row, tab list or tab whose selection rests on indices the toolkit does not map to its accessible rows (GTK 4, or a toolkit that does not name itself or that the snapshot could not read), unless the node or an item a select on it can match acts on its own. The preflight read keeps those tokens, so `click --headed` and `select --headed` still reach the element.
+- Windows: the preflight lists the same tokens as the snapshot.
+- macOS: the preflight also adds `SetValue` and `TypeText` to a text field or combo box that is being edited in place, because `type` and `set-value` reach its editor. A snapshot does not list them.
+- Linux: a snapshot leaves out a token whose every headless route the application's toolkit refuses. That is `Click` on a GTK 4 entry whose only action is `activate`, and `Select` on a list, row, tab list or tab whose selection rests on indices the toolkit does not map to its accessible rows. Only GTK 3, Qt, Chromium and Gecko are measured to map them, so this covers GTK 4, any other toolkit (the desktop shell's included) and a toolkit the snapshot could not read. A node or an item a select on it can match that acts on its own keeps `Select`. The preflight keeps `Select`, so `select --headed` still reaches the element. It withholds `Click` from that entry too, but `click --headed` passes the preflight without a `Click` token.
 
 ## Snapshot diffs (`--since`)
 
