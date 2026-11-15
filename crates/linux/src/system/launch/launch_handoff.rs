@@ -7,19 +7,9 @@ use super::launch_step::Step;
 use crate::system::SharedBus;
 use crate::system::process::running_app::Running;
 
-#[path = "launch_bus_name.rs"]
-mod bus_name;
-
-/// The resident a cleanly exited launcher handed the launch to: the one that
-/// gained a window. Once the handoff has `settled` with no new window, as when
-/// a running application only shows a different page of its window, the
-/// handoff went to the one resident still running, if there is exactly one
-/// and it `serves` forwarded launches.
 fn select_owner(
     before: &[(Running, HashSet<String>)],
     after: &[(Running, HashSet<String>)],
-    settled: bool,
-    serves: &dyn Fn(&Running) -> bool,
 ) -> Step {
     let mut owners = after.iter().filter_map(|(owner, windows)| {
         before.iter().find_map(|(resident, known)| {
@@ -29,7 +19,6 @@ fn select_owner(
         })
     });
     match (owners.next(), owners.next()) {
-        (None, _) if settled => sole_resident(before, after, serves),
         (None, _) => Step::Wait,
         (Some(owner), None) => Step::Owner(owner.clone()),
         (Some(first), Some(second)) => Step::Ambiguous(
@@ -41,28 +30,11 @@ fn select_owner(
     }
 }
 
-fn sole_resident(
-    before: &[(Running, HashSet<String>)],
-    after: &[(Running, HashSet<String>)],
-    serves: &dyn Fn(&Running) -> bool,
-) -> Step {
-    let mut still_running = after.iter().filter(|(owner, _)| {
-        before
-            .iter()
-            .any(|(resident, _)| resident.identity() == owner.identity())
-    });
-    match (still_running.next(), still_running.next()) {
-        (Some((owner, _)), None) if serves(owner) => Step::Owner(owner.clone()),
-        _ => Step::Wait,
-    }
-}
-
 pub(super) fn observe(
     bus: &SharedBus,
     baseline: &Baseline,
     apps: &[Running],
     deadline: Deadline,
-    settled: bool,
 ) -> Step {
     let after: Vec<_> = apps
         .iter()
@@ -78,9 +50,7 @@ pub(super) fn observe(
                 .map(|windows| (owner.clone(), windows))
         })
         .collect();
-    select_owner(&baseline.residents, &after, settled, &|owner| {
-        bus_name::owns_bus_name(owner.pid, deadline)
-    })
+    select_owner(&baseline.residents, &after)
 }
 
 #[cfg(test)]

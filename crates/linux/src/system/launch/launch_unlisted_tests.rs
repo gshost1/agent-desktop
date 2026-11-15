@@ -12,7 +12,9 @@ fn a_process_still_starting_is_told_to_wait_for_its_window() {
     let text = suggestion_for(OffBus::Starting);
     assert!(text.contains("still starting"), "{text}");
     assert!(
-        text.contains("agent-desktop wait --app 'adl-absent' --window"),
+        text.contains(
+            "agent-desktop wait --event window-opened --app 'adl-absent' --timeout 30000"
+        ),
         "{text}"
     );
     assert!(!text.contains("toolkit may need"), "{text}");
@@ -39,4 +41,10 @@ fn an_unreadable_process_is_reported_under_the_requested_name() {
     assert_eq!(result.app, "adl-absent");
     assert!(result.window.is_none());
     assert!(result.process_instance.is_none());
+}
+
+#[test]
+fn an_app_name_is_quoted_as_one_shell_word() {
+    assert_eq!(shell_quoted("Text Editor"), "'Text Editor'");
+    assert_eq!(shell_quoted("it's"), "'it'\\''s'");
 }

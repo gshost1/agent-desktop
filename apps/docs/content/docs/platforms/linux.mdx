@@ -41,7 +41,7 @@ agent-desktop status
   <tbody>
     <tr><td>Answered, healthy</td><td><code>accessibility</code> is <code>granted</code>, <code>supported_surfaces</code> lists surfaces, <code>list-apps</code> returns rows</td><td>Normal</td></tr>
     <tr><td>Answered, empty</td><td><code>granted</code>, but <code>list-apps</code> returns no rows</td><td>The bus is up and no app registered. Start an app, or restart one that started before the bus</td></tr>
-    <tr><td>Unavailable</td><td><code>denied</code> with a suggestion and empty <code>supported_surfaces</code>; commands that read the bus without a permission check, such as <code>list-apps</code>, fail with <code>PLATFORM_NOT_SUPPORTED</code>, and commands that check permissions first fail with <code>PERM_DENIED</code> and the same suggestion, except when the display is unreachable: then every such command answers the display refusal (<code>PLATFORM_NOT_SUPPORTED</code>, <code>details.display_unavailable</code>)</td><td>The session bus or the accessibility bus cannot be reached</td></tr>
+    <tr><td>Unavailable</td><td><code>denied</code> with a suggestion, empty <code>supported_surfaces</code>, and commands fail with <code>PLATFORM_NOT_SUPPORTED</code></td><td>The session bus or the accessibility bus cannot be reached</td></tr>
   </tbody>
 </table>
 

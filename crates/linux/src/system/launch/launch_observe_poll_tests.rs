@@ -13,6 +13,7 @@ fn empty_baseline() -> super::super::baseline::Baseline {
     super::super::baseline::Baseline {
         processes: HashSet::new(),
         residents: Vec::new(),
+        instances: 0,
     }
 }
 
@@ -173,7 +174,7 @@ fn a_process_that_may_still_be_starting_is_waited_for_until_the_deadline() {
     assert_eq!(owner.unwrap(), None);
     assert!(started.elapsed() >= std::time::Duration::from_millis(400));
     assert!(observed.get() > 1, "observed {} times", observed.get());
-    assert_eq!(query.off_bus.get(), OffBus::Starting);
+    assert_eq!(query.seen.get(), Seen::OffBus(OffBus::Starting));
 }
 
 #[test]
@@ -193,7 +194,7 @@ fn a_window_or_a_bridge_turned_off_ends_the_wait_after_the_grace() {
         );
         assert_eq!(owner.unwrap(), None);
         assert_eq!(reads.get(), 1);
-        assert_eq!(query.off_bus.get(), seen);
+        assert_eq!(query.seen.get(), Seen::OffBus(seen));
     }
 }
 
@@ -215,37 +216,46 @@ fn the_process_is_not_examined_inside_the_grace() {
     assert_eq!(error.code, ErrorCode::Internal);
 }
 
-#[test]
-fn a_clean_launcher_exit_hands_off_once_it_has_settled() {
-    let identity = keys(&["forwarding-tool"]);
-    let before = empty_baseline();
-    let query = query_until(&identity, &before, 10_000);
+fn exited_launcher() -> Spawned {
     let Ok(mut child) = std::process::Command::new("/bin/true").spawn() else {
         panic!("/bin/true starts");
     };
     let _ = child.wait();
-    let mut spawned = Spawned::new(child, "forwarding-tool");
+    Spawned::new(child, "forwarding-tool")
+}
+
+#[test]
+fn a_clean_launcher_exit_is_settled_only_after_the_query_settle() {
+    let identity = keys(&["forwarding-tool"]);
+    let before = empty_baseline();
     let resident = app(77, "forwarding-tool");
-    let settled_calls = std::cell::RefCell::new(Vec::new());
-    let started = std::time::Instant::now();
+    let settled = query_until(&identity, &before, 30_000).settling_after(std::time::Duration::ZERO);
+    let mut spawned = exited_launcher();
     let owner = poll_owner(
         &mut spawned,
-        &query,
+        &settled,
         || Ok(Some(Vec::new())),
         |_, settled| {
-            settled_calls.borrow_mut().push(settled);
-            if settled {
-                Step::Owner(resident.clone())
-            } else {
-                Step::Wait
-            }
+            assert!(settled, "a zero settle is settled at once");
+            Step::Owner(resident.clone())
         },
         || OffBus::Starting,
     );
-    assert_eq!(owner.unwrap(), Some(resident.clone()));
-    assert!(started.elapsed() >= HANDOFF_SETTLE);
-    assert!(started.elapsed() < std::time::Duration::from_secs(5));
-    let calls = settled_calls.borrow();
-    assert_eq!(calls.first(), Some(&false));
-    assert_eq!(calls.last(), Some(&true));
+    assert_eq!(owner.unwrap(), Some(resident));
+    let unsettled = query_until(&identity, &before, 30_000)
+        .settling_after(std::time::Duration::from_secs(3_600));
+    let reads = std::cell::Cell::new(0);
+    let mut spawned = exited_launcher();
+    let error = poll_owner(
+        &mut spawned,
+        &unsettled,
+        stop_after_reads(&reads, 3, Some(Vec::new())),
+        |_, settled| {
+            assert!(!settled, "an hour-long settle has not passed");
+            Step::Wait
+        },
+        || panic!("an exited launcher is not examined for a window"),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Internal);
 }

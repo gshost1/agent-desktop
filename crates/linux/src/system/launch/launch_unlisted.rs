@@ -32,7 +32,8 @@ pub(super) fn report_unlisted(id: &str, pid: u32, seen: OffBus) -> LaunchResult 
 fn suggestion(app: &str, seen: OffBus) -> String {
     match seen {
         OffBus::Starting => format!(
-            "The application is still starting: its process is running, but it has neither joined the accessibility bus nor shown a window within the launch timeout. To wait for its window, run: agent-desktop wait --app '{app}' --window '<title>' --timeout 30000. Run 'agent-desktop list-apps' to see when it appears. {WRAPPER}"
+            "The application is still starting: its process is running, but it has neither joined the accessibility bus nor shown a window within the launch timeout. To wait for its window, run: agent-desktop wait --event window-opened --app {app} --timeout 30000. {WRAPPER}",
+            app = shell_quoted(app)
         ),
         OffBus::Windowed => format!(
             "The process shows a window but did not join the accessibility bus. {WRAPPER} Its toolkit may need a flag or an environment variable to register; run 'list-apps' to see whether it appears."
@@ -41,6 +42,11 @@ fn suggestion(app: &str, seen: OffBus) -> String {
             "The process runs with its accessibility bridge turned off (NO_AT_BRIDGE=1 or GTK_A11Y=none in its environment), so it does not join the accessibility bus. {WRAPPER} Launch it without that setting to read or drive it."
         ),
     }
+}
+
+/// `text` as one POSIX shell word.
+fn shell_quoted(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 #[cfg(test)]

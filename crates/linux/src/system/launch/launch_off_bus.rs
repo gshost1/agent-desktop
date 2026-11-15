@@ -6,6 +6,7 @@ use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, MapState, Window};
 use x11rb::rust_connection::RustConnection;
 
 use crate::system::display::display_server::{DisplayServer, session_server};
+use crate::system::process::proc_stat::read_stat;
 use crate::system::x11::control_display::open;
 use crate::system::x11::stacking::bounded;
 
@@ -14,9 +15,9 @@ use crate::system::x11::stacking::bounded;
 /// inside the second a command may overrun its timeout by.
 const WINDOW_READ: Duration = Duration::from_millis(250);
 
-/// The environment settings with which a toolkit never loads its
-/// accessibility bridge.
-const BRIDGE_OFF: [&[u8]; 2] = [b"NO_AT_BRIDGE=1", b"GTK_A11Y=none"];
+/// How many parents a window owner's process is followed through to reach the
+/// spawned process, which covers a wrapper or sandbox launcher chain.
+const MAX_ANCESTRY: usize = 16;
 
 /// What a launch observed about a spawned process that runs and is not on the
 /// accessibility bus.
@@ -47,9 +48,10 @@ pub(crate) fn observe(pid: u32) -> OffBus {
     classify(environ.as_deref(), || maps_window(pid))
 }
 
-/// Whether `pid` owns a mapped top-level window on the session's X11
-/// display. The owner is the client the X server reports for the window, so a
-/// toolkit that never sets `_NET_WM_PID` is seen too. A Wayland session
+/// Whether `pid`, or a process started from it, owns a mapped top-level
+/// window on the session's X11 display. The owner is the client the X server
+/// reports for the window, so a toolkit that never sets `_NET_WM_PID` is seen
+/// too. A Wayland session
 /// without Xwayland, or a display that does not answer in time, shows none.
 fn maps_window(pid: u32) -> bool {
     let display = match session_server() {
@@ -127,18 +129,35 @@ fn owns_one(connection: &RustConnection, windows: &[Window], pid: u32) -> bool {
                 .ids
                 .iter()
                 .filter(|id| id.spec.mask == ClientIdMask::LOCAL_CLIENT_PID)
-                .any(|id| id.value.first() == Some(&pid))
+                .filter_map(|id| id.value.first().copied())
+                .any(|owner| descends_from(owner, pid))
         })
 }
 
+/// Whether `process` is `ancestor` or started from it, following the parent
+/// in `/proc/<pid>/stat`.
+fn descends_from(process: u32, ancestor: u32) -> bool {
+    let mut current = process;
+    for _ in 0..MAX_ANCESTRY {
+        if current == ancestor {
+            return true;
+        }
+        match read_stat(current) {
+            Ok(Some(stat)) if stat.parent > 1 => current = stat.parent,
+            _ => return false,
+        }
+    }
+    false
+}
+
 /// The evidence from an environment block and a window check, which runs only
-/// when the environment leaves the bridge on.
+/// when the environment leaves the bridge on. `NO_AT_BRIDGE=1` stops the ATK
+/// bridge of GTK 3 and `GTK_A11Y=none` (any case) stops GTK 4; Qt reads
+/// neither, so a Qt process with them set is treated as bridge-off too and is
+/// reported after the grace with that note.
 pub(crate) fn classify(environ: Option<&[u8]>, windowed: impl FnOnce() -> bool) -> OffBus {
-    let bridge_off = environ.is_some_and(|block| {
-        block
-            .split(|byte| *byte == 0)
-            .any(|entry| BRIDGE_OFF.contains(&entry))
-    });
+    let bridge_off =
+        environ.is_some_and(|block| block.split(|byte| *byte == 0).any(turns_bridge_off));
     if bridge_off {
         OffBus::BridgeOff
     } else if windowed() {
@@ -146,6 +165,13 @@ pub(crate) fn classify(environ: Option<&[u8]>, windowed: impl FnOnce() -> bool) 
     } else {
         OffBus::Starting
     }
+}
+
+fn turns_bridge_off(entry: &[u8]) -> bool {
+    entry == b"NO_AT_BRIDGE=1"
+        || entry
+            .strip_prefix(b"GTK_A11Y=")
+            .is_some_and(|value| value.eq_ignore_ascii_case(b"none"))
 }
 
 #[cfg(test)]

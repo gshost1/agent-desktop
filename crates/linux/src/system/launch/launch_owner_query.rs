@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use agent_desktop_core::Deadline;
 
-use self::off_bus::OffBus;
+use self::seen::Seen;
 use super::baseline::Baseline;
 use crate::system::process::executable_identity::ExecutableIdentity;
 
@@ -16,20 +16,30 @@ use crate::system::process::executable_identity::ExecutableIdentity;
 /// window wait does.
 const NOT_ON_BUS_GRACE: Duration = Duration::from_millis(5_000);
 
+/// How long after a launcher exited cleanly the launch waits for a resident
+/// to gain a window before it may take the one running instance as the owner.
+const HANDOFF_SETTLE: Duration = Duration::from_millis(2_000);
+
 #[path = "launch_off_bus.rs"]
 pub(super) mod off_bus;
+#[path = "launch_seen.rs"]
+pub(super) mod seen;
 
 /// What an owner search looks for and how long it may look. `not_on_bus`
 /// ends the search early when the spawned process is still running, a
 /// registry read that began after it expired answered, nothing on the
-/// registry is the launch's, and the process will not join. `off_bus` keeps
-/// what the search last saw of the process off the bus.
+/// registry is the launch's, and the process will not join. `seen` keeps what
+/// the search learned beyond the registry. `desktop_id` names the desktop
+/// entry the launch started, and `settle` is how long a cleanly exited
+/// launcher's handoff may take before the running instance is considered.
 pub(super) struct OwnerQuery<'a> {
     pub(super) identity: &'a Option<ExecutableIdentity>,
     pub(super) before: &'a Baseline,
     pub(super) deadline: Deadline,
     pub(super) not_on_bus: Deadline,
-    pub(super) off_bus: Cell<OffBus>,
+    pub(super) seen: Cell<Seen>,
+    pub(super) desktop_id: Option<&'a str>,
+    pub(super) settle: Duration,
 }
 
 impl<'a> OwnerQuery<'a> {
@@ -60,7 +70,20 @@ impl<'a> OwnerQuery<'a> {
             before,
             deadline,
             not_on_bus: grace.map_or(deadline, |grace| deadline.capped(grace)),
-            off_bus: Cell::new(OffBus::Starting),
+            seen: Cell::new(Seen::Nothing),
+            desktop_id: None,
+            settle: HANDOFF_SETTLE,
         }
+    }
+
+    /// The query for a launch of the desktop entry `desktop_id`.
+    pub(super) fn for_entry(self, desktop_id: Option<&'a str>) -> Self {
+        Self { desktop_id, ..self }
+    }
+
+    /// The query with a handoff settle of `settle` instead of the standard one.
+    #[cfg(test)]
+    pub(super) fn settling_after(self, settle: Duration) -> Self {
+        Self { settle, ..self }
     }
 }

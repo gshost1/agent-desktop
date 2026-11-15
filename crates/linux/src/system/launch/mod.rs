@@ -11,6 +11,7 @@ use agent_desktop_core::{
 use self::launch_attach::{Decision, decide};
 use self::launch_observe::{POLL_INTERVAL, find_owner, pids_of, running_of};
 use self::launch_owner_query::OwnerQuery;
+use self::launch_owner_query::seen::Seen;
 use self::launch_owner_reads::{chromium_renderer, same_window};
 use self::launch_preflight::{require_display, with_spawned_pid};
 use self::launch_search::Search;
@@ -149,19 +150,6 @@ impl Launch<'_> {
         })
     }
 
-    /// The new window a forwarded launch opened in a running application, or
-    /// the window it already showed when the forward only changed its page.
-    fn new_or_shown_window(
-        &self,
-        owner: &Running,
-        known: &HashSet<String>,
-    ) -> Result<Option<WindowInfo>, AdapterError> {
-        match self.window_of(owner, true, known)? {
-            Some(window) => Ok(Some(window)),
-            None => self.window_of(owner, false, &HashSet::new()),
-        }
-    }
-
     /// Reads the owner's windows until one is reported. `waits` is true for an
     /// application this launch spawned: the read goes on for a window and ends
     /// if the owner exits. An attach passes false and reads only until it has
@@ -225,7 +213,7 @@ impl Launch<'_> {
     }
 
     fn wait_limit(&self, known: &HashSet<String>) -> Deadline {
-        if self.options.presentation.activate && known.is_empty() {
+        if self.options.presentation.activate {
             return self.deadline;
         }
         let wait = if known.is_empty() {
@@ -234,6 +222,16 @@ impl Launch<'_> {
             NEW_WINDOW_WAIT
         };
         self.deadline.capped(wait)
+    }
+
+    /// The result for an instance taken as the owner without a new window,
+    /// which says so in its suggestion.
+    fn conclude_adopted(&self, owner: &Running) -> LaunchResult {
+        let window = launch_adopt::adopted_window(self.bus, owner, self.deadline);
+        let mut result = self.conclude_with(owner, window, false);
+        let earlier = result.notes.suggestion.take();
+        result.notes.suggestion = Some(launch_adopt::adoption_note(owner.pid, earlier));
+        result
     }
 
     fn conclude_with(
@@ -286,18 +284,20 @@ impl Launch<'_> {
             &before,
             self.deadline,
             self.options.presentation.activate,
-        );
+        )
+        .for_entry(plan.desktop_id.as_deref());
         let spawned_pid = spawned.pid;
         let owner = find_owner(self.bus, &mut spawned, &query)
             .map_err(|error| with_spawned_pid(error, spawned_pid))?;
         match owner {
+            Some(owner) if query.seen.get() == Seen::Adopted => Ok(self.conclude_adopted(&owner)),
             Some(owner) => {
                 let known = before
                     .residents
                     .iter()
                     .find(|(resident, _)| resident.identity() == owner.identity());
                 let window = match known {
-                    Some((_, windows)) => self.new_or_shown_window(&owner, windows),
+                    Some((_, windows)) => self.window_of(&owner, true, windows),
                     None if before.processes.contains(&owner.identity()) => Ok(None),
                     None => {
                         remember_launch(plan.desktop_id.as_deref(), &owner, spawned_pid);
@@ -307,7 +307,11 @@ impl Launch<'_> {
                 .map_err(|error| with_spawned_pid(error, spawned_pid))?;
                 Ok(self.conclude_with(&owner, window, owner.pid == spawned.pid))
             }
-            None => Ok(report_unlisted(self.id, spawned.pid, query.off_bus.get())),
+            None => Ok(report_unlisted(
+                self.id,
+                spawned.pid,
+                query.seen.get().off_bus(),
+            )),
         }
     }
 }
@@ -370,6 +374,7 @@ pub(super) mod desktop_exec;
 pub(super) mod desktop_lookup;
 pub(super) mod desktop_stamp;
 pub(super) mod indexed_entry;
+mod launch_adopt;
 pub(super) mod launch_attach;
 mod launch_handoff;
 #[cfg(test)]
