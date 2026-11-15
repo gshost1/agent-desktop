@@ -72,7 +72,7 @@ agent-desktop wait --element @s2txcl95uvubmn:e6 --predicate value --value 7 --ti
 }
 ```
 
-`observed` depends on the predicate: `exists`; `enabled` or `visible` with `applicable`; `actionable` with `checks`; or the value counts above, which never echo the value itself. `actionable` runs the checks the action would run; use `--action type` before typing, because the editability check runs only for editing actions. A ref that does not resolve yet keeps being retried until the timeout.
+`observed` depends on the predicate: `exists`; `enabled` or `visible` with `applicable`; `actionable` with `checks`; or the value counts above, which never echo the value itself. `actionable` runs the checks the action would run; use `--action type` before typing, because the editability check runs only for editing actions. A ref that does not resolve yet keeps being retried until the timeout. Once the ref has resolved, a ref without an element token (Linux, Windows) is polled at its recorded place instead of being searched for across the whole window again, and the window is counted once more before the wait reports the predicate met, so a twin that appeared meanwhile still makes the wait fail.
 
 ### Window
 
