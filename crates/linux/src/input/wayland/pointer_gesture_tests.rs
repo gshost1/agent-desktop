@@ -195,8 +195,7 @@ fn wheel_detents_follow_the_x11_direction_convention() {
         [
             "motion:0:50:10",
             "motion:0:50:10",
-            "axis:0:-1",
-            "axis:0:-1",
+            "axis:0:-2",
             "motion:0:50:10",
             "axis:1:-1"
         ]
@@ -305,4 +304,29 @@ fn a_failure_mid_drag_releases_the_held_button() {
     let released = log.iter().rposition(|event| *event == "button:272:false");
     assert!(pressed.is_some() && released > pressed, "{log:?}");
     assert_eq!(session.log.last().map(String::as_str), Some("stop"));
+}
+
+#[test]
+fn a_long_wheel_turn_sends_one_call_per_burst_of_ten() {
+    let mut session = Recorder::default();
+    run_pointer(
+        &mut session,
+        &event(
+            MouseEventKind::Wheel {
+                delta_x: 0.,
+                delta_y: -25.,
+            },
+            1650.,
+            10.,
+        ),
+        &two_monitors(),
+        &mut || Ok(()),
+        deadline(),
+    )
+    .expect("a long wheel turn is sent");
+    let axes: Vec<&str> = sent(&session.log)
+        .into_iter()
+        .filter(|event| event.starts_with("axis"))
+        .collect();
+    assert_eq!(axes, ["axis:0:10", "axis:0:10", "axis:0:5"]);
 }

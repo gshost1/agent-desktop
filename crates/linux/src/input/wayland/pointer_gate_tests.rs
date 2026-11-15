@@ -3,7 +3,7 @@ use std::cell::Cell;
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 use zbus::connection::Builder;
 
-use super::{coordinate_gate, element_gate, missing_interface, probe};
+use super::{coordinate_gate, element_gate, missing_interface, open_input_session, probe};
 use crate::input::backend::Backend;
 use crate::system::bus::session_bus::SessionBus;
 
@@ -93,6 +93,12 @@ fn the_probe_names_the_first_missing_compositor_interface() {
         missing_after_probe().as_deref(),
         Some("org.gnome.Mutter.RemoteDesktop")
     );
+    let error = open_input_session(Deadline::after(5_000).unwrap())
+        .err()
+        .expect("the delivery path refuses before any session exists");
+    assert_eq!(error.code, ErrorCode::PlatformNotSupported);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(error.details.unwrap()["cause"], "wayland_interface_missing");
     let remote = zbus::block_on(async {
         Builder::session()
             .unwrap()

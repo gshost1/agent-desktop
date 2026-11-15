@@ -6,6 +6,7 @@ use agent_desktop_core::{
 use serde_json::json;
 
 use super::key_session::KeySession;
+use super::pointer_gate::open_input_session;
 use super::pointer_gesture::{WaylandGesture, run_gesture, translate};
 use super::remote_desktop::RemoteDesktop;
 use super::stream_point::StreamPoint;
@@ -128,10 +129,11 @@ pub(crate) fn send(
     deadline: Deadline,
 ) -> Result<Delivery, AdapterError> {
     let gesture = event_gesture(event, displays)?;
-    let mut session = RemoteDesktop::open(deadline)?;
+    let mut session = open_input_session(deadline)?;
     run_gesture(&mut session, &gesture, gate, deadline)
 }
 
+#[cfg(test)]
 pub(crate) fn run_pointer<S: PointerSession>(
     session: &mut S,
     event: &MouseEvent,
@@ -159,7 +161,7 @@ pub(crate) fn drag(params: &DragParams, deadline: Deadline) -> Result<Delivery, 
     let plan = plan_drag(params, deadline)?;
     let displays = crate::system::list_wayland_displays(deadline)?;
     let gesture = translate(&plan.steps, Vec::new(), &displays)?;
-    let mut session = RemoteDesktop::open(deadline)?;
+    let mut session = open_input_session(deadline)?;
     run_gesture(&mut session, &gesture, &mut || Ok(()), deadline)
 }
 

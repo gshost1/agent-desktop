@@ -8,7 +8,7 @@ use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 use serde_json::json;
 use zbus::Connection;
 
-use super::remote_desktop::semantic_action_refusal;
+use super::remote_desktop::{RemoteDesktop, semantic_action_refusal};
 use crate::input::backend::Backend;
 use crate::system::bus::session_bus::{SessionBus, is_transport_failure};
 use crate::system::within;
@@ -118,11 +118,18 @@ pub(crate) fn coordinate_gate(
     }
 }
 
+/// Opens the compositor input session for a pointer gesture. A session bus
+/// where RemoteDesktop or ScreenCast does not answer refuses with the missing
+/// interface, so every caller of the adapter gets the gate's answer.
+pub(crate) fn open_input_session(deadline: Deadline) -> Result<RemoteDesktop, AdapterError> {
+    let connection = SessionBus::get(deadline)?;
+    probe(&connection, deadline).map_err(refused_unsent)?;
+    Ok(RemoteDesktop::over(connection))
+}
+
 /// Probes this session's bus for the interfaces a coordinate gesture needs.
 pub(crate) fn probe_session() -> Result<(), AdapterError> {
-    let deadline = Deadline::after(PROBE_BUDGET_MS)?;
-    let connection = SessionBus::get(deadline)?;
-    probe(&connection, deadline)
+    open_input_session(Deadline::after(PROBE_BUDGET_MS)?).map(|_| ())
 }
 
 #[cfg(test)]

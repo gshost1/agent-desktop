@@ -141,9 +141,34 @@ pub(crate) fn translate(
     }
     Ok(WaylandGesture {
         connectors,
-        acts,
+        acts: merge_detents(acts),
         modifiers,
     })
+}
+
+/// Sends a burst of wheel detents on one axis and in one direction as one
+/// compositor call; the toolkit still receives one scroll event per detent.
+fn merge_detents(acts: Vec<PointerAct>) -> Vec<PointerAct> {
+    let mut merged: Vec<PointerAct> = Vec::with_capacity(acts.len());
+    for act in acts {
+        if let PointerAct::Axis { axis, steps } = act
+            && let Some(last) = merged
+                .iter()
+                .rposition(|kept| !matches!(kept, PointerAct::Pause(_)))
+            && let PointerAct::Axis {
+                axis: kept_axis,
+                steps: kept_steps,
+            } = &mut merged[last]
+            && *kept_axis == axis
+            && kept_steps.signum() == steps.signum()
+        {
+            *kept_steps += steps;
+            merged.truncate(last + 1);
+            continue;
+        }
+        merged.push(act);
+    }
+    merged
 }
 
 #[derive(Default)]
