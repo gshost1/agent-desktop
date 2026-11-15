@@ -131,11 +131,51 @@ Each line, in order:
 - Bidirectional marks (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069) are dropped. Text matching in `find`, `wait --text` and selectors already ignores them. A value copied from a line matches once its `\"` and `\\` escapes are undone; a value with neither matches as printed.
 - Every node of the presented tree has a line, in the depth-first order refs are allocated in, including nodes without a ref. `-i`, `--compact`, `--skeleton`, `--max-depth` and `--root` shape the tree as before; `--lines` only changes how it prints.
 - `available_actions`, `native_id`, `subrole`, `role_description`, `dom_classes` and `name_source` are not printed. Run without `--lines` to read them.
+- `data.contents`, when present, becomes an array of lines too (see [Snapshot contents](#snapshot-contents)).
 - Every other `data` field keeps its meaning and value, including `snapshot_id`, `ref_count`, `complete`, `truncated`, `nodes_observed`, `refmap_capped`, `identity_unproven`, `matched_selector` and `after_action`. Refs are allocated and saved exactly as without the flag, and a trace records the tree.
 - `jq -r '.data.lines[]'` prints the bare lines.
 - A tree that cannot be rendered stays in `data.tree`, and `data.lines_error` gives the reason.
 - A tree that cannot be rendered stays `data.tree`, and the envelope stays on one line, so a delivered action's report is never replaced by an error. Check for `data.lines` before reading it.
 - `agent-desktop mcp --lines` applies the flag to every call the server runs. A result whose top-level `data` holds `lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope. A `batch` result keeps each entry's lines inside the envelope text.
+
+## Snapshot contents
+
+A snapshot whose tree holds 40 or more nodes carries `data.contents`, a short
+index of what the tree holds and where, so a read that stops early still shows
+which lists exist, how much of each is loaded and what comes after them. The
+key sorts before `lines` and `tree`, so it prints first.
+
+```json
+{ "data": { "contents": {
+    "roles": { "button": 62, "cell": 6, "radiobutton": 5, "treeitem": 6 },
+    "regions": [
+      { "line": 29, "role": "outline", "name": "item-list", "ref": "@s8f3k2p9:e28", "items": 6, "partial": true },
+      { "line": 51, "role": "tablist", "name": "tab-view" },
+      { "line": 75, "role": "scrollarea", "name": "lazy-list", "ref": "@s8f3k2p9:e73", "items": 12, "partial": true }
+    ] } } }
+```
+
+- `roles` counts the nodes that carry a ref, for the four commonest roles, leaving
+  out structure no one acts on (`column`, `handle`, `scrollarea`, `scrollbar`,
+  `window`).
+- `regions` lists, in tree order, each `list`, `table`, `outline`, `grid` and
+  `browser`, each `scrollarea` whose content reads as a list (five or more items,
+  80 % of them one role) and does not wrap one of those, and each `toolbar` and
+  `tablist`. At most six are listed; `more_regions` counts the rest.
+- `line` is the region node's index in tree order, which is its index in
+  `data.lines`. `name` (shortened to 32 characters) and `ref` appear when the node
+  has them.
+- `items` is the number of items the list holds in this snapshot. A list that
+  loads rows only near its viewport holds only those, so `items` can be far below
+  the list's length.
+- `partial: true` means the list's scroll area has an enabled scroll bar: it can
+  scroll, so it may hold items this snapshot does not show. Search it with
+  `find --root <ref> --scroll` (macOS) rather than reading it in pages.
+- With `--lines`, `contents` is an array of lines: `roles: button 62, cell 6, ...`,
+  then one line per region such as
+  `line 75: @s8f3k2p9:e73 scrollarea "lazy-list" items=12 partial`, and
+  `+N more regions` when some were left out.
+- `tests/fixtures/snapshot-contents.json` pins the shape.
 
 ## Snapshot diffs (`--since`)
 

@@ -52,3 +52,25 @@ else
     assert "indistinguishable twins fail closed" "$([ "$twin_code" = "AMBIGUOUS_TARGET" ] && echo 1 || echo 0)" \
         "before=$twin_before after=$twin_after error=$twin_code"
 fi
+
+note "Snapshot contents index the lists before the tree"
+contents_json="$("$bin" snapshot --app "$app" -i --compact 2>/dev/null)"
+contents_check="$(printf '%s' "$contents_json" | "$e2e_python" -c '
+import json, sys
+data = json.load(sys.stdin)["data"]
+regions = data.get("contents", {}).get("regions", [])
+outline = next((r for r in regions if r.get("name") == "item-list"), None)
+def line_of(node, ref, counter):
+    if node.get("ref_id") == ref:
+        return counter[0]
+    counter[0] += 1
+    for child in node.get("children", []):
+        found = line_of(child, ref, counter)
+        if found is not None:
+            return found
+    return None
+line = line_of(data["tree"], outline["ref"], [0]) if outline and outline.get("ref") else None
+print("ok" if outline and outline.get("items") == 6 and line == outline.get("line") else f"bad outline={outline} line={line}")
+' 2>&1)"
+assert "snapshot contents name the item list, its six rows and its line" \
+    "$([ "$contents_check" = "ok" ] && echo 1 || echo 0)" "$contents_check"

@@ -128,6 +128,9 @@ pub(crate) fn format_snapshot_fields(
     matched_selector: Option<&str>,
 ) -> Result<Value, AppError> {
     let mut body = snapshot_fields_without_tree(result);
+    if let Some(contents) = crate::snapshot::snapshot_contents::summarize(&result.tree) {
+        body["contents"] = serde_json::to_value(contents)?;
+    }
     body["tree"] = serde_json::to_value(&result.tree)?;
     if let Some(ms) = elapsed_ms {
         body["elapsed_ms"] = json!(ms);
