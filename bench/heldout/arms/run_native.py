@@ -26,6 +26,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import common  # noqa: E402
+import cua_daemon  # noqa: E402
 import run_audit  # noqa: E402
 
 sys.path.insert(0, str(common.BENCH))
@@ -79,6 +80,13 @@ def reset_heldout_desktop():
             th.close_bench_app(app)
 
 
+def pre_arm_setup(arm, rdir):
+    """Infrastructure an arm needs before the model starts; None when ready, else why it is not."""
+    if arm == "cua":
+        return cua_daemon.start(rdir / "arm-home", str(HERE / "bin/cua/cua-driver"))
+    return None
+
+
 def post_arm_cleanup(arm, rdir):
     """Stop daemons the arm started for this run; they must not carry state into the next run."""
     if arm == "peekaboo":
@@ -109,6 +117,9 @@ def run_once(a):
     env.update({"PATH": f"{common.arm_bin_dir(a.arm)}:{env['PATH']}", "AD_LOG": str(rdir / "ad.log"),
                 "AGENT_DESKTOP_HOME": str(home), "HO_ARM_HOME": str(rdir / "arm-home")})
     env.pop("AGENT_DESKTOP_SESSION", None)
+    fault = pre_arm_setup(a.arm, rdir)
+    if fault:
+        return record_infra_fault(a, task, run_id, rdir, fault)
     cmd = ["claude", "-p", common.TASK_PREFIX + task.prompt(), "--output-format", "stream-json", "--verbose",
            "--setting-sources", "project", "--strict-mcp-config", "--tools", "Bash",
            "--permission-mode", "bypassPermissions", "--model", a.model, "--no-session-persistence",
@@ -180,6 +191,23 @@ def run_once(a):
           f"turns={summary.get('num_turns')} in={summary['input_total']} | {why}"
           + (f" | INVALID {summary['invalid_reason']}" if summary.get("valid") is False else ""), flush=True)
     return summary
+
+
+def record_infra_fault(a, task, run_id, rdir, fault):
+    """An arm that cannot start is the harness's fault, not the tool's: no model call, an invalid row, no spend."""
+    for step in (task.cleanup, lambda: post_arm_cleanup(a.arm, rdir)):
+        try:
+            step()
+        except Exception as exc:
+            print(f"{run_id} cleanup failed: {exc}", flush=True)
+    row = {"suite": "native", "arm": a.arm, "arm_version": common.ARM_VERSIONS[a.arm], "run_id": run_id,
+           "task": a.task, "round": a.round, "model": a.model, "success": False, "verify": f"not run: {fault}",
+           "cost_usd_list": 0.0, "rules": common.RULES, "host": a.host, "valid": False,
+           "invalid_reason": f"infrastructure: {fault}"}
+    with open(RUNS / "results-native.jsonl", "a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    print(f"{run_id} {a.arm:8} {a.task} not run | INVALID infrastructure: {fault}", flush=True)
+    return row
 
 
 def main():
