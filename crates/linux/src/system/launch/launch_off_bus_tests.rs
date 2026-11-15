@@ -5,18 +5,16 @@ fn a_process_without_a_window_is_still_starting() {
     let environ = b"HOME=/home/user\0DISPLAY=:1\0".as_slice();
     assert_eq!(classify(Some(environ), || false), OffBus::Starting);
     assert_eq!(classify(None, || false), OffBus::Starting);
-    assert!(!OffBus::Starting.never_joins());
 }
 
 #[test]
-fn a_window_without_bus_presence_never_joins() {
+fn a_window_without_bus_presence_is_windowed() {
     let environ = b"HOME=/home/user\0".as_slice();
     assert_eq!(classify(Some(environ), || true), OffBus::Windowed);
-    assert!(OffBus::Windowed.never_joins());
 }
 
 #[test]
-fn an_environment_that_turns_the_bridge_off_never_joins_without_a_window_read() {
+fn an_environment_that_turns_the_bridge_off_needs_no_window_read() {
     for environ in [
         b"HOME=/home/user\0NO_AT_BRIDGE=1\0".as_slice(),
         b"GTK_A11Y=none\0DISPLAY=:1".as_slice(),
@@ -24,7 +22,6 @@ fn an_environment_that_turns_the_bridge_off_never_joins_without_a_window_read() 
     ] {
         let seen = classify(Some(environ), || panic!("the window read is not needed"));
         assert_eq!(seen, OffBus::BridgeOff);
-        assert!(seen.never_joins());
     }
 }
 

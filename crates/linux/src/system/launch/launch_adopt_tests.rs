@@ -193,3 +193,39 @@ fn a_launch_interface_is_read_from_the_application_object() {
         "<node><interface name=\"org.mpris.MediaPlayer2\"></interface></node>"
     ));
 }
+
+#[test]
+fn an_option_value_before_the_script_is_part_of_the_resident_operands() {
+    let resident = running(7, &["/usr/bin/python3", "-W", "ignore", "a.py"]);
+    let before = baseline(std::slice::from_ref(&resident), 1);
+    let apps = std::slice::from_ref(&resident);
+    assert_eq!(
+        chosen(
+            &before,
+            &["/usr/bin/python3", "-W", "ignore", "b.py"],
+            apps,
+            true
+        ),
+        Step::Wait
+    );
+    assert_eq!(
+        chosen(
+            &before,
+            &["/usr/bin/python3", "-W", "ignore", "a.py", "page2"],
+            apps,
+            true
+        ),
+        Step::Owner(resident.clone())
+    );
+    let java = running(8, &["/usr/bin/java", "-cp", "x.jar", "A"]);
+    let before = baseline(std::slice::from_ref(&java), 1);
+    assert_eq!(
+        chosen(
+            &before,
+            &["/usr/bin/java", "-cp", "x.jar", "B"],
+            std::slice::from_ref(&java),
+            true
+        ),
+        Step::Wait
+    );
+}

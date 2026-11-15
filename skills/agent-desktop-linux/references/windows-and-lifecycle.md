@@ -113,8 +113,8 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
 - A spawned process that is still running but not on the accessibility bus is
   waited for until `--timeout`. The wait ends after 5 s (never past `--timeout`)
   only when the process, or one it started, maps a window on X11 or Xwayland
-  without joining the bus, or its environment sets `NO_AT_BRIDGE=1` or
-  `GTK_A11Y=none` (Qt reads neither, but is treated the same). `launch` then
+  that stays off the bus for 2 s more, or its environment sets `NO_AT_BRIDGE=1`
+  or `GTK_A11Y=none` (Qt reads neither, but is treated the same). `launch` then
   answers `ok: true` with no `window`, the spawned pid, and a `data.suggestion`
   that names the case: `The process shows a window but did not join the
   accessibility bus`, `The process runs with its accessibility bridge turned
@@ -128,9 +128,9 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   `delivered_unverified`, without that kind. A forwarding launcher can attach to
   one existing instance of the same executable when that instance opens a new
   window, even if its argv differs. When no instance opens a new window within
-  2 s, the launch takes the running instance as the owner only if it was the
+  5 s, the launch takes the running instance as the owner only if it was the
   one instance of that executable on the bus before the spawn, was started with
-  the same first operand as the request (or none), and serves forwarded launches
+  no operands or with operands that begin the request's, and serves forwarded launches
   on the session bus (its desktop id, or an application object with
   `org.freedesktop.Application` or `org.gtk.Application`). The result then
   carries that instance, its window when it shows exactly one (no `window` when

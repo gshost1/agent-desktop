@@ -1,6 +1,5 @@
 use agent_desktop_core::{AdapterError, Deadline};
 
-use crate::system::bus::bus_process::owner_process_id;
 use crate::system::bus::session_bus::SessionBus;
 
 /// The interfaces a single-instance application exports on its application
@@ -39,7 +38,9 @@ async fn serving(pid: u32, desktop_id: Option<&str>, connection: &zbus::Connecti
         return false;
     };
     for name in names.iter().filter(|name| !name.starts_with(':')) {
-        if owner_process_id(connection, name).await.ok() != Some(pid) {
+        let owner =
+            call::<_, u32>(connection, DAEMON, "GetConnectionUnixProcessID", &(name,)).await;
+        if owner != Some(pid) {
             continue;
         }
         if desktop_id == Some(name.as_str()) || exports_launch_interface(connection, name).await {
@@ -50,22 +51,47 @@ async fn serving(pid: u32, desktop_id: Option<&str>, connection: &zbus::Connecti
 }
 
 async fn exports_launch_interface(connection: &zbus::Connection, name: &str) -> bool {
-    let Ok(reply) = connection
-        .call_method(
-            Some(name),
-            application_path(name).as_str(),
-            Some("org.freedesktop.DBus.Introspectable"),
-            "Introspect",
-            &(),
-        )
+    let path = application_path(name);
+    let target = [name, path.as_str(), "org.freedesktop.DBus.Introspectable"];
+    call::<_, String>(connection, target, "Introspect", &())
         .await
-    else {
-        return false;
-    };
-    reply
-        .body()
-        .deserialize::<String>()
-        .is_ok_and(|xml| declares_launch_interface(&xml))
+        .is_some_and(|xml| declares_launch_interface(&xml))
+}
+
+const DAEMON: [&str; 3] = [
+    "org.freedesktop.DBus",
+    "/org/freedesktop/DBus",
+    "org.freedesktop.DBus",
+];
+
+/// One method call to `[destination, path, interface]` that never starts a
+/// service the bus could activate for the name, and its reply body.
+async fn call<B, R>(
+    connection: &zbus::Connection,
+    [destination, path, interface]: [&str; 3],
+    method: &str,
+    body: &B,
+) -> Option<R>
+where
+    B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
+    R: for<'d> zbus::zvariant::DynamicDeserialize<'d>,
+{
+    let proxy = zbus::proxy::Builder::<zbus::Proxy<'_>>::new(connection)
+        .destination(destination)
+        .ok()?
+        .path(path)
+        .ok()?
+        .interface(interface)
+        .ok()?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await
+        .ok()?;
+    proxy
+        .call_with_flags::<_, B, R>(method, zbus::proxy::MethodFlags::NoAutoStart.into(), body)
+        .await
+        .ok()
+        .flatten()
 }
 
 /// The object path an application exports under its bus name, as GLib and

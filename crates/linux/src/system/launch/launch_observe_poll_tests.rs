@@ -25,6 +25,7 @@ fn query_with_grace<'a>(
     let deadline =
         agent_desktop_core::Deadline::from_duration(std::time::Duration::from_secs(30)).unwrap();
     OwnerQuery::with_grace(identity, before, deadline, Some(grace))
+        .settling_after(std::time::Duration::ZERO)
 }
 
 fn stop_after_reads(
@@ -182,7 +183,8 @@ fn a_window_or_a_bridge_turned_off_ends_the_wait_after_the_grace() {
     let identity = keys(&["plain-x11-tool"]);
     let before = empty_baseline();
     for seen in [OffBus::Windowed, OffBus::BridgeOff] {
-        let query = query_until(&identity, &before, 30_000);
+        let query =
+            query_until(&identity, &before, 30_000).settling_after(std::time::Duration::ZERO);
         let reads = std::cell::Cell::new(0);
         let mut spawned = running_child(4242);
         let owner = poll_owner(
@@ -258,4 +260,24 @@ fn a_clean_launcher_exit_is_settled_only_after_the_query_settle() {
     )
     .unwrap_err();
     assert_eq!(error.code, ErrorCode::Internal);
+}
+
+#[test]
+fn a_window_off_the_bus_must_stay_off_for_its_settle() {
+    let identity = keys(&["late-registering-app"]);
+    let before = empty_baseline();
+    let query = query_until(&identity, &before, 30_000)
+        .settling_after(std::time::Duration::from_secs(3_600));
+    let reads = std::cell::Cell::new(0);
+    let mut spawned = running_child(4242);
+    let error = poll_owner(
+        &mut spawned,
+        &query,
+        stop_after_reads(&reads, 3, Some(Vec::new())),
+        |_, _| Step::Wait,
+        || OffBus::Windowed,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Internal);
+    assert_eq!(query.seen.get(), Seen::OffBus(OffBus::Windowed));
 }

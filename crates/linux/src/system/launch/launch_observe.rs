@@ -242,6 +242,7 @@ fn poll_owner(
     let deadline = query.deadline;
     let mut interval = POLL_INTERVAL;
     let mut exited_at = None;
+    let mut windowed_at = None;
     loop {
         let child = spawned.state();
         let expired = deadline.is_expired();
@@ -264,7 +265,7 @@ fn poll_owner(
         {
             let exited: &mut std::time::Instant =
                 exited_at.get_or_insert_with(std::time::Instant::now);
-            next = handoff(&apps, expired || exited.elapsed() >= query.settle);
+            next = handoff(&apps, expired || exited.elapsed() >= query.settles.handoff);
             if next == Step::Wait && expired {
                 next = Step::Failed(status);
             }
@@ -272,7 +273,18 @@ fn poll_owner(
         let not_on_bus = next == Step::Wait && child.is_none() && registry_read && grace_over && {
             let seen = observe();
             query.seen.set(Seen::OffBus(seen));
-            seen.never_joins()
+            match seen {
+                OffBus::Windowed => {
+                    let since: &mut std::time::Instant =
+                        windowed_at.get_or_insert_with(std::time::Instant::now);
+                    since.elapsed() >= query.settles.window_off_bus
+                }
+                OffBus::BridgeOff => true,
+                OffBus::Starting => {
+                    windowed_at = None;
+                    false
+                }
+            }
         };
         match next {
             Step::Owner(owner) => return Ok(Some(owner)),

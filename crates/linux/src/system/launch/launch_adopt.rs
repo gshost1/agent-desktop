@@ -9,6 +9,7 @@ use super::launch_step::Step;
 use crate::system::SharedBus;
 use crate::system::process::executable_identity::ExecutableIdentity;
 use crate::system::process::running_app::Running;
+use crate::system::registry::registry_frames::RootRead;
 use crate::system::window::window_ops::windows_of_process;
 
 #[path = "launch_adopt_bus.rs"]
@@ -63,33 +64,40 @@ fn choose(
     }
 }
 
-fn first_operand(identity: Option<&ExecutableIdentity>) -> Option<&OsStr> {
-    identity?
-        .argv
-        .as_ref()?
-        .iter()
-        .skip(1)
-        .map(|argument| argument.as_os_str())
-        .find(|argument| !argument.as_encoded_bytes().starts_with(b"-"))
+fn operands(identity: Option<&ExecutableIdentity>) -> Vec<&OsStr> {
+    identity
+        .and_then(|identity| identity.argv.as_ref())
+        .map(|argv| {
+            argv.iter()
+                .skip(1)
+                .map(|argument| argument.as_os_str())
+                .filter(|argument| !argument.as_encoded_bytes().starts_with(b"-"))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-/// A resident started with an operand, such as the script an interpreter
-/// runs, takes only a request with the same first operand.
+/// A resident started with operands, such as the script an interpreter runs
+/// or an option's value before it, takes only a request whose operands begin
+/// with the same words.
 fn same_operand(resident: &Running, requested: &Option<ExecutableIdentity>) -> bool {
-    match first_operand(resident.executable.as_ref()) {
-        None => true,
-        operand => operand == first_operand(requested.as_ref()),
-    }
+    let resident = operands(resident.executable.as_ref());
+    let requested = operands(requested.as_ref());
+    requested.starts_with(&resident)
 }
 
 /// The window of an adopted instance: its only window, or none when it shows
-/// several, because nothing tells which of them the launch changed.
+/// several, because nothing tells which of them the launch changed, or when
+/// the read of its windows was not complete.
 pub(super) fn adopted_window(
     bus: &SharedBus,
     owner: &Running,
     deadline: Deadline,
 ) -> Option<WindowInfo> {
-    let (windows, _) = windows_of_process(bus, owner.pid, deadline).ok()?;
+    let (windows, read) = windows_of_process(bus, owner.pid, deadline).ok()?;
+    if read != RootRead::Read {
+        return None;
+    }
     only_window(owner, windows)
 }
 

@@ -33,14 +33,6 @@ pub(crate) enum OffBus {
     BridgeOff,
 }
 
-impl OffBus {
-    /// Whether the evidence shows the process will not join the bus however
-    /// long the launch waits.
-    pub(crate) fn never_joins(self) -> bool {
-        self != Self::Starting
-    }
-}
-
 /// Reads the evidence for `pid`: its environment, then whether it maps a
 /// top-level X11 window, Xwayland's included.
 pub(crate) fn observe(pid: u32) -> OffBus {
@@ -143,6 +135,7 @@ fn descends_from(process: u32, ancestor: u32) -> bool {
             return true;
         }
         match read_stat(current) {
+            Ok(Some(stat)) if stat.parent == ancestor => return true,
             Ok(Some(stat)) if stat.parent > 1 => current = stat.parent,
             _ => return false,
         }
