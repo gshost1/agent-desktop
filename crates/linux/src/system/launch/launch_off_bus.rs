@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use agent_desktop_core::Deadline;
-use x11rb::connection::Connection;
 use x11rb::protocol::res::{ClientIdMask, ClientIdSpec, ConnectionExt as _};
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, MapState, Window};
 use x11rb::rust_connection::RustConnection;

@@ -17,7 +17,7 @@ fn one_resident_gaining_a_window_is_the_owner() {
     let before = [resident(7, &["old"]), resident(8, &["other"])];
     let after = [resident(7, &["old", "new"]), resident(8, &["other"])];
     assert_eq!(
-        select_owner(&before, &after),
+        select_owner(&before, &after, false),
         Step::Owner(after[0].0.clone())
     );
 }
@@ -25,14 +25,17 @@ fn one_resident_gaining_a_window_is_the_owner() {
 #[test]
 fn unchanged_windows_do_not_prove_a_handoff() {
     let before = [resident(7, &["old"])];
-    assert_eq!(select_owner(&before, &before), Step::Wait);
+    assert_eq!(select_owner(&before, &before, false), Step::Wait);
 }
 
 #[test]
 fn two_residents_gaining_windows_are_ambiguous() {
     let before = [resident(7, &[]), resident(8, &["old"])];
     let after = [resident(7, &["new"]), resident(8, &["old", "other"])];
-    assert_eq!(select_owner(&before, &after), Step::Ambiguous(vec![7, 8]));
+    assert_eq!(
+        select_owner(&before, &after, false),
+        Step::Ambiguous(vec![7, 8])
+    );
 }
 
 #[test]
@@ -40,19 +43,22 @@ fn a_replaced_process_instance_cannot_prove_a_handoff() {
     let before = [resident(7, &["old"])];
     let mut after = [resident(7, &["new"])];
     after[0].0.instance = "boot:replacement".to_owned();
-    assert_eq!(select_owner(&before, &after), Step::Wait);
+    assert_eq!(select_owner(&before, &after, false), Step::Wait);
 }
 
 #[test]
 fn losing_windows_does_not_prove_a_handoff() {
     let before = [resident(7, &["old", "closed"])];
     let after = [resident(7, &["old"])];
-    assert_eq!(select_owner(&before, &after), Step::Wait);
+    assert_eq!(select_owner(&before, &after, false), Step::Wait);
 }
 
 #[test]
 fn a_process_without_a_captured_baseline_cannot_prove_a_handoff() {
-    assert_eq!(select_owner(&[], &[resident(7, &["new"])]), Step::Wait);
+    assert_eq!(
+        select_owner(&[], &[resident(7, &["new"])], false),
+        Step::Wait
+    );
 }
 
 #[test]
@@ -60,5 +66,27 @@ fn a_different_pid_with_the_same_instance_token_is_not_a_resident() {
     let before = [resident(7, &["old"])];
     let mut after = [resident(8, &["new"])];
     after[0].0.instance = before[0].0.instance.clone();
-    assert_eq!(select_owner(&before, &after), Step::Wait);
+    assert_eq!(select_owner(&before, &after, false), Step::Wait);
+}
+
+#[test]
+fn a_settled_handoff_without_a_new_window_went_to_the_one_resident() {
+    let before = [resident(7, &["old"])];
+    assert_eq!(
+        select_owner(&before, &before, true),
+        Step::Owner(before[0].0.clone())
+    );
+}
+
+#[test]
+fn a_settled_handoff_names_no_owner_among_several_residents_or_a_replaced_one() {
+    let before = [resident(7, &["old"]), resident(8, &["other"])];
+    assert_eq!(select_owner(&before, &before, true), Step::Wait);
+    let mut replaced = [resident(7, &["old"])];
+    replaced[0].0.instance = "boot:replacement".to_owned();
+    assert_eq!(select_owner(&before[..1], &replaced, true), Step::Wait);
+    assert_eq!(
+        select_owner(&[], &[resident(7, &["old"])], true),
+        Step::Wait
+    );
 }

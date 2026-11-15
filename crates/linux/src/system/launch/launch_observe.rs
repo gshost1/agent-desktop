@@ -18,6 +18,10 @@ use crate::system::registry::Registry;
 pub(in crate::system) const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const POLL_LIMIT: Duration = Duration::from_millis(250);
 
+/// How long after a launcher exited cleanly the launch waits for a resident
+/// to gain a window before it takes the one running resident as the owner.
+const HANDOFF_SETTLE: Duration = Duration::from_millis(2_000);
+
 fn pick(mut found: Vec<&Running>) -> Option<Step> {
     match found.len() {
         0 => None,
@@ -200,7 +204,7 @@ pub(super) fn find_owner(
             Err(error) if error.code == ErrorCode::Timeout => Ok(None),
             Err(error) => Err(error),
         },
-        |apps| launch_handoff::observe(bus, query.before, apps, deadline),
+        |apps, settled| launch_handoff::observe(bus, query.before, apps, deadline, settled),
         || off_bus::observe(pid),
     )
 }
@@ -210,16 +214,18 @@ pub(super) fn find_owner(
 /// spawned process is off the bus. Only a read that began after the
 /// not-on-bus grace expired can settle the search on it, and only when
 /// `observe` shows the process will not join. `handoff` looks for a resident
-/// that received the launch from a launcher that exited cleanly.
+/// that received the launch from a launcher that exited cleanly, and is told
+/// when [`HANDOFF_SETTLE`] has passed since that exit.
 fn poll_owner(
     spawned: &mut Spawned,
     query: &OwnerQuery<'_>,
     mut read: impl FnMut() -> Result<Option<Vec<Running>>, AdapterError>,
-    mut handoff: impl FnMut(&[Running]) -> Step,
+    mut handoff: impl FnMut(&[Running], bool) -> Step,
     mut observe: impl FnMut() -> OffBus,
 ) -> Result<Option<Running>, AdapterError> {
     let deadline = query.deadline;
     let mut interval = POLL_INTERVAL;
+    let mut exited_at = None;
     loop {
         let child = spawned.state();
         let expired = deadline.is_expired();
@@ -240,7 +246,9 @@ fn poll_owner(
             && status.success()
             && matches!(next, Step::Wait | Step::Failed(_))
         {
-            next = handoff(&apps);
+            let exited: &mut std::time::Instant =
+                exited_at.get_or_insert_with(std::time::Instant::now);
+            next = handoff(&apps, expired || exited.elapsed() >= HANDOFF_SETTLE);
             if next == Step::Wait && expired {
                 next = Step::Failed(status);
             }
