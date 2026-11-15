@@ -1,7 +1,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocatorSelection {
     Strict,
-    All { limit: Option<u32> },
+    All {
+        limit: Option<u32>,
+    },
     Count,
     First,
     /// The first match whose whole name equals a substring name query, and

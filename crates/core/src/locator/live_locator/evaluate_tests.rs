@@ -36,7 +36,11 @@ fn cut_after(first: &str) -> ObservedTree {
     list.completeness.subtree_complete = false;
     list.children_count = Some(100);
     tree(
-        vec![root, node(1, evidence("button", Some(first)), Vec::new(), &[0]), list],
+        vec![
+            root,
+            node(1, evidence("button", Some(first)), Vec::new(), &[0]),
+            list,
+        ],
         vec![0],
         false,
     )
@@ -55,7 +59,10 @@ fn settled(tree: ObservedTree, selection: LocatorSelection) -> (String, bool) {
 #[test]
 fn a_longer_name_first_in_a_cut_read_does_not_settle_a_whole_name_first() {
     assert_eq!(
-        settled(cut_after("Save As"), LocatorSelection::FirstPreferringExactName),
+        settled(
+            cut_after("Save As"),
+            LocatorSelection::FirstPreferringExactName
+        ),
         ("Save As".to_string(), false)
     );
     assert_eq!(
@@ -67,7 +74,10 @@ fn a_longer_name_first_in_a_cut_read_does_not_settle_a_whole_name_first() {
 #[test]
 fn a_whole_name_first_in_a_cut_read_settles_it() {
     assert_eq!(
-        settled(cut_after("Save"), LocatorSelection::FirstPreferringExactName),
+        settled(
+            cut_after("Save"),
+            LocatorSelection::FirstPreferringExactName
+        ),
         ("Save".to_string(), true)
     );
 }

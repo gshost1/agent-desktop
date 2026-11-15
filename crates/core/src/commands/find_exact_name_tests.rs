@@ -122,8 +122,7 @@ fn single_by_name(name: &str, pick: fn(&mut FindSelectionArgs)) -> FindArgs {
 }
 
 fn single_name(args: FindArgs, adapter: &LiveFindAdapter) -> String {
-    let response =
-        execute(args, adapter, &CommandContext::default()).expect("find should succeed");
+    let response = execute(args, adapter, &CommandContext::default()).expect("find should succeed");
     response["match"]["name"]
         .as_str()
         .map(str::to_owned)
