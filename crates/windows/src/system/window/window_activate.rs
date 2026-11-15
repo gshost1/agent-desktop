@@ -74,6 +74,9 @@ pub(crate) fn focus_window(win: &WindowInfo, lease: &InteractionLease) -> Result
     };
     evidence.verify_stored().map_err(before_activation)?;
     let target = activation_root(handle);
+    if super::window_enum::is_hidden_by_cloak(target) {
+        return Err(before_activation(cloaked_target_error()));
+    }
     ensure_window_is_pumping(target).map_err(before_activation)?;
     restore_if_iconic(target, &evidence).map_err(before_activation)?;
     if is_owned_foreground(target, &evidence) {
@@ -114,6 +117,17 @@ fn activation_root(handle: super::window_enum::WindowHandle) -> super::window_en
 #[cfg(not(target_os = "windows"))]
 fn activation_root(handle: super::window_enum::WindowHandle) -> super::window_enum::WindowHandle {
     handle
+}
+
+/// A cloaked window is not shown, and the agent inventory leaves it out
+/// (a dismissed Start survives cloaked, A26-2). Raising one hands the
+/// foreground to a window nobody can see, so it is refused before any write.
+fn cloaked_target_error() -> AdapterError {
+    AdapterError::new(
+        ErrorCode::WindowNotFound,
+        "window is cloaked, so it is not shown on this desktop",
+    )
+    .with_suggestion("Take a fresh snapshot to find the window that is shown now")
 }
 
 fn before_activation(error: AdapterError) -> AdapterError {

@@ -87,3 +87,50 @@ fn a_child_window_id_raises_its_own_top_level_window() {
     );
     assert!(is_foreground_window(target.handle() as _));
 }
+
+fn set_cloak(handle: isize, cloaked: bool) -> i32 {
+    use windows_sys::Win32::Graphics::Dwm::{DWMWA_CLOAK, DwmSetWindowAttribute};
+    let value = i32::from(cloaked);
+    unsafe {
+        DwmSetWindowAttribute(
+            handle as _,
+            DWMWA_CLOAK as u32,
+            (&value as *const i32).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    }
+}
+
+fn foreground() -> isize {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    (unsafe { GetForegroundWindow() }) as isize
+}
+
+/// A cloaked window is not shown, so raising it would hand the foreground to
+/// a window nobody can see: a dismissed Start stays cloaked, and before this
+/// refusal the raise made it the foreground and reported success.
+#[test]
+fn a_cloaked_window_is_refused_before_any_raise() {
+    let _stage = crate::tree::fixture::fixture_window::on_screen_stage();
+    crate::tree::fixture::ensure_test_apartment();
+    let (left, top) = crate::tree::fixture::fixture_window::on_screen_origin();
+    let target = crate::tree::fixture::LocalFixture::create_at(left, top).expect("target fixture");
+    assert_eq!(
+        set_cloak(target.handle(), true),
+        0,
+        "the DWM cloaks the window"
+    );
+    assert!(super::super::window_enum::is_cloaked(target.handle() as _));
+
+    let focused = focus_window(&window_info_for_current_process(target.handle()), &lease());
+    let after = foreground();
+    let _ = set_cloak(target.handle(), false);
+
+    let error = focused.expect_err("a cloaked window is not raised");
+    assert_eq!(error.code, ErrorCode::WindowNotFound, "{error:?}");
+    assert_ne!(
+        after,
+        target.handle(),
+        "the foreground never moved onto the cloaked window"
+    );
+}

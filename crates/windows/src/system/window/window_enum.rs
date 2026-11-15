@@ -125,6 +125,19 @@ pub(crate) fn is_cloaked(window: HWND) -> bool {
     succeeded && cloaked != 0
 }
 
+/// Whether the DWM hides a window that is not minimized: the shape the agent
+/// inventory leaves out as cloaked. A minimized window stays listable, so its
+/// cloak does not count here.
+#[cfg(target_os = "windows")]
+pub(crate) fn is_hidden_by_cloak(window: HWND) -> bool {
+    is_cloaked(window) && unsafe { IsIconic(window) } == 0
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn is_hidden_by_cloak(_window: WindowHandle) -> bool {
+    false
+}
+
 #[cfg(target_os = "windows")]
 fn is_tool_window(window: HWND) -> bool {
     let ex_style = unsafe { GetWindowLongW(window, GWL_EXSTYLE) };
