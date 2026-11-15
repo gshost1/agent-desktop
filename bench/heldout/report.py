@@ -12,13 +12,16 @@ Statistics are kept apart, because a tool that fails fast looks fast in any medi
   pass          verifier passes / valid runs
   per success   sum of the metric over every run of the task (failures included) divided by the passes:
                 what one success costs. A failure adds its cost and removes a success, so failing never helps.
+                With no pass the divisor is 0.5 (charged), or none in the per-task tables.
   pass median   median over passing runs only
   all median    median over every valid run, passes and failures alike (the v1 report's only number)
   p90, max      over every valid run; p90 interpolates linearly between order statistics (n=5: between the
                 4th and 5th value)
 
-Ranking: most passes first; ties go to the lower per-success wall time summed over the tasks where every
-ranked arm has at least one pass. A ranked arm can never move up by failing a run.
+Ranking: only arms that ran every task of the suite are ranked; the rest get their own unranked table. Order:
+pass rate, then tasks not passed, then per-success wall time summed over every task, where a task with no pass is
+charged twice its total (as if half a run had passed). A ranked arm can never move up by failing a run, and no task
+leaves the sums because some arm failed it.
 
 Usage: python3 -I heldout/report.py [--model M] [--host H] [--focus ad-14] [--arms a,b] [--results <jsonl> ...]
 """
@@ -122,58 +125,77 @@ def passes(rs):
     return sum(r["ok"] for r in rs)
 
 
-def common_tasks(by, suite, tasks, arms):
-    """Tasks where every arm has at least one valid run and one pass: sums over them compare like with like."""
-    return [t for t in tasks if all(passes(by.get((suite, t, a), [])) > 0 for a in arms)]
+NO_PASS_SHARE = 0.5
+
+
+def charged(rs, m):
+    """Per-success cost of one (task, arm) group: the total over its runs divided by its passes.
+
+    A group with no pass is charged as if half a run had passed, twice its total, so a task an arm never
+    passes stays in its sums and costs more than the same runs with one pass would."""
+    total = sum(r[m] for r in rs)
+    return total / max(passes(rs), NO_PASS_SHARE)
 
 
 def ranking(rows, suite):
-    """Arms ordered by passes (desc), then per-success wall summed over the common tasks (asc)."""
+    """(ranked, partial, tasks). Ranked arms ran every task of the suite; partial arms did not and are never ranked.
+
+    Ranked order: pass rate (desc), then tasks with no pass (asc), then charged per-success wall summed over
+    every task (asc)."""
     by = group(rows)
     srows = [r for r in rows if r["suite"] == suite]
     tasks, arms = tasks_in(rows, suite), arms_in(srows)
-    common = common_tasks(by, suite, tasks, arms)
-    out = []
+    ranked, partial = [], []
     for arm in arms:
         rs = [r for r in srows if r["arm"] == arm]
-        per = {m: sum(cell_stats(by[(suite, t, arm)], m)["per_success"] for t in common) for m, _ in METRICS}
-        zero = sum(1 for t in tasks if by.get((suite, t, arm)) and passes(by[(suite, t, arm)]) == 0)
-        out.append({"arm": arm, "passes": passes(rs), "runs": len(rs), "per": per, "zero_tasks": zero,
-                    "covered": sum(1 for t in tasks if by.get((suite, t, arm)))})
-    out.sort(key=lambda x: (-x["passes"] / max(x["runs"], 1), x["per"]["wall"]))
-    return out, common, tasks
+        ran = [t for t in tasks if by.get((suite, t, arm))]
+        per = {m: sum(charged(by[(suite, t, arm)], m) for t in ran) for m, _ in METRICS}
+        zero = [t for t in ran if passes(by[(suite, t, arm)]) == 0]
+        entry = {"arm": arm, "passes": passes(rs), "runs": len(rs), "per": per, "zero": zero, "ran": ran}
+        (ranked if len(ran) == len(tasks) else partial).append(entry)
+    ranked.sort(key=lambda x: (-x["passes"] / max(x["runs"], 1), len(x["zero"]), x["per"]["wall"]))
+    partial.sort(key=lambda x: x["arm"])
+    return ranked, partial, tasks
 
 
 def summary_tables(rows, suite):
     by = group(rows)
-    ranked, common, tasks = ranking(rows, suite)
-    n_common = f"{len(common)}/{len(tasks)}"
+    ranked, partial, tasks = ranking(rows, suite)
+    n = len(tasks)
+    head = ("| arm | pass | rate | tasks not passed | CLI s / success | wall s / success | tokens / success | "
+            "turns / success |")
     lines = [f"### {suite}: ranking (cannot reward failing)", "",
-             f"Order: pass rate, then per-success wall time. Per-success sums cover the {n_common} tasks where every arm "
-             "passes at least once.", "",
-             "| rank | arm | pass | rate | tasks with 0 passes | CLI s / success | wall s / success | tokens / success | "
-             "turns / success |", "|---|---|---|---|---|---|---|---|---|"]
+             f"Only arms that ran all {n} tasks are ranked. Order: pass rate, then tasks not passed, then per-success "
+             "wall time. Per-success sums cover every task: a task's total over its runs divided by its passes, and "
+             "a task with no pass is charged twice its total (as if half a run had passed).", "",
+             "| rank " + head, "|---" * 9 + "|"]
     for i, x in enumerate(ranked, 1):
         per = " | ".join(fmt(x["per"][m], m) for m, _ in METRICS)
+        zero = ", ".join(x["zero"]) if x["zero"] else "0"
         lines.append(f"| {i} | {x['arm']} | {x['passes']}/{x['runs']} | {x['passes'] / max(x['runs'], 1):.0%} | "
-                     f"{x['zero_tasks']} | {per} |")
-    lines += ["", f"### {suite}: sums of per-task statistics over the {n_common} common tasks", "",
-              "Each cell: pass median / all median / p90 / max. Pass median counts passing runs only; the other three "
-              "count every valid run.", "", "| arm | " + " | ".join(label for _, label in METRICS) + " |",
-              "|---|" + "---|" * len(METRICS)]
-    for x in ranked:
+                     f"{zero} | {per} |")
+    if partial:
+        lines += ["", f"### {suite}: not ranked (ran only some of the {n} tasks)", "",
+                  "Sums cover only the tasks the arm ran, so they do not compare with the ranking above.", "",
+                  "| arm | tasks run " + head[5:], "|---" * 9 + "|"]
+        for x in partial:
+            per = " | ".join(fmt(x["per"][m], m) for m, _ in METRICS)
+            zero = ", ".join(x["zero"]) if x["zero"] else "0"
+            lines.append(f"| {x['arm']} | {len(x['ran'])}/{n}: {','.join(x['ran'])} | {x['passes']}/{x['runs']} | "
+                         f"{x['passes'] / max(x['runs'], 1):.0%} | {zero} | {per} |")
+    lines += ["", f"### {suite}: sums of per-task statistics over every task an arm ran", "",
+              "Each cell: pass median / all median / p90 / max. Pass median counts passing runs only and sums only "
+              "the tasks with a pass (marked * when some task has none); the other three count every valid run.", "",
+              "| arm | tasks | " + " | ".join(label for _, label in METRICS) + " |",
+              "|---|---|" + "---|" * len(METRICS)]
+    for x in ranked + partial:
         cells = []
         for m, _ in METRICS:
-            stats = [cell_stats(by[(suite, t, x["arm"])], m) for t in common]
-            cells.append(" / ".join(fmt(sum(s[k] for s in stats), m) for k in ("pass_med", "all_med", "p90", "max")))
-        lines.append(f"| {x['arm']} | " + " | ".join(cells) + " |")
-    lines += ["", f"### {suite}: sum of per-task all-run medians over every task (v1 number; rewards fast failures)", "",
-              "| arm | " + " | ".join(label for _, label in METRICS) + " | pass | tasks with runs |",
-              "|---|" + "---|" * (len(METRICS) + 2)]
-    for x in ranked:
-        sums = [fmt(sum(cell_stats(by[(suite, t, x["arm"])], m)["all_med"] for t in tasks if by.get((suite, t, x["arm"]))), m)
-                for m, _ in METRICS]
-        lines.append(f"| {x['arm']} | " + " | ".join(sums) + f" | {x['passes']}/{x['runs']} | {x['covered']}/{len(tasks)} |")
+            stats = [cell_stats(by[(suite, t, x["arm"])], m) for t in x["ran"]]
+            pm = [s["pass_med"] for s in stats if s["pass_med"] is not None]
+            first = fmt(sum(pm), m) + ("*" if len(pm) < len(stats) else "")
+            cells.append(" / ".join([first] + [fmt(sum(s[k] for s in stats), m) for k in ("all_med", "p90", "max")]))
+        lines.append(f"| {x['arm']} | {len(x['ran'])}/{n} | " + " | ".join(cells) + " |")
     return lines
 
 

@@ -108,6 +108,32 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(per["ad-up"], 120.0)
         self.assertEqual(per["ad-14"], 62.5)
 
+    def test_a_task_some_arm_never_passes_stays_in_every_sum(self):
+        rows = self.hn6_like() + [row("ad-up", "hn2", False, 1, 30) for _ in range(5)] + \
+            [row("ad-14", "hn2", True, 2, 40) for _ in range(5)]
+        ranked, partial, tasks = report.ranking(rows, "native")
+        self.assertEqual(tasks, ["hn2", "hn6"])
+        self.assertEqual(partial, [])
+        per = {x["arm"]: x["per"]["wall"] for x in ranked}
+        self.assertEqual(per["ad-up"], 120.0 + 150 / 0.5)
+        self.assertEqual(per["ad-14"], 62.5 + 40.0)
+        self.assertEqual([x["zero"] for x in ranked], [[], ["hn2"]])
+
+    def test_partial_coverage_is_never_ranked(self):
+        rows = self.hn6_like() + [row("ad-14", "hn2", True, 2, 40) for _ in range(5)] + \
+            [row("ad-up", "hn2", True, 1, 5) for _ in range(5)] + [row("cand", "hn2", True, 1, 2) for _ in range(5)]
+        ranked, partial, _ = report.ranking(rows, "native")
+        self.assertNotIn("cand", [x["arm"] for x in ranked])
+        self.assertEqual([x["arm"] for x in partial], ["cand"])
+        text = "\n".join(report.summary_tables(rows, "native"))
+        self.assertIn("not ranked", text)
+        self.assertIn("| cand | 1/2: hn2 |", text)
+
+    def test_losing_the_last_pass_never_improves_the_charge(self):
+        one = [row("a", "t", True, 1, 10)] + [row("a", "t", False, 1, 10) for _ in range(4)]
+        none = [row("a", "t", False, 1, 10) for _ in range(5)]
+        self.assertLess(report.charged(one, "wall"), report.charged(none, "wall"))
+
     def test_one_more_failure_never_improves_per_success(self):
         base = [row("a", "t", True, 1, 10) for _ in range(4)]
         worse = base + [row("a", "t", False, 0.1, 1)]
@@ -145,8 +171,10 @@ class ReportTests(unittest.TestCase):
         text = report.render(self.hn6_like(), 0)
         self.assertIn("ranking (cannot reward failing)", text)
         self.assertIn("pass median / all median / p90 / max", text)
-        self.assertIn("rewards fast failures", text)
+        self.assertIn("charged twice its total", text)
         header = next(line for line in text.splitlines() if line.startswith("| rank |"))
+        sep = text.splitlines()[text.splitlines().index(header) + 1]
+        self.assertEqual(header.count("|"), sep.count("|"))
         self.assertLess(header.index("CLI"), header.index("wall"))
 
 
