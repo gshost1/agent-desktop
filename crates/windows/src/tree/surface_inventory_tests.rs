@@ -193,6 +193,9 @@ fn a_staged_modal_presents_a_sheet_surface_distinct_from_its_owner_window() {
 #[test]
 fn an_open_menu_presents_a_menu_surface_with_the_staged_item_count() {
     bootstrap();
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let _app_name_scope = app_name_lock();
     let _stage = crate::tree::fixture::fixture_window::on_screen_stage();
     let menu = MenuFixture::spawn().expect("the menu fixture spawns");

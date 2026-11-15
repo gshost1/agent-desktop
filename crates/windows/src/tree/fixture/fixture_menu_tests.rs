@@ -43,6 +43,9 @@ fn the_menu_fixture_opens_and_closes_the_context_menu_independently_of_any_predi
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
     assert!(
         !fixture.menu_is_up(),
@@ -70,6 +73,9 @@ fn the_menu_fixture_opens_and_closes_the_context_menu_independently_of_any_predi
 #[test]
 fn opening_the_fixture_menu_does_not_put_the_test_process_into_menu_mode() {
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");

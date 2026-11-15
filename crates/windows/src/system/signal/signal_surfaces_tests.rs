@@ -156,6 +156,9 @@ fn an_open_menu_produces_a_menu_surface_signal_and_no_event_while_it_stays_open(
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
     let app = app_for_pid(fixture.process_id(), "menu-fixture");
 

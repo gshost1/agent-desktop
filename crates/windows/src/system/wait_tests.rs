@@ -36,7 +36,7 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::system::fixture::test_support::FIXTURE_APP_NAME_LOCK;
+use crate::system::fixture::test_support::{FIXTURE_APP_NAME_LOCK, SHELL_SURFACE_LOCK};
 use crate::tree::fixture::bootstrap;
 use crate::tree::fixture::fixture_menu::MenuFixture;
 
@@ -67,6 +67,7 @@ fn open_true_returns_ok_once_the_fixtures_menu_opens_shortly_after_the_wait_star
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _stage = crate::tree::fixture::fixture_window::on_screen_stage();
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
     let identity = identity_for(ProcessId::from(fixture.process_id()));
@@ -104,6 +105,7 @@ fn open_false_waits_and_returns_ok_once_the_already_open_menu_is_dismissed() {
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
     fixture.open_context_menu();
     assert!(fixture.wait_for_menu_state(true, STATE_TIMEOUT));
@@ -163,6 +165,7 @@ fn a_menu_that_never_transitions_times_out_with_direction_specific_platform_deta
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = SHELL_SURFACE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _stage = crate::tree::fixture::fixture_window::on_screen_stage();
     let never_opens = MenuFixture::spawn().expect("the menu fixture starts");
     let open_identity = identity_for(ProcessId::from(never_opens.process_id()));
