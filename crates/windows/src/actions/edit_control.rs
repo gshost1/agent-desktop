@@ -15,6 +15,10 @@
 //! combo box forwards `CBN_EDITCHANGE`, and it marks the text modified. The
 //! same dialog saved to the written path 2 of 2 through it (run 43740201813).
 //!
+//! A value holding U+0000, a read-only or disabled edit and a value over the
+//! edit's text limit keep `ValuePattern.SetValue`, since `EM_REPLACESEL` would
+//! cut or refuse them.
+//!
 //! The rule keys on the window class the control was built from, which
 //! `RealGetWindowClassW` reports through any superclass, never on the
 //! application: an `Edit`, or a `ComboBox` whose edit child takes the text.
@@ -57,6 +61,8 @@ impl EditTarget {
 #[cfg(target_os = "windows")]
 mod imp {
     use super::{AdapterError, Deadline, EditTarget};
+    use crate::actions::chain::{DeliveryOutcome, after_delivery};
+    use crate::actions::value_write::gated_pattern_value_equals;
     use crate::tree::element::UIAElement;
     use agent_desktop_core::{DeliverySemantics, ErrorCode};
     use std::ffi::c_void;
@@ -81,7 +87,11 @@ mod imp {
         let Some(class) = real_class(handle) else {
             return EditTarget::NotEdit;
         };
-        let child = combo_edit_child(handle);
+        let child = if class.eq_ignore_ascii_case("ComboBox") {
+            combo_edit_child(handle)
+        } else {
+            None
+        };
         match EditTarget::from_classes(handle, &class, child) {
             EditTarget::Edit(edit) if accepts(edit, value, deadline) => EditTarget::Edit(edit),
             _ => EditTarget::NotEdit,
@@ -89,30 +99,51 @@ mod imp {
     }
 
     /// Replaces the edit's whole text with `value` through `EM_SETSEL` and
-    /// `EM_REPLACESEL`. `Ok(false)` means the selection message was never
-    /// delivered, so nothing changed. A replace that was sent and not
-    /// answered may still land, so it reports a delivered, unverified error.
-    pub(crate) fn replace_text(
+    /// `EM_REPLACESEL`.
+    ///
+    /// An unanswered selection fails before any text is sent, so it is not
+    /// delivered. An unanswered replace may still land: a timed-out sent
+    /// message stays queued, so it reports a delivered, unverified error and
+    /// leaves the text buffer allocated for the late delivery, which reads it
+    /// in place when the edit lives in this process.
+    fn replace_text(handle: isize, value: &str, deadline: Deadline) -> Result<(), AdapterError> {
+        if send(handle, EM_SETSEL, 0, -1, deadline).is_none() {
+            return Err(unanswered("EM_SETSEL", DeliverySemantics::not_delivered()));
+        }
+        let text: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
+        if send(handle, EM_REPLACESEL, 1, text.as_ptr() as isize, deadline).is_some() {
+            return Ok(());
+        }
+        std::mem::forget(text);
+        Err(unanswered(
+            "EM_REPLACESEL",
+            DeliverySemantics::delivered_unverified(),
+        ))
+    }
+
+    /// Replaces the edit's text and reads the value back through the
+    /// element's secure-gated value read.
+    pub(crate) fn write_edit(
+        element: &UIAElement,
         handle: isize,
         value: &str,
         deadline: Deadline,
-    ) -> Result<bool, AdapterError> {
-        if send(handle, EM_SETSEL, 0, -1, deadline).is_none() {
-            return Ok(false);
-        }
-        let text: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
-        match send(handle, EM_REPLACESEL, 1, text.as_ptr() as isize, deadline) {
-            Some(_) => Ok(true),
-            None => Err(AdapterError::new(
-                ErrorCode::ActionFailed,
-                "The edit control did not answer the text replacement in time",
-            )
-            .with_platform_detail(format!(
-                "SendMessageTimeoutW(EM_REPLACESEL): {}",
-                std::io::Error::last_os_error()
-            ))
-            .with_disposition(DeliverySemantics::delivered_unverified())),
-        }
+    ) -> Result<DeliveryOutcome, AdapterError> {
+        replace_text(handle, value, deadline)?;
+        let verified = gated_pattern_value_equals(element, value).map_err(after_delivery)?;
+        Ok(DeliveryOutcome::from_observation(verified))
+    }
+
+    fn unanswered(message: &str, disposition: DeliverySemantics) -> AdapterError {
+        AdapterError::new(
+            ErrorCode::ActionFailed,
+            "The edit control did not answer the text replacement in time",
+        )
+        .with_platform_detail(format!(
+            "SendMessageTimeoutW({message}): {}",
+            std::io::Error::last_os_error()
+        ))
+        .with_disposition(disposition)
     }
 
     fn element_window(element: &UIAElement) -> Option<isize> {
@@ -151,7 +182,10 @@ mod imp {
     fn accepts(handle: isize, value: &str, deadline: Deadline) -> bool {
         let window = handle as *mut c_void;
         let style = unsafe { GetWindowLongW(window, GWL_STYLE) };
-        if unsafe { IsWindowEnabled(window) } == 0 || style & ES_READONLY != 0 {
+        if value.contains('\0')
+            || unsafe { IsWindowEnabled(window) } == 0
+            || style & ES_READONLY != 0
+        {
             return false;
         }
         let Some(limit) = send(handle, EM_GETLIMITTEXT, 0, 0, deadline) else {
@@ -191,6 +225,7 @@ mod imp {
 #[cfg(not(target_os = "windows"))]
 mod imp {
     use super::{AdapterError, Deadline, EditTarget};
+    use crate::actions::chain::DeliveryOutcome;
     use crate::tree::element::UIAElement;
 
     pub(crate) fn edit_target(
@@ -201,17 +236,18 @@ mod imp {
         EditTarget::NotEdit
     }
 
-    pub(crate) fn replace_text(
+    pub(crate) fn write_edit(
+        _element: &UIAElement,
         _handle: isize,
         _value: &str,
         _deadline: Deadline,
-    ) -> Result<bool, AdapterError> {
+    ) -> Result<DeliveryOutcome, AdapterError> {
         Err(AdapterError::not_supported("EditControl.ReplaceSel"))
     }
 }
 
 #[allow(unused_imports)]
-pub(crate) use imp::{edit_target, replace_text};
+pub(crate) use imp::{edit_target, write_edit};
 
 #[cfg(test)]
 #[path = "edit_control_tests.rs"]

@@ -46,7 +46,7 @@ mod imp {
         VALUE_LABEL, VALUE_WRITE_CHAIN, execute_chain,
     };
     use crate::actions::chain::{after_delivery, gated};
-    use crate::actions::edit_control::{EDIT_LABEL, EditTarget, edit_target, replace_text};
+    use crate::actions::edit_control::{EDIT_LABEL, EditTarget, edit_target, write_edit};
     use crate::actions::mutation::{classify_success, classify_write};
     use crate::tree::properties::element_properties::ElementProperties;
     use crate::tree::properties::property_ids::TreeProperty;
@@ -61,12 +61,7 @@ mod imp {
         deadline: Deadline,
     ) -> Result<Vec<ActionStep>, AdapterError> {
         let parsed = parse_finite_f64(value);
-        let writable = value_writable(element);
-        let edit = if writable {
-            edit_target(element, value, deadline)
-        } else {
-            EditTarget::NotEdit
-        };
+        let (writable, edit) = writable_target(element, value, deadline);
         set_value_judged_for(
             deadline,
             policy,
@@ -77,7 +72,7 @@ mod imp {
                 edit_control: edit.handle().is_some(),
             },
             || match edit.handle() {
-                Some(handle) => invoke_edit_replace(element, handle, value, deadline),
+                Some(handle) => write_edit(element, handle, value, deadline),
                 None => invoke_value_set(element, value),
             },
             || match parsed {
@@ -92,9 +87,26 @@ mod imp {
         policy: InteractionPolicy,
         deadline: Deadline,
     ) -> Result<Vec<ActionStep>, AdapterError> {
-        let value_ok = value_writable(element);
-        clear_judged_for(deadline, policy, value_ok, || invoke_value_set(element, ""))
-            .map_err(|error| attach_value_chars(error, ""))
+        let (value_ok, edit) = writable_target(element, "", deadline);
+        let edit_control = edit.handle().is_some();
+        clear_judged_for(deadline, policy, value_ok, edit_control, || {
+            match edit.handle() {
+                Some(handle) => write_edit(element, handle, "", deadline),
+                None => invoke_value_set(element, ""),
+            }
+        })
+        .map_err(|error| attach_value_chars(error, ""))
+    }
+
+    fn writable_target(
+        element: &UIAElement,
+        value: &str,
+        deadline: Deadline,
+    ) -> (bool, EditTarget) {
+        if !value_writable(element) {
+            return (false, EditTarget::NotEdit);
+        }
+        (true, edit_target(element, value, deadline))
     }
 
     /// Injected SetValue chain — unit-test seam and live path.
@@ -114,11 +126,7 @@ mod imp {
             policy,
             &mut [
                 ChainRung {
-                    label: if plan.edit_control {
-                        EDIT_LABEL
-                    } else {
-                        VALUE_LABEL
-                    },
+                    label: value_rung_label(plan.edit_control),
                     requires_headed: false,
                     run: &mut value_run,
                 },
@@ -137,6 +145,7 @@ mod imp {
         deadline: Deadline,
         policy: InteractionPolicy,
         value_writable: bool,
+        edit_control: bool,
         mut value_write: impl FnMut() -> Result<DeliveryOutcome, AdapterError>,
     ) -> Result<Vec<ActionStep>, AdapterError> {
         let mut value_run = gated(value_writable, &mut value_write);
@@ -145,11 +154,19 @@ mod imp {
             &CLEAR_CHAIN,
             policy,
             &mut [ChainRung {
-                label: VALUE_LABEL,
+                label: value_rung_label(edit_control),
                 requires_headed: false,
                 run: &mut value_run,
             }],
         )
+    }
+
+    fn value_rung_label(edit_control: bool) -> &'static str {
+        if edit_control {
+            EDIT_LABEL
+        } else {
+            VALUE_LABEL
+        }
     }
 
     pub(crate) fn value_writable(element: &UIAElement) -> bool {
@@ -180,19 +197,6 @@ mod imp {
             Err(error) => classify_write("get_pattern", VALUE_LABEL, &error)?,
         };
         if !delivered {
-            return Ok(DeliveryOutcome::NotDelivered);
-        }
-        let verified = gated_pattern_value_equals(element, value).map_err(after_delivery)?;
-        Ok(DeliveryOutcome::from_observation(verified))
-    }
-
-    fn invoke_edit_replace(
-        element: &UIAElement,
-        handle: isize,
-        value: &str,
-        deadline: Deadline,
-    ) -> Result<DeliveryOutcome, AdapterError> {
-        if !replace_text(handle, value, deadline)? {
             return Ok(DeliveryOutcome::NotDelivered);
         }
         let verified = gated_pattern_value_equals(element, value).map_err(after_delivery)?;
