@@ -64,3 +64,7 @@ impl SessionBus {
 #[cfg(test)]
 #[path = "session_bus_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "session_bus_expectation_tests.rs"]
+mod expectation_tests;
