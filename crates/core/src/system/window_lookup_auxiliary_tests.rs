@@ -61,7 +61,11 @@ impl crate::SystemOps for PanelApp {
         Ok(window.clone())
     }
 
-    fn focus_window(&self, window: &WindowInfo, _lease: &InteractionLease) -> Result<(), AdapterError> {
+    fn focus_window(
+        &self,
+        window: &WindowInfo,
+        _lease: &InteractionLease,
+    ) -> Result<(), AdapterError> {
         self.record(window);
         Ok(())
     }
