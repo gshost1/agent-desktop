@@ -22,6 +22,33 @@ pub(crate) fn resolve_surface(
     resolve_row(row, deadline)
 }
 
+/// The shell surface presented right now under exactly `handle`, if any.
+///
+/// The agent window inventory leaves the shell chrome out on purpose (the
+/// taskbar is a tool window, the tray toolbar a child window, and the
+/// immersive surfaces are absent from `EnumWindows`, A26-1), so a window id a
+/// shell-surface snapshot handed out is vouched for by the resolver that
+/// handed it out, never by the inventory. A row whose resolution fails says
+/// nothing about this handle, so it is passed over rather than fatal.
+pub(crate) fn presented_surface_at(
+    handle: crate::system::window::window_enum::WindowHandle,
+    deadline: Deadline,
+) -> Result<Option<WindowInfo>, AdapterError> {
+    let id = crate::system::window::window_ops::window_id(handle);
+    for row in super::shell_surface_kinds::rows()
+        .iter()
+        .filter(|row| row.exists_on_build)
+    {
+        deadline.ensure_remaining()?;
+        if let Ok(Some(info)) = resolve_present_row(row) {
+            if info.id == id {
+                return Ok(Some(info));
+            }
+        }
+    }
+    Ok(None)
+}
+
 pub(in crate::system) fn resolve_row(
     row: &SurfaceKindRow,
     deadline: Deadline,

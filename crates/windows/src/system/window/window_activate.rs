@@ -65,13 +65,31 @@ pub(crate) fn focus_window(win: &WindowInfo, lease: &InteractionLease) -> Result
         )));
     };
     evidence.verify_stored().map_err(before_activation)?;
-    ensure_window_is_pumping(handle).map_err(before_activation)?;
-    restore_if_iconic(handle, &evidence).map_err(before_activation)?;
-    if is_owned_foreground(handle, &evidence) {
+    let target = activation_root(handle);
+    ensure_window_is_pumping(target).map_err(before_activation)?;
+    restore_if_iconic(target, &evidence).map_err(before_activation)?;
+    if is_owned_foreground(target, &evidence) {
         return Ok(());
     }
     let strictly_higher = activation_target_is_strictly_higher(win.pid);
-    raise_with_budget(handle, &evidence, lease, strictly_higher)
+    raise_with_budget(target, &evidence, lease, strictly_higher)
+}
+
+/// The window activation acts on: the handle itself, or the root of a child
+/// window id, because only a top-level window can own the foreground. A
+/// shell-surface snapshot is what hands out a child id (the tray toolbar);
+/// the identity evidence stays on the child, so every ownership check still
+/// reads the window the caller named.
+#[cfg(target_os = "windows")]
+fn activation_root(handle: super::window_enum::WindowHandle) -> super::window_enum::WindowHandle {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor};
+    let root = unsafe { GetAncestor(handle, GA_ROOT) };
+    if root.is_null() { handle } else { root }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn activation_root(handle: super::window_enum::WindowHandle) -> super::window_enum::WindowHandle {
+    handle
 }
 
 fn before_activation(error: AdapterError) -> AdapterError {

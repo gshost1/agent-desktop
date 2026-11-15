@@ -1,0 +1,3 @@
+### Bug Fixes
+
+* On Windows, a headed ref action on a ref from a shell-surface snapshot (`--surface taskbar`, `system-tray`, `system-tray-overflow`, `start-menu` or `action-center`), such as `--headed click`, `hover`, `focus` or `right-click`, no longer fails `WINDOW_NOT_FOUND` before it acts. The headed focus step looked the ref's window up in the agent window inventory, which leaves the shell chrome out (the taskbar is a tool window, the tray toolbar a child window, the immersive surfaces are not enumerable); it now accepts the window the shell-surface resolver presents under the same id and process, and raises a child window's top-level window.
