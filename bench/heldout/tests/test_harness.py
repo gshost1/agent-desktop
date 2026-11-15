@@ -239,17 +239,17 @@ class CloseBenchAppTests(unittest.TestCase):
         self.assertEqual(d.calls, [])
 
     def test_windows_the_task_set_allows_are_quit_not_refused(self):
-        d = FakeDesktop([["Calculator"]])
-        desktop.close_app(d, "Calculator", allowed=lambda title: title == "Calculator")
+        d = FakeDesktop([["Tool"]])
+        desktop.close_app(d, "Tool", allowed=lambda title: title == "Tool")
         self.assertFalse(d.running)
-        d = FakeDesktop([["Calculator"]])
+        d = FakeDesktop([["Tool"]])
         with self.assertRaisesRegex(RuntimeError, "not a bench window"):
-            desktop.close_app(d, "Calculator")
+            desktop.close_app(d, "Tool")
         self.assertTrue(d.running)
 
     def test_extra_discard_prefixes_are_closed_without_saving(self):
-        d = FakeDesktop([["seed-fx-1.mov"]])
-        desktop.close_app(d, "QuickTime Player", allowed=lambda title: title.startswith("seed-fx-"), discard=("seed-fx-",))
+        d = FakeDesktop([["seed-fx-1.doc"]])
+        desktop.close_app(d, "Viewer", allowed=lambda title: title.startswith("seed-fx-"), discard=("seed-fx-",))
         closes = [c for c in d.calls if c[0] == "close-discard"]
         self.assertEqual(len(closes), 1)
         self.assertIn("seed-fx-", closes[0])
