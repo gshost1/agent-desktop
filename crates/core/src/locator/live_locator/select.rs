@@ -1,15 +1,36 @@
 use super::{LocatorMatchData, LocatorSelection, ObservedTree};
+use crate::{locator::LocatorQuery, tree::search_text};
 
+/// The whole name a `--name` query asks for when it matches by substring.
+/// A match whose whole name equals it is the one the caller named.
+fn exact_name_wanted(query: &LocatorQuery) -> Option<&str> {
+    if query.exact {
+        return None;
+    }
+    query.identity.name.as_deref()
+}
+
+/// Whether `name` is the whole name `query` asks for.
+pub(crate) fn is_exact_name(query: &LocatorQuery, name: &str) -> bool {
+    exact_name_wanted(query).is_some_and(|wanted| search_text::normalize(name) == wanted)
+}
+
+/// The matches a selection keeps, in traversal order, and whether it cut any.
+/// A limited selection keeps the matches `is_exact` accepts before the rest,
+/// so a limit never drops an exact name for a longer one found earlier.
 pub(crate) fn selected_indices(
     matches: &[usize],
     selection: LocatorSelection,
+    is_exact: impl Fn(usize) -> bool,
 ) -> (Vec<usize>, bool) {
     match selection {
         LocatorSelection::Strict => take(matches, 10),
         LocatorSelection::All {
             limit: Some(0) | None,
         } => (matches.to_vec(), false),
-        LocatorSelection::All { limit: Some(limit) } => take(matches, limit as usize),
+        LocatorSelection::All { limit: Some(limit) } => {
+            take_exact_first(matches, limit as usize, is_exact)
+        }
         LocatorSelection::Count => (Vec::new(), false),
         LocatorSelection::First => take(matches, 1),
         LocatorSelection::Last => (
@@ -64,6 +85,25 @@ fn take(matches: &[usize], limit: usize) -> (Vec<usize>, bool) {
         matches.iter().take(limit).copied().collect(),
         matches.len() > limit,
     )
+}
+
+fn take_exact_first(
+    matches: &[usize],
+    limit: usize,
+    is_exact: impl Fn(usize) -> bool,
+) -> (Vec<usize>, bool) {
+    if matches.len() <= limit {
+        return (matches.to_vec(), false);
+    }
+    let (exact, rest): (Vec<usize>, Vec<usize>) =
+        matches.iter().copied().partition(|index| is_exact(*index));
+    let mut kept = exact
+        .into_iter()
+        .chain(rest)
+        .take(limit)
+        .collect::<Vec<_>>();
+    kept.sort_unstable();
+    (kept, true)
 }
 
 fn node_label(node: &super::ObservedNode) -> String {

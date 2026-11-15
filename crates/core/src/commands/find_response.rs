@@ -1,5 +1,8 @@
 use super::FindArgs;
-use crate::{AppError, LocatorQuery, locator::live_locator::LocatorResolution};
+use crate::{
+    AppError, LocatorQuery,
+    locator::live_locator::{LocatorResolution, is_exact_name},
+};
 use serde_json::{Value, json};
 
 /// Shapes the find response. A find run with `--allow-partial` also says
@@ -69,13 +72,7 @@ pub(super) fn order_exact_names_first<T>(
     query: &LocatorQuery,
     name_of: impl Fn(&T) -> &str,
 ) {
-    let Some(wanted) = query.identity.name.as_deref() else {
-        return;
-    };
-    if query.exact {
-        return;
-    }
-    items.sort_by_key(|item| crate::tree::search_text::normalize(name_of(item)) != wanted);
+    items.sort_by_key(|item| !is_exact_name(query, name_of(item)));
 }
 
 pub(super) fn format_match(
