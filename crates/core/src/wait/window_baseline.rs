@@ -90,22 +90,70 @@ impl WindowBaseline {
     }
 
     /// The windows an application-level command such as a menu item acts in:
-    /// the process's focused window, where a sheet it opens attaches, then the
+    /// the window it acts in, where a sheet it opens attaches, then the
     /// windows it opened since the action.
     pub(crate) fn acted_on(
         &self,
         adapter: &dyn PlatformAdapter,
         deadline: Deadline,
     ) -> Result<Vec<WindowInfo>, AdapterError> {
-        let (focused, rest): (Vec<_>, Vec<_>) =
-            process_windows(adapter, &self.app, &self.process, deadline)?
-                .into_iter()
-                .partition(|window| window.state.is_focused);
-        let opened = rest
-            .into_iter()
-            .filter(|window| !self.open.contains(&window.id));
-        Ok(focused.into_iter().chain(opened).collect())
+        let windows = process_windows(adapter, &self.app, &self.process, deadline)?;
+        Ok(acted_on_among(windows, Some(&self.open)))
     }
+}
+
+/// The window an application-level command on `entry` acts in when no
+/// baseline was taken before it. Without one, the windows it opened cannot
+/// be told from the ones already open, so none of those is read.
+pub(crate) fn acted_on_without_baseline(
+    adapter: &dyn PlatformAdapter,
+    entry: &RefEntry,
+    deadline: Deadline,
+) -> Result<Vec<WindowInfo>, AdapterError> {
+    let (Some(app), Some(process)) = (entry.source.source_app.as_deref(), entry.process.identity())
+    else {
+        return Ok(Vec::new());
+    };
+    let windows = process_windows(adapter, app, &process, deadline)?;
+    Ok(acted_on_among(windows, None))
+}
+
+/// The process's focused window, or its front window when none is focused,
+/// as for an application in the background, followed by every other window
+/// not in `open_before`.
+fn acted_on_among(
+    windows: Vec<WindowInfo>,
+    open_before: Option<&BTreeSet<String>>,
+) -> Vec<WindowInfo> {
+    let (mut acted, mut rest): (Vec<_>, Vec<_>) = windows
+        .into_iter()
+        .partition(|window| window.state.is_focused);
+    if acted.is_empty()
+        && let Some(front) = front_window(&rest)
+    {
+        acted.push(rest.remove(front));
+    }
+    let opened = rest
+        .into_iter()
+        .filter(|window| open_before.is_some_and(|open| !open.contains(&window.id)));
+    acted.into_iter().chain(opened).collect()
+}
+
+/// The first accessible window the platform lists as visible, or failing
+/// that the first not reported hidden or minimized. A platform that lists a
+/// process's windows front to back names its front window first.
+fn front_window(windows: &[WindowInfo]) -> Option<usize> {
+    let readable = |window: &WindowInfo| window.state.accessible;
+    windows
+        .iter()
+        .position(|window| readable(window) && window.state.visible == Some(true))
+        .or_else(|| {
+            windows.iter().position(|window| {
+                readable(window)
+                    && window.state.visible.is_none()
+                    && window.state.minimized != Some(true)
+            })
+        })
 }
 
 /// Every window of one process instance. A window whose process instance the
