@@ -87,3 +87,19 @@ fn a_focused_auxiliary_window_is_still_chosen_over_an_unfocused_document() {
         assert_eq!(chosen.unwrap().id, "w-2");
     }
 }
+
+#[test]
+fn two_primary_windows_beside_an_auxiliary_one_stay_ambiguous() {
+    let mut adapter = app(&["w-2"]);
+    adapter.windows.push(window("w-3", "Untitled"));
+    for chosen in by_app(&adapter) {
+        let Err(AppError::Adapter(error)) = chosen else {
+            panic!("expected an ambiguous target, got {chosen:?}");
+        };
+        assert_eq!(error.code, ErrorCode::AmbiguousTarget);
+        let details = error.details.unwrap();
+        assert_eq!(details["candidate_count"], 2);
+        assert_eq!(details["candidates"][0]["id"], "w-1");
+        assert_eq!(details["candidates"][1]["id"], "w-3");
+    }
+}
