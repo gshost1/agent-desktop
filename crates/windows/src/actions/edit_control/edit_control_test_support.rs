@@ -4,7 +4,7 @@
 //!
 //! The owner's window procedure logs every `WM_COMMAND` notification, so a
 //! test can assert that the owner heard the change, not only that the text
-//! reads back. A posted hold message parks the owner's thread inside its
+//! reads back. A posted hold message parks one owner's thread inside its
 //! window procedure, so no sent message reaches its windows until release.
 
 use crate::actions::value_write::set_value_steps;
@@ -15,17 +15,17 @@ use crate::tree::fixture::fixture_window::{
 };
 use agent_desktop_core::{Deadline, InteractionPolicy};
 use std::ffi::c_void;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::thread::{JoinHandle, sleep, spawn};
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, FindWindowExW, GetDlgItem, PostMessageW, PostQuitMessage,
-    SW_SHOWNOACTIVATE, SendMessageW, ShowWindow, WM_COMMAND, WM_DESTROY, WS_CHILD,
-    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, FindWindowExW, GWLP_USERDATA, GetDlgItem, GetWindowLongPtrW,
+    PostMessageW, PostQuitMessage, SW_SHOWNOACTIVATE, SendMessageW, SetWindowLongPtrW, ShowWindow,
+    WM_COMMAND, WM_DESTROY, WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const READY: u32 = 0x0400 + 7;
@@ -46,9 +46,23 @@ pub(super) const LIMITED_ID: i32 = 108;
 /// The text limit the `LIMITED_ID` edit is given, in UTF-16 units.
 pub(super) const LIMITED_LENGTH: usize = 8;
 
+const ECHO: u32 = 0x0400 + 9;
+
 static NOTIFICATIONS: Mutex<Vec<(isize, u32)>> = Mutex::new(Vec::new());
-static HOLDING: AtomicBool = AtomicBool::new(false);
-static HELD: AtomicBool = AtomicBool::new(false);
+
+/// One owner window's test controls, reached from its window procedure
+/// through `GWLP_USERDATA`, so parallel tests never steer each other.
+#[derive(Default)]
+struct OwnerState {
+    holding: AtomicBool,
+    held: AtomicBool,
+    echo_to: AtomicIsize,
+}
+
+fn owner_state<'a>(window: HWND) -> Option<&'a OwnerState> {
+    let state = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *const OwnerState;
+    unsafe { state.as_ref() }
+}
 
 unsafe extern "system" fn owner_proc(
     window: HWND,
@@ -56,17 +70,25 @@ unsafe extern "system" fn owner_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if message == WM_COMMAND
-        && let Ok(mut log) = NOTIFICATIONS.lock()
-    {
-        log.push((lparam, ((wparam >> 16) & 0xFFFF) as u32));
+    let state = owner_state(window);
+    if message == WM_COMMAND {
+        let code = ((wparam >> 16) & 0xFFFF) as u32;
+        if let Ok(mut log) = NOTIFICATIONS.lock() {
+            log.push((lparam, code));
+        }
+        let echo_to = state.map_or(0, |state| state.echo_to.load(Ordering::Acquire));
+        if code == EN_CHANGE && echo_to != 0 {
+            unsafe { SendMessageW(echo_to as HWND, ECHO, 0, 0) };
+        }
     }
-    if message == HOLD {
-        HELD.store(true, Ordering::Release);
-        while HOLDING.load(Ordering::Acquire) {
+    if message == HOLD
+        && let Some(state) = state
+    {
+        state.held.store(true, Ordering::Release);
+        while state.holding.load(Ordering::Acquire) {
             sleep(Duration::from_millis(5));
         }
-        HELD.store(false, Ordering::Release);
+        state.held.store(false, Ordering::Release);
         return 0;
     }
     if message == WM_DESTROY {
@@ -81,17 +103,21 @@ pub(super) struct EditOwner {
     thread_id: u32,
     class_name: String,
     pump: Option<JoinHandle<()>>,
+    state: Arc<OwnerState>,
 }
 
 impl EditOwner {
     pub(super) fn create() -> Self {
         let class_name = unique_class_name();
         let (sender, receiver) = channel();
+        let state = Arc::new(OwnerState::default());
+        let state_address = Arc::as_ptr(&state) as isize;
         let pump = spawn({
             let class_name = class_name.clone();
             move || {
                 register_class_with_proc(&class_name, owner_proc).expect("class registers");
                 let window = create_owner(&class_name);
+                unsafe { SetWindowLongPtrW(window as HWND, GWLP_USERDATA, state_address) };
                 unsafe { ShowWindow(window as HWND, SW_SHOWNOACTIVATE) };
                 unsafe { PostMessageW(window as HWND, READY, 0, 0) };
                 pump_until_destroyed(window, sender, READY);
@@ -106,6 +132,7 @@ impl EditOwner {
             thread_id: running.thread_id,
             class_name,
             pump: Some(pump),
+            state,
         }
     }
 
@@ -132,16 +159,24 @@ impl EditOwner {
     /// Parks the owner's thread inside its window procedure until
     /// `release`, so messages sent to its windows wait unanswered.
     pub(super) fn hold(&self) {
-        HOLDING.store(true, Ordering::Release);
+        self.state.holding.store(true, Ordering::Release);
         unsafe { PostMessageW(self.window as HWND, HOLD, 0, 0) };
         assert!(
-            wait_until(Duration::from_secs(20), || HELD.load(Ordering::Acquire)),
+            wait_until(Duration::from_secs(20), || {
+                self.state.held.load(Ordering::Acquire)
+            }),
             "the owner thread is held"
         );
     }
 
     pub(super) fn release(&self) {
-        HOLDING.store(false, Ordering::Release);
+        self.state.holding.store(false, Ordering::Release);
+    }
+
+    /// Makes the owner, on every `EN_CHANGE`, send a message to `window`
+    /// and wait for its answer before the edit's change completes.
+    pub(super) fn echo_changes_to(&self, window: isize) {
+        self.state.echo_to.store(window, Ordering::Release);
     }
 }
 

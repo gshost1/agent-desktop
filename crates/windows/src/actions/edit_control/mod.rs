@@ -27,6 +27,12 @@
 
 use agent_desktop_core::{AdapterError, Deadline};
 
+pub(crate) mod edit_pending;
+pub(crate) mod edit_replace;
+pub(crate) mod edit_route;
+#[cfg(target_os = "windows")]
+mod edit_send;
+
 /// The step label of a value write delivered through `EM_REPLACESEL`.
 pub(crate) const EDIT_LABEL: &str = "EditControl.ReplaceSel";
 
@@ -62,31 +68,18 @@ impl EditTarget {
 
 #[cfg(target_os = "windows")]
 mod imp {
+    use super::edit_replace::replace_text;
+    use super::edit_send::{EM_GETLIMITTEXT, WindowMessenger, send};
     use super::{AdapterError, Deadline, EditTarget};
     use crate::actions::chain::{DeliveryOutcome, after_delivery};
-    use crate::actions::edit_pending::{MAX_PENDING_REPLACEMENTS, PendingReplacements};
-    use crate::actions::edit_replace::{EditMessage, EditMessenger, EditSendFailure, replace_text};
     use crate::actions::value_write::gated_pattern_value_equals;
     use crate::tree::element::UIAElement;
     use std::ffi::c_void;
-    use std::sync::mpsc::sync_channel;
-    use std::thread::Builder;
-    use std::time::Duration;
-    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, FindWindowExW, GWL_STYLE,
-        GetWindowLongW, GetWindowThreadProcessId, RealGetWindowClassW, SMTO_ABORTIFHUNG,
-        SMTO_ERRORONEXIT, SendMessageTimeoutW, SendMessageW,
+        GetWindowLongW, RealGetWindowClassW,
     };
-
-    static PENDING_REPLACEMENTS: PendingReplacements =
-        PendingReplacements::new(MAX_PENDING_REPLACEMENTS);
-
-    const EM_SETSEL: u32 = 0x00B1;
-    const EM_REPLACESEL: u32 = 0x00C2;
-    const EM_GETLIMITTEXT: u32 = 0x00D5;
-    const SEND_TIMEOUT_CAP_MS: u64 = 2_000;
 
     /// The edit window a value write to `element` should replace the text
     /// of, when the element is a classic edit that accepts input and the
@@ -120,96 +113,6 @@ mod imp {
         replace_text(&WindowMessenger, handle, value, deadline)?;
         let verified = gated_pattern_value_equals(element, value).map_err(after_delivery)?;
         Ok(DeliveryOutcome::from_observation(verified))
-    }
-
-    struct WindowMessenger;
-
-    impl EditMessenger for WindowMessenger {
-        fn send(
-            &self,
-            handle: isize,
-            message: EditMessage,
-            deadline: Deadline,
-        ) -> Result<(), EditSendFailure> {
-            match message {
-                EditMessage::SelectAll => send(handle, EM_SETSEL, 0, -1, deadline)
-                    .map(|_| ())
-                    .ok_or_else(|| EditSendFailure::Unanswered(os_detail())),
-                EditMessage::ReplaceSelection(text) => {
-                    replace_selection(handle, text, deadline, &PENDING_REPLACEMENTS)
-                }
-            }
-        }
-    }
-
-    /// Sends `EM_REPLACESEL` with a text buffer that stays allocated until
-    /// nothing can read it any more.
-    ///
-    /// A window of the calling thread runs its window procedure inside the
-    /// send, so the buffer outlives every read of it. Any other window gets
-    /// the buffer through a worker thread that owns it and sends with a
-    /// blocking `SendMessageW`, which returns only after the edit's thread
-    /// has processed the message, or after that thread has exited and the
-    /// queue holding the message is gone. Either way no later read of the
-    /// buffer exists, so the worker frees it on return. The caller waits for
-    /// the worker up to the deadline and reports an unanswered replace when
-    /// the wait ends first. Each worker holds a `pool` permit for its whole
-    /// life, so the buffers and threads waiting on unresponsive edits never
-    /// outnumber the pool's capacity; a replace past it is refused unsent.
-    pub(super) fn replace_selection(
-        handle: isize,
-        text: Vec<u16>,
-        deadline: Deadline,
-        pool: &'static PendingReplacements,
-    ) -> Result<(), EditSendFailure> {
-        if window_thread(handle) == unsafe { GetCurrentThreadId() } {
-            return send(handle, EM_REPLACESEL, 1, text.as_ptr() as isize, deadline)
-                .map(|_| ())
-                .ok_or_else(|| EditSendFailure::Unanswered(os_detail()));
-        }
-        let Some(permit) = pool.try_acquire() else {
-            return Err(EditSendFailure::NotSent(format!(
-                "{} earlier replacements are still waiting for their edit controls",
-                pool.capacity()
-            )));
-        };
-        let (answer, answered) = sync_channel(1);
-        let worker = Builder::new()
-            .name("agent-desktop-edit-replace".into())
-            .spawn(move || {
-                let text = text;
-                let permit = permit;
-                unsafe {
-                    SendMessageW(
-                        handle as *mut c_void,
-                        EM_REPLACESEL,
-                        1,
-                        text.as_ptr() as isize,
-                    )
-                };
-                drop(text);
-                drop(permit);
-                let _ = answer.send(());
-            });
-        if let Err(error) = worker {
-            return Err(EditSendFailure::NotSent(format!(
-                "the replacement thread did not start: {error}"
-            )));
-        }
-        let wait = send_timeout_ms(deadline);
-        answered
-            .recv_timeout(Duration::from_millis(u64::from(wait)))
-            .map_err(|_| {
-                EditSendFailure::Unanswered(format!("SendMessageW unanswered after {wait} ms"))
-            })
-    }
-
-    fn os_detail() -> String {
-        format!("SendMessageTimeoutW: {}", std::io::Error::last_os_error())
-    }
-
-    fn window_thread(handle: isize) -> u32 {
-        unsafe { GetWindowThreadProcessId(handle as *mut c_void, std::ptr::null_mut()) }
     }
 
     fn element_window(element: &UIAElement) -> Option<isize> {
@@ -265,36 +168,6 @@ mod imp {
         };
         value.encode_utf16().count() <= limit
     }
-
-    fn send(
-        handle: isize,
-        message: u32,
-        wparam: usize,
-        lparam: isize,
-        deadline: Deadline,
-    ) -> Option<usize> {
-        let mut answer: usize = 0;
-        let sent = unsafe {
-            SendMessageTimeoutW(
-                handle as *mut c_void,
-                message,
-                wparam,
-                lparam,
-                SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
-                send_timeout_ms(deadline),
-                &mut answer,
-            )
-        };
-        (sent != 0).then_some(answer)
-    }
-
-    fn send_timeout_ms(deadline: Deadline) -> u32 {
-        let timeout = deadline
-            .remaining()
-            .as_millis()
-            .clamp(1, u128::from(SEND_TIMEOUT_CAP_MS));
-        u32::try_from(timeout).unwrap_or(u32::MAX)
-    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -323,9 +196,6 @@ mod imp {
 
 #[allow(unused_imports)]
 pub(crate) use imp::{edit_target, write_edit};
-
-#[cfg(all(test, target_os = "windows"))]
-use imp::replace_selection;
 
 #[cfg(test)]
 #[path = "edit_control_tests.rs"]
