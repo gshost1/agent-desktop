@@ -127,6 +127,10 @@ fn the_index_keeps_the_commonest_roles_and_the_first_regions() {
     assert!(!contents.roles.contains_key("window"));
     assert_eq!(contents.regions.len(), 6);
     assert_eq!(contents.more_regions, 2);
+    assert_eq!(
+        contents.lines().last().map(String::as_str),
+        Some("+2 more regions")
+    );
 }
 
 #[test]
