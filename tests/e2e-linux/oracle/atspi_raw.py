@@ -204,6 +204,12 @@ def app_root(tier: Tier, owner_name: str) -> RawNode:
     return matches[0]
 
 
+def vanished(error) -> bool:
+    """A node a walk listed was gone by the time it was read: the toolkit rebuilt that part
+    of the tree, as GTK 4 does with a popover while it opens or closes."""
+    return "Object does not exist at path" in str(error)
+
+
 def unresponsive(error) -> bool:
     return isinstance(error, TimeoutError) or any(token in str(error) for token in
         ("org.freedesktop.DBus.Error.NoReply", "Timeout was reached", "g-io-error-quark: Timeout"))

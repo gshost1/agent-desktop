@@ -23,7 +23,13 @@ def about_items(ctx, app):
     previous = [0]
 
     def settled():
-        items = [node for node in root(ctx, app).find(role=35) if "SHOWING" in node.states]
+        try:
+            items = [node for node in root(ctx, app).find(role=35) if "SHOWING" in node.states]
+        except Exception as error:
+            if not raw.vanished(error):
+                raise
+            previous[0] = 0
+            return None
         ready = bool(items) and previous[0] == len(items)
         previous[0] = len(items)
         return items if ready else None

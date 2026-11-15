@@ -6,7 +6,7 @@ from runner.apps import launch, stop, window_id
 from runner.helper import changed
 from runner.legs import implementation
 from runner.verdict import LegContext
-from oracle.atspi_raw import app_root, registry
+from oracle.atspi_raw import app_root, poll as raw_poll, registry
 from oracle.proc import members
 
 CALCULATOR = "Calculator"
@@ -72,18 +72,46 @@ def launch_text_editor_new_window(ctx: LegContext) -> None:
 LAUNCH_HARNESS_TIMEOUT_S = 45.0
 
 
+TERMINAL_ENTRY = "org.gnome.Terminal"
+TERMINAL_SERVER = "gnome-terminal-server"
+
+
+def unresolved_handoff(envelope) -> bool:
+    """The documented answer when the launcher exits cleanly after handing the launch to another
+    executable, which `launch` does not follow by name (skill: windows-and-lifecycle)."""
+    error = envelope.error or {}
+    details = error.get("details") or {}
+    return (not envelope.ok and error.get("code") == "ACTION_FAILED"
+            and details.get("kind") == "exited" and details.get("status") == 0
+            and (error.get("disposition") or {}).get("delivery") == "delivered_unverified")
+
+
 @implementation("launch.launch_terminal_owner")
 def launch_terminal_owner(ctx: LegContext) -> None:
-    read = lambda: [member[2] for member in members(ctx.tier.runtime_dir) if "gnome-terminal" in member[2]]
+    read = lambda: sorted(member[2] for member in members(ctx.tier.runtime_dir)
+                          if member[2].startswith("gnome-terminal"))
     before = read()
     ctx.before("proc.terminal_owner", before)
-    envelope = ctx.product(["launch", TERMINAL], timeout_s=LAUNCH_HARNESS_TIMEOUT_S)
-    assert envelope.ok, envelope.raw
+    envelope = ctx.product(["launch", TERMINAL_ENTRY], timeout_s=LAUNCH_HARNESS_TIMEOUT_S)
+    if envelope.ok:
+        owner = (envelope.data or {}).get("pid")
+        names = [member[2] for member in members(ctx.tier.runtime_dir) if member[0] == owner]
+        assert names and names[0].startswith("gnome-terminal-"), \
+            f"launch reported a pid that is not the terminal server: {envelope.raw}"
+    else:
+        assert unresolved_handoff(envelope), envelope.raw
+    def server_root():
+        try:
+            return app_root(ctx.tier, TERMINAL_SERVER)
+        except LookupError:
+            return None
+
+    assert raw_poll(server_root, 6), \
+        "no gnome-terminal-server owner on the accessibility bus"
     owners = read()
     ctx.after("proc.terminal_owner", owners)
     assert owners, "no gnome-terminal-server owner in the runtime directory"
-    assert app_root(ctx.tier, "gnome-terminal-server")
-    closed = ctx.product(["close-app", TERMINAL])
+    closed = ctx.product(["close-app", TERMINAL_SERVER])
     assert closed.ok, closed.raw
     ctx.restored("proc.terminal_owner", changed(read, before, seconds=6))
 
