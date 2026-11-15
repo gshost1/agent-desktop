@@ -204,6 +204,28 @@ A failed `--wait-for` after a delivered operation keeps the operation's own deli
 
 Each match carries `role` and `interactive`, and `ref_id`, `name`, `value`, `states` and `path` when it has them (`path` is trimmed above). A match that earns a ref has a qualified `ref_id`, and the response then includes the `snapshot_id` that holds it. A match with no ref is a context match: it has no `ref_id` and carries `bounds` when the platform reports them, so you can see where it is. An element without an accessible name omits `name`, and its content stays in `value`. When a query with `--role` matches nothing, `roles_present` lists the roles the search did see.
 
+## Snapshot diffs
+
+`snapshot --since <snapshot_id>` returns the usual snapshot fields (`app`, `window`, `snapshot_id`, `ref_count`, `complete` and, when cut short, `truncated`, `nodes_observed` and `refmap_capped`) and `diff` in place of `tree`. The usage is in [`snapshot`](/desktop/commands/observation#only-what-changed).
+
+<table>
+  <thead>
+    <tr><th>Field</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>diff.since</code></td><td>The snapshot compared against.</td></tr>
+    <tr><td><code>diff.status</code></td><td><code>changed</code>, <code>unchanged</code>, <code>incomplete</code> or <code>not_comparable</code>.</td></tr>
+    <tr><td><code>diff.incomplete</code></td><td>With <code>incomplete</code>: <code>["baseline"]</code>, <code>["snapshot"]</code> or both, the reads that were cut short.</td></tr>
+    <tr><td><code>diff.reason</code></td><td>With <code>not_comparable</code>: <code>owner_changed</code> or <code>presentation_changed</code>. <code>data.tree</code> is then present.</td></tr>
+    <tr><td><code>diff.added</code></td><td>Nodes that appeared, in tree order, with refs of the new snapshot.</td></tr>
+    <tr><td><code>diff.changed</code></td><td>Nodes paired by identity whose visible fields differ. Each adds <code>changed</code> (field names from <code>name</code>, <code>value</code>, <code>description</code>, <code>placeholder</code>, <code>hint</code>, <code>states</code>, <code>focus</code>) and <code>was</code> (earlier values, <code>null</code> for none).</td></tr>
+    <tr><td><code>diff.removed</code></td><td>Nodes that are gone, without <code>ref_id</code>.</td></tr>
+    <tr><td><code>diff.focused</code></td><td>The deepest node with keyboard focus now, when one has it.</td></tr>
+  </tbody>
+</table>
+
+Each row is a tree node without `children`. Empty row lists are omitted. With `--lines`, the rows and `focused` become `data.lines` and `diff` keeps `since`, `status`, `incomplete` and `reason`.
+
 ## Exit codes
 
 <table>

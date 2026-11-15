@@ -5,7 +5,9 @@ use agent_desktop_core::{
 };
 use serde_json::json;
 
-use super::select_pointer::{Pointer, already_satisfied, pointer_required};
+use super::select_pointer::{
+    Pointer, after_input_sent, already_satisfied, pointer_required, with_detail,
+};
 use super::select_popup::{Shown, commit, first_label};
 use super::select_search::{Hit, Search, name_matches, search};
 use crate::actions::click::{POLL_STEP, poll_until};
@@ -207,31 +209,54 @@ fn choose_by_pointer(
     }
     let pointer = pointer.ok_or_else(pointer_required)?;
     let opened = pointer.click(combo)?;
+    let opened_list = OpenedList {
+        closed: &closed,
+        current: &current,
+        wanted,
+        deadline,
+    };
+    choose_in_opened(choices, pointer, &opened_list)
+        .map(|result| after_opening(opened, result))
+        .map_err(after_input_sent)
+}
+
+struct OpenedList<'a> {
+    closed: &'a [AtspiElement],
+    current: &'a AtspiElement,
+    wanted: &'a str,
+    deadline: Deadline,
+}
+
+/// The part of a pointer select that runs after the click opened the combo.
+/// Every failure here follows that click, so none of them is untouched.
+fn choose_in_opened(
+    choices: &mut dyn Choices,
+    pointer: &dyn Pointer,
+    list: &OpenedList<'_>,
+) -> Result<ActionResult, AdapterError> {
+    let (closed, deadline) = (list.closed, list.deadline);
     let popup = poll_until(
         deadline,
         POPUP_WAIT,
         POLL_STEP,
-        || new_list(choices, &closed),
+        || new_list(choices, closed),
         |popup| popup.is_some(),
     )
     .ok_or_else(|| popup_not_observed(choices.overview_open()))?;
-    let hit = match choices.find(&popup, wanted)? {
+    let hit = match choices.find(&popup, list.wanted)? {
         Search::Found(hit) => hit,
         miss => {
-            let shut = close_popup(choices, pointer, &closed, deadline);
-            let error = miss_error(&miss);
-            return Err(if shut {
-                error
-            } else {
-                error.with_disposition(DeliverySemantics::delivered_unverified())
-            });
+            let shut = close_popup(choices, pointer, closed, deadline);
+            return Err(with_detail(miss_error(&miss), "popup_closed", json!(shut)));
         }
     };
-    let committed = choices.commit(&hit, &current, wanted);
-    if committed.is_err() || !wait_closed(choices, &closed, deadline) {
-        close_popup(choices, pointer, &closed, deadline);
-    }
-    committed.map(|result| after_opening(opened, result))
+    let committed = choices.commit(&hit, list.current, list.wanted);
+    let shut = if committed.is_err() || !wait_closed(choices, closed, deadline) {
+        close_popup(choices, pointer, closed, deadline)
+    } else {
+        true
+    };
+    committed.map_err(|error| with_detail(error, "popup_closed", json!(shut)))
 }
 
 pub(in crate::actions) fn select_in_pointer_combo(

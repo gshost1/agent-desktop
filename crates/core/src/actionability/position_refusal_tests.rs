@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::*;
+use crate::ErrorCode;
 use crate::{
     Action, DeliverySemantics, Rect,
     adapter::{ActionOps, InputOps, NativeHandle, ObservationOps, SystemOps},

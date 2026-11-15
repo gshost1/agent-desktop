@@ -182,6 +182,25 @@ fn the_display_probe_leaves_most_of_the_second_a_command_may_overrun_by() {
     );
 }
 
+fn sweeps_after(capture: CaptureAvailability) -> usize {
+    let mut sweeps = 0;
+    release_stale_input(&capture, deadline(), |_| sweeps += 1);
+    sweeps
+}
+
+#[test]
+fn held_input_is_released_only_on_a_display_that_answered() {
+    assert_eq!(sweeps_after(CaptureAvailability::Unknown), 0);
+    assert_eq!(sweeps_after(CaptureAvailability::Reachable), 1);
+}
+
+#[test]
+fn the_display_probe_and_the_release_sweep_fit_inside_the_overrun_second() {
+    let spent = CAPTURE_PROBE_SLICE + crate::input::x11::stale_release::SWEEP_SLICE;
+
+    assert!(spent < Duration::from_millis(1_000), "{spent:?}");
+}
+
 fn display_refusals() -> Vec<AdapterError> {
     use crate::system::display::display_error::{DisplayCause, display_cause_error};
     [

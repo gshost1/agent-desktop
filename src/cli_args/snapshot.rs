@@ -34,4 +34,10 @@ pub(crate) struct SnapshotArgs {
     )]
     #[serde(default)]
     pub force_electron_a11y: bool,
+    #[arg(
+        long,
+        value_name = "SNAPSHOT_ID",
+        help = "Print only what changed since this earlier snapshot of the same window: added, changed and removed rows with fresh refs, and the focused element"
+    )]
+    pub since: Option<String>,
 }

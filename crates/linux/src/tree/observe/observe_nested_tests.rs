@@ -95,7 +95,7 @@ fn a_sheet_surface_roots_at_a_dialog_drawn_inside_the_window() {
     )
     .expect("the nested dialog observes as the sheet");
     assert!(tree.is_complete());
-    assert_eq!(rooted_at, ["/a", "/d"]);
+    assert_eq!(rooted_at, ["/a", "/a", "/d"]);
 }
 
 #[test]
@@ -338,10 +338,10 @@ fn alert_surface_finds_nested_alerts_and_rejects_ordinary_dialogs() {
         );
         if let Some(code) = expected {
             assert_eq!(result.unwrap_err().code, code);
-            assert_eq!(roots, ["/a"]);
+            assert_eq!(roots, ["/a", "/a"]);
         } else {
             assert!(result.unwrap().is_complete());
-            assert_eq!(roots, ["/a", "/d"]);
+            assert_eq!(roots, ["/a", "/a", "/d"]);
         }
     }
 }

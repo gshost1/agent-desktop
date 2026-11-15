@@ -11,14 +11,61 @@ class WorkflowTests(unittest.TestCase):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
         self.assertIn("workflow_dispatch", workflow)
         self.assertIn("LINUX_E2E_RUNNER", workflow)
-        self.assertNotIn("continue-on-error", workflow)
         self.assertIn("tests/e2e-linux/run.sh", workflow)
+        job, steps = workflow.split("\n    steps:\n", 1)
+        self.assertNotIn("continue-on-error", steps)
+        self.assertEqual(job.count(
+            "\n    continue-on-error: ${{ github.event_name == 'pull_request' "
+            "|| !vars.LINUX_E2E_RUNNER }}\n"), 1, job)
+        self.assertNotIn("continue-on-error: true", workflow)
+
+    def test_pull_requests_never_reach_the_self_hosted_runner(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        self.assertIn(
+            "runs-on: ${{ (github.event_name != 'pull_request' && vars.LINUX_E2E_RUNNER) "
+            "|| 'ubuntu-24.04' }}", workflow)
+        uses = [line for line in workflow.splitlines()
+                if "vars.LINUX_E2E_RUNNER" in line and "runs-on" not in line]
+        self.assertTrue(uses)
+        for line in uses:
+            self.assertRegex(line, r"github\.event_name [!=]= 'pull_request'", line)
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
 
     def test_hosted_lane_runs_the_self_tests(self):
         ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
         discover = [line for line in ci.splitlines() if "discover -s tests/e2e-linux" in line]
         self.assertEqual(len(discover), 1, discover)
         self.assertIn("AGENT_DESKTOP_E2E_SKIP_LIVE=1", discover[0])
+
+    def test_hosted_lane_tests_run_on_the_bus_they_start(self):
+        ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
+        steps = ci.split("\n      - name: ")
+        runs = [step for step in steps
+                if "dbus-run-session" in step and "cargo-test-isolated-home.sh test" in step]
+        self.assertEqual(len(runs), 1, runs)
+        self.assertIn("AGENT_DESKTOP_TEST_SESSION: inherit", runs[0])
+        self.assertIn('AGENT_DESKTOP_EXPECT_SESSION_BUS: "1"', runs[0])
+        self.assertIn('AGENT_DESKTOP_EXPECT_ATSPI_BUS: "1"', runs[0])
+
+    def test_live_workflow_runs_on_pull_requests_and_main(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        triggers = workflow.split("\npermissions:", 1)[0]
+        self.assertIn("\n  pull_request:\n", triggers)
+        self.assertIn("\n  push:\n    branches: [main]", triggers)
+        self.assertIn("--tier x11-openbox", workflow)
+
+    def test_live_workflow_writes_the_harness_summary_even_when_legs_fail(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        steps = workflow.split("\n      - name: ")
+        summary = [step for step in steps if "runner/step_summary.py" in step]
+        self.assertEqual(len(summary), 1, summary)
+        self.assertIn("always()", summary[0])
+        self.assertIn('>> "$GITHUB_STEP_SUMMARY"', summary[0])
+        self.assertIn("/ad-sessions/e2e-suite-*/report.txt", summary[0])
+        harness = [step for step in steps if "--tier x11-openbox" in step]
+        self.assertEqual(len(harness), 1, harness)
+        self.assertIn("AGENT_DESKTOP_SESSION_BASE: ${{ runner.temp }}/ad-sessions", harness[0])
+        self.assertLess(steps.index(harness[0]), steps.index(summary[0]))
 
 
 

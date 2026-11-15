@@ -150,7 +150,9 @@ fn thread_reports_menu_mode(thread_id: u32) -> bool {
 /// menu bar dropdown is also covered, a classic menu-bar dropdown is not
 /// (A23-1 covers that stack fully on its own). A Chromium DOM menu surfaces
 /// under no tool window at all - it lives inside the application's own
-/// non-tool window - and is the third source's pool ([`chromium`]).
+/// non-tool window - and is the third source's pool ([`chromium`]). A WinUI 3
+/// menu flyout is a visible popup window rather than a tool window, so the
+/// pool also holds the pid's shown WinUI popup windows.
 #[cfg(target_os = "windows")]
 fn uia_menu_reachable(pid: ProcessId, deadline: Deadline) -> Result<bool, AdapterError> {
     deadline.ensure_remaining()?;
@@ -183,12 +185,25 @@ fn uia_menu_reachable(_pid: ProcessId, deadline: Deadline) -> Result<bool, Adapt
 /// window, so no classic flag fires and no tool window carries it.
 use chromium::chromium_dom_menu_reachable;
 
+/// The window class WinUI 3 gives the top-level window a popup - a menu
+/// flyout among them - presents in. Measured on Windows 11 build 26200 with
+/// the Store Notepad: expanding its File menu shows a visible, non-tool
+/// `PopupHost` window of this class owned by the application, which no
+/// classic menu-mode flag and no tool-window probe sees, while at rest the
+/// application owns no visible window of this class.
+#[cfg(target_os = "windows")]
+const WINUI_POPUP_WINDOW_CLASS: &str = "Microsoft.UI.Content.PopupWindowSiteBridge";
+
+/// Source B's pool: the pid's tool windows (A23-11) and its visible,
+/// uncloaked WinUI 3 popup windows. A popup window is a candidate only; the
+/// menu-family probe under it is what tells a menu flyout from any other
+/// popup the toolkit presents.
 #[cfg(target_os = "windows")]
 fn tool_window_candidates(pid: ProcessId) -> Result<Vec<isize>, AdapterError> {
     let mut handles = Vec::new();
     enumerate_top_level(|window| {
         if crate::system::window::window_identity::live_window_owner(window.handle) == Some(pid)
-            && window.tool
+            && (window.tool || is_shown_winui_popup(&window))
         {
             handles.push(window.handle as isize);
         }
@@ -196,6 +211,14 @@ fn tool_window_candidates(pid: ProcessId) -> Result<Vec<isize>, AdapterError> {
     })
     .map_err(narrow_to_permitted_codes)?;
     Ok(handles)
+}
+
+#[cfg(target_os = "windows")]
+fn is_shown_winui_popup(window: &crate::system::window::window_enum::EnumeratedWindow) -> bool {
+    window.visible
+        && !window.cloaked
+        && crate::system::window::window_ops::window_class_name(window.handle).as_deref()
+            == Some(WINUI_POPUP_WINDOW_CLASS)
 }
 
 /// One `ControlType` narrowed to a UIA property condition, the building
@@ -316,3 +339,7 @@ mod tests;
 #[cfg(all(test, target_os = "windows"))]
 #[path = "menu_state_chromium_tests.rs"]
 mod chromium_tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "menu_state_winui_tests.rs"]
+mod winui_tests;

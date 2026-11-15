@@ -1,4 +1,5 @@
 //! Physical keyboard legs for `TypeText` and `PressKey`: focus-fallback
+//! policy, keyboard focus given to the target when it lacks it under a headed
 //! policy, keyboard-focus verification, elevation gate, then `SendInput`
 //! synthesis. Null-handle `PressKey` synthesizes globally with no element
 //! gate.
@@ -8,6 +9,7 @@ use agent_desktop_core::{
     StepMechanism,
 };
 
+use crate::actions::keyboard_focus::establish_keyboard_focus;
 use crate::actions::physical_target::{
     ensure_keyboard_delivery_ready, ensure_keyboard_policy, focus_lost_before_delivery,
 };
@@ -25,14 +27,14 @@ pub(crate) fn type_text_steps(
 ) -> Result<Vec<ActionStep>, AdapterError> {
     ensure_keyboard_policy(policy)?;
     preflight_text(text, deadline)?;
-    let focus_ready = ensure_keyboard_delivery_ready(element, deadline)?;
-    type_text_from_gate(text, focus_ready, deadline, |deadline| {
+    let focus = establish_keyboard_focus(element, policy, deadline)?;
+    let keystroke = type_text_from_gate(text, focus.is_ready(), deadline, |deadline| {
         match ensure_keyboard_delivery_ready(element, deadline)? {
             true => Ok(()),
             false => Err(focus_lost_before_delivery()),
         }
-    })
-    .map(|step| vec![step])
+    })?;
+    Ok(focus.then(keystroke))
 }
 
 pub(crate) fn press_key_element_steps(
@@ -43,8 +45,9 @@ pub(crate) fn press_key_element_steps(
 ) -> Result<Vec<ActionStep>, AdapterError> {
     ensure_keyboard_policy(policy)?;
     deadline.ensure_remaining()?;
-    let focus_ready = ensure_keyboard_delivery_ready(element, deadline)?;
-    press_key_from_gate(combo, focus_ready, deadline).map(|step| vec![step])
+    let focus = establish_keyboard_focus(element, policy, deadline)?;
+    let keystroke = press_key_from_gate(combo, focus.is_ready(), deadline)?;
+    Ok(focus.then(keystroke))
 }
 
 pub(crate) fn press_key_global(
