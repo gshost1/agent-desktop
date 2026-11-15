@@ -30,7 +30,7 @@ Start with `agent-desktop status` and `agent-desktop list-apps`.
 | `APP_UNRESPONSIVE` | The app is stopped (`SIGSTOP`) or its main loop is blocked. Resume it; `close-app --force` ends it |
 | `STALE_REF` | The element is gone or no longer matches. `details.kind: saved_ref_absent` means no live element matched the stored role and stable fields, so take a fresh snapshot; `retained_object_stale` never appears on Linux. `menu_closed` needs its opener reopened before a fresh menu snapshot; `resolve_target_destroyed` needs a replacement target; a menu or tray `resolve_no_candidate` is retryable |
 | `ACTION_NOT_SUPPORTED`, `selection_index_unproven` | The toolkit's selection indices cannot identify accessible rows safely. A headless select cannot map the row and refreshing cannot help. On X11 run `--headed select` with the same ref; see "Toolkit limits" |
-| `INTERNAL` "private file parent is accessible by group or other users" | The state root is group-writable or world-accessible. `chmod 700` it; see `references/bus-and-permissions.md` |
+| `PERM_DENIED` "private file parent is accessible by group or other users" (`details.kind: state_directory_permission`) | The state root is group-writable or world-accessible. `chmod 700` it; see `references/bus-and-permissions.md` |
 
 ## Apps that are not on the bus
 

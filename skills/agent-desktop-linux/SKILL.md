@@ -47,4 +47,4 @@ agent-desktop snapshot --app gnome-text-editor -i --compact --lines
 - **Keys:** `cmd` and `meta` are Super; X keysym names work. Blocked combos refuse without `--force`.
 - **Menus:** after opening one, read `data.surfaces`, then `snapshot --surface menu --app <name> -i`. A list-backed dropdown is part of the window, not a menu.
 - **Chromium and Qt apps need a launch flag** to appear on the bus; open `troubleshooting`.
-- **The state root must be private.** A group- or world-accessible `~/.agent-desktop` makes `snapshot` fail with `INTERNAL`: `chmod 700` it.
+- **The state root must be private.** A group- or world-accessible `~/.agent-desktop` makes `snapshot` fail with `PERM_DENIED`, `details.kind: "state_directory_permission"`, and a suggestion naming the `chmod`: `chmod 700` it.
