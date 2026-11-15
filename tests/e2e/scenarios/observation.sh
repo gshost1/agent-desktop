@@ -71,6 +71,6 @@ def line_of(node, ref, counter):
     return None
 line = line_of(data["tree"], outline["ref"], [0]) if outline and outline.get("ref") else None
 print("ok" if outline and outline.get("items") == 6 and line == outline.get("line") else f"bad outline={outline} line={line}")
-' 2>&1)"
+' 2>/dev/null)"
 assert "snapshot contents name the item list, its six rows and its line" \
     "$([ "$contents_check" = "ok" ] && echo 1 || echo 0)" "$contents_check"
