@@ -27,7 +27,7 @@ pub(crate) fn wait_for_menu(
         }
         let pause = match deadline.remaining_slice(Duration::from_millis(50)) {
             Ok(pause) if !deadline.is_expired() => pause,
-            _ if wait.satisfied_at_deadline() => return require_core(&process).map(|_| ()),
+            _ if wait.satisfied_at_deadline(deadline) => return require_core(&process).map(|_| ()),
             _ => {
                 let message = if wait.wants_open() {
                     "No context menu opened before the deadline"

@@ -135,7 +135,7 @@ impl SystemOps for ScriptedMenu {
             }
             let gap = match deadline.remaining_slice(POLL) {
                 Ok(gap) if !deadline.is_expired() => gap,
-                _ if wait.satisfied_at_deadline() => return Ok(()),
+                _ if wait.satisfied_at_deadline(deadline) => return Ok(()),
                 _ => return Err(deadline.timeout_error()),
             };
             std::thread::sleep(gap);
@@ -174,6 +174,20 @@ fn a_short_timeout_does_not_shrink_the_grace_below_a_late_popover() {
 fn a_slow_closed_read_with_a_short_timeout_returns_closed_not_a_timeout() {
     let adapter = ScriptedMenu::script(&[Read::Is(false), Read::Slow(60_000, false)]);
     assert!(wait_closed(&adapter, 1_000, &CommandContext::default()));
+}
+
+#[test]
+fn a_closed_wait_whose_reads_after_the_grace_never_complete_times_out_instead_of_closing() {
+    let adapter = ScriptedMenu::script(&[Read::Is(false), Read::Slow(60_000, false)]);
+    let error = wait_for_menu(
+        Some("MenuApp".into()),
+        false,
+        2_500,
+        &adapter,
+        &CommandContext::default(),
+    )
+    .expect_err("no read completed after the grace");
+    assert_eq!(error.code(), ErrorCode::Timeout.as_str());
 }
 
 #[test]

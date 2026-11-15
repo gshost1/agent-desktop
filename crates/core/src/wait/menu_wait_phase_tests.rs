@@ -51,8 +51,15 @@ fn leaving_open_takes_two_consecutive_closed_reads() {
 #[test]
 fn the_deadline_closes_only_a_grace_whose_reads_were_all_closed() {
     let until = Instant::now() + Duration::from_secs(1);
-    assert_eq!(awaiting(until, true).expire(), MenuWaitPhase::Closed);
-    assert_eq!(awaiting(until, false).expire(), awaiting(until, false));
-    assert_eq!(MenuWaitPhase::Open.expire(), MenuWaitPhase::Open);
-    assert_eq!(MenuWaitPhase::Closing.expire(), MenuWaitPhase::Closing);
+    assert_eq!(awaiting(until, true).expire(until), MenuWaitPhase::Closed);
+    assert_eq!(awaiting(until, false).expire(until), awaiting(until, false));
+    assert_eq!(MenuWaitPhase::Open.expire(until), MenuWaitPhase::Open);
+    assert_eq!(MenuWaitPhase::Closing.expire(until), MenuWaitPhase::Closing);
+}
+
+#[test]
+fn a_deadline_after_the_grace_keeps_awaiting_the_reads_after_it() {
+    let until = Instant::now() + Duration::from_secs(1);
+    let later = until + Duration::from_millis(1);
+    assert_eq!(awaiting(until, true).expire(later), awaiting(until, true));
 }

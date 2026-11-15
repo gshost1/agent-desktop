@@ -12,8 +12,8 @@ use crate::{
 };
 
 /// The most a pre-action menu reading may spend before `batch` starts the
-/// action without it. A seed only shortens the wait, so a slow read is
-/// dropped rather than allowed to delay the action.
+/// action without it. A seed only shortens the wait, so a read slower than
+/// this is dropped, and the reading delays the action by at most this much.
 const SEED_READ_CAP: Duration = Duration::from_millis(500);
 
 pub(crate) fn wait_for_menu(

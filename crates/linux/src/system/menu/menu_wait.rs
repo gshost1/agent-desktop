@@ -146,7 +146,7 @@ pub(in crate::system) fn run(
         }
         let gap = match deadline.remaining_slice(POLL_INTERVAL) {
             Ok(gap) if !deadline.is_expired() => gap,
-            _ if wait.satisfied_at_deadline() => return verify_process(world),
+            _ if wait.satisfied_at_deadline(deadline) => return verify_process(world),
             _ => {
                 return Err(menu_timeout(
                     open,

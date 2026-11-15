@@ -80,7 +80,7 @@ pub(crate) fn wait_for_menu(
             Err(error) => return Err(settle_predicate_error(&process, error, deadline)),
         }
         if deadline.is_expired() {
-            if wait.satisfied_at_deadline() {
+            if wait.satisfied_at_deadline(deadline) {
                 return verify_process_alive(&process);
             }
             return Err(deadline
@@ -89,14 +89,16 @@ pub(crate) fn wait_for_menu(
         }
         let pause = match deadline.remaining_slice(POLL_INTERVAL) {
             Ok(pause) => pause,
-            Err(_) if wait.satisfied_at_deadline() => return verify_process_alive(&process),
+            Err(_) if wait.satisfied_at_deadline(deadline) => {
+                return verify_process_alive(&process);
+            }
             Err(error) => return Err(error.with_platform_detail(direction_message(open))),
         };
         std::thread::sleep(pause);
     }
 }
 
-/// One read of the [`menu_is_open`] predicate for core's pre-action menu
+/// One read of the poll loop's [`menu_is_open`] predicate for core's pre-action menu
 /// reading, between the same liveness checks the poll loop makes, so a
 /// process that exits during the read never yields an open reading.
 pub(crate) fn menu_open(
@@ -104,7 +106,7 @@ pub(crate) fn menu_open(
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
     verify_process_alive(process)?;
-    let open = menu_is_open(process.pid, deadline)?;
+    let open = evaluate_menu_state(process.pid, deadline)?;
     verify_process_alive(process)?;
     Ok(open)
 }

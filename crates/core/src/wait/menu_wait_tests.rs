@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use super::{MENU_OPENER_GRACE, MenuWait};
+use crate::Deadline;
 use crate::wait::menu_wait_phase::MenuWaitPhase;
 
 #[test]
@@ -56,15 +57,25 @@ fn the_grace_is_the_full_opener_grace_whatever_the_budget() {
 #[test]
 fn the_deadline_satisfies_a_closed_wait_only_after_a_closed_read() {
     let started = Instant::now();
+    let inside_grace = Deadline::after(1_000).unwrap();
     let mut unread = MenuWait::closed(started);
-    assert!(!unread.satisfied_at_deadline());
+    assert!(!unread.satisfied_at_deadline(inside_grace));
     let mut read = MenuWait::closed(started);
     assert!(!read.observe(false, started));
-    assert!(read.satisfied_at_deadline());
+    assert!(read.satisfied_at_deadline(inside_grace));
     let mut seen_open = MenuWait::closed(started);
     assert!(!seen_open.observe(true, started));
-    assert!(!seen_open.satisfied_at_deadline());
-    assert!(!MenuWait::opened().satisfied_at_deadline());
+    assert!(!seen_open.satisfied_at_deadline(inside_grace));
+    assert!(!MenuWait::opened().satisfied_at_deadline(inside_grace));
+}
+
+#[test]
+fn a_deadline_after_the_grace_does_not_close_a_wait_whose_later_reads_never_completed() {
+    let started = Instant::now();
+    let mut wait = MenuWait::closed(started);
+    assert!(!wait.observe(false, started));
+    assert!(!wait.satisfied_at_deadline(Deadline::after(5_000).unwrap()));
+    assert!(!wait.is_satisfied());
 }
 
 #[test]

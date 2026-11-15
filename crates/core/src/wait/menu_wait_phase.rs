@@ -39,14 +39,17 @@ impl MenuWaitPhase {
         }
     }
 
-    /// The transition when the deadline arrives: a wait still awaiting the
-    /// menu whose every completed read was closed ran out its grace with the
-    /// deadline, so the menu stayed closed for the whole wait.
-    pub(crate) fn expire(self) -> Self {
+    /// The transition when the deadline, at `expires_at`, arrives: a wait
+    /// whose deadline fell inside the grace and whose every completed read
+    /// was closed ran out its grace with the deadline, so the menu stayed
+    /// closed for the whole wait. A deadline after the grace closes nothing:
+    /// the reads after the grace, which never completed, are what decide.
+    pub(crate) fn expire(self, expires_at: Instant) -> Self {
         match self {
             Self::AwaitingOpen {
-                read_closed: true, ..
-            } => Self::Closed,
+                until,
+                read_closed: true,
+            } if expires_at <= until => Self::Closed,
             other => other,
         }
     }

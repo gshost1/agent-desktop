@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use super::menu_wait_phase::MenuWaitPhase;
+use super::{deadline::Deadline, menu_wait_phase::MenuWaitPhase};
 
 /// How long a closed-direction wait with no sign of an open menu keeps
 /// reading before a closed read counts. A GTK 4 popover first reads open 157
@@ -70,11 +70,12 @@ impl MenuWait {
         self.is_satisfied()
     }
 
-    /// Called when the deadline arrives before the wait was satisfied. A
-    /// closed wait still inside its grace whose completed reads were all
-    /// closed is satisfied: the menu stayed closed for the whole wait.
-    pub fn satisfied_at_deadline(&mut self) -> bool {
-        self.phase = self.phase.expire();
+    /// Called when `deadline` arrives before the wait was satisfied. A
+    /// closed wait whose deadline fell inside its grace, and whose completed
+    /// reads were all closed, is satisfied: the menu stayed closed for the
+    /// whole wait.
+    pub fn satisfied_at_deadline(&mut self, deadline: Deadline) -> bool {
+        self.phase = self.phase.expire(deadline.expires_at());
         self.is_satisfied()
     }
 
