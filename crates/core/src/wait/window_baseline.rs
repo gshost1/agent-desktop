@@ -139,20 +139,20 @@ fn acted_on_among(
     acted.into_iter().chain(opened).collect()
 }
 
-/// The first accessible window the platform lists as visible, or failing
-/// that the first not reported hidden or minimized. A platform that lists a
-/// process's windows front to back names its front window first.
+/// The first accessible, unminimized window the platform lists as visible,
+/// or failing that the first whose visibility it does not report. A platform
+/// that lists a process's windows front to back names its front window
+/// first.
 fn front_window(windows: &[WindowInfo]) -> Option<usize> {
-    let readable = |window: &WindowInfo| window.state.accessible;
+    let shown =
+        |window: &WindowInfo| window.state.accessible && window.state.minimized != Some(true);
     windows
         .iter()
-        .position(|window| readable(window) && window.state.visible == Some(true))
+        .position(|window| shown(window) && window.state.visible == Some(true))
         .or_else(|| {
-            windows.iter().position(|window| {
-                readable(window)
-                    && window.state.visible.is_none()
-                    && window.state.minimized != Some(true)
-            })
+            windows
+                .iter()
+                .position(|window| shown(window) && window.state.visible.is_none())
         })
 }
 

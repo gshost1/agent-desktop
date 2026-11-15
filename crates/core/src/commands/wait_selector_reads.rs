@@ -3,9 +3,10 @@
 //!
 //! A window that closed between the listing and the read, or a surface a
 //! complete read proved absent, shows nothing. Any other failed read leaves
-//! the scope incomplete, except a failure that means the application cannot
+//! the poll incomplete, except a failure that means the application cannot
 //! be read at all: a denied permission or an unresponsive owner. That one is
-//! the read's answer unless another window matches, so it reaches the
+//! kept while the rest of the poll's windows and overlays are read, and is
+//! the poll's answer only when none of them matched, so it reaches the
 //! unresponsive check and the caller with its own code and is never taken
 //! for a closed window.
 
@@ -17,7 +18,7 @@ use crate::{
     wait::window_baseline::{WINDOW_BASELINE_BUDGET, process_windows},
 };
 
-use super::Observed;
+use super::{Matched, Observed};
 
 const OVERLAY_SURFACES: [SnapshotSurface; 3] = [
     SnapshotSurface::Sheet,
@@ -25,24 +26,34 @@ const OVERLAY_SURFACES: [SnapshotSurface; 3] = [
     SnapshotSurface::Popover,
 ];
 
-/// What the reads of one poll found short of a match: whether every read was
-/// complete, and the first failure that means the application cannot be
-/// read.
+/// What the reads of one poll found short of a match, across its windows and
+/// overlays: whether every read was complete, and the first failure that
+/// means the application cannot be read.
 pub(super) struct Unmatched {
     complete: bool,
     unreadable: Option<AppError>,
 }
 
 impl Unmatched {
-    pub(super) fn new(complete: bool) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            complete,
+            complete: true,
             unreadable: None,
         }
     }
 
     pub(super) fn record_read(&mut self, complete: bool) {
         self.complete &= complete;
+    }
+
+    /// Keeps an unreadable application's error for the end of the poll and
+    /// returns any other error, for a read whose failure ends the wait.
+    pub(super) fn keep_unreadable(&mut self, error: AppError) -> Result<(), AppError> {
+        if !is_unreadable(&error) {
+            return Err(error);
+        }
+        self.unreadable.get_or_insert(error);
+        Ok(())
     }
 
     pub(super) fn record_error(&mut self, error: AppError) {
@@ -106,17 +117,17 @@ pub(super) fn observe_each(
     windows: Vec<WindowInfo>,
     query: &LocatorQuery,
     deadline: Deadline,
-    mut unmatched: Unmatched,
-) -> Observed {
+    unmatched: &mut Unmatched,
+) -> Option<Matched> {
     for window in windows {
         let owner = SnapshotOwner::Window(window);
         match observe_owner(adapter, &owner, query, deadline) {
-            Ok((true, _)) => return Ok(Some((true, Some((owner, SnapshotSurface::Window))))),
+            Ok((true, _)) => return Some(Some((owner, SnapshotSurface::Window))),
             Ok((false, complete)) => unmatched.record_read(complete),
             Err(error) => unmatched.record_error(error),
         }
     }
-    unmatched.finish()
+    None
 }
 
 /// The sheet, alert or popover of the ref's own process instance that holds
@@ -128,19 +139,19 @@ pub(super) fn read_overlays(
     entry: &RefEntry,
     query: &LocatorQuery,
     deadline: Deadline,
-) -> Result<Option<(SnapshotOwner, SnapshotSurface)>, AppError> {
+    unmatched: &mut Unmatched,
+) -> Option<(SnapshotOwner, SnapshotSurface)> {
     let (Some(app), Some(process)) = (entry.source.source_app.as_deref(), entry.process.identity())
     else {
-        return Ok(None);
+        return None;
     };
     let surfaces: Vec<_> = OVERLAY_SURFACES
         .into_iter()
         .filter(|surface| adapter.check_surface_support(*surface).is_ok())
         .collect();
     if surfaces.is_empty() {
-        return Ok(None);
+        return None;
     }
-    let mut unmatched = Unmatched::new(true);
     let mut windows = unmatched.listed(process_windows(
         adapter,
         app,
@@ -164,13 +175,13 @@ pub(super) fn read_overlays(
                 Ok(SelectorObservation::Selector {
                     matches: true,
                     complete: true,
-                }) => return Ok(Some((owner.clone(), surface))),
+                }) => return Some((owner.clone(), surface)),
                 Ok(_) => {}
                 Err(error) => unmatched.record_error(error),
             }
         }
     }
-    unmatched.unreadable.map_or(Ok(None), Err)
+    None
 }
 
 /// A read that found its window closed, or a surface proved absent.

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -14,6 +15,7 @@ use crate::{
 
 const OURS: &str = "test-instance";
 const THEIRS: &str = "other-instance";
+const WAIT_BUDGET_MS: u64 = 10_000;
 
 /// Where the selector shows in one window, and from when.
 #[derive(Clone, Copy)]
@@ -27,12 +29,18 @@ enum Field {
 struct Pane {
     info: WindowInfo,
     field: Field,
+    fails: Option<ErrorCode>,
 }
 
+/// Windows of two processes. `failure` fails every read, a pane's `fails`
+/// only that window's, and each overlay probe costs `overlay_cost` of the
+/// virtual clock; `late_probes` counts probes started past the wait budget.
 struct TwoWindowApp {
     anchor: Instant,
     panes: Vec<Pane>,
     failure: Option<ErrorCode>,
+    overlay_cost: Duration,
+    late_probes: AtomicUsize,
 }
 
 impl TwoWindowApp {
@@ -41,7 +49,16 @@ impl TwoWindowApp {
             anchor: now(),
             panes,
             failure: None,
+            overlay_cost: Duration::ZERO,
+            late_probes: AtomicUsize::new(0),
         }
+    }
+
+    fn charge_overlay_probe(&self) {
+        if now().saturating_duration_since(self.anchor) >= ms(WAIT_BUDGET_MS) {
+            self.late_probes.fetch_add(1, Ordering::SeqCst);
+        }
+        crate::wait::deadline::sleep(self.overlay_cost);
     }
 
     fn shown(&self, since: Duration) -> bool {
@@ -49,12 +66,7 @@ impl TwoWindowApp {
     }
 
     fn failure(&self) -> Option<AdapterError> {
-        self.failure.clone().map(|code| match code {
-            ErrorCode::AppUnresponsive => AdapterError::app_unresponsive("TestApp")
-                .with_details(serde_json::json!({ "retryable": true })),
-            ErrorCode::PermDenied => AdapterError::permission_denied(),
-            code => AdapterError::new(code, "read failed"),
-        })
+        self.failure.clone().map(error_for)
     }
 
     fn surface_tree(
@@ -70,6 +82,17 @@ impl TwoWindowApp {
             .iter()
             .find(|pane| pane.info.id == id)
             .ok_or_else(|| AdapterError::new(ErrorCode::WindowNotFound, "window closed"))?;
+        if let Some(code) = pane.fails.clone() {
+            return Err(error_for(code));
+        }
+        self.pane_tree(pane, surface)
+    }
+
+    fn pane_tree(
+        &self,
+        pane: &Pane,
+        surface: SnapshotSurface,
+    ) -> Result<AccessibilityNode, AdapterError> {
         let width = |since| {
             if self.shown(since) {
                 vec![node("incrementor", "Width:")]
@@ -89,9 +112,18 @@ impl TwoWindowApp {
             (_, Field::InWindow(since)) => width(since),
             _ => vec![node("button", "Cancel")],
         };
-        let mut root = node("window", id);
+        let mut root = node("window", &pane.info.id);
         root.children = children;
         Ok(root)
+    }
+}
+
+fn error_for(code: ErrorCode) -> AdapterError {
+    match code {
+        ErrorCode::AppUnresponsive => AdapterError::app_unresponsive("TestApp")
+            .with_details(serde_json::json!({ "retryable": true })),
+        ErrorCode::PermDenied => AdapterError::permission_denied(),
+        code => AdapterError::new(code, "read failed"),
     }
 }
 
@@ -121,6 +153,9 @@ impl ObservationOps for TwoWindowApp {
         root: ObservationRoot<'_>,
         request: &ObservationRequest,
     ) -> Result<ObservedTree, AdapterError> {
+        if request.surface == SnapshotSurface::Sheet {
+            self.charge_overlay_probe();
+        }
         let tree = match &root {
             ObservationRoot::Window(window) => self.surface_tree(&window.id, request.surface)?,
             ObservationRoot::Application { .. } => match self.failure() {
@@ -199,6 +234,7 @@ fn pane(id: &str, instance: &str, focused: bool, field: Field) -> Pane {
             },
         },
         field,
+        fails: None,
     }
 }
 
@@ -227,7 +263,7 @@ fn click_and_wait(
     let context = CommandContext::default().with_wait_selector(Some(crate::WaitSelector {
         query_raw: ":Width".into(),
         gone: false,
-        timeout_ms: 10_000,
+        timeout_ms: WAIT_BUDGET_MS,
     }));
     let delivered =
         serde_json::to_value(crate::ActionResult::delivered_unverified("click")).unwrap();
@@ -312,55 +348,8 @@ fn a_sheet_of_another_process_with_the_same_name_never_satisfies_the_wait() {
     assert!(clock.elapsed() >= ms(10_000), "{:?}", clock.elapsed());
 }
 
-#[test]
-fn a_background_menu_bar_click_reads_the_window_its_command_acts_in() {
-    let _home = HomeGuard::new();
-    let clock = VirtualClock::freeze();
-    let app = TwoWindowApp::new(vec![
-        pane("w-1", OURS, false, Field::InWindow(ms(300))),
-        pane("w-2", OURS, false, Field::Nowhere),
-    ]);
-    let entry = menubar_entry();
-    let baseline = baseline(&app, &entry);
-    assert!(baseline.is_some());
-
-    let result = click_and_wait(&app, &entry, baseline.as_ref()).unwrap();
-
-    assert_eq!(result["window"]["id"], "w-1");
-    assert!(clock.elapsed() < ms(1_000), "{:?}", clock.elapsed());
-}
-
-#[test]
-fn a_background_menu_bar_click_ignores_a_window_behind_the_one_it_acts_in() {
-    let _home = HomeGuard::new();
-    let clock = VirtualClock::freeze();
-    let app = TwoWindowApp::new(vec![
-        pane("w-1", OURS, false, Field::Nowhere),
-        pane("w-2", OURS, false, Field::InWindow(Duration::ZERO)),
-    ]);
-    let entry = menubar_entry();
-    let baseline = baseline(&app, &entry);
-
-    let error = adapter_error(click_and_wait(&app, &entry, baseline.as_ref()));
-
-    assert_eq!(error.code, ErrorCode::Timeout);
-    assert!(clock.elapsed() >= ms(10_000), "{:?}", clock.elapsed());
-}
-
-#[test]
-fn a_menu_bar_click_without_a_baseline_still_reads_the_focused_window() {
-    let _home = HomeGuard::new();
-    let clock = VirtualClock::freeze();
-    let app = TwoWindowApp::new(vec![
-        pane("w-2", OURS, false, Field::InWindow(Duration::ZERO)),
-        pane("w-1", OURS, true, Field::InWindow(ms(300))),
-    ]);
-
-    let result = click_and_wait(&app, &menubar_entry(), None).unwrap();
-
-    assert_eq!(result["window"]["id"], "w-1");
-    assert!(clock.elapsed() < ms(1_000), "{:?}", clock.elapsed());
-}
-
 #[path = "wait_selector_unreadable_tests.rs"]
 mod unreadable_tests;
+
+#[path = "wait_selector_front_window_tests.rs"]
+mod front_window_tests;
