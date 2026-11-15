@@ -31,7 +31,8 @@ pub(crate) fn wait_for_menu(
         other => other,
     })?;
     let process = process_identity(&target)?;
-    let wait = menu_wait(open, &process, context.menu_seed(), start);
+    let grace = adapter.menu_opener_grace();
+    let wait = menu_wait(open, &process, context.menu_seed(), start, grace);
     adapter
         .wait_for_menu(process.clone(), wait, deadline)
         .map_err(|error| {
@@ -49,20 +50,21 @@ pub(crate) fn wait_for_menu(
 /// The phase a menu wait starts in. The open direction needs one open read.
 /// The closed direction starts `Open` only when a reading of the same process
 /// taken before the action saw the menu open; otherwise it awaits the menu
-/// for the opener grace, because a closed read right after an opener may be
-/// a menu that has not appeared yet.
+/// for the adapter's opener grace, because a closed read right after an
+/// opener may be a menu that has not appeared yet.
 pub(crate) fn menu_wait(
     open: bool,
     process: &ProcessIdentity,
     seed: Option<&MenuSeed>,
     started: Instant,
+    grace: Duration,
 ) -> MenuWait {
     if open {
         return MenuWait::opened();
     }
     match seed {
         Some(seed) if seed.open && seed.process == *process => MenuWait::closed_after_open(),
-        _ => MenuWait::closed(started),
+        _ => MenuWait::closed_within(started, grace),
     }
 }
 
@@ -84,3 +86,7 @@ pub fn menu_seed(
 #[cfg(test)]
 #[path = "wait_menu_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "wait_menu_grace_tests.rs"]
+mod grace_tests;

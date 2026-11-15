@@ -376,6 +376,15 @@ pub trait ObservationOps: Send + Sync {
     ) -> Result<bool, AdapterError> {
         Err(AdapterError::not_supported("menu_open"))
     }
+
+    /// How long a closed-direction menu wait with no sign of an open menu
+    /// holds before a closed read counts: the longest an opener's menu takes
+    /// to appear after the opener returns on this platform. The default is
+    /// [`crate::MENU_OPENER_GRACE`]; an adapter that measured its menus
+    /// appearing sooner returns its own value.
+    fn menu_opener_grace(&self) -> std::time::Duration {
+        crate::MENU_OPENER_GRACE
+    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,11 @@ use agent_desktop_core::{
     TreeOptions, WindowFilter, WindowInfo,
 };
 
+/// A macOS menu reads open by the time a ref opener returns, and 5 to 225 ms
+/// after a raw click on its opener (median about 45 ms, 21 runs over three
+/// apps), so the closed wait's hold is shorter than the default.
+pub(crate) const MENU_OPENER_GRACE: std::time::Duration = std::time::Duration::from_millis(300);
+
 impl ObservationOps for MacOSAdapter {
     fn menu_open(
         &self,
@@ -12,6 +17,10 @@ impl ObservationOps for MacOSAdapter {
         deadline: Deadline,
     ) -> Result<bool, AdapterError> {
         crate::system::wait::menu_open(&process, deadline)
+    }
+
+    fn menu_opener_grace(&self) -> std::time::Duration {
+        MENU_OPENER_GRACE
     }
 
     fn is_application_surface(&self, surface: agent_desktop_core::SnapshotSurface) -> bool {
@@ -251,3 +260,7 @@ impl ObservationOps for MacOSAdapter {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "adapter_tests.rs"]
+mod tests;

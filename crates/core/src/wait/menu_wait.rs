@@ -3,9 +3,11 @@ use std::time::{Duration, Instant};
 use super::{deadline::Deadline, menu_wait_phase::MenuWaitPhase};
 
 /// How long a closed-direction wait with no sign of an open menu keeps
-/// reading before a closed read counts. A GTK 4 popover first reads open 157
-/// to 999 ms after its opener returns (probes L18-2, L33-11, L33-51), and the
-/// grace starts when the wait starts, which is after the opener returned.
+/// reading before a closed read counts, unless the adapter supplies its own
+/// through `ObservationOps::menu_opener_grace`. A GTK 4 popover first reads
+/// open 157 to 999 ms after its opener returns (probes L18-2, L33-11,
+/// L33-51), and the grace starts when the wait starts, which is after the
+/// opener returned.
 pub const MENU_OPENER_GRACE: Duration = Duration::from_millis(1_500);
 
 /// A menu wait: the state it waits for and its phase. Core builds it and
@@ -40,7 +42,12 @@ impl MenuWait {
     /// [`MENU_OPENER_GRACE`] does not satisfy it, an open read means the menu
     /// must then close.
     pub fn closed(started: Instant) -> Self {
-        Self::closed_awaiting_open(started.checked_add(MENU_OPENER_GRACE).unwrap_or(started))
+        Self::closed_within(started, MENU_OPENER_GRACE)
+    }
+
+    /// [`MenuWait::closed`] with the platform's own opener grace.
+    pub fn closed_within(started: Instant, grace: Duration) -> Self {
+        Self::closed_awaiting_open(started.checked_add(grace).unwrap_or(started))
     }
 
     pub(crate) fn closed_awaiting_open(until: Instant) -> Self {
