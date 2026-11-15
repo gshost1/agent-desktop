@@ -14,6 +14,12 @@ use std::time::Instant;
 /// `unpaired_command` warning rather than a lost record.
 /// `command.end` carries `command_seq`, the `seq` of this scope's own
 /// `command.start`, so the reader pairs overlapping scopes of one command.
+/// A `command.end` that fails under `--trace-strict` replaces the command's
+/// result and carries the delivery that result reported. In a scope that may
+/// send input, a result that left delivery `unknown` becomes
+/// `delivery_uncertain`, unless it was an argument refusal raised before
+/// anything ran (`not_delivered`): the trace error's own code, such as
+/// `INVALID_ARGS` for a full recording, must not read as that refusal.
 pub struct CommandScope<'a> {
     context: &'a CommandContext,
     command: &'static str,
@@ -53,12 +59,22 @@ impl<'a> CommandScope<'a> {
             Ok(_) => self.emit_end(true, None),
             Err(err) => self.emit_end(false, Some(err.code())),
         };
-        emitted.map_err(|error| {
-            trace_error_with_disposition(
-                error,
-                result_disposition(result, self.success_disposition),
-            )
-        })
+        emitted
+            .map_err(|error| trace_error_with_disposition(error, self.closing_disposition(result)))
+    }
+
+    fn closing_disposition(&self, result: &Result<Value, AppError>) -> DeliverySemantics {
+        let disposition = result_disposition(result, self.success_disposition);
+        if disposition != DeliverySemantics::unknown()
+            || self.success_disposition == DeliverySemantics::not_delivered()
+        {
+            return disposition;
+        }
+        if is_argument_refusal(result) {
+            DeliverySemantics::not_delivered()
+        } else {
+            DeliverySemantics::uncertain()
+        }
     }
 
     fn emit_end(&self, ok: bool, code: Option<&str>) -> Result<(), AppError> {
@@ -77,6 +93,16 @@ impl<'a> CommandScope<'a> {
     }
 }
 
+fn is_argument_refusal(result: &Result<Value, AppError>) -> bool {
+    matches!(
+        result,
+        Err(AppError::Adapter(error))
+            if error.code == crate::ErrorCode::InvalidArgs
+                && !error.moved_focus()
+                && !error.changed_view()
+    )
+}
+
 impl Drop for CommandScope<'_> {
     fn drop(&mut self) {
         if self.finished.get() {
@@ -85,3 +111,7 @@ impl Drop for CommandScope<'_> {
         let _ = self.emit_end(false, Some("INTERNAL"));
     }
 }
+
+#[cfg(test)]
+#[path = "command_scope_tests.rs"]
+mod tests;
