@@ -139,7 +139,7 @@ fn a_node_whose_identity_changed_is_removed_and_added_never_changed() {
 #[test]
 fn twins_are_never_paired_by_position() {
     let before = baseline(vec![field("a"), field("b")], true);
-    let now = result(vec![field("a"), field("c")], true);
+    let now = result(vec![field("c"), field("b")], true);
     let diff = compare("s1", &before, &now, presentation());
     assert!(diff.changed.is_empty());
     let value = |rows: &[AccessibilityNode]| -> Vec<String> {
@@ -147,7 +147,7 @@ fn twins_are_never_paired_by_position() {
             .filter_map(|row| row.identity.value.clone())
             .collect()
     };
-    assert_eq!(value(&diff.removed), ["b"]);
+    assert_eq!(value(&diff.removed), ["a"]);
     assert_eq!(value(&diff.added), ["c"]);
 }
 
