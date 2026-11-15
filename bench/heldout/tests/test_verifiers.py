@@ -254,6 +254,30 @@ class NativeJudgeTests(unittest.TestCase):
         self.assertTrue(th.judge_timezone("Berlin - Germany", "Europe/Berlin", names)[0])
         self.assertFalse(th.judge_timezone("Pacific Standard Time", "Europe/Berlin", names)[0])
 
+    def test_timezone_names_match_whole_words(self):
+        la = {"names": ["PST", "PT", "Pacific Daylight Time", "Pacific Standard Time", "Pacific Time"]}
+        zone = "America/Los_Angeles"
+        self.assertFalse(th.judge_timezone("empty option", zone, la)[0])
+        self.assertTrue(th.judge_timezone("Pacific Standard Time", zone, la)[0])
+        self.assertTrue(th.judge_timezone("Pacific Standard Time (closest city: San Francisco, CA – United States)",
+                                          zone, la)[0])
+        self.assertTrue(th.judge_timezone("PT", zone, la)[0])
+        self.assertFalse(th.judge_timezone("San Francisco, CA - United States", zone, la)[0])
+
+    def test_display_minutes_answers_seen_in_stored_runs(self):
+        for answer in ["Never", "**Never**", "For Never", "For 10 minutes? No — the value shown is **Never**.",
+                       'On power adapter, the display setting under Lock Screen is: **Never**',
+                       'The Lock Screen setting "Turn display off on power adapter when inactive" shows **Never**.',
+                       '**Never**. The "Turn display off on power adapter when inactive" setting is set to Never. I '
+                       "identified it by its position in the popup list, because the element tree doesn't label each popup."]:
+            self.assertEqual(th.minutes_said(answer), 0, answer)
+
+    def test_display_minutes_never_only_where_a_value_goes(self):
+        self.assertIsNone(th.minutes_said("I never found it"))
+        self.assertEqual(th.minutes_said("10 minutes (not Never)"), 10)
+        self.assertIsNone(th.minutes_said("For 10 minutes, or Never"))
+        self.assertEqual(th.minutes_said("It is set to Never."), 0)
+
     def test_display_minutes(self):
         self.assertEqual(th.minutes_said("For 10 minutes"), 10)
         self.assertEqual(th.minutes_said("For 1 hour"), 60)

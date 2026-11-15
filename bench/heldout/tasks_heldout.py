@@ -888,10 +888,12 @@ class TimeZoneRead(ReadOnlySettingsTask):
 
 
 def judge_timezone(answer, zone, names):
+    """Whether the answer names the zone: its IANA id, its city, or a name macOS gives it, each as whole words, so
+    the abbreviation "PT" never matches inside "empty" or "option"."""
     low = _norm(answer).lower()
     city = zone.split("/")[-1].replace("_", " ")
     accepted = [zone, city] + [n for n in names.get("names", []) if n]
-    ok = any(a.lower() in low for a in accepted)
+    ok = any(re.search(r"(?<![a-z0-9])" + re.escape(a.lower()) + r"(?![a-z0-9])", low) for a in accepted)
     return ok, f"want one of {accepted}"
 
 
@@ -906,14 +908,24 @@ def display_sleep_ac():
     return value
 
 
+NEVER_VALUE = r"(?:^|\bis|\bset to|\bshows?|:|\bfor|\bor)\W*never\W*(?:$|[.!,;)\n])"
+
+
 def minutes_said(answer):
-    low = answer.lower()
-    if re.search(r"\bnever\b", low):
-        return 0
-    found = re.search(r"(\d+)\s*(hour|hr|minute|min)", low)
-    if not found:
-        return None
-    return int(found.group(1)) * (60 if found.group(2).startswith("h") else 1)
+    """The display-off value an answer states, in minutes (0 for Never), or None when it states none or several.
+
+    Bold spans are the stated value when present ("For 10 minutes? No, it is **Never**"). "Never" counts only
+    where a value goes (alone, or after "is", "set to", "shows", ":", "for" or "or"), so "I never found it" states
+    none and an echo of the prompt's two examples states several."""
+    parts = re.findall(r"\*\*(.+?)\*\*", answer, re.S) or [answer]
+    values = set()
+    for part in parts:
+        low = part.lower().strip()
+        if re.search(NEVER_VALUE, low):
+            values.add(0)
+        for n, unit in re.findall(r"(\d+)\s*(hours?|hrs?|minutes?|mins?)\b", low):
+            values.add(int(n) * (60 if unit.startswith("h") else 1))
+    return values.pop() if len(values) == 1 else None
 
 
 class DisplayOffRead(ReadOnlySettingsTask):
