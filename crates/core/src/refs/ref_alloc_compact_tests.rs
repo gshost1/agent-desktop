@@ -153,7 +153,10 @@ fn compact_keeps_every_ref_id_and_entry_the_full_tree_allocates() {
         assert_eq!(shaped_entry.identity.role, full_entry.identity.role);
     }
     let one = shaped.children[0].ref_id.as_deref().unwrap();
-    assert_eq!(shaped_refs.get(one).unwrap().scope.path.as_slice(), [0, 0, 0]);
+    assert_eq!(
+        shaped_refs.get(one).unwrap().scope.path.as_slice(),
+        [0, 0, 0]
+    );
 }
 
 #[test]
