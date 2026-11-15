@@ -10,7 +10,7 @@ permissions: {}
 
 concurrency:
   group: linux-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -19,11 +19,12 @@ env:
 jobs:
   linux-e2e:
     name: Linux live e2e
-    runs-on: ${{ vars.LINUX_E2E_RUNNER || 'ubuntu-24.04' }}
+    # A pull request, which can come from a fork, never runs on the self-hosted runner.
+    runs-on: ${{ (github.event_name != 'pull_request' && vars.LINUX_E2E_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 90
-    # Non-blocking until every x11-openbox leg is green; the harness step still fails and the
-    # summary step lists each failing leg.
-    continue-on-error: true
+    # The hosted lane is non-blocking until every x11-openbox leg is green; the harness step still
+    # fails and the summary step lists each failing leg. The self-hosted lane stays blocking.
+    continue-on-error: ${{ github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER }}
     permissions:
       contents: read
     steps:
@@ -33,7 +34,7 @@ jobs:
         run: rustup show
 
       - name: Install the private-session tools and the GNOME and Qt apps the legs drive
-        if: ${{ !vars.LINUX_E2E_RUNNER }}
+        if: ${{ github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -56,17 +57,17 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Live harness on the x11-openbox tier (the gate exits 2 without a prerequisite)
-        if: ${{ !vars.LINUX_E2E_RUNNER }}
+        if: ${{ github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER }}
         env:
           AGENT_DESKTOP_SESSION_BASE: ${{ runner.temp }}/ad-sessions
         run: bash tests/e2e-linux/run.sh --tier x11-openbox
 
       - name: Write the harness summary
-        if: ${{ always() && !vars.LINUX_E2E_RUNNER }}
+        if: ${{ always() && (github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER) }}
         run: python3 -I tests/e2e-linux/runner/step_summary.py "$RUNNER_TEMP"/ad-sessions/e2e-suite-*/report.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the failed suite's report and evidence
-        if: ${{ failure() && !vars.LINUX_E2E_RUNNER }}
+        if: ${{ failure() && (github.event_name == 'pull_request' || !vars.LINUX_E2E_RUNNER) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-e2e-x11-openbox
@@ -76,7 +77,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Live harness, every tier (the gate exits 2 without a session)
-        if: ${{ vars.LINUX_E2E_RUNNER }}
+        if: ${{ github.event_name != 'pull_request' && vars.LINUX_E2E_RUNNER }}
         run: bash tests/e2e-linux/run.sh
 
       - name: Private session checks

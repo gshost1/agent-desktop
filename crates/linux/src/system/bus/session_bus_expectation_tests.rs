@@ -6,7 +6,8 @@ use crate::system::bus::bus_deadline::within;
 
 fn expects(variable: &str) -> bool {
     match std::env::var_os(variable) {
-        Some(value) => value == "1",
+        Some(value) if value == "1" => true,
+        Some(value) => panic!("{variable} must be 1 or unset, not {value:?}"),
         None => {
             eprintln!("skipped: {variable} is not set, so this run promises no bus");
             false

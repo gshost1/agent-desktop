@@ -14,7 +14,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("tests/e2e-linux/run.sh", workflow)
         job, steps = workflow.split("\n    steps:\n", 1)
         self.assertNotIn("continue-on-error", steps)
-        self.assertEqual(job.count("\n    continue-on-error: true\n"), 1, job)
+        self.assertEqual(job.count(
+            "\n    continue-on-error: ${{ github.event_name == 'pull_request' "
+            "|| !vars.LINUX_E2E_RUNNER }}\n"), 1, job)
+        self.assertNotIn("continue-on-error: true", workflow)
+
+    def test_pull_requests_never_reach_the_self_hosted_runner(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        self.assertIn(
+            "runs-on: ${{ (github.event_name != 'pull_request' && vars.LINUX_E2E_RUNNER) "
+            "|| 'ubuntu-24.04' }}", workflow)
+        uses = [line for line in workflow.splitlines()
+                if "vars.LINUX_E2E_RUNNER" in line and "runs-on" not in line]
+        self.assertTrue(uses)
+        for line in uses:
+            self.assertRegex(line, r"github\.event_name [!=]= 'pull_request'", line)
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
 
     def test_hosted_lane_runs_the_self_tests(self):
         ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
