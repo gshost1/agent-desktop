@@ -193,14 +193,36 @@ pub(crate) fn wait_until_main(
     window: &crate::tree::AXElement,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    wait_until(window, "AXMain", deadline, "window did not become main")
+    wait_until(window, deadline, "window did not become main")
+}
+
+/// Subroles of windows that the window server keeps above their app's
+/// document windows and that never become main, such as font, colour and
+/// inspector panels.
+pub(crate) fn is_floating_subrole(subrole: &str) -> bool {
+    matches!(subrole, "AXFloatingWindow" | "AXSystemFloatingWindow")
+}
+
+#[cfg(target_os = "macos")]
+fn stands_in_front(
+    window: &crate::tree::AXElement,
+    deadline: Deadline,
+) -> Result<bool, AdapterError> {
+    if read_boolean(window, "AXMain", deadline)? {
+        return Ok(true);
+    }
+    prepare(window, deadline)?;
+    let subrole =
+        crate::tree::properties::attributes::copy_string_attr_result(window, "AXSubrole", deadline);
+    deadline.ensure_remaining()?;
+    Ok(matches!(subrole, Ok(Some(subrole)) if is_floating_subrole(&subrole)))
 }
 
 pub(crate) fn verify_window_main(
     window: &crate::tree::AXElement,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
-    if read_boolean(window, "AXMain", deadline)? {
+    if stands_in_front(window, deadline)? {
         Ok(())
     } else {
         Err(AdapterError::new(
@@ -229,14 +251,13 @@ fn read_boolean(
 }
 
 fn wait_until(
-    element: &crate::tree::AXElement,
-    attribute: &str,
+    window: &crate::tree::AXElement,
     deadline: Deadline,
     timeout_message: &str,
 ) -> Result<(), AdapterError> {
     let local_deadline = Instant::now() + VERIFY_LIMIT;
     loop {
-        if read_boolean(element, attribute, deadline)? {
+        if stands_in_front(window, deadline)? {
             return Ok(());
         }
         deadline.ensure_remaining()?;

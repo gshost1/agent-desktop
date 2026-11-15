@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use agent_desktop_core::{ActionOps, AdapterError, InputOps, ObservationOps, ProcessId, SystemOps};
+use agent_desktop_core::{
+    ActionOps, AdapterError, Deadline, InputOps, ObservationOps, ProcessId, SystemOps,
+};
 
 use super::WebChannelAdapter;
 use crate::channel::test_support::ScriptedConnector;
@@ -20,6 +22,10 @@ impl ObservationOps for PreparingPlatform {
     fn prepare_application_connection(&self, pid: ProcessId) -> Result<(), AdapterError> {
         self.connected.store(pid.get() as usize, Ordering::SeqCst);
         Ok(())
+    }
+
+    fn is_auxiliary_window(&self, window: &agent_desktop_core::WindowInfo, _: Deadline) -> bool {
+        window.id == "w-2"
     }
 }
 impl ActionOps for PreparingPlatform {}
@@ -49,4 +55,25 @@ fn preparing_an_application_connection_reaches_the_platform() {
             .is_ok()
     );
     assert_eq!(web.inner().connected.load(Ordering::SeqCst), 42);
+}
+
+#[test]
+fn whether_a_window_is_auxiliary_is_the_platform_answer() {
+    let web = WebChannelAdapter::with_connector(
+        PreparingPlatform::default(),
+        Box::new(ScriptedConnector::default()),
+    )
+    .with_download_ledger(None);
+    let mut window = agent_desktop_core::WindowInfo::for_process(&agent_desktop_core::AppInfo {
+        name: "App".into(),
+        pid: ProcessId::new(3),
+        bundle_id: None,
+        process_instance: None,
+        presentation: None,
+    });
+    let deadline = Deadline::after(1_000).unwrap();
+    window.id = "w-2".into();
+    assert!(web.is_auxiliary_window(&window, deadline));
+    window.id = "w-1".into();
+    assert!(!web.is_auxiliary_window(&window, deadline));
 }
