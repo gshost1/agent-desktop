@@ -125,9 +125,9 @@ pub(crate) fn is_cloaked(window: HWND) -> bool {
     succeeded && cloaked != 0
 }
 
-/// Whether the DWM hides a window that is not minimized: the shape the agent
-/// inventory leaves out as cloaked. A minimized window stays listable, so its
-/// cloak does not count here.
+/// Whether the DWM hides a window that is not minimized. A minimized window is
+/// exempt, so restoring one is never refused here; the agent window inventory
+/// leaves out every cloaked window, minimized or not.
 #[cfg(target_os = "windows")]
 pub(crate) fn is_hidden_by_cloak(window: HWND) -> bool {
     is_cloaked(window) && unsafe { IsIconic(window) } == 0

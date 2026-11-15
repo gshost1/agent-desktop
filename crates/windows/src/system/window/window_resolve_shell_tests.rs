@@ -118,6 +118,13 @@ fn a_headed_focus_on_a_taskbar_ref_raises_the_taskbar() {
         let snapshot = surface_snapshot(SnapshotSurface::Taskbar);
         let taskbar = parse_handle(snapshot["window"]["id"].as_str().expect("window id"));
         let Some(ref_id) = first_ref(&snapshot["tree"]) else {
+            assert!(
+                cfg!(target_arch = "aarch64"),
+                "the x64 taskbar exposed no ref (ref_count {}, complete {}); only the ARM64 \
+                 runner's taskbar is known to have none",
+                snapshot["ref_count"],
+                snapshot["complete"]
+            );
             eprintln!(
                 "skip taskbar focus: this desktop's taskbar exposes no ref at the default depth \
                  (ref_count {}, complete {}), so there is no ref action to drive",
