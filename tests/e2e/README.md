@@ -165,7 +165,7 @@ python3 -m unittest discover -s tests/e2e -p 'test_*.py'
 | AE4 | Two windows with the same title receive distinct ids; focusing the second id focuses that exact window. |
 | AE5 | Deterministic tests prove prompt isolation and nonprompting Automation probes; when the runner already has denied Automation TCC, a native headed Notification Center operation must return `PERM_DENIED`. Other TCC states are explicitly logged as unavailable rather than claimed as exercised. |
 | AE6 | One batch captures a pre-action baseline, clicks open a sheet, and reports `surface_appeared` without naming the surface title. |
-| AE7 | The same disabled action with no timeout flag returns the structured timeout near the untouched 5 s default. |
+| AE7 | The same disabled action with no timeout flag returns `ACTION_FAILED`, `details.kind=target_disabled`, `retryable=false`, near 2 s into the 5 s default budget, and never dispatches. |
 
 AE2, AE3, and AE7 run in both headless and headed policy modes. Elapsed-time
 tolerances account for process launch and scheduler noise but are narrow enough

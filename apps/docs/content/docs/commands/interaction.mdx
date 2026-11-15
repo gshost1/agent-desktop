@@ -61,7 +61,7 @@ When the target is already in the requested state, nothing is delivered and the 
 
 ## Wait budget
 
-Every command on this page takes `--timeout-ms MS` (default `5000`; `type` adds 30 ms per character), the budget for resolving the ref and waiting for the element to become actionable. Core polls the transient checks (`visible`, `stable`, `enabled`, and, for pointer delivery, `receives_events`) until they pass. The terminal checks (`supported_action`, `policy`, `editable`) cannot be fixed by waiting and fail at once. `--timeout-ms 0` tries once without polling.
+Every command on this page takes `--timeout-ms MS` (default `5000`; `type` adds 30 ms per character), the budget for resolving the ref and waiting for the element to become actionable. Core polls the transient checks (`visible`, `stable`, `enabled`, and, for pointer delivery, `receives_events`) until they pass. The terminal checks (`supported_action`, `policy`, `editable`) cannot be fixed by waiting and fail at once. One transient check is cut short: on the command's default budget, a target whose only failing check is `enabled` ends 2 s in with `ACTION_FAILED` and `details.kind: target_disabled`, while a `--timeout-ms` other than the default waits it out. `--timeout-ms 0` tries once without polling.
 
 A failed check list appears in `error.details.checks`, each with a `status` of `pass`, `fail`, or `unknown` and a `reason`. This is `double-click` on a text entry without `--headed`:
 
@@ -97,9 +97,9 @@ A failed check list appears in `error.details.checks`, each with a `status` of `
     <tr><td><code>STALE_REF</code></td><td>No live element matches the ref's saved identity.</td></tr>
     <tr><td><code>AMBIGUOUS_TARGET</code></td><td>Several live elements match. A ref action never guesses.</td></tr>
     <tr><td><code>ACTION_NOT_SUPPORTED</code></td><td>The element does not expose the action.</td></tr>
-    <tr><td><code>POLICY_DENIED</code></td><td>A physical or focus-taking path was needed and headless policy refused it. When the element advertises no semantic action, the suggestion names <code>--headed</code> as the only way to act on it.</td></tr>
+    <tr><td><code>POLICY_DENIED</code></td><td>A physical or focus-taking path was needed and headless policy refused it. When the element advertises no semantic action, the suggestion names <code>--headed</code> as the only way to act on it, if the user allows physical input for the task.</td></tr>
     <tr><td><code>TIMEOUT</code>, <code>details.kind: actionability_timeout</code></td><td>The target never became actionable within <code>--timeout-ms</code>. <code>details.last_report</code> names the failing check.</td></tr>
-    <tr><td><code>ACTION_FAILED</code>, <code>details.kind: target_disabled</code></td><td>The target's live enabled state was still false 2 s into the default 5 s budget, so the command stopped waiting (<code>retryable: false</code>). Enable it first, or wait for it with <code>wait --element REF --predicate enabled</code>. A <code>--timeout-ms</code> other than the default waits the whole budget.</td></tr>
+    <tr><td><code>ACTION_FAILED</code>, <code>details.kind: target_disabled</code></td><td>The target's live enabled state was still false 2 s into the command's default budget, so the command stopped waiting (<code>retryable: false</code>). Enable it first, or wait for it with <code>wait --element REF --predicate enabled</code>. A <code>--timeout-ms</code> other than the default waits the whole budget.</td></tr>
     <tr><td><code>ACTION_FAILED</code></td><td>The action was rejected, blocked, or contradicted by the readback.</td></tr>
     <tr><td><code>APP_UNRESPONSIVE</code></td><td>The app stopped responding.</td></tr>
     <tr><td><code>PERM_DENIED</code></td><td>Accessibility permission is not granted, or, with <code>details.kind: "state_directory_permission"</code>, the state path in <code>details.path</code> is open to other users.</td></tr>

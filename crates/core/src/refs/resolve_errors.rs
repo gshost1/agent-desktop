@@ -67,28 +67,42 @@ fn identity_not_unique(entry: &RefEntry) -> AdapterError {
 const TWIN_SUGGESTION: &str = "When this ref was captured, another element in its window had the \
      same role, name, description and native id, so every new snapshot refuses it the same way. \
      Act on a control that is unique in the window, reach this one with the keyboard, or, where \
-     headed pointer input is available, pick it with --headed mouse-click --xy X,Y.";
+     headed pointer input is available, pick it with --headed mouse-click --xy X,Y. A ref from a \
+     snapshot taken before 2.7 may not be a twin: take a new snapshot first.";
 
-const MENU_TWIN_SUGGESTION: &str = "This menu entry has a twin with the same role and name \
-     elsewhere in the window, such as the same entry in another menu or a second copy of the menu \
-     bar, so every snapshot of the whole window refuses it. Open the menu that holds it (click \
-     its menu-bar entry), run snapshot --surface menu --app <app> -i, and act on the ref from \
-     that snapshot, which counts only the open menu.";
+const MENU_TWIN_SUGGESTION: &str = "This menu entry has a twin with the same role, name, \
+     description and native id elsewhere in the window, such as the same entry in another menu or \
+     a second copy of the menu bar, so every snapshot of the whole window refuses it. Open the \
+     menu that holds it (click its menu-bar entry), run snapshot --surface menu --app <app> -i, \
+     and act on the ref from that snapshot, which counts only the open menu. A ref from a snapshot \
+     taken before 2.7 may not be a twin: take a new snapshot first.";
+
+const MENU_BAR_TWIN_SUGGESTION: &str = "This menu has a twin with the same role, name, description \
+     and native id elsewhere in the window, such as a second copy of the menu bar, so every \
+     snapshot of the whole window refuses it. If it is the menu-bar entry itself, open it with the \
+     keyboard (its access key, or F10 and the arrow keys); if it is a submenu, open the menu that \
+     holds it, run snapshot --surface menu --app <app> -i, and act on the ref from that snapshot, \
+     which counts only the open menu. A ref from a snapshot taken before 2.7 may not be a twin: \
+     take a new snapshot first.";
 
 const OPEN_MENU_TWIN_SUGGESTION: &str = "The open menu holds another entry with the same role, \
      name, description and native id, so every snapshot of it refuses this ref. Move to the entry \
      with the arrow keys and press Return, or, where headed pointer input is available, pick it \
-     with --headed mouse-click --xy X,Y.";
+     with --headed mouse-click --xy X,Y. A ref from a snapshot taken before 2.7 may not be a twin: \
+     take a new snapshot first.";
 
 /// Picks the way out from where the twin was counted: a menu entry seen in a
 /// whole-window capture can be told apart once its own menu is open and
-/// snapshotted as the menu surface, while a twin inside the open menu, or any
+/// snapshotted as the menu surface, and a menu title may sit on the menu bar
+/// itself, which no menu surface holds. A twin inside the open menu, or any
 /// other control, has no ref path.
 fn twin_suggestion(entry: &RefEntry) -> &'static str {
-    let menu_entry = matches!(entry.identity.role.as_str(), "menuitem" | "menu");
+    let role = entry.identity.role.as_str();
+    let menu_entry = matches!(role, "menuitem" | "menu");
     match entry.source.source_surface {
         crate::SnapshotSurface::Menu if menu_entry => OPEN_MENU_TWIN_SUGGESTION,
         crate::SnapshotSurface::Menu => TWIN_SUGGESTION,
+        _ if role == "menu" => MENU_BAR_TWIN_SUGGESTION,
         _ if menu_entry => MENU_TWIN_SUGGESTION,
         _ => TWIN_SUGGESTION,
     }

@@ -24,6 +24,21 @@ assert_actionability_timeout() {
         "exit=$RUN_EXIT elapsed_ms=$RUN_MS code=$code kind=$kind last_report=${last_report:0:100}"
 }
 
+assert_disabled_refusal() {
+    local label="$1" lower="$2" upper="$3"
+    local code kind retryable checks timing_ok
+    code="$(json_field "$RUN_JSON" error.code)"
+    kind="$(json_field "$RUN_JSON" error.details.kind)"
+    retryable="$(json_field "$RUN_JSON" error.details.retryable)"
+    checks="$(json_field "$RUN_JSON" error.details.checks)"
+    timing_ok="$(elapsed_in_range "$RUN_MS" "$lower" "$upper")"
+    assert "$label" \
+        "$([ "$RUN_EXIT" -ne 0 ] && [ "$code" = "ACTION_FAILED" ] && \
+            [ "$kind" = "target_disabled" ] && [ "$retryable" = "False" ] && \
+            [ -n "$checks" ] && [ "$timing_ok" = "1" ] && echo 1 || echo 0)" \
+        "exit=$RUN_EXIT elapsed_ms=$RUN_MS code=$code kind=$kind retryable=$retryable"
+}
+
 note "AE1: zero-sized element is not visible"
 require_target zero_target button zero-bounds-button
 zero_visible="$(is_target "$zero_target" visible 2>/dev/null)"
@@ -39,9 +54,9 @@ for mode in headless headed; do
     require_value disabled_before delayed-action-status
 
     run_ref_timed "$mode" "$permanent"
-    assert_actionability_timeout "AE7 $mode default timeout remains approximately 5 seconds" 4400 6800
+    assert_disabled_refusal "AE7 $mode default budget ends a disabled target after about 2 seconds" 1700 3800
     require_value disabled_after_default delayed-action-status
-    assert "AE7 $mode timeout never dispatches" \
+    assert "AE7 $mode disabled refusal never dispatches" \
         "$([ "$disabled_after_default" = "$disabled_before" ] && echo 1 || echo 0)" \
         "before=$disabled_before after=$disabled_after_default"
 

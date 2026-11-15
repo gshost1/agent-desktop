@@ -128,6 +128,41 @@ fn a_twin_control_names_what_the_capture_saw_and_no_older_refmap() {
 }
 
 #[test]
+fn a_twin_menu_title_from_a_window_capture_offers_the_keyboard_for_a_menu_bar_entry() {
+    let error = refusal(
+        "menu",
+        CaptureVerdict::Ambiguous,
+        crate::SnapshotSurface::Window,
+    );
+
+    let hint = error.suggestion.unwrap();
+    assert!(hint.contains("menu-bar entry itself"), "{hint}");
+    assert!(hint.contains("keyboard"), "{hint}");
+}
+
+#[test]
+fn every_twin_text_warns_that_a_ref_from_before_two_seven_may_not_be_a_twin() {
+    for (role, surface) in [
+        ("button", crate::SnapshotSurface::Window),
+        ("menuitem", crate::SnapshotSurface::Window),
+        ("menu", crate::SnapshotSurface::Window),
+        ("menuitem", crate::SnapshotSurface::Menu),
+    ] {
+        let hint = refusal(role, CaptureVerdict::Ambiguous, surface)
+            .suggestion
+            .unwrap();
+        assert!(
+            hint.contains("before 2.7 may not be a twin"),
+            "{role}: {hint}"
+        );
+        assert!(
+            hint.contains("role, name, description and native id"),
+            "{role}: {hint}"
+        );
+    }
+}
+
+#[test]
 fn a_twin_menu_entry_from_a_window_capture_points_at_the_menu_surface() {
     for role in ["menuitem", "menu"] {
         for surface in [
