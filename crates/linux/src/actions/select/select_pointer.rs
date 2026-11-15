@@ -141,6 +141,18 @@ pub(in crate::actions) fn pointer_required() -> AdapterError {
     }))
 }
 
+/// Keeps a failure that follows input this select already sent from reading as
+/// untouched. The click or expand that opened the choices moved focus and may
+/// have changed the control even when the choice was then missing or refused,
+/// so a `not_delivered` failure after it becomes `delivered_unverified`.
+pub(super) fn after_input_sent(error: AdapterError) -> AdapterError {
+    if error.disposition == DeliverySemantics::not_delivered() {
+        error.with_disposition(DeliverySemantics::delivered_unverified())
+    } else {
+        error
+    }
+}
+
 #[cfg(test)]
 #[path = "select_pointer_tests.rs"]
 mod tests;

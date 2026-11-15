@@ -196,11 +196,11 @@ fn a_choice_in_the_popup_is_committed_through_the_list_and_verified_by_the_shown
 }
 
 #[test]
-fn an_absent_choice_closes_the_popup_and_is_not_found() {
+fn an_absent_choice_closes_the_popup_and_is_not_found_but_not_untouched() {
     let world = World::dropdown();
     let error = choose(&world, "Sometimes").expect_err("absent");
     assert_eq!(error.code, ErrorCode::ElementNotFound);
-    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     let world = world.borrow();
     assert_eq!(world.clicks, ["/combo"]);
     assert!(world.commits.is_empty());
@@ -303,6 +303,7 @@ fn a_commit_the_popup_refuses_closes_the_popup_and_returns_the_refusal() {
     world.borrow_mut().refuse_commit = true;
     let error = choose(&world, "Never").expect_err("refused");
     assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     assert_eq!(world.borrow().escapes, 1);
     assert!(!world.borrow().open);
 }

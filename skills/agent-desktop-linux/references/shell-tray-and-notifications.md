@@ -94,7 +94,10 @@ A combobox with no popup state, no selection and no action, such as a libadwaita
 combo row, takes `--headed select @ref "Choice"` on X11. It clicks the combobox,
 finds the choice in the list that appears, selects it through that list and the
 popup's default action, and checks the value the combobox shows. A missing
-choice closes the popup with Escape and answers `ELEMENT_NOT_FOUND`. Without
+choice closes the popup with Escape and answers `ELEMENT_NOT_FOUND` with
+`delivered_unverified` and `retry: unsafe`: the click already focused and
+selected the row. Read the combobox before another select. The same holds for a
+dropdown that `select` expands semantically, such as a GTK4 `DropDown`. Without
 `--headed` that select is `POLICY_DENIED`, kind `pointer_required`, unless the
 combobox already shows the choice. Where `select` still refuses, adding
 `--headed` does not supply a missing semantic action.
