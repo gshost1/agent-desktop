@@ -51,3 +51,26 @@ fn text_planning_recovers_own_pending_remaps_before_reading_the_keymap() {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[test]
+fn only_plans_that_press_keys_hold_the_event_listener() {
+    use crate::input::plan::Plan;
+    use crate::input::step::Step;
+    let keys = crate::input::keyboard::text_plan::plan_text(&start_keymap(), "a").unwrap();
+    assert!(super::sends_keys(&keys));
+    let pointer = vec![Plan {
+        steps: vec![
+            Step::MoveTo { x: 1, y: 1 },
+            Step::Button {
+                code: 1,
+                down: true,
+            },
+            Step::Button {
+                code: 1,
+                down: false,
+            },
+        ],
+        release_origin: None,
+    }];
+    assert!(!super::sends_keys(&pointer));
+}

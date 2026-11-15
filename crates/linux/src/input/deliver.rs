@@ -32,7 +32,11 @@ pub(crate) fn send_keysyms(
 ) -> Result<Delivery, AdapterError> {
     match backend()? {
         Backend::X11(_) => Err(AdapterError::not_supported("x11_keysym_input")),
-        Backend::Wayland => keysym_send::send_chunks(chunks, gate, deadline),
+        Backend::Wayland => crate::system::bus::listener_hold::hold_after(
+            chunks.iter().any(|chunk| !chunk.is_empty()),
+            || keysym_send::send_chunks(chunks, gate, deadline),
+            crate::system::bus::listener_hold::outlive_sent_keys,
+        ),
     }
 }
 
