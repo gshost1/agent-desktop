@@ -112,29 +112,36 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   spawned nothing, `delivered_unverified` after the spawn.
 - A spawned process that is still running but not on the accessibility bus is
   waited for until `--timeout`. The wait ends after 5 s (never past `--timeout`)
-  only when the process maps an X11 window without joining the bus, or its
-  environment sets `NO_AT_BRIDGE=1` or `GTK_A11Y=none`. `launch` then answers
-  `ok: true` with no `window`, the spawned pid, and a `data.suggestion` that names
-  the case: `The process shows a window but did not join the accessibility bus`,
-  `The process runs with its accessibility bridge turned off`, or, at the
-  timeout, `The application is still starting` with the
-  `agent-desktop wait --app '<app>' --window '<title>' --timeout 30000` command.
+  only when the process, or one it started, maps a window on X11 or Xwayland
+  without joining the bus, or its environment sets `NO_AT_BRIDGE=1` or
+  `GTK_A11Y=none` (Qt reads neither, but is treated the same). `launch` then
+  answers `ok: true` with no `window`, the spawned pid, and a `data.suggestion`
+  that names the case: `The process shows a window but did not join the
+  accessibility bus`, `The process runs with its accessibility bridge turned
+  off`, or, at the timeout, `The application is still starting` with the command
+  to run next, `agent-desktop wait --event window-opened --app '<app>' --timeout 30000`.
   The pid may be a wrapper of the application. Only a registry read that
-  answered counts toward the 5 s. A forwarded launch to the one running instance
-  that owns a session-bus name and opens no new window within 2 s reports that
-  instance and the window it already shows.
+  answered counts toward the 5 s.
 - A launcher that exits with no owner is `ACTION_FAILED`,
   `details.kind: exited` (`crashed` after a signal), `delivered_unverified`. An
   owner that exits before its window appears is `ACTION_FAILED`,
   `delivered_unverified`, without that kind. A forwarding launcher can attach to
   one existing instance of the same executable when that instance opens a new
-  window, even if its argv differs. If no owner can be proven, including a
-  handoff that only opens a tab in an existing window, the exited launcher can
-  return `ACTION_FAILED`, `delivered_unverified`; re-list windows before retrying.
+  window, even if its argv differs. When no instance opens a new window within
+  2 s, the launch takes the running instance as the owner only if it was the
+  one instance of that executable on the bus before the spawn, was started with
+  the same first operand as the request (or none), and serves forwarded launches
+  on the session bus (its desktop id, or an application object with
+  `org.freedesktop.Application` or `org.gtk.Application`). The result then
+  carries that instance, its window when it shows exactly one (no `window` when
+  it shows several), and a `data.suggestion` that starts `The launcher exited
+  cleanly and no new window opened` and says the effect was not verified. If no
+  owner can be proven, the exited launcher returns `ACTION_FAILED`,
+  `delivered_unverified`; re-list windows before retrying.
 - The result carries `app`, `pid`, `process_instance` and, when one appeared,
   `window`. A no-argument attach returns an existing window of the running app. A
-  new launch or argument handoff reports only a new window, so a handoff that
-  opens a tab in an existing window can return no `window`.
+  new launch or argument handoff reports a new window, or, for the adopted
+  instance above, the one window it already shows.
 - Chromium and Qt apps need a flag or an environment variable to appear on the
   bus; pass them with `--arg` or `--env`. Electron apps need none. See
   `references/troubleshooting.md`.

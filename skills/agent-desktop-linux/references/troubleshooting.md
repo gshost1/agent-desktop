@@ -37,8 +37,9 @@ Start with `agent-desktop status` and `agent-desktop list-apps`.
 An app is in `list-apps` only when its toolkit registered with the accessibility
 bus. The CLI says so when a process is running but not on the bus. `launch`
 waits up to `--timeout` for an app that is still starting. It ends after 5 s only
-when the process maps an X11 window without joining the bus, or its environment
-sets `NO_AT_BRIDGE=1` or `GTK_A11Y=none`. The suggestion names the case.
+when the process maps a window on X11 or Xwayland without joining the bus, or
+its environment sets `NO_AT_BRIDGE=1` or `GTK_A11Y=none`. The suggestion names
+the case.
 
 | App | Needs |
 |-----|-------|

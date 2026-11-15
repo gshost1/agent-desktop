@@ -151,3 +151,6 @@ mod identity;
 
 #[path = "launch_direct_live_tests.rs"]
 mod direct;
+
+#[path = "launch_adopt_live_tests.rs"]
+mod adopt;

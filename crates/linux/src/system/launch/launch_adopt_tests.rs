@@ -43,7 +43,7 @@ fn the_one_serving_instance_is_adopted() {
         chosen(
             &before,
             &["/usr/bin/settings", "datetime"],
-            &[settings.clone()],
+            std::slice::from_ref(&settings),
             true
         ),
         Step::Owner(settings)
@@ -75,7 +75,7 @@ fn an_interpreter_running_another_script_is_not_adopted_even_when_it_serves() {
         chosen(
             &before,
             &["/usr/bin/python3", "other.py", "--page"],
-            &[resident.clone()],
+            std::slice::from_ref(&resident),
             true
         ),
         Step::Owner(resident)
@@ -103,7 +103,12 @@ fn two_read_instances_or_one_gone_or_unread_now_block_adoption() {
     let second = running(8, &["/usr/bin/settings"]);
     let both = baseline(&[first.clone(), second.clone()], 2);
     assert_eq!(
-        chosen(&both, &["/usr/bin/settings"], &[first.clone()], true),
+        chosen(
+            &both,
+            &["/usr/bin/settings"],
+            std::slice::from_ref(&first),
+            true
+        ),
         Step::Wait
     );
     let one = baseline(std::slice::from_ref(&first), 1);
