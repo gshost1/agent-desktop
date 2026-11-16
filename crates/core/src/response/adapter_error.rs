@@ -3,6 +3,12 @@ use thiserror::Error;
 
 use crate::{DeliverySemantics, ErrorCode, InteractionPolicy};
 
+const COMPLETE_ABSENCE_KINDS: [&str; 3] = [
+    "resolve_no_candidate",
+    "resolution_complete_absence",
+    "saved_ref_absent",
+];
+
 #[derive(Debug, Error, Clone)]
 #[error("{message}")]
 pub struct AdapterError {
@@ -67,6 +73,21 @@ impl AdapterError {
 
     pub fn permits_retry_by_default(&self) -> bool {
         self.retryability != crate::response::retryability::Retryability::NonRetryable
+    }
+
+    /// Whether the error is a `STALE_REF` read over complete evidence whose
+    /// kind says the element is gone. Waiting cannot change that answer, so
+    /// resolvers stamp it `retryable: false`, but a new snapshot can, so it
+    /// still carries the fresh-snapshot recovery.
+    pub(crate) fn is_complete_absence(&self) -> bool {
+        let Some(details) = self.details.as_ref() else {
+            return false;
+        };
+        let kind = details.get("kind").and_then(Value::as_str);
+        let complete = details.get("complete").and_then(Value::as_bool) == Some(true);
+        self.code == ErrorCode::StaleRef
+            && complete
+            && kind.is_some_and(|kind| COMPLETE_ABSENCE_KINDS.contains(&kind))
     }
 
     /// Marks a lookup refusal raised before anything was sent to the
