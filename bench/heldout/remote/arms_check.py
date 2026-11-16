@@ -4,14 +4,21 @@ python3 -I arms_check.py <taskset module> <candidates dir> <arms dir> <arm> [<ar
 
 Exits 0 when every file pin of the set matches and the module itself is pinned, every arm is known, no arm is
 listed twice, and every candidate arm's agent-desktop and agent-desktop-macos-helper match an
-"arm `<label>` <file> sha256 `<hex>`" line. Prints each refusal otherwise."""
+"arm `<label>` <file> sha256 `<hex>`" line. A set whose FROZEN.md names "manifest digest `<hex>`" must also
+rebuild to that digest on this host (remote/manifest.py over these arms), and a set that pins `schedule.json`
+runs only with SCHEDULE set to that file. A placeholder pin (`<at freeze>`) refuses. Prints each refusal
+otherwise."""
 import hashlib
+import os
 import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 FILE_PIN = re.compile(r"`([^`]+)` sha256 `([0-9a-f]{64})`")
 ARM_PIN = re.compile(r"arm `([^`]+)` (agent-desktop(?:-macos-helper)?) sha256 `([0-9a-f]{64})`")
+MANIFEST_PIN = re.compile(r"manifest digest `([0-9a-f]{64})`")
 CANDIDATE_FILES = ("agent-desktop", "agent-desktop-macos-helper")
 
 
@@ -43,6 +50,18 @@ def refusals(taskset, candidates, builtin, arms):
             out.append(f"unknown arm {arm}")
     if len(set(arms)) != len(arms):
         out.append("an arm is listed twice")
+    if "<at freeze>" in text:
+        out.append("FROZEN.md still has a placeholder pin")
+    if "schedule.json" in {f for f, _ in files}:
+        given = os.environ.get("SCHEDULE")
+        if not given or Path(given).resolve() != (root / "schedule.json").resolve():
+            out.append("the set pins schedule.json; run with SCHEDULE set to it")
+    want = MANIFEST_PIN.search(text)
+    if want and not out:
+        import manifest
+        got = manifest.digest(manifest.build(taskset, arms))
+        if got != want.group(1):
+            out.append(f"manifest digest {got[:12]} differs from its pin {want.group(1)[:12]}")
     return out
 
 

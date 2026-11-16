@@ -71,6 +71,43 @@ class ArmsCheckTests(unittest.TestCase):
         (self.ts.parent / "FROZEN.md").write_text("nothing pinned\n")
         self.assertEqual(self.check("ad-14"), ["tasks_x.py is not pinned"])
 
+    def test_a_placeholder_pin_is_refused(self):
+        self.frozen()
+        with open(self.ts.parent / "FROZEN.md", "a") as fh:
+            fh.write("- arm `ad-16` agent-desktop sha256 `<at freeze>`\n")
+        self.assertEqual(self.check("ad-14"), ["FROZEN.md still has a placeholder pin"])
+
+    def test_a_pinned_schedule_must_be_the_one_run(self):
+        import os
+        (self.ts.parent / "schedule.json").write_text("{}")
+        self.frozen()
+        with open(self.ts.parent / "FROZEN.md", "a") as fh:
+            fh.write(f"`schedule.json` sha256 `{sha(b'{}')}`\n")
+        os.environ.pop("SCHEDULE", None)
+        self.assertEqual(self.check("ad-14"), ["the set pins schedule.json; run with SCHEDULE set to it"])
+        os.environ["SCHEDULE"] = str(self.ts.parent / "schedule.json")
+        try:
+            self.assertEqual(self.check("ad-14"), [])
+        finally:
+            os.environ.pop("SCHEDULE")
+
+    def test_a_manifest_that_rebuilds_differently_is_refused(self):
+        import manifest
+        self.frozen()
+        with open(self.ts.parent / "FROZEN.md", "a") as fh:
+            fh.write(f"manifest digest `{'a' * 64}`\n")
+        real = manifest.build
+        manifest.build = lambda taskset, arms: {"files": {"x": "y"}}
+        try:
+            got = self.check("ad-14")
+            self.assertEqual(len(got), 1)
+            self.assertTrue(got[0].startswith("manifest digest"))
+            text = (self.ts.parent / "FROZEN.md").read_text().replace("a" * 64, manifest.digest({"files": {"x": "y"}}))
+            (self.ts.parent / "FROZEN.md").write_text(text)
+            self.assertEqual(self.check("ad-14"), [])
+        finally:
+            manifest.build = real
+
 
 if __name__ == "__main__":
     unittest.main()

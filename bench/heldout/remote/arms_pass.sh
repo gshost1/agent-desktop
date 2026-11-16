@@ -9,7 +9,8 @@
 # the STOP file, the API refusal scanner and the pass's list-price spend over every listed arm; past CAP_USD it
 # writes STOP-SPEND and ends.
 #
-# With SCHEDULE=<file> (schedule.py make; the final run requires one, pinned in FROZEN.md) the pass runs exactly the
+# With SCHEDULE=<file> (schedule.py make; set automatically when the set's FROZEN.md pins its schedule.json, as the
+# final set does) the pass runs exactly the
 # saved cells in their saved order instead, skips cells the ledger shows were attempted (a resumed pass never reruns one),
 # and holds the lock per task block. Before every run it reserves RESERVE_USD (default 0.75, above any run seen so
 # far) against CAP_USD and stops rather than start a run the cap cannot cover. An unknown row cost counts as
@@ -35,10 +36,15 @@ log() { echo "[$(date +%H:%M:%S)] $*"; }
 [[ $TASKSET == /* ]] || TASKSET=$HOME/$TASKSET
 [ -f "$TASKSET" ] || { log "no task set $TASKSET"; exit 2; }
 export HELDOUT_TASKSET=$TASKSET
+if grep -q '`schedule.json` sha256' "$(dirname "$TASKSET")/FROZEN.md" 2>/dev/null; then
+  export SCHEDULE=$(dirname "$TASKSET")/schedule.json
+fi
 IFS=, read -r -a ARMS <<< "$ARMS_CSV"
 [ ${#ARMS[@]} -ge 1 ] || { log "no arms"; exit 2; }
 
 $P -I "$H/remote/arms_check.py" "$TASKSET" "$CANDS" "$H/arms" "${ARMS[@]}" || { log "refused: see above"; exit 3; }
+export HO_MANIFEST=$($P -I "$H/remote/manifest.py" --digest "$TASKSET" "${ARMS[@]}")
+$P -I "$H/remote/manifest.py" "$TASKSET" "${ARMS[@]}" > "$BT/logs/manifest-$NAME.json"
 eval "$($P -I - "$TASKSET" <<'PY'
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("heldout_taskset", sys.argv[1])
@@ -98,7 +104,10 @@ native_run() {
   local arm=$1 task=$2 r=$3 slot=${4:-}
   touch "$BT/logs/.since"
   $P -I "$H/arms/run_native.py" --arm "$arm" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" \
-    --experiment "$NAME" ${slot:+--slot "$slot"} < /dev/null || log "native $arm $task exited $? (kept in the ledger)"
+    --experiment "$NAME" ${slot:+--slot "$slot"} < /dev/null
+  local rc=$?
+  if [ $rc -eq 75 ]; then log "native $arm $task: cleanup failed, stopping the pass"; touch "$BT/STOP"; fi
+  [ $rc -eq 0 ] || log "native $arm $task exited $rc (kept in the ledger)"
 }
 
 caffeinate -dims -w $$ &

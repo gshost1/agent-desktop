@@ -21,7 +21,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 BENCH_HOST=${BENCH_HOST:-100.111.59.3}
-BENCH_USER_FILE=${BENCH_USER_FILE:-$HOME/.t3/userdata/secrets/files/2e9f373fbe3227c5e3303f683361bc8d}
+BENCH_USER_FILE=${BENCH_USER_FILE:-$HOME/.t3/userdata/secrets/files/cf0799bbd72ebce8960876e9f8890bbf}
 SSHDIR=$HOME/.agent-desktop-bench-target/remote/ssh
 RESULTS=$HOME/.agent-desktop-bench-target/remote/results
 MODEL=${MODEL:-claude-sonnet-5-5}
@@ -70,6 +70,8 @@ collect() {
   local dir=$RESULTS/candidates/$set
   mkdir -p "$dir/raw-arms-$name"
   put "$U@$BENCH_HOST:$MIRROR/heldout/runs/$set/results-native.jsonl" "$dir/raw-arms-$name/" || { echo "no rows on the bench Mac" >&2; exit 1; }
+  put "$U@$BENCH_HOST:$MIRROR/heldout/runs/$set/attempts.jsonl" "$dir/raw-arms-$name/" 2>/dev/null || true
+  put "$U@$BENCH_HOST:$LOGS/manifest-$name.json" "$dir/raw-arms-$name/" 2>/dev/null || true
   local spec; spec=$(r "cat $LOGS/arms-$name.start")
   "$PY" -I - "$dir/raw-arms-$name/results-native.jsonl" "$spec" "$dir/arms-$name-results-native.jsonl" "$HERE/.." <<'PY'
 import json, sys
@@ -78,7 +80,9 @@ src, spec, out = Path(sys.argv[1]), sys.argv[2].split(), Path(sys.argv[3])
 sys.path.insert(0, sys.argv[4])
 import pricing
 arms, start = spec[1].split(","), int(spec[2])
-rows = [json.loads(l) for l in src.read_text().splitlines()[start:] if l.strip()]
+every = [json.loads(l) for l in src.read_text().splitlines() if l.strip()]
+tagged = [r for r in every if r.get("experiment") == spec[0]]
+rows = tagged if tagged else every[start:]
 rows = [r for r in rows if r.get("arm") in arms]
 out.write_text("".join(json.dumps(r) + "\n" for r in rows))
 for arm in arms:
@@ -88,6 +92,12 @@ print(f"total list price ${sum(pricing.row_cost(r)[0] or 0.0 for r in rows):.2f}
 PY
   local focus; focus=$(r "cut -d' ' -f2 $LOGS/arms-$name.start" | cut -d, -f1)
   "$PY" -I "$HERE/report.py" --model "$MODEL" --focus "$focus" --results "$dir/arms-$name-results-native.jsonl" > "$dir/REPORT-arms-$name.md"
+  local sched; sched=$(dirname "$TASKSET")/schedule.json
+  if [ -f "$sched" ] && grep -q "\"experiment\": \"$name\"" "$sched"; then
+    "$PY" -I "$HERE/final_report.py" --schedule "$sched" --ledger "$dir/raw-arms-$name/attempts.jsonl" \
+      --rows "$dir/arms-$name-results-native.jsonl" --focus "$focus" > "$dir/FINAL-arms-$name.md"
+    echo "final report: $dir/FINAL-arms-$name.md"
+  fi
   echo "report: $dir/REPORT-arms-$name.md"
 }
 
@@ -144,7 +154,7 @@ done
 r "rm -f bench-tools/STOP bench-tools/STOP-SPEND"
 put --exclude 'runs*' --exclude 'out/' --exclude '__pycache__' --exclude '*.swift' --exclude 'REPORT*' \
   --exclude 'COSTS*' "$HERE/" "$U@$BENCH_HOST:$MIRROR/heldout/"
-put "$HERE/../driver.py" "$HERE/../pricing.py" "$U@$BENCH_HOST:$MIRROR/"
+put "$HERE/../driver.py" "$HERE/../pricing.py" "$HERE/../tasks.py" "$HERE/../lockq.sh" "$U@$BENCH_HOST:$MIRROR/"
 TS_DIR=$(cd "$(dirname "$TASKSET")" && pwd); TS_REMOTE=.agent-desktop-bench-target/$(basename "$TS_DIR")
 r "mkdir -p -m 700 $BH/$TS_REMOTE && chmod 700 $BH/$TS_REMOTE"
 put --exclude 'feas/' --exclude '__pycache__' --exclude 'tests/' --exclude '*.swift' "$TS_DIR/" "$U@$BENCH_HOST:$BH/$TS_REMOTE/"

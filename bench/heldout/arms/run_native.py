@@ -144,6 +144,10 @@ def effective_grants(arm, env):
     return {k: grants.get(k) for k in ("accessibility", "screen_recording")}
 
 
+CLEANUP_FAILED = 75
+"""run_native's exit code when a run's cleanup failed: its row keeps its verdict, and the pass stops."""
+
+
 def ledger(record):
     """One line per attempt state in the attempt ledger: `started` before the model, then exactly one end state."""
     with open(RUNS / "attempts.jsonl", "a") as fh:
@@ -243,10 +247,12 @@ def attempt(a, run_id, rdir):
     if capped.is_set():
         ok, why = False, f"timed out at the {th.NATIVE_CAP_S} s cap; {why}"
     crashed = [f"{app} during the run" for app in crashed_apps()]
+    cleanup_failed = []
     for step in (task.cleanup, lambda: post_arm_cleanup(a.arm, rdir)):
         try:
             step()
         except Exception as exc:
+            cleanup_failed.append(f"{type(exc).__name__}: {exc}"[:200])
             print(f"{run_id} cleanup failed: {exc}", flush=True)
     crashed += [f"{app} during cleanup" for app in crashed_apps() if f"{app} during the run" not in crashed]
     desktop.dismiss_crash_dialogs(DESKTOP, bench_apps())
@@ -256,6 +262,7 @@ def attempt(a, run_id, rdir):
                     "cap_s": th.NATIVE_CAP_S, "timed_out": capped.is_set(), "screen_recording": a.screen_recording,
                     "rules": common.RULES, "violations": forbidden[:5], "grants": grants,
                     "capture": "on" if a.screen_recording else "off", "slot": a.slot, "experiment": a.experiment,
+                    "manifest": os.environ.get("HO_MANIFEST"), "cleanup_failed": cleanup_failed,
                     "host": a.host, **front})
     summary.update(driver.validity(stderr, rdir))
     if crashed:
@@ -305,7 +312,10 @@ def main():
     RUNS.mkdir(parents=True, exist_ok=True)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     for _ in range(a.runs):
-        run_once(a)
+        row = run_once(a)
+        if row.get("cleanup_failed"):
+            print("cleanup failed: the next run's starting state is unknown, stopping", flush=True)
+            sys.exit(CLEANUP_FAILED)
 
 
 if __name__ == "__main__":

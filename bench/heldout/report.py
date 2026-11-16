@@ -246,8 +246,8 @@ def paired_rows(rows, suite, focus):
 def paired_tables(rows, suite, focus):
     lines = [f"### {suite}: paired against {focus}", "",
              f"Fisher's exact p compares overall pass rates. Wall and tokens: tasks where {focus}'s pass median is "
-             "lower / higher / tied, over tasks both arms passed, with the two-sided sign-test p. A p above 0.05 is "
-             "inside the noise.", "",
+             "lower / higher / tied, over tasks both arms passed, with the two-sided sign-test p. A p above 0.05 means "
+             "no difference established, not a tie or equivalence.", "",
              f"| arm | {focus} pass | arm pass | Fisher p | wall {focus} lower/higher/tie | p | "
              f"tokens {focus} lower/higher/tie | p |", "|---" * 8 + "|"]
     for x in paired_rows(rows, suite, focus):
