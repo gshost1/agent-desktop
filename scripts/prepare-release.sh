@@ -3,7 +3,7 @@ set -euo pipefail
 bash scripts/check-release-consistency.sh
 VERSION=$(node "$(dirname "${BASH_SOURCE[0]}")/release-version.js")
 TAG_NAME="v${VERSION}"
-NPM_VERSION=$(npm view agent-desktop version 2>/dev/null || echo "0.0.0")
+NPM_VERSION=$(npm view deskref version 2>/dev/null || echo "0.0.0")
 SHOULD_RELEASE=false
 NEEDS_GITHUB_RELEASE=false
 if [ "$VERSION" != "$NPM_VERSION" ]; then

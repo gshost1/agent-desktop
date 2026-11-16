@@ -53,7 +53,7 @@ The other tools were upstream at `8e8dd7cbe`, Peekaboo 4.9.8, Cua Driver 0.47.7,
 Download the archive for your OS and architecture from the [latest release](https://github.com/gshost1/agent-desktop/releases/latest), and extract the executable and its helper into one directory on your `PATH`. On macOS and Linux:
 
 ```bash
-VERSION=1.4.0
+VERSION=1.5.0
 TARGET=aarch64-apple-darwin         # or x86_64-apple-darwin, aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu
 BASE="https://github.com/gshost1/agent-desktop/releases/download/v$VERSION"
 curl -fLO "$BASE/agent-desktop-v$VERSION-$TARGET.tar.gz"
@@ -67,7 +67,7 @@ agent-desktop permissions --guide   # macOS: walks you through the Accessibility
 
 If `~/.local/bin` is not on your `PATH`, add it or extract into a directory that is. On Windows, download the `x86_64-pc-windows-msvc` or `aarch64-pc-windows-msvc` archive from the release page and extract it with `tar -xzf`.
 
-This fork does not publish to npm or Homebrew. `npm install -g agent-desktop` and `brew install agent-desktop` install upstream's build, which has no web surface.
+Or install this fork from npm with `npm install -g deskref`. It installs one executable under two command names, `deskref` and `agent-desktop`, and every example here works with either. The npm package `agent-desktop` and `brew install agent-desktop` install upstream's build, which has no web surface.
 
 ## Quick start
 

@@ -1,3 +1,0 @@
-### Bug Fixes
-
-* A web snapshot leaves out iframes that miss their budget instead of failing with `TIMEOUT` (`cdp_timeout`) and losing the page it had already read. Iframe reads stop short of the snapshot deadline, keeping a fifth of the time left (at least 100 ms); an iframe that times out or is reached after the budget is spent joins `unreadable_frames`, and the `suggestion` counts the iframes left out. On an ad-heavy dictionary page, failed snapshots went from 2 of 16 to 1 of 24, and the one left failed before any frame was read. The main frame keeps the full deadline, and a `--root` drill-down on a web ref still returns `TIMEOUT`. ([#139](https://github.com/gshost1/agent-desktop/pull/139))

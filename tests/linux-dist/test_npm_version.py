@@ -47,7 +47,7 @@ if sys.argv[1] == "pack":
     print("package.tgz")
 else:
     prefix = pathlib.Path(sys.argv[sys.argv.index("--prefix") + 1])
-    installed = prefix / "lib/node_modules/agent-desktop/bin"
+    installed = prefix / "lib/node_modules/deskref/bin"
     installed.mkdir(parents=True, exist_ok=True)
     native = installed / "agent-desktop-linux-x64"
     native.write_text({binary_script!r})
