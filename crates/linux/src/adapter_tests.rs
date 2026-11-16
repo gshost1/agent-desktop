@@ -118,10 +118,9 @@ fn lease() -> InteractionLease {
         .expect("a lease")
 }
 
-fn not_the_default(error: &AdapterError) {
-    assert_ne!(
-        error.code,
-        ErrorCode::PlatformNotSupported,
+fn not_the_default(error: &AdapterError, method: &str) {
+    assert!(
+        !error.is_default_not_supported(method),
         "the adapter answers for itself: {error:?}"
     );
 }
@@ -162,7 +161,7 @@ fn the_lifecycle_overrides_are_wired_to_the_adapter() {
     let error = adapter
         .window_op(&window, agent_desktop_core::WindowOp::Minimize, &lease())
         .expect_err("a window without its process instance is refused");
-    not_the_default(&error);
+    not_the_default(&error, "window_op");
 
     let combo = KeyCombo {
         key: "n".to_owned(),
@@ -176,5 +175,5 @@ fn the_lifecycle_overrides_are_wired_to_the_adapter() {
             &lease(),
         )
         .expect_err("no desktop here");
-    not_the_default(&error);
+    not_the_default(&error, "press_key_for_app");
 }
