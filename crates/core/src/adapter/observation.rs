@@ -101,6 +101,14 @@ pub trait ObservationOps: Send + Sync {
         false
     }
 
+    /// The id of the one window among `windows`, all of one application, that
+    /// the platform names that application's main window, asked only when
+    /// `--app` still matches several. `None` when it names none, or its
+    /// evidence conflicts or cannot be read.
+    fn main_window(&self, _windows: &[WindowInfo], _deadline: Deadline) -> Option<String> {
+        None
+    }
+
     fn list_apps(&self, _deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
         Err(AdapterError::not_supported("list_apps"))
     }
