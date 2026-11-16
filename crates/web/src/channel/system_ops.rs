@@ -4,12 +4,12 @@ use agent_desktop_core::system::launch_result::LaunchResult;
 use agent_desktop_core::system::process_state::ProcessState;
 use agent_desktop_core::{
     ActionResult, AdapterError, AdapterSession, AppInfo, CursorOverlayControl, Deadline,
-    DismissAllNotificationsRequest, DismissNotificationRequest, DisplayInfo, DownloadInfo,
-    DownloadScope, ImageBuffer, InteractionLease, InteractionPolicy, KeyCombo,
-    NotificationActionRequest, NotificationFilter, NotificationInfo, OpenUrlRequest, OpenedPage,
-    OperationReport, PermissionReport, PlatformAdapter, ProcessIdentity, RefEntry,
-    ScreenshotTarget, SessionAffinity, SignalBaseline, SignalFilter, SnapshotSurface, SystemOps,
-    WaitWakeup, WindowInfo, WindowOp,
+    DismissAllNotificationsRequest, DismissAllOutcome, DismissNotificationRequest, DisplayInfo,
+    DownloadInfo, DownloadScope, ImageBuffer, InteractionLease, InteractionPolicy, KeyCombo,
+    NotificationActionRequest, NotificationFilter, NotificationInfo, NotificationOutcome,
+    OpenUrlRequest, OpenedPage, OperationReport, PermissionReport, PlatformAdapter,
+    ProcessIdentity, RefEntry, ScreenshotTarget, SessionAffinity, SignalBaseline, SignalFilter,
+    SnapshotSurface, SystemOps, WaitWakeup, WindowInfo, WindowOp,
 };
 
 use super::candidate_origin::CandidateOrigin;
@@ -352,6 +352,23 @@ impl<P: PlatformAdapter> SystemOps for WebChannelAdapter<P> {
         lease: &InteractionLease,
     ) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
         self.inner.dismiss_all_notifications(request, lease)
+    }
+
+    fn dismiss_notification_reported(
+        &self,
+        request: DismissNotificationRequest<'_>,
+        lease: &InteractionLease,
+    ) -> Result<NotificationOutcome<NotificationInfo>, AdapterError> {
+        self.inner.dismiss_notification_reported(request, lease)
+    }
+
+    fn dismiss_all_notifications_reported(
+        &self,
+        request: DismissAllNotificationsRequest<'_>,
+        lease: &InteractionLease,
+    ) -> Result<DismissAllOutcome, AdapterError> {
+        self.inner
+            .dismiss_all_notifications_reported(request, lease)
     }
 
     fn notification_action(

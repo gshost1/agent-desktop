@@ -25,14 +25,22 @@ pub fn execute(
         NotificationTarget::new(args.index, args.key.as_deref(), identity)?.with_app(args.app);
     let policy = super::notification_policy::mutation_policy(context)?;
     let lease = crate::commands::helpers::acquire_interaction_lease(adapter)?;
-    let dismissed = adapter.dismiss_notification(
+    let outcome = adapter.dismiss_notification_reported(
         crate::DismissNotificationRequest {
             target: &target,
             policy,
         },
         &lease,
     )?;
-    Ok(json!({
-        "dismissed": dismissed,
-    }))
+    let mut data = json!({
+        "dismissed": outcome.value,
+    });
+    if let Some(restore) = outcome.list_restore {
+        data["list_restore"] = json!(restore);
+    }
+    Ok(data)
 }
+
+#[cfg(test)]
+#[path = "dismiss_notification_tests.rs"]
+mod tests;

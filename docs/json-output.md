@@ -376,7 +376,7 @@ Each of these commands now returns the adapter's own report inside `data`:
 ```
 
 - `disposition.delivery` is `delivered_verified` only after the adapter read back the postcondition it names, `delivered_unverified` after a completed dispatch without that proof, and `not_delivered` only when the adapter observed that the operation was already satisfied (for example `close-app` on an application that had already exited). `ok: true` means the command returned a delivered or already-satisfied result, not that the application effect was verified.
-- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value`, and for a headless `clear`, which writes through the accessibility API, on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone.
+- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value`, and for a headless `clear`, which writes through the accessibility API, on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone. A macOS `clear` on an element that already reports no characters writes nothing and returns `not_delivered` with an `AlreadyEmpty` step and no commit hint; a secure field, which hides its count, is still written.
 - `target.kind` is `window` (`id`, `title`, `process`), `app` (`name`, `process`), `pointer` (`point`), `drag` (`from`, `to`) or `clipboard`. The adapter supplies the identity it validated and used. A pointer target is the dispatch coordinate and does not prove which application received the input.
 - Request context (`x`, `y`, `count`, `dx`, `dy`, `width`, `height`, drag endpoints, `drop_delay_ms`, `type`, `app`, `method`, and a confirmed `focused`) keeps its earlier meaning. These fields echo the request and are not observed post-state.
 - Errors keep `error.disposition`. A failed `--wait-for` after a delivered operation keeps the operation's own delivery (verified, unverified, or not delivered) in `error.disposition` and carries the report under `details.after_action`.
@@ -736,6 +736,14 @@ does not take a key yet. `dismiss-notification --key` without INDEX acts on the 
 entry wherever it now sits. An index with only `--expected-app` or
 `--expected-title` checks just those fields, so it cannot tell two entries
 with the same app and title apart. A bare index is `INVALID_ARGS`.
+
+When agent-desktop opened the notification surface itself and could not close
+it again or restore the previous focus after a mutation was sent, the
+mutation's result stands and says so: `notification-action` adds
+`details.list_restore: "unverified"`, and on macOS `dismiss-notification` and
+`dismiss-all-notifications` add `data.list_restore: "unverified"` beside
+`dismissed`. The field is absent when the cleanup succeeded. List again
+instead of repeating the old index, and close the surface with Escape.
 
 The `key` field and the `--key` flag are additive and belong to the 2.7
 contract; a consumer that ignores `key` reads the list as before.

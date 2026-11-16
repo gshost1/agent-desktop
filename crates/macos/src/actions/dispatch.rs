@@ -190,8 +190,13 @@ mod imp {
             }
 
             Action::Clear => {
-                let steps = run_chain(el, &chain_defs::CLEAR_CHAIN, Some(""), request, deadline)?;
-                return Ok(value_write_result(action, el, steps, deadline));
+                let probe = crate::actions::clear_probe::read_clear_probe(el, deadline);
+                return crate::actions::clear_probe::clear_with(
+                    action,
+                    &probe,
+                    || run_chain(el, &chain_defs::CLEAR_CHAIN, Some(""), request, deadline),
+                    || crate::actions::edit_commit::read_edit_commit(el, deadline),
+                );
             }
 
             Action::KeyDown(_) | Action::KeyUp(_) | Action::Hover | Action::Drag(_) => {
