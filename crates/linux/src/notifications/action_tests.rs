@@ -304,3 +304,17 @@ fn a_list_that_cannot_be_read_after_the_expand_press_is_possibly_delivered() {
     );
     assert_eq!(world.clicks(), vec!["/Mail:a/expand"]);
 }
+
+#[test]
+fn an_action_click_that_fails_after_the_expand_press_is_possibly_delivered() {
+    let log = log();
+    let mut world = FakeWorld::new(&log, vec![entry(false), entry(true)]);
+    world.faults.click_fails_after = Some(1);
+    let error = after_expand(&world, &identity());
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::delivered_unverified()
+    );
+    assert_eq!(world.clicks(), vec!["/Mail:a/expand", "/Mail:a/act/Run B"]);
+}

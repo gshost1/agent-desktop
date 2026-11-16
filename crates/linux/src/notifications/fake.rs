@@ -198,6 +198,7 @@ pub(crate) struct Faults {
     pub(crate) close_sticks: bool,
     pub(crate) click: bool,
     pub(crate) read_after_click: bool,
+    pub(crate) click_fails_after: Option<usize>,
 }
 
 pub(crate) enum DaemonFailure {
@@ -348,7 +349,7 @@ impl ShellWorld for FakeWorld {
         _: &InteractionLease,
     ) -> Result<Point, AdapterError> {
         self.note(format!("click:{}", node.path()));
-        if self.faults.click {
+        if self.faults.click || self.faults.click_fails_after == Some(self.counts.clicks.get()) {
             return Err(AdapterError::new(
                 ErrorCode::ActionFailed,
                 "the click failed",

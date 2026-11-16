@@ -267,3 +267,35 @@ fn an_open_that_does_not_say_whether_it_pressed_is_never_advised_to_retry() {
     assert!(!suggestion.contains("by hand"), "{suggestion}");
     assert!(suggestion.contains("before"), "{suggestion}");
 }
+
+fn unpressed_open_error(disposition: Option<DeliverySemantics>) -> AdapterError {
+    let error = AdapterError::new(ErrorCode::ActionFailed, "the opener was never pressed")
+        .with_details(json!({"surface_opened_by_call": false}));
+    match disposition {
+        Some(disposition) => error.with_disposition(disposition),
+        None => error,
+    }
+}
+
+#[test]
+fn an_unpressed_open_of_unknown_delivery_is_stamped_not_delivered() {
+    let log = log();
+    let mut world = world(&log);
+    world.faults.open_error = Some(unpressed_open_error(None));
+    let error = session_error(&world);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(suggestion.contains("by hand"), "{suggestion}");
+}
+
+#[test]
+fn an_unpressed_open_already_unsafe_to_retry_keeps_its_disposition() {
+    let log = log();
+    let mut world = world(&log);
+    let uncertain = DeliverySemantics::uncertain();
+    world.faults.open_error = Some(unpressed_open_error(Some(uncertain)));
+    let error = session_error(&world);
+    assert_eq!(error.disposition, uncertain);
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(!suggestion.contains("by hand"), "{suggestion}");
+}
