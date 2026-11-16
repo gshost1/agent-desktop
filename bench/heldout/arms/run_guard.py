@@ -1,8 +1,11 @@
 """What a run did to the shared desktop and how its process ends, measured instead of read from its commands.
 
-FrontWatch samples the frontmost app while the model runs. A background-only run whose task app comes to the front
-broke the rule whatever route did it (a menu call that activates, a launch, a focus call). Only bench app names are
-kept; any other frontmost app is recorded as "other", never by name. It also reads the seconds since the last
+FrontWatch samples the frontmost app while the model runs. A background-only run in which a task app comes to the
+front after the start broke the rule whatever route did it (a menu call that activates, a launch, a focus call).
+The app in front at the start is the run's baseline (front_at_start); final-set setup opens its apps with `open -a`,
+so that is usually the task app, and re-activating the app already in front cannot be seen. A switch to another
+task app, or back to one after something else took the front, is. Only bench app names are kept; any other
+frontmost app is recorded as "other", never by name. It also reads the seconds since the last
 keyboard and mouse event in the session, which a run that posts global input resets; those are recorded, not
 enforced, because a person at the Mac resets them too.
 

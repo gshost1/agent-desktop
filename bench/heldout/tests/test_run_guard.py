@@ -55,6 +55,18 @@ class FrontWatchTests(unittest.TestCase):
         self.assertEqual(rec["fronted"], [])
         self.assertIsNone(run_guard.foreground_violation(rec, False))
 
+    def test_a_task_app_in_front_at_the_start_is_the_baseline(self):
+        w, clock = watch(["Chess", "Chess", "Chess"], apps=("Chess", "ColorSync Utility"))
+        w.sample()
+        w.sample()
+        rec = w.stop()
+        self.assertEqual(rec["front_at_start"], "Chess")
+        self.assertIsNone(run_guard.foreground_violation(rec, False))
+        w, clock = watch(["Chess", "Chess", "ColorSync Utility"], apps=("Chess", "ColorSync Utility"))
+        w.sample()
+        w.sample()
+        self.assertTrue(run_guard.foreground_violation(w.stop(), False).startswith("foreground: ColorSync"))
+
     def test_global_input_during_the_run_is_recorded(self):
         w, clock = watch(["Finder"] * 2, idle=lambda: {"key": 0.5, "mouse_move": 9999.0})
         clock.t += 10

@@ -121,7 +121,7 @@ def native_system_prompt(arm, screen_recording=False, allow_foreground=False):
                   "guide and output you saved yourself. ")
         if not allow_foreground:
             rules += (f"Work in the background only: do not use {FOREGROUND_TEXT[NATIVE_TOOL[arm]]}, which take over "
-                      "the shared screen, keyboard or mouse; a run that brings the task's app to the front fails "
+                      "the shared screen, keyboard or mouse; a run that brings a task app to the front fails "
                       "too. A run that breaks these rules fails. ")
     return NATIVE_TOOL_TEXT[arm] + " " + rules + ("" if screen_recording else SCREEN_OFF.format(off=CAPTURE_OFF[NATIVE_TOOL[arm]]) + " ") + \
         "When the task is complete, reply with the final answer only."
