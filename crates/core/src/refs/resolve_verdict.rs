@@ -30,12 +30,6 @@ use serde_json::Value;
 
 use crate::{AdapterError, ErrorCode};
 
-const COMPLETE_ABSENCE_KINDS: [&str; 3] = [
-    "resolve_no_candidate",
-    "resolution_complete_absence",
-    "saved_ref_absent",
-];
-
 /// The retry disposition of one resolution refusal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ResolveVerdict {
@@ -72,11 +66,7 @@ impl ResolveVerdict {
             == Some(true);
         match (&error.code, kind) {
             (ErrorCode::StaleRef, Some("saved_ref_landing_moved")) => Self::Moved,
-            (ErrorCode::StaleRef, Some(kind))
-                if complete && COMPLETE_ABSENCE_KINDS.contains(&kind) =>
-            {
-                Self::Absent
-            }
+            _ if error.is_complete_absence() => Self::Absent,
             (ErrorCode::StaleRef | ErrorCode::AmbiguousTarget, _) if complete => Self::Unsettled,
             _ => Self::Incomplete,
         }

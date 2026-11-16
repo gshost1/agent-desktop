@@ -111,7 +111,7 @@ impl ErrorPayload {
             payload.platform_detail = adapter_error.platform_detail.clone();
             payload.details = adapter_error.details.clone();
             payload.disposition = adapter_error.disposition;
-            if adapter_error.permits_retry_by_default() {
+            if adapter_error.permits_retry_by_default() || adapter_error.is_complete_absence() {
                 payload.recovery = recovery_for_code(
                     &adapter_error.code,
                     adapter_error.disposition,

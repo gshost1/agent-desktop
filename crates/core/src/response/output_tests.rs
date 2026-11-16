@@ -280,3 +280,62 @@ fn an_io_exposure_payload_carries_the_state_permission_details() {
         "state_directory_permission"
     );
 }
+
+fn recovery_strategy(error: AdapterError) -> Option<String> {
+    ErrorPayload::from_app_error(&AppError::Adapter(error))
+        .recovery
+        .map(|recovery| recovery.strategy)
+}
+
+/// A complete absence is stamped `retryable: false` so waits stop at once,
+/// but its envelope says retry is safe and the element can only come back
+/// through a new snapshot, so it must still name that recovery.
+#[test]
+fn a_complete_absence_stamped_not_retryable_still_carries_snapshot_recovery() {
+    for kind in [
+        "saved_ref_absent",
+        "resolve_no_candidate",
+        "resolution_complete_absence",
+    ] {
+        let absent = AdapterError::stale_ref_because("No live element matches").with_details(
+            json!({ "kind": kind, "retryable": false, "complete": true, "role": "button" }),
+        );
+        assert_eq!(
+            recovery_strategy(absent).as_deref(),
+            Some("refresh_snapshot_then_retry_original"),
+            "{kind} must keep the fresh-snapshot recovery"
+        );
+    }
+}
+
+#[test]
+fn a_complete_absence_of_an_exited_owner_carries_the_inspect_state_recovery() {
+    let exited = AdapterError::stale_ref_because("The application is no longer running")
+        .with_details(json!({
+            "kind": "saved_ref_absent",
+            "process_state": "exited",
+            "retryable": false,
+            "complete": true,
+        }));
+    assert_eq!(
+        recovery_strategy(exited).as_deref(),
+        Some("inspect_state_then_retry_original")
+    );
+}
+
+#[test]
+fn an_unproven_or_partial_stale_ref_stamped_not_retryable_carries_no_recovery() {
+    let unproven = AdapterError::stale_ref_because("Saved ref was not proven unique").with_details(
+        json!({ "kind": "identity_unproven", "reason": "capture_incomplete", "retryable": false }),
+    );
+    assert_eq!(recovery_strategy(unproven), None);
+
+    let partial = AdapterError::stale_ref_because("No live element matches")
+        .with_details(json!({ "kind": "saved_ref_absent", "retryable": false, "complete": false }));
+    assert_eq!(recovery_strategy(partial), None);
+
+    let timeout = AdapterError::new(ErrorCode::Timeout, "read ran out")
+        .with_disposition(crate::DeliverySemantics::not_delivered())
+        .with_details(json!({ "kind": "saved_ref_absent", "retryable": false, "complete": true }));
+    assert_eq!(recovery_strategy(timeout), None);
+}
