@@ -82,20 +82,33 @@ def reset_heldout_desktop():
             th.close_bench_app(app)
 
 
-def pre_arm_setup(arm, rdir):
+def pre_arm_setup(arm, rdir, tool_home):
     """Infrastructure an arm needs before the model starts; None when ready, else why it is not."""
     if arm == "cua":
-        return cua_daemon.start(rdir / "arm-home", str(HERE / "bin/cua/cua-driver"))
+        return cua_daemon.start(rdir / "arm-home", str(HERE / "bin/cua/cua-driver"), tool_home=tool_home)
     return None
+
+
+TOOL_HOME_ROOT = Path("/private/tmp/ho")
+
+
+def make_tool_home(run_id):
+    """The HOME every tool call of the run gets (logwrap.zsh): a fresh bench-owned folder with a short path, because a
+    daemon's socket under ~/Library/Caches must fit the 104-byte Unix socket path limit."""
+    TOOL_HOME_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    home = TOOL_HOME_ROOT / run_id
+    home.mkdir(mode=0o700)
+    return home
 
 
 def post_arm_cleanup(arm, rdir):
     """Stop daemons the arm started for this run; they must not carry state into the next run."""
+    tool_home = {"HO_TOOL_HOME": str(TOOL_HOME_ROOT / rdir.name)} if (TOOL_HOME_ROOT / rdir.name).is_dir() else {}
     if arm == "peekaboo":
-        env = dict(os.environ, HO_ARM_HOME=str(rdir / "arm-home"))
+        env = dict(os.environ, HO_ARM_HOME=str(rdir / "arm-home"), **tool_home)
         subprocess.run([str(HERE / "bin/peekaboo/peekaboo"), "daemon", "stop"], env=env, capture_output=True, timeout=30)
     if arm == "cua":
-        env = dict(os.environ, HO_ARM_HOME=str(rdir / "arm-home"))
+        env = dict(os.environ, HO_ARM_HOME=str(rdir / "arm-home"), **tool_home)
         for args in (["call", "end_session", "{}"], ["stop"]):
             subprocess.run([str(HERE / "bin/cua/cua-driver"), *args], env=env, capture_output=True, timeout=30)
 
@@ -127,6 +140,17 @@ def captured(events):
     return None
 
 
+def listed_grants(text):
+    """Peekaboo's form: {"data": {"permissions": [{"name": "Accessibility", "isGranted": true}, ...]}}."""
+    try:
+        perms = (json.loads(text).get("data") or {}).get("permissions") or []
+    except (ValueError, AttributeError):
+        return {}
+    names = {"accessibility": "accessibility", "screen recording": "screen_recording"}
+    return {names[p["name"].lower()]: bool(p.get("isGranted")) for p in perms
+            if isinstance(p, dict) and str(p.get("name", "")).lower() in names}
+
+
 def effective_grants(arm, env):
     """What the arm's own tool reports for Accessibility and Screen Recording, through its bench wrapper:
     {"accessibility": bool|None, "screen_recording": bool|None}."""
@@ -137,11 +161,27 @@ def effective_grants(arm, env):
         text = out.stdout + out.stderr
     except (OSError, subprocess.TimeoutExpired):
         return {"accessibility": None, "screen_recording": None}
-    grants = {}
+    grants = listed_grants(out.stdout)
     for name, value in GRANT.findall(text):
         key = "accessibility" if name.lower() == "accessibility" else "screen_recording"
         grants.setdefault(key, value.lower() in ("true", "granted", "authorized", "yes"))
     return {k: grants.get(k) for k in ("accessibility", "screen_recording")}
+
+
+ISOLATION = {"CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+"""Set for every model run: no CLAUDE.md from the host account and no auto-memory, so a run on a personal Mac
+sees the same context as one in a bench account."""
+
+
+def work_dir(rdir, run_id):
+    """The model's working directory: an empty folder under HO_WORK_ROOT (a bench-owned temp root outside any
+    repository, so nothing above it is read as project context) when that is set, else rdir/cwd."""
+    root = os.environ.get("HO_WORK_ROOT")
+    if root:
+        Path(root).mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix=f"{run_id}-", dir=root))
+    (rdir / "cwd").mkdir()
+    return rdir / "cwd"
 
 
 CLEANUP_FAILED = 75
@@ -178,17 +218,17 @@ def attempt(a, run_id, rdir):
     reset_heldout_desktop()
     time.sleep(1.5)
     task.setup()
-    cwd = rdir / "cwd"
-    cwd.mkdir()
+    cwd = work_dir(rdir, run_id)
+    tool_home = make_tool_home(run_id)
     home = rdir / "ad-home"
     home.mkdir(mode=0o700)
     (rdir / "arm-home").mkdir()
     env = dict(os.environ)
     env.update({"PATH": f"{common.arm_bin_dir(a.arm)}:{env['PATH']}", "AD_LOG": str(rdir / "ad.log"),
                 "AGENT_DESKTOP_HOME": str(home), "HO_ARM_HOME": str(rdir / "arm-home"),
-                "HO_CAPTURE": "on" if a.screen_recording else "off"})
+                "HO_CAPTURE": "on" if a.screen_recording else "off", "HO_TOOL_HOME": str(tool_home), **ISOLATION})
     env.pop("AGENT_DESKTOP_SESSION", None)
-    fault = pre_arm_setup(a.arm, rdir)
+    fault = pre_arm_setup(a.arm, rdir, tool_home)
     grants = effective_grants(a.arm, dict(env, AD_LOG=str(rdir / "probe.log")))
     fault = fault or run_guard.hold_front()
     if fault:
@@ -263,7 +303,7 @@ def attempt(a, run_id, rdir):
                     "cap_s": th.NATIVE_CAP_S, "timed_out": capped.is_set(), "screen_recording": a.screen_recording,
                     "rules": common.RULES, "violations": forbidden[:5], "grants": grants,
                     "capture": "on" if a.screen_recording else "off", "slot": a.slot, "experiment": a.experiment,
-                    "manifest": os.environ.get("HO_MANIFEST"), "cleanup_failed": cleanup_failed,
+                    "manifest": os.environ.get("HO_MANIFEST"), "cleanup_failed": cleanup_failed, "cwd": str(cwd), "tool_home": str(tool_home),
                     "host": a.host, **front})
     summary.update(driver.validity(stderr, rdir))
     if crashed:

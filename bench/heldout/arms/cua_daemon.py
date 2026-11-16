@@ -17,30 +17,33 @@ APP = common.TOOLS / "cua-driver-0.47.7" / "cua-driver-rs-0.47.7-darwin-arm64" /
 POLLS = 40
 
 
-def launch(app, home):
-    """Open the app as a new instance in the background, with telemetry off and this run's driver home."""
+def launch(app, home, tool_home=None):
+    """Open the app as a new instance in the background, with telemetry off, this run's driver home, and HOME at the
+    run's tool home (logwrap.zsh gives the CLI the same HOME, so both find the daemon's socket under it and nothing
+    is written to the host account's Library)."""
     subprocess.run(["open", "-n", "-g", "--env", "CUA_DRIVER_RS_TELEMETRY_ENABLED=0", "--env",
                     "CUA_TELEMETRY_ENABLED=false", "--env", f"CUA_DRIVER_RS_HOME={home}", "--env",
-                    f"CUA_DRIVER_TELEMETRY_HOME={home / 'telemetry'}", str(app), "--args", "serve", "--no-overlay"],
+                    f"CUA_DRIVER_TELEMETRY_HOME={home / 'telemetry'}", "--env", f"HOME={tool_home or home.parent / 'home'}", str(app),
+                    "--args", "serve", "--no-overlay"],
                    capture_output=True, timeout=30)
 
 
-def probe_with(cli, arm_home):
+def probe_with(cli, arm_home, tool_home=None):
     def probe(args):
-        env = dict(os.environ, HO_ARM_HOME=str(arm_home))
+        env = dict(os.environ, HO_ARM_HOME=str(arm_home), **({"HO_TOOL_HOME": str(tool_home)} if tool_home else {}))
         return subprocess.run([cli, *args], env=env, capture_output=True, text=True, timeout=30)
     return probe
 
 
-def start(arm_home, cli, app=APP, opener=launch, prober=None, sleep=time.sleep):
+def start(arm_home, cli, app=APP, opener=launch, prober=None, sleep=time.sleep, tool_home=None):
     """None once the daemon runs and reports its Accessibility grant, else the infrastructure fault."""
     arm_home = Path(arm_home)
     home = arm_home / "cua-home"
     (home / "telemetry").mkdir(parents=True, exist_ok=True)
-    prober = prober or probe_with(cli, arm_home)
+    prober = prober or probe_with(cli, arm_home, tool_home)
     if not Path(app).exists():
         return f"CuaDriver.app is missing at {app}"
-    opener(app, home)
+    opener(app, home) if tool_home is None else opener(app, home, tool_home)
     for _ in range(POLLS):
         if prober(["status"]).returncode == 0:
             break

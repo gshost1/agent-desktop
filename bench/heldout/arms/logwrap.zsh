@@ -29,8 +29,11 @@ fi
 log=${AD_LOG:-}
 [[ -z $log && -n ${AGENT_DESKTOP_HOME:-} ]] && log=${AGENT_DESKTOP_HOME:h}/tool.log
 tmp=$(mktemp "${TMPDIR:-/tmp}/ho-out.XXXXXX") || exit 70
+# The tool runs with HOME at the run's throwaway tool home, so it reads and writes no state of the host account.
+tool_home=${HO_TOOL_HOME:-${HO_ARM_HOME:+$HO_ARM_HOME/home}}
+[[ -n $tool_home ]] && mkdir -p "$tool_home"
 t0=$EPOCHREALTIME
-"$real" "$@" > "$tmp"
+HOME=${tool_home:-$HOME} "$real" "$@" > "$tmp"
 rc=$?
 t1=$EPOCHREALTIME
 cat "$tmp"
