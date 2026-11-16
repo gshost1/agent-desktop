@@ -1,6 +1,6 @@
 use super::{
-    TextSelectionTarget, searchable_text, select_text_in, settled_selection, unique_range,
-    utf16_occurrences,
+    TextSelectionTarget, searchable_text, select_text_in, selected_text_matches, settled_selection,
+    unique_range, utf16_occurrences,
 };
 use crate::tree::properties::bounded_string::BoundedString;
 use agent_desktop_core::{DeliverySemantics, ErrorCode};
@@ -137,16 +137,20 @@ fn a_whole_or_absent_value_is_searched_as_read() {
     assert_eq!(searchable_text(Ok(None)).unwrap(), "");
 }
 
+type StubValue = Result<Option<(&'static str, bool)>, i32>;
+
 struct StubField {
-    value: Result<Option<(&'static str, bool)>, i32>,
+    value: StubValue,
+    value_after_write: Option<StubValue>,
     selection_after_write: Option<std::ops::Range<usize>>,
     writes: std::cell::RefCell<Vec<std::ops::Range<usize>>>,
 }
 
 impl StubField {
-    fn new(value: Result<Option<(&'static str, bool)>, i32>) -> Self {
+    fn new(value: StubValue) -> Self {
         Self {
             value,
+            value_after_write: None,
             selection_after_write: None,
             writes: std::cell::RefCell::new(Vec::new()),
         }
@@ -165,7 +169,11 @@ impl TextSelectionTarget for StubField {
         &self,
         _deadline: agent_desktop_core::Deadline,
     ) -> Result<Option<BoundedString>, i32> {
-        self.value.map(|value| {
+        let current = match self.value_after_write {
+            Some(after) if !self.writes.borrow().is_empty() => after,
+            _ => self.value,
+        };
+        current.map(|value| {
             value.map(|(text, complete)| BoundedString {
                 value: text.into(),
                 complete,
@@ -251,4 +259,86 @@ fn select_refuses_a_truncated_value_before_writing() {
 
     assert!(field.writes.borrow().is_empty());
     assert_eq!(error.details.unwrap()["kind"], "text_value_truncated");
+}
+
+#[test]
+fn select_fails_when_the_text_at_the_selected_range_changed() {
+    let mut field = StubField::new(Ok(Some(("target rest", true))));
+    field.value_after_write = Some(Ok(Some(("other! rest", true))));
+    field.selection_after_write = Some(0..6);
+
+    let error = select(&field, "target").unwrap_err();
+
+    assert_eq!(*field.writes.borrow(), vec![0..6]);
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let details = error.details.unwrap();
+    assert_eq!(details["kind"], "selection_text_changed");
+    assert_eq!(
+        details["requested"],
+        serde_json::json!({ "start": 0, "end": 6 })
+    );
+}
+
+#[test]
+fn select_with_an_unreadable_value_after_the_write_succeeds_unverified() {
+    let mut field = StubField::new(Ok(Some(("target rest", true))));
+    field.value_after_write = Some(Err(accessibility_sys::kAXErrorCannotComplete));
+    field.selection_after_write = Some(0..6);
+
+    assert!(!select(&field, "target").unwrap());
+}
+
+#[test]
+fn select_with_a_truncated_value_after_the_write_succeeds_unverified() {
+    let mut field = StubField::new(Ok(Some(("target rest", true))));
+    field.value_after_write = Some(Ok(Some(("target", false))));
+    field.selection_after_write = Some(0..6);
+
+    assert!(!select(&field, "target").unwrap());
+}
+
+#[test]
+fn select_verifies_when_only_text_outside_the_range_changed() {
+    let mut field = StubField::new(Ok(Some(("target rest", true))));
+    field.value_after_write = Some(Ok(Some(("target best", true))));
+    field.selection_after_write = Some(0..6);
+
+    assert!(select(&field, "target").unwrap());
+}
+
+#[test]
+fn selected_text_is_compared_in_utf16_units() {
+    assert!(selected_text_matches("café 😀 H2O", &(5..7), "😀").unwrap());
+    assert!(selected_text_matches("café 😀 H2O", &(8..11), "H2O").unwrap());
+    let error = selected_text_matches("café 😀 H2O", &(8..11), "H2").unwrap_err();
+    assert_eq!(error.details.unwrap()["kind"], "selection_text_changed");
+}
+
+#[test]
+fn a_range_past_the_changed_text_is_a_delivered_failure() {
+    let error = selected_text_matches("short", &(10..16), "target").unwrap_err();
+
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+}
+
+#[test]
+fn overlapping_occurrences_are_counted() {
+    assert_eq!(utf16_occurrences("banana", "ana"), vec![1..4, 3..6]);
+    assert_eq!(utf16_occurrences("aaa", "aa"), vec![0..2, 1..3]);
+    assert_eq!(utf16_occurrences("ééé", "éé"), vec![0..2, 1..3]);
+    assert_eq!(utf16_occurrences("😀😀😀", "😀😀"), vec![0..4, 2..6]);
+}
+
+#[test]
+fn an_overlapping_repeat_is_refused_before_writing() {
+    let field = StubField::new(Ok(Some(("banana", true))));
+
+    let error = select(&field, "ana").unwrap_err();
+
+    assert!(field.writes.borrow().is_empty());
+    assert_eq!(error.code, ErrorCode::AmbiguousTarget);
+    let details = error.details.unwrap();
+    assert_eq!(details["occurrences"], 2);
+    assert_eq!(details["offsets"], serde_json::json!([1, 3]));
 }

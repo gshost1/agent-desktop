@@ -227,8 +227,8 @@ fn validate_args(cmd: &Commands) -> Result<(), AppError> {
                 [&args.expected_app, &args.expected_title],
             )?;
         }
-        Commands::Find(_)
-        | Commands::Screenshot(_)
+        Commands::Find(args) => scroll_search_args(args)?,
+        Commands::Screenshot(_)
         | Commands::Press(_)
         | Commands::KeyDown(_)
         | Commands::KeyUp(_)
@@ -296,6 +296,31 @@ fn requires_screen_recording(permission: PermissionNeed) -> bool {
         permission,
         PermissionNeed::ScreenRecording | PermissionNeed::AccessibilityAndScreenRecording
     )
+}
+
+/// A batch or MCP find reaches dispatch without clap's checks, so the
+/// `--scroll` rules clap enforces on the command line are checked here too,
+/// before any entry of a batch runs.
+fn scroll_search_args(args: &crate::cli_args::FindArgs) -> Result<(), AppError> {
+    let Some(direction) = args.place.scroll.as_deref() else {
+        return Ok(());
+    };
+    if !matches!(direction, "up" | "down" | "left" | "right") {
+        return Err(AppError::invalid_input(
+            "find --scroll takes a direction: up, down, left or right",
+        ));
+    }
+    let Some(root) = args.place.root.as_deref() else {
+        return Err(AppError::invalid_input("find --scroll needs --root"));
+    };
+    validate_ref_id(root)?;
+    let selection = &args.selection;
+    if selection.count || selection.last || selection.nth.is_some() || selection.allow_partial {
+        return Err(AppError::invalid_input(
+            "find --scroll cannot take --count, --last, --nth or --allow-partial",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

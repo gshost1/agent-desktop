@@ -30,6 +30,7 @@ fn rooted_find_and_drill_validate_the_observed_menu_context_before_publishing() 
                     window_id: None,
                     root: Some(root.clone()),
                     surface: crate::SnapshotSurface::Window,
+                    scroll: None,
                 },
                 filter: FindFilterArgs {
                     role: Some("button".into()),

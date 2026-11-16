@@ -169,6 +169,17 @@ The three outcomes are not interchangeable:
   focused field exposes a readable Text pattern selection.** Without one, `type`
   lands here. Confirm the value with a fresh `get` if it matters.
 
+**A classic Win32 edit takes `set-value` and `clear` the way typing does.** On
+an `Edit` control, including a WinForms `TextBox`, or on a combo box that has an
+edit, the step is `EditControl.ReplaceSel`: the whole text is selected and replaced,
+so the application is told the text changed, as it is when a user types or
+pastes. `ValuePattern.SetValue` on such an edit tells a multiline edit's or a
+combo box's owner nothing, so the field showed the new text while the app kept
+the old one. A read-only or disabled edit, an edit that cannot scroll its text
+(where a replace, like typing, would cut a value wider than the box), a
+drop-down list, a value over the edit's text limit or holding U+0000, and
+every other control still take `ValuePattern.SetValue`.
+
 **A `set-value` that the application reshapes reads as failed.** If the app
 trims whitespace, reformats a date or normalizes a number, the readback differs
 from what you wrote, and the envelope says `ACTION_FAILED` although the write
@@ -189,12 +200,7 @@ The script runs as written against an open classic Notepad, in front of or
 behind other windows. Each ref comes from the JSON of the step before it, so the
 sequence stays correct when the tree shifts.
 
-On the Windows 11 Notepad, the menu steps work and reach the Save as dialog, but
-the save itself is not reliable. The dialog's File name field reads back the
-written path, yet in 6 of 7 measured runs the file never appeared there. The
-runs that saved anything saved the suggested name, `the document body.txt`, to
-Documents. The final `wait --window` then times out. Treat that timeout as a
-failed save and check the file on disk.
+It also runs as written against the Windows 11 Notepad.
 
 ```powershell
 $out = "$env:TEMP\notepad-save-demo.txt"
@@ -231,8 +237,9 @@ Four things that surprise a first-time caller:
   matches both, because the name match ignores case and finds substrings at any
   depth.
 - **`find --name "File name"` returns three matches:** a `statictext` label, a
-  `combobox`, and the `textfield` inside the combobox. Only the textfield
-  accepts `set-value`, so match on `role` as well as name.
+  `combobox`, and the `textfield` inside the combobox. The label takes no
+  value, so match on `role` as well as name. The textfield and the combobox
+  both write the same edit.
 - **The full path in the name field selects the directory.** There is no
   separate folder step, and navigating the file list by ref is far more fragile.
 - **The file does not exist when the Save click returns.** The shell took

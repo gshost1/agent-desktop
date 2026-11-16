@@ -301,7 +301,7 @@ fn process_observed_gone(pid: ProcessId, instance: &str) -> Result<bool, Adapter
 fn top_level_windows_for_pid(pid: ProcessId) -> Result<Vec<isize>, AdapterError> {
     let mut handles = Vec::new();
     super::window::window_enum::enumerate_top_level(|window| {
-        if super::window::window_identity::live_window_owner(window.handle) == Some(pid) {
+        if super::window::frame_identity::is_window_of_process(window.handle, pid) {
             handles.push(window.handle as isize);
         }
         true
@@ -320,7 +320,7 @@ fn post_wm_close_if_still_owned(
     use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
     let hwnd = hwnd as super::window::window_enum::WindowHandle;
-    if super::window::window_identity::live_window_owner(hwnd) != Some(pid) {
+    if !super::window::frame_identity::is_window_of_process(hwnd, pid) {
         return Ok(false);
     }
     if !process_identity::matches_instance(pid, instance)? {
@@ -377,6 +377,10 @@ fn after_termination(error: AdapterError) -> AdapterError {
 #[cfg(test)]
 #[path = "close_tests.rs"]
 mod tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "close_hosted_tests.rs"]
+mod hosted_tests;
 
 #[cfg(test)]
 #[path = "close_fanout_tests.rs"]

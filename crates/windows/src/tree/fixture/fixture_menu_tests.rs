@@ -43,6 +43,9 @@ fn the_menu_fixture_opens_and_closes_the_context_menu_independently_of_any_predi
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
     assert!(
         !fixture.menu_is_up(),
@@ -72,6 +75,9 @@ fn opening_the_fixture_menu_does_not_put_the_test_process_into_menu_mode() {
     let _app_name_scope = FIXTURE_APP_NAME_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _shell = crate::system::fixture::test_support::SHELL_SURFACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fixture = MenuFixture::spawn().expect("the menu fixture starts");
 
     fixture.open_context_menu();
@@ -83,7 +89,7 @@ fn opening_the_fixture_menu_does_not_put_the_test_process_into_menu_mode() {
         "opening the child's menu must not put the test process into menu mode"
     );
     assert!(
-        any_thread_reports_menu_mode(fixture.process_id()),
+        menu_mode_observed_while_up(&fixture, STATE_TIMEOUT),
         "the fixture's own process must report menu mode while its menu is open"
     );
 
@@ -117,6 +123,31 @@ fn the_menu_fixture_cleans_up_its_window_on_drop() {
         !window_exists(handle),
         "the fixture window must be gone after drop"
     );
+}
+
+/// Polls for the fixture's own process to report menu mode while the
+/// fixture still reports its menu up. A tracked popup menu ends when its
+/// owner loses activation, which another test on a shared desktop can cause
+/// at any moment, so a menu found dismissed is reopened rather than read as
+/// a missing menu-mode flag.
+fn menu_mode_observed_while_up(fixture: &MenuFixture, timeout: Duration) -> bool {
+    let end = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < end {
+        if !fixture.menu_is_up() {
+            fixture.open_context_menu();
+            if !fixture.wait_for_menu_state(
+                true,
+                end.saturating_duration_since(std::time::Instant::now()),
+            ) {
+                continue;
+            }
+        }
+        if any_thread_reports_menu_mode(fixture.process_id()) && fixture.menu_is_up() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    false
 }
 
 fn window_exists(handle: isize) -> bool {

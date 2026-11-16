@@ -40,6 +40,16 @@ pub(super) fn execute(
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     let deadline = traversal_deadline(args)?;
+    execute_within(args, query, (adapter, context), deadline)
+}
+
+/// Runs one find inside `deadline`.
+pub(super) fn execute_within(
+    args: &FindArgs,
+    query: &LocatorQuery,
+    (adapter, context): (&dyn PlatformAdapter, &CommandContext),
+    deadline: crate::Deadline,
+) -> Result<Value, AppError> {
     let request = resolve_request(args, deadline);
     let mut resolution = match args.scope.root.as_deref() {
         Some(root_ref) => rooted_resolution(args, query, root_ref, &request, (adapter, context))?,
@@ -223,6 +233,7 @@ mod tests {
                 window_id: None,
                 root: None,
                 surface: crate::SnapshotSurface::Window,
+                scroll: None,
             },
             filter: crate::commands::find::FindFilterArgs {
                 role: None,

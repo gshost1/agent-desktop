@@ -59,6 +59,27 @@ fn push_new(tokens: &mut Vec<String>, token: &str) {
     }
 }
 
+fn name_tokens(facts: &Facts, name: &str) -> &'static [&'static str] {
+    let selection = selection_verbs(
+        Some(facts.role),
+        Some(facts.bits.has(SELECTABLE)),
+        Some(facts.bits.has(CHECKABLE)),
+    );
+    if name.eq_ignore_ascii_case("toggle") && selection.contains(&"toggle") {
+        &[capability::SELECT]
+    } else {
+        capability_of(name)
+    }
+}
+
+/// Whether one of the node's own action names stands for `Select`.
+pub(crate) fn names_select(facts: &Facts) -> bool {
+    facts
+        .names
+        .iter()
+        .any(|name| name_tokens(facts, name).contains(&capability::SELECT))
+}
+
 /// The capability tokens of a node, in order of first appearance: its action
 /// names through the one table, then the tokens that need more than a name.
 /// The result is unknown when a read the tokens depend on failed: a list that
@@ -68,18 +89,8 @@ pub(crate) fn capabilities(node: &RawNode) -> LocatorField<Vec<String>> {
         return LocatorField::Unknown;
     };
     let mut tokens: Vec<String> = Vec::new();
-    let selection = selection_verbs(
-        Some(facts.role),
-        Some(facts.bits.has(SELECTABLE)),
-        Some(facts.bits.has(CHECKABLE)),
-    );
     for name in facts.names {
-        let capabilities = if name.eq_ignore_ascii_case("toggle") && selection.contains(&"toggle") {
-            &[capability::SELECT][..]
-        } else {
-            capability_of(name)
-        };
-        for token in capabilities {
+        for token in name_tokens(&facts, name) {
             push_new(&mut tokens, token);
         }
     }

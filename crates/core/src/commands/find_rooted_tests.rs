@@ -54,6 +54,7 @@ fn find_args(root: Option<String>, name: Option<&str>, role: Option<&str>) -> Fi
             window_id: root.is_none().then(|| "w-2".into()),
             root,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             role: role.map(Into::into),

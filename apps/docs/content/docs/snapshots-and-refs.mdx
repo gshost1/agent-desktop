@@ -90,8 +90,10 @@ For window-owned surfaces, `snapshot` and `find` read one window. Without `--app
 2. Keep only visible windows.
 3. Keep only the focused window.
 4. Keep only accessible windows.
+5. Set aside windows the platform reports as auxiliary, such as a floating panel or a suggestion list, and repeat these steps for the rest.
+6. Use the window the platform names the app's main window, when it names exactly one of those left. An app in the background focuses no window, so this is what settles it there. macOS reports it; Windows and Linux report no main window, so they skip this step.
 
-If several windows are still left, the command fails with `AMBIGUOUS_TARGET`, and `details.candidates` lists up to 10 of them. Run `list-windows --app <name>` and pass `--window-id`.
+`data.window` names the window that was read. If several windows are still left, the command fails with `AMBIGUOUS_TARGET`, and `details.candidates` lists up to 10 of them. Run `list-windows --app <name>` and pass `--window-id`.
 
 On macOS, `menu` and `menubar` surfaces are application-owned. They can be observed without a document window. If you pass `--window-id`, it selects the app that owns the surface; the returned snapshot remains application-owned and omits `data.window`.
 

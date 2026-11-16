@@ -18,6 +18,7 @@ fn named_find(window_id: &str, name: &str) -> FindArgs {
             window_id: Some(window_id.into()),
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             name: Some(name.into()),
@@ -48,6 +49,7 @@ fn unfiltered_find(window_id: &str, selection: FindSelectionArgs) -> FindArgs {
             window_id: Some(window_id.into()),
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             role: None,

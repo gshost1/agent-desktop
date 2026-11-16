@@ -1,25 +1,33 @@
 use agent_desktop_core::{AdapterError, Deadline, InteractionPolicy, KeyCombo, ProcessIdentity};
 
+use super::restore_report::{RestoreReport, error_with_unverified_restore};
+
 const CLEANUP_TIMEOUT_MS: u64 = 2_000;
 
-pub(crate) fn close_session<T>(
+pub(crate) fn close_session<T: RestoreReport>(
     session: NcSession,
     result: Result<T, AdapterError>,
 ) -> Result<T, AdapterError> {
     merge_session_result(result, session.close())
 }
 
-fn merge_session_result<T>(
+fn merge_session_result<T: RestoreReport>(
     result: Result<T, AdapterError>,
     cleanup: Result<(), AdapterError>,
 ) -> Result<T, AdapterError> {
     match (result, cleanup) {
         (Ok(value), Ok(())) => Ok(value),
-        (Ok(_), Err(close_err)) => Err(close_err),
-        (Err(err), Ok(())) => Err(err),
-        (Err(err), Err(close_err)) => {
-            tracing::warn!(error = %close_err, "notification center cleanup also failed after the operation failed");
-            Err(err)
+        (Ok(value), Err(close_err)) => value.after_failed_restore(close_err),
+        (Err(err), cleanup) => Err(failure_after_cleanup(err, cleanup)),
+    }
+}
+
+fn failure_after_cleanup(error: AdapterError, cleanup: Result<(), AdapterError>) -> AdapterError {
+    match cleanup {
+        Ok(()) => error,
+        Err(close_err) => {
+            tracing::warn!(error = %close_err, "Notification Center cleanup also failed after the operation failed");
+            error_with_unverified_restore(error)
         }
     }
 }
@@ -101,7 +109,7 @@ impl NcSession {
             }
             Err(error) => {
                 let cleanup = session.cleanup_with(ops.close, ops.reactivate);
-                merge_session_result(Err(error), cleanup)
+                Err(failure_after_cleanup(error, cleanup))
             }
         }
     }

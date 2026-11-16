@@ -49,6 +49,7 @@ pub(super) fn execute(
             (
                 context.event_baseline().cloned(),
                 context.notification_seed().cloned(),
+                context.menu_seed().cloned(),
             )
         });
         let held = seeds[index].take().map(PendingSeed::into_read);
@@ -78,7 +79,7 @@ pub(super) fn execute(
                 }
                 continue;
             }
-            Some((_, Ok((event, notification)))) => Some((event.map(Ok), notification)),
+            Some((_, Ok((event, notification, menu)))) => Some((event.map(Ok), notification, menu)),
             None => inherited_seed,
         };
 
