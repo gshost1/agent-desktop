@@ -55,6 +55,7 @@ else:
     os.link(native, installed / "agent-desktop")
     (prefix / "bin").mkdir(parents=True, exist_ok=True)
     os.symlink(installed / "agent-desktop", prefix / "bin/agent-desktop")
+    os.symlink(installed / "agent-desktop", prefix / "bin/deskref")
     pathlib.Path(os.environ["AD_CURL_DOUBLE_LOG"]).write_text("/agent-desktop-v1-x86_64-unknown-linux-gnu.tar.gz\\n/checksums.txt\\n")
 ''')
                 executable("python3", f'''#!{sys.executable}
