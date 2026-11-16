@@ -75,7 +75,11 @@ shape when none are, and a top-level `ClearAllButton`.
   identical twin left behind does not hide it. When the target is the only
   entry and had no identical twin, the verified clear-all control runs instead.
   Otherwise the call reports `ACTION_FAILED` (`delivered_unverified`) and
-  never clears an identical twin. `dismiss-all-notifications` is
+  never clears an identical twin. Identical twins cannot be told apart, so
+  with twins listed, success from `dismiss-notification` or
+  `notification-action` means one identical entry left, not which one: a
+  different twin leaving within the 2 s settle window also counts. List
+  again if it matters. `dismiss-all-notifications` is
   judged against the entries captured before the clear, so entries that arrive
   while it runs are not failures.
 - **`wait --notification` opens and closes the center per poll**, as on macOS.

@@ -27,7 +27,7 @@ fn oldest_twin(before: &[NotificationInfo]) -> NotificationInfo {
 }
 
 #[test]
-fn dismissing_one_of_two_identical_twins_is_verified_by_the_twin_count_dropping() {
+fn dismissing_one_of_two_identical_twins_is_verified_and_never_clears_the_survivor() {
     let before = twins();
     let target = oldest_twin(&before);
     let current = vec![entry(1, "App A", "Ping")];
@@ -35,20 +35,8 @@ fn dismissing_one_of_two_identical_twins_is_verified_by_the_twin_count_dropping(
     assert_eq!(
         after_dismiss(&target, &before, &current),
         DismissStep::Verified,
-        "the keyed twin left and its untouched twin remains, so the dismiss landed"
-    );
-}
-
-#[test]
-fn a_lone_survivor_of_two_listed_twins_never_triggers_the_clear_all() {
-    let before = twins();
-    let target = oldest_twin(&before);
-    let current = vec![entry(1, "App A", "Ping")];
-
-    assert_ne!(
-        after_dismiss(&target, &before, &current),
-        DismissStep::SubstituteClearAll,
-        "the survivor is indistinguishable from the target, so the clear-all could delete the untouched twin"
+        "the identical-entry count dropped, so the dismiss landed and the untouched twin, \
+         indistinguishable from the target, is never handed to the clear-all"
     );
 }
 
