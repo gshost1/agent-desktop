@@ -353,14 +353,18 @@ def built_here(tokens, start, name) -> bool:
 
 
 def past_closure_params(tokens, lo, limit):
-    """The first token after a closure's `move` and `|params|`, when the chain is a closure body."""
+    """The first token after a closure's `move` and `|params|`, when the chain is a closure body.
+
+    A closure with several parameters reaches here mid-list, because the comma
+    between them ends the chain, so the closing bar of the list is skipped too.
+    """
     if tokens[lo] == ("ident", "move"):
         lo += 1
-    if tokens[lo] == ("punct", "||"):
-        return lo + 1
-    if tokens[lo] != ("punct", "|"):
-        return lo
-    for k in range(lo + 1, limit):
+    if tokens[lo] == ("punct", "|"):
+        lo += 1
+    for k in range(lo, limit):
+        if tokens[k] == ("punct", "."):
+            return lo
         if tokens[k] == ("punct", "|"):
             return k + 1
     return lo
@@ -392,7 +396,6 @@ def readvised_suggestions(tokens, depth, consts):
             continue
         if tokens[lo + 1] != ("punct", "."):
             continue
-        chain = {value for kind, value in tokens[lo : hi + 1] if kind == "ident"}
         if stamps_not_delivered(tokens, depth, lo, hi) or built_here(tokens, lo, head):
             continue
         yield from suggestions_in(tokens, depth, k, hi + 1, consts)
@@ -518,6 +521,12 @@ SELF_TEST_BAD = [
     """fn i(world: &W) -> Result<(), AdapterError> {
         world.open().map_err(|e| e.with_suggestion("Retry the open"))
     }""",
+    """fn l(errors: Vec<AdapterError>, first: AdapterError) -> AdapterError {
+        errors.into_iter().fold(first, |acc, e| e.with_suggestion("Retry the open"))
+    }""",
+    """fn m(world: &W) -> Result<(), AdapterError> {
+        world.open().map_err(|e: AdapterError| e.with_suggestion("Retry the open"))
+    }""",
     """fn j(world: &W) -> Result<(), AdapterError> {
         world.open().map_err(move |error| error.with_suggestion("Run it again"))
     }""",
@@ -574,6 +583,9 @@ SELF_TEST_GOOD = [
             false => AdapterError::timeout("never"),
         };
         error.with_suggestion("Start it, or wait again with a longer --timeout")
+    }""",
+    """fn n(a: bool, b: bool) -> bool {
+        a || b
     }""",
     """#[cfg(test)]
     mod tests {
