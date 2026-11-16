@@ -79,7 +79,7 @@ if [ -n "${HO_MODEL_STUB_CONFIG:-}" ]; then
 fi
 env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL=/bin/zsh LANG=en_US.UTF-8 TMPDIR="$BT/tmp/" ZDOTDIR="$BT/zdot" \
   PATH="$BT/claude-bin:/usr/bin:/bin:/usr/sbin:/sbin" PYTHONDONTWRITEBYTECODE=1 BENCH_REAL_HOME="$LB" HELDOUT_PY="$PY" \
-  HELDOUT_HOST=control-mac HO_WORK_ROOT="$BT/work" CAP_USD="${CAP_USD:-35}" HO_API_KEY_FILE="$KEY" "${STUB[@]}" \
+  HELDOUT_HOST=control-mac HO_WORK_ROOT="$BT/work" CAP_USD="${CAP_USD:-35}" HO_API_KEY_FILE="$KEY" ${STUB[@]+"${STUB[@]}"} \
   /usr/bin/perl -MPOSIX -e 'fork and exit 0; POSIX::setsid(); open STDIN, "<", "/dev/null"; my $l = shift @ARGV; open STDOUT, ">>", $l; open STDERR, ">&STDOUT"; exec @ARGV or die' \
   "$LOG" /bin/bash "$H/local/final_pass.sh" "$NAME" "$ARMS_CSV" "$TASKSET" "${MODEL:-claude-sonnet-5-5}" "${RULES:-v2}"
 echo "started $NAME; log $LOG"
