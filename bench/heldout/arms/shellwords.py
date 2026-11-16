@@ -147,27 +147,42 @@ class _Reader:
 
 
 def _program_words(words):
-    """The words from the program on, or [] when the command runs no program."""
-    out = list(words)
+    """The words from the program on, or [] when the command runs no program.
+
+    Redirections before the program move behind it (`< f head` is `head < f`), so a reader of the words still
+    sees the source; a command that is only redirections (`$(< f)`) becomes `:` with them. A `function` header
+    and a `case` pattern are dropped, so the command that follows them is the one read."""
+    out, moved = list(words), []
     while out:
         w = out[0]
         if ASSIGNMENT.match(w) or w in KEYWORDS or w in PREFIXES:
             out.pop(0)
             continue
         if REDIRECT.match(w):
-            out.pop(0)
+            moved.append(out.pop(0))
             if REDIRECT.fullmatch(w) and out:
-                out.pop(0)
+                moved.append(out.pop(0))
+            continue
+        if w == "function" and len(out) > 1:
+            del out[:2]
+            continue
+        if w == "case":
+            del out[:out.index("in") + 1 if "in" in out else len(out)]
+            continue
+        if w.endswith(")") and len(w) > 1 and not w.startswith(("$", "`")):
+            out.pop(0)
             continue
         if w in NON_COMMANDS:
-            return []
+            return [":"] + moved if moved else []
         if w in FLAG_PREFIXES:
             out.pop(0)
             while out and (out[0].startswith("-") or ASSIGNMENT.match(out[0]) or (w == "timeout" and out[0][:1].isdigit())):
                 out.pop(0)
             continue
         break
-    return out
+    if not out:
+        return [":"] + moved if moved else []
+    return out + moved
 
 
 def drop_redirects(args):

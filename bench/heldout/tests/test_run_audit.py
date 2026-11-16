@@ -74,6 +74,74 @@ class RefusedTests(unittest.TestCase):
         self.assertIsNotNone(run(["grep x /tmp/s.json"])[0])
 
 
+class AuditBypassTests(unittest.TestCase):
+    """Astra audit F6: each command here passed the audit before the fix."""
+
+    def test_programs_that_read_a_file_from_inside(self):
+        for cmd in ["awk 'BEGIN{while((getline l < \"/etc/hosts\")>0) print l}'",
+                    "awk 'BEGIN{system(\"id\")}'", "awk '{print | \"sh\"}' /tmp/x",
+                    "jq -n --rawfile t /etc/hosts '$t'", "jq -n --slurpfile t /etc/x.json '$t'",
+                    "jq -n 'import \"x\" as $x; $x'", "jq -n '$ENV'", "sed -n '1r /etc/hosts' /dev/null",
+                    "awk -f /etc/x.awk"]:
+            self.assertIsNotNone(run([cmd])[0], cmd)
+
+    def test_a_leading_or_substituted_input_redirect(self):
+        for cmd in ["< /etc/hosts head -3", "X=$(< /etc/hosts)", "echo \"$(</etc/hosts)\""]:
+            self.assertIsNotNone(run([cmd])[0], cmd)
+
+    def test_a_guide_path_that_escapes_the_guide(self):
+        guide = common.NATIVE_GUIDE_DIR["cua"]
+        for cmd in [f"cat {guide}/../../../../etc/hosts", f"head {guide}/../peekaboo/SKILL.md"]:
+            self.assertIsNotNone(run([cmd], "cua")[0], cmd)
+        self.assertIsNone(run([f"cat {guide}/./SKILL.md"], "cua")[0])
+
+    def test_a_program_hidden_in_a_variable_or_unlisted(self):
+        for cmd in ["P=cat; $P /etc/hosts", "$P /etc/hosts", "A=\"agent-desktop press --headed\"; $A cmd+t",
+                    "lsappinfo front", "function f { cat /etc/hosts; }; f", "case x in x) cat /etc/hosts;; esac"]:
+            self.assertIsNotNone(run([cmd])[0], cmd)
+
+    def test_own_tool_clipboard(self):
+        self.assertTrue(run(["peekaboo clipboard get --json"], "peekaboo")[0].startswith("clipboard"))
+        self.assertTrue(run(["peekaboo paste \"x\" --app TextEdit"], "peekaboo")[0].startswith("clipboard"))
+        self.assertTrue(run(["agent-desktop clipboard-get"])[0].startswith("clipboard"))
+        self.assertTrue(run(["cua-driver call clipboard_read '{}'"], "cua")[0].startswith("clipboard"))
+
+    def test_documented_foreground_routes(self):
+        steps = "cua-driver call run_steps '{\"steps\":[{\"tool\":\"click\"}],\"foreground_fallback\":true}'"
+        self.assertTrue(run([steps], "cua")[0].startswith("foreground"))
+        self.assertTrue(run(["peekaboo see --app TextEdit --web-focus --json"], "peekaboo")[0].startswith("foreground"))
+        self.assertTrue(run(["peekaboo app switch --to TextEdit"], "peekaboo")[0].startswith("foreground"))
+        self.assertTrue(run(["agent-desktop focus-window --app TextEdit"])[0].startswith("foreground"))
+        self.assertTrue(run(["agent-desktop launch TextEdit --activate"])[0].startswith("foreground"))
+
+
+class AuditWriteTests(unittest.TestCase):
+    def test_writes_outside_scratch_fail(self):
+        for cmd in ["echo x > ~/agent-desktop-bench/seed.game", "agent-desktop snapshot >> /Users/x/notes.txt",
+                    "agent-desktop snapshot | tee /etc/x", "echo x > ../../seed.game", "echo x > \"$F\""]:
+            self.assertTrue(run([cmd])[0].startswith("writes"), cmd)
+
+    def test_scratch_writes_pass(self):
+        for cmd in ["agent-desktop snapshot > /tmp/s.json 2>/dev/null", "agent-desktop snapshot > s.json 2>&1",
+                    "agent-desktop snapshot | tee /tmp/a.txt | head", "agent-desktop snapshot > \"$TMPDIR/s.json\""]:
+            self.assertIsNone(run([cmd])[0], cmd)
+
+
+class AuditAllowsOwnWorkTests(unittest.TestCase):
+    def test_cat_of_output_the_run_saved(self):
+        self.assertEqual(run(["agent-desktop snapshot --app TextEdit --lines > /tmp/own.txt", "cat /tmp/own.txt"]),
+                         [None, None])
+        self.assertEqual(run(["agent-desktop snapshot > /tmp/own.txt; cat /tmp/own.txt | grep x"]), [None])
+
+    def test_functions_and_literal_variables_the_run_defined(self):
+        cmds = ["P() { agent-desktop press \"$@\" --app TextEdit; }; P down", "A=agent-desktop; $A snapshot -i",
+                "awk '/\\[2[0-9]\\]|\\[3[0-9]\\]/' /tmp/own.txt", "agent-desktop clipboard-set --help | head"]
+        self.assertEqual(run(["agent-desktop snapshot > /tmp/own.txt"] + cmds)[1:], [None] * len(cmds))
+
+    def test_a_regex_alternation_in_awk_is_not_a_pipe(self):
+        self.assertIsNone(run(["agent-desktop snapshot --lines | awk -F'\\t' '/a|b/ {print $1 \"|\" $2}'"])[0])
+
+
 class PromptTests(unittest.TestCase):
     def test_v2_prompt_names_only_the_arms_own_foreground_flag(self):
         text = common.native_system_prompt("peekaboo")

@@ -22,7 +22,11 @@ VERIFY_AD = TOOLS / "agent-desktop-1.4.0" / "agent-desktop"
 
 TOOL_NAMES = {"agent-desktop", "peekaboo", "cua-driver", "browser-harness", "playwright-cli", "agent-browser"}
 
-SCREEN_OFF = "Screen Recording is off, so screenshots fail."
+SCREEN_OFF = "Screen capture is off in this benchmark for every tool: read the accessibility tree instead ({off}). " \
+    "A run whose tool captures the screen fails."
+CAPTURE_OFF = {"agent-desktop": "no `screenshot` or `--screenshot`",
+               "peekaboo": "pass `--no-screenshot` to `see`; no `image`",
+               "cua-driver": "pass `include_screenshot:false` to every read, including `observe`; no `screenshot`"}
 
 NATIVE_TOOL_TEXT = {
     "ad-up": ("You operate this Mac's GUI through the `agent-desktop` CLI (on PATH, accessibility granted). "
@@ -103,21 +107,23 @@ register_candidates()
 
 RULES = os.environ.get("HO_RULES", "v2")
 """v1: the forbidden-program audit only. v2 (default): also run_audit.RunAudit and the background-only rule."""
-FOREGROUND_TEXT = {"agent-desktop": "`--headed`", "peekaboo": "`--foreground`",
-                   "cua-driver": "`bring_to_front` or a foreground delivery mode"}
+FOREGROUND_TEXT = {"agent-desktop": "`--headed`, `focus-window` or `launch --activate`",
+                   "peekaboo": "`--foreground`, `--web-focus`, `app switch`, `app launch` or `window focus`",
+                   "cua-driver": "`bring_to_front`, `foreground_fallback` or a foreground delivery mode"}
 
 
 def native_system_prompt(arm, screen_recording=False, allow_foreground=False):
     rules = ("Use Bash only to run the tool named above; piping its output through jq, grep or head is fine. Do not use "
-             "any other program to do the task or to read the answer (no open, osascript, defaults, mkdir, ls, cat other "
-             "than the tool's guide, python, or any other GUI tool). ")
+             "any other program to do the task or to read the answer (no open, osascript, defaults, mkdir, ls, cat of anything but "
+             "the tool's guide or output you saved, python, or any other GUI tool). ")
     if RULES == "v2":
         rules += ("Do not start another shell (sh, bash, eval), use the clipboard, or read files other than the tool's "
                   "guide and output you saved yourself. ")
         if not allow_foreground:
-            rules += (f"Work in the background only: do not use {FOREGROUND_TEXT[NATIVE_TOOL[arm]]}, which takes over "
-                      "the shared screen, keyboard or mouse. A run that breaks these rules fails. ")
-    return NATIVE_TOOL_TEXT[arm] + " " + rules + ("" if screen_recording else SCREEN_OFF + " ") + \
+            rules += (f"Work in the background only: do not use {FOREGROUND_TEXT[NATIVE_TOOL[arm]]}, which take over "
+                      "the shared screen, keyboard or mouse; a run that brings the task's app to the front fails "
+                      "too. A run that breaks these rules fails. ")
+    return NATIVE_TOOL_TEXT[arm] + " " + rules + ("" if screen_recording else SCREEN_OFF.format(off=CAPTURE_OFF[NATIVE_TOOL[arm]]) + " ") + \
         "When the task is complete, reply with the final answer only."
 
 
@@ -130,16 +136,17 @@ SPILL = re.compile(r"/\.claude/projects/[^/]+/[^/]+/tool-results/[^/]+$")
 def _guide_or_spill(path, guide):
     """`cat` may read the arm's guide, or a file where Claude Code saved one of the model's own oversized tool
     results (it tells the model that path): that is the tool's output, not system state."""
-    full = str(Path(path).expanduser())
+    full = os.path.normpath(str(Path(path).expanduser()))
     return bool(guide and full.startswith(str(guide) + "/")) or bool(SPILL.search(full))
 
 
-def audit_native(cmd, arm, forbidden, skills=None):
+def audit_native(cmd, arm, forbidden, skills=None, check_cat=True):
     """The first program a Bash command runs that the arm may not use, or None.
 
     Forbidden: the bench's system-reading list, every other GUI tool, and `cat` outside the arm's guide folder.
     Commands are read by shellwords, so a `|` or `;` inside a quoted pattern never starts a new command.
-    `skills` is the skills root the run saw (default: this host's), for re-auditing another host's rows."""
+    `skills` is the skills root the run saw (default: this host's), for re-auditing another host's rows.
+    `check_cat=False` leaves `cat` to a caller that tracks what the run wrote (run_audit.RunAudit)."""
     own = NATIVE_TOOL[arm]
     guide = NATIVE_GUIDE_DIR.get(arm)
     if guide is not None and skills is not None:
@@ -148,12 +155,12 @@ def audit_native(cmd, arm, forbidden, skills=None):
         prog = words[0].split("/")[-1]
         if prog == own:
             continue
-        if prog == "cat":
+        if prog == "cat" and check_cat:
             paths = [w for w in shellwords.drop_redirects(words[1:]) if not w.startswith("-")]
             if paths and all(_guide_or_spill(p, guide) for p in paths):
                 continue
             return "cat"
-        if prog in TOOL_NAMES or prog in forbidden:
+        if prog != "cat" and (prog in TOOL_NAMES or prog in forbidden):
             return prog
     return None
 

@@ -9,6 +9,12 @@
 # the STOP file, the API refusal scanner and the pass's list-price spend over every listed arm; past CAP_USD it
 # writes STOP-SPEND and ends.
 #
+# With SCHEDULE=<file> (schedule.py make; the final run requires one, pinned in FROZEN.md) the pass runs exactly the
+# saved cells in their saved order instead, skips cells the ledger shows were attempted (a resumed pass never reruns one),
+# and holds the lock per task block. Before every run it reserves RESERVE_USD (default 0.75, above any run seen so
+# far) against CAP_USD and stops rather than start a run the cap cannot cover. An unknown row cost counts as
+# infinite. A run_native exit is never retried: the ledger keeps the attempt and its end state.
+#
 # taskset is required: a module with tasks_heldout.py's contract whose folder's FROZEN.md pins every file
 # ("`<file>` sha256 `<hex>`", all must match). Every candidate arm (a build under heldout-tools/candidates/) must
 # also be pinned there, binary and helper: "arm `<label>` agent-desktop sha256 `<hex>`" and
@@ -52,13 +58,16 @@ lines() { [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0; }
 FROM=$(lines "$NATIVE_ROWS")
 echo "$NAME $ARMS_CSV $FROM" > "$BT/logs/arms-$NAME.start"
 spent() {
-  $P -I - "$NATIVE_ROWS" "$FROM" "$B" "${ARMS[@]}" <<'PY'
+  $P -I - "$NATIVE_ROWS" "$FROM" "$B" "$NAME" "${ARMS[@]}" <<'PY'
 import json, sys
 from pathlib import Path
-path, start, arms = Path(sys.argv[1]), int(sys.argv[2]), set(sys.argv[4:])
+path, start, name, arms = Path(sys.argv[1]), int(sys.argv[2]), sys.argv[4], set(sys.argv[5:])
 sys.path.insert(0, sys.argv[3])
 import pricing
-rows = [json.loads(l) for l in path.read_text().splitlines()[start:] if l.strip()] if path.exists() else []
+lines = path.read_text().splitlines() if path.exists() else []
+rows = [json.loads(l) for l in lines if l.strip()]
+mine = [r for r in rows if r.get("experiment") == name]
+rows = mine if mine else rows[start:]
 costs = [pricing.row_cost(r)[0] for r in rows if r.get("arm") in arms]
 print(round(sum(float("inf") if c is None else c for c in costs), 4))
 PY
@@ -75,23 +84,51 @@ check() {
   fi
   return 1
 }
+RESERVE_USD=${RESERVE_USD:-0.75}
+reserve() {
+  local s; s=$(spent)
+  if $P -I -c 'import sys; sys.exit(0 if float(sys.argv[1]) + float(sys.argv[2]) > float(sys.argv[3]) else 1)' \
+      "$s" "$RESERVE_USD" "$CAP_USD"; then
+    log "SPEND RESERVE: \$$s spent + \$$RESERVE_USD reserved passes \$$CAP_USD; not starting another run"
+    touch "$BT/STOP-SPEND"; return 0
+  fi
+  return 1
+}
 native_run() {
-  local arm=$1 task=$2 r=$3
+  local arm=$1 task=$2 r=$3 slot=${4:-}
   touch "$BT/logs/.since"
-  $P -I "$H/arms/run_native.py" --arm "$arm" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" < /dev/null \
-    || { log "native $arm $task exited; retrying once"
-         $P -I "$H/arms/run_native.py" --arm "$arm" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" < /dev/null \
-           || log "native $arm $task exited again"; }
+  $P -I "$H/arms/run_native.py" --arm "$arm" --task "$task" --round "$r" --model "$MODEL" --host "$HOST" \
+    --experiment "$NAME" ${slot:+--slot "$slot"} < /dev/null || log "native $arm $task exited $? (kept in the ledger)"
 }
 
 caffeinate -dims -w $$ &
 trap 'bash "$B/lockq.sh" release "$OWNER" > /dev/null 2>&1' EXIT
+if [ -n "${SCHEDULE:-}" ]; then
+  $P -I "$H/schedule.py" check "$SCHEDULE" || { log "refused: schedule $SCHEDULE is not balanced and complete"; exit 3; }
+  $P -I "$H/schedule.py" matches "$SCHEDULE" "$NAME" "$ARMS_CSV" || { log "refused: schedule is for another pass"; exit 3; }
+  LEDGER=$ROWS_DIR/attempts.jsonl
+  log "ARMS START $NAME schedule $SCHEDULE ($(shasum -a 256 "$SCHEDULE" | cut -c1-12)) model $MODEL rules $HO_RULES"
+  block=""
+  while read -r slot r task arm; do
+    if [ "$block" != "$r $task" ]; then
+      [ -n "$block" ] && bash "$B/lockq.sh" release "$OWNER" > /dev/null
+      bash "$B/lockq.sh" take "$OWNER" 5 > /dev/null
+      block="$r $task"
+    fi
+    if reserve; then exit 9; fi
+    native_run "$arm" "$task" "$r" "$slot"
+    if check; then exit 9; fi
+  done < <($P -I "$H/schedule.py" pending "$SCHEDULE" "$LEDGER")
+  log "ARMS COMPLETE $NAME spend \$$(spent)"
+  exit 0
+fi
 log "ARMS START $NAME arms ${ARMS[*]} model $MODEL rules $HO_RULES rounds 0-$((N - 1)) native ${NATIVE_TASKS[*]}"
 for (( r=0; r<N; r++ )); do
   i=0
   for task in $(rot "$r" "${NATIVE_TASKS[@]}"); do
     bash "$B/lockq.sh" take "$OWNER" 5 > /dev/null
     for arm in $(rot $(( r + (r + i) % ${#NATIVE_TASKS[@]} )) "${ARMS[@]}"); do
+      if reserve; then exit 9; fi
       native_run "$arm" "$task" "$r"
       if check; then exit 9; fi
     done
