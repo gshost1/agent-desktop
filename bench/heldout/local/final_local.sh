@@ -11,14 +11,16 @@
 # Everything lives under HO_LOCAL_ROOT (~/.agent-desktop-bench-target/local-final): bench-tools/logs, the STOP
 # files, the model's working folders (bench-tools/work, outside any repository), TMPDIR and an empty ZDOTDIR. The
 # pass gets only HOME, USER, LOGNAME, SHELL, LANG and the bench variables: no key, token or agent-session variable
-# of the calling shell. local/claude.zsh is the pass's `claude`.
+# of the calling shell. local/claude.zsh is the pass's `claude`: bare mode on the bench API key, read from the
+# owner-only file <root>/secrets/anthropic_api_key into the model process's environment only.
 #
 # The pass refuses to start (exit 4) while the privacy preflight fails: a mail, messages, photos or notes app, a web
 # browser, or a Finder window. It never quits an app. HO_PREFLIGHT_ALLOW (bundle ids) and the file
 # <root>/preflight-allow (one bundle id per line) name https-registered apps that are not browsers.
 #
 # Env: CAP_USD (35), MODEL (claude-sonnet-5-5), RULES (v2). A dry run sets HO_MODEL_STUB_CONFIG=<config.json>:
-# local/model_stub.py answers every model call on a local port (no spend), and HO_PREFLIGHT=record lets a dry run go
+# local/model_stub.py answers every model call on a local port (no spend; HO_STUB_WITH_KEY=1 sends the bench key to
+# it, to check the pass's auth), and HO_PREFLIGHT=record lets a dry run go
 # on with a failing preflight, recording it. A real pass cannot skip the preflight.
 set -u
 H=$(cd "$(dirname "$0")/.." && pwd)
@@ -67,11 +69,17 @@ if [ $rc -ne 0 ]; then
     echo "privacy preflight failed: $pf" >&2; exit 4
   fi
 fi
+KEY=$LB/secrets/anthropic_api_key
+if [ -z "${HO_MODEL_STUB_CONFIG:-}" ] || [ "${HO_STUB_WITH_KEY:-}" = 1 ]; then
+  [ -s "$KEY" ] && [ "$(stat -f %Lp "$KEY")" = 600 ] || { echo "no owner-only API key file at $KEY" >&2; exit 3; }
+fi
 STUB=()
-if [ -n "${HO_MODEL_STUB_CONFIG:-}" ]; then STUB=(HO_MODEL_STUB_CONFIG="$HO_MODEL_STUB_CONFIG" HO_MODEL_STUB_PORT=18790); fi
+if [ -n "${HO_MODEL_STUB_CONFIG:-}" ]; then
+  STUB=(HO_MODEL_STUB_CONFIG="$HO_MODEL_STUB_CONFIG" HO_MODEL_STUB_PORT=18790 HO_STUB_WITH_KEY="${HO_STUB_WITH_KEY:-}")
+fi
 env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL=/bin/zsh LANG=en_US.UTF-8 TMPDIR="$BT/tmp/" ZDOTDIR="$BT/zdot" \
   PATH="$BT/claude-bin:/usr/bin:/bin:/usr/sbin:/sbin" PYTHONDONTWRITEBYTECODE=1 BENCH_REAL_HOME="$LB" HELDOUT_PY="$PY" \
-  HELDOUT_HOST=control-mac HO_WORK_ROOT="$BT/work" CAP_USD="${CAP_USD:-35}" "${STUB[@]}" \
+  HELDOUT_HOST=control-mac HO_WORK_ROOT="$BT/work" CAP_USD="${CAP_USD:-35}" HO_API_KEY_FILE="$KEY" "${STUB[@]}" \
   /usr/bin/perl -MPOSIX -e 'fork and exit 0; POSIX::setsid(); open STDIN, "<", "/dev/null"; my $l = shift @ARGV; open STDOUT, ">>", $l; open STDERR, ">&STDOUT"; exec @ARGV or die' \
   "$LOG" /bin/bash "$H/local/final_pass.sh" "$NAME" "$ARMS_CSV" "$TASKSET" "${MODEL:-claude-sonnet-5-5}" "${RULES:-v2}"
 echo "started $NAME; log $LOG"

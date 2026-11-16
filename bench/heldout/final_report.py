@@ -243,9 +243,10 @@ def headline(cs, focus, arms, comps, versions, ok_all):
     scope = (f"We compared the agent-desktop 1.5 candidate [{v.get(focus, focus)}] with "
              + ", ".join(f"{a} [{v.get(a, a)}]" for a in others)
              + f" on ten frozen native macOS tasks across three apps, {v.get('rounds', 'five')} seeded rounds per "
-             f"task, using {v.get('model', 'Sonnet 5.5')} on {v.get('host', 'one M1 Pro')} on {v.get('date', '[date]')}, "
+             f"task, using {v.get('model', 'Sonnet 5.5')} on {v.get('host', '[host]')} on {v.get('date', '[date]')}, "
              "with background-only operations and screenshot capture disabled. These are results for this task "
-             "suite and configuration.")
+             "suite and configuration."
+             + "".join(f" {n}" for n in v.get("scope_notes", [])))
     lines = ["## Headline", "", f"> {scope}", ""]
     if not ok_all:
         return lines + ["> Incomplete exploratory comparison: some planned cells have no finished attempt, so no "
@@ -365,7 +366,7 @@ def main():
     ap.add_argument("--ledger", required=True)
     ap.add_argument("--rows", required=True)
     ap.add_argument("--focus", required=True)
-    ap.add_argument("--versions", default=None, help="JSON {arm: version, model, host, date, rounds}")
+    ap.add_argument("--versions", default=None, help="JSON {arm: version, model, host, date, rounds, scope_notes: [sentence, ...]}")
     a = ap.parse_args()
     plan = json.loads(Path(a.schedule).read_text())
     versions = json.loads(Path(a.versions).read_text()) if a.versions else None

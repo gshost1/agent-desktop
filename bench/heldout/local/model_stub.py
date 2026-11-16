@@ -8,8 +8,10 @@ with one read of the task's app, the third ends the run with a text answer. The 
 repository, because it names the task apps) is
   {"status": {"<tool>": "<command>"}, "reads": {"<app>": {"<tool>": "<command>"}}, "answer": "<text>"}
 The tool is the first config tool named in the system prompt; the app is the first config app named in the first
-user message. Every request's size and the commands sent are appended to <config>.log, never request headers.
+user message. Every request's size, the commands sent, which auth header came (x-api-key or authorization) and the
+first 12 hex digits of its sha256 are appended to <config>.log; never a header value.
 """
+import hashlib
 import json
 import sys
 import time
@@ -83,6 +85,15 @@ def sse(msg):
     return "".join(f"event: {e}\ndata: {json.dumps(d)}\n\n" for e, d in events).encode()
 
 
+def auth(headers):
+    """Which credential the request carried, as a header name and a 12-digit hash prefix, never the value."""
+    for name in ("x-api-key", "authorization"):
+        value = headers.get(name)
+        if value:
+            return {"auth": name, "auth_sha12": hashlib.sha256(value.encode()).hexdigest()[:12]}
+    return {"auth": None}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -114,7 +125,7 @@ class Handler(BaseHTTPRequestHandler):
         kind, payload = plan(body)
         with open(LOG, "a") as fh:
             fh.write(json.dumps({"t": round(time.time(), 3), "bytes": len(raw), "kind": kind,
-                                 "command": payload if kind == "bash" else None}) + "\n")
+                                 "command": payload if kind == "bash" else None, **auth(self.headers)}) + "\n")
         msg = message(kind, payload, body.get("model", "stub"))
         if body.get("stream"):
             return self.reply(200, sse(msg), "text/event-stream")

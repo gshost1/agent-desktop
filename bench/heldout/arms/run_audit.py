@@ -33,6 +33,20 @@ import shellwords
 
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "eval", "source", "."}
 CLIPBOARD = {"pbpaste", "pbcopy"}
+HARNESS_VARIABLE = re.compile(r"\$\{?!?(?:ANTHROPIC|CLAUDE|HO)_\w*")
+BARE_ENV = re.compile(r"(?:^|[;&|({`]|\$\()\s*(?:printenv\b|env(?:\s+-\w+)*\s*(?:$|[;&|)>`]))")
+"""The model process holds the bench API key and the harness's settings in its environment; a run never needs them."""
+
+
+def dumps_environment(prog, args):
+    """True for a command that prints the whole environment: env or printenv with no program or name, a bare set, or
+    export, declare or typeset with no name."""
+    names = [a for a in args if not a.startswith("-") and "=" not in a]
+    if prog in ("env", "printenv"):
+        return prog == "env" and not names or prog == "printenv"
+    if prog == "set":
+        return not args
+    return prog in ("export", "declare", "typeset") and all(a.startswith("-") for a in args)
 ALL_ARGS_READERS = {"head", "tail", "wc", "strings", "xxd", "od", "hexdump", "cut", "sort", "uniq", "less", "more",
                     "base64", "iconv", "file", "nl", "tac", "rev", "column", "paste", "comm", "diff", "cmp", "md5",
                     "shasum", "fold", "fmt", "expand", "join", "split", "tee"}
@@ -232,6 +246,8 @@ class RunAudit:
         hit = common.audit_native(cmd, self.arm, self.forbidden, self.skills, check_cat=False)
         if hit:
             return hit
+        if HARNESS_VARIABLE.search(cmd) or BARE_ENV.search(cmd):
+            return "reads the harness environment"
         self.remember(cmd)
         own = common.NATIVE_TOOL[self.arm]
         for words in shellwords.commands(cmd):
@@ -240,6 +256,8 @@ class RunAudit:
             if prog == "cd":
                 target = os.path.normpath(args[0]) if args and "$" not in args[0] else ""
                 self.cwd_readable = bool(re.search(r"tool-results$|/heldout-tools/skills/[^/]+$", target))
+            if dumps_environment(prog, args):
+                return "reads the harness environment"
             if prog in SHELLS:
                 return f"shell {prog}"
             if prog in CLIPBOARD:

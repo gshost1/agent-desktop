@@ -76,6 +76,13 @@ class FinalReportTests(unittest.TestCase):
         self.assertAlmostEqual(r["ratio"], 0.5)
         self.assertEqual(r["tasks"], 10)
 
+    def test_scope_notes_follow_the_scope_sentence(self):
+        ledger, rows = run_all(self.plan)
+        out = fr.render(self.plan, ledger, rows, "cand", {"host": "one test Mac", "scope_notes": ["A grant was held."]})
+        scope = [l for l in out.splitlines() if l.startswith("> We compared")][0]
+        self.assertIn("on one test Mac", scope)
+        self.assertTrue(scope.endswith("suite and configuration. A grant was held."))
+
     def test_holm_is_monotone_and_bounded(self):
         self.assertEqual(fr.holm([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06])
 

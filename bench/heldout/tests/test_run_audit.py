@@ -44,6 +44,14 @@ class AllowedTests(unittest.TestCase):
 
 
 class RefusedTests(unittest.TestCase):
+    def test_reading_the_harness_environment(self):
+        for cmd in ["env", "env | grep KEY", "printenv ANTHROPIC_API_KEY", "set", "export -p", "declare -x",
+                    "echo $ANTHROPIC_API_KEY", "echo ${CLAUDE_CODE_ENTRYPOINT}", "X=$HO_ARM_HOME; echo $X"]:
+            self.assertEqual(run([cmd])[0], "reads the harness environment", cmd)
+        for cmd in ["set -e; agent-desktop snapshot --app TextEdit", "export X=1; echo $X",
+                    "env LANG=C agent-desktop snapshot --app TextEdit"]:
+            self.assertIsNone(run([cmd])[0], cmd)
+
     def test_other_shells_and_indirection(self):
         for cmd in ["sh /tmp/u.sh", "bash -c 'agent-desktop snapshot'", "eval \"$X\"", "source ./x"]:
             self.assertTrue(run([cmd])[0].startswith("shell"), cmd)
