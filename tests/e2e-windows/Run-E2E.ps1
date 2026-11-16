@@ -33,6 +33,7 @@ Import-Module (Join-Path $PSScriptRoot 'NativeToken.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'StagedProcess.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'BoundedProcess.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'DesktopLease.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'ForegroundContender.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Harness.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Lib.psm1') -Force
 

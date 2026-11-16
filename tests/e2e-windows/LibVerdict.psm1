@@ -18,6 +18,7 @@ $script:SkipAllowlist = $null
 $script:RegisteredLegs = New-Object System.Collections.Generic.List[string]
 $script:LegDispositions = @{}
 $script:UndeclaredSkipTokens = New-Object System.Collections.Generic.List[string]
+$script:LastErrorEnvelope = $null
 
 function Require-Target {
     <# Aborts through the one canonical failure path when a precondition is
@@ -71,14 +72,29 @@ function Register-Legs {
     }
 }
 
+function Set-LastErrorEnvelope {
+    <# Lib.psm1's Invoke-AgentDesktop records every ok:false envelope here
+       as text (code, message, command), so a failed leg's verdict line can
+       name the product error it saw even when the throw that failed it
+       ("expected ok=true, got ok=False") does not. Cleared at every
+       disposition, so it only ever names an envelope from the leg being
+       dispositioned. #>
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $script:LastErrorEnvelope = $Text
+}
+
 function Add-Pass {
     param([Parameter(Mandatory = $true)][string]$Leg)
     $script:LegDispositions[$Leg] = @{ Status = 'passed' }
+    $script:LastErrorEnvelope = $null
 }
 
 function Add-Fail {
     param([Parameter(Mandatory = $true)][string]$Leg, [string]$Reason)
-    $script:LegDispositions[$Leg] = @{ Status = 'failed'; Detail = $Reason }
+    $detail = $Reason
+    if ($script:LastErrorEnvelope) { $detail = "$Reason [last error envelope in this leg: $($script:LastErrorEnvelope)]" }
+    $script:LegDispositions[$Leg] = @{ Status = 'failed'; Detail = $detail }
+    $script:LastErrorEnvelope = $null
 }
 
 function Add-Skip {
@@ -91,6 +107,7 @@ function Add-Skip {
         $script:UndeclaredSkipTokens.Add($Token)
     }
     $script:LegDispositions[$Leg] = @{ Status = 'skipped'; Token = $Token; Detail = $Reason }
+    $script:LastErrorEnvelope = $null
 }
 
 function Reset-Verdict {
@@ -99,6 +116,7 @@ function Reset-Verdict {
     $script:RegisteredLegs.Clear()
     $script:LegDispositions = @{}
     $script:UndeclaredSkipTokens.Clear()
+    $script:LastErrorEnvelope = $null
 }
 
 function Write-Verdict {
@@ -139,5 +157,5 @@ function Write-Verdict {
 Export-ModuleMember -Function @(
     'Require-Target', 'Enter-Stage',
     'Set-SkipAllowlistPath', 'Register-Legs', 'Add-Pass', 'Add-Fail', 'Add-Skip',
-    'Reset-Verdict', 'Write-Verdict'
+    'Reset-Verdict', 'Write-Verdict', 'Set-LastErrorEnvelope'
 )
