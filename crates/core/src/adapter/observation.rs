@@ -101,6 +101,14 @@ pub trait ObservationOps: Send + Sync {
         false
     }
 
+    /// The id of the one window among `windows`, all of one application, that
+    /// the platform names that application's main window, asked only when
+    /// `--app` still matches several. `None` when it names none, or its
+    /// evidence conflicts or cannot be read.
+    fn main_window(&self, _windows: &[WindowInfo], _deadline: Deadline) -> Option<String> {
+        None
+    }
+
     fn list_apps(&self, _deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
         Err(AdapterError::not_supported("list_apps"))
     }
@@ -365,6 +373,25 @@ pub trait ObservationOps: Send + Sync {
     ) -> Result<(), AdapterError> {
         let _ = (handle, point, deadline);
         Ok(())
+    }
+
+    /// One whole read of whether `process` shows an open menu, with the same
+    /// detector `SystemOps::wait_for_menu` polls.
+    fn menu_open(
+        &self,
+        _process: crate::ProcessIdentity,
+        _deadline: Deadline,
+    ) -> Result<bool, AdapterError> {
+        Err(AdapterError::not_supported("menu_open"))
+    }
+
+    /// How long a closed-direction menu wait with no sign of an open menu
+    /// holds before a closed read counts: the longest an opener's menu takes
+    /// to appear after the opener returns on this platform. The default is
+    /// [`crate::MENU_OPENER_GRACE`]; an adapter that measured its menus
+    /// appearing sooner returns its own value.
+    fn menu_opener_grace(&self) -> std::time::Duration {
+        crate::MENU_OPENER_GRACE
     }
 }
 

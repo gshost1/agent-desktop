@@ -59,7 +59,12 @@ pub(super) fn search(
                     report.pages += 1;
                     report.unconfirmed_pages += 1;
                 }
-                Ok(ScrollPage::AtEnd { .. }) => break,
+                Ok(ScrollPage::AtEnd { delivered }) => {
+                    if delivered {
+                        report.pages_at_end += 1;
+                    }
+                    break;
+                }
                 Err(error) => return Err(stopped(error.into(), report, deadline)),
             }
             match area.look() {

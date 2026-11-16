@@ -259,3 +259,30 @@ fn only_a_returned_element_counts_as_found() {
     assert!(!holds_a_match(&json!({ "matches": [] })));
     assert!(!holds_a_match(&json!({ "count": 12 })));
 }
+
+#[test]
+fn a_page_sent_at_the_end_makes_a_later_failure_unsafe_to_retry() {
+    let expired =
+        AdapterError::timeout("deadline").with_disposition(DeliverySemantics::not_delivered());
+    let pages = vec![Ok(ScrollPage::AtEnd { delivered: true }), Err(expired)];
+    let mut list = ScriptedList::new(pages, None);
+    let Err(AppError::Adapter(error)) = search(&mut list, Direction::Down, deadline()) else {
+        panic!("the failure ends the search");
+    };
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let details = error.details.expect("details");
+    assert_eq!(details["scroll_search"]["pages"], 0);
+    assert_eq!(details["scroll_search"]["pages_at_end"], 1);
+}
+
+#[test]
+fn a_page_at_the_end_that_sent_nothing_stays_retry_safe() {
+    let refused = AdapterError::new(ErrorCode::ActionFailed, "refused")
+        .with_disposition(DeliverySemantics::not_delivered());
+    let pages = vec![Ok(ScrollPage::AtEnd { delivered: false }), Err(refused)];
+    let mut list = ScriptedList::new(pages, None);
+    let Err(AppError::Adapter(error)) = search(&mut list, Direction::Down, deadline()) else {
+        panic!("the failure ends the search");
+    };
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+}

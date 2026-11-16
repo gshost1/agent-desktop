@@ -53,8 +53,10 @@ pub(crate) fn find_window_for_process(
 /// When the rules of [`select_window`] leave several windows, the ones the
 /// adapter reports as auxiliary, such as a floating panel or a text field's
 /// suggestion list, are set aside and the choice is made among the rest.
-/// Two or more remaining windows stay ambiguous, and a set that is all
-/// auxiliary or has none is judged as it stands.
+/// Several windows still left, as for an application in the background,
+/// which focuses none, resolve to the one the adapter names the
+/// application's main window. Without that, they stay ambiguous, and a set
+/// that is all auxiliary or has none is judged as it stands.
 pub(crate) fn select_app_window(
     adapter: &dyn PlatformAdapter,
     candidates: Vec<WindowInfo>,
@@ -62,14 +64,25 @@ pub(crate) fn select_app_window(
     ambiguous_message: &str,
     deadline: crate::Deadline,
 ) -> Result<WindowInfo, AppError> {
-    match select_window(candidates.clone(), empty_error.clone(), ambiguous_message) {
-        Err(AppError::Adapter(error)) if error.code == ErrorCode::AmbiguousTarget => {
-            match standard_windows(adapter, candidates, deadline) {
-                Some(standard) => select_window(standard, empty_error, ambiguous_message),
-                None => Err(AppError::Adapter(error)),
-            }
-        }
-        chosen => chosen,
+    let remaining = match narrow_window(candidates.clone()) {
+        Ok(chosen) => return Ok(chosen),
+        Err(remaining) if remaining.is_empty() => return Err(empty_error.unsent().into()),
+        Err(remaining) => remaining,
+    };
+    let mut remaining = match standard_windows(adapter, candidates, deadline) {
+        Some(standard) => match narrow_window(standard) {
+            Ok(chosen) => return Ok(chosen),
+            Err(remaining) => remaining,
+        },
+        None => remaining,
+    };
+    let main = adapter.main_window(&remaining, deadline);
+    match remaining
+        .iter()
+        .position(|window| main.as_deref() == Some(window.id.as_str()))
+    {
+        Some(index) => Ok(remaining.swap_remove(index)),
+        None => Err(ambiguous_error(&remaining, ambiguous_message)),
     }
 }
 
@@ -120,15 +133,25 @@ pub(crate) fn surface_owner_order(mut candidates: Vec<WindowInfo>) -> Vec<Window
 }
 
 pub(crate) fn select_window(
-    mut candidates: Vec<WindowInfo>,
+    candidates: Vec<WindowInfo>,
     empty_error: crate::AdapterError,
     ambiguous_message: &str,
 ) -> Result<WindowInfo, AppError> {
-    if candidates.is_empty() {
-        return Err(empty_error.unsent().into());
+    match narrow_window(candidates) {
+        Ok(chosen) => Ok(chosen),
+        Err(remaining) if remaining.is_empty() => Err(empty_error.unsent().into()),
+        Err(remaining) => Err(ambiguous_error(&remaining, ambiguous_message)),
     }
+}
+
+/// The one window the visibility, focus and accessibility rules leave, or
+/// every window still in the running when they leave none or several.
+fn narrow_window(mut candidates: Vec<WindowInfo>) -> Result<WindowInfo, Vec<WindowInfo>> {
     if candidates.len() == 1 {
         return Ok(candidates.swap_remove(0));
+    }
+    if candidates.is_empty() {
+        return Err(candidates);
     }
     if candidates
         .iter()
@@ -156,6 +179,10 @@ pub(crate) fn select_window(
             return Ok(candidates.swap_remove(0));
         }
     }
+    Err(candidates)
+}
+
+fn ambiguous_error(candidates: &[WindowInfo], ambiguous_message: &str) -> AppError {
     let summaries = candidates
         .iter()
         .take(10)
@@ -168,14 +195,14 @@ pub(crate) fn select_window(
             })
         })
         .collect::<Vec<_>>();
-    Err(crate::AdapterError::ambiguous_target(ambiguous_message)
+    crate::AdapterError::ambiguous_target(ambiguous_message)
         .with_suggestion("Run 'list-windows' and retry with --window-id <id>.")
         .with_details(json!({
             "candidate_count": candidates.len(),
             "candidate_summaries_truncated": candidates.len() > summaries.len(),
             "candidates": summaries,
         }))
-        .into())
+        .into()
 }
 
 #[cfg(test)]
@@ -185,3 +212,7 @@ mod tests;
 #[cfg(test)]
 #[path = "window_lookup_auxiliary_tests.rs"]
 mod auxiliary_tests;
+
+#[cfg(test)]
+#[path = "window_lookup_main_tests.rs"]
+mod main_tests;

@@ -30,6 +30,7 @@ pub(crate) use bus::{REGISTRY_ROOT_PATH, REGISTRY_SERVICE};
 
 pub(crate) use app::app_ops::{inventory as app_inventory, scoped as apps_scoped};
 pub(crate) use display::{list_displays, list_wayland_displays};
+pub(crate) use menu::menu_wait::menu_open;
 pub(crate) use menu::surfaces::list_surfaces;
 pub(crate) use window::window_ops::{focused_window, list_windows};
 pub(crate) use window::window_resolve::resolve_window_strict;

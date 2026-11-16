@@ -193,3 +193,26 @@ fn a_list_root_is_paged_by_the_area_around_it_and_a_pane_by_the_one_inside() {
     assert!(looks_inside_first(Some("AXGroup")));
     assert!(looks_inside_first(None));
 }
+
+#[test]
+fn an_unmoved_read_cut_short_by_the_deadline_is_no_end() {
+    let page = settle(signals(1), || signals(1), || false);
+    assert_eq!(page, ScrollPage::Unconfirmed);
+}
+
+#[test]
+fn a_displaced_step_ends_the_page_with_its_error_instead_of_settling_it() {
+    let mut displaced = || {
+        Ok(SearchStep::Displaced(
+            AdapterError::new(agent_desktop_core::ErrorCode::ActionFailed, "probe left")
+                .with_disposition(agent_desktop_core::DeliverySemantics::delivered_unverified()),
+        ))
+    };
+    let mut later =
+        || -> Result<SearchStep, AdapterError> { panic!("no step after a displaced bar") };
+    let error = send_steps(&mut [&mut displaced, &mut later], true, || {
+        panic!("settled a displaced bar as a page")
+    })
+    .unwrap_err();
+    assert_eq!(error.message, "probe left");
+}

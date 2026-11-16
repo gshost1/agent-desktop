@@ -376,7 +376,7 @@ Each of these commands now returns the adapter's own report inside `data`:
 ```
 
 - `disposition.delivery` is `delivered_verified` only after the adapter read back the postcondition it names, `delivered_unverified` after a completed dispatch without that proof, and `not_delivered` only when the adapter observed that the operation was already satisfied (for example `close-app` on an application that had already exited). `ok: true` means the command returned a delivered or already-satisfied result, not that the application effect was verified.
-- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value` on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone.
+- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value`, and for a headless `clear`, which writes through the accessibility API, on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone. A macOS `clear` on an element that already reports no characters writes nothing and returns `not_delivered` with an `AlreadyEmpty` step and no commit hint; a secure field, which hides its count, is still written.
 - `target.kind` is `window` (`id`, `title`, `process`), `app` (`name`, `process`), `pointer` (`point`), `drag` (`from`, `to`) or `clipboard`. The adapter supplies the identity it validated and used. A pointer target is the dispatch coordinate and does not prove which application received the input.
 - Request context (`x`, `y`, `count`, `dx`, `dy`, `width`, `height`, drag endpoints, `drop_delay_ms`, `type`, `app`, `method`, and a confirmed `focused`) keeps its earlier meaning. These fields echo the request and are not observed post-state.
 - Errors keep `error.disposition`. A failed `--wait-for` after a delivered operation keeps the operation's own delivery (verified, unverified, or not delivered) in `error.disposition` and carries the report under `details.after_action`.
@@ -599,18 +599,23 @@ search paged the `--root` scroll area and why it stopped:
               "stopped": "found" } } }
 ```
 
-- `pages` counts the pages sent, `directions` the directions searched in order,
-  and `view_moved` whether any page was observed to move the area. A search
+- `pages` counts the pages sent that moved the area or could not be
+  confirmed, `directions` the directions searched in order, and `view_moved`
+  whether any page was observed to move the area. A search
   that matched on its first look sends nothing: `pages: 0`, `directions: []`.
 - `unconfirmed_pages` appears when some pages were sent but their movement
-  could not be read; such a page may have moved the view.
+  could not be read, or their reads were cut short by the deadline; such a page
+  may have moved the view.
+- `pages_at_end` appears when a page was sent at an end of the area and read
+  unchanged. It is not in `pages`, but it was sent.
 - `stopped` is `found`, `both_ends` (no match between the two ends of the
   area: `match` is `null`, or `matches` is empty) or `page_cap` (200 pages).
   `found` always comes with a match.
 - The view stays where the search stopped.
 - An error that ends the search carries the same object in
-  `details.scroll_search`, with `stopped` `deadline` or `error`. Once a page may
-  have moved the view, the error's disposition is `delivered_unverified`.
+  `details.scroll_search`, with `stopped` `deadline` or `error`. Once any page
+  was sent, counted in `pages` or `pages_at_end`, the error's disposition is
+  `delivered_unverified`: a sent scroll is never retry-safe.
 
 ## Derived names
 
@@ -731,6 +736,14 @@ does not take a key yet. `dismiss-notification --key` without INDEX acts on the 
 entry wherever it now sits. An index with only `--expected-app` or
 `--expected-title` checks just those fields, so it cannot tell two entries
 with the same app and title apart. A bare index is `INVALID_ARGS`.
+
+When agent-desktop opened the notification surface itself and could not close
+it again or restore the previous focus after a mutation was sent, the
+mutation's result stands and says so: `notification-action` adds
+`details.list_restore: "unverified"`, and on macOS `dismiss-notification` and
+`dismiss-all-notifications` add `data.list_restore: "unverified"` beside
+`dismissed`. The field is absent when the cleanup succeeded. List again
+instead of repeating the old index, and close the surface with Escape.
 
 The `key` field and the `--key` flag are additive and belong to the 2.7
 contract; a consumer that ignores `key` reads the list as before.

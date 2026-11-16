@@ -91,6 +91,10 @@ impl Deadline {
         }))
     }
 
+    pub(crate) fn expires_at(self) -> Instant {
+        self.expires_at
+    }
+
     pub fn remaining(self) -> Duration {
         self.expires_at.saturating_duration_since(now())
     }

@@ -26,12 +26,12 @@ impl SystemOps for MenuWaitAdapter {
     fn wait_for_menu(
         &self,
         process: crate::ProcessIdentity,
-        open: bool,
+        wait: crate::MenuWait,
         _deadline: crate::Deadline,
     ) -> Result<(), AdapterError> {
         assert_eq!(process.pid, 42);
         assert_eq!(process.instance, "test-instance");
-        *self.open_seen.lock().unwrap() = Some(open);
+        *self.open_seen.lock().unwrap() = Some(wait.wants_open());
         Ok(())
     }
 }
@@ -83,7 +83,7 @@ impl SystemOps for ExitedMenuAdapter {
     fn wait_for_menu(
         &self,
         _process: crate::ProcessIdentity,
-        _open: bool,
+        _wait: crate::MenuWait,
         _deadline: crate::Deadline,
     ) -> Result<(), AdapterError> {
         Err(AdapterError::stale_ref_because(
@@ -142,10 +142,10 @@ impl SystemOps for BudgetProbeAdapter {
     fn wait_for_menu(
         &self,
         process: crate::ProcessIdentity,
-        open: bool,
+        wait: crate::MenuWait,
         deadline: crate::Deadline,
     ) -> Result<(), AdapterError> {
-        ExitedMenuAdapter.wait_for_menu(process, open, deadline)
+        ExitedMenuAdapter.wait_for_menu(process, wait, deadline)
     }
 
     fn process_state(

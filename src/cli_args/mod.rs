@@ -252,7 +252,7 @@ pub(crate) struct FindArgs {
     #[arg(
         long = "timeout-ms",
         value_name = "MS",
-        help = "Traversal deadline in milliseconds (default 5000; raise for a large tree such as a shell file dialog)"
+        help = "Traversal deadline in milliseconds (default 5000, or 20000 with --scroll; raise for a large tree such as a shell file dialog)"
     )]
     #[serde(default)]
     pub timeout_ms: Option<u64>,
