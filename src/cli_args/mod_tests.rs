@@ -51,10 +51,54 @@ fn find_args_cli_flags_still_resolve_through_flattened_groups() {
 fn find_accepts_a_drill_down_root_and_leaves_it_unset_by_default() {
     let scoped =
         FindArgs::try_parse_from(["find", "--root", "@s1:e4", "--role", "button"]).unwrap();
-    assert_eq!(scoped.root.as_deref(), Some("@s1:e4"));
+    assert_eq!(scoped.place.root.as_deref(), Some("@s1:e4"));
 
     let unscoped = FindArgs::try_parse_from(["find", "--role", "button"]).unwrap();
-    assert!(unscoped.root.is_none());
+    assert!(unscoped.place.root.is_none());
+}
+
+#[test]
+fn find_scroll_defaults_to_down_takes_a_direction_and_needs_a_root() {
+    let bare = FindArgs::try_parse_from(["find", "--root", "@s1:e4", "--name", "Row", "--scroll"])
+        .unwrap();
+    assert_eq!(bare.place.scroll.as_deref(), Some("down"));
+
+    let upward = FindArgs::try_parse_from([
+        "find", "--root", "@s1:e4", "--name", "Row", "--scroll", "up",
+    ])
+    .unwrap();
+    assert_eq!(upward.place.scroll.as_deref(), Some("up"));
+
+    let unrooted = FindArgs::try_parse_from(["find", "--name", "Row", "--scroll"]);
+    assert!(unrooted.is_err());
+
+    let unscrolled =
+        FindArgs::try_parse_from(["find", "--root", "@s1:e4", "--name", "Row"]).unwrap();
+    assert!(unscrolled.place.scroll.is_none());
+}
+
+#[test]
+fn find_scroll_refuses_an_unknown_direction_and_whole_list_selections_at_parse_time() {
+    let sideways = FindArgs::try_parse_from([
+        "find", "--root", "@s1:e4", "--name", "Row", "--scroll", "sideways",
+    ])
+    .unwrap_err();
+    assert_eq!(sideways.kind(), clap::error::ErrorKind::InvalidValue);
+    for flag in [
+        &["--count"][..],
+        &["--last"],
+        &["--nth", "3"],
+        &["--allow-partial"],
+    ] {
+        let mut argv = vec!["find", "--root", "@s1:e4", "--name", "Row", "--scroll"];
+        argv.extend_from_slice(flag);
+        let error = FindArgs::try_parse_from(argv).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::ArgumentConflict,
+            "{flag:?}"
+        );
+    }
 }
 
 #[test]

@@ -52,6 +52,7 @@ fn find_sheet(scene: &Scene, window: &str) -> RefEntry {
             window_id: Some(window.to_owned()),
             root: None,
             surface: SnapshotSurface::Sheet,
+            scroll: None,
         },
         filter: FindFilterArgs {
             role: Some("button".to_owned()),

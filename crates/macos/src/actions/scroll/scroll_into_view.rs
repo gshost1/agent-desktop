@@ -178,7 +178,7 @@ mod imp {
             .map_err(after_delivery)
     }
 
-    pub(super) fn declined_without_delivery(error: &AdapterError) -> bool {
+    pub(crate) fn declined_without_delivery(error: &AdapterError) -> bool {
         error.code == ErrorCode::ActionNotSupported
             && matches!(
                 error.disposition,
@@ -343,6 +343,7 @@ mod imp {
     }
 }
 
+pub(crate) use imp::declined_without_delivery;
 pub(crate) use imp::{scroll_into_view_impl, scroll_into_view_outcome};
 
 #[cfg(test)]

@@ -103,6 +103,7 @@ fn first_by_name(name: &str) -> FindArgs {
             window_id: Some("w-1".into()),
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             role: None,

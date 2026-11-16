@@ -263,3 +263,41 @@ fn only_permission_readers_pay_for_the_full_report() {
     assert!(requires_permission_report(&click));
     assert!(!requires_full_permission_report(&click));
 }
+
+#[test]
+fn a_batch_scroll_search_is_checked_like_the_command_line_before_it_runs() {
+    let report = PermissionReport {
+        accessibility: PermissionState::Granted,
+        screen_recording: PermissionState::Granted,
+        automation: PermissionState::NotRequired,
+    };
+    let find = |args: serde_json::Value| {
+        Commands::Find(serde_json::from_value(args).expect("find args deserialize"))
+    };
+    let refused = [
+        serde_json::json!({ "name": "Row", "scroll": "down" }),
+        serde_json::json!({ "name": "Row", "root": "@e1", "scroll": "down" }),
+        serde_json::json!({ "name": "Row", "root": VALID_REF_ID, "scroll": "sideways" }),
+        serde_json::json!({ "name": "Row", "root": VALID_REF_ID, "scroll": "down", "count": true }),
+        serde_json::json!({ "name": "Row", "root": VALID_REF_ID, "scroll": "down", "nth": 20 }),
+        serde_json::json!({ "name": "Row", "root": VALID_REF_ID, "scroll": "up", "last": true }),
+        serde_json::json!({
+            "name": "Row", "root": VALID_REF_ID, "scroll": "down", "allow_partial": true
+        }),
+    ];
+    for args in refused {
+        let err = preflight(&find(args.clone()), &report).expect_err("refused before it runs");
+        assert_eq!(err.code(), "INVALID_ARGS", "{args}");
+    }
+    let accepted = serde_json::json!({
+        "name": "Row", "root": VALID_REF_ID, "scroll": "down", "first": true
+    });
+    assert!(preflight(&find(accepted), &report).is_ok());
+    assert!(
+        preflight(
+            &find(serde_json::json!({ "name": "Row", "count": true })),
+            &report
+        )
+        .is_ok()
+    );
+}

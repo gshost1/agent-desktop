@@ -1,4 +1,15 @@
-use super::EditCommit;
+use super::{EditCommit, value_write_result, wrote_value_semantically};
+use agent_desktop_core::{Action, ActionStep, StepMechanism};
+
+fn headless_clear_steps() -> Vec<ActionStep> {
+    vec![
+        ActionStep::skipped("FocusThenClearByKeyboard")
+            .with_mechanism(StepMechanism::PhysicalSynthetic),
+        ActionStep::succeeded("AXValue")
+            .with_mechanism(StepMechanism::SemanticApi)
+            .with_verified(true),
+    ]
+}
 
 #[test]
 fn only_a_plain_text_field_waits_for_editing_to_end() {
@@ -43,4 +54,70 @@ fn a_text_view_is_unobserved_and_settled_only_by_the_saved_result() {
 fn an_unread_role_fails_closed_to_an_unobserved_commit() {
     assert!(EditCommit::Unread.hint().is_some());
     assert_eq!(EditCommit::from_roles(None, None), EditCommit::Immediate);
+}
+
+#[test]
+fn a_semantic_clear_of_a_field_reports_an_unobserved_commit() {
+    let result = value_write_result(&Action::Clear, headless_clear_steps(), || {
+        EditCommit::OnEndEditing
+    });
+
+    assert!(result.commit_unobserved());
+    assert_eq!(
+        result.details.as_ref().unwrap()["commit_hint"],
+        EditCommit::OnEndEditing.hint().unwrap()
+    );
+}
+
+#[test]
+fn a_semantic_clear_and_set_value_get_the_same_commit_report() {
+    let steps = vec![
+        ActionStep::succeeded("AXValue")
+            .with_mechanism(StepMechanism::SemanticApi)
+            .with_verified(true),
+    ];
+    let cleared = value_write_result(&Action::Clear, headless_clear_steps(), || {
+        EditCommit::TextView
+    });
+    let written = value_write_result(&Action::SetValue(String::new()), steps, || {
+        EditCommit::TextView
+    });
+
+    assert_eq!(cleared.details, written.details);
+    assert_eq!(cleared.disposition(), written.disposition());
+}
+
+#[test]
+fn a_keyboard_clear_is_judged_by_its_read_back() {
+    let steps = vec![
+        ActionStep::succeeded("FocusThenClearByKeyboard")
+            .with_mechanism(StepMechanism::PhysicalSynthetic)
+            .with_verified(false),
+    ];
+    let mut role_read = false;
+
+    let result = value_write_result(&Action::Clear, steps, || {
+        role_read = true;
+        EditCommit::OnEndEditing
+    });
+
+    assert!(!role_read);
+    assert!(!result.commit_unobserved());
+}
+
+#[test]
+fn a_write_to_a_search_field_is_settled_by_its_read_back() {
+    let result = value_write_result(&Action::Clear, headless_clear_steps(), || {
+        EditCommit::Immediate
+    });
+
+    assert!(!result.commit_unobserved());
+}
+
+#[test]
+fn only_a_delivered_semantic_step_counts_as_a_semantic_write() {
+    assert!(wrote_value_semantically(&headless_clear_steps()));
+    assert!(!wrote_value_semantically(&[
+        ActionStep::skipped("AXValue").with_mechanism(StepMechanism::SemanticApi)
+    ]));
 }

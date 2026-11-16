@@ -188,6 +188,7 @@ fn find_and_snapshot_reach_the_same_sheet_and_respect_an_explicit_window() {
                         window_id: window.map(str::to_owned),
                         root: None,
                         surface: crate::SnapshotSurface::Sheet,
+                        scroll: None,
                     },
                     filter: FindFilterArgs {
                         role: Some("sheet".into()),

@@ -7,6 +7,7 @@ use crate::tree::AXElement;
 const SETTLE_READS: usize = 11;
 const SETTLE_PAUSE: Duration = Duration::from_millis(25);
 const SAMPLED_CHILDREN: usize = 4;
+const AREA_CHILDREN: usize = 32;
 
 /// Reads every signal a page scroll on `direction`'s axis could move: that
 /// axis's scroll bar value, the frames of the area's first children that are
@@ -35,13 +36,13 @@ pub(super) fn capture(
     let mut sampled = 0;
     let content_children = content_children(area, deadline);
     let descendant = match &content_children {
-        Some(Some(children)) => children.first().and_then(
-            |first| match super::scroll_read::children(first, deadline) {
+        Some(Some(children)) => children.first().and_then(|first| {
+            match super::scroll_read::children_up_to(first, SAMPLED_CHILDREN, deadline) {
                 Ok(inner) if inner.is_empty() => None,
                 Ok(inner) => Some(frames_hash(sample(&inner), &mut sampled, deadline)),
                 Err(_) => Some(None),
-            },
-        ),
+            }
+        }),
         Some(None) => Some(None),
         None => None,
     };
@@ -57,7 +58,7 @@ pub(super) fn capture(
 }
 
 fn content_children(area: &AXElement, deadline: Deadline) -> Option<Option<Vec<AXElement>>> {
-    let Ok(children) = super::scroll_read::children(area, deadline) else {
+    let Ok(children) = super::scroll_read::children_up_to(area, AREA_CHILDREN, deadline) else {
         return Some(None);
     };
     let mut content = Vec::new();

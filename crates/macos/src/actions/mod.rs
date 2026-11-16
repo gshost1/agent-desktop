@@ -4,6 +4,7 @@ pub(crate) mod ax_helpers;
 pub(crate) mod ax_mutation;
 pub(crate) mod ax_perform;
 pub(crate) mod chain;
+pub(crate) mod clear_probe;
 pub(crate) mod delivery_tracker;
 pub(crate) mod dispatch;
 pub(crate) mod edit_commit;

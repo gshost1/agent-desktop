@@ -170,6 +170,7 @@ fn find_materializes_refs_from_the_application_surface() {
                 window_id: None,
                 root: None,
                 surface: SnapshotSurface::Menubar,
+                scroll: None,
             },
             filter: find::FindFilterArgs {
                 role: Some("menuitem".into()),

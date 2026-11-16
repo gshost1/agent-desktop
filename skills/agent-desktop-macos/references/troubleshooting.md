@@ -126,6 +126,7 @@ Replace `@s1:e1` and `@s2:e1` with the `ref_id` each `find` returns. While a pan
 | `NOTIFICATION_NOT_FOUND` | The index moved after a dismiss | Run `list-notifications` again |
 | Banner gone before you list it | Banners are transient | Use `wait --notification --app "App"` |
 | A dismissed item is replaced by another | Notifications from one app are stacked | Dismiss again. `dismiss-all-notifications` may need more than one round |
+| Notification Center stays open after a dismiss or action that succeeded | Closing the center or restoring focus afterwards failed; the mutation was sent and its result stands with `list_restore: "unverified"` (in `details` for `notification-action`, in `data` for the dismiss commands) | List again instead of repeating the old index, and close the center with Escape |
 | Calendar widget stays | It is a system widget, not a notification | Expected |
 
 The dismiss chain runs in order: the `AXDismiss` and `AXRemoveFromParent` actions, then a close button named close, clear or dismiss, then hover to reveal a hidden close button and press it. `AXPress` is never used, because it opens the source app and does not dismiss.

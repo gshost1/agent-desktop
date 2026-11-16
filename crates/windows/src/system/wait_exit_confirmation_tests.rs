@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use agent_desktop_core::{AdapterError, Deadline, ErrorCode, ProcessId};
+use agent_desktop_core::{AdapterError, Deadline, ErrorCode, MenuWait, ProcessId};
 
 use super::super::{
     EXIT_CONFIRMATION_SLICE, forced_predicate_error, forced_process_death, settle_predicate_error,
@@ -25,8 +25,12 @@ fn a_target_that_exits_after_the_liveness_rechecks_still_surfaces_as_stale_ref()
     forced_process_death::arm_after(2);
     forced_predicate_error::arm(unresponsive("menu_probe_window_not_pumping"));
 
-    let error = wait_for_menu(identity, true, Deadline::after(10_000).expect("deadline"))
-        .expect_err("a target that exits during teardown must not report a satisfied wait");
+    let error = wait_for_menu(
+        identity,
+        MenuWait::opened(),
+        Deadline::after(10_000).expect("deadline"),
+    )
+    .expect_err("a target that exits during teardown must not report a satisfied wait");
 
     assert_eq!(error.code, ErrorCode::StaleRef, "{error:?}");
 }
