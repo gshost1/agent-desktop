@@ -65,7 +65,8 @@ fn recovery_for_code(
     }
     let process_exited = details
         .and_then(|details| details.get("process_state"))
-        .is_some_and(|state| state == "exited");
+        .and_then(Value::as_str)
+        .is_some_and(crate::system::process_state::ProcessState::names_a_gone_process);
     match code {
         ErrorCode::StaleRef if process_exited => Some(RecoveryHint {
             strategy: "inspect_state_then_retry_original".into(),

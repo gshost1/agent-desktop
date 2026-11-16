@@ -58,3 +58,19 @@ fn running_and_unresponsive_serialize_as_tag_only() {
         serde_json::json!({ "state": "unresponsive" })
     );
 }
+
+#[test]
+fn only_exited_and_crashed_labels_name_a_gone_process() {
+    assert!(ProcessState::names_a_gone_process(
+        ProcessState::Exited { code: Some(0) }.label()
+    ));
+    assert!(ProcessState::names_a_gone_process(
+        ProcessState::Crashed { signal_or_code: 11 }.label()
+    ));
+    assert!(!ProcessState::names_a_gone_process(
+        ProcessState::Running.label()
+    ));
+    assert!(!ProcessState::names_a_gone_process(
+        ProcessState::Unresponsive.label()
+    ));
+}

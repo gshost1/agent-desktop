@@ -17,13 +17,14 @@ pub(crate) fn stale_ref_error(_entry: &RefEntry) -> AdapterError {
 /// first attempt instead of re-running resolution to the outer deadline and
 /// reporting a bare `TIMEOUT` that discards the diagnosis (A14-4 measured
 /// ~5s at the default budget for a defect this stamp settles in one pass).
-/// `ErrorCode::StaleRef` on a `not_delivered` disposition already carries the
-/// `refresh_snapshot_then_retry_original` recovery hint (`output.rs`'s
-/// `recovery_for_code`), so nothing further needs attaching here.
+/// `process_state: exited` over complete evidence makes it a complete absence
+/// in core, so the envelope carries the `inspect_state_then_retry_original`
+/// recovery despite the stamp: relaunch the app, then take a new snapshot.
 #[cfg(target_os = "windows")]
 pub(crate) fn owning_process_exited_error(_entry: &RefEntry) -> AdapterError {
     AdapterError::stale_ref_because("Stored ref's owning process has exited").with_details(json!({
         "kind": "resolve_owning_process_exited",
+        "process_state": "exited",
         "complete": true,
         "retryable": false,
     }))

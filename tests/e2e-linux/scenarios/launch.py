@@ -138,7 +138,9 @@ def recovery_strategy_on_error(ctx: LegContext) -> None:
     assert details.get("process_state") == "exited", envelope.raw
     assert details.get("retryable") is False, envelope.raw
     assert error.get("disposition") == {"delivery": "not_delivered", "retry": "safe"}, envelope.raw
-    assert "recovery" not in error, envelope.raw
+    recovery = error.get("recovery") or {}
+    assert recovery.get("strategy") == "inspect_state_then_retry_original", envelope.raw
+    assert recovery.get("requires_fresh_snapshot") is True, envelope.raw
     ctx.restored("proc.calculator", read())
 
 

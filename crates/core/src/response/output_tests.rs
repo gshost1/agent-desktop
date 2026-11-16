@@ -339,3 +339,55 @@ fn an_unproven_or_partial_stale_ref_stamped_not_retryable_carries_no_recovery() 
         .with_details(json!({ "kind": "saved_ref_absent", "retryable": false, "complete": true }));
     assert_eq!(recovery_strategy(timeout), None);
 }
+
+/// A crashed owner is as gone as an exited one: a new snapshot of it answers
+/// `APP_NOT_FOUND`, so the recovery is to inspect and relaunch first.
+#[test]
+fn a_complete_absence_of_a_crashed_owner_carries_the_inspect_state_recovery() {
+    let crashed = AdapterError::stale_ref_because("The application is no longer running")
+        .with_details(json!({
+            "kind": "saved_ref_absent",
+            "process_state": "crashed",
+            "retryable": false,
+            "complete": true,
+        }));
+    assert_eq!(
+        recovery_strategy(crashed).as_deref(),
+        Some("inspect_state_then_retry_original")
+    );
+}
+
+/// A platform kind outside the absence list still counts when its
+/// `process_state` names a gone owner, as the Windows owning-process refusal
+/// does.
+#[test]
+fn a_platform_owner_exit_over_complete_evidence_carries_the_inspect_state_recovery() {
+    let exited = AdapterError::stale_ref_because("Stored ref's owning process has exited")
+        .with_details(json!({
+            "kind": "resolve_owning_process_exited",
+            "process_state": "exited",
+            "retryable": false,
+            "complete": true,
+        }));
+    assert_eq!(
+        recovery_strategy(exited).as_deref(),
+        Some("inspect_state_then_retry_original")
+    );
+}
+
+/// Recovery is offered only when retry is safe: the same complete absence on
+/// a disposition that may have delivered carries none.
+#[test]
+fn a_complete_absence_on_an_unsafe_disposition_carries_no_recovery() {
+    for disposition in [
+        crate::DeliverySemantics::uncertain(),
+        crate::DeliverySemantics::delivered_unverified(),
+    ] {
+        let absent = AdapterError::stale_ref_because("No live element matches")
+            .with_disposition(disposition)
+            .with_details(
+                json!({ "kind": "saved_ref_absent", "retryable": false, "complete": true }),
+            );
+        assert_eq!(recovery_strategy(absent), None);
+    }
+}
