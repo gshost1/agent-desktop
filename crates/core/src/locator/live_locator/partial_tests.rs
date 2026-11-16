@@ -67,12 +67,12 @@ fn observed(name: &str, token: Option<&str>, fully_observed: bool) -> LocatorMat
         entry,
         screen_bounds: None,
         fully_observed,
-        logical_depth: 1,
     }
 }
 
 fn incomplete(matches: Vec<LocatorMatch>) -> LocatorResolution {
     LocatorResolution {
+        match_depth: None,
         matches,
         refmap: None,
         stats: LocatorStats::default(),

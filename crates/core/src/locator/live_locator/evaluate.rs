@@ -3,7 +3,7 @@ use super::{
     LocatorResolveRequest, ObservedTree,
     compiled_clause::{CompiledClause, compile_clauses},
     evaluation_buffers::EvaluationBuffers,
-    match_depth::{MatchedClause, match_depth},
+    match_depth::{MatchVerdicts, shallowest_match_depth},
     match_verdict::MatchVerdict,
     materialize::{materialize_refmap, ref_entry},
     predicate::{normalize_query, self_text_verdict, self_verdict},
@@ -90,7 +90,7 @@ pub(super) fn evaluate_locator_tree_in(
     let pick = selected.first().copied();
     let mut complete = tree.structurally_complete && !unknown;
     let refmap = match request.materialization {
-        LocatorMaterialization::None => None,
+        LocatorMaterialization::None | LocatorMaterialization::MatchDepth => None,
         LocatorMaterialization::SelectedMatches => {
             let (refmap, materialization_complete) =
                 materialize_refmap(&mut tree, &normalized, Some(&selected))?;
@@ -105,12 +105,17 @@ pub(super) fn evaluate_locator_tree_in(
         }
     };
     let proof = crate::refs::ref_capture_proof::CaptureProof::new(&tree);
-    let matched_clause = MatchedClause {
-        clause: &clauses[root_clause],
-        index: root_clause,
-        count: clauses.len(),
-        subtree_text: &subtree_text,
-    };
+    let match_depth = (request.materialization == LocatorMaterialization::MatchDepth)
+        .then(|| {
+            let verdicts = MatchVerdicts {
+                clauses: &clauses,
+                matches: &matches,
+                subtree_matches: &subtree_matches,
+                subtree_text: &subtree_text,
+            };
+            shallowest_match_depth(&tree, &matched_indices, root_clause, &verdicts)
+        })
+        .flatten();
     let mut selected_matches = Vec::with_capacity(selected.len());
     for index in selected {
         let data = match_data(&tree, index, &parents)
@@ -129,8 +134,6 @@ pub(super) fn evaluate_locator_tree_in(
                 &node.evidence,
                 entry.geometry.bounds_space.unwrap_or_default(),
             ),
-            logical_depth: match_depth(&tree, index, &matched_clause)
-                .unwrap_or(request.max_raw_depth),
             entry,
         });
     }
@@ -186,6 +189,7 @@ pub(super) fn evaluate_locator_tree_in(
                 roles_present,
                 exact_name_unproven,
             },
+            match_depth,
         },
         tree,
     ))

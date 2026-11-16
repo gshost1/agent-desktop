@@ -142,11 +142,13 @@ fn acted_on_among(
 }
 
 /// The front window an application command acts in when no window is
-/// focused. Among the accessible, unminimized windows the platform does not
-/// report hidden, the ones the adapter reports as auxiliary, such as a
-/// floating inspector, are set aside as an `--app` window choice sets them
-/// aside, since a command acts in a document window or dialog; a set that is
-/// all auxiliary or has none is taken as it stands.
+/// focused, chosen as an `--app` window choice is. Among the accessible,
+/// unminimized windows the platform does not report hidden, the ones the
+/// adapter reports as auxiliary, such as a floating inspector, are set aside,
+/// since a command acts in a document window or dialog; a set that is all
+/// auxiliary or has none is taken as it stands. Of several left, the one the
+/// adapter names the application's main window is taken, and failing that
+/// the first the platform lists as visible.
 fn front_standard_window(
     adapter: &dyn PlatformAdapter,
     windows: &[WindowInfo],
@@ -166,7 +168,13 @@ fn front_standard_window(
         _ => crate::system::window_lookup::standard_windows(adapter, shown.clone(), deadline)
             .unwrap_or(shown),
     };
-    let front = front_window(&candidates)?;
+    let main = match candidates.len() {
+        0 | 1 => None,
+        _ => adapter.main_window(&candidates, deadline),
+    };
+    let front = main
+        .and_then(|id| candidates.iter().find(|window| window.id == id))
+        .or_else(|| front_window(&candidates))?;
     windows.iter().position(|window| window.id == front.id)
 }
 

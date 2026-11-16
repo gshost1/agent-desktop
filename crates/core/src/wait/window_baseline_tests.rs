@@ -162,6 +162,13 @@ impl ObservationOps for PanelWindows {
     fn is_auxiliary_window(&self, window: &WindowInfo, _deadline: Deadline) -> bool {
         window.id.starts_with("panel")
     }
+
+    fn main_window(&self, windows: &[WindowInfo], _deadline: Deadline) -> Option<String> {
+        windows
+            .iter()
+            .find(|window| window.id.starts_with("main"))
+            .map(|window| window.id.clone())
+    }
 }
 
 impl ActionOps for PanelWindows {}
@@ -211,4 +218,25 @@ fn a_panel_stays_the_front_window_beside_a_hidden_document_or_other_panels() {
 
     assert_eq!(beside_hidden, ["panel-inspector"]);
     assert_eq!(only_panels, ["panel-inspector"]);
+}
+
+#[test]
+fn with_no_window_focused_the_command_acts_in_the_main_window_among_documents() {
+    let acted = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("w-first", Some(true)),
+        shown("main-document", Some(true)),
+    ]);
+
+    assert_eq!(acted, ["main-document"]);
+}
+
+#[test]
+fn without_a_main_window_the_command_acts_in_the_first_listed_document() {
+    let acted = acted_on_ids(vec![
+        shown("w-first", Some(true)),
+        shown("w-second", Some(true)),
+    ]);
+
+    assert_eq!(acted, ["w-first"]);
 }

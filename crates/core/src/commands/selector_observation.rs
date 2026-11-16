@@ -8,8 +8,8 @@ use crate::{
 };
 
 pub(crate) enum SelectorObservation {
-    /// `depth` is how far below the read's root the first match sits, and
-    /// zero when nothing matched.
+    /// `depth` is how deep a snapshot of the read's root must reach to hold
+    /// its shallowest match, and zero when nothing matched.
     Selector {
         matches: bool,
         complete: bool,
@@ -55,7 +55,7 @@ impl SelectorObservation {
             deadline,
             max_raw_depth: 50,
             surface: (surface != SnapshotSurface::Window).then_some(surface),
-            materialization: LocatorMaterialization::None,
+            materialization: LocatorMaterialization::MatchDepth,
         };
         match window_capture::first_surface_owner(owners, |owner| {
             resolve_query(adapter, query, owner.observation_root(surface), &request)
@@ -63,10 +63,7 @@ impl SelectorObservation {
             Ok((_, resolution)) => Ok(Self::Selector {
                 matches: resolution.meta.total_matches > 0,
                 complete: resolution.meta.selection_complete,
-                depth: resolution
-                    .matches
-                    .first()
-                    .map_or(request.max_raw_depth, |found| found.logical_depth),
+                depth: resolution.match_depth.unwrap_or(request.max_raw_depth),
             }),
             Err(error) if surface_target::is_confirmed_surface_absence(&error, surface) => {
                 Ok(Self::absent())
