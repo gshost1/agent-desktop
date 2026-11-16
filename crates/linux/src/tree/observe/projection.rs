@@ -7,6 +7,7 @@ use agent_desktop_core::{
 
 use super::decorate::Decorate;
 use crate::tree::capabilities::action_names::capabilities;
+use crate::tree::capabilities::headless_routes::HeadlessRoutes;
 use crate::tree::capabilities::value_read::truncate_to_boundary;
 use crate::tree::vocabulary::resolve_vocabulary;
 use crate::tree::{Extents, Field, ObservedRead, Walk, WalkLimits, WalkedNode};
@@ -75,6 +76,7 @@ fn value_of(read: &ObservedRead) -> LocatorField<String> {
 struct Projector<'a> {
     limits: &'a WalkLimits,
     stats: LocatorStats,
+    routes: &'a HeadlessRoutes,
 }
 
 impl Projector<'_> {
@@ -151,6 +153,7 @@ impl Projector<'_> {
     ) -> ObservedSubtree {
         let mut evidence = self.evidence_of(&node.payload, node.in_web_document);
         visibility.append(&node.payload, &mut evidence);
+        self.routes.withhold(&node, &mut evidence);
         let wrapper = crate::tree::walk::wrapper::classify(&node.payload).wrapper;
         let WalkedNode {
             payload,
@@ -184,7 +187,9 @@ impl Projector<'_> {
 
 /// The evidence of one node read, exactly as a walk projects it: a ref taken
 /// from a snapshot and a node read later through this function agree on every
-/// field the node's own reads decide.
+/// field the node's own reads decide, except `available_actions` on a toolkit
+/// whose headless routes refuse a token. A snapshot leaves that token out; this
+/// live read keeps it, because a headed request can still deliver it.
 pub(crate) fn project_node(
     read: &ObservedRead,
     in_web_document: bool,
@@ -193,6 +198,7 @@ pub(crate) fn project_node(
     Projector {
         limits,
         stats: LocatorStats::default(),
+        routes: &HeadlessRoutes::unread(),
     }
     .evidence_of(read, in_web_document)
 }
@@ -205,20 +211,31 @@ pub(crate) fn project(
     walk: Walk<ObservedRead>,
     limits: &WalkLimits,
 ) -> (ObservedSubtree, LocatorStats) {
-    project_with(walk, limits, &mut super::decorate::Plain, None)
+    project_with(
+        walk,
+        limits,
+        &mut super::decorate::Plain,
+        None,
+        &HeadlessRoutes::unread(),
+    )
 }
 
-/// `project`, with a hook that may decorate nodes and append its own.
+/// `project`, with a hook that may decorate nodes and append its own, and
+/// the routes that withhold the tokens the observed application's toolkit
+/// refuses headless. Only a snapshot projects through it; a node read for an
+/// action goes through `project_node` and keeps every token.
 pub(crate) fn project_with(
     walk: Walk<ObservedRead>,
     limits: &WalkLimits,
     decorate: &mut dyn Decorate,
     displays: Option<&[Extents]>,
+    routes: &HeadlessRoutes,
 ) -> (ObservedSubtree, LocatorStats) {
     decorate.prepare(&walk.root);
     let mut projector = Projector {
         limits,
         stats: LocatorStats::default(),
+        routes,
     };
     let counts = walk.counts;
     projector.stats.traversal.nodes_visited = walk.node_count as u64;

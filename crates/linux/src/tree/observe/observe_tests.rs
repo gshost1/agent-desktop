@@ -29,7 +29,7 @@ pub(super) fn observe_plain(
                     (walker.borrow_mut())(element, whole, deadline)
                 })
             },
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(false),
             stopped: &|_| false,
             pause: &mut |_| {},
@@ -381,7 +381,7 @@ fn optional_display_completion_runs_after_the_accessibility_walk() {
                 one_node_walk(limits)
             },
             scan: &mut super::never_scans,
-            place: &mut |_| Ok(()),
+            place: &mut |_| Ok(None),
             is_web_process: &|_| Ok(false),
             stopped: &|_| false,
             pause: &mut |_| {},

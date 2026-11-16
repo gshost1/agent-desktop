@@ -1,10 +1,11 @@
 use crate::{
     AdapterError, AdapterSession, AppInfo, CursorOverlayControl, Deadline,
-    DismissAllNotificationsRequest, DismissNotificationRequest, ImageBuffer, InteractionLease,
-    InteractionPolicy, KeyCombo, NotificationActionRequest, NotificationFilter, NotificationInfo,
-    OperationReport, PermissionReport, PermissionState, ProcessIdentity, SessionAffinity,
-    SignalBaseline, SignalFilter, WindowInfo, WindowOp, actions::action_result::ActionResult,
-    system::display_info::DisplayInfo, system::screenshot_target::ScreenshotTarget,
+    DismissAllNotificationsRequest, DismissAllOutcome, DismissNotificationRequest, ImageBuffer,
+    InteractionLease, InteractionPolicy, KeyCombo, NotificationActionRequest, NotificationFilter,
+    NotificationInfo, NotificationOutcome, OperationReport, PermissionReport, PermissionState,
+    ProcessIdentity, SessionAffinity, SignalBaseline, SignalFilter, WindowInfo, WindowOp,
+    actions::action_result::ActionResult, system::display_info::DisplayInfo,
+    system::screenshot_target::ScreenshotTarget,
 };
 
 pub trait SystemOps: Send + Sync {
@@ -23,10 +24,8 @@ pub trait SystemOps: Send + Sync {
         Err(AdapterError::not_supported("acquire_interaction_lease"))
     }
 
-    /// An adapter that never overrides this has not probed permissions at all,
-    /// which is not the same fact as a user denying one. `Unknown` routes through
-    /// `unknown_accessibility_means_unsupported` to `PLATFORM_NOT_SUPPORTED`
-    /// rather than the misleading `PERM_DENIED`.
+    /// An adapter that never overrides this has not probed permissions, which is not a denial:
+    /// `Unknown` routes to `PLATFORM_NOT_SUPPORTED` rather than the misleading `PERM_DENIED`.
     fn permission_report(&self, _deadline: Deadline) -> Result<PermissionReport, AdapterError> {
         Ok(PermissionReport {
             accessibility: PermissionState::Unknown,
@@ -198,16 +197,11 @@ pub trait SystemOps: Send + Sync {
         Ok(None)
     }
 
-    /// Raises an OS-chrome surface - the Start menu, the Action Center, the
-    /// taskbar - and returns the identity of the window the surface actually
-    /// presents, in the same shape the window observation stack consumes. It
-    /// takes the lease because it mutates OS chrome and takes the foreground;
-    /// the policy travels separately because the lease carries no
-    /// focus-steal refusal. Implementations that raise anything must refuse with
-    /// `POLICY_DENIED` first when `policy.allow_focus_steal` is false, must
-    /// return an already-present surface without raising it again, and
-    /// must answer a kind their platform does not expose with a refusal that
-    /// names what a caller should ask for instead - never with this default.
+    /// Raises an OS-chrome surface (Start menu, Action Center, taskbar) and returns the window it
+    /// presents. It takes the lease because it mutates OS chrome; the policy travels apart because
+    /// the lease carries no focus-steal refusal. It refuses with `POLICY_DENIED` first when
+    /// `policy.allow_focus_steal` is false, returns an already-present surface without raising it
+    /// again, and answers a kind its platform lacks with a refusal naming what to ask for instead.
     fn open_system_surface(
         &self,
         _surface: crate::adapter::SnapshotSurface,
@@ -217,12 +211,9 @@ pub trait SystemOps: Send + Sync {
         Err(AdapterError::not_supported("open_system_surface"))
     }
 
-    /// Opens adapter-native connection affinity for a persistent host.
-    ///
-    /// The returned session may retain platform connection state, but never a
-    /// resolved element handle. Stateless command callers do not need to open a
-    /// session. Adapters without persistent native state return
-    /// `PLATFORM_NOT_SUPPORTED`.
+    /// Opens adapter-native connection affinity for a persistent host. The session may keep
+    /// connection state but never a resolved element handle; stateless callers need none, and
+    /// adapters without persistent native state return `PLATFORM_NOT_SUPPORTED`.
     fn open_session(
         &self,
         _affinity: &SessionAffinity,
@@ -231,14 +222,10 @@ pub trait SystemOps: Send + Sync {
         Err(AdapterError::not_supported("open_session"))
     }
 
-    /// Captures a point-in-time [`SignalBaseline`] snapshot,
-    /// narrowed by `filter` when the caller already knows which app it cares
-    /// about. `deadline` is one absolute budget shared by every native read in
-    /// the capture; an adapter must return `TIMEOUT` rather than publish an
-    /// observation completed at or after it. `wait --event` calls this once at
-    /// wait-start and again on every poll, then diffs the two snapshots with
-    /// `crate::diff_signals` — the adapter never decides what changed,
-    /// only what the desktop looks like right now.
+    /// Captures a point-in-time [`SignalBaseline`], narrowed by `filter`. `deadline` bounds every
+    /// native read; an adapter returns `TIMEOUT` rather than publish an observation completed at
+    /// or after it. `wait --event` captures at start and on every poll and diffs them with
+    /// `crate::diff_signals`: the adapter reports what the desktop looks like, never what changed.
     fn capture_signal_baseline(
         &self,
         _filter: &SignalFilter,
@@ -256,21 +243,15 @@ pub trait SystemOps: Send + Sync {
         Err(AdapterError::not_supported("close_app"))
     }
 
-    /// Reports whether closing `identifier` would terminate a process the OS
-    /// depends on (window server, login session, shell). The set is
-    /// inherently platform-specific, so each adapter owns its own list;
-    /// core only asks. The default denies nothing.
+    /// Reports whether closing `identifier` would end a process the OS depends on (window
+    /// server, login session, shell). Each adapter owns its list; the default denies nothing.
     fn is_protected_process(&self, _identifier: &str) -> bool {
         false
     }
 
-    /// Reports whether `combo` is a platform-dangerous keyboard shortcut that
-    /// should be refused unless the caller explicitly forces it (for example
-    /// macOS Cmd+Q quit, Ctrl+Cmd+Q lock, Cmd+Alt+Esc force-quit). Which
-    /// combos are dangerous — and how key names alias to physical keys — is
-    /// platform-specific, so each adapter owns its own list; core only asks
-    /// and lets the caller override via `--force`. The default blocks nothing,
-    /// leaving the decision entirely to the calling agent.
+    /// Reports whether `combo` is a platform-dangerous shortcut refused unless the caller passes
+    /// `--force` (macOS Cmd+Q quit, Ctrl+Cmd+Q lock, Cmd+Alt+Esc force-quit). Each adapter owns
+    /// its list and key aliases; the default blocks nothing.
     fn is_blocked_combo(&self, _combo: &KeyCombo) -> bool {
         false
     }
@@ -324,10 +305,11 @@ pub trait SystemOps: Send + Sync {
         )
     }
 
+    /// Polls the menu of `process` and feeds each whole read to `wait`, which decides.
     fn wait_for_menu(
         &self,
         _process: ProcessIdentity,
-        _open: bool,
+        _wait: crate::MenuWait,
         _deadline: Deadline,
     ) -> Result<(), AdapterError> {
         Err(AdapterError::not_supported("wait_for_menu"))
@@ -382,6 +364,26 @@ pub trait SystemOps: Send + Sync {
         _lease: &InteractionLease,
     ) -> Result<(Vec<NotificationInfo>, Vec<String>), AdapterError> {
         Err(AdapterError::not_supported("dismiss_all_notifications"))
+    }
+
+    /// `dismiss_notification` with whether the surface it opened was put back afterwards.
+    fn dismiss_notification_reported(
+        &self,
+        request: DismissNotificationRequest<'_>,
+        lease: &InteractionLease,
+    ) -> Result<NotificationOutcome<NotificationInfo>, AdapterError> {
+        self.dismiss_notification(request, lease)
+            .map(NotificationOutcome::from)
+    }
+
+    /// `dismiss_all_notifications` with whether the surface it opened was put back afterwards.
+    fn dismiss_all_notifications_reported(
+        &self,
+        request: DismissAllNotificationsRequest<'_>,
+        lease: &InteractionLease,
+    ) -> Result<DismissAllOutcome, AdapterError> {
+        self.dismiss_all_notifications(request, lease)
+            .map(NotificationOutcome::from)
     }
 
     fn notification_action(

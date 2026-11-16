@@ -9,4 +9,5 @@ pub(crate) mod headed_focus;
 pub(crate) mod headed_requirement;
 pub mod interaction_policy;
 pub(crate) mod post_action;
+pub mod scroll_page;
 pub mod step_mechanism;

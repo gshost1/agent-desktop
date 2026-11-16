@@ -80,7 +80,7 @@ Searches by role, name, value, text, description, native id, or state, and retur
 ```bash
 agent-desktop find [--app NAME] [--window-id ID] [--role ROLE] [--name TEXT] [--value TEXT] \
                    [--text TEXT] [--description TEXT] [--native-id ID] [--exact] \
-                   [--state TOKEN[=BOOL]]... [--root REF] [--surface KIND] [--timeout-ms MS] \
+                   [--state TOKEN[=BOOL]]... [--root REF [--scroll [DIRECTION]]] [--surface KIND] [--timeout-ms MS] \
                    [--count | --first | --last | --nth N | --limit N]
 ```
 
@@ -99,8 +99,9 @@ agent-desktop find [--app NAME] [--window-id ID] [--role ROLE] [--name TEXT] [--
     <tr><td><code>--exact</code></td><td>off</td><td>Case-insensitive equality instead of a fuzzy match.</td></tr>
     <tr><td><code>--state TOKEN[=BOOL]</code></td><td>none</td><td>Filter by a state, repeatable. A bare token means true. Tokens: <code>focused</code>, <code>disabled</code>, <code>secure</code>, <code>expanded</code>, <code>checked</code>, <code>selected</code>, <code>hidden</code>, <code>busy</code>, <code>modal</code>, <code>required</code>, <code>indeterminate</code>, <code>pressed</code>, <code>readonly</code>, <code>offscreen</code>, <code>invalid</code>, <code>multiselectable</code>, <code>haspopup</code>.</td></tr>
     <tr><td><code>--root REF</code></td><td>none</td><td>Search one ref's subtree. See <a href="/desktop/skeleton-and-drill-down#scope-a-search">Scope a search</a>.</td></tr>
+    <tr><td><code>--scroll [DIRECTION]</code></td><td>off; <code>down</code> when given bare</td><td>Page the <code>--root</code> list or scroll area headlessly until a match loads. See <a href="#lists-that-load-as-you-scroll">Lists that load as you scroll</a>.</td></tr>
     <tr><td><code>--surface KIND</code></td><td><code>window</code></td><td>Search an overlay. Cannot combine with <code>--root</code>.</td></tr>
-    <tr><td><code>--timeout-ms MS</code></td><td><code>5000</code></td><td>Traversal deadline.</td></tr>
+    <tr><td><code>--timeout-ms MS</code></td><td><code>5000</code>, <code>20000</code> with <code>--scroll</code></td><td>Traversal deadline.</td></tr>
     <tr><td><code>--count</code></td><td>off</td><td>Return the match count only.</td></tr>
     <tr><td><code>--first</code>, <code>--last</code>, <code>--nth N</code></td><td>off</td><td>Return one match: the first, the last, or zero-based index <code>N</code>.</td></tr>
     <tr><td><code>--limit N</code></td><td><code>50</code></td><td>Return at most <code>N</code> matches. <code>0</code> returns all. Use <code>--limit 2</code> before a mutation to check the match is unique.</td></tr>
@@ -132,6 +133,16 @@ agent-desktop find --app gnome-calculator --role button --name 7 --exact --first
 ```
 
 When a `--role` filter matches nothing, `roles_present` lists the roles in the searched tree, which tells a wrong role name from an empty screen. Errors specific to `find`: `INVALID_ARGS` for conflicting shaping flags, `--root` with `--surface`, or an unknown `--state` token; `TIMEOUT` with `details.kind: "locator_incomplete"` when the traversal ran out of budget, which does not mean the app hangs. Raise `--timeout-ms` or narrow the search.
+
+### Lists that load as you scroll
+
+A list that builds rows only near its viewport, such as a long font or photo grid, does not expose the rows it has not loaded, so a snapshot or a plain `find` cannot see them. `--scroll` pages the `--root` area without moving the pointer, looks again after each page, and turns back at the end:
+
+```bash
+agent-desktop find --root @s8f3k2p9:e9 --name "Report 2024" --exact --first --scroll
+```
+
+It stops at the first match, at both ends of the area, after 200 pages, or at `--timeout-ms` (default 20000 with `--scroll`). The result is the usual find data plus `data.scroll`, which says how many pages it sent, whether the view moved and why it stopped; no match after both ends is `ok: true` with `stopped: "both_ends"`. The view stays where the search stopped. `--scroll` needs `--root` and cannot combine with `--count`, `--last`, `--nth` or `--allow-partial`, which need the whole list. In `batch` JSON the direction is a string: `"scroll": "down"`. Paging is supported on macOS; elsewhere, and for a `web` surface ref, a search that needs a page returns `PLATFORM_NOT_SUPPORTED` with `details.scroll_search`. The fields are in [JSON output](/desktop/json-output#find-results).
 
 ## get
 

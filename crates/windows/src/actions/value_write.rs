@@ -1,5 +1,9 @@
 //! ValuePattern / RangeValuePattern writes for `SetValue` and `Clear`.
 //!
+//! A classic Win32 edit, or a combo box's edit, takes the text through
+//! [`crate::actions::edit_control`] instead of `ValuePattern.SetValue`, so its
+//! owner is told that the text changed.
+//!
 //! Verification re-reads route through [`gated_pattern_value_equals`] /
 //! [`gated_pattern_range_equals`] so an `IsPassword` element never calls
 //! `get_value` (A19-3). Error echoes carry `value_chars` counts, never text.
@@ -30,6 +34,8 @@ pub(crate) struct SetValuePlan<'a> {
     pub(crate) value: &'a str,
     pub(crate) value_writable: bool,
     pub(crate) range_available: bool,
+    /// The text rung writes a classic edit through `EM_REPLACESEL`.
+    pub(crate) edit_control: bool,
 }
 
 #[cfg(target_os = "windows")]
@@ -40,6 +46,7 @@ mod imp {
         VALUE_LABEL, VALUE_WRITE_CHAIN, execute_chain,
     };
     use crate::actions::chain::{after_delivery, gated};
+    use crate::actions::edit_control::{EDIT_LABEL, EditTarget, edit_target, write_edit};
     use crate::actions::mutation::{classify_success, classify_write};
     use crate::tree::properties::element_properties::ElementProperties;
     use crate::tree::properties::property_ids::TreeProperty;
@@ -54,15 +61,20 @@ mod imp {
         deadline: Deadline,
     ) -> Result<Vec<ActionStep>, AdapterError> {
         let parsed = parse_finite_f64(value);
+        let (writable, edit) = writable_target(element, value, deadline);
         set_value_judged_for(
             deadline,
             policy,
             SetValuePlan {
                 value,
-                value_writable: value_writable(element),
+                value_writable: writable,
                 range_available: range_available(element),
+                edit_control: edit.handle().is_some(),
             },
-            || invoke_value_set(element, value),
+            || match edit.handle() {
+                Some(handle) => write_edit(element, handle, value, deadline),
+                None => invoke_value_set(element, value),
+            },
             || match parsed {
                 Some(target) => invoke_range_set(element, target),
                 None => Ok(DeliveryOutcome::NotDelivered),
@@ -75,9 +87,26 @@ mod imp {
         policy: InteractionPolicy,
         deadline: Deadline,
     ) -> Result<Vec<ActionStep>, AdapterError> {
-        let value_ok = value_writable(element);
-        clear_judged_for(deadline, policy, value_ok, || invoke_value_set(element, ""))
-            .map_err(|error| attach_value_chars(error, ""))
+        let (value_ok, edit) = writable_target(element, "", deadline);
+        let edit_control = edit.handle().is_some();
+        clear_judged_for(deadline, policy, value_ok, edit_control, || {
+            match edit.handle() {
+                Some(handle) => write_edit(element, handle, "", deadline),
+                None => invoke_value_set(element, ""),
+            }
+        })
+        .map_err(|error| attach_value_chars(error, ""))
+    }
+
+    fn writable_target(
+        element: &UIAElement,
+        value: &str,
+        deadline: Deadline,
+    ) -> (bool, EditTarget) {
+        if !value_writable(element) {
+            return (false, EditTarget::NotEdit);
+        }
+        (true, edit_target(element, value, deadline))
     }
 
     /// Injected SetValue chain — unit-test seam and live path.
@@ -97,7 +126,7 @@ mod imp {
             policy,
             &mut [
                 ChainRung {
-                    label: VALUE_LABEL,
+                    label: value_rung_label(plan.edit_control),
                     requires_headed: false,
                     run: &mut value_run,
                 },
@@ -116,6 +145,7 @@ mod imp {
         deadline: Deadline,
         policy: InteractionPolicy,
         value_writable: bool,
+        edit_control: bool,
         mut value_write: impl FnMut() -> Result<DeliveryOutcome, AdapterError>,
     ) -> Result<Vec<ActionStep>, AdapterError> {
         let mut value_run = gated(value_writable, &mut value_write);
@@ -124,11 +154,19 @@ mod imp {
             &CLEAR_CHAIN,
             policy,
             &mut [ChainRung {
-                label: VALUE_LABEL,
+                label: value_rung_label(edit_control),
                 requires_headed: false,
                 run: &mut value_run,
             }],
         )
+    }
+
+    fn value_rung_label(edit_control: bool) -> &'static str {
+        if edit_control {
+            EDIT_LABEL
+        } else {
+            VALUE_LABEL
+        }
     }
 
     pub(crate) fn value_writable(element: &UIAElement) -> bool {

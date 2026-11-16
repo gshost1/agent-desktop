@@ -14,6 +14,7 @@ fn args(allow_partial: bool, count: bool) -> FindArgs {
             window_id: None,
             root: None,
             surface: crate::SnapshotSurface::Window,
+            scroll: None,
         },
         filter: FindFilterArgs {
             role: None,

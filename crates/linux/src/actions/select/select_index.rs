@@ -4,18 +4,10 @@ use crate::actions::context::Target;
 use crate::actions::write::mutation::{Fault, WriteKind, WriteReply, fault_of};
 use crate::actions::write::write_call::{Call, invoke};
 use crate::system::{ACCESSIBLE_INTERFACE, within};
-use crate::tree::properties::toolkit_trust::{ToolkitKind, is_gecko, kind};
+use crate::tree::properties::toolkit_trust::selection_indices_are_accessible;
 use crate::tree::{AtspiElement, list_children};
 
 pub(in crate::actions) const UNPROVEN_INDEX_KIND: &str = "selection_index_unproven";
-
-fn supports_indices(toolkit: &crate::system::process::toolkit_id::ToolkitId) -> bool {
-    match kind(toolkit) {
-        ToolkitKind::Gtk4 => false,
-        ToolkitKind::Other => is_gecko(toolkit),
-        _ => true,
-    }
-}
 
 pub(crate) trait IndexLookup {
     fn accessible_indices(&self) -> bool;
@@ -68,7 +60,7 @@ impl IndexLookup for Target<'_> {
             self.element,
             self.deadline,
         );
-        supports_indices(&toolkit)
+        selection_indices_are_accessible(&toolkit)
     }
 
     fn counted_indices(&self) -> Result<bool, AdapterError> {
@@ -211,7 +203,7 @@ mod tests {
             Ok(WriteReply::Done)
         }
         fn accessible_indices(&self) -> bool {
-            supports_indices(&crate::system::process::toolkit_id::ToolkitId {
+            selection_indices_are_accessible(&crate::system::process::toolkit_id::ToolkitId {
                 name: Some(self.toolkit.into()),
                 version: Some("4.14.5".into()),
             })

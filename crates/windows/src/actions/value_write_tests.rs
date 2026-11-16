@@ -16,6 +16,7 @@ fn set_value_verified_when_readback_equals() {
             value: "hello",
             value_writable: true,
             range_available: false,
+            edit_control: false,
         },
         || {
             value.set(value.get() + 1);
@@ -47,6 +48,7 @@ fn unequal_readback_stops_without_reaching_range_value() {
             value: "77",
             value_writable: true,
             range_available: true,
+            edit_control: false,
         },
         || {
             value_calls.set(value_calls.get() + 1);
@@ -74,6 +76,7 @@ fn range_value_numeric_on_value_less_control() {
             value: "77",
             value_writable: false,
             range_available: true,
+            edit_control: false,
         },
         || Ok(DeliveryOutcome::DeliveredVerified),
         || Ok(DeliveryOutcome::DeliveredVerified),
@@ -94,6 +97,7 @@ fn unparsable_range_value_exhausts_honestly() {
             value: "not-a-number",
             value_writable: false,
             range_available: true,
+            edit_control: false,
         },
         || Ok(DeliveryOutcome::NotDelivered),
         || {
@@ -128,6 +132,7 @@ fn error_envelope_carries_value_chars_never_marker_text() {
             value: MARKER,
             value_writable: false,
             range_available: false,
+            edit_control: false,
         },
         || Ok(DeliveryOutcome::NotDelivered),
         || Ok(DeliveryOutcome::NotDelivered),
@@ -148,4 +153,24 @@ fn error_envelope_carries_value_chars_never_marker_text() {
             .and_then(|details| details.get("value_chars")),
         Some(&serde_json::json!(MARKER.chars().count()))
     );
+}
+
+#[test]
+fn an_edit_control_write_records_the_replace_rung() {
+    let steps = set_value_judged_for(
+        deadline(5_000),
+        InteractionPolicy::headless(),
+        SetValuePlan {
+            value: "C:\\out\\name.txt",
+            value_writable: true,
+            range_available: false,
+            edit_control: true,
+        },
+        || Ok(DeliveryOutcome::DeliveredVerified),
+        || Ok(DeliveryOutcome::NotDelivered),
+    )
+    .expect("set-value");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].label(), crate::actions::edit_control::EDIT_LABEL);
+    assert_eq!(steps[0].verified(), Some(true));
 }

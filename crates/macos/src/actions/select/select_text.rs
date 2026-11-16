@@ -4,9 +4,12 @@
 //! selection never lands on a guess: no occurrence and several occurrences are
 //! refused before anything is written. The range is written to
 //! `AXSelectedTextRange` in UTF-16 code units, the unit AppKit text ranges use,
-//! and the selection is read back until it equals the requested range. A
-//! read-back that names a different range fails the action; only a selection
-//! that cannot be read at all leaves the write delivered but unverified.
+//! and the selection is read back until it equals the requested range. The
+//! value is then read again and the text at that range must still be the
+//! requested text, because a range alone does not prove what it covers. A
+//! read-back that names a different range or different text fails the action;
+//! only a selection or value that cannot be read leaves the write delivered
+//! but unverified.
 
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 use std::ops::Range;
@@ -14,18 +17,25 @@ use std::ops::Range;
 const SELECTED_RANGE: &str = "AXSelectedTextRange";
 const REPORTED_OFFSETS: usize = 10;
 
-/// Where `wanted` occurs in `text`, as UTF-16 ranges.
+/// Where `wanted` occurs in `text`, as UTF-16 ranges, overlapping
+/// occurrences included: `ana` occurs twice in `banana`.
 pub(crate) fn utf16_occurrences(text: &str, wanted: &str) -> Vec<Range<usize>> {
     if wanted.is_empty() {
         return Vec::new();
     }
     let length = wanted.encode_utf16().count();
-    text.match_indices(wanted)
-        .map(|(byte, _)| {
-            let start = text[..byte].encode_utf16().count();
-            start..start + length
-        })
-        .collect()
+    let mut found = Vec::new();
+    let mut counted_byte = 0;
+    let mut counted_units = 0;
+    let mut from = 0;
+    while let Some(offset) = text[from..].find(wanted) {
+        let byte = from + offset;
+        counted_units += text[counted_byte..byte].encode_utf16().count();
+        counted_byte = byte;
+        found.push(counted_units..counted_units + length);
+        from = byte + text[byte..].chars().next().map_or(1, char::len_utf8);
+    }
+    found
 }
 
 /// The single range to select, or the refusal that explains why none is.
@@ -152,7 +162,50 @@ pub(crate) fn select_text_in(
     let text = searchable_text(read)?;
     let range = unique_range(&text, wanted)?;
     target.write_selection(&range, deadline)?;
-    verify_range(target, &range, deadline)
+    if !verify_range(target, &range, deadline)? {
+        return Ok(false);
+    }
+    verify_selected_text(target, &range, wanted, deadline)
+}
+
+#[cfg(target_os = "macos")]
+fn verify_selected_text(
+    target: &impl TextSelectionTarget,
+    range: &Range<usize>,
+    wanted: &str,
+    deadline: Deadline,
+) -> Result<bool, AdapterError> {
+    match target.read_value(deadline) {
+        Ok(Some(text)) if text.complete => selected_text_matches(&text.value, range, wanted),
+        _ => Ok(false),
+    }
+}
+
+/// What the element's text at the selected range proves about the selection:
+/// verified when it is still the requested text, a delivered failure when the
+/// text there changed after it was searched.
+pub(crate) fn selected_text_matches(
+    text: &str,
+    range: &Range<usize>,
+    wanted: &str,
+) -> Result<bool, AdapterError> {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let selected = units.get(range.clone()).map(String::from_utf16_lossy);
+    if selected.as_deref() == Some(wanted) {
+        return Ok(true);
+    }
+    Err(AdapterError::new(
+        ErrorCode::ActionFailed,
+        "The selection landed on the requested range but the text there is no longer the text to select",
+    )
+    .with_details(serde_json::json!({
+        "kind": "selection_text_changed",
+        "requested": { "start": range.start, "end": range.end },
+    }))
+    .with_suggestion(
+        "The field's text changed while selecting. Take a fresh snapshot, read the field's value and selection, and decide the next step from what they show.",
+    )
+    .with_disposition(DeliverySemantics::delivered_unverified()))
 }
 
 #[cfg(target_os = "macos")]

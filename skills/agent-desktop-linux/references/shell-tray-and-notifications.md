@@ -136,7 +136,7 @@ prove it. Advertised surfaces require a resolvable structural container.
 - Shell snapshots need no `--app`. `list-surfaces` inventories an app selected
   with `--app`. Shell containers do not appear in `list-windows`.
 - Role shape and uniqueness find the message list and the date menu that opens
-  it. English labels, wrapper depth and screen position prove nothing. A shell read that keeps losing a node refuses with `shell_container_unproven`; retry once the shell settles.
+  it. English labels, wrapper depth and screen position prove nothing. A shell read that keeps losing a node refuses with `shell_container_unproven`. Before the opener was pressed it sent nothing, so run the command again once the shell settles; after the press it is `delivered_unverified`, so run `list-surfaces` before you open or close it again, because the opener toggles.
 - Other containers and the system-button opener return `ACTION_NOT_SUPPORTED`,
   `shell_container_unproven`, before input. Opening a hidden popup headless
   still requires headed permission.

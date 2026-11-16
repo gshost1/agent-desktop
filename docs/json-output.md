@@ -376,7 +376,7 @@ Each of these commands now returns the adapter's own report inside `data`:
 ```
 
 - `disposition.delivery` is `delivered_verified` only after the adapter read back the postcondition it names, `delivered_unverified` after a completed dispatch without that proof, and `not_delivered` only when the adapter observed that the operation was already satisfied (for example `close-app` on an application that had already exited). `ok: true` means the command returned a delivered or already-satisfied result, not that the application effect was verified.
-- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value` on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone.
+- A value write that reads back but whose commit the platform cannot see stays `delivered_unverified` with `details.application_commit: "unobserved"`, `details.verification_reason: "edit_commit_unobserved"` and `details.commit_hint`. macOS reports it for `set-value`, and for a headless `clear`, which writes through the accessibility API, on a plain text field, whose app may take the text only when editing ends, on a text area, whose document may take the text when editing ends or not at all, and when the element's role cannot be read after the write. A search field, secure field or pop-up button is settled by the read-back alone. A macOS `clear` on an element that already reports no characters writes nothing and returns `not_delivered` with an `AlreadyEmpty` step and no commit hint; a secure field, which hides its count, is still written.
 - `target.kind` is `window` (`id`, `title`, `process`), `app` (`name`, `process`), `pointer` (`point`), `drag` (`from`, `to`) or `clipboard`. The adapter supplies the identity it validated and used. A pointer target is the dispatch coordinate and does not prove which application received the input.
 - Request context (`x`, `y`, `count`, `dx`, `dy`, `width`, `height`, drag endpoints, `drop_delay_ms`, `type`, `app`, `method`, and a confirmed `focused`) keeps its earlier meaning. These fields echo the request and are not observed post-state.
 - Errors keep `error.disposition`. A failed `--wait-for` after a delivered operation keeps the operation's own delivery (verified, unverified, or not delivered) in `error.disposition` and carries the report under `details.after_action`.
@@ -414,7 +414,7 @@ A complete menu lookup with no surface returns `ELEMENT_NOT_FOUND` with `details
 
 When a ref action returns `delivery_uncertain` with a post-action wait selector, `error.details.post_action_observation` records a read-only observation of the original process. Application-owned refs keep their source surface. Window-owned refs observe their original pinned window, including refs captured from `sheet`, `alert`, `popover`, `focused`, or a window-owned `menu` such as a Linux menu. A web ref, captured on the `web` surface, is observed on its page over the same DevTools endpoint rather than the window's native tree, so browser UI outside the page, such as a JavaScript dialog, is not seen; run `snapshot --surface window` with the selector to wait on it. This lets a closed overlay be observed without treating the parent window as absent. The action is never repeated, and its original error and unsafe retry disposition stay unchanged. Even `expected_state_observed` does not prove that the action caused the state. Observation uses `--wait-timeout` separately from the action timeout.
 
-A post-action `--wait-for` that follows a ref, either window-owned or on an application-owned surface such as a macOS menu bar, ends before its budget when it cannot succeed: `APP_NOT_FOUND` with `details.kind: "wait_target_gone"` and `details.process_state` (`exited` or `crashed`) when the ref's process is gone, and `APP_UNRESPONSIVE` with `details.kind: "wait_owner_unresponsive"` and `details.unresponsive_ms` when every read failed as unresponsive for 5 s and the platform's process check then reported the process unresponsive. Both carry `predicate`, `selector`, `elapsed_ms`, `timeout_ms` and `details.after_action`, and keep the action's delivery disposition. A window or overlay read that fails with `PERM_DENIED`, as when accessibility permission is revoked, or with an `APP_UNRESPONSIVE` not marked retryable, ends the wait with that error, `details.after_action` and the action's delivery disposition unless another window or overlay read in the same poll matched; it is never counted as a closed window. A failed window listing is not such a read: the wait goes on polling. A menu bar ref with no focused window reads the first accessible visible window of its process. On success the snapshot may be of a window the action opened, or of a sheet, alert or popover open on any window of the ref's process instance; `data.window` names the window that holds it.
+A post-action `--wait-for` that follows a ref, either window-owned or on an application-owned surface such as a macOS menu bar, ends before its budget when it cannot succeed: `APP_NOT_FOUND` with `details.kind: "wait_target_gone"` and `details.process_state` (`exited` or `crashed`) when the ref's process is gone, and `APP_UNRESPONSIVE` with `details.kind: "wait_owner_unresponsive"` and `details.unresponsive_ms` when every read failed as unresponsive for 5 s and the platform's process check then reported the process unresponsive. Both carry `predicate`, `selector`, `elapsed_ms`, `timeout_ms` and `details.after_action`, and keep the action's delivery disposition. A window or overlay read that fails with `PERM_DENIED`, as when accessibility permission is revoked, or with an `APP_UNRESPONSIVE` not marked retryable, ends the wait with that error, `details.after_action` and the action's delivery disposition unless another window or overlay read in the same poll matched; it is never counted as a closed window. A failed window listing is not such a read: the wait goes on polling. A menu bar ref with no focused window reads the first accessible visible window of its process. On success the snapshot may be of a window the action opened, of a sheet, alert or popover open on any window of the ref's process instance, or of the menu that process has open where menus are window-owned (not macOS); `data.window` names the window that holds it.
 
 | Field | Meaning |
 | --- | --- |
@@ -587,6 +587,36 @@ could hide an earlier whole-name match (see above):
 - Without the flag the data has no `complete` field, and an incomplete walk is
   still `TIMEOUT`.
 
+### Scroll search
+
+`find --scroll` adds `data.scroll` to the usual find data. It says how far the
+search paged the `--root` scroll area and why it stopped:
+
+```json
+{ "data": { "snapshot_id": "s8f3k2p9",
+  "match": { "ref_id": "@s8f3k2p9:e1", "role": "button", "name": "Row 300" },
+  "scroll": { "pages": 48, "view_moved": true, "directions": ["down"],
+              "stopped": "found" } } }
+```
+
+- `pages` counts the pages sent that moved the area or could not be
+  confirmed, `directions` the directions searched in order, and `view_moved`
+  whether any page was observed to move the area. A search
+  that matched on its first look sends nothing: `pages: 0`, `directions: []`.
+- `unconfirmed_pages` appears when some pages were sent but their movement
+  could not be read, or their reads were cut short by the deadline; such a page
+  may have moved the view.
+- `pages_at_end` appears when a page was sent at an end of the area and read
+  unchanged. It is not in `pages`, but it was sent.
+- `stopped` is `found`, `both_ends` (no match between the two ends of the
+  area: `match` is `null`, or `matches` is empty) or `page_cap` (200 pages).
+  `found` always comes with a match.
+- The view stays where the search stopped.
+- An error that ends the search carries the same object in
+  `details.scroll_search`, with `stopped` `deadline` or `error`. Once any page
+  was sent, counted in `pages` or `pages_at_end`, the error's disposition is
+  `delivered_unverified`: a sent scroll is never retry-safe.
+
 ## Derived names
 
 A `row`, `treeitem` or `cell` that no accessible-name source names, but whose
@@ -706,6 +736,14 @@ does not take a key yet. `dismiss-notification --key` without INDEX acts on the 
 entry wherever it now sits. An index with only `--expected-app` or
 `--expected-title` checks just those fields, so it cannot tell two entries
 with the same app and title apart. A bare index is `INVALID_ARGS`.
+
+When agent-desktop opened the notification surface itself and could not close
+it again or restore the previous focus after a mutation was sent, the
+mutation's result stands and says so: `notification-action` adds
+`details.list_restore: "unverified"`, and on macOS `dismiss-notification` and
+`dismiss-all-notifications` add `data.list_restore: "unverified"` beside
+`dismissed`. The field is absent when the cleanup succeeded. List again
+instead of repeating the old index, and close the surface with Escape.
 
 The `key` field and the `--key` flag are additive and belong to the 2.7
 contract; a consumer that ignores `key` reads the list as before.

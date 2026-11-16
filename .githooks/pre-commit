@@ -93,7 +93,7 @@ EOF
 fi
 
 if [ "$HAS_RUST_CHANGES" -eq 0 ] && [ "$HAS_FFI_CHANGES" -eq 0 ]; then
-    if staged_matches '^(tests/e2e-linux/|scripts/|\.githooks/|\.github/workflows/)' "$staged_files"; then
+    if staged_matches '^(tests/e2e-linux/|scripts/|skills/|\.githooks/|\.github/workflows/)' "$staged_files"; then
         echo "pre-commit: checking harness and script files"
         scripts/check-bash3-compat.sh
         scripts/check-no-phase-references.sh

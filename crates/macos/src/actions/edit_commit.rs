@@ -7,9 +7,14 @@
 //! saved result settles it. A search field filters on the write itself, and a
 //! secure field cannot be read, so neither is reported as waiting for a
 //! commit. The rule keys on the raw accessibility role and subrole, never on
-//! the application.
+//! the application. It applies to every value write that reached the element
+//! through the accessibility API, `set-value` and `clear` alike; a clear sent
+//! as keystrokes goes through the field's own editor and is judged by its
+//! read-back like typed text.
 
-use agent_desktop_core::Deadline;
+use agent_desktop_core::{
+    Action, ActionResult, ActionStep, ActionStepOutcome, Deadline, StepMechanism,
+};
 
 const FIELD_HINT: &str = "The field shows the new text, but an app may take it only when editing ends. Before you save or confirm, run `focus` on another field in the same window to end the edit, then check the result. Do not press Return in the field: it can submit a form or press a default button.";
 
@@ -47,6 +52,32 @@ impl EditCommit {
             Self::TextView => Some(TEXT_VIEW_HINT),
             Self::Unread => Some(UNREAD_HINT),
         }
+    }
+}
+
+/// True when a step wrote the value through the accessibility API.
+pub(crate) fn wrote_value_semantically(steps: &[ActionStep]) -> bool {
+    steps.iter().any(|step| {
+        matches!(step.outcome, ActionStepOutcome::Succeeded)
+            && step.mechanism() == Some(StepMechanism::SemanticApi)
+    })
+}
+
+/// The result of a value write, marked as waiting for the application's
+/// commit when the write went through the accessibility API and the
+/// element's role says the app may take it only when editing ends.
+pub(crate) fn value_write_result(
+    action: &Action,
+    steps: Vec<ActionStep>,
+    read_commit: impl FnOnce() -> EditCommit,
+) -> ActionResult {
+    let hint = wrote_value_semantically(&steps)
+        .then(read_commit)
+        .and_then(EditCommit::hint);
+    let result = ActionResult::from_execution(action, steps);
+    match hint {
+        Some(hint) => result.with_commit_unobserved(hint),
+        None => result,
     }
 }
 
