@@ -112,6 +112,10 @@ impl ObservationOps for MacOSAdapter {
         crate::system::window::window_subrole::is_auxiliary_window(window, deadline)
     }
 
+    fn main_window(&self, windows: &[WindowInfo], deadline: Deadline) -> Option<String> {
+        crate::system::window::window_main::main_window(windows, deadline)
+    }
+
     fn list_apps(&self, deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
         crate::system::app::app_inventory::list_apps_complete_until(
             crate::tree::locator_deadline::from_operation(deadline)?,
