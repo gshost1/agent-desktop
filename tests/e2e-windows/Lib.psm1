@@ -93,7 +93,7 @@ function Find-Target {
 }
 
 function Find-TargetMatches {
-    <# Cardinality-preserving sibling of Find-Target: omits --first - plural data.matches[]/data.total_matches. #>
+    <# Cardinality-preserving sibling of Find-Target: omits --first. find saves no snapshot_id when no match is ref-bearing, so Count counts every match and Targets holds only the ref-bearing ones. #>
     [CmdletBinding()]
     param(
         [string]$App, [string]$WindowId, [string]$NativeId, [string]$Name, [string]$Role,
@@ -113,8 +113,8 @@ function Find-TargetMatches {
         if ($envelope['ok'] -eq $true) {
             $matchList = $envelope['data']['matches']
             $snapshotId = $envelope['data']['snapshot_id']
-            if ($matchList -and $snapshotId) {
-                $targets = @($matchList | ForEach-Object { [pscustomobject]@{ RefId = $_['ref_id']; SnapshotId = $snapshotId } })
+            if ($matchList) {
+                $targets = @($matchList | Where-Object { $_['ref_id'] -and $snapshotId } | ForEach-Object { [pscustomobject]@{ RefId = $_['ref_id']; SnapshotId = $snapshotId } })
                 return [pscustomobject]@{ Targets = $targets; Count = [int]$envelope['data']['total_matches']; SnapshotId = $snapshotId }
             }
         }
