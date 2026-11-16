@@ -49,7 +49,7 @@ function Invoke-AgentDesktop {
         throw "Invoke-AgentDesktop: '$($Arguments -join ' ')' produced no stdout to parse (ExitCode=$($result.ExitCode), TimedOut=$($result.TimedOut), OutputLimited=$($result.OutputLimited)); stderr: $($result.StdErr.Trim())"
     }
     $envelope = ConvertFrom-AgentJson -Json $result.StdOut
-    if ($envelope['ok'] -ne $true -and $envelope['error']) { Set-LastErrorEnvelope -Text "$($envelope['error']['code']): $($envelope['error']['message']) (command: $($Arguments[0]))" }
+    if ($envelope['ok'] -ne $true -and $envelope['error']) { Set-LastErrorEnvelope -Text "$($envelope['error']['code']): $($envelope['error']['message']) (command: $(@($Arguments | Where-Object { $_ -notlike '-*' })[0]))" }
     if ($RequireOk -and $envelope['ok'] -ne $true) {
         throw "Invoke-AgentDesktop: setup command '$($Arguments -join ' ')' on $Description failed: $($envelope['error']['code'])"
     }
