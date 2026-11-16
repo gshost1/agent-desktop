@@ -628,14 +628,16 @@ jobs:
           $env:AGENT_DESKTOP_BINARY_PATH = (Resolve-Path 'target/release/agent-desktop.exe').Path
           Push-Location npm
           npm pack
-          $tarball = Get-ChildItem -Filter 'agent-desktop-*.tgz' | Select-Object -First 1
+          $tarball = Get-ChildItem -Filter 'deskref-*.tgz' | Select-Object -First 1
           if (-not $tarball) { Write-Host 'FAIL: npm pack produced no tarball'; exit 1 }
           Pop-Location
           $prefix = Join-Path $env:RUNNER_TEMP 'npm-arm64-prefix'
           npm install -g $tarball.FullName --prefix $prefix
           if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: npm install exited $LASTEXITCODE"; exit $LASTEXITCODE }
-          & (Join-Path $prefix 'agent-desktop.cmd') version
-          if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: agent-desktop version through the npm shim exited $LASTEXITCODE"; exit $LASTEXITCODE }
+          foreach ($command in 'agent-desktop', 'deskref') {
+            & (Join-Path $prefix "$command.cmd") version
+            if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: $command version through the npm shim exited $LASTEXITCODE"; exit $LASTEXITCODE }
+          }
           Write-Host 'OK: the win32-arm64 table entry resolves and runs through the npm shim'
 
       - name: Guard profile isolation

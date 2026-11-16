@@ -1,3 +1,0 @@
-### Performance
-
-* On macOS, `list-windows --app` and the owner lookup of every `snapshot --app`, web snapshots included, confirm through libproc that each selected process is still the one the first AppKit read named, instead of taking a second AppKit workspace snapshot. On the bench Mac with Chrome, the median `snapshot --app "Google Chrome" --surface web -i --lines` went from 31.0 ms to 26.5 ms and `list-windows --app "Google Chrome"` from 30.9 ms to 27.1 ms. An owner that exited or relaunched still makes the read retry, and a pid libproc cannot read still gets the second snapshot. ([#137](https://github.com/gshost1/agent-desktop/pull/137))

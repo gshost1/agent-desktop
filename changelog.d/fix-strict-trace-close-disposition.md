@@ -1,3 +1,0 @@
-### Bug Fixes
-
-* Under `--trace-strict`, a command that sends input and whose closing trace record fails after its own result left delivery `unknown` (a mutation that timed out, an internal error) now fails with `delivery_uncertain` and an unsafe retry. When the recording was full, the trace error's `INVALID_ARGS` code was read as an argument refusal raised before anything ran, and the envelope said `not_delivered` with a safe retry, so an agent could repeat an action that may have landed. A delivery the command reported, and an `INVALID_ARGS` refusal raised before any focus or scroll, keep their disposition. ([#175](https://github.com/gshost1/agent-desktop/pull/175))

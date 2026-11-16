@@ -1,3 +1,0 @@
-### Bug Fixes
-
-* A post-action `--wait-for` on a window-owned ref now follows the action into the windows its process opened after the action, so a selector in a dialog the click opened matches instead of burning the whole budget; once the ref's window closes it reads every window of that process. It ends at once with `APP_NOT_FOUND` (`details.kind: "wait_target_gone"`) when the process exits, and with `APP_UNRESPONSIVE` (`wait_owner_unresponsive`) when its reads have failed for 5 s and the platform's process check confirms it is unresponsive. The `--wait-timeout` default drops from 30000 to 10000 ms. ([#162](https://github.com/gshost1/agent-desktop/pull/162))

@@ -1,3 +1,0 @@
-### Bug Fixes
-
-* On macOS, `focus-window --app`, `screenshot --app`, `minimize`, `maximize`, `restore`, `move-window` and `resize-window --app`, and `press --headed --app` now choose among the standard windows and dialogs when the app has several windows and none is the focused one, as `snapshot`, `find` and `wait` already did. They failed `AMBIGUOUS_TARGET` while an unfocused app showed a floating panel or a search field's suggestion list beside its document window. Two standard windows still fail `AMBIGUOUS_TARGET`, a focused panel is still chosen, and `--window-id` still names the exact window. Windows and Linux report no auxiliary windows, so their choice is unchanged.

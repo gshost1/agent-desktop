@@ -1,13 +1,13 @@
 # Installing agent-desktop
 
-Install the `agent-desktop` npm package with npm, pnpm, Yarn, or Bun. It needs Node 18 or later and bundles native executables and platform helpers for macOS, Windows, and Linux, on x64 and ARM64:
+Install the `deskref` npm package with npm, pnpm, Yarn, or Bun. It needs Node 18 or later and bundles native executables and platform helpers for macOS, Windows, and Linux, on x64 and ARM64. It installs one executable under two command names, `deskref` and `agent-desktop`:
 
 ```bash
-npm install -g agent-desktop
+npm install -g deskref
 agent-desktop version
 ```
 
-Without `-g`, the command goes to `./node_modules/.bin` instead of your PATH. Run it with `npx agent-desktop`, or install globally.
+Without `-g`, the commands go to `./node_modules/.bin` instead of your PATH. Run them with `npx deskref`, or install globally.
 
 ## Homebrew
 
@@ -35,10 +35,10 @@ with `command -v agent-desktop` on macOS/Linux or `Get-Command agent-desktop` on
 The npm package's `postinstall` script replaces the Node launcher with a link to the native binary. Some package managers block install scripts, and npm 12 does by default. Then every call runs through the Node launcher, which adds about 125 ms. The launcher prints a one-time notice to stderr. Allow the script and reinstall:
 
 ```bash
-npm install -g agent-desktop --allow-scripts=agent-desktop
+npm install -g deskref --allow-scripts=deskref
 ```
 
-For a project install, run `npm install-scripts approve agent-desktop` inside the project, then `npm rebuild agent-desktop`. The approve command only edits the project's `package.json` and fails for a global install.
+For a project install, run `npm install-scripts approve deskref` inside the project, then `npm rebuild deskref`. The approve command only edits the project's `package.json` and fails for a global install.
 
 ## Release archives
 

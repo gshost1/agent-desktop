@@ -47,7 +47,7 @@ if sys.argv[1] == "pack":
     print("package.tgz")
 else:
     prefix = pathlib.Path(sys.argv[sys.argv.index("--prefix") + 1])
-    installed = prefix / "lib/node_modules/agent-desktop/bin"
+    installed = prefix / "lib/node_modules/deskref/bin"
     installed.mkdir(parents=True, exist_ok=True)
     native = installed / "agent-desktop-linux-x64"
     native.write_text({binary_script!r})
@@ -55,6 +55,7 @@ else:
     os.link(native, installed / "agent-desktop")
     (prefix / "bin").mkdir(parents=True, exist_ok=True)
     os.symlink(installed / "agent-desktop", prefix / "bin/agent-desktop")
+    os.symlink(installed / "agent-desktop", prefix / "bin/deskref")
     pathlib.Path(os.environ["AD_CURL_DOUBLE_LOG"]).write_text("/agent-desktop-v1-x86_64-unknown-linux-gnu.tar.gz\\n/checksums.txt\\n")
 ''')
                 executable("python3", f'''#!{sys.executable}

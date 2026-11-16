@@ -1,14 +1,18 @@
 {
-  "name": "agent-desktop",
-  "version": "1.4.0",
+  "name": "deskref",
+  "version": "1.5.0",
   "description": "Reliable computer use for AI agents — observe and operate desktop apps via native accessibility trees",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vercel-labs/agent-desktop.git"
+    "url": "git+https://github.com/gshost1/agent-desktop.git"
   },
-  "homepage": "https://github.com/vercel-labs/agent-desktop",
+  "homepage": "https://github.com/gshost1/agent-desktop#readme",
+  "bugs": {
+    "url": "https://github.com/gshost1/agent-desktop/issues"
+  },
   "bin": {
+    "deskref": "bin/agent-desktop",
     "agent-desktop": "bin/agent-desktop"
   },
   "scripts": {

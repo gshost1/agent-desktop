@@ -19,7 +19,7 @@ macOS, Windows, and Linux. The [platform table in the README](../README.md#platf
 ## How do I install agent-desktop?
 
 ```bash
-npm install -g agent-desktop
+npm install -g deskref    # installs the deskref and agent-desktop commands
 ```
 
 [Installation](https://agent-browser.dev/desktop/installation) covers the other package managers, release archives, and building from source. [docs/install.md](install.md) has the same details for GitHub readers.

@@ -78,18 +78,21 @@ fi
 
 PREFIX="$WORK/prefix"
 AGENT_DESKTOP_BINARY_PATH="$ROOT/$SOURCE" npm install -g "$TARBALL" --prefix "$PREFIX" --no-audit --no-fund
-INSTALLED_BIN="$PREFIX/lib/node_modules/agent-desktop/bin"
+INSTALLED_BIN="$PREFIX/lib/node_modules/deskref/bin"
 if ! [ "$INSTALLED_BIN/agent-desktop" -ef "$INSTALLED_BIN/${NAME}" ]; then
   echo "Installed bin entry is not the native binary ${NAME}" >&2
   exit 1
 fi
-PATH="$PREFIX/bin:/usr/bin:/bin" agent-desktop version > "$WORK/installed-version.json"
-EXPECTED_OS="$EXPECTED_OS" node -e "
-  const json = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
-  if (json.ok !== true || typeof json.data?.version !== 'string') {
-    throw new Error('installed agent-desktop command did not return version JSON');
-  }
-  if (json.data.os !== process.env.EXPECTED_OS) {
-    throw new Error('installed agent-desktop reported os ' + json.data.os + ', expected ' + process.env.EXPECTED_OS);
-  }
-" "$WORK/installed-version.json"
+for COMMAND in agent-desktop deskref; do
+  PATH="$PREFIX/bin:/usr/bin:/bin" "$COMMAND" version > "$WORK/installed-version-$COMMAND.json"
+  EXPECTED_OS="$EXPECTED_OS" node -e "
+    const json = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+    const command = process.argv[2];
+    if (json.ok !== true || typeof json.data?.version !== 'string') {
+      throw new Error('installed ' + command + ' command did not return version JSON');
+    }
+    if (json.data.os !== process.env.EXPECTED_OS) {
+      throw new Error('installed ' + command + ' reported os ' + json.data.os + ', expected ' + process.env.EXPECTED_OS);
+    }
+  " "$WORK/installed-version-$COMMAND.json" "$COMMAND"
+done

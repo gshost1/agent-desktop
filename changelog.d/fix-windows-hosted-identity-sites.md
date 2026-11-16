@@ -1,3 +1,0 @@
-### Bug Fixes
-
-* On Windows, `list-surfaces`, `close-app` and the unresponsive-app check now read an `ApplicationFrameHost`-hosted app, such as Settings, under the identity `list-windows` reports. `list-surfaces --app SystemSettings.exe` listed no surface and now lists the frame as `window` and `focused`. `close-app SystemSettings.exe` ended in `TIMEOUT` with Settings still running and now closes it through its frame (`delivered_verified`). The hang check now reads the hosted `CoreWindow`, whose thread is the app's, not the frame, whose thread is the frame host's. The frame host's title bar and other hosted apps' frames stay excluded. ([#221](https://github.com/gshost1/agent-desktop/pull/221))
