@@ -260,27 +260,26 @@ function Invoke-SplitIntegrityActivationLeg {
            foreground with nothing else competing for it on this desktop,
            which would make a Medium focus-window's `ok:true` ambiguous
            between "it genuinely activated the window" and "it was already
-           there." Any other real top-level window on the desktop is stolen
-           to the foreground first, through the same raw
-           Set-NativeForegroundWindow this harness already uses for R14
+           there." Foreground is stolen first onto the harness's own
+           contender window (Invoke-WithForegroundStolen) through the same
+           raw Set-NativeForegroundWindow this harness uses for R14
            preconditions - never through the product - and the steal is
            verified before the leg proceeds. #>
-        [void](Set-NativeForegroundAwayFrom -ExcludeHandle $fixtureHandle)
-        $beforeForeground = Get-NativeForegroundWindowHandle
-        if ($beforeForeground -eq $fixtureHandle) {
-            throw 'Invoke-SplitIntegrityActivationLeg: could not steal foreground away from the fixture before the leg - the precondition would be unfalsifiable'
-        }
+        Invoke-WithForegroundStolen -ExcludeHandle $fixtureHandle -Body {
+            $beforeForeground = Get-NativeForegroundWindowHandle
+            if ($beforeForeground -eq $fixtureHandle) { throw 'Invoke-SplitIntegrityActivationLeg: could not steal foreground away from the fixture before the leg - the precondition would be unfalsifiable' }
 
-        $medium = Invoke-StagedAgentDesktop -IntegrityLevel Medium -FilePath (Get-SplitIntegrityStagedBinary) -InheritLeaseHandle $LeaseHandle `
-            -Arguments @('focus-window', '--window-id', $windowId) -TimeoutSeconds 20
-        Assert-StagingConfirmedMedium -Staging $medium.Staging
-        if ($medium.Envelope['ok'] -ne $true) {
-            throw "Invoke-SplitIntegrityActivationLeg: expected Medium focus-window to succeed (measured behavior), got ok=false code=$($medium.Envelope['error']['code'])"
-        }
+            $medium = Invoke-StagedAgentDesktop -IntegrityLevel Medium -FilePath (Get-SplitIntegrityStagedBinary) -InheritLeaseHandle $LeaseHandle `
+                -Arguments @('focus-window', '--window-id', $windowId) -TimeoutSeconds 20
+            Assert-StagingConfirmedMedium -Staging $medium.Staging
+            if ($medium.Envelope['ok'] -ne $true) {
+                throw "Invoke-SplitIntegrityActivationLeg: expected Medium focus-window to succeed (measured behavior), got ok=false code=$($medium.Envelope['error']['code'])"
+            }
 
-        $afterForeground = Get-NativeForegroundWindowHandle
-        if ($afterForeground -ne $fixtureHandle) {
-            throw "Invoke-SplitIntegrityActivationLeg: focus-window reported ok=true but raw GetForegroundWindow ($afterForeground) never became the fixture ($fixtureHandle) - the envelope and the independent oracle disagree"
+            $afterForeground = Get-NativeForegroundWindowHandle
+            if ($afterForeground -ne $fixtureHandle) {
+                throw "Invoke-SplitIntegrityActivationLeg: focus-window reported ok=true but raw GetForegroundWindow ($afterForeground) never became the fixture ($fixtureHandle) - the envelope and the independent oracle disagree"
+            }
         }
 
         Add-Pass -Leg 'split-integrity-activation-recorded'

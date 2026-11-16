@@ -1,12 +1,10 @@
 #Requires -Version 5.1
 
 <#
-    NativeTypes.psm1 - the raw Win32 P/Invoke type surface: every struct and
-    DllImport declaration the harness needs, loaded exactly once per process
-    through Add-Type. Split out of Native.psm1 so that module and its sibling
-    NativeDesktop.psm1 can each stay under the 400-line cap while sharing one
-    compiled type definition rather than two independent Add-Type blocks
-    racing to define AgentDesktopE2E.Native twice in the same process.
+    NativeTypes.psm1 - the raw Win32 P/Invoke type surface: every struct and DllImport declaration the
+    harness needs, loaded exactly once per process through Add-Type. Split out of Native.psm1 so that
+    module and its sibling NativeDesktop.psm1 can each stay under the 400-line cap while sharing one
+    compiled type definition rather than two Add-Type blocks racing to define AgentDesktopE2E.Native.
 #>
 
 Set-StrictMode -Version 2.0
@@ -227,6 +225,7 @@ namespace AgentDesktopE2E {
         public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+        [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
