@@ -1,11 +1,13 @@
 use super::*;
-use crate::refs::refs_test_support::HomeGuard;
+use crate::refs::refs_test_support::{
+    HandshakeChild, HomeGuard, SUBPROCESS_HANG_LIMIT, signal_ready_and_wait_for_release,
+};
 use crate::session::SessionTraceMode;
 use std::fs;
 use std::time::{Duration, Instant};
 
 fn gc_until_removed(options: GcOptions, session_ids: &[&str]) -> GcReport {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + SUBPROCESS_HANG_LIMIT;
     let mut removed = Vec::new();
     loop {
         removed.extend(gc(options).unwrap().removed);
@@ -51,13 +53,11 @@ fn multiple_liveness_owners_do_not_serialize_each_other() {
 
 #[test]
 fn subprocess_session_lease_holder() {
-    let Some(ready) = std::env::var_os("AGENT_DESKTOP_SESSION_LEASE_READY") else {
+    let Ok(session_id) = std::env::var("AGENT_DESKTOP_SESSION_LEASE_ID") else {
         return;
     };
-    let session_id = std::env::var("AGENT_DESKTOP_SESSION_LEASE_ID").unwrap();
     let _lease = acquire_liveness_lease(&session_id).unwrap().unwrap();
-    std::fs::write(ready, b"ready").unwrap();
-    std::thread::sleep(Duration::from_secs(5));
+    signal_ready_and_wait_for_release();
 }
 
 #[test]
@@ -71,24 +71,15 @@ fn gc_retains_idle_cross_process_owner_and_reaps_after_crash() {
     .unwrap();
     manifest.created_at = 0;
     write_manifest(&manifest).unwrap();
-    let ready = guard.path().join("lease-ready");
-    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
         .arg("--exact")
         .arg("session::gc_tests::subprocess_session_lease_holder")
         .arg("--nocapture")
         .env("HOME", guard.path())
-        .env("AGENT_DESKTOP_SESSION_LEASE_READY", &ready)
-        .env("AGENT_DESKTOP_SESSION_LEASE_ID", &manifest.id)
-        .spawn()
-        .unwrap();
-    let ready_deadline = std::time::Instant::now() + Duration::from_secs(2);
-    while !ready.is_file() && std::time::Instant::now() < ready_deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(
-        ready.is_file(),
-        "subprocess did not acquire its session lease"
-    );
+        .env("AGENT_DESKTOP_SESSION_LEASE_ID", &manifest.id);
+    let mut child = HandshakeChild::spawn(command);
+    child.wait_ready();
 
     let retained = gc(GcOptions {
         ended_only: false,
@@ -97,8 +88,7 @@ fn gc_retains_idle_cross_process_owner_and_reaps_after_crash() {
     .unwrap();
     assert!(!retained.removed.contains(&manifest.id));
 
-    child.kill().unwrap();
-    child.wait().unwrap();
+    child.kill();
     let removed = gc_until_removed(
         GcOptions {
             ended_only: false,

@@ -1,4 +1,7 @@
 use super::*;
+use crate::refs::refs_test_support::{
+    HandshakeChild, SUBPROCESS_HANG_LIMIT, signal_ready_and_wait_for_release,
+};
 use crate::{RefCapabilities, RefEntryIdentity, RefGeometry, RefProcess, RefScope, RefSource};
 
 fn entry(name: &str, root_ref: Option<&str>) -> crate::RefEntry {
@@ -48,8 +51,6 @@ fn subprocess_transaction_writer() {
     };
     let root_ref = std::env::var("AGENT_DESKTOP_TX_ROOT_REF").unwrap();
     let label = std::env::var("AGENT_DESKTOP_TX_LABEL").unwrap();
-    let ready = PathBuf::from(std::env::var_os("AGENT_DESKTOP_TX_READY").unwrap());
-    let go = PathBuf::from(std::env::var_os("AGENT_DESKTOP_TX_GO").unwrap());
     let store = RefStore::new().unwrap();
     let snapshot_id = snapshot_id.to_string_lossy();
     let expected = store
@@ -58,16 +59,27 @@ fn subprocess_transaction_writer() {
         .get(&root_ref)
         .unwrap()
         .clone();
-    std::fs::write(&ready, b"ready").unwrap();
-    while !go.is_file() {
-        std::thread::sleep(std::time::Duration::from_millis(5));
+    signal_ready_and_wait_for_release();
+    let hang_at = std::time::Instant::now() + SUBPROCESS_HANG_LIMIT;
+    loop {
+        let attempt =
+            store.update_existing_snapshot(&snapshot_id, &root_ref, &expected, |current| {
+                current.try_allocate(entry(&label, Some(&root_ref)))?;
+                Ok(())
+            });
+        match attempt {
+            Ok(_) => return,
+            Err(error) if is_lock_timeout(&error) && std::time::Instant::now() < hang_at => {}
+            Err(error) => panic!("transaction failed: {error:?}"),
+        }
     }
-    store
-        .update_existing_snapshot(&snapshot_id, &root_ref, &expected, |current| {
-            current.try_allocate(entry(&label, Some(&root_ref)))?;
-            Ok(())
-        })
-        .unwrap();
+}
+
+fn is_lock_timeout(error: &AppError) -> bool {
+    matches!(error, AppError::Adapter(adapter) if adapter
+        .details
+        .as_ref()
+        .is_some_and(|details| details["kind"] == "lock_timeout"))
 }
 
 #[test]
@@ -83,35 +95,26 @@ fn two_process_transactions_preserve_disjoint_drill_updates() {
     map.try_allocate(entry("Root A", None)).unwrap();
     map.try_allocate(entry("Root B", None)).unwrap();
     let snapshot_id = store.save_new_snapshot(&map).unwrap();
-    let go = home.join("go");
-    let mut children = Vec::new();
-    for (index, (root_ref, label)) in [("@e1", "Child A"), ("@e2", "Child B")]
-        .into_iter()
-        .enumerate()
-    {
-        let ready = home.join(format!("ready-{index}"));
-        let child = std::process::Command::new(std::env::current_exe().unwrap())
+    let mut children = [("@e1", "Child A"), ("@e2", "Child B")].map(|(root_ref, label)| {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
             .arg("--exact")
             .arg("refs::refs_store::transaction_tests::subprocess_transaction_writer")
             .arg("--nocapture")
             .env("HOME", &home)
             .env("AGENT_DESKTOP_TX_SNAPSHOT", &snapshot_id)
             .env("AGENT_DESKTOP_TX_ROOT_REF", root_ref)
-            .env("AGENT_DESKTOP_TX_LABEL", label)
-            .env("AGENT_DESKTOP_TX_READY", &ready)
-            .env("AGENT_DESKTOP_TX_GO", &go)
-            .spawn()
-            .unwrap();
-        children.push((child, ready));
+            .env("AGENT_DESKTOP_TX_LABEL", label);
+        HandshakeChild::spawn(command)
+    });
+    for child in &mut children {
+        child.wait_ready();
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while children.iter().any(|(_, ready)| !ready.is_file()) {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(std::time::Duration::from_millis(5));
+    for child in &mut children {
+        child.release();
     }
-    std::fs::write(&go, b"go").unwrap();
-    for (child, _) in &mut children {
-        assert!(child.wait().unwrap().success());
+    for child in &mut children {
+        assert!(child.wait_exit().success());
     }
     let updated = store.load_snapshot(&snapshot_id).unwrap();
     assert_eq!(updated.len(), 4);
