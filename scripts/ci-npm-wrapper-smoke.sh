@@ -85,14 +85,14 @@ if ! [ "$INSTALLED_BIN/agent-desktop" -ef "$INSTALLED_BIN/${NAME}" ]; then
 fi
 for COMMAND in agent-desktop deskref; do
   PATH="$PREFIX/bin:/usr/bin:/bin" "$COMMAND" version > "$WORK/installed-version-$COMMAND.json"
-  COMMAND="$COMMAND" EXPECTED_OS="$EXPECTED_OS" node -e "
+  EXPECTED_OS="$EXPECTED_OS" node -e "
     const json = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
-    const command = process.env.COMMAND;
+    const command = process.argv[2];
     if (json.ok !== true || typeof json.data?.version !== 'string') {
       throw new Error('installed ' + command + ' command did not return version JSON');
     }
     if (json.data.os !== process.env.EXPECTED_OS) {
       throw new Error('installed ' + command + ' reported os ' + json.data.os + ', expected ' + process.env.EXPECTED_OS);
     }
-  " "$WORK/installed-version-$COMMAND.json"
+  " "$WORK/installed-version-$COMMAND.json" "$COMMAND"
 done
