@@ -85,7 +85,7 @@ The report groups outcomes by tier and mode. Only `pass` and `asserted-refusal` 
 | `outstanding`, `owner-decision` | Registered but deliberately not run; the reason is printed. |
 | `tier-unavailable` | The tier's private session never became healthy or its desktop warm-up failed, so its legs did not run. |
 
-The `launch.recovery_strategy_on_error` leg is an `asserted-refusal`. It stops Calculator after a snapshot, then requires a click on the dead owner's ref to answer `STALE_REF` with `details.process_state=exited`, `details.retryable=false` and disposition `not_delivered`/`safe`, with no `recovery` object and no relaunch of the owner.
+The `launch.recovery_strategy_on_error` leg is an `asserted-refusal`. It stops Calculator after a snapshot, then requires a click on the dead owner's ref to answer `STALE_REF` with `details.process_state=exited`, `details.retryable=false` and disposition `not_delivered`/`safe`, with the `inspect_state_then_retry_original` recovery (`requires_fresh_snapshot: true`) and no relaunch of the owner.
 
 The `error_contract.recoverable_error_envelopes` leg is an `asserted-refusal` on both X11 tiers. Against a live Calculator it requires a bare `@e1` to answer `INVALID_ARGS` with the snapshot-qualified suggestion, `@sdeadbeef:e1` to answer `SNAPSHOT_NOT_FOUND` with the `refresh_snapshot_then_retry_original` recovery, and an unknown `--app` to answer `APP_NOT_FOUND` with the `list-apps` suggestion. Each must be `not_delivered` and exit 1, and the Calculator display and the owned-process set must be unchanged.
 

@@ -75,19 +75,25 @@ impl AdapterError {
         self.retryability != crate::response::retryability::Retryability::NonRetryable
     }
 
-    /// Whether the error is a `STALE_REF` read over complete evidence whose
-    /// kind says the element is gone. Waiting cannot change that answer, so
-    /// resolvers stamp it `retryable: false`, but a new snapshot can, so it
-    /// still carries the fresh-snapshot recovery.
+    /// Whether the error is a `STALE_REF` read over complete evidence that
+    /// says the element is gone: its kind names an absence, or its
+    /// `process_state` names an owner that exited or crashed. Waiting cannot
+    /// change that answer, so resolvers stamp it `retryable: false`, but a new
+    /// snapshot, or a relaunch and then a snapshot, can, so it still carries a
+    /// recovery.
     pub(crate) fn is_complete_absence(&self) -> bool {
         let Some(details) = self.details.as_ref() else {
             return false;
         };
         let kind = details.get("kind").and_then(Value::as_str);
         let complete = details.get("complete").and_then(Value::as_bool) == Some(true);
+        let owner_gone = details
+            .get("process_state")
+            .and_then(Value::as_str)
+            .is_some_and(crate::system::process_state::ProcessState::names_a_gone_process);
         self.code == ErrorCode::StaleRef
             && complete
-            && kind.is_some_and(|kind| COMPLETE_ABSENCE_KINDS.contains(&kind))
+            && (owner_gone || kind.is_some_and(|kind| COMPLETE_ABSENCE_KINDS.contains(&kind)))
     }
 
     /// Marks a lookup refusal raised before anything was sent to the
