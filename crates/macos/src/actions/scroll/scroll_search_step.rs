@@ -12,6 +12,10 @@ pub(super) enum SearchStep {
     Sent,
     /// Sending failed, and the application may still have acted on it.
     Refused(AdapterError),
+    /// A write moved the area by a probe shift that could not be taken back.
+    /// The reads cannot tell that from a page, so the page ends with this
+    /// error instead of being settled.
+    Displaced(AdapterError),
 }
 
 impl From<Result<bool, AdapterError>> for SearchStep {

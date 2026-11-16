@@ -101,7 +101,7 @@ agent-desktop find [--app NAME] [--window-id ID] [--role ROLE] [--name TEXT] [--
     <tr><td><code>--root REF</code></td><td>none</td><td>Search one ref's subtree. See <a href="/desktop/skeleton-and-drill-down#scope-a-search">Scope a search</a>.</td></tr>
     <tr><td><code>--scroll [DIRECTION]</code></td><td>off; <code>down</code> when given bare</td><td>Page the <code>--root</code> list or scroll area headlessly until a match loads. See <a href="#lists-that-load-as-you-scroll">Lists that load as you scroll</a>.</td></tr>
     <tr><td><code>--surface KIND</code></td><td><code>window</code></td><td>Search an overlay. Cannot combine with <code>--root</code>.</td></tr>
-    <tr><td><code>--timeout-ms MS</code></td><td><code>5000</code></td><td>Traversal deadline.</td></tr>
+    <tr><td><code>--timeout-ms MS</code></td><td><code>5000</code>, <code>20000</code> with <code>--scroll</code></td><td>Traversal deadline.</td></tr>
     <tr><td><code>--count</code></td><td>off</td><td>Return the match count only.</td></tr>
     <tr><td><code>--first</code>, <code>--last</code>, <code>--nth N</code></td><td>off</td><td>Return one match: the first, the last, or zero-based index <code>N</code>.</td></tr>
     <tr><td><code>--limit N</code></td><td><code>50</code></td><td>Return at most <code>N</code> matches. <code>0</code> returns all. Use <code>--limit 2</code> before a mutation to check the match is unique.</td></tr>

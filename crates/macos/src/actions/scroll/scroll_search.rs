@@ -124,6 +124,7 @@ pub(super) fn send_steps(
             {
                 refusal = Some(error);
             }
+            Ok(SearchStep::Displaced(error)) => return Err(error),
             Ok(SearchStep::Refused(error)) => match settled() {
                 ScrollPage::Moved => return Ok(ScrollPage::Moved),
                 ScrollPage::AtEnd { .. } => refusal = Some(error),
@@ -288,7 +289,9 @@ pub(super) fn area_moved(before: ScrollSignals, after: ScrollSignals) -> Option<
 
 /// Reads the area until it moves, which settles the page as moved. An area
 /// that stays readable and unmoved through the last read settles as the end
-/// of the area. Anything the reads cannot decide is unconfirmed.
+/// of the area. Anything the reads cannot decide is unconfirmed, including
+/// unmoved reads the deadline cut short of the settle window, since a page
+/// may still be animating.
 pub(super) fn settle(
     before: ScrollSignals,
     mut read: impl FnMut() -> ScrollSignals,
@@ -302,7 +305,7 @@ pub(super) fn settle(
             None => unmoved = false,
         }
         if attempt + 1 < SETTLE_READS && !pause() {
-            break;
+            return ScrollPage::Unconfirmed;
         }
     }
     if unmoved {
