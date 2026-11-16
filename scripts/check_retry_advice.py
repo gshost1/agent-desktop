@@ -352,19 +352,48 @@ def built_here(tokens, start, name) -> bool:
     return False
 
 
+def past_closure_params(tokens, lo, limit):
+    """The first token after a closure's `move` and `|params|`, when the chain is a closure body."""
+    if tokens[lo] == ("ident", "move"):
+        lo += 1
+    if tokens[lo] == ("punct", "||"):
+        return lo + 1
+    if tokens[lo] != ("punct", "|"):
+        return lo
+    for k in range(lo + 1, limit):
+        if tokens[k] == ("punct", "|"):
+            return k + 1
+    return lo
+
+
+DELIVERED_STAMPS = {"delivered_unverified", "delivered_verified", "uncertain"}
+
+
+def stamps_not_delivered(tokens, depth, lo, hi):
+    """Whether the chain's last `with_disposition` call stamps only `not_delivered`."""
+    calls = [k for k in range(lo, hi + 1) if tokens[k] == ("ident", "with_disposition")]
+    if not calls:
+        return False
+    start = calls[-1] + 1
+    end = matching_close(tokens, depth, start)
+    names = {value for kind, value in tokens[start : end + 1] if kind == "ident"}
+    return "not_delivered" in names and not names & DELIVERED_STAMPS
+
+
 def readvised_suggestions(tokens, depth, consts):
     """Retry suggestions attached to a received error whose disposition was set elsewhere."""
     for k in range(1, len(tokens) - 1):
         if tokens[k] != ("ident", "with_suggestion") or tokens[k - 1] != ("punct", "."):
             continue
         lo, hi = chain_bounds(tokens, depth, k - 1)
+        lo = past_closure_params(tokens, lo, k)
         kind, head = tokens[lo]
         if kind != "ident" or not head[0].islower() or head in ("self", "Self"):
             continue
         if tokens[lo + 1] != ("punct", "."):
             continue
         chain = {value for kind, value in tokens[lo : hi + 1] if kind == "ident"}
-        if "not_delivered" in chain or built_here(tokens, lo, head):
+        if stamps_not_delivered(tokens, depth, lo, hi) or built_here(tokens, lo, head):
             continue
         yield from suggestions_in(tokens, depth, k, hi + 1, consts)
 
@@ -485,6 +514,17 @@ SELF_TEST_BAD = [
     }""",
     """fn h(error: AdapterError) -> AdapterError {
         error.with_suggestion("Retry the open")
+    }""",
+    """fn i(world: &W) -> Result<(), AdapterError> {
+        world.open().map_err(|e| e.with_suggestion("Retry the open"))
+    }""",
+    """fn j(world: &W) -> Result<(), AdapterError> {
+        world.open().map_err(move |error| error.with_suggestion("Run it again"))
+    }""",
+    """fn k(error: AdapterError, late: bool) -> AdapterError {
+        error
+            .with_suggestion("Retry the open")
+            .with_disposition(if late { DeliverySemantics::not_delivered() } else { DeliverySemantics::delivered_unverified() })
     }""",
     """fn d() -> AdapterError {
         AdapterError::new(code, "x")
