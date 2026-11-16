@@ -159,6 +159,7 @@ try {
     if ($ok) { $exitCode = 0 } else { $exitCode = 1 }
 } catch {
     Write-Host "Run-E2E.ps1: aborting - $($_.Exception.Message)"
+    [void](Write-Verdict)
     $exitCode = 1
 } finally {
     if ($fixtureHandle) { try { Stop-GuardedDetached -Handle $fixtureHandle } catch { Write-Warning "fixture teardown: $($_.Exception.Message)" } }

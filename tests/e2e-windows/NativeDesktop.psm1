@@ -179,6 +179,31 @@ function Set-NativeForegroundWindow {
     return $false
 }
 
+function Set-NativeForegroundAwayFrom {
+    <#
+    .SYNOPSIS
+        Moves OS foreground off ExcludeHandle onto some other visible
+        top-level window, trying each in z-order until one takes it.
+        EnumWindows also yields hidden windows, which SetForegroundWindow
+        cannot foreground: on a hosted runner's sparse desktop the first
+        non-fixture HWND was one, so a first-only steal never moved
+        foreground at all.
+    .OUTPUTS
+        The handle that took foreground, or $null when none did.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][IntPtr]$ExcludeHandle, [int]$MaxAttempts = 20)
+    Initialize-E2ENative
+    $candidates = @(Get-NativeTopLevelWindows | Where-Object {
+            $_.Handle -ne $ExcludeHandle -and $_.Handle -ne [IntPtr]::Zero -and [AgentDesktopE2E.Native]::IsWindowVisible($_.Handle)
+        } | Select-Object -First $MaxAttempts)
+    foreach ($candidate in $candidates) {
+        if (Set-NativeForegroundWindow -WindowHandle $candidate.Handle) { return $candidate.Handle }
+    }
+    Write-Host "Set-NativeForegroundAwayFrom: none of $($candidates.Count) visible top-level window(s) took foreground"
+    return $null
+}
+
 function Wait-NativeForegroundToSettle {
     <#
     .SYNOPSIS
@@ -326,6 +351,7 @@ Export-ModuleMember -Function @(
     'Get-NativeGuiThreadInfo',
     'Get-NativeWindowRect',
     'Set-NativeForegroundWindow',
+    'Set-NativeForegroundAwayFrom',
     'Wait-NativeForegroundToSettle',
     'ConvertTo-NativeWindowHandle',
     'Get-NativeScreenPixel'

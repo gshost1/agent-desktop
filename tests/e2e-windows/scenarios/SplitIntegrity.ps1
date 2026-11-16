@@ -265,10 +265,7 @@ function Invoke-SplitIntegrityActivationLeg {
            Set-NativeForegroundWindow this harness already uses for R14
            preconditions - never through the product - and the steal is
            verified before the leg proceeds. #>
-        $stealCandidate = Get-NativeTopLevelWindows | Where-Object { $_.Handle -ne $fixtureHandle -and $_.Handle -ne [IntPtr]::Zero } | Select-Object -First 1
-        if ($stealCandidate) {
-            [void](Set-NativeForegroundWindow -WindowHandle $stealCandidate.Handle)
-        }
+        [void](Set-NativeForegroundAwayFrom -ExcludeHandle $fixtureHandle)
         $beforeForeground = Get-NativeForegroundWindowHandle
         if ($beforeForeground -eq $fixtureHandle) {
             throw 'Invoke-SplitIntegrityActivationLeg: could not steal foreground away from the fixture before the leg - the precondition would be unfalsifiable'
