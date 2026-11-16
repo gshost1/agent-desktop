@@ -5,8 +5,8 @@ python3 -I manifest.py --digest <taskset module> <arm> [...]     # only the dige
 
 Entries, each a sha256 or a measured value, keyed by a path with the home folder written as ~ so both Macs name
 the same file the same way:
-  - harness: every .py, .sh, .zsh and arm wrapper under bench/heldout (not runs/ or tests/), bench/driver.py,
-    pricing.py, tasks.py, lockq.sh, macctl.swift and the built macctl;
+  - harness: every .py, .sh, .zsh, arm wrapper and front-holder source under bench/heldout (not runs/ or tests/),
+    the built BenchFront, bench/driver.py, pricing.py, tasks.py, lockq.sh, macctl.swift and the built macctl;
   - task set: every file of its folder that FROZEN.md pins, and schedule.json when present;
   - tools: the verifier binary, and for each arm its wrapper, the binary the wrapper runs and that binary's
     helper beside it, and every file of the arm's guide folder;
@@ -48,11 +48,14 @@ def harness_files():
         rel = p.relative_to(HELDOUT).parts
         if not p.is_file() or rel[0] in ("runs", "tests") or "__pycache__" in rel or p.suffix == ".pyc":
             continue
-        if p.suffix in (".py", ".sh", ".zsh") or (len(rel) >= 3 and rel[:2] == ("arms", "bin")):
+        if p.suffix in (".py", ".sh", ".zsh") or rel[:2] in (("arms", "bin"), ("arms", "front")) and len(rel) >= 3:
             out.append(p)
     for name in ("driver.py", "pricing.py", "tasks.py", "lockq.sh", "macctl.swift", "out/macctl"):
         if (BENCH / name).is_file():
             out.append(BENCH / name)
+    holder = HELDOUT / "out" / "BenchFront.app" / "Contents" / "MacOS" / "BenchFront"
+    if holder.is_file():
+        out.append(holder)
     return out
 
 

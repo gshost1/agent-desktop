@@ -190,10 +190,13 @@ def attempt(a, run_id, rdir):
     env.pop("AGENT_DESKTOP_SESSION", None)
     fault = pre_arm_setup(a.arm, rdir)
     grants = effective_grants(a.arm, dict(env, AD_LOG=str(rdir / "probe.log")))
+    fault = fault or run_guard.hold_front()
     if fault:
         return record_infra_fault(a, task, run_id, rdir, fault)
     watch = run_guard.FrontWatch(bench_apps())
-    watch.start()
+    if watch.start() != "holder":
+        watch.stop()
+        return record_infra_fault(a, task, run_id, rdir, "a task app took the front back before the model started")
     cmd = ["claude", "-p", common.TASK_PREFIX + task.prompt(), "--output-format", "stream-json", "--verbose",
            "--setting-sources", "project", "--strict-mcp-config", "--tools", "Bash",
            "--permission-mode", "bypassPermissions", "--model", a.model, "--no-session-persistence",

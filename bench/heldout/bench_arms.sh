@@ -152,7 +152,7 @@ for (( c=0; c<${#CAND_LABELS[@]}; c++ )); do
   put "${TMPDIR:-/tmp}/ho-arms-version" "$U@$BENCH_HOST:$CANDS/$arm/VERSION"
 done
 r "rm -f bench-tools/STOP bench-tools/STOP-SPEND"
-put --exclude 'runs*' --exclude 'out/' --exclude '__pycache__' --exclude '*.swift' --exclude 'REPORT*' \
+put --exclude 'runs*' --exclude 'out/' --exclude '__pycache__' --include 'arms/front/*.swift' --exclude '*.swift' --exclude 'REPORT*' \
   --exclude 'COSTS*' "$HERE/" "$U@$BENCH_HOST:$MIRROR/heldout/"
 put "$HERE/../driver.py" "$HERE/../pricing.py" "$HERE/../tasks.py" "$HERE/../lockq.sh" "$U@$BENCH_HOST:$MIRROR/"
 TS_DIR=$(cd "$(dirname "$TASKSET")" && pwd); TS_REMOTE=.agent-desktop-bench-target/$(basename "$TS_DIR")

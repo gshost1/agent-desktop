@@ -2,10 +2,10 @@
 
 FrontWatch samples the frontmost app while the model runs. A background-only run in which a task app comes to the
 front after the start broke the rule whatever route did it (a menu call that activates, a launch, a focus call).
-The app in front at the start is the run's baseline (front_at_start); final-set setup opens its apps with `open -a`,
-so that is usually the task app, and re-activating the app already in front cannot be seen. A switch to another
-task app, or back to one after something else took the front, is. Only bench app names are kept; any other
-frontmost app is recorded as "other", never by name. It also reads the seconds since the last
+Task apps launch in the background (`open -g`) and the harness then makes BenchFront, its own windowless app built
+from front/front_holder.swift, the active app (hold_front), so front_at_start is "holder" and any task app reaching
+the front is seen. Only bench app names are kept; BenchFront is "holder" and any other frontmost app is "other",
+never by name. It also reads the seconds since the last
 keyboard and mouse event in the session, which a run that posts global input resets; those are recorded, not
 enforced, because a person at the Mac resets them too.
 
@@ -15,11 +15,18 @@ group, so tools the model started cannot outlive the attempt.
 import ctypes
 import ctypes.util
 import os
+import plistlib
 import signal
 import subprocess
 import threading
 import time
+from pathlib import Path
 
+HOLDER = "BenchFront"
+HOLDER_SOURCE = Path(__file__).resolve().parent / "front" / "front_holder.swift"
+HOLDER_APP = Path(__file__).resolve().parent.parent / "out" / f"{HOLDER}.app"
+HOLDER_PLIST = {"CFBundleExecutable": HOLDER, "CFBundleIdentifier": "local.bench.front", "CFBundleName": HOLDER,
+                "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "13.0"}
 INPUT_TYPES = {"key": 10, "left_click": 1, "right_click": 3, "mouse_move": 5, "scroll": 22}
 COMBINED_SESSION = 0
 
@@ -49,6 +56,28 @@ def front_app():
     return value.strip().strip('"') if head.strip().strip('"') == "LSDisplayName" else None
 
 
+def build_holder(app=HOLDER_APP, source=HOLDER_SOURCE):
+    """Build BenchFront.app from its source when missing or older than the source; returns the bundle path."""
+    exe = app / "Contents" / "MacOS" / HOLDER
+    if not exe.exists() or exe.stat().st_mtime < source.stat().st_mtime:
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["swiftc", "-O", str(source), "-o", str(exe)], check=True, capture_output=True, timeout=300)
+        (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(HOLDER_PLIST))
+    return app
+
+
+def hold_front(reader=front_app, opener=None, seconds=5.0, sleep=time.sleep):
+    """Make BenchFront the active app before the model starts. None when it holds the front, else why not."""
+    app = build_holder()
+    opener = opener or (lambda: subprocess.run(["open", "-a", str(app)], capture_output=True, timeout=20))
+    opener()
+    for _ in range(int(seconds / 0.1)):
+        if reader() == HOLDER:
+            return None
+        sleep(0.1)
+    return f"{HOLDER} did not take the front within {seconds:.0f} s"
+
+
 class FrontWatch:
     """Samples the frontmost app every `interval` seconds between start() and stop()."""
 
@@ -70,6 +99,8 @@ class FrontWatch:
     def label(self, name):
         if name is None:
             return None
+        if name == HOLDER:
+            return "holder"
         return name if name in self.apps else "other"
 
     def sample(self):
@@ -77,7 +108,7 @@ class FrontWatch:
         self.samples += 1
         if name is None:
             self.unreadable += 1
-        elif name != "other" and name != self._last:
+        elif name not in ("other", "holder") and name != self._last:
             self.fronted.append((round(self.clock() - self._t0, 2), name))
         if name is not None:
             self._last = name

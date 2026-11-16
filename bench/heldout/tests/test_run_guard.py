@@ -67,6 +67,23 @@ class FrontWatchTests(unittest.TestCase):
         w.sample()
         self.assertTrue(run_guard.foreground_violation(w.stop(), False).startswith("foreground: ColorSync"))
 
+    def test_the_holder_is_the_baseline_and_a_task_app_after_it_is_seen(self):
+        w, clock = watch(["BenchFront", "BenchFront", "Chess"])
+        w.sample()
+        w.sample()
+        rec = w.stop()
+        self.assertEqual(rec["front_at_start"], "holder")
+        self.assertTrue(run_guard.foreground_violation(rec, False).startswith("foreground: Chess"))
+
+    def test_hold_front_waits_for_the_holder_and_reports_when_it_does_not_come(self):
+        fronts = iter(["Finder", "Chess", "BenchFront"])
+        opened = []
+        got = run_guard.hold_front(reader=lambda: next(fronts), opener=lambda: opened.append(1), sleep=lambda s: None)
+        self.assertIsNone(got)
+        self.assertEqual(opened, [1])
+        got = run_guard.hold_front(reader=lambda: "Chess", opener=lambda: None, seconds=0.3, sleep=lambda s: None)
+        self.assertTrue(got.startswith("BenchFront did not take the front"))
+
     def test_global_input_during_the_run_is_recorded(self):
         w, clock = watch(["Finder"] * 2, idle=lambda: {"key": 0.5, "mouse_move": 9999.0})
         clock.t += 10
