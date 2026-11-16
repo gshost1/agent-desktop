@@ -11,7 +11,8 @@
 //!
 //! - A refusal without `retryable: true` is settled.
 //! - A known complete absence (`resolve_no_candidate`,
-//!   `resolution_complete_absence`, `saved_ref_absent`) is final whatever its
+//!   `resolution_complete_absence`, `saved_ref_absent`, or a `process_state`
+//!   naming an owner that exited or crashed) is final whatever its
 //!   `retryable` stamp: the element is not there, and the recovery is a new
 //!   snapshot, so the action answers `STALE_REF` at once. That includes a list
 //!   rebuilt under the lease while the action resolved it.
