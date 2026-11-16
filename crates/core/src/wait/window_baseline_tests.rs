@@ -148,6 +148,9 @@ fn with_no_window_focused_the_command_acts_in_the_first_shown_window_not_a_minim
     assert_eq!(acted_on, ["w-shown"]);
 }
 
+/// Windows whose ids say what the adapter reports: a `panel` is auxiliary,
+/// and the first `main` window it lists is the application's main window,
+/// named even when it is not among the windows it is asked about.
 struct PanelWindows(Vec<WindowInfo>);
 
 impl ObservationOps for PanelWindows {
@@ -160,11 +163,11 @@ impl ObservationOps for PanelWindows {
     }
 
     fn is_auxiliary_window(&self, window: &WindowInfo, _deadline: Deadline) -> bool {
-        window.id.starts_with("panel")
+        window.id.contains("panel")
     }
 
-    fn main_window(&self, windows: &[WindowInfo], _deadline: Deadline) -> Option<String> {
-        windows
+    fn main_window(&self, _windows: &[WindowInfo], _deadline: Deadline) -> Option<String> {
+        self.0
             .iter()
             .find(|window| window.id.starts_with("main"))
             .map(|window| window.id.clone())
@@ -239,4 +242,21 @@ fn without_a_main_window_the_command_acts_in_the_first_listed_document() {
     ]);
 
     assert_eq!(acted, ["w-first"]);
+}
+
+#[test]
+fn a_main_window_that_is_a_panel_or_hidden_falls_back_to_the_first_listed_document() {
+    let named_panel = acted_on_ids(vec![
+        shown("main-panel", Some(true)),
+        shown("w-first", Some(true)),
+        shown("w-second", Some(true)),
+    ]);
+    let named_hidden = acted_on_ids(vec![
+        shown("main-hidden", Some(false)),
+        shown("w-first", Some(true)),
+        shown("w-second", Some(true)),
+    ]);
+
+    assert_eq!(named_panel, ["w-first"]);
+    assert_eq!(named_hidden, ["w-first"]);
 }
