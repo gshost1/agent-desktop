@@ -147,3 +147,68 @@ fn with_no_window_focused_the_command_acts_in_the_first_shown_window_not_a_minim
 
     assert_eq!(acted_on, ["w-shown"]);
 }
+
+struct PanelWindows(Vec<WindowInfo>);
+
+impl ObservationOps for PanelWindows {
+    fn list_windows(
+        &self,
+        _filter: &WindowFilter,
+        _deadline: Deadline,
+    ) -> Result<Vec<WindowInfo>, AdapterError> {
+        Ok(self.0.clone())
+    }
+
+    fn is_auxiliary_window(&self, window: &WindowInfo, _deadline: Deadline) -> bool {
+        window.id.starts_with("panel")
+    }
+}
+
+impl ActionOps for PanelWindows {}
+
+impl InputOps for PanelWindows {}
+
+impl SystemOps for PanelWindows {}
+
+fn acted_on_ids(windows: Vec<WindowInfo>) -> Vec<String> {
+    let adapter = PanelWindows(windows);
+    let process = ProcessIdentity::new(crate::ProcessId::new(1), "instance");
+    let baseline = WindowBaseline::capture(&adapter, "TestApp", process, long()).unwrap();
+    baseline
+        .acted_on(&adapter, long())
+        .unwrap()
+        .into_iter()
+        .map(|window| window.id)
+        .collect()
+}
+
+fn shown(id: &str, visible: Option<bool>) -> WindowInfo {
+    let mut window = window(id, 1, Some("instance"));
+    window.state.visible = visible;
+    window
+}
+
+#[test]
+fn with_no_window_focused_the_command_acts_in_the_document_behind_a_floating_panel() {
+    let acted = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("w-document", Some(true)),
+    ]);
+
+    assert_eq!(acted, ["w-document"]);
+}
+
+#[test]
+fn a_panel_stays_the_front_window_beside_a_hidden_document_or_other_panels() {
+    let beside_hidden = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("w-document", Some(false)),
+    ]);
+    let only_panels = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("panel-colors", Some(true)),
+    ]);
+
+    assert_eq!(beside_hidden, ["panel-inspector"]);
+    assert_eq!(only_panels, ["panel-inspector"]);
+}

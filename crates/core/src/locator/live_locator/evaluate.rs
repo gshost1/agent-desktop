@@ -3,6 +3,7 @@ use super::{
     LocatorResolveRequest, ObservedTree,
     compiled_clause::{CompiledClause, compile_clauses},
     evaluation_buffers::EvaluationBuffers,
+    match_depth::{MatchedClause, match_depth},
     match_verdict::MatchVerdict,
     materialize::{materialize_refmap, ref_entry},
     predicate::{normalize_query, self_text_verdict, self_verdict},
@@ -104,6 +105,12 @@ pub(super) fn evaluate_locator_tree_in(
         }
     };
     let proof = crate::refs::ref_capture_proof::CaptureProof::new(&tree);
+    let matched_clause = MatchedClause {
+        clause: &clauses[root_clause],
+        index: root_clause,
+        count: clauses.len(),
+        subtree_text: &subtree_text,
+    };
     let mut selected_matches = Vec::with_capacity(selected.len());
     for index in selected {
         let data = match_data(&tree, index, &parents)
@@ -122,6 +129,8 @@ pub(super) fn evaluate_locator_tree_in(
                 &node.evidence,
                 entry.geometry.bounds_space.unwrap_or_default(),
             ),
+            logical_depth: match_depth(&tree, index, &matched_clause)
+                .unwrap_or(request.max_raw_depth),
             entry,
         });
     }

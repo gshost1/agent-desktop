@@ -14,6 +14,10 @@ pub struct LocatorMatch {
     /// Whether the observation that found this node read every field a ref
     /// and the response need, so reading the node again would only repeat it.
     pub(crate) fully_observed: bool,
+    /// How many levels below the observation root the node sits, counted as
+    /// a snapshot's `max_depth` counts them, so a snapshot of the same root
+    /// cut at this depth still holds it.
+    pub(crate) logical_depth: u8,
 }
 
 impl LocatorMatch {

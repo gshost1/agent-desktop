@@ -75,7 +75,7 @@ pub(crate) fn select_app_window(
 
 /// The windows among `windows` that are not auxiliary, when the adapter
 /// reports at least one auxiliary window and at least one other.
-fn standard_windows(
+pub(crate) fn standard_windows(
     adapter: &dyn PlatformAdapter,
     windows: Vec<WindowInfo>,
     deadline: crate::Deadline,

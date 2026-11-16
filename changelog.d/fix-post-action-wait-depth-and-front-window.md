@@ -1,0 +1,4 @@
+### Bug Fixes
+
+* `--wait-for` returns a match deeper than the snapshot depth: the wait reads 50 levels down but returned a snapshot cut at 10 and rechecked it, so `click <ref> --wait-for 'button:Done'` with the button 22 levels down timed out on a window that already held it; the returned snapshot now reaches the match and the text that matched it, and a `--skeleton` snapshot becomes a full tree to that depth. ([#PR](https://github.com/gshost1/agent-desktop/pull/PR))
+* A menu bar ref's `--wait-for` in an app with no focused window reads the front document window instead of a floating panel listed above it, so a selector the menu command shows in the document no longer times out. ([#PR](https://github.com/gshost1/agent-desktop/pull/PR))
