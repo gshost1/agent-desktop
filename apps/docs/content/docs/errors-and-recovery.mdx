@@ -95,7 +95,7 @@ A macOS <code>TIMEOUT</code> with <code>details.kind: "focus_verification"</code
 
 ## Recovery strategies
 
-`recovery` appears only when `disposition.retry` is `safe`, the code has a declared plan, and the adapter has not marked the failure non-retryable with `details.retryable: false`. It has `strategy`, `retryable`, `requires_fresh_snapshot`, and, for two codes, `retry_after_ms`.
+`recovery` appears only when `disposition.retry` is `safe`, the code has a declared plan, and the adapter has not marked the failure non-retryable with `details.retryable: false`, with one exception: a `STALE_REF` read over complete evidence (`details.complete: true`) that says the element is gone, or that its owning process exited or crashed, keeps its recovery, because waiting cannot change it but a new snapshot, or a relaunch, can. It has `strategy`, `retryable`, `requires_fresh_snapshot`, and, for two codes, `retry_after_ms`.
 
 <table>
   <thead>
@@ -110,7 +110,7 @@ A macOS <code>TIMEOUT</code> with <code>details.kind: "focus_verification"</code
 
 `STALE_REF` uses `inspect_state_then_retry_original` only when `details.process_state` is `exited` or `crashed`, and `refresh_snapshot_then_retry_original` otherwise. Every other code, such as `ACTION_FAILED`, `INVALID_ARGS`, or `AMBIGUOUS_TARGET`, never carries `recovery`. Follow the "What to do" column instead.
 
-`retry_after_ms` is set only for `TIMEOUT` and `APP_UNRESPONSIVE` (250 ms in this release). `details.retryable` is the adapter's own judgment: `false` means waiting cannot change the outcome, so try a different approach, and it suppresses `recovery` even for a code that would otherwise carry one.
+`retry_after_ms` is set only for `TIMEOUT` and `APP_UNRESPONSIVE` (250 ms in this release). `details.retryable` is the adapter's own judgment: `false` means waiting cannot change the outcome, so try a different approach, and it suppresses `recovery` even for a code that would otherwise carry one, except for the complete-absence `STALE_REF` above.
 
 ## Decide whether to retry
 
