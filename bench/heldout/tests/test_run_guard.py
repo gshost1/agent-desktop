@@ -76,13 +76,23 @@ class FrontWatchTests(unittest.TestCase):
         self.assertTrue(run_guard.foreground_violation(rec, False).startswith("foreground: Chess"))
 
     def test_hold_front_waits_for_the_holder_and_reports_when_it_does_not_come(self):
-        fronts = iter(["Finder", "Chess", "BenchFront"])
+        fronts = iter(["Finder", "Chess"] + ["BenchFront"] * 30)
         opened = []
         got = run_guard.hold_front(reader=lambda: next(fronts), opener=lambda: opened.append(1), sleep=lambda s: None)
         self.assertIsNone(got)
         self.assertEqual(opened, [1])
         got = run_guard.hold_front(reader=lambda: "Chess", opener=lambda: None, seconds=0.3, sleep=lambda s: None)
-        self.assertTrue(got.startswith("BenchFront did not take the front"))
+        self.assertTrue(got.startswith("BenchFront did not hold the front"))
+
+    def test_hold_front_needs_two_steady_seconds_and_reopens_the_holder(self):
+        flicker = iter((["BenchFront"] * 5 + ["ColorSync Utility"]) * 3 + ["BenchFront"] * 25)
+        opened = []
+        got = run_guard.hold_front(reader=lambda: next(flicker), opener=lambda: opened.append(1), sleep=lambda s: None)
+        self.assertIsNone(got)
+        self.assertGreater(len(opened), 1)
+        always_flicker = iter((["BenchFront"] * 15 + ["Chess"]) * 20)
+        got = run_guard.hold_front(reader=lambda: next(always_flicker), opener=lambda: None, sleep=lambda s: None)
+        self.assertIsNotNone(got)
 
     def test_global_input_during_the_run_is_recorded(self):
         w, clock = watch(["Finder"] * 2, idle=lambda: {"key": 0.5, "mouse_move": 9999.0})

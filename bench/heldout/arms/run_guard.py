@@ -66,16 +66,27 @@ def build_holder(app=HOLDER_APP, source=HOLDER_SOURCE):
     return app
 
 
-def hold_front(reader=front_app, opener=None, seconds=5.0, sleep=time.sleep):
-    """Make BenchFront the active app before the model starts. None when it holds the front, else why not."""
+def hold_front(reader=front_app, opener=None, seconds=10.0, stable=2.0, sleep=time.sleep):
+    """Make BenchFront the active app after a task's whole setup and before the model starts, and require it to
+    stay in front for `stable` seconds; a setup step that brought a task app forward (opening a document into a
+    running app does, even with `open -g`) is undone this way for every task and arm alike. None when it holds,
+    else why not: the run is then an infrastructure fault."""
     app = build_holder()
     opener = opener or (lambda: subprocess.run(["open", "-a", str(app)], capture_output=True, timeout=20))
+    held, step, opened = 0.0, 0.1, 0
     opener()
-    for _ in range(int(seconds / 0.1)):
+    for i in range(int(seconds / step)):
         if reader() == HOLDER:
-            return None
-        sleep(0.1)
-    return f"{HOLDER} did not take the front within {seconds:.0f} s"
+            held += step
+            if held >= stable:
+                return None
+        else:
+            held = 0.0
+            if i - opened >= 10:
+                opener()
+                opened = i
+        sleep(step)
+    return f"{HOLDER} did not hold the front for {stable:.0f} s within {seconds:.0f} s"
 
 
 class FrontWatch:
