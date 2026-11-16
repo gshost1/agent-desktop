@@ -176,15 +176,58 @@ function Get-ShellTrayToolbarIdentity {
     param()
     $scan = Invoke-ShellComProbe -ProbeArguments @('trayscan')
     $promoted = @($scan['toolbars'] | Where-Object { $_['label'] -eq 'promoted_via_tray_notify_wnd' -and $_['found'] })
-    if ($promoted.Count -ne 1) {
-        throw "Get-ShellTrayToolbarIdentity: the COM read did not yield exactly one promoted notification-area toolbar (got $($promoted.Count))"
-    }
+    $flags = @('tray_notify_wnd_child_present', 'promoted_toolbar_windows_of_taskbar', 'promoted_toolbar_via_tray_notify_found',
+        'overflow_window_class_notify_icon_overflow_window_present', 'overflow_inner_toolbar_found') | ForEach-Object { "$_=$($scan[$_])" }
+    $evidence = "trayscan: promoted toolbars=$($promoted.Count) $($flags -join ' ')"
+    if ($promoted.Count -gt 1) { throw "Get-ShellTrayToolbarIdentity: the COM read yielded more than one promoted notification-area toolbar ($evidence)" }
+    if ($promoted.Count -eq 0) { return [pscustomobject]@{ Found = $false; Handle = 0; ButtonCount = 0; Evidence = $evidence } }
     $toolbar = $promoted[0]
     $buttons = @($toolbar['buttons'] | Where-Object { $_['ct'] -eq 'Button' })
     return [pscustomobject]@{
+        Found       = $true
         Handle      = [long]$toolbar['nativewindowhandle']
         ButtonCount = $buttons.Count
+        Evidence    = $evidence
     }
+}
+
+function Get-ShellHostEvidence {
+    <#
+    .SYNOPSIS
+        What this desktop's shell offers, read without the binary: the OS
+        edition and build, whether the ShellExperienceHost process that
+        presents the Action Center runs, and the names of the top-level
+        Windows.UI.Core.CoreWindow surfaces managed UI Automation sees.
+    #>
+    [CmdletBinding()]
+    param()
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem
+    $hostRunning = @(Get-Process -Name 'ShellExperienceHost' -ErrorAction SilentlyContinue).Count -gt 0
+    Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+    $coreWindow = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'Windows.UI.Core.CoreWindow')
+    $names = @([System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $coreWindow) | ForEach-Object { $_.Current.Name })
+    return [pscustomobject]@{
+        ShellHostRunning = $hostRunning
+        Text             = "os='$($os.Caption)' build=$($os.BuildNumber) product_type=$($os.ProductType) ShellExperienceHost_running=$hostRunning core_windows=[$($names -join '; ')]"
+    }
+}
+
+function Get-ShellSurfaceAbsence {
+    <#
+    .SYNOPSIS
+        The evidence that this runner does not expose a surface whose open
+        failed, or $null when the failure does not show that: the build
+        refusal (INVALID_ARGS), or a TIMEOUT on a desktop where no
+        ShellExperienceHost process runs to present the surface. A TIMEOUT
+        with the host running is the binary's failure, never a skip.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Open)
+    if ($Open.ErrorCode -eq 'INVALID_ARGS') { return 'open-system-surface refused with INVALID_ARGS' }
+    if ($Open.ErrorCode -ne 'TIMEOUT') { return $null }
+    $evidence = Get-ShellHostEvidence
+    if ($evidence.ShellHostRunning) { return $null }
+    return "open-system-surface timed out and no ShellExperienceHost process runs to present the surface ($($evidence.Text))"
 }
 
 function Get-ShellTreeIdentityMarks {
@@ -237,5 +280,7 @@ Export-ModuleMember -Function @(
     'Initialize-ShellKeybd',
     'Invoke-ShellActionCenterToggle',
     'Get-ShellTrayToolbarIdentity',
+    'Get-ShellHostEvidence',
+    'Get-ShellSurfaceAbsence',
     'Get-ShellTreeIdentityMarks'
 )
