@@ -98,7 +98,7 @@ impl WindowBaseline {
         deadline: Deadline,
     ) -> Result<Vec<WindowInfo>, AdapterError> {
         let windows = process_windows(adapter, &self.app, &self.process, deadline)?;
-        Ok(acted_on_among(windows, Some(&self.open)))
+        Ok(acted_on_among(adapter, windows, Some(&self.open), deadline))
     }
 }
 
@@ -115,21 +115,23 @@ pub(crate) fn acted_on_without_baseline(
         return Ok(Vec::new());
     };
     let windows = process_windows(adapter, app, &process, deadline)?;
-    Ok(acted_on_among(windows, None))
+    Ok(acted_on_among(adapter, windows, None, deadline))
 }
 
 /// The process's focused window, or its front window when none is focused,
 /// as for an application in the background, followed by every other window
 /// not in `open_before`.
 fn acted_on_among(
+    adapter: &dyn PlatformAdapter,
     windows: Vec<WindowInfo>,
     open_before: Option<&BTreeSet<String>>,
+    deadline: Deadline,
 ) -> Vec<WindowInfo> {
     let (mut acted, mut rest): (Vec<_>, Vec<_>) = windows
         .into_iter()
         .partition(|window| window.state.is_focused);
     if acted.is_empty()
-        && let Some(front) = front_window(&rest)
+        && let Some(front) = front_standard_window(adapter, &rest, deadline)
     {
         acted.push(rest.remove(front));
     }
@@ -139,21 +141,43 @@ fn acted_on_among(
     acted.into_iter().chain(opened).collect()
 }
 
-/// The first accessible, unminimized window the platform lists as visible,
-/// or failing that the first whose visibility it does not report. A platform
-/// that lists a process's windows front to back names its front window
-/// first.
-fn front_window(windows: &[WindowInfo]) -> Option<usize> {
-    let shown =
-        |window: &WindowInfo| window.state.accessible && window.state.minimized != Some(true);
+/// The front window an application command acts in when no window is
+/// focused. Among the accessible, unminimized windows the platform does not
+/// report hidden, the ones the adapter reports as auxiliary, such as a
+/// floating inspector, are set aside as an `--app` window choice sets them
+/// aside, since a command acts in a document window or dialog; a set that is
+/// all auxiliary or has none is taken as it stands.
+fn front_standard_window(
+    adapter: &dyn PlatformAdapter,
+    windows: &[WindowInfo],
+    deadline: Deadline,
+) -> Option<usize> {
+    let shown: Vec<WindowInfo> = windows
+        .iter()
+        .filter(|window| {
+            window.state.accessible
+                && window.state.minimized != Some(true)
+                && window.state.visible != Some(false)
+        })
+        .cloned()
+        .collect();
+    let candidates = match shown.len() {
+        0 | 1 => shown,
+        _ => crate::system::window_lookup::standard_windows(adapter, shown.clone(), deadline)
+            .unwrap_or(shown),
+    };
+    let front = front_window(&candidates)?;
+    windows.iter().position(|window| window.id == front.id)
+}
+
+/// The first window the platform lists as visible, or failing that the first
+/// whose visibility it does not report. A platform that lists a process's
+/// windows front to back names its front window first.
+fn front_window(windows: &[WindowInfo]) -> Option<&WindowInfo> {
     windows
         .iter()
-        .position(|window| shown(window) && window.state.visible == Some(true))
-        .or_else(|| {
-            windows
-                .iter()
-                .position(|window| shown(window) && window.state.visible.is_none())
-        })
+        .find(|window| window.state.visible == Some(true))
+        .or_else(|| windows.iter().find(|window| window.state.visible.is_none()))
 }
 
 /// Every window of one process instance. A window whose process instance the

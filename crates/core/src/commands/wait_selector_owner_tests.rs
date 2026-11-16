@@ -175,6 +175,10 @@ impl ObservationOps for TwoWindowApp {
         Ok(self.panes.iter().map(|pane| pane.info.clone()).collect())
     }
 
+    fn is_auxiliary_window(&self, window: &WindowInfo, _deadline: crate::Deadline) -> bool {
+        window.id.starts_with("panel")
+    }
+
     fn get_tree(
         &self,
         window: &WindowInfo,
