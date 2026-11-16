@@ -208,6 +208,7 @@ function Get-ShellHostEvidence {
     $names = @([System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $coreWindow) | ForEach-Object { $_.Current.Name })
     return [pscustomobject]@{
         ShellHostRunning = $hostRunning
+        ProductType      = [int]$os.ProductType
         Text             = "os='$($os.Caption)' build=$($os.BuildNumber) product_type=$($os.ProductType) ShellExperienceHost_running=$hostRunning core_windows=[$($names -join '; ')]"
     }
 }
@@ -217,17 +218,42 @@ function Get-ShellSurfaceAbsence {
     .SYNOPSIS
         The evidence that this runner does not expose a surface whose open
         failed, or $null when the failure does not show that: the build
-        refusal (INVALID_ARGS), or a TIMEOUT on a desktop where no
-        ShellExperienceHost process runs to present the surface. A TIMEOUT
-        with the host running is the binary's failure, never a skip.
+        refusal (INVALID_ARGS), or a TIMEOUT on a server SKU (ProductType
+        not 1, workstation) where no ShellExperienceHost process runs to
+        present the surface. A TIMEOUT on a workstation, or with the host
+        running, is the binary's failure, never a skip. Evidence defaults to
+        a fresh Get-ShellHostEvidence read; self-tests pass their own.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)]$Open)
+    param([Parameter(Mandatory = $true)]$Open, $Evidence)
     if ($Open.ErrorCode -eq 'INVALID_ARGS') { return 'open-system-surface refused with INVALID_ARGS' }
     if ($Open.ErrorCode -ne 'TIMEOUT') { return $null }
-    $evidence = Get-ShellHostEvidence
-    if ($evidence.ShellHostRunning) { return $null }
-    return "open-system-surface timed out and no ShellExperienceHost process runs to present the surface ($($evidence.Text))"
+    if (-not $Evidence) { $Evidence = Get-ShellHostEvidence }
+    if ($Evidence.ShellHostRunning -or $Evidence.ProductType -eq 1) { return $null }
+    return "open-system-surface timed out on a server SKU where no ShellExperienceHost process runs to present the surface ($($Evidence.Text))"
+}
+
+function Resolve-ShellTrayAbsence {
+    <#
+    .SYNOPSIS
+        Decides the tray count leg when the harness COM read found no
+        promoted notification-area toolbar: returns the skip's evidence when
+        the binary's system-tray snapshot also answers WINDOW_NOT_FOUND, and
+        throws otherwise - an opened tray is a disagreement, and any other
+        refusal (INTERNAL, TIMEOUT, PERM_DENIED) is the binary's failure,
+        not proof the surface is absent. Returns $null when the COM read
+        found the toolbar.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Com, [Parameter(Mandatory = $true)]$Snapshot, [string]$HostEvidence)
+    if ($Com.Found) { return $null }
+    if ($Snapshot.Opened) {
+        throw "the COM read found no promoted notification-area toolbar ($($Com.Evidence)), yet snapshot --surface system-tray rooted at '$($Snapshot.WindowId)'; the oracle and the binary disagree"
+    }
+    if ($Snapshot.ErrorCode -ne 'WINDOW_NOT_FOUND') {
+        throw "the COM read found no promoted notification-area toolbar ($($Com.Evidence)), and snapshot --surface system-tray failed with $($Snapshot.ErrorCode), which is not an absence"
+    }
+    return "this shell has no promoted notification-area toolbar ($($Com.Evidence)) and snapshot --surface system-tray answered WINDOW_NOT_FOUND ($HostEvidence)"
 }
 
 function Get-ShellTreeIdentityMarks {
@@ -282,5 +308,6 @@ Export-ModuleMember -Function @(
     'Get-ShellTrayToolbarIdentity',
     'Get-ShellHostEvidence',
     'Get-ShellSurfaceAbsence',
+    'Resolve-ShellTrayAbsence',
     'Get-ShellTreeIdentityMarks'
 )

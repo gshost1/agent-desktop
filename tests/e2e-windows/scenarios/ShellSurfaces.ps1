@@ -199,9 +199,9 @@ function Invoke-ShellTrayCountLeg {
             $com = Get-ShellTrayToolbarIdentity
             $snap = Invoke-ShellSurfaceSnapshot -Surface 'system-tray'
             if (-not $com.Found) {
-                if ($snap.Opened) { throw "the COM read found no promoted notification-area toolbar ($($com.Evidence)), yet snapshot --surface system-tray rooted at '$($snap.WindowId)'; the oracle and the binary disagree" }
+                $absence = Resolve-ShellTrayAbsence -Com $com -Snapshot $snap -HostEvidence (Get-ShellHostEvidence).Text
                 $script:ShellSurfacesSkippedLeg = $leg
-                Add-Skip -Leg $leg -Token 'shell-tray-toolbar-absent' -Reason "this shell has no promoted notification-area toolbar ($($com.Evidence)) and snapshot --surface system-tray answered $($snap.ErrorCode) ($((Get-ShellHostEvidence).Text))"
+                Add-Skip -Leg $leg -Token 'shell-tray-toolbar-absent' -Reason $absence
                 return
             }
             if (-not $snap.Opened) { throw "snapshot --surface system-tray failed: $($snap.ErrorCode)" }
