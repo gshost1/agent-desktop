@@ -69,6 +69,16 @@ Invoke-SelfTest 'a failed leg names the error envelope it saw, and a pass clears
     Assert-True ($hostText -match "'leg-clean-fail': plain failure(\r?\n|$)") "a disposition must clear the recorded envelope - saw: $hostText"
 }
 
+Invoke-SelfTest 'a skipped leg prints its token and its evidence' {
+    Reset-Verdict
+    Register-Legs -Names @('leg-pass', 'leg-skip')
+    Add-Pass -Leg 'leg-pass'
+    Add-Skip -Leg 'leg-skip' -Token 'shell-surface-absent' -Reason 'no host process runs'
+    $records = Write-Verdict 6>&1
+    $hostText = ($records | Where-Object { $_ -is [System.Management.Automation.InformationRecord] } | ForEach-Object { $_.MessageData.ToString() }) -join "`n"
+    Assert-True ($hostText -match "VERDICT skipped leg 'leg-skip' \[shell-surface-absent\]: no host process runs") "the skip's evidence must be printed - saw: $hostText"
+}
+
 <#
     9. A scenario that registers legs and dispositions none of them fails
        the run. Invert-verified by removing the leg-accounting checks and

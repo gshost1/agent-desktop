@@ -151,6 +151,11 @@ function Write-Verdict {
     foreach ($name in $failedNames) {
         Write-Host "VERDICT failed leg '$name': $($script:LegDispositions[$name].Detail)"
     }
+    <# A skip is an assertion that the host lacks something, so its evidence
+       is printed beside it, the same as a failure's reason. #>
+    foreach ($name in @($script:LegDispositions.Keys | Where-Object { $script:LegDispositions[$_].Status -eq 'skipped' })) {
+        Write-Host "VERDICT skipped leg '$name' [$($script:LegDispositions[$name].Token)]: $($script:LegDispositions[$name].Detail)"
+    }
     return $ok
 }
 
