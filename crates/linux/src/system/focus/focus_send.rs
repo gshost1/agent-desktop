@@ -101,30 +101,45 @@ pub(super) fn dialog_over(client: u32, deadline: Deadline) -> Option<String> {
 }
 
 /// The title of the active window when it is already a modal dialog of
-/// `client`: transient for it and carrying `_NET_WM_STATE_MODAL`. A window
-/// manager hands an activation of `client` to that dialog, so asking it is
-/// pointless and would only raise the parent beneath the dialog.
+/// `client`, decided by [`modal_blocks`]. A window manager hands an
+/// activation of `client` to that dialog, so asking it is pointless and would
+/// only raise the parent beneath the dialog.
 pub(super) fn open_modal_over(client: u32, deadline: Deadline) -> Option<String> {
     bounded(deadline, None, move || {
         let (connection, root) = connect().ok()?;
         let active = first_window(&connection, root, atom(&connection, b"_NET_ACTIVE_WINDOW")?)?;
-        if active == client {
-            return None;
-        }
-        let owner = first_window(&connection, active, AtomEnum::WM_TRANSIENT_FOR.into())?;
-        (owner == client && is_modal(&connection, active)?).then(|| title_of(&connection, active))
+        let transient_for = first_window(&connection, active, AtomEnum::WM_TRANSIENT_FOR.into());
+        let modal = atom(&connection, b"_NET_WM_STATE_MODAL")?;
+        let states = window_states(&connection, active)?;
+        modal_blocks(client, active, transient_for, &states, modal)
+            .then(|| title_of(&connection, active))
     })
 }
 
-fn is_modal(connection: &RustConnection, window: Window) -> Option<bool> {
+/// Whether the active window is a modal dialog of `target`: another window,
+/// transient for `target` itself, whose `_NET_WM_STATE` carries `modal`. Only
+/// the direct `WM_TRANSIENT_FOR` link counts. A modal dialog transient for a
+/// dialog of `target` is not matched, so focusing `target` under it sends the
+/// request and reads the outcome back, as it does for any window that is not
+/// blocked before the request.
+pub(super) fn modal_blocks(
+    target: Window,
+    active: Window,
+    transient_for: Option<Window>,
+    states: &[Atom],
+    modal: Atom,
+) -> bool {
+    active != target && transient_for == Some(target) && states.contains(&modal)
+}
+
+fn window_states(connection: &RustConnection, window: Window) -> Option<Vec<Atom>> {
     let state = atom(connection, b"_NET_WM_STATE")?;
-    let modal = atom(connection, b"_NET_WM_STATE_MODAL")?;
     let reply = connection
         .get_property(false, window, state, AtomEnum::ATOM, 0, 64)
         .ok()?
         .reply()
         .ok()?;
-    Some(reply.value32()?.any(|value| value == modal))
+    Some(reply.value32().map(Iterator::collect).unwrap_or_default())
 }
 
 /// Whether the input focus lies in `client`: the focus window is the client or
@@ -147,3 +162,7 @@ pub(crate) fn input_focus_in(client: u32, deadline: Deadline) -> bool {
     })
     .unwrap_or(false)
 }
+
+#[cfg(test)]
+#[path = "focus_send_tests.rs"]
+mod tests;
