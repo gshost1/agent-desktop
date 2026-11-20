@@ -273,7 +273,7 @@ Single-item `dismiss-notification` and `notification-action` require
   not laid out, the command first expands it with the header button before the
   last one. If that press removes the entry instead, the result is
   `ACTION_FAILED`. Every error after the expand press, a moved entry included,
-  is `delivery: delivered_unverified` with `retry: unsafe`: the press toggles
+  has `retry: unsafe`: the press toggles
   the entry, so run `list-notifications` before you act on it again.
 - An action counts only when the entry's object leaves the list, which GNOME
   does after an action unless the notification is resident. `details.evidence`

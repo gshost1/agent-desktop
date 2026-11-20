@@ -263,6 +263,7 @@ fn an_open_that_does_not_say_whether_it_pressed_is_never_advised_to_retry() {
     let mut world = world(&log);
     world.faults.open_error = Some(AdapterError::new(ErrorCode::Internal, "no progress"));
     let error = session_error(&world);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     let suggestion = error.suggestion.expect("a suggestion");
     assert!(!suggestion.contains("by hand"), "{suggestion}");
     assert!(suggestion.contains("before"), "{suggestion}");
@@ -298,4 +299,35 @@ fn an_unpressed_open_already_unsafe_to_retry_keeps_its_disposition() {
     assert_eq!(error.disposition, uncertain);
     let suggestion = error.suggestion.expect("a suggestion");
     assert!(!suggestion.contains("by hand"), "{suggestion}");
+}
+
+#[test]
+fn a_possibly_pressed_open_with_advice_stamps_safe_errors_but_preserves_unsafe_ones() {
+    for opened in [None, Some(true)] {
+        for disposition in [
+            DeliverySemantics::not_delivered(),
+            DeliverySemantics::uncertain(),
+        ] {
+            let log = log();
+            let mut world = world(&log);
+            let mut error = AdapterError::internal("opener failed")
+                .with_disposition(disposition)
+                .with_suggestion("Inspect the list before pressing again");
+            if let Some(opened) = opened {
+                error = error.with_details(json!({"surface_opened_by_call": opened}));
+            }
+            world.faults.open_error = Some(error);
+            let error = session_error(&world);
+            let expected = if disposition == DeliverySemantics::uncertain() {
+                disposition
+            } else {
+                DeliverySemantics::delivered_unverified()
+            };
+            assert_eq!(error.disposition, expected);
+            assert_eq!(
+                error.suggestion.as_deref(),
+                Some("Inspect the list before pressing again")
+            );
+        }
+    }
 }

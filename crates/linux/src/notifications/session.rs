@@ -93,6 +93,11 @@ fn advised(error: AdapterError, opened_by_call: Option<bool>) -> AdapterError {
             .with_suggestion(OPEN_BY_HAND)
             .with_disposition(DeliverySemantics::not_delivered());
     }
+    let error = if !unpressed && error.disposition.retry() != RetryDisposition::Unsafe {
+        error.with_disposition(DeliverySemantics::delivered_unverified())
+    } else {
+        error
+    };
     if error.suggestion.is_some() {
         return error;
     }
