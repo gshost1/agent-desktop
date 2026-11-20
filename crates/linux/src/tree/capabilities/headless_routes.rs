@@ -12,6 +12,7 @@ use super::action_names::{click_verbs, names_select, unsupported_entry_activatio
 use super::capability_rules::{Facts, holds_selection_interface, select_rests_on_indices};
 use crate::system::process::toolkit_id::ToolkitId;
 use crate::tree::properties::toolkit_trust::{ToolkitKind, kind, selection_indices_are_accessible};
+use crate::tree::vocabulary::role_numbers::COMBO_BOX;
 use crate::tree::{ObservedRead, Walk, WalkedNode};
 
 /// The toolkit a snapshot read for the application it observed, keyed by
@@ -126,8 +127,7 @@ pub(crate) fn withheld_tokens(
         withheld.push(capability::CLICK);
     }
     if kind(toolkit) == ToolkitKind::Qt
-        && (facts.role == crate::tree::vocabulary::role_numbers::COMBO_BOX
-            || node.payload.node.element.ancestry().combo_owner().is_some())
+        && (facts.role == COMBO_BOX || node.payload.node.element.ancestry().combo_owner().is_some())
     {
         withheld.push(capability::SELECT);
     }
