@@ -47,6 +47,64 @@ fn stale_ref_payload_carries_snapshot_recovery() {
 }
 
 #[test]
+fn nonretryable_stale_ref_absence_carries_refresh_recovery_only_when_safe() {
+    for kind in [
+        "saved_ref_absent",
+        "retained_object_stale",
+        "resolve_no_candidate",
+        "resolution_complete_absence",
+    ] {
+        for disposition in [
+            DeliverySemantics::not_delivered(),
+            DeliverySemantics::unknown(),
+            DeliverySemantics::uncertain(),
+            DeliverySemantics::delivered_unverified(),
+            DeliverySemantics::delivered_verified(),
+        ] {
+            let error = AdapterError::stale_ref_because("element is gone")
+                .with_details(json!({ "kind": kind, "retryable": false }))
+                .with_disposition(disposition);
+            assert!(!error.permits_retry_by_default());
+            let payload = ErrorPayload::from_app_error(&AppError::Adapter(error));
+            assert_eq!(payload.details.as_ref().unwrap()["retryable"], false);
+            assert_eq!(payload.disposition, disposition);
+            if disposition == DeliverySemantics::not_delivered() {
+                let recovery = payload.recovery.expect(kind);
+                assert_eq!(recovery.strategy, "refresh_snapshot_then_retry_original");
+                assert!(recovery.retryable);
+                assert!(recovery.requires_fresh_snapshot);
+            } else {
+                assert!(payload.recovery.is_none(), "{kind}: {disposition:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn nonretryable_identity_refusals_do_not_carry_snapshot_recovery() {
+    for (code, kind, reason) in [
+        (ErrorCode::StaleRef, "identity_unproven", "capture_unknown"),
+        (
+            ErrorCode::StaleRef,
+            "identity_unproven",
+            "capture_incomplete",
+        ),
+        (ErrorCode::AmbiguousTarget, "identity_not_unique", ""),
+        (ErrorCode::AmbiguousTarget, "saved_ref_ambiguous", ""),
+        (ErrorCode::StaleRef, "focused_window_changed", ""),
+        (ErrorCode::StaleRef, "menu_closed", ""),
+        (ErrorCode::StaleRef, "unknown_kind", ""),
+    ] {
+        let error = AdapterError::new(code, "use a different approach")
+            .with_details(json!({ "kind": kind, "reason": reason, "retryable": false }))
+            .with_disposition(DeliverySemantics::not_delivered());
+        assert!(!error.permits_retry_by_default());
+        let payload = ErrorPayload::from_app_error(&AppError::Adapter(error));
+        assert!(payload.recovery.is_none(), "{kind}: {reason}");
+    }
+}
+
+#[test]
 fn snapshot_not_found_payload_carries_snapshot_recovery() {
     let err = AppError::Adapter(AdapterError::snapshot_not_found("snap-abc"));
     let payload = ErrorPayload::from_app_error(&err);

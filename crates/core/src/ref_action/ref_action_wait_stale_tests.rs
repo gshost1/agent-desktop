@@ -19,6 +19,8 @@ fn zero_timeout_click_on_removed_target_carries_refresh_recovery() {
         assert_eq!(error.code, ErrorCode::StaleRef);
         assert_eq!(error.disposition, DeliverySemantics::not_delivered());
         assert_eq!(error.details.as_ref().unwrap()["kind"], "saved_ref_absent");
+        assert_eq!(error.details.as_ref().unwrap()["retryable"], false);
+        assert!(!error.permits_retry_by_default());
         assert!(!crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(&error).retries());
         let payload = ErrorPayload::from_app_error(&crate::AppError::Adapter(error));
         let envelope =

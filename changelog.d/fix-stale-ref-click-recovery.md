@@ -1,3 +1,3 @@
 ### Bug Fixes
 
-* Restore fresh-snapshot recovery hints for stale refs whose targets disappeared, while keeping clicks fail-closed without delivery.
+* Restore fresh-snapshot recovery hints in safe stale-ref error envelopes without making complete-absence refusals retryable.

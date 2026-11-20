@@ -192,7 +192,7 @@ pub(crate) fn absent(entry: &RefEntry) -> AdapterError {
     AdapterError::stale_ref_because("No live element matches the saved ref's recorded identity")
         .with_details(json!({
             "kind": "saved_ref_absent",
-            "retryable": true,
+            "retryable": false,
             "complete": true,
             "role": entry.identity.role,
         }))

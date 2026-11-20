@@ -13,8 +13,7 @@ fn the_third_consecutive_moved_landing_ends_as_saved_ref_absent() {
         .expect("the third moved landing stops the action");
 
     assert_eq!(refusal.code, crate::ErrorCode::StaleRef);
-    assert!(refusal.permits_retry_by_default());
-    assert!(!ResolveVerdict::for_ref_action(&refusal).retries());
+    assert!(!refusal.permits_retry_by_default());
     assert_eq!(
         refusal.details.expect("details")["kind"],
         "saved_ref_absent"

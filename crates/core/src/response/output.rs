@@ -111,7 +111,21 @@ impl ErrorPayload {
             payload.platform_detail = adapter_error.platform_detail.clone();
             payload.details = adapter_error.details.clone();
             payload.disposition = adapter_error.disposition;
-            if adapter_error.permits_retry_by_default() {
+            let refresh_stale_ref = adapter_error.code == ErrorCode::StaleRef
+                && matches!(
+                    adapter_error
+                        .details
+                        .as_ref()
+                        .and_then(|details| details.get("kind"))
+                        .and_then(Value::as_str),
+                    Some(
+                        "saved_ref_absent"
+                            | "retained_object_stale"
+                            | "resolve_no_candidate"
+                            | "resolution_complete_absence"
+                    )
+                );
+            if adapter_error.permits_retry_by_default() || refresh_stale_ref {
                 payload.recovery = recovery_for_code(
                     &adapter_error.code,
                     adapter_error.disposition,
