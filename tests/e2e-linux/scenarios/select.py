@@ -16,13 +16,30 @@ def select_contract(ctx, *, absent=False):
         target = ref(ctx, app, role="combobox", name=combo.name)
         ctx.before("gsettings", initial)
         try:
-            response = command(ctx, ["select", target, "Never" if not absent else "absent-option"],
-                               app, code="ACTION_NOT_SUPPORTED")
-            require("Select" in response.error["message"] or "semantic" in response.error["message"],
-                    response.raw)
+            if absent:
+                headless = ctx.mode == "headless"
+                response = command(ctx, ["select", target, "absent-option"], app,
+                                   code="POLICY_DENIED" if headless else "ELEMENT_NOT_FOUND")
+                details = response.error.get("details", {})
+                disposition = response.error.get("disposition", {})
+                require(disposition == {"delivery": "not_delivered" if headless else "delivered_unverified",
+                                        "retry": "safe" if headless else "unsafe"}, response.raw)
+                if headless:
+                    require(details.get("kind") == "pointer_required"
+                            and details.get("physical_delivery_started") is False, response.raw)
+                else:
+                    require(details.get("searched") is True and details.get("popup_closed") is True,
+                            response.raw)
+            else:
+                response = command(ctx, ["select", target, "Never"], app, code="ACTION_NOT_SUPPORTED")
+                require("Select" in response.error["message"] or "semantic" in response.error["message"],
+                        response.raw)
             changed(lambda: gsettings.get(ctx.tier, schema, key), initial, floor=0.3)
             ctx.after("gsettings", gsettings.get(ctx.tier, schema, key))
         finally:
+            if absent and gsettings.get(ctx.tier, schema, key) != initial:
+                gsettings.set(ctx.tier, schema, key, initial)
+                changed(lambda: gsettings.get(ctx.tier, schema, key), initial)
             require(gsettings.get(ctx.tier, schema, key) == initial)
             ctx.restored("gsettings", gsettings.get(ctx.tier, schema, key))
 
@@ -32,6 +49,6 @@ def screen_blank_value(ctx: LegContext) -> None:
     select_contract(ctx)
 
 
-@implementation("select.refusal_without_semantic_route")
-def refusal_without_semantic_route(ctx: LegContext) -> None:
+@implementation("select.absent_choice_refused")
+def absent_choice_refused(ctx: LegContext) -> None:
     select_contract(ctx, absent=True)
