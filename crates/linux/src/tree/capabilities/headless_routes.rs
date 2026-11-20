@@ -2,8 +2,8 @@
 //! toolkit refuses their headless route. A snapshot's `available_actions`
 //! promise a headless semantic action, so a token whose every route the
 //! action path refuses before writing is not printed. A snapshot that could
-//! not read the toolkit withholds what the action path refuses for a toolkit
-//! it cannot name. A node read for an
+//! not read the toolkit keeps its tokens until a live read can judge them.
+//! A node read for an
 //! action is projected without this pass: its live evidence keeps `Select`,
 //! which the preflight of a `--headed select` needs to reach the row click,
 //! and a `--headed click` passes preflight without a `Click` token.
@@ -40,16 +40,16 @@ impl HeadlessRoutes {
     }
 
     /// The routes of a walk whose placement read `toolkit` from the walked
-    /// application's root. A read that did not answer, or was not made, is
-    /// judged as a toolkit that names nothing: the action path reads the
-    /// toolkit again and, when that read names nothing either, refuses an
-    /// index select and still dispatches an entry's `activate` (L41-22 needs
-    /// GTK 4 named).
+    /// application's root. A read that did not answer, or was not made,
+    /// keeps every token. A read that answered without naming a toolkit
+    /// withholds the index selects that the action path refuses for it.
     pub(crate) fn of_walk(walk: &Walk<ObservedRead>, toolkit: Option<ToolkitId>) -> Self {
-        Self::of_application(
-            walk.root.payload.node.element.bus_name(),
-            toolkit.unwrap_or_default(),
-        )
+        match toolkit {
+            Some(toolkit) => {
+                Self::of_application(walk.root.payload.node.element.bus_name(), toolkit)
+            }
+            None => Self::every_token(),
+        }
     }
 
     pub(crate) fn withhold(&self, node: &WalkedNode<ObservedRead>, evidence: &mut LocatorEvidence) {

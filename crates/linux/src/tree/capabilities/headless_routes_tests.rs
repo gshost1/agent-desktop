@@ -308,8 +308,8 @@ fn node_tokens(node: &WalkedNode<ObservedRead>, routes: &HeadlessRoutes) -> Vec<
 }
 
 #[test]
-fn a_snapshot_that_could_not_read_the_toolkit_withholds_what_an_unnamed_toolkit_refuses() {
-    let routes = HeadlessRoutes::of_walk(&snapshot_walk(), None);
+fn a_snapshot_with_an_answered_but_unnamed_toolkit_withholds_index_selects() {
+    let routes = HeadlessRoutes::of_walk(&snapshot_walk(), Some(ToolkitId::default()));
     let snapshot = snapshot_actions(&routes);
     assert!(snapshot[0].contains(&"Click".to_owned()), "{snapshot:?}");
     assert!(!snapshot[1].contains(&"Select".to_owned()), "{snapshot:?}");
@@ -333,4 +333,20 @@ fn a_snapshot_that_could_not_read_the_toolkit_withholds_what_an_unnamed_toolkit_
         ))],
     );
     assert!(node_tokens(&activatable, &routes).contains(&"Select".to_owned()));
+}
+
+#[test]
+fn a_snapshot_cut_off_before_the_toolkit_answers_keeps_select_for_a_fresh_live_read() {
+    let routes = HeadlessRoutes::of_walk(&snapshot_walk(), None);
+    let snapshot = snapshot_actions(&routes);
+    assert!(snapshot[0].contains(&"Click".to_owned()), "{snapshot:?}");
+    assert!(snapshot[1].contains(&"Select".to_owned()), "{snapshot:?}");
+    for mut node in [tab(), tab_list(), row(), list()] {
+        node.node.properties.name = Field::Present(String::new());
+        assert!(
+            tokens(&node, &routes).contains(&"Select".to_owned()),
+            "{:?}",
+            node.node.traits.role
+        );
+    }
 }
