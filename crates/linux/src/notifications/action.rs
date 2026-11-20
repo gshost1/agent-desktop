@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use agent_desktop_core::{
     ActionResult, AdapterError, DeliverySemantics, ErrorCode, InteractionLease, MouseButton,
-    NotificationActionRequest, NotificationTarget,
+    NotificationActionRequest, NotificationTarget, RetryDisposition,
 };
 use serde_json::json;
 
@@ -17,6 +17,7 @@ use crate::system::SharedBus;
 use crate::system::shell::light::Light;
 
 const EXPAND_POLL: Duration = Duration::from_millis(100);
+const EXPAND_SENT: &str = "Run list-notifications before deciding whether to act on the entry again: the expand press was sent, and a second press can collapse it";
 
 pub(crate) fn action(
     bus: &SharedBus,
@@ -56,14 +57,27 @@ fn press(
     first: &Entry,
     lease: &InteractionLease,
 ) -> Result<ActionResult, AdapterError> {
-    let (deadline, name, index) = (lease.deadline(), request.action_name, first.info.index);
-    let mut ready = reconfirm(world, wanted, first, deadline)?;
-    if !laid_out(ready.entry(), name) {
-        let expand = require(ready.entry().expand(), "expand button", index)?;
-        world.click(&expand.element, MouseButton::Left, request.policy, lease)?;
-        ready = expanded(world, wanted, first, name, lease)?;
+    let (name, index) = (request.action_name, first.info.index);
+    let ready = reconfirm(world, wanted, first, lease.deadline())?;
+    if laid_out(ready.entry(), name) {
+        return push((world, signals), request, first, ready.entry(), lease);
     }
-    let button = require(button_named(ready.entry(), name), "action button", index)?;
+    let expand = require(ready.entry().expand(), "expand button", index)?;
+    world.click(&expand.element, MouseButton::Left, request.policy, lease)?;
+    expanded(world, wanted, first, name, lease)
+        .and_then(|ready| push((world, signals), request, first, ready.entry(), lease))
+        .map_err(expand_sent)
+}
+
+fn push(
+    (world, signals): (&dyn ShellWorld, &dyn SignalSource),
+    request: &NotificationActionRequest<'_>,
+    first: &Entry,
+    ready: &Entry,
+    lease: &InteractionLease,
+) -> Result<ActionResult, AdapterError> {
+    let (deadline, name) = (lease.deadline(), request.action_name);
+    let button = require(button_named(ready, name), "action button", first.info.index)?;
     let subscription = signals.subscribe(deadline).ok();
     world.click(&button.element, MouseButton::Left, request.policy, lease)?;
     let pressed = Instant::now();
@@ -86,6 +100,19 @@ fn press(
     }
 }
 
+/// Every failure after the expand press went out: the toggle may have
+/// landed, so an error that would otherwise read as safe to retry keeps its
+/// code and message but says the press was delivered and asks for a look
+/// before the next one. A shifted target is still refused, never acted on.
+fn expand_sent(error: AdapterError) -> AdapterError {
+    if error.disposition.retry() == RetryDisposition::Unsafe {
+        return error;
+    }
+    error
+        .with_suggestion(EXPAND_SENT)
+        .with_disposition(DeliverySemantics::delivered_unverified())
+}
+
 fn expanded(
     world: &dyn ShellWorld,
     wanted: &NotificationTarget,
@@ -102,7 +129,7 @@ fn expanded(
         if lease.deadline().is_expired() {
             return Err(pressed_without_effect(
                 format!("The entry was expanded but the '{name}' button never appeared"),
-                "Run list-notifications before deciding whether to act on the entry again: the expand press was sent, and a second press can collapse it",
+                EXPAND_SENT,
             ));
         }
         std::thread::sleep(EXPAND_POLL);

@@ -63,12 +63,14 @@ function Invoke-PreconditionsScenario {
                deliberately shares its id across two controls (R2's
                exemption), so it is checked separately as "exactly two
                hits" rather than through the resolve loop below. #>
+            $unresolved = [System.Collections.Generic.List[string]]::new()
             foreach ($id in $inventory.Resident) {
                 if ($id -eq 'twin-control') { continue }
                 $hit = Find-TargetMatches -App $App -NativeId $id -TimeoutSeconds 10
-                if (-not $hit -or $hit.Count -lt 1) {
-                    throw "Preconditions: resident id '$id' did not resolve by --native-id"
-                }
+                if (-not $hit -or $hit.Count -lt 1) { $unresolved.Add($id) }
+            }
+            if ($unresolved.Count -gt 0) {
+                throw "Preconditions: resident id(s) did not resolve by --native-id: [$($unresolved -join ', ')]"
             }
             Add-Pass -Leg 'resident-ids-resolve'
         } catch {

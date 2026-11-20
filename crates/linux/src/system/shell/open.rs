@@ -16,7 +16,7 @@ use crate::system::shell::located::Located;
 use crate::system::{SharedBus, process::process_facts, window::window_id};
 
 const POLL: Duration = Duration::from_millis(40);
-const READ_BEFORE_PRESSING: &str = "Run 'list-surfaces' to see whether the surface is showing before you open or close it again: its opener toggles, so a second press can undo a first one the shell applied late";
+pub(crate) const READ_BEFORE_PRESSING: &str = "Run 'list-surfaces' to see whether the surface is showing before you open or close it again: its opener toggles, so a second press can undo a first one the shell applied late";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Opened {
