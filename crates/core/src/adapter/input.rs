@@ -15,6 +15,15 @@ pub trait InputOps: Send + Sync {
         None
     }
 
+    /// The reason pointer delivery at caller-given screen coordinates cannot
+    /// happen in this session, if it cannot. A session that can place input at
+    /// a point but cannot prove which window lies under it answers `None` here
+    /// and still refuses through [`Self::physical_pointer_refusal`], which
+    /// guards every gesture aimed at an element. Defaults to that answer.
+    fn coordinate_pointer_refusal(&self) -> Option<AdapterError> {
+        self.physical_pointer_refusal()
+    }
+
     /// Whether a headed keyboard delivery needs the target window activated
     /// first. An adapter whose keys can be delivered without activating
     /// another window (a Wayland session, where the compositor refuses client

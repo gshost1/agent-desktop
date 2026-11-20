@@ -101,7 +101,7 @@ function Invoke-ChromiumScenario {
     Register-Legs -Names $legs
 
     if (-not (Test-ChromiumTargetAvailable)) {
-        foreach ($leg in $legs) { Add-Skip -Leg $leg -Token 'chromium-target-absent' -Reason 'no Chromium/Electron target installed on this host' }
+        foreach ($leg in $legs) { Add-Skip -Leg $leg -Token 'chromium-target-absent' -Reason "no Obsidian.exe at '$(Get-ChromiumObsidianExePath)', the only Chromium/Electron target this scenario looks for; no browser or other Electron app is checked" }
         return
     }
 

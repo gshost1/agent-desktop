@@ -103,12 +103,13 @@ function Invoke-ShellActionCenterOpenLeg {
                 }
                 $open = Invoke-ShellActionCenterOpenWithRetry -Surface 'action-center'
                 if (-not $open.Opened) {
-                    if ($open.ErrorCode -eq 'INVALID_ARGS') {
+                    $absence = Get-ShellSurfaceAbsence -Open $open
+                    if ($absence) {
                         $script:ShellSurfacesSkippedLeg = $leg
-                        Add-Skip -Leg $leg -Token 'shell-surface-absent' -Reason "open-system-surface refused with $($open.ErrorCode); this runner does not expose the surface"
+                        Add-Skip -Leg $leg -Token 'shell-surface-absent' -Reason "$absence; this runner does not expose the surface"
                         return
                     }
-                    throw "open-system-surface --surface action-center failed: $($open.ErrorCode)"
+                    throw "open-system-surface --surface action-center failed: $($open.ErrorCode) ($((Get-ShellHostEvidence).Text))"
                 }
                 if (-not $open.WindowId) { throw 'open-system-surface returned no window id' }
                 $snap = $null
@@ -150,12 +151,13 @@ function Invoke-ShellActionCenterCloseLeg {
                 if (-not $pre.Opened) {
                     $open = Invoke-ShellActionCenterOpenWithRetry -Surface 'action-center'
                     if (-not $open.Opened) {
-                        if ($open.ErrorCode -eq 'INVALID_ARGS') {
+                        $absence = Get-ShellSurfaceAbsence -Open $open
+                        if ($absence) {
                             $script:ShellSurfacesSkippedLeg = $leg
-                            Add-Skip -Leg $leg -Token 'shell-surface-absent' -Reason "open-system-surface refused with $($open.ErrorCode); this runner does not expose the surface"
+                            Add-Skip -Leg $leg -Token 'shell-surface-absent' -Reason "$absence; this runner does not expose the surface"
                             return
                         }
-                        throw "open-system-surface --surface action-center failed: $($open.ErrorCode)"
+                        throw "open-system-surface --surface action-center failed: $($open.ErrorCode) ($((Get-ShellHostEvidence).Text))"
                     }
                 }
                 Invoke-ShellActionCenterToggle
@@ -196,6 +198,12 @@ function Invoke-ShellTrayCountLeg {
         Enter-Stage -Lock DesktopLease -Body {
             $com = Get-ShellTrayToolbarIdentity
             $snap = Invoke-ShellSurfaceSnapshot -Surface 'system-tray'
+            if (-not $com.Found) {
+                $absence = Resolve-ShellTrayAbsence -Com $com -Snapshot $snap -HostEvidence (Get-ShellHostEvidence).Text
+                $script:ShellSurfacesSkippedLeg = $leg
+                Add-Skip -Leg $leg -Token 'shell-tray-toolbar-absent' -Reason $absence
+                return
+            }
             if (-not $snap.Opened) { throw "snapshot --surface system-tray failed: $($snap.ErrorCode)" }
             $expectedId = 'w-{0}' -f $com.Handle
             if ($snap.WindowId -ne $expectedId) {
@@ -205,6 +213,7 @@ function Invoke-ShellTrayCountLeg {
                 throw "the tray snapshot reported $($snap.RefCount) refs; the harness's own COM read counted $($com.ButtonCount) Button children on the promoted toolbar"
             }
         }
+        if ($script:ShellSurfacesSkippedLeg -eq $leg) { return }
         Add-Pass -Leg $leg
     } catch {
         Add-Fail -Leg $leg -Reason $_.Exception.Message

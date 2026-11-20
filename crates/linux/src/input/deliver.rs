@@ -60,7 +60,13 @@ pub(crate) fn mouse_event(
                 &delivery,
             ))
         }
-        Backend::Wayland => Err(keysym_send::pointer_refusal("mouse_event")),
+        Backend::Wayland => {
+            let delivery = super::wayland::pointer_send::mouse_event(event, lease.deadline())?;
+            Ok(with_event_count(
+                OperationReport::pointer_dispatched(event, false),
+                &delivery,
+            ))
+        }
     }
 }
 
@@ -78,7 +84,13 @@ pub(crate) fn drag(
                 &delivery,
             ))
         }
-        Backend::Wayland => Err(keysym_send::pointer_refusal("drag")),
+        Backend::Wayland => {
+            let delivery = super::wayland::pointer_send::drag(params, deadline)?;
+            Ok(with_event_count(
+                OperationReport::drag_dispatched(params),
+                &delivery,
+            ))
+        }
     }
 }
 

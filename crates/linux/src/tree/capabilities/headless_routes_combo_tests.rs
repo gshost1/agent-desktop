@@ -49,7 +49,7 @@ fn qt_combo_and_its_choices_do_not_promise_a_headless_select_even_with_an_own_ve
     let routes = HeadlessRoutes::of_application(":1.1", toolkit("Qt"));
     for target in [node(COMBO_BOX, false), node(LIST_ITEM, true)] {
         assert!(!offers_select(&target, &routes));
-        assert!(offers_select(&target, &HeadlessRoutes::unread()));
+        assert!(offers_select(&target, &HeadlessRoutes::every_token()));
     }
 }
 

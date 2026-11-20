@@ -1,7 +1,9 @@
 //! The capability tokens a snapshot withholds because the application's
 //! toolkit refuses their headless route. A snapshot's `available_actions`
 //! promise a headless semantic action, so a token whose every route the
-//! action path refuses before writing is not printed. A node read for an
+//! action path refuses before writing is not printed. A snapshot that could
+//! not read the toolkit keeps its tokens until a live read can judge them.
+//! A node read for an
 //! action is projected without this pass: its live evidence keeps `Select`,
 //! which the preflight of a `--headed select` needs to reach the row click,
 //! and a `--headed click` passes preflight without a `Click` token.
@@ -17,8 +19,7 @@ use crate::tree::{ObservedRead, Walk, WalkedNode};
 
 /// The toolkit a snapshot read for the application it observed, keyed by
 /// that application's bus name. A node of another application, a toolkit
-/// that refuses none of these routes, or a snapshot whose toolkit read did
-/// not answer keeps every token.
+/// that refuses none of these routes, or a live read keeps every token.
 pub(crate) struct HeadlessRoutes {
     application: Option<(String, ToolkitId)>,
 }
@@ -29,7 +30,8 @@ fn may_refuse(toolkit: &ToolkitId) -> bool {
 }
 
 impl HeadlessRoutes {
-    pub(crate) fn unread() -> Self {
+    /// The routes of a node read for an action, which keeps every token.
+    pub(crate) fn every_token() -> Self {
         Self { application: None }
     }
 
@@ -40,13 +42,15 @@ impl HeadlessRoutes {
     }
 
     /// The routes of a walk whose placement read `toolkit` from the walked
-    /// application's root.
+    /// application's root. A read that did not answer, or was not made,
+    /// keeps every token. A read that answered without naming a toolkit
+    /// withholds the index selects that the action path refuses for it.
     pub(crate) fn of_walk(walk: &Walk<ObservedRead>, toolkit: Option<ToolkitId>) -> Self {
         match toolkit {
             Some(toolkit) => {
                 Self::of_application(walk.root.payload.node.element.bus_name(), toolkit)
             }
-            None => Self::unread(),
+            None => Self::every_token(),
         }
     }
 

@@ -109,7 +109,21 @@ def stale_ref_after_ui_change(ctx: LegContext) -> None:
 
 
 def preferences_showing(tree) -> bool:
-    return any("SHOWING" in node.states for node in tree.find(name="Preferences"))
+    for node in tree.find(role=35):
+        if "SHOWING" not in node.states:
+            continue
+        name = node.name
+        if not name:
+            relations = node.invoke(raw.ACCESSIBLE, "GetRelationSet")[0]
+            targets = [target for kind, labels in relations if kind == 2 for target in labels]
+            require(len(targets) <= 1, "menu item has ambiguous labels")
+            if targets:
+                bus, path = targets[0]
+                label = raw.RawNode(node.connection, bus or node.bus, path)
+                name = label.name or label.text()
+        if name == "Preferences":
+            return True
+    return False
 
 
 @implementation("observation.selector_wait_resolves")

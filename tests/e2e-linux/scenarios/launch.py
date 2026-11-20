@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scenarios.headed_actions import find_ref as qualified_ref
+from scenarios.headed_actions import count_name, find_ref as qualified_ref
 
 from runner.apps import launch, stop, window_id
 from runner.helper import changed
@@ -122,7 +122,9 @@ def recovery_strategy_on_error(ctx: LegContext) -> None:
     app = launch(ctx.tier, CALCULATOR)
     snapshot = ctx.product(["snapshot", "--app", CALCULATOR, "-i"])
     assert snapshot.ok, snapshot.raw
-    ref = _first_ref((snapshot.data or {}).get("tree"))
+    tree = (snapshot.data or {}).get("tree")
+    assert count_name(tree, "7") == 1, "the recovery target must have a unique name"
+    ref = _first_ref(tree, name="7", role="button")
     assert ref, "the snapshot allocated no ref"
     stop(app)
     read = lambda: any(member[0] == app.pid for member in members(ctx.tier.runtime_dir))
@@ -142,5 +144,5 @@ def recovery_strategy_on_error(ctx: LegContext) -> None:
     ctx.restored("proc.calculator", read())
 
 
-def _first_ref(tree: dict | None) -> str | None:
-    return qualified_ref(tree)
+def _first_ref(tree: dict | None, *, name=None, role=None) -> str | None:
+    return qualified_ref(tree, name=name, role=role)

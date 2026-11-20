@@ -179,6 +179,42 @@ function Set-NativeForegroundWindow {
     return $false
 }
 
+function Test-NativeWindowCloaked {
+    <# DWMWA_CLOAKED (14): nonzero when DWM hides the window although it is
+       WS_VISIBLE. A failed read is reported as not cloaked. #>
+    param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle)
+    Initialize-E2ENative
+    $cloaked = 0
+    $hr = [AgentDesktopE2E.Native]::DwmGetWindowAttribute($WindowHandle, 14, [ref]$cloaked, 4)
+    return ($hr -eq 0 -and $cloaked -ne 0)
+}
+
+function Set-NativeForegroundAwayFrom {
+    <#
+    .SYNOPSIS
+        Moves OS foreground off ExcludeHandle onto some other visible,
+        uncloaked top-level window, trying each in z-order until one takes
+        it. EnumWindows also yields hidden windows, and IsWindowVisible
+        is true for DWM-cloaked ones (suspended UWP frames, other virtual
+        desktops), and SetForegroundWindow can foreground neither: on a
+        hosted runner a first-only steal never moved foreground, and run
+        43805176493 saw 11 visible candidates all refuse it.
+    .OUTPUTS
+        The handle that took foreground, or $null when none did.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][IntPtr]$ExcludeHandle, [int]$MaxAttempts = 20)
+    Initialize-E2ENative
+    $candidates = @(Get-NativeTopLevelWindows | Where-Object {
+            $_.Handle -ne $ExcludeHandle -and $_.Handle -ne [IntPtr]::Zero -and [AgentDesktopE2E.Native]::IsWindowVisible($_.Handle) -and -not (Test-NativeWindowCloaked -WindowHandle $_.Handle)
+        } | Select-Object -First $MaxAttempts)
+    foreach ($candidate in $candidates) {
+        if (Set-NativeForegroundWindow -WindowHandle $candidate.Handle) { return $candidate.Handle }
+    }
+    Write-Host "Set-NativeForegroundAwayFrom: none of $($candidates.Count) visible top-level window(s) took foreground"
+    return $null
+}
+
 function Wait-NativeForegroundToSettle {
     <#
     .SYNOPSIS
@@ -326,6 +362,8 @@ Export-ModuleMember -Function @(
     'Get-NativeGuiThreadInfo',
     'Get-NativeWindowRect',
     'Set-NativeForegroundWindow',
+    'Set-NativeForegroundAwayFrom',
+    'Test-NativeWindowCloaked',
     'Wait-NativeForegroundToSettle',
     'ConvertTo-NativeWindowHandle',
     'Get-NativeScreenPixel'
