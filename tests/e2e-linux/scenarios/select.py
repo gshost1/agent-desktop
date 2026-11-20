@@ -30,14 +30,26 @@ def select_contract(ctx, *, absent=False):
                 else:
                     require(details.get("searched") is True and details.get("popup_closed") is True,
                             response.raw)
+                expected = initial
             else:
-                response = command(ctx, ["select", target, "Never"], app, code="ACTION_NOT_SUPPORTED")
-                require("Select" in response.error["message"] or "semantic" in response.error["message"],
-                        response.raw)
-            changed(lambda: gsettings.get(ctx.tier, schema, key), initial, floor=0.3)
+                label, wanted = ("5 minutes", "uint32 300") if initial == "uint32 0" else ("Never", "uint32 0")
+                headless = ctx.mode == "headless"
+                response = command(ctx, ["select", target, label], app,
+                                   code="POLICY_DENIED" if headless else None)
+                if headless:
+                    details = response.error.get("details", {})
+                    require(details.get("kind") == "pointer_required"
+                            and details.get("physical_delivery_started") is False, response.raw)
+                    require(response.error.get("disposition") == {"delivery": "not_delivered", "retry": "safe"},
+                            response.raw)
+                else:
+                    require((response.data or {}).get("disposition") == {
+                        "delivery": "delivered_verified", "retry": "unsafe"}, response.raw)
+                expected = initial if headless else wanted
+            changed(lambda: gsettings.get(ctx.tier, schema, key), expected, floor=0.3)
             ctx.after("gsettings", gsettings.get(ctx.tier, schema, key))
         finally:
-            if absent and gsettings.get(ctx.tier, schema, key) != initial:
+            if gsettings.get(ctx.tier, schema, key) != initial:
                 gsettings.set(ctx.tier, schema, key, initial)
                 changed(lambda: gsettings.get(ctx.tier, schema, key), initial)
             require(gsettings.get(ctx.tier, schema, key) == initial)
@@ -46,6 +58,11 @@ def select_contract(ctx, *, absent=False):
 
 @implementation("select.screen_blank_value")
 def screen_blank_value(ctx: LegContext) -> None:
+    select_contract(ctx)
+
+
+@implementation("select.screen_blank_headless_refusal")
+def screen_blank_headless_refusal(ctx: LegContext) -> None:
     select_contract(ctx)
 
 
