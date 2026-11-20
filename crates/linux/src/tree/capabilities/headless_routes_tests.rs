@@ -116,7 +116,7 @@ fn gtk4_entry_activation_and_index_selects_are_not_promised_to_a_snapshot() {
 
 #[test]
 fn live_evidence_keeps_the_tokens_a_headed_route_needs() {
-    let unread = HeadlessRoutes::unread();
+    let unread = HeadlessRoutes::every_token();
     assert!(tokens(&entry(), &unread).contains(&"Click".to_owned()));
     for node in [tab(), tab_list(), row(), list()] {
         assert!(tokens(&node, &unread).contains(&"Select".to_owned()));
@@ -181,11 +181,8 @@ fn gtk4_routes_that_land_headless_stay_promised() {
     assert!(withheld(entry_with_click, &gtk).is_empty());
 }
 
-fn snapshot_actions(routes: &HeadlessRoutes) -> Vec<Vec<String>> {
-    use crate::tree::observe::decorate::Plain;
-    use crate::tree::observe::projection::project_with;
+fn snapshot_walk() -> crate::tree::Walk<ObservedRead> {
     use crate::tree::{Walk, WalkCounts, WalkedNode};
-    use agent_desktop_core::{ObservationSource, ObservedTree, WindowInfo, WindowState};
     let leaf_at = |payload, source_index| WalkedNode {
         payload,
         children: Vec::new(),
@@ -194,7 +191,7 @@ fn snapshot_actions(routes: &HeadlessRoutes) -> Vec<Vec<String>> {
         source_index,
         in_web_document: false,
     };
-    let walk = Walk {
+    Walk {
         root: WalkedNode {
             children: vec![leaf_at(entry(), 0), leaf_at(tab(), 1)],
             ..leaf_at(read(LIST, &[SENSITIVE], &[], &[], 2), 0)
@@ -203,8 +200,20 @@ fn snapshot_actions(routes: &HeadlessRoutes) -> Vec<Vec<String>> {
         node_count: 3,
         max_depth: 1,
         counts: WalkCounts::default(),
-    };
-    let (subtree, stats) = project_with(walk, &WalkLimits::default(), &mut Plain, None, routes);
+    }
+}
+
+fn snapshot_actions(routes: &HeadlessRoutes) -> Vec<Vec<String>> {
+    use crate::tree::observe::decorate::Plain;
+    use crate::tree::observe::projection::project_with;
+    use agent_desktop_core::{ObservationSource, ObservedTree, WindowInfo, WindowState};
+    let (subtree, stats) = project_with(
+        snapshot_walk(),
+        &WalkLimits::default(),
+        &mut Plain,
+        None,
+        routes,
+    );
     let window = WindowInfo {
         id: "w-1.1-p".to_owned(),
         title: "t".to_owned(),
@@ -237,7 +246,7 @@ fn a_gtk4_snapshot_prints_only_the_tokens_a_headless_request_can_deliver() {
     assert!(!snapshot[0].contains(&"Click".to_owned()), "{snapshot:?}");
     assert!(snapshot[0].contains(&"SetValue".to_owned()), "{snapshot:?}");
     assert!(!snapshot[1].contains(&"Select".to_owned()), "{snapshot:?}");
-    let unread = snapshot_actions(&HeadlessRoutes::unread());
+    let unread = snapshot_actions(&HeadlessRoutes::every_token());
     assert!(unread[0].contains(&"Click".to_owned()), "{unread:?}");
     assert!(unread[1].contains(&"Select".to_owned()), "{unread:?}");
 }
@@ -287,4 +296,57 @@ fn a_gtk4_container_keeps_select_when_an_item_it_can_match_acts_on_its_own() {
         withheld_tokens(&clickable_label_in_row, &gtk),
         vec!["Select"]
     );
+}
+
+fn node_tokens(node: &WalkedNode<ObservedRead>, routes: &HeadlessRoutes) -> Vec<String> {
+    let mut evidence = project_node(&node.payload, false, &WalkLimits::default());
+    routes.withhold(node, &mut evidence);
+    match evidence.ref_evidence.available_actions {
+        LocatorField::Known(tokens) => tokens,
+        other => panic!("tokens unread: {other:?}"),
+    }
+}
+
+#[test]
+fn a_snapshot_with_an_answered_but_unnamed_toolkit_withholds_index_selects() {
+    let routes = HeadlessRoutes::of_walk(&snapshot_walk(), Some(ToolkitId::default()));
+    let snapshot = snapshot_actions(&routes);
+    assert!(snapshot[0].contains(&"Click".to_owned()), "{snapshot:?}");
+    assert!(!snapshot[1].contains(&"Select".to_owned()), "{snapshot:?}");
+    for node in [tab(), tab_list(), row(), list()] {
+        assert!(
+            !tokens(&node, &routes).contains(&"Select".to_owned()),
+            "{:?}",
+            node.node.traits.role
+        );
+    }
+    let own_verb = read(LIST_ITEM, &[SENSITIVE, SELECTABLE], &[], &["select"], 1);
+    assert!(tokens(&own_verb, &routes).contains(&"Select".to_owned()));
+    let activatable = holding(
+        list(),
+        vec![leaf(read(
+            LIST_ITEM,
+            &[SENSITIVE, SELECTABLE],
+            &[],
+            &["activate"],
+            1,
+        ))],
+    );
+    assert!(node_tokens(&activatable, &routes).contains(&"Select".to_owned()));
+}
+
+#[test]
+fn a_snapshot_cut_off_before_the_toolkit_answers_keeps_select_for_a_fresh_live_read() {
+    let routes = HeadlessRoutes::of_walk(&snapshot_walk(), None);
+    let snapshot = snapshot_actions(&routes);
+    assert!(snapshot[0].contains(&"Click".to_owned()), "{snapshot:?}");
+    assert!(snapshot[1].contains(&"Select".to_owned()), "{snapshot:?}");
+    for mut node in [tab(), tab_list(), row(), list()] {
+        node.node.properties.name = Field::Present(String::new());
+        assert!(
+            tokens(&node, &routes).contains(&"Select".to_owned()),
+            "{:?}",
+            node.node.traits.role
+        );
+    }
 }
