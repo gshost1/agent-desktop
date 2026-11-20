@@ -2,8 +2,11 @@ pub(crate) mod kept_session;
 pub(crate) mod key_session;
 pub(crate) mod keysym_send;
 pub(crate) mod layout;
+pub(crate) mod pointer_gate;
+pub(crate) mod pointer_gesture;
 pub(crate) mod pointer_send;
 pub(crate) mod remote_desktop;
+pub(crate) mod stream_point;
 
 #[cfg(test)]
 mod fake_session;

@@ -1,0 +1,14 @@
+P: /devices/virtual/input/input99
+E: SUBSYSTEM=input
+A: name=E2E Virtual Mouse
+
+P: /devices/virtual/input/input99/event99
+N: input/event99
+E: DEVNAME=/dev/input/event99
+E: SUBSYSTEM=input
+E: ID_INPUT=1
+E: ID_INPUT_MOUSE=1
+E: ID_VENDOR_ID=0001
+E: ID_MODEL_ID=0001
+E: LIBINPUT_DEVICE_GROUP=e2e-mouse
+A: dev=13:99

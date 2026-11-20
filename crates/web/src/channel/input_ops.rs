@@ -10,6 +10,10 @@ impl<P: PlatformAdapter> InputOps for WebChannelAdapter<P> {
         self.inner.physical_pointer_refusal()
     }
 
+    fn coordinate_pointer_refusal(&self) -> Option<AdapterError> {
+        self.inner.coordinate_pointer_refusal()
+    }
+
     fn keyboard_needs_window_activation(&self) -> bool {
         self.inner.keyboard_needs_window_activation()
     }

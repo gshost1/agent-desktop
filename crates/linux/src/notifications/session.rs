@@ -1,11 +1,14 @@
 use std::time::Duration;
 
-use agent_desktop_core::{AdapterError, Deadline, InteractionLease, InteractionPolicy};
+use agent_desktop_core::{
+    AdapterError, Deadline, DeliverySemantics, InteractionLease, InteractionPolicy,
+    RetryDisposition,
+};
 use serde_json::Value;
 
 use super::restore_report::{LIST_RESTORE, RestoreReport, with_entry};
 use super::world::ShellWorld;
-use crate::system::shell::open::Opened;
+use crate::system::shell::open::{Opened, READ_BEFORE_PRESSING};
 
 const CLEANUP_MS: u64 = 2_000;
 const CLOSED_POLL: Duration = Duration::from_millis(50);
@@ -60,10 +63,9 @@ impl<'a> Session<'a> {
                     .details
                     .as_ref()
                     .and_then(|details| details.get("surface_opened_by_call"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let restore = restore(world, lease, by_call);
-                Err(with_restore(error.with_suggestion(OPEN_BY_HAND), restore))
+                    .and_then(Value::as_bool);
+                let restore = restore(world, lease, by_call.unwrap_or(false));
+                Err(with_restore(advised(error, by_call), restore))
             }
         }
     }
@@ -79,6 +81,27 @@ impl<'a> Session<'a> {
             (Err(error), restore) => Err(with_restore(error, restore)),
         }
     }
+}
+
+/// The by-hand advice answers only an open the shell proved never pressed
+/// the opener, and such an open is stamped `not_delivered`. Any other open
+/// may have toggled the list, so it keeps the shell's own look-first advice.
+fn advised(error: AdapterError, opened_by_call: Option<bool>) -> AdapterError {
+    let unpressed = opened_by_call == Some(false);
+    if unpressed && error.disposition.retry() != RetryDisposition::Unsafe {
+        return error
+            .with_suggestion(OPEN_BY_HAND)
+            .with_disposition(DeliverySemantics::not_delivered());
+    }
+    let error = if !unpressed && error.disposition.retry() != RetryDisposition::Unsafe {
+        error.with_disposition(DeliverySemantics::delivered_unverified())
+    } else {
+        error
+    };
+    if error.suggestion.is_some() {
+        return error;
+    }
+    error.with_suggestion(READ_BEFORE_PRESSING)
 }
 
 /// Closes a list this session opened. The close runs on a deadline of its

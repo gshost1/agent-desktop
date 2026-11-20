@@ -18,7 +18,7 @@ pub fn execute(
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     crate::commands::point_resolve::require_cursor_policy(context, "mouse-wheel")?;
-    crate::commands::point_resolve::require_pointer_capability(adapter)?;
+    crate::commands::point_resolve::require_coordinate_pointer_capability(adapter)?;
     if !args.x.is_finite() || !args.y.is_finite() || !args.dx.is_finite() || !args.dy.is_finite() {
         return Err(AppError::invalid_input(
             "mouse-wheel coordinates and line deltas must be finite numbers",

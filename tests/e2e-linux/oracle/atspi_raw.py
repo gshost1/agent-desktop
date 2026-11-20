@@ -122,8 +122,10 @@ class RawNode:
                 if (role is None or node.role == role) and (name is None or node.name == name)]
 
     def extents(self, window_coords: bool = False) -> tuple[int, int, int, int]:
-        return tuple(self.invoke("org.a11y.atspi.Component", "GetExtents", "(u)",
-                                 (1 if window_coords else 0,))[0])
+        position = self.invoke("org.a11y.atspi.Component", "GetPosition", "(u)",
+                               (1 if window_coords else 0,))
+        size = self.invoke("org.a11y.atspi.Component", "GetSize")
+        return tuple((*position, *size))
 
     def text(self) -> str | None:
         if "org.a11y.atspi.Text" not in self.interfaces():
@@ -190,6 +192,11 @@ def app_root(tier: Tier, owner_name: str) -> RawNode:
 def unresponsive(error) -> bool:
     return isinstance(error, TimeoutError) or any(token in str(error) for token in
         ("org.freedesktop.DBus.Error.NoReply", "Timeout was reached", "g-io-error-quark: Timeout"))
+
+
+def vanished(error) -> bool:
+    return any(token in str(error) for token in
+        ("org.freedesktop.DBus.Error.UnknownObject", "Object does not exist at path"))
 
 
 def poll(predicate: Callable[[], object], deadline_s: float, *, floor_s: float = 0.0):
