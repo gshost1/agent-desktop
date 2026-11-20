@@ -34,6 +34,8 @@ pub(crate) fn no_candidate() -> AdapterError {
 }
 
 /// The process that owned the ref no longer exists.
+/// Core maps this kind to safe `inspect_state_then_retry_original` recovery
+/// without making the old ref retryable.
 pub(crate) fn app_exited() -> AdapterError {
     settled(
         "Stored ref's owning application has exited",

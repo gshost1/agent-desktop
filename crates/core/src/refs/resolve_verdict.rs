@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use crate::{AdapterError, ErrorCode};
 
-const COMPLETE_ABSENCE_KINDS: [&str; 3] = [
+pub(crate) const COMPLETE_ABSENCE_KINDS: [&str; 3] = [
     "resolve_no_candidate",
     "resolution_complete_absence",
     "saved_ref_absent",
