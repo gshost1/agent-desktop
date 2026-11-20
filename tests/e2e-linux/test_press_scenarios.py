@@ -33,7 +33,7 @@ class PressVerdictTests(unittest.TestCase):
 
 class RestorationTests(unittest.TestCase):
     def run_leg(self, original, backspace_works=True, *, type_works=True, return_works=True,
-                document_count=1, text_available=True):
+                document_count=1, text_available=True, restore_error=None, modifier_restore_error=None):
         tier = SimpleNamespace(runtime_dir=Path("/private/test"))
         app = SimpleNamespace(windows=["w-editor"])
         document, selected = [original], [False]
@@ -43,6 +43,7 @@ class RestorationTests(unittest.TestCase):
         tree = SimpleNamespace(text=lambda: None, children=lambda: [textview, label],
                                find=lambda **kw: [textview] * document_count if kw.get("role") == 61 else [])
         ctx = LegContext(tier, "headed", legs.leg_by_id(LEG), member_reader=lambda _: frozenset())
+        self.ctx = ctx
 
         def product(tier, argv, **kw):
             if argv[0] == "type" and type_works:
@@ -65,13 +66,16 @@ class RestorationTests(unittest.TestCase):
             patch.object(text_entry, "ref_for", return_value="@s:e1"), \
             patch.object(headed_actions, "live_root", return_value=tree), \
             patch.object(text_entry, "live_root", return_value=tree), \
-            patch.object(text_entry, "_modifier_state", return_value=ALL_OFF), \
+            patch.object(text_entry, "_modifier_state",
+                         side_effect=[ALL_OFF, ALL_OFF, modifier_restore_error or ALL_OFF]), \
+            patch.object(text_entry, "restore_text", wraps=text_entry.restore_text, side_effect=restore_error), \
             patch.object(lifecycle.atspi_raw, "poll", side_effect=lambda read, *a, **kw: read()), \
             patch("runner.verdict.run_product", side_effect=product):
             try:
                 text_entry.press_combos_edit_document(ctx)
             finally:
-                self.assertEqual(document[0], original)
+                if restore_error is None:
+                    self.assertEqual(document[0], original)
                 stop.assert_called_once_with(app)
         return ctx, document
 
@@ -85,6 +89,25 @@ class RestorationTests(unittest.TestCase):
     def test_a_backspace_that_deletes_nothing_fails_the_leg(self):
         with self.assertRaises(AssertionError):
             self.run_leg("", backspace_works=False)
+
+    def test_restore_failure_is_recorded_without_replacing_the_body_failure(self):
+        for label, kwargs in (("document", {"restore_error": RuntimeError("restore failed")}),
+                              ("modifiers", {"modifier_restore_error": RuntimeError("restore failed")})):
+            with self.subTest(label=label), self.assertRaisesRegex(AssertionError, "ctrl\\+a then backspace left"):
+                self.run_leg("saved", backspace_works=False, **kwargs)
+            self.assertEqual(self.ctx.findings, [f"Text entry cleanup: {label}: restore failed"])
+            other = "x11.modifiers" if label == "document" else "atspi.document_text"
+            self.assertIn("restored", self.ctx.reads[other])
+
+    def test_restore_failure_fails_an_otherwise_successful_leg(self):
+        for label, kwargs in (("document", {"restore_error": RuntimeError("restore failed")}),
+                              ("modifiers", {"modifier_restore_error": RuntimeError("restore failed")})):
+            with self.subTest(label=label), self.assertRaisesRegex(
+                    AssertionError, f"Text entry cleanup: {label}: restore failed"):
+                self.run_leg("saved", **kwargs)
+            self.assertEqual(self.ctx.findings, [])
+            other = "x11.modifiers" if label == "document" else "atspi.document_text"
+            self.assertIn("restored", self.ctx.reads[other])
 
     def test_failed_typing_or_return_is_not_hidden_by_a_successful_clear(self):
         for kwargs in ({"type_works": False}, {"return_works": False}):

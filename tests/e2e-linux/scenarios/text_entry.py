@@ -139,6 +139,7 @@ def press_combos_edit_document(ctx: LegContext) -> None:
         before = read()
         ctx.before("atspi.document_text", before)
         ctx.before("x11.modifiers", held_modifiers(_modifier_state(ctx.tier)))
+        succeeded = False
         try:
             assert_ok(ctx.product(["type", ref_for(ctx, window, role="textfield"), "ab"]))
             typed = _settled_document(read, lambda text: "ab" in text)
@@ -153,8 +154,21 @@ def press_combos_edit_document(ctx: LegContext) -> None:
             problems = press_verdict(typed, after_return, after_clear, stuck)
             if problems:
                 raise AssertionError("; ".join(problems))
+            succeeded = True
         finally:
-            restore_text(ctx, app, before, read=read)
-            ctx.restored("x11.modifiers", held_modifiers(_modifier_state(ctx.tier)))
+            problems = []
+            for label, restore in (
+                ("document", lambda: restore_text(ctx, app, before, read=read)),
+                ("modifiers", lambda: ctx.restored("x11.modifiers", held_modifiers(_modifier_state(ctx.tier)))),
+            ):
+                try:
+                    restore()
+                except Exception as error:
+                    problems.append(f"{label}: {error}")
+            if problems:
+                message = "Text entry cleanup: " + "; ".join(problems)
+                if succeeded:
+                    raise AssertionError(message)
+                ctx.finding(message)
     finally:
         apps.stop(app)
