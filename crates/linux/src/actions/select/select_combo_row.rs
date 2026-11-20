@@ -35,7 +35,8 @@ trait ComboRows {
     fn satisfied(&mut self) -> Option<bool>;
     fn expanded(&mut self, deadline: Deadline) -> Option<bool>;
     fn open(&mut self) -> Result<Vec<ActionStep>, AdapterError>;
-    fn close(&mut self, deadline: Deadline) -> bool;
+    fn popup_hidden(&self, deadline: Deadline) -> Option<bool>;
+    fn close(&mut self, deadline: Deadline) -> Option<bool>;
     fn choose(&mut self) -> Result<ActionResult, AdapterError>;
 }
 
@@ -61,17 +62,30 @@ impl ComboRows for BusCombo<'_> {
         self.pointer.click(self.combo)
     }
 
-    fn close(&mut self, deadline: Deadline) -> bool {
-        if self.pointer.escape().is_err() {
-            return false;
+    fn popup_hidden(&self, deadline: Deadline) -> Option<bool> {
+        let children = children_of(self.target.bus, self.combo, Some(COMBO_BOX), deadline).ok()?;
+        let mut found = false;
+        for child in children {
+            let view = read_node_view(self.target.bus, &handle_of(&child), deadline).ok()?;
+            if view.role()? == LIST {
+                found = true;
+                if view.state(SHOWING)? {
+                    return Some(false);
+                }
+            }
         }
+        found.then_some(true)
+    }
+
+    fn close(&mut self, deadline: Deadline) -> Option<bool> {
+        self.pointer.escape().ok()?;
         poll_until(
             deadline,
             CLOSE_WAIT,
             POLL_STEP,
             || self.popup_hidden(deadline),
             |hidden| *hidden == Some(true),
-        ) == Some(true)
+        )
     }
 
     fn choose(&mut self) -> Result<ActionResult, AdapterError> {
@@ -92,23 +106,6 @@ fn observed_expansion(expanded: Option<bool>, expandable: Option<bool>) -> Optio
         (Some(true), _) => Some(true),
         (Some(false), Some(true)) => Some(false),
         _ => None,
-    }
-}
-
-impl BusCombo<'_> {
-    fn popup_hidden(&self, deadline: Deadline) -> Option<bool> {
-        let children = children_of(self.target.bus, self.combo, Some(COMBO_BOX), deadline).ok()?;
-        let mut found = false;
-        for child in children {
-            let view = read_node_view(self.target.bus, &handle_of(&child), deadline).ok()?;
-            if view.role()? == LIST {
-                found = true;
-                if view.state(SHOWING)? {
-                    return Some(false);
-                }
-            }
-        }
-        found.then_some(true)
     }
 }
 
@@ -150,14 +147,19 @@ fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, 
         |expanded| *expanded == Some(true),
     );
     if expanded != Some(true) {
-        let closed = rows.close(deadline);
+        let attempted = rows.popup_hidden(deadline) == Some(false);
+        let closed = if attempted {
+            rows.close(deadline)
+        } else {
+            None
+        };
         return Err(after_opener(
             AdapterError::new(
                 ErrorCode::ActionFailed,
                 "The dropdown did not show its choices after the pointer click",
             )
             .with_details(
-                json!({"kind": "popup_not_observed", "popup_close_attempted": true,
+                json!({"kind": "popup_not_observed", "popup_close_attempted": attempted,
                                  "popup_closed": closed}),
             )
             .with_disposition(DeliverySemantics::delivered_unverified()),

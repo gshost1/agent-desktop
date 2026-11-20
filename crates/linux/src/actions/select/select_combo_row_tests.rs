@@ -8,6 +8,7 @@ struct Rows {
     opens: bool,
     failure: Option<&'static str>,
     operations: Vec<&'static str>,
+    hidden: Option<bool>,
 }
 
 impl Rows {
@@ -18,6 +19,7 @@ impl Rows {
             opens: true,
             failure: None,
             operations: Vec::new(),
+            hidden: Some(false),
         }
     }
 }
@@ -63,9 +65,17 @@ impl ComboRows for Rows {
             .with_verified_delivery())
     }
 
-    fn close(&mut self, _deadline: Deadline) -> bool {
+    fn popup_hidden(&self, _deadline: Deadline) -> Option<bool> {
+        self.hidden
+    }
+
+    fn close(&mut self, _deadline: Deadline) -> Option<bool> {
         self.operations.push("escape");
-        self.failure != Some("close")
+        match self.failure {
+            Some("close") => Some(false),
+            Some("close-unread") => None,
+            _ => Some(true),
+        }
     }
 }
 
@@ -178,6 +188,37 @@ fn a_close_failure_keeps_the_original_unsafe_error_and_does_not_claim_restoratio
     let details = error.details.expect("details");
     assert_eq!(details["kind"], "popup_not_observed");
     assert_eq!(details["popup_closed"], false);
+}
+
+#[test]
+fn an_unknown_or_hidden_popup_never_receives_a_global_escape() {
+    for hidden in [None, Some(true)] {
+        let mut rows = Rows {
+            opens: false,
+            hidden,
+            ..Rows::closed()
+        };
+        let error = select(&mut rows).expect_err("popup not observed");
+        assert_eq!(rows.operations, ["open"]);
+        assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+        let details = error.details.expect("details");
+        assert_eq!(details["popup_close_attempted"], false);
+        assert!(details["popup_closed"].is_null());
+    }
+}
+
+#[test]
+fn an_unread_popup_after_escape_is_unknown_not_proven_open() {
+    let mut rows = Rows {
+        opens: false,
+        failure: Some("close-unread"),
+        ..Rows::closed()
+    };
+    let error = select(&mut rows).expect_err("popup not observed");
+    assert_eq!(rows.operations, ["open", "escape"]);
+    let details = error.details.expect("details");
+    assert_eq!(details["popup_close_attempted"], true);
+    assert!(details["popup_closed"].is_null());
 }
 
 #[test]

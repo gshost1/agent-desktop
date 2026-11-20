@@ -172,8 +172,9 @@ cursor; on Wayland none is drawn.
   already-open popup open until choosing and verifies the combo's displayed
   value. A combo that does not advertise expansion refuses before input rather
   than treating its missing expanded flag as a closed popup. If expansion
-  cannot be observed after opening, it sends Escape and reports whether
-  the popup was proven closed. It reserves cleanup time before opening; a
+  cannot be observed after opening, it sends Escape only when a popup is
+  independently observed as visible. An unobserved popup reports an unknown
+  closure state rather than receiving a global key. It reserves cleanup time before opening; a
   budget too short for cleanup refuses without input. A failure after clicking
   the opener is unsafe to retry even when the popup was closed.
   Headed, on a list whose toolkit index cannot be mapped to the
