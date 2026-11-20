@@ -373,6 +373,7 @@ pub(crate) mod desktop_entry_traits;
 pub(super) mod desktop_exec;
 pub(super) mod desktop_lookup;
 pub(super) mod desktop_stamp;
+pub(super) mod entry_commands;
 pub(super) mod indexed_entry;
 mod launch_adopt;
 pub(super) mod launch_attach;
