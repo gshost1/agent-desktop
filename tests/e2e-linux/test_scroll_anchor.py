@@ -1,7 +1,7 @@
 import copy
 import sys
 import unittest
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -66,23 +66,27 @@ class ScrollAnchorTests(unittest.TestCase):
             with self.subTest(details=details), self.assertRaises(AssertionError):
                 no_input(SimpleNamespace(error={"disposition": disposition, "details": details}, raw="bad"))
 
+    @contextmanager
+    def settings_fixture(self, *, failure=None, restore_error=None, read_error=None):
+        ctx = Mock()
+        bar = SimpleNamespace(value=lambda: 7.0)
+        control = SimpleNamespace(extents=lambda **kw: (0, 0, 40, 40), states={"CHECKED"})
+        before = (7.0, (((0, 0, 40, 40), True), ((0, 0, 40, 40), True)))
+        data = {"tree": {"role": "scrollarea", "ref_id": "@s:e1", "children": [{"name": "Hot Corner"}]}}
+        with patch.object(ref_scroll, "managed", return_value=nullcontext(object())), \
+                patch.object(ref_scroll, "desktop_restored", return_value=nullcontext()), \
+                patch.object(ref_scroll, "root"), patch.object(ref_scroll, "content_bar", return_value=bar), \
+                patch.object(ref_scroll, "one", return_value=control), \
+                patch.object(ref_scroll, "desktop", return_value=((0, 0), "window")), \
+                patch.object(ref_scroll, "snapshot", return_value=data), \
+                patch.object(ref_scroll, "identity_refusal", side_effect=failure), \
+                patch.object(ref_scroll, "raw_value", side_effect=restore_error) as restore, \
+                patch.object(ref_scroll, "changed", return_value=before, side_effect=read_error):
+            yield ctx, bar, before, restore
+
     def test_settings_scroll_is_restored_after_success_or_assertion_failure(self):
         for failure in (None, AssertionError("body failed")):
-            ctx = Mock()
-            bar = SimpleNamespace(value=lambda: 7.0)
-            control = SimpleNamespace(extents=lambda **kw: (0, 0, 40, 40), states={"CHECKED"})
-            before = (7.0, (((0, 0, 40, 40), True), ((0, 0, 40, 40), True)))
-            data = {"tree": {"role": "scrollarea", "ref_id": "@s:e1", "children": [{"name": "Hot Corner"}]}}
-            with self.subTest(failure=failure), \
-                    patch.object(ref_scroll, "managed", return_value=nullcontext(object())), \
-                    patch.object(ref_scroll, "desktop_restored", return_value=nullcontext()), \
-                    patch.object(ref_scroll, "root"), patch.object(ref_scroll, "content_bar", return_value=bar), \
-                    patch.object(ref_scroll, "one", return_value=control), \
-                    patch.object(ref_scroll, "desktop", return_value=((0, 0), "window")), \
-                    patch.object(ref_scroll, "snapshot", return_value=data), \
-                    patch.object(ref_scroll, "identity_refusal", side_effect=failure), \
-                    patch.object(ref_scroll, "raw_value") as restore, \
-                    patch.object(ref_scroll, "changed", return_value=before):
+            with self.subTest(failure=failure), self.settings_fixture(failure=failure) as (ctx, bar, before, restore):
                 if failure:
                     with self.assertRaisesRegex(AssertionError, "body failed"):
                         ref_scroll.settings_scroll_identity_refusal(ctx)
@@ -90,6 +94,22 @@ class ScrollAnchorTests(unittest.TestCase):
                     ref_scroll.settings_scroll_identity_refusal(ctx)
             restore.assert_called_once_with(bar, 7.0)
             ctx.restored.assert_called_once_with("atspi.viewport", before)
+
+    def test_settings_cleanup_errors_do_not_replace_the_body_failure(self):
+        for key in ("restore_error", "read_error"):
+            with self.subTest(key=key), self.settings_fixture(
+                    failure=AssertionError("body failed"), **{key: RuntimeError("cleanup failed")}) as (ctx, *_):
+                with self.assertRaisesRegex(AssertionError, "body failed"):
+                    ref_scroll.settings_scroll_identity_refusal(ctx)
+                ctx.finding.assert_called_once_with("Settings scroll cleanup: cleanup failed")
+
+    def test_settings_cleanup_errors_fail_an_otherwise_successful_body(self):
+        for key in ("restore_error", "read_error"):
+            with self.subTest(key=key), self.settings_fixture(
+                    **{key: RuntimeError("cleanup failed")}) as (ctx, *_):
+                with self.assertRaisesRegex(AssertionError, "Settings scroll cleanup: cleanup failed"):
+                    ref_scroll.settings_scroll_identity_refusal(ctx)
+                ctx.finding.assert_not_called()
 
     def test_settings_leg_is_not_positive_scroll_coverage(self):
         leg = next(leg for leg in REGISTRY if leg.id == "ref_actions.settings_scroll_identity_refusal")

@@ -84,6 +84,7 @@ def settings_scroll_identity_refusal(ctx):
                                          for node in controls))
         before, desktop_before = read(), desktop(ctx.tier)
         ctx.before("atspi.viewport", before)
+        succeeded = False
         try:
             data = snapshot(ctx, app)
             candidates = [item["ref_id"] for item in nodes(data.get("tree"))
@@ -95,9 +96,16 @@ def settings_scroll_identity_refusal(ctx):
             require(after == before, "identity refusal changed Settings")
             require(desktop(ctx.tier) == desktop_before, "identity refusal moved pointer or focus")
             ctx.after("atspi.viewport", after)
+            succeeded = True
         finally:
-            raw_value(bar, before[0])
-            ctx.restored("atspi.viewport", changed(read, before))
+            try:
+                raw_value(bar, before[0])
+                ctx.restored("atspi.viewport", changed(read, before))
+            except Exception as error:
+                message = f"Settings scroll cleanup: {error}"
+                if succeeded:
+                    raise AssertionError(message) from error
+                ctx.finding(message)
 
 
 @implementation("ref_actions.scroll_to")
