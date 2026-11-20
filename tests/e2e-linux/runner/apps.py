@@ -31,6 +31,7 @@ ALIASES = {
     "Calculator": ("calculator",), "Files": ("nautilus", "files"),
     "Terminal": ("terminal",), "Text Editor": ("text-editor", "text editor"),
     "Settings": ("control-center", "settings"),
+    "Settings Mouse": ("control-center", "settings"),
     "Zoo GTK3": ("zoo gtk3", "zoo_gtk3.py"),
     "Zoo GTK4": ("zoo gtk4", "zoo_gtk4.py"),
     "Zoo Qt": ("zoo qt", "zoo_qt.py"),
@@ -139,6 +140,9 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
     elif app.endswith(("zoo_gtk3.py", "zoo_gtk4.py")):
         command = ["python3", app]
         env["GTK_USE_PORTAL"] = "0"
+    elif app == "Settings Mouse":
+        device = Path(__file__).resolve().parents[1] / "apps" / "mouse.umockdev"
+        command = ["umockdev-run", "--device", str(device), "--", "gnome-control-center"]
     else:
         command = [COMMANDS.get(app, app)]
     if "code" in Path(command[0]).name:

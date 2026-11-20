@@ -37,9 +37,9 @@ def hot_corner_flip_restore(ctx: LegContext) -> None:
             ctx.restored("gsettings", gsettings.get(ctx.tier, schema, key))
 
 
-def numeric_commit(ctx, panel, label, schema, key, wanted, role, raw_role):
+def numeric_commit(ctx, panel, label, schema, key, wanted, role, raw_role, *, app_name="Settings"):
     initial = gsettings.get(ctx.tier, schema, key)
-    with managed(ctx, "Settings", (panel,)) as app:
+    with managed(ctx, app_name, (panel,)) as app:
         raw_target = one(root(ctx, app), role=raw_role, name=label)
         target = ref(ctx, app, role=role, name=label)
         ctx.before("gsettings", initial)
@@ -50,7 +50,7 @@ def numeric_commit(ctx, panel, label, schema, key, wanted, role, raw_role):
             stale_twin(ctx, app, target, lambda: gsettings.get(ctx.tier, schema, key),
                        ("set-value", str(wanted)))
             apps.stop(app)
-            with managed(ctx, "Settings", (panel,)) as reopened:
+            with managed(ctx, app_name, (panel,)) as reopened:
                 control = one(root(ctx, reopened), role=raw_role, name=label)
                 require(control.value() == wanted, "value did not survive panel reopen")
                 ctx.after("gsettings", gsettings.get(ctx.tier, schema, key))
@@ -69,7 +69,8 @@ def pointer_speed_commit(ctx: LegContext) -> None:
     schema, key = "org.gnome.desktop.peripherals.mouse", "speed"
     initial = key_number(gsettings.get(ctx.tier, schema, key))
     wanted = -0.25 if initial == 0.25 else 0.25
-    numeric_commit(ctx, "mouse", "Pointer Speed", schema, key, wanted, "slider", 51)
+    numeric_commit(ctx, "mouse", "Pointer Speed", schema, key, wanted, "slider", 51,
+                   app_name="Settings Mouse")
 
 
 @implementation("values.terminal_read_only_flip")

@@ -28,6 +28,7 @@ Keep failed suites for diagnosis; the runner removes a successful suite. Use ano
 - `x11-mutter`: `gnome-shell`, `xdotool`, `wmctrl`, `xclip`.
 - `wayland`: `gnome-shell`, `wl-copy`, `wl-paste`.
 - The legs also drive the GNOME apps Calculator, Text Editor, Files, Terminal and Settings, and a PyQt6 test window. AT-SPI must be available in the private session.
+- `umockdev-run` supplies the Settings Mouse fixture's virtual udev mouse so the pointer-speed control is present without host hardware. Both Mouse legs still drive GNOME Settings and check the private GSettings value; the commit leg also closes and reopens the same fixture.
 
 The runner inherits the caller's tool paths and libraries: supply tools through `PATH` and shared libraries through `LD_LIBRARY_PATH`. Qt legs run under `python3`; set `AGENT_DESKTOP_QT_PYTHON` when PyQt6 lives in a separate interpreter. That does not change the harness interpreter.
 
