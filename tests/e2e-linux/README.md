@@ -127,7 +127,7 @@ The registry is the inventory; these surfaces have no live claim, and their cove
 
 - Electron and Chromium: no leg in this registry.
 - Clipboard HTML import: unsupported by design. `clipboard-get` reads only the text and image targets (`formats::TEXT_TARGETS`, `targets::choose_target`; `x11_read_tests::an_owner_without_the_wanted_target_reads_as_absent`). The clipboard legs cover text, image, owner lifetime, clear and a foreign read after the CLI exited.
-- Positive `select` on a display value: `select.screen_blank_value` is a headed live check of verified delivery and the independently observed setting change and restoration. `select.screen_blank_headless_refusal` separately asserts pointer-policy refusal and an unchanged setting. `crates/linux/src/actions/select/select_tests.rs` and `select_search_tests.rs` cover route, identity, effect and refusal.
+- Positive `select` on a display value: `select.screen_blank_value` is a headed live check of verified delivery and the independently observed setting change and restoration. `select.screen_blank_headless_refusal` separately asserts pointer-policy refusal and an unchanged setting. `select.absent_choice_refused` checks a missing choice under both policies. `crates/linux/src/actions/select/select_tests.rs` and `select_search_tests.rs` cover route, identity, effect and refusal.
 - Wayland: the private shell has no keyboard seat, so focus and window capture are live only as fail-closed refusals (`wayland_actions.*`, `gaps.wayland_window_capture_refused`). The other Wayland legs check that `list-windows` reports no position, that a seatless semantic click works, and that an unhealthy shell fails the tier with a named reason.
 
 ## Reading a failure
