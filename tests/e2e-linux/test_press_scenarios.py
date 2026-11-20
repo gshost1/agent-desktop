@@ -32,20 +32,26 @@ class PressVerdictTests(unittest.TestCase):
 
 
 class RestorationTests(unittest.TestCase):
-    def run_leg(self, original, backspace_works=True):
+    def run_leg(self, original, backspace_works=True, *, type_works=True, return_works=True,
+                document_count=1, text_available=True):
         tier = SimpleNamespace(runtime_dir=Path("/private/test"))
         app = SimpleNamespace(windows=["w-editor"])
         document, selected = [original], [False]
+        textview = SimpleNamespace(role=61, text=lambda: document[0] if text_available else None,
+                                   children=lambda: [])
+        label = SimpleNamespace(role=29, text=lambda: "New Document: unrelated header text", children=lambda: [])
+        tree = SimpleNamespace(text=lambda: None, children=lambda: [textview, label],
+                               find=lambda **kw: [textview] * document_count if kw.get("role") == 61 else [])
         ctx = LegContext(tier, "headed", legs.leg_by_id(LEG), member_reader=lambda _: frozenset())
 
         def product(tier, argv, **kw):
-            if argv[0] == "type":
+            if argv[0] == "type" and type_works:
                 document[0] += argv[-1]
             elif argv[0] == "set-value":
                 document[0] = argv[-1]
             elif argv[0] == "clear":
                 document[0] = ""
-            elif argv[:2] == ["press", "return"]:
+            elif argv[:2] == ["press", "return"] and return_works:
                 document[0] += "\n"
             elif argv[:2] == ["press", "ctrl+a"]:
                 selected[0] = True
@@ -54,21 +60,23 @@ class RestorationTests(unittest.TestCase):
             return Envelope(True, {}, None, "{}", 0, argv)
 
         with patch.object(lifecycle.apps, "launch", return_value=app), \
-            patch.object(lifecycle.apps, "stop"), \
+            patch.object(lifecycle.apps, "stop") as stop, \
             patch.object(headed_actions, "ref_for", return_value="@s:e1"), \
             patch.object(text_entry, "ref_for", return_value="@s:e1"), \
-            patch.object(headed_actions, "live_root", return_value=app), \
-            patch.object(text_entry, "live_root", return_value=app), \
-            patch.object(headed_actions, "longest_text", side_effect=lambda _: document[0]), \
-            patch.object(text_entry, "longest_text", side_effect=lambda _: document[0]), \
+            patch.object(headed_actions, "live_root", return_value=tree), \
+            patch.object(text_entry, "live_root", return_value=tree), \
             patch.object(text_entry, "_modifier_state", return_value=ALL_OFF), \
             patch.object(lifecycle.atspi_raw, "poll", side_effect=lambda read, *a, **kw: read()), \
             patch("runner.verdict.run_product", side_effect=product):
-            text_entry.press_combos_edit_document(ctx)
+            try:
+                text_entry.press_combos_edit_document(ctx)
+            finally:
+                self.assertEqual(document[0], original)
+                stop.assert_called_once_with(app)
         return ctx, document
 
     def test_faithful_product_restores_the_document_and_records_each_oracle_once(self):
-        for original in ("", "saved"):
+        for original in ("", "saved", "first line\nsecond line\n"):
             with self.subTest(original=original):
                 ctx, document = self.run_leg(original)
                 self.assertEqual(verdict.evaluate(ctx), [])
@@ -77,6 +85,20 @@ class RestorationTests(unittest.TestCase):
     def test_a_backspace_that_deletes_nothing_fails_the_leg(self):
         with self.assertRaises(AssertionError):
             self.run_leg("", backspace_works=False)
+
+    def test_failed_typing_or_return_is_not_hidden_by_a_successful_clear(self):
+        for kwargs in ({"type_works": False}, {"return_works": False}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(AssertionError):
+                self.run_leg("saved", **kwargs)
+
+    def test_missing_or_ambiguous_documents_fail_before_typing(self):
+        for count in (0, 2):
+            with self.subTest(count=count), self.assertRaisesRegex(AssertionError, "expected one raw node"):
+                self.run_leg("saved", document_count=count)
+
+    def test_an_unreadable_document_is_not_treated_as_empty(self):
+        with self.assertRaisesRegex(AssertionError, "document text is unavailable"):
+            self.run_leg("saved", text_available=False)
 
 
 if __name__ == "__main__":

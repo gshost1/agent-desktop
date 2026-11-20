@@ -5,6 +5,7 @@ import ctypes.util
 
 from oracle import atspi_raw
 from runner import apps
+from runner.helper import one
 from runner.legs import implementation
 from runner.verdict import LegContext
 from scenarios.headed_actions import (
@@ -129,24 +130,31 @@ def _settled_document(read, accepted) -> str:
 def press_combos_edit_document(ctx: LegContext) -> None:
     app, window = _launch(ctx)
     try:
-        read = lambda: longest_text(live_root(ctx.tier, app))
+        document = one(live_root(ctx.tier, app), role=61)
+        def read():
+            value = document.text()
+            if value is None:
+                raise AssertionError("document text is unavailable")
+            return value
         before = read()
         ctx.before("atspi.document_text", before)
         ctx.before("x11.modifiers", held_modifiers(_modifier_state(ctx.tier)))
-        assert_ok(ctx.product(["type", ref_for(ctx, window, role="textfield"), "ab"]))
-        typed = _settled_document(read, lambda text: "ab" in text)
-        assert_ok(ctx.product(["press", "return", "--window-id", window]))
-        after_return = _settled_document(read, lambda text: text.count("\n") == typed.count("\n") + 1)
-        assert_ok(ctx.product(["press", "ctrl+a", "--window-id", window]))
-        assert_ok(ctx.product(["press", "backspace", "--window-id", window]))
-        after_clear = _settled_document(read, lambda text: text == "")
-        ctx.after("atspi.document_text", after_clear)
-        stuck = held_modifiers(_modifier_state(ctx.tier))
-        ctx.after("x11.modifiers", stuck)
-        problems = press_verdict(typed, after_return, after_clear, stuck)
-        if problems:
-            raise AssertionError("; ".join(problems))
-        restore_text(ctx, app, before)
-        ctx.restored("x11.modifiers", held_modifiers(_modifier_state(ctx.tier)))
+        try:
+            assert_ok(ctx.product(["type", ref_for(ctx, window, role="textfield"), "ab"]))
+            typed = _settled_document(read, lambda text: "ab" in text)
+            assert_ok(ctx.product(["press", "return", "--window-id", window]))
+            after_return = _settled_document(read, lambda text: text.count("\n") == typed.count("\n") + 1)
+            assert_ok(ctx.product(["press", "ctrl+a", "--window-id", window]))
+            assert_ok(ctx.product(["press", "backspace", "--window-id", window]))
+            after_clear = _settled_document(read, lambda text: text == "")
+            ctx.after("atspi.document_text", after_clear)
+            stuck = held_modifiers(_modifier_state(ctx.tier))
+            ctx.after("x11.modifiers", stuck)
+            problems = press_verdict(typed, after_return, after_clear, stuck)
+            if problems:
+                raise AssertionError("; ".join(problems))
+        finally:
+            restore_text(ctx, app, before, read=read)
+            ctx.restored("x11.modifiers", held_modifiers(_modifier_state(ctx.tier)))
     finally:
         apps.stop(app)
