@@ -37,17 +37,19 @@ trait ComboRows {
     fn open(&mut self) -> Result<Vec<ActionStep>, AdapterError>;
     fn popup_hidden(&self, deadline: Deadline) -> Option<bool>;
     fn escape(&mut self) -> Option<()>;
-    fn close(&mut self, deadline: Deadline) -> Option<bool> {
-        if self.popup_hidden(deadline) != Some(false) {
-            return None;
+    fn close(&mut self, deadline: Deadline) -> (bool, Option<bool>) {
+        if self.popup_hidden(deadline) != Some(false) || self.escape().is_none() {
+            return (false, None);
         }
-        self.escape()?;
-        poll_until(
-            deadline,
-            CLOSE_WAIT,
-            POLL_STEP,
-            || self.popup_hidden(deadline),
-            |hidden| *hidden == Some(true),
+        (
+            true,
+            poll_until(
+                deadline,
+                CLOSE_WAIT,
+                POLL_STEP,
+                || self.popup_hidden(deadline),
+                |hidden| *hidden == Some(true),
+            ),
         )
     }
     fn choose(&mut self) -> Result<ActionResult, AdapterError>;
@@ -153,11 +155,10 @@ fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, 
         |expanded| *expanded == Some(true),
     );
     if expanded != Some(true) {
-        let attempted = rows.popup_hidden(deadline) == Some(false);
-        let closed = if attempted {
+        let (attempted, closed) = if rows.popup_hidden(deadline) == Some(false) {
             rows.close(deadline)
         } else {
-            None
+            (false, None)
         };
         return Err(after_opener(
             AdapterError::new(

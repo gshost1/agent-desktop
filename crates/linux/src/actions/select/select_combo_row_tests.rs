@@ -80,6 +80,9 @@ impl ComboRows for Rows {
     }
 
     fn escape(&mut self) -> Option<()> {
+        if self.failure == Some("escape-refused") {
+            return None;
+        }
         self.operations.push("escape");
         self.hidden = match self.failure {
             Some("close") => Some(false),
@@ -220,19 +223,26 @@ fn an_unknown_or_hidden_popup_never_receives_a_global_escape() {
 
 #[test]
 fn cleanup_rechecks_visibility_immediately_before_sending_escape() {
-    for failure in ["hidden-before-close", "unread-before-close"] {
+    for (failure, sent) in [
+        ("hidden-before-close", false),
+        ("unread-before-close", false),
+        ("escape-refused", false),
+        ("visible-before-close", true),
+    ] {
         let mut rows = Rows {
             opens: false,
             failure: Some(failure),
             ..Rows::closed()
         };
         let error = select(&mut rows).expect_err("popup not observed");
-        assert_eq!(rows.operations, ["open"]);
-        assert_eq!(rows.hidden_reads.get(), 2);
+        let expected: &[&str] = if sent { &["open", "escape"] } else { &["open"] };
+        assert_eq!(rows.operations, expected);
+        assert_eq!(rows.hidden_reads.get(), if sent { 3 } else { 2 });
         assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
         let details = error.details.expect("details");
         assert_eq!(details["kind"], "popup_not_observed");
-        assert!(details["popup_closed"].is_null());
+        assert_eq!(details["popup_close_attempted"], sent);
+        assert_eq!(details["popup_closed"], json!(sent.then_some(true)));
     }
 }
 
