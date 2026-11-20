@@ -1,3 +1,3 @@
 ### Testing
 
-* Accept the documented not-delivered, non-retryable captured-twin refusal for no-route widget-matrix rows, while retaining the independent unchanged-state and event-log assertions.
+* Give GTK3 fixture containers distinct accessible names so the ref matrix exercises their unsupported-action contract instead of accepting a captured-twin refusal as a pass.

@@ -1,11 +1,10 @@
-import copy
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from scenarios.ref_contract import captured_twin_refused, row_verdict
+from scenarios.ref_contract import unsupported, row_verdict
 
 
 class CapturedTwinRefusalTests(unittest.TestCase):
@@ -14,23 +13,21 @@ class CapturedTwinRefusalTests(unittest.TestCase):
                       "details": {"kind": "identity_not_unique", "retryable": False},
                       "disposition": {"delivery": "not_delivered", "retry": "safe"}}
 
-    def test_captured_twin_refusal_is_specific_and_safe(self):
-        self.assertTrue(captured_twin_refused(self.error))
-        for key, value in (("code", "ACTION_FAILED"), ("details", {}),
-                           ("details", {"kind": "live_identity_ambiguous", "retryable": False}),
-                           ("details", {"kind": "identity_not_unique", "retryable": True}),
-                           ("disposition", {"delivery": "delivered_unverified", "retry": "unsafe"})):
-            with self.subTest(key=key, value=value):
-                changed = copy.deepcopy(self.error)
-                changed[key] = value
-                self.assertFalse(captured_twin_refused(changed))
+    def test_a_twin_row_does_not_pass_the_unsupported_action_contract(self):
+        self.assertFalse(unsupported(self.error))
+        args = dict(succeeded=False, refused=unsupported(self.error),
+                    log_effect=False, raw_effect=False, log_unchanged=True, raw_unchanged=True)
+        for expected in ("refuse", "land", "land-or-refuse"):
+            self.assertEqual(row_verdict(expected, **args), "fail")
 
     def test_missing_error_is_not_a_refusal(self):
-        self.assertFalse(captured_twin_refused(None))
-        self.assertFalse(captured_twin_refused({}))
+        self.assertFalse(unsupported(None))
+        self.assertFalse(unsupported({}))
 
     def test_only_expected_refusals_with_unchanged_independent_oracles_pass(self):
-        args = dict(succeeded=False, refused=captured_twin_refused(self.error),
+        error = {"code": "ACTION_NOT_SUPPORTED", "details": {"semantic_verb": "absent"},
+                 "disposition": {"delivery": "not_delivered", "retry": "safe"}}
+        args = dict(succeeded=False, refused=unsupported(error),
                     log_effect=False, raw_effect=False, log_unchanged=True, raw_unchanged=True)
         self.assertEqual(row_verdict("refuse", **args), "pass")
         self.assertEqual(row_verdict("land", **args), "fail")
