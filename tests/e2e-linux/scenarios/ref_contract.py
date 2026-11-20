@@ -43,6 +43,13 @@ def unsupported(error):
                   for check in details.get("checks", ())))))
 
 
+def captured_twin_refused(error):
+    return bool(error and error.get("code") == "AMBIGUOUS_TARGET"
+                and error.get("details", {}).get("kind") == "identity_not_unique"
+                and error.get("details", {}).get("retryable") is False
+                and error.get("disposition") == {"delivery": "not_delivered", "retry": "safe"})
+
+
 def row_verdict(expected, *, succeeded, refused, log_effect, raw_effect, log_unchanged, raw_unchanged):
     landed = succeeded and log_effect and raw_effect
     clean_refusal = refused and log_unchanged and raw_unchanged
@@ -333,7 +340,8 @@ def refs(ctx):
                         refused = (response.exit_code == 1 and bool(response.error)
                                    and not response.error.get("code", "").startswith("HARNESS_"))
                         if not any(a in ACTIONS for a in node.get("available_actions", ())) and not set(node.get("states", ())) & BLOCKED:
-                            refused = refused and unsupported(response.error)
+                            refused = refused and (unsupported(response.error)
+                                                   or captured_twin_refused(response.error))
                         verdict = row_verdict(expected, succeeded=response.ok, refused=refused, log_effect=log_effect,
                                               raw_effect=raw_effect, log_unchanged=log_after == log_before,
                                               raw_unchanged=after == before)
