@@ -13,7 +13,7 @@ use crate::input::mouse::press_clock::PressClock;
 use crate::input::physical::target_world::{LiveWorld, PhysicalWorld};
 use crate::input::plan::Plan;
 use crate::input::step::Step;
-use crate::system::SharedBus;
+use crate::system::{DisplayLayout, SharedBus};
 use crate::tree::{AtspiElement, atspi_element};
 
 pub(crate) struct ClickSpec {
@@ -236,10 +236,15 @@ pub(crate) fn click_shell(
     let extents = crate::system::shell::light::live_extents(bus, node, deadline)?
         .map(Rect::from)
         .ok_or_else(geometry_refusal)?;
-    let displays = crate::system::list_displays(deadline)?;
-    let point = super::shell_aim::aim(extents, &displays)?;
     let world = LiveWorld { bus, lease };
-    match world.backend()? {
+    let backend = world.backend()?;
+    let layout = shell_layout(
+        &backend,
+        || crate::system::list_displays(deadline),
+        || crate::system::wayland_layout(deadline),
+    )?;
+    let point = super::shell_aim::aim(extents, &layout.displays)?;
+    match backend {
         Backend::X11(_) => {
             click_steps(
                 &world,
@@ -262,7 +267,7 @@ pub(crate) fn click_shell(
                     kind: MouseEventKind::Click { count: 1 },
                     modifiers: Vec::new(),
                 },
-                &displays,
+                &layout,
                 &mut || world.validate_pointer(node, &point, deadline),
                 deadline,
             )?;
@@ -270,6 +275,21 @@ pub(crate) fn click_shell(
     }
     Ok(point)
 }
+
+fn shell_layout(
+    backend: &Backend,
+    x11: impl FnOnce() -> Result<Vec<agent_desktop_core::DisplayInfo>, AdapterError>,
+    wayland: impl FnOnce() -> Result<DisplayLayout, AdapterError>,
+) -> Result<DisplayLayout, AdapterError> {
+    match backend {
+        Backend::X11(_) => x11().map(DisplayLayout::unscaled),
+        Backend::Wayland => wayland(),
+    }
+}
+
+#[cfg(test)]
+#[path = "shell_pointer_layout_tests.rs"]
+mod shell_layout_tests;
 
 #[cfg(test)]
 #[path = "target_click_tests.rs"]

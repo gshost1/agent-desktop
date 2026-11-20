@@ -1,6 +1,6 @@
 from oracle import gsettings
 from runner import apps
-from runner.helper import (changed, command, managed, one, ref, require, root,
+from runner.helper import (changed, command, listed_app_name, managed, one, ref, require, root,
                            stale_twin)
 from runner.legs import implementation
 from runner.verdict import LegContext
@@ -75,12 +75,13 @@ def pointer_speed_commit(ctx: LegContext) -> None:
 @implementation("values.terminal_read_only_flip")
 def terminal_read_only_flip(ctx: LegContext) -> None:
     with managed(ctx, "Terminal", ("--show-menubar",)) as app:
+        name = listed_app_name(ctx, app)
         tree = root(ctx, app)
         item = one(tree, role=8, name="Read-Only")
         initial = "CHECKED" in item.states
         menu = ref(ctx, app, role="menu", name="Terminal")
         command(ctx, ["click", menu], app)
-        command(ctx, ["wait", "--menu", "--app", "Terminal", "--timeout", "5000"])
+        command(ctx, ["wait", "--menu", "--app", name, "--timeout", "5000"])
         target = ref(ctx, app, role="menuitem", name="Read-Only", surface="menu")
         ctx.before("atspi", initial)
         try:
@@ -91,7 +92,7 @@ def terminal_read_only_flip(ctx: LegContext) -> None:
         finally:
             if ("CHECKED" in item.states) != initial:
                 command(ctx, ["click", menu], app)
-                command(ctx, ["wait", "--menu", "--app", "Terminal", "--timeout", "5000"])
+                command(ctx, ["wait", "--menu", "--app", name, "--timeout", "5000"])
                 target = ref(ctx, app, role="menuitem", name="Read-Only", surface="menu")
                 command(ctx, ["click", target], app)
             changed(lambda: "CHECKED" in item.states, initial)

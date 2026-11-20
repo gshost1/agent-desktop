@@ -19,8 +19,15 @@ suggestion that says retry, again or rerun fails unless it also
 says to look first: "before ...", "only if/when ...", "if it is still ...",
 "do not ...", "instead of retrying" or "no automatic retry".
 
-It cannot see a suggestion passed in as a parameter or a disposition chosen at
-run time; those sites need their own unit tests.
+A chain that starts from an error value it received (a parameter, an
+`Err(error)` binding, a closure argument) carries a disposition chosen at
+run time, which may be delivered. A retry suggestion attached to such a
+value fails unless the same chain stamps `not_delivered`. A value bound by a
+local `let` from an `AdapterError` constructor is not a received one.
+
+It cannot see a suggestion passed in as a parameter of an ordinary
+function, or a constant from another file; those sites need their own unit
+tests.
 
 It also reads every skill page under `skills/`. A passage (a table row, a list
 item or a paragraph) that names, in backticks, a `details.kind` some delivered
@@ -318,6 +325,82 @@ def helper_suggestions(tokens, depth, consts, helpers):
                 yield " ".join(parts)
 
 
+def built_here(tokens, start, name) -> bool:
+    """Whether `name` is bound by a `let` from an `AdapterError` constructor before `start`."""
+    for k in range(start - 1, 0, -1):
+        if tokens[k] == ("ident", "fn"):
+            return False
+        if tokens[k] != ("ident", "let"):
+            continue
+        j = k + 1
+        if tokens[j] == ("ident", "mut"):
+            j += 1
+        if tokens[j] != ("ident", name) or tokens[j + 1] != ("punct", "="):
+            continue
+        end = j + 2
+        level = 0
+        while end < len(tokens):
+            kind, value = tokens[end]
+            if kind == "punct" and value in OPEN:
+                level += 1
+            elif kind == "punct" and value in CLOSE:
+                level -= 1
+            elif kind == "punct" and value == ";" and level == 0:
+                break
+            end += 1
+        return ("ident", "AdapterError") in tokens[j + 2 : end]
+    return False
+
+
+def past_closure_params(tokens, lo, limit):
+    """The first token after a closure's `move` and `|params|`, when the chain is a closure body.
+
+    A closure with several parameters reaches here mid-list, because the comma
+    between them ends the chain, so the closing bar of the list is skipped too.
+    """
+    if tokens[lo] == ("ident", "move"):
+        lo += 1
+    if tokens[lo] == ("punct", "|"):
+        lo += 1
+    for k in range(lo, limit):
+        if tokens[k] == ("punct", "."):
+            return lo
+        if tokens[k] == ("punct", "|"):
+            return k + 1
+    return lo
+
+
+DELIVERED_STAMPS = {"delivered_unverified", "delivered_verified", "uncertain"}
+
+
+def stamps_not_delivered(tokens, depth, lo, hi):
+    """Whether the chain's last `with_disposition` call stamps only `not_delivered`."""
+    calls = [k for k in range(lo, hi + 1) if tokens[k] == ("ident", "with_disposition")]
+    if not calls:
+        return False
+    start = calls[-1] + 1
+    end = matching_close(tokens, depth, start)
+    names = {value for kind, value in tokens[start : end + 1] if kind == "ident"}
+    return "not_delivered" in names and not names & DELIVERED_STAMPS
+
+
+def readvised_suggestions(tokens, depth, consts):
+    """Retry suggestions attached to a received error whose disposition was set elsewhere."""
+    for k in range(1, len(tokens) - 1):
+        if tokens[k] != ("ident", "with_suggestion") or tokens[k - 1] != ("punct", "."):
+            continue
+        lo, hi = chain_bounds(tokens, depth, k - 1)
+        lo = past_closure_params(tokens, lo, k)
+        kind, head = tokens[lo]
+        if kind != "ident" or not head[0].islower() or head in ("self", "Self"):
+            continue
+        if tokens[lo + 1] != ("punct", "."):
+            continue
+        if stamps_not_delivered(tokens, depth, lo, hi) or built_here(tokens, lo, head):
+            continue
+        yield from suggestions_in(tokens, depth, k, hi + 1, consts)
+
+
 def needs_look_first(suggestion: str) -> bool:
     spoken = OBSERVED_AGAIN.sub("", suggestion)
     return bool(RETRY_WORDS.search(spoken)) and not LOOK_FIRST.search(spoken)
@@ -330,6 +413,7 @@ def violations(text: str, helpers: dict[str, int] | None = None) -> list[str]:
     for lo, hi in delivered_chains(tokens, depth):
         found.extend(suggestions_in(tokens, depth, lo, hi + 1, consts))
     found.extend(helper_suggestions(tokens, depth, consts, helpers))
+    found.extend(readvised_suggestions(tokens, depth, consts))
     return [suggestion for suggestion in found if needs_look_first(suggestion)]
 
 
@@ -424,6 +508,33 @@ SELF_TEST_BAD = [
     fn e() -> AdapterError {
         pressed("The entry was pressed again", "Run list-notifications and retry")
     }""",
+    """const BY_HAND: &str = "Open the list by hand and retry";
+    fn g(world: &W) -> Result<(), AdapterError> {
+        match world.open() {
+            Ok(_) => Ok(()),
+            Err(error) => Err(error.with_suggestion(BY_HAND)),
+        }
+    }""",
+    """fn h(error: AdapterError) -> AdapterError {
+        error.with_suggestion("Retry the open")
+    }""",
+    """fn i(world: &W) -> Result<(), AdapterError> {
+        world.open().map_err(|e| e.with_suggestion("Retry the open"))
+    }""",
+    """fn l(errors: Vec<AdapterError>, first: AdapterError) -> AdapterError {
+        errors.into_iter().fold(first, |acc, e| e.with_suggestion("Retry the open"))
+    }""",
+    """fn m(world: &W) -> Result<(), AdapterError> {
+        world.open().map_err(|e: AdapterError| e.with_suggestion("Retry the open"))
+    }""",
+    """fn j(world: &W) -> Result<(), AdapterError> {
+        world.open().map_err(move |error| error.with_suggestion("Run it again"))
+    }""",
+    """fn k(error: AdapterError, late: bool) -> AdapterError {
+        error
+            .with_suggestion("Retry the open")
+            .with_disposition(if late { DeliverySemantics::not_delivered() } else { DeliverySemantics::delivered_unverified() })
+    }""",
     """fn d() -> AdapterError {
         AdapterError::new(code, "x")
             .with_disposition(agent_desktop_core::DeliverySemantics::delivered_unverified())
@@ -460,6 +571,21 @@ SELF_TEST_GOOD = [
         AdapterError::new(code, "x")
             .with_suggestion("Run 'list-windows' to find the window again")
             .with_disposition(DeliverySemantics::delivered_unverified())
+    }""",
+    """fn g(error: AdapterError) -> AdapterError {
+        error
+            .with_suggestion("Open the list by hand and retry")
+            .with_disposition(DeliverySemantics::not_delivered())
+    }""",
+    """fn h(late: bool) -> AdapterError {
+        let error = match late {
+            true => AdapterError::timeout("late"),
+            false => AdapterError::timeout("never"),
+        };
+        error.with_suggestion("Start it, or wait again with a longer --timeout")
+    }""",
+    """fn n(a: bool, b: bool) -> bool {
+        a || b
     }""",
     """#[cfg(test)]
     mod tests {
