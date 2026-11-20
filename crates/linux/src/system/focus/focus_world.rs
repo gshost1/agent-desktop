@@ -202,6 +202,10 @@ impl FocusWorld for LiveWorld<'_> {
         focus_send::dialog_over(client, self.deadline)
     }
 
+    fn open_modal_over(&self, client: u32) -> Option<String> {
+        focus_send::open_modal_over(client, self.deadline)
+    }
+
     fn lift(&self, client: u32) -> Result<Lifted, AdapterError> {
         restore_minimized::lift(client, &self.owner, self.deadline)
     }
