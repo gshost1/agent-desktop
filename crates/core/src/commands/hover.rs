@@ -5,7 +5,7 @@ use crate::{
         helpers::{apply_post_action_wait, validate_post_action_wait},
         operation_response::operation_response,
         point_resolve::{
-            PointResolveArgs, ResolvedPoint, require_cursor_policy, require_pointer_capability,
+            PointResolveArgs, ResolvedPoint, require_cursor_policy, require_pointer_capability_for,
         },
         pointer_action::{
             CommandFocus, PointResolveAttempt, before_first_event, ensure_point_deadline,
@@ -36,15 +36,15 @@ pub fn execute(
         ));
     }
     require_cursor_policy(context, "hover")?;
-    require_pointer_capability(adapter)?;
-    validate_post_action_wait(context)?;
-    let deadline = point_deadline(args.timeout_ms)?;
     let point_args = PointResolveArgs {
         ref_id: args.ref_id.as_deref(),
         xy: args.xy,
         missing_input_message: "Provide a ref (@<snapshot_id>:e1) or --xy x,y",
         headed_requirement: crate::HeadedRequirement::FocusedWindowAndCursor,
     };
+    require_pointer_capability_for(&[point_args], adapter)?;
+    validate_post_action_wait(context)?;
+    let deadline = point_deadline(args.timeout_ms)?;
     before_first_event(|| refuse_unproven_refs(&[point_args], context))?;
     let auto_wait = args.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let cursor = crate::cursor_overlay::hold_cursor(context, deadline);

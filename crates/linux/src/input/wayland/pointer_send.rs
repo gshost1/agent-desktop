@@ -1,52 +1,42 @@
 use std::time::Duration;
 
 use agent_desktop_core::{
-    AdapterError, Deadline, DeliverySemantics, DisplayInfo, ErrorCode, MouseButton, MouseEvent,
-    Point,
+    AdapterError, Deadline, DeliverySemantics, DragParams, MouseEvent, MouseEventKind,
 };
 use serde_json::json;
 
 use super::key_session::KeySession;
+use super::pointer_gate::open_input_session;
+use super::pointer_gesture::{WaylandGesture, run_gesture, translate};
 use super::remote_desktop::RemoteDesktop;
-use crate::input::delivery::Gate;
-use crate::input::physical::shell_aim::display_under;
+use super::stream_point::StreamPoint;
+use crate::input::delivery::{Delivery, Gate};
+use crate::input::keyboard::key_names::modifier_keysym;
+use crate::input::keyboard::keymap::Keymap;
+use crate::input::mouse::drag_plan::plan_drag;
+use crate::input::mouse::pointer_plan::{plan_click, plan_move};
+use crate::input::mouse::wheel_plan::plan_wheel;
+use crate::input::standalone::reject_standalone;
+use crate::system::DisplayLayout;
 
-pub(crate) fn send(
-    event: &MouseEvent,
-    displays: &[DisplayInfo],
-    gate: Gate<'_>,
-    deadline: Deadline,
-) -> Result<(), AdapterError> {
-    let mut session = RemoteDesktop::open(deadline)?;
-    run_pointer(&mut session, event, displays, gate, deadline)
-}
-
-fn monitor_under(point: &Point, displays: &[DisplayInfo]) -> Option<(String, Point)> {
-    let display = display_under(point, displays)?;
-    let connector = display.id.split('+').next().unwrap_or_default().to_owned();
-    Some((
-        connector,
-        Point {
-            x: point.x - display.bounds.x,
-            y: point.y - display.bounds.y,
-        },
-    ))
-}
-
-const SETTLE_PAUSE: Duration = Duration::from_millis(150);
-const PRESS_PAUSE: Duration = Duration::from_millis(60);
 const RECOVERY_MS: u64 = 1_000;
-const BTN_LEFT: u32 = 272;
-const BTN_RIGHT: u32 = 273;
-const BTN_MIDDLE: u32 = 274;
+
 pub(crate) trait PointerSession: KeySession {
     fn button(&mut self, button: u32, down: bool, deadline: Deadline) -> Result<(), AdapterError>;
     fn pause(&mut self, duration: Duration) {
         std::thread::sleep(duration);
     }
     fn attach_stream(&mut self, connector: &str, deadline: Deadline) -> Result<(), AdapterError>;
-    fn motion_absolute(&mut self, x: f64, y: f64, deadline: Deadline) -> Result<(), AdapterError>;
+    fn motion_absolute(&mut self, at: &StreamPoint, deadline: Deadline)
+    -> Result<(), AdapterError>;
+    fn axis_discrete(
+        &mut self,
+        axis: u32,
+        steps: i32,
+        deadline: Deadline,
+    ) -> Result<(), AdapterError>;
 }
+
 impl PointerSession for RemoteDesktop {
     fn button(&mut self, button: u32, down: bool, deadline: Deadline) -> Result<(), AdapterError> {
         self.pointer_button(button, down, deadline)
@@ -56,38 +46,25 @@ impl PointerSession for RemoteDesktop {
         RemoteDesktop::attach_stream(self, connector, deadline)
     }
 
-    fn motion_absolute(&mut self, x: f64, y: f64, deadline: Deadline) -> Result<(), AdapterError> {
-        self.pointer_motion_absolute(x, y, deadline)
+    fn motion_absolute(
+        &mut self,
+        at: &StreamPoint,
+        deadline: Deadline,
+    ) -> Result<(), AdapterError> {
+        self.pointer_motion_absolute(at, deadline)
+    }
+
+    fn axis_discrete(
+        &mut self,
+        axis: u32,
+        steps: i32,
+        deadline: Deadline,
+    ) -> Result<(), AdapterError> {
+        self.pointer_axis_discrete(axis, steps, deadline)
     }
 }
 
-fn button_code(button: &MouseButton) -> u32 {
-    match button {
-        MouseButton::Left => BTN_LEFT,
-        MouseButton::Right => BTN_RIGHT,
-        MouseButton::Middle => BTN_MIDDLE,
-    }
-}
-
-fn press<S: PointerSession>(
-    session: &mut S,
-    code: u32,
-    deadline: Deadline,
-) -> Result<(), AdapterError> {
-    session.button(code, true, deadline).map_err(|error| {
-        if error.disposition == DeliverySemantics::not_delivered() {
-            error
-        } else {
-            delivery_error(error, DeliverySemantics::uncertain())
-        }
-    })?;
-    session.pause(PRESS_PAUSE);
-    session
-        .button(code, false, recovery_deadline(deadline))
-        .map_err(|error| delivery_error(error, DeliverySemantics::uncertain()))
-}
-
-fn delivery_error(error: AdapterError, disposition: DeliverySemantics) -> AdapterError {
+pub(crate) fn delivery_error(error: AdapterError, disposition: DeliverySemantics) -> AdapterError {
     let details = error.details.clone().unwrap_or_else(|| json!({}));
     let mut details = match details {
         serde_json::Value::Object(details) => details,
@@ -100,7 +77,7 @@ fn delivery_error(error: AdapterError, disposition: DeliverySemantics) -> Adapte
         .with_suggestion("Inspect the target with 'snapshot' before retrying; some physical input may already have been delivered")
 }
 
-fn execute_created_session<S: PointerSession>(
+pub(crate) fn execute_created_session<S: PointerSession>(
     session: &mut S,
     deadline: Deadline,
     execute: impl FnOnce(&mut S) -> Result<(), AdapterError>,
@@ -119,50 +96,80 @@ fn recovery_deadline(spent: Deadline) -> Deadline {
     Deadline::detached_after(RECOVERY_MS).unwrap_or(spent)
 }
 
+fn event_gesture(
+    event: &MouseEvent,
+    layout: &DisplayLayout,
+) -> Result<WaylandGesture, AdapterError> {
+    let map = Keymap::default();
+    let plan = match &event.kind {
+        MouseEventKind::Move => plan_move(event.point.clone()),
+        MouseEventKind::Click { count } => {
+            plan_click(&map, event.point.clone(), &event.button, *count, &[])
+        }
+        MouseEventKind::Wheel { delta_x, delta_y } => {
+            plan_wheel(&map, event.point.clone(), *delta_x, *delta_y, &[]).map(|plans| {
+                crate::input::plan::Plan {
+                    steps: plans.into_iter().flat_map(|plan| plan.steps).collect(),
+                    release_origin: None,
+                }
+            })
+        }
+        MouseEventKind::Down => Err(reject_standalone("mouse_event down")),
+        MouseEventKind::Up => Err(reject_standalone("mouse_event up")),
+    }?;
+    let modifiers = event.modifiers.iter().map(modifier_keysym).collect();
+    translate(&plan.steps, modifiers, layout)
+}
+
+/// Sends one pointer event through a session opened for it; `gate` is asked
+/// before the first event and before every press.
+pub(crate) fn send(
+    event: &MouseEvent,
+    layout: &DisplayLayout,
+    gate: Gate<'_>,
+    deadline: Deadline,
+) -> Result<Delivery, AdapterError> {
+    let gesture = event_gesture(event, layout)?;
+    let mut session = open_input_session(deadline)?;
+    run_gesture(&mut session, &gesture, gate, deadline)
+}
+
+#[cfg(test)]
 pub(crate) fn run_pointer<S: PointerSession>(
     session: &mut S,
     event: &MouseEvent,
-    displays: &[DisplayInfo],
+    layout: &DisplayLayout,
     gate: Gate<'_>,
     deadline: Deadline,
-) -> Result<(), AdapterError> {
-    let (connector, local) = monitor_under(&event.point, displays).ok_or_else(|| {
-        AdapterError::new(
-            ErrorCode::ActionFailed,
-            "The pointer is outside every readable display",
-        )
-        .with_disposition(DeliverySemantics::not_delivered())
-    })?;
-    session.create(deadline)?;
-    execute_created_session(session, deadline, |session| {
-        session
-            .attach_stream(&connector, deadline)
-            .map_err(|mut error| {
-                error.details.get_or_insert_with(|| json!({}))["physical_delivery_started"] =
-                    false.into();
-                error.with_disposition(DeliverySemantics::not_delivered())
-            })?;
-        session.start(deadline).map_err(|mut error| {
-            error.details.get_or_insert_with(|| json!({}))["physical_delivery_started"] =
-                false.into();
-            error.with_disposition(DeliverySemantics::not_delivered())
-        })?;
-        gate()?;
-        session
-            .motion_absolute(local.x, local.y, deadline)
-            .map_err(|error| delivery_error(error, DeliverySemantics::uncertain()))?;
-        session.pause(SETTLE_PAUSE);
-        gate().map_err(|error| delivery_error(error, DeliverySemantics::delivered_unverified()))?;
-        press(session, button_code(&event.button), deadline).map_err(|error| {
-            if error.disposition == DeliverySemantics::not_delivered() {
-                delivery_error(error, DeliverySemantics::delivered_unverified())
-            } else {
-                error
-            }
-        })
-    })
+) -> Result<Delivery, AdapterError> {
+    let gesture = event_gesture(event, layout)?;
+    run_gesture(session, &gesture, gate, deadline)
+}
+
+/// A pointer event at caller-given coordinates. Nothing can prove which
+/// window is under the point, so the caller reports it unverified.
+pub(crate) fn mouse_event(
+    event: &MouseEvent,
+    deadline: Deadline,
+) -> Result<Delivery, AdapterError> {
+    let layout = crate::system::wayland_layout(deadline)?;
+    send(event, &layout, &mut || Ok(()), deadline)
+}
+
+/// A drag between two caller-given points, which may lie on different
+/// monitors; every point it passes must be on a listed display.
+pub(crate) fn drag(params: &DragParams, deadline: Deadline) -> Result<Delivery, AdapterError> {
+    let plan = plan_drag(params, deadline)?;
+    let layout = crate::system::wayland_layout(deadline)?;
+    let gesture = translate(&plan.steps, Vec::new(), &layout)?;
+    let mut session = open_input_session(deadline)?;
+    run_gesture(&mut session, &gesture, &mut || Ok(()), deadline)
 }
 
 #[cfg(test)]
 #[path = "target_pointer_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pointer_live_tests.rs"]
+mod live_tests;
