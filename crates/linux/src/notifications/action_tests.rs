@@ -235,3 +235,86 @@ fn a_keyed_action_on_a_shifted_list_presses_nothing() {
     assert_eq!(error.code, ErrorCode::NotificationNotFound);
     assert!(world.clicks().is_empty());
 }
+
+fn keyed_first() -> NotificationTarget {
+    let seen = [
+        agent_desktop_core::NotificationInfo {
+            index: 1,
+            app_name: "Mail".into(),
+            title: "a".into(),
+            body: None,
+            actions: vec![],
+        },
+        agent_desktop_core::NotificationInfo {
+            index: 2,
+            app_name: "Chat".into(),
+            title: "z".into(),
+            body: None,
+            actions: vec![],
+        },
+    ];
+    let key = agent_desktop_core::notification_keys(&seen).remove(0);
+    NotificationTarget::new(Some(1), Some(&key), NotificationIdentity::default()).expect("t")
+}
+
+fn pushed_down() -> Walk {
+    reading(&[
+        spec("New", "n"),
+        spec("Mail", "a").actions(&["Run A", "Run B"]).expanded(),
+        spec("Chat", "z"),
+    ])
+}
+
+fn after_expand(world: &FakeWorld, target: &NotificationTarget) -> AdapterError {
+    action_in(
+        world,
+        &signals(&world.log, Vec::new()),
+        request(target, "Run B", InteractionPolicy::headed()),
+        &lease(600),
+    )
+    .expect_err("the shifted entry is refused")
+}
+
+#[test]
+fn an_entry_pushed_down_after_the_expand_press_is_refused_as_possibly_delivered() {
+    for target in [keyed_first(), identity()] {
+        let log = log();
+        let world = FakeWorld::new(&log, vec![entry(false), pushed_down()]);
+        let error = after_expand(&world, &target);
+        assert_eq!(error.code, ErrorCode::NotificationNotFound);
+        assert_eq!(
+            error.disposition,
+            agent_desktop_core::DeliverySemantics::delivered_unverified()
+        );
+        let suggestion = error.suggestion.expect("a suggestion");
+        assert!(suggestion.contains("before"), "{suggestion}");
+        assert_eq!(world.clicks(), vec!["/Mail:a/expand"]);
+    }
+}
+
+#[test]
+fn a_list_that_cannot_be_read_after_the_expand_press_is_possibly_delivered() {
+    let log = log();
+    let mut world = FakeWorld::new(&log, vec![entry(false), entry(true)]);
+    world.faults.read_after_click = true;
+    let error = after_expand(&world, &identity());
+    assert_eq!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::delivered_unverified()
+    );
+    assert_eq!(world.clicks(), vec!["/Mail:a/expand"]);
+}
+
+#[test]
+fn an_action_click_that_fails_after_the_expand_press_is_possibly_delivered() {
+    let log = log();
+    let mut world = FakeWorld::new(&log, vec![entry(false), entry(true)]);
+    world.faults.click_fails_after = Some(1);
+    let error = after_expand(&world, &identity());
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::delivered_unverified()
+    );
+    assert_eq!(world.clicks(), vec!["/Mail:a/expand", "/Mail:a/act/Run B"]);
+}

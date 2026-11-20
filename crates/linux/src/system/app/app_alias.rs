@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::system::launch::desktop_entry::parse;
 use crate::system::launch::desktop_exec::{ExecContext, expand};
 use crate::system::launch::desktop_lookup::{current_dirs, find};
+use crate::system::launch::entry_commands::other_execs;
 use crate::system::process::executable_identity::ExecutableIdentity;
 
 /// The desktop entries of the machine, as the names each executable goes by.
@@ -17,30 +18,36 @@ impl AliasIndex {
     pub(in crate::system) fn build(files: &[(String, String)], dirs: &[PathBuf]) -> Self {
         let entries = files
             .iter()
-            .filter_map(|(id, text)| parse(id, text))
-            .filter(|entry| entry.traits.application && !entry.traits.hidden)
-            .map(|entry| {
-                let argv = entry
-                    .exec
-                    .as_deref()
-                    .map(|exec| {
-                        let file =
-                            find(&entry.id, dirs).map(|file| file.to_string_lossy().into_owned());
-                        if exec.contains("%k") && file.is_none() {
-                            return Vec::new();
-                        }
-                        expand(
-                            exec,
-                            &ExecContext {
-                                arguments: &[],
-                                icon: entry.icon.as_deref(),
-                                name: &entry.name,
-                                file: file.as_deref(),
-                            },
-                        )
-                    })
-                    .unwrap_or_default();
-                IndexedEntry::new(entry.id, entry.name, argv, entry.path)
+            .filter_map(|(id, text)| parse(id, text).map(|entry| (entry, text)))
+            .filter(|(entry, _)| entry.traits.application && !entry.traits.hidden)
+            .map(|(entry, text)| {
+                let file = find(&entry.id, dirs).map(|file| file.to_string_lossy().into_owned());
+                let expanded = |exec: &str| {
+                    if exec.contains("%k") && file.is_none() {
+                        return Vec::new();
+                    }
+                    expand(
+                        exec,
+                        &ExecContext {
+                            arguments: &[],
+                            icon: entry.icon.as_deref(),
+                            name: &entry.name,
+                            file: file.as_deref(),
+                        },
+                    )
+                };
+                let argv = entry.exec.as_deref().map(expanded).unwrap_or_default();
+                let others = other_execs(&entry.id, text, dirs)
+                    .iter()
+                    .map(|exec| expanded(exec))
+                    .collect();
+                IndexedEntry::new(
+                    entry.id.clone(),
+                    entry.name.clone(),
+                    argv,
+                    entry.path.clone(),
+                )
+                .with_other_commands(others)
             })
             .collect();
         Self { entries }
@@ -63,7 +70,8 @@ impl AliasIndex {
 
     /// The names and desktop ids the verified process answers to, from one
     /// pass over the entries. Aliases require desktop entries whose resolved
-    /// executable and full argv match the process. Several entries that run
+    /// executable and full argv match the process, through the entry's `Exec`,
+    /// one of its actions' or its bus activation command. Several entries that run
     /// that same command each name the process. A name is an alias only when
     /// no entry with that name runs another command. The ids are in byte
     /// order.
@@ -112,12 +120,7 @@ impl AliasIndex {
         let mut matching: Vec<&IndexedEntry> = self
             .entries
             .iter()
-            .filter(|entry| {
-                actual.could_be_run_by(&entry.argv)
-                    && entry
-                        .resolved(path)
-                        .is_some_and(|wanted| wanted.matches(actual))
-            })
+            .filter(|entry| entry.runs(actual, path))
             .collect();
         matching.sort_by(|left, right| left.id.cmp(&right.id));
         matching

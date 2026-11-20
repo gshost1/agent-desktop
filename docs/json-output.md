@@ -137,6 +137,14 @@ Each line, in order:
 - A tree that cannot be rendered stays `data.tree`, and the envelope stays on one line, so a delivered action's report is never replaced by an error. Check for `data.lines` before reading it.
 - `agent-desktop mcp --lines` applies the flag to every call the server runs. A result whose top-level `data` holds `lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope. A `batch` result keeps each entry's lines inside the envelope text.
 
+## Available actions
+
+`available_actions` names the actions an element offers through its accessibility interfaces, the routes a request without `--headed` uses. A snapshot and `find` list the same tokens. The read an action makes of its target before it runs (the actionability preflight) can differ:
+
+- Windows: the preflight lists the same tokens as the snapshot.
+- macOS: the preflight also adds `SetValue` and `TypeText` to a text field or combo box that is being edited in place, because `type` and `set-value` reach its editor. A snapshot does not list them.
+- Linux: a snapshot leaves out a token whose every headless route the application's toolkit refuses. That is `Click` on a GTK 4 entry whose only action is `activate`, and `Select` on a list, row, tab list or tab whose selection rests on indices the toolkit does not map to its accessible rows. Only GTK 3, Qt, Chromium and Gecko are measured to map them, so this covers GTK 4, any other named toolkit and a toolkit read that answered without a name. If the read times out or is not attempted, the snapshot keeps the tokens for a fresh live read to judge at action time. A node or an item a select on it can match that acts on its own keeps `Select`. The preflight keeps `Select`, so `select --headed` still reaches the element. It withholds `Click` from that entry too, but `click --headed` passes the preflight without a `Click` token.
+
 ## Snapshot diffs (`--since`)
 
 `snapshot --since <snapshot_id>` is an additive flag: without it, every envelope is what it was. With it, the command takes a full snapshot exactly as `snapshot` does, with its own `snapshot_id`, saved refmap and trace, and returns `data.diff` in place of `data.tree`. Every other `data` field keeps its meaning: `app`, `window`, `snapshot_id`, `ref_count`, `complete`, and `truncated`, `nodes_observed`, `refmap_capped` and `identity_unproven` when they apply to the new snapshot.
