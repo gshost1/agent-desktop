@@ -52,6 +52,10 @@ class RawOracleTests(unittest.TestCase):
                 return ("café",)
             if method == "Get":
                 return (4,)
+            if method == "GetPosition":
+                return (10, -20)
+            if method == "GetSize":
+                return (80, 40)
             return ((10, -20, 80, 40),)
 
         with patch.object(raw, "call", side_effect=reply):
@@ -59,8 +63,8 @@ class RawOracleTests(unittest.TestCase):
             self.assertEqual(node.extents(True), (10, -20, 80, 40))
             self.assertEqual(node.extents(), (10, -20, 80, 40))
             self.assertEqual(node.text(), "café")
-        self.assertEqual(seen[0], ("GetExtents", "(u)", (1,)))
-        self.assertEqual(seen[1], ("GetExtents", "(u)", (0,)))
+        self.assertEqual(seen[:4], [("GetPosition", "(u)", (1,)), ("GetSize", "()", ()),
+                                    ("GetPosition", "(u)", (0,)), ("GetSize", "()", ())])
         self.assertIn(("GetText", "(ii)", (0, 4)), seen)
 
     def test_missing_optional_interfaces_are_absent(self):

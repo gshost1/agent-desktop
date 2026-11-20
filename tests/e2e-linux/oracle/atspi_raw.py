@@ -122,8 +122,10 @@ class RawNode:
                 if (role is None or node.role == role) and (name is None or node.name == name)]
 
     def extents(self, window_coords: bool = False) -> tuple[int, int, int, int]:
-        return tuple(self.invoke("org.a11y.atspi.Component", "GetExtents", "(u)",
-                                 (1 if window_coords else 0,))[0])
+        position = self.invoke("org.a11y.atspi.Component", "GetPosition", "(u)",
+                               (1 if window_coords else 0,))
+        size = self.invoke("org.a11y.atspi.Component", "GetSize")
+        return tuple((*position, *size))
 
     def text(self) -> str | None:
         if "org.a11y.atspi.Text" not in self.interfaces():
