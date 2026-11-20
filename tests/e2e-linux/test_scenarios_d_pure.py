@@ -4,6 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -51,6 +52,16 @@ class EventTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_dead_owner_setup_refuses_missing_or_duplicate_names_before_saving_ref(self):
+        for children in ([], [{"name": "7"}, {"name": "7"}]):
+            ctx = Mock()
+            ctx.product.return_value = SimpleNamespace(ok=True, raw="snapshot", data={"tree": {"children": children}})
+            with self.subTest(children=children), patch.object(launch, "launch"), patch.object(launch, "stop") as stop:
+                with self.assertRaisesRegex(AssertionError, "unique name"):
+                    launch.recovery_strategy_on_error(ctx)
+                stop.assert_not_called()
+                self.assertEqual(ctx.product.call_count, 1)
+
     def test_ids_skip_entries_without_one(self) -> None:
         self.assertEqual(identity.window_ids([{"id": "w-1"}, {}, {"id": "w-2"}]), ["w-1", "w-2"])
 
@@ -70,6 +81,15 @@ class MenuTests(unittest.TestCase):
 
 
 class LaunchTests(unittest.TestCase):
+    def test_dead_owner_target_skips_unrelated_and_same_named_non_buttons(self):
+        tree = {"role": "scrollarea", "ref_id": "@s:e1", "children": [
+            {"role": "label", "name": "7", "ref_id": "@s:e2"},
+            {"role": "button", "name": "7", "ref_id": "@s:e3"}]}
+        self.assertEqual(launch._first_ref(tree, name="7", role="button"), "@s:e3")
+        for missing in (None, {}, {"role": "label", "name": "7", "ref_id": "@s:e2"},
+                        {"role": "button", "name": "7", "ref_id": "unqualified"}):
+            self.assertIsNone(launch._first_ref(missing, name="7", role="button"))
+
     def test_first_ref_returns_the_root_ref(self) -> None:
         self.assertEqual(launch._first_ref({"ref_id": "@s:e1"}), "@s:e1")
 
