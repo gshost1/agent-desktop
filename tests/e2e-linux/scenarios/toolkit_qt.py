@@ -4,7 +4,7 @@ import time
 
 from oracle.atspi_raw import poll
 from oracle.proc import members
-from runner.helper import (command, delayed, managed, one, ref, require, root,
+from runner.helper import (changed, command, delayed, listed_app_name, managed, one, ref, require, root,
                            snapshot, stale_twin, remove)
 from runner.legs import implementation
 from runner.verdict import LegContext
@@ -27,8 +27,7 @@ def qt_app(ctx):
             yield app
     finally:
         remove(path)
-        restored = log_state(ctx)
-        require(restored == baseline)
+        restored = changed(lambda: log_state(ctx), baseline)
         ctx.restored("applog", restored)
 
 
@@ -56,7 +55,7 @@ def open_raw(tree):
 
 
 def wait_menu(ctx, app, opened, *, timeout=2000, code=None):
-    return command(ctx, ["wait", "--menu" if opened else "--menu-closed", "--app", app.name,
+    return command(ctx, ["wait", "--menu" if opened else "--menu-closed", "--app", listed_app_name(ctx, app),
                          "--timeout", str(timeout)], code=code)
 
 
