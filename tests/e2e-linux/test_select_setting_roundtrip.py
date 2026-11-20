@@ -3,12 +3,20 @@ from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from runner.legs import leg_by_id
 from scenarios import select
 
 
 class SelectSettingTests(unittest.TestCase):
+    def test_the_registry_separates_positive_selection_from_headless_refusal(self):
+        positive = leg_by_id("select.screen_blank_value")
+        refusal = leg_by_id("select.screen_blank_headless_refusal")
+        self.assertEqual((positive.modes, positive.disposition), (("headed",), "pass"))
+        self.assertEqual((refusal.modes, refusal.disposition), (("headless",), "asserted-refusal"))
+
     @contextmanager
-    def fixture(self, mode, *, initial="uint32 300", effect=True, error=None, combos=None):
+    def fixture(self, mode, *, initial="uint32 300", effect=True, error=None, combos=None,
+                delivery="delivered_verified"):
         state = [initial]
         ctx = Mock(mode=mode, tier=SimpleNamespace(display=None))
         if error is None and mode == "headless":
@@ -17,7 +25,8 @@ class SelectSettingTests(unittest.TestCase):
         def product(argv, **kwargs):
             if effect and mode == "headed":
                 state[0] = "uint32 0" if argv[-1] == "Never" else "uint32 300"
-            return SimpleNamespace(ok=error is None, error=error, raw="fixture response")
+            return SimpleNamespace(ok=error is None, error=error, raw="fixture response",
+                                   data={"disposition": {"delivery": delivery, "retry": "unsafe"}})
         ctx.product.side_effect = product
         def changed(read, expected, **kwargs):
             self.assertEqual(read(), expected)
@@ -36,7 +45,8 @@ class SelectSettingTests(unittest.TestCase):
         for initial in ("uint32 300", "uint32 0"):
             for mode in ("headless", "headed"):
                 with self.subTest(mode=mode, initial=initial), self.fixture(mode, initial=initial) as (ctx, state, restore):
-                    select.screen_blank_value(ctx)
+                    action = select.screen_blank_headless_refusal if mode == "headless" else select.screen_blank_value
+                    action(ctx)
                     label, wanted = ("Never", "uint32 0") if initial != "uint32 0" else ("5 minutes", "uint32 300")
                     self.assertEqual(ctx.product.call_args.args[0], ["select", "@snapshot:e1", label])
                     ctx.after.assert_called_once_with("gsettings", initial if mode == "headless" else wanted)
@@ -48,7 +58,7 @@ class SelectSettingTests(unittest.TestCase):
         for combos in ([], [SimpleNamespace(name="Screen Blank"), SimpleNamespace(name="Screen Blank")]):
             with self.subTest(combos=combos), self.fixture("headless", combos=combos) as (ctx, _, _):
                 with self.assertRaisesRegex(AssertionError, "missing or ambiguous"):
-                    select.screen_blank_value(ctx)
+                    select.screen_blank_headless_refusal(ctx)
                 ctx.product.assert_not_called()
 
     def test_success_without_the_setting_change_still_fails(self):
@@ -69,4 +79,12 @@ class SelectSettingTests(unittest.TestCase):
         for error in ({"code": "ACTION_NOT_SUPPORTED"}, {"code": "POLICY_DENIED"}):
             with self.subTest(error=error), self.fixture("headless", error=error) as (ctx, _, _):
                 with self.assertRaises(AssertionError):
+                    select.screen_blank_headless_refusal(ctx)
+
+    def test_headed_success_requires_verified_delivery_even_when_the_setting_changes(self):
+        for delivery in (None, "delivered_unverified", "not_delivered"):
+            with self.subTest(delivery=delivery), self.fixture("headed", delivery=delivery) as (ctx, state, restore):
+                with self.assertRaises(AssertionError):
                     select.screen_blank_value(ctx)
+                self.assertEqual(state[0], "uint32 300")
+                restore.assert_called_once()

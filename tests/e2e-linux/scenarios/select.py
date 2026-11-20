@@ -32,6 +32,9 @@ def select_contract(ctx, *, absent=False):
                             and details.get("physical_delivery_started") is False, response.raw)
                     require(response.error.get("disposition") == {"delivery": "not_delivered", "retry": "safe"},
                             response.raw)
+                else:
+                    require((response.data or {}).get("disposition") == {
+                        "delivery": "delivered_verified", "retry": "unsafe"}, response.raw)
                 expected = initial if headless else wanted
             changed(lambda: gsettings.get(ctx.tier, schema, key), expected, floor=0.3)
             ctx.after("gsettings", gsettings.get(ctx.tier, schema, key))
@@ -45,6 +48,11 @@ def select_contract(ctx, *, absent=False):
 
 @implementation("select.screen_blank_value")
 def screen_blank_value(ctx: LegContext) -> None:
+    select_contract(ctx)
+
+
+@implementation("select.screen_blank_headless_refusal")
+def screen_blank_headless_refusal(ctx: LegContext) -> None:
     select_contract(ctx)
 
 
