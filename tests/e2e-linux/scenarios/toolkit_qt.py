@@ -1,12 +1,15 @@
 import contextlib
 import json
+import os
 import time
+from pathlib import Path
 
 from oracle.atspi_raw import poll
-from oracle.proc import members
+from oracle.proc import members, stat_fields
 from runner.helper import (command, delayed, listed_app_name, managed, one, ref, require, root,
                            snapshot, stale_twin, remove)
 from runner.legs import implementation
+from runner.product import BINARY_ENV, DEFAULT_BINARY
 from runner.verdict import LegContext
 
 
@@ -14,6 +17,56 @@ def log_state(ctx):
     path = ctx.tier.runtime_dir / "qt-window.log"
     return {"members": members(ctx.tier.runtime_dir),
             "log": path.read_text() if path.exists() else None}
+
+
+def _listener_holder(member):
+    pid, start, comm = member
+    if comm != "agent-desktop":
+        return False
+    path = Path("/proc") / str(pid)
+    binary = Path(os.environ.get(BINARY_ENV, str(DEFAULT_BINARY))).resolve()
+    try:
+        if Path(os.readlink(path / "exe")).resolve() != binary:
+            return False
+        argv = (path / "cmdline").read_bytes().rstrip(b"\0").split(b"\0")
+        if len(argv) != 6 or argv[1:5] != [b"--headed", b"press", b"escape", b"--window-id"]:
+            return False
+        if {fd.name for fd in (path / "fd").iterdir()} != {"0", "1", "2", "3"}:
+            return False
+        if any(os.readlink(path / "fd" / str(fd)) != "/dev/null" for fd in range(3)):
+            return False
+        if not os.readlink(path / "fd/3").startswith("socket:["):
+            return False
+        return stat_fields((path / "stat").read_text())[0] == start
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except OSError:
+        return False
+
+
+def _restored_state(ctx, baseline):
+    """Bound the listener_hold holder from crates/linux/src/system/bus/listener_hold.rs to 1.5 s."""
+    deadline = time.clock_gettime(time.CLOCK_BOOTTIME) + 1.5
+    before = set(baseline["members"])
+    while True:
+        restored = log_state(ctx)
+        current = set(restored["members"])
+        require(restored["log"] == baseline["log"] and before <= current,
+                "Qt cleanup changed its log or lost a baseline process")
+        extra = current - before
+        if not extra:
+            return restored
+        pending = False
+        for member in extra:
+            holder = _listener_holder(member)
+            require(holder is not False, f"unexpected Qt cleanup process: {member}")
+            if holder:
+                pending = True
+                deadline = min(deadline, member[1] / os.sysconf("SC_CLK_TCK") + 1.5)
+        remaining = deadline - time.clock_gettime(time.CLOCK_BOOTTIME)
+        require(remaining > 0, "listener_hold holder survived its 1.5 s grace")
+        if pending:
+            time.sleep(min(0.02, remaining))
 
 
 @contextlib.contextmanager
@@ -27,8 +80,7 @@ def qt_app(ctx):
             yield app
     finally:
         remove(path)
-        restored = log_state(ctx)
-        require(restored == baseline)
+        restored = _restored_state(ctx, baseline)
         ctx.restored("applog", restored)
 
 

@@ -9,6 +9,55 @@ from scenarios import toolkit_qt, values
 
 
 class ListedAppNameTests(unittest.TestCase):
+    def test_only_an_identified_listener_holder_may_exit_during_cleanup(self):
+        baseline = {"members": [(1, 2, "service")], "log": None}
+        pending = {"members": baseline["members"] + [(3, 10000, "agent-desktop")], "log": None}
+        with patch.object(toolkit_qt, "log_state", side_effect=[pending, baseline]), \
+            patch.object(toolkit_qt, "_listener_holder", return_value=True), \
+            patch.object(toolkit_qt.os, "sysconf", return_value=100), \
+            patch.object(toolkit_qt.time, "clock_gettime", return_value=100), \
+            patch.object(toolkit_qt.time, "sleep") as sleep:
+            self.assertEqual(toolkit_qt._restored_state(object(), baseline), baseline)
+            sleep.assert_called_once()
+
+    def test_a_listener_holder_still_alive_after_its_grace_fails(self):
+        baseline = {"members": [], "log": None}
+        pending = {"members": [(3, 10000, "agent-desktop")], "log": None}
+        with patch.object(toolkit_qt, "log_state", return_value=pending), \
+            patch.object(toolkit_qt, "_listener_holder", return_value=True), \
+            patch.object(toolkit_qt.os, "sysconf", return_value=100), \
+            patch.object(toolkit_qt.time, "clock_gettime", side_effect=[100, 100, 101.6]), \
+            patch.object(toolkit_qt.time, "sleep"):
+            with self.assertRaisesRegex(AssertionError, "survived its 1.5 s grace"):
+                toolkit_qt._restored_state(object(), baseline)
+
+    def test_other_extra_processes_fail_without_waiting(self):
+        baseline = {"members": [], "log": None}
+        with patch.object(toolkit_qt, "log_state", return_value={"members": [(3, 4, "other")], "log": None}) as read, \
+            patch.object(toolkit_qt.time, "sleep") as sleep:
+            with self.assertRaisesRegex(AssertionError, "unexpected Qt cleanup process"):
+                toolkit_qt._restored_state(object(), baseline)
+            read.assert_called_once()
+            sleep.assert_not_called()
+
+    def test_holder_identity_requires_the_suite_binary_press_argv_and_socket_only_descriptors(self):
+        argv = b"/suite/agent-desktop\0--headed\0press\0escape\0--window-id\0w-1\0"
+        for wrong in (None, "exe", "argv", "stdio", "generation"):
+            with self.subTest(wrong=wrong):
+                def link(path):
+                    if path.name == "exe":
+                        return "/other/agent-desktop" if wrong == "exe" else "/suite/agent-desktop"
+                    if path.name == "3":
+                        return "socket:[123]"
+                    return "pipe:[456]" if wrong == "stdio" else "/dev/null"
+                with patch.dict(toolkit_qt.os.environ, {toolkit_qt.BINARY_ENV: "/suite/agent-desktop"}), \
+                    patch.object(toolkit_qt.os, "readlink", side_effect=link), \
+                    patch.object(Path, "read_bytes", return_value=b"other" if wrong == "argv" else argv), \
+                    patch.object(Path, "read_text", return_value="stat"), \
+                    patch.object(Path, "iterdir", return_value=iter([Path(str(i)) for i in range(4)])), \
+                    patch.object(toolkit_qt, "stat_fields", return_value=(8 if wrong == "generation" else 7, 1, "agent-desktop")):
+                    self.assertEqual(toolkit_qt._listener_holder((3, 7, "agent-desktop")), wrong is None)
+
     def test_lookup_uses_the_owned_pid_not_the_accessibility_name(self):
         app = SimpleNamespace(pid=73, name="qt_window.py")
         inventory = {"apps": [{"pid": 74, "name": "other"}, {"pid": 73, "name": "python3.12"}]}
