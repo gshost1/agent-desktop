@@ -27,6 +27,14 @@
 
 use agent_desktop_core::{AdapterError, Deadline};
 
+pub(crate) mod edit_pending;
+pub(crate) mod edit_replace;
+pub(crate) mod edit_route;
+#[cfg(target_os = "windows")]
+mod edit_send;
+#[cfg(target_os = "windows")]
+mod edit_worker;
+
 /// The step label of a value write delivered through `EM_REPLACESEL`.
 pub(crate) const EDIT_LABEL: &str = "EditControl.ReplaceSel";
 
@@ -62,23 +70,18 @@ impl EditTarget {
 
 #[cfg(target_os = "windows")]
 mod imp {
+    use super::edit_replace::replace_text;
+    use super::edit_send::{EM_GETLIMITTEXT, WindowMessenger, send};
     use super::{AdapterError, Deadline, EditTarget};
     use crate::actions::chain::{DeliveryOutcome, after_delivery};
     use crate::actions::value_write::gated_pattern_value_equals;
     use crate::tree::element::UIAElement;
-    use agent_desktop_core::{DeliverySemantics, ErrorCode};
     use std::ffi::c_void;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, FindWindowExW, GWL_STYLE,
-        GetWindowLongW, RealGetWindowClassW, SMTO_ABORTIFHUNG, SMTO_ERRORONEXIT,
-        SendMessageTimeoutW,
+        GetWindowLongW, RealGetWindowClassW,
     };
-
-    const EM_SETSEL: u32 = 0x00B1;
-    const EM_REPLACESEL: u32 = 0x00C2;
-    const EM_GETLIMITTEXT: u32 = 0x00D5;
-    const SEND_TIMEOUT_CAP_MS: u64 = 2_000;
 
     /// The edit window a value write to `element` should replace the text
     /// of, when the element is a classic edit that accepts input and the
@@ -101,29 +104,6 @@ mod imp {
         }
     }
 
-    /// Replaces the edit's whole text with `value` through `EM_SETSEL` and
-    /// `EM_REPLACESEL`.
-    ///
-    /// An unanswered selection fails before any text is sent, so it is not
-    /// delivered. An unanswered replace may still land: a timed-out sent
-    /// message stays queued, so it reports a delivered, unverified error and
-    /// leaves the text buffer allocated for the late delivery, which reads it
-    /// in place when the edit lives in this process.
-    fn replace_text(handle: isize, value: &str, deadline: Deadline) -> Result<(), AdapterError> {
-        if send(handle, EM_SETSEL, 0, -1, deadline).is_none() {
-            return Err(unanswered("EM_SETSEL", DeliverySemantics::not_delivered()));
-        }
-        let text: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
-        if send(handle, EM_REPLACESEL, 1, text.as_ptr() as isize, deadline).is_some() {
-            return Ok(());
-        }
-        std::mem::forget(text);
-        Err(unanswered(
-            "EM_REPLACESEL",
-            DeliverySemantics::delivered_unverified(),
-        ))
-    }
-
     /// Replaces the edit's text and reads the value back through the
     /// element's secure-gated value read.
     pub(crate) fn write_edit(
@@ -132,21 +112,9 @@ mod imp {
         value: &str,
         deadline: Deadline,
     ) -> Result<DeliveryOutcome, AdapterError> {
-        replace_text(handle, value, deadline)?;
+        replace_text(&WindowMessenger, handle, value, deadline)?;
         let verified = gated_pattern_value_equals(element, value).map_err(after_delivery)?;
         Ok(DeliveryOutcome::from_observation(verified))
-    }
-
-    fn unanswered(message: &str, disposition: DeliverySemantics) -> AdapterError {
-        AdapterError::new(
-            ErrorCode::ActionFailed,
-            "The edit control did not answer the text replacement in time",
-        )
-        .with_platform_detail(format!(
-            "SendMessageTimeoutW({message}): {}",
-            std::io::Error::last_os_error()
-        ))
-        .with_disposition(disposition)
     }
 
     fn element_window(element: &UIAElement) -> Option<isize> {
@@ -202,33 +170,6 @@ mod imp {
         };
         value.encode_utf16().count() <= limit
     }
-
-    fn send(
-        handle: isize,
-        message: u32,
-        wparam: usize,
-        lparam: isize,
-        deadline: Deadline,
-    ) -> Option<usize> {
-        let timeout = deadline
-            .remaining()
-            .as_millis()
-            .min(u128::from(SEND_TIMEOUT_CAP_MS))
-            .max(1);
-        let mut answer: usize = 0;
-        let sent = unsafe {
-            SendMessageTimeoutW(
-                handle as *mut c_void,
-                message,
-                wparam,
-                lparam,
-                SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
-                u32::try_from(timeout).unwrap_or(u32::MAX),
-                &mut answer,
-            )
-        };
-        (sent != 0).then_some(answer)
-    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -263,5 +204,13 @@ pub(crate) use imp::{edit_target, write_edit};
 mod tests;
 
 #[cfg(all(test, target_os = "windows"))]
+#[path = "edit_control_test_support.rs"]
+mod test_support;
+
+#[cfg(all(test, target_os = "windows"))]
 #[path = "edit_control_live_tests.rs"]
 mod live_tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "edit_control_pending_live_tests.rs"]
+mod pending_live_tests;

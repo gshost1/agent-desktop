@@ -2,6 +2,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use agent_desktop_core::ErrorCode;
+use x11rb::connection::Connection;
+use x11rb::protocol::Event;
+use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, EventMask};
 
 use super::lift_live_tests::*;
 use super::*;
@@ -48,6 +51,78 @@ fn focus_window_live_a_modal_dialog_is_named_and_the_window_is_not_reported_acti
     assert_eq!(details["dialog"], "adl-dialog");
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
     assert!(names_of_active().contains("adl-dialog"));
+}
+
+#[test]
+#[ignore = "drives real desktop applications; run through scripts/private-session.sh"]
+fn focus_window_live_an_already_active_modal_refuses_without_sending_a_request() {
+    close_overview();
+    let bus = SharedBus::default();
+    let mut launched = Launched::new();
+    let owner = spawn_env(&mut launched, &bus, "owner", false, true);
+    assert_eq!(owner.title, "adl");
+    let started = Instant::now();
+    while !names_of_active().contains("adl-dialog") {
+        assert!(
+            started.elapsed() < SETTLE,
+            "the modal dialog never became active"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let (connection, screen) = x11rb::connect(None).unwrap();
+    let root = connection.setup().roots[screen].root;
+    connection
+        .change_window_attributes(
+            root,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
+        )
+        .unwrap()
+        .check()
+        .unwrap();
+    let activation = connection
+        .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    let desktop = connection
+        .intern_atom(false, b"_NET_CURRENT_DESKTOP")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    let active_before = xprop(&["-root", "_NET_ACTIVE_WINDOW"]);
+    let stacking_before = xprop(&["-root", "_NET_CLIENT_LIST_STACKING"]);
+    while connection.poll_for_event().unwrap().is_some() {}
+    let error = focus(&bus, &owner).expect_err("an already active modal blocks the owner");
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    let details = error.details.as_ref().unwrap();
+    assert_eq!(details["cause"], "blocked_by_modal_dialog");
+    assert_eq!(details["dialog"], "adl-dialog");
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    connection.get_input_focus().unwrap().reply().unwrap();
+    let mut requests = Vec::new();
+    while let Some(event) = connection.poll_for_event().unwrap() {
+        if let Event::ClientMessage(event) = event
+            && (event.type_ == activation || event.type_ == desktop)
+        {
+            requests.push(event);
+        }
+    }
+    assert!(
+        requests.is_empty(),
+        "unexpected activation requests: {requests:?}"
+    );
+    assert_eq!(xprop(&["-root", "_NET_ACTIVE_WINDOW"]), active_before);
+    assert_eq!(
+        xprop(&["-root", "_NET_CLIENT_LIST_STACKING"]),
+        stacking_before
+    );
+    println!(
+        "active modal refusal: {details}; disposition={:?}; activation_requests={}",
+        error.disposition,
+        requests.len()
+    );
 }
 
 #[test]

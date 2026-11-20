@@ -12,9 +12,9 @@ pub(crate) struct DesktopEntry {
     pub(crate) traits: EntryTraits,
 }
 
-const GROUP: &str = "[Desktop Entry]";
+pub(super) const GROUP: &str = "[Desktop Entry]";
 
-fn unescape(value: &str) -> String {
+pub(super) fn unescape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut chars = value.chars();
     while let Some(c) = chars.next() {
@@ -38,13 +38,14 @@ fn unescape(value: &str) -> String {
     out
 }
 
-fn keys_of_group(text: &str) -> Vec<(&str, &str)> {
+/// The `key=value` pairs of the group headed `[group]`, in file order.
+pub(super) fn keys_of<'a>(text: &'a str, group: &str) -> Vec<(&'a str, &'a str)> {
     let mut inside = false;
     let mut pairs = Vec::new();
     for line in text.lines() {
         let line = line.trim();
         if line.starts_with('[') {
-            inside = line == GROUP;
+            inside = line == group;
             continue;
         }
         if !inside || line.is_empty() || line.starts_with('#') {
@@ -61,7 +62,7 @@ fn keys_of_group(text: &str) -> Vec<(&str, &str)> {
 /// as `Name[de]` are ignored and the first occurrence of a key wins. Text with
 /// no such group, or with no `Name`, is not an entry.
 pub(crate) fn parse(id: &str, text: &str) -> Option<DesktopEntry> {
-    let pairs = keys_of_group(text);
+    let pairs = keys_of(text, GROUP);
     let get = |key: &str| {
         pairs
             .iter()

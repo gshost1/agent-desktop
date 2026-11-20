@@ -28,6 +28,8 @@ Keep failed suites for diagnosis; the runner removes a successful suite. Use ano
 - `x11-mutter`: `gnome-shell`, `xdotool`, `wmctrl`, `xclip`.
 - `wayland`: `gnome-shell`, `wl-copy`, `wl-paste`.
 - The legs also drive the GNOME apps Calculator, Text Editor, Files, Terminal and Settings, and a PyQt6 test window. AT-SPI must be available in the private session.
+- `umockdev-run` supplies the Settings Mouse fixture's virtual udev mouse so the pointer-speed control is present without host hardware. Both Mouse legs still drive GNOME Settings and check the private GSettings value; the commit leg also closes and reopens the same fixture.
+- Settings' Mouse and Multitasking panels need the GStreamer `playbin` plugin (`gstreamer1.0-plugins-base` on Ubuntu) and Multitasking needs the Mutter and GNOME Shell schemas (`mutter-common` and `gnome-shell-common`). Without them, Settings aborts before it exposes a window; a launch-discovery deadline is not evidence of a slow accessibility walk.
 
 The runner inherits the caller's tool paths and libraries: supply tools through `PATH` and shared libraries through `LD_LIBRARY_PATH`. Qt legs run under `python3`; set `AGENT_DESKTOP_QT_PYTHON` when PyQt6 lives in a separate interpreter. That does not change the harness interpreter.
 
@@ -87,6 +89,8 @@ The report groups outcomes by tier and mode. Only `pass` and `asserted-refusal` 
 
 The `launch.recovery_strategy_on_error` leg is an `asserted-refusal`. It stops Calculator after a snapshot, then requires a click on the dead owner's ref to answer `STALE_REF` with `details.process_state=exited`, `details.retryable=false` and disposition `not_delivered`/`safe`, with no `recovery` object and no relaunch of the owner.
 
+`launch.unresolved_terminal_handoff` checks the documented unsafe handoff result, not successful owner attribution or a no-effect refusal. The Terminal client exits successfully and D-Bus starts a different, unmarked executable. The leg requires `ACTION_FAILED`, `details.kind=exited`, status 0, the spawned pid, `delivered_unverified`/`unsafe` and no automatic recovery. Raw AT-SPI and process identity must independently prove the service window exists; cleanup closes its exact listed owner and restores both process and window observations. A 5 s product deadline leaves room for the result inside the harness deadline.
+
 The `error_contract.recoverable_error_envelopes` leg is an `asserted-refusal` on both X11 tiers. Against a live Calculator it requires a bare `@e1` to answer `INVALID_ARGS` with the snapshot-qualified suggestion, `@sdeadbeef:e1` to answer `SNAPSHOT_NOT_FOUND` with the `refresh_snapshot_then_retry_original` recovery, and an unknown `--app` to answer `APP_NOT_FOUND` with the `list-apps` suggestion. Each must be `not_delivered` and exit 1, and the Calculator display and the owned-process set must be unchanged.
 
 The `observation.stale_ref_after_ui_change` leg is an `asserted-refusal` on both X11 tiers. It mints a ref to the Calculator About menu item, closes the menu through the raw toggle, and requires `click` on that ref to answer `STALE_REF` with `details.kind: menu_closed`, `retryable: false` and no `recovery` (a fresh snapshot cannot bring back an item of a closed menu), `not_delivered` and exit 1 while the app stays owned and the display is unchanged; a fresh snapshot must then mint a different ref.
@@ -127,7 +131,7 @@ The registry is the inventory; these surfaces have no live claim, and their cove
 
 - Electron and Chromium: no leg in this registry.
 - Clipboard HTML import: unsupported by design. `clipboard-get` reads only the text and image targets (`formats::TEXT_TARGETS`, `targets::choose_target`; `x11_read_tests::an_owner_without_the_wanted_target_reads_as_absent`). The clipboard legs cover text, image, owner lifetime, clear and a foreign read after the CLI exited.
-- Positive `select` on a display value: only `select.refusal_without_semantic_route` is live. `crates/linux/src/actions/select/select_tests.rs` and `select_search_tests.rs` cover route, identity, effect and refusal.
+- Positive `select` on a display value: `select.screen_blank_value` is a headed live check of verified delivery and the independently observed setting change and restoration. `select.screen_blank_headless_refusal` separately asserts pointer-policy refusal and an unchanged setting. `select.absent_choice_refused` checks a missing choice under both policies. `crates/linux/src/actions/select/select_tests.rs` and `select_search_tests.rs` cover route, identity, effect and refusal.
 - Wayland: the private shell has no keyboard seat, so focus and window capture are live only as fail-closed refusals (`wayland_actions.*`, `gaps.wayland_window_capture_refused`). The other Wayland legs check that `list-windows` reports no position, that a seatless semantic click works, and that an unhealthy shell fails the tier with a named reason.
 
 ## Reading a failure
