@@ -10,7 +10,7 @@
 use crate::actions::value_write::set_value_steps;
 use crate::tree::automation::root_from_hwnd;
 use crate::tree::fixture::fixture_window::{
-    close_window, destroy_window, pump_until_destroyed, quit_pump, register_class_with_proc,
+    PumpHandle, close_window, destroy_window, quit_pump, register_class_with_proc,
     unique_class_name, unregister_class, wide,
 };
 use agent_desktop_core::{Deadline, InteractionPolicy};
@@ -22,10 +22,12 @@ use std::thread::{JoinHandle, sleep, spawn};
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, FindWindowExW, GWLP_USERDATA, GetDlgItem, GetWindowLongPtrW,
-    PostMessageW, PostQuitMessage, SW_SHOWNOACTIVATE, SendMessageW, SetWindowLongPtrW, ShowWindow,
-    WM_COMMAND, WM_DESTROY, WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowExW, GWLP_USERDATA, GetDlgItem,
+    GetMessageW, GetWindowLongPtrW, MSG, PostMessageW, PostQuitMessage, SW_SHOWNOACTIVATE,
+    SendMessageW, SetWindowLongPtrW, ShowWindow, TranslateMessage, WM_COMMAND, WM_DESTROY,
+    WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const READY: u32 = 0x0400 + 7;
@@ -57,6 +59,7 @@ struct OwnerState {
     holding: AtomicBool,
     held: AtomicBool,
     echo_to: AtomicIsize,
+    exiting: AtomicBool,
 }
 
 fn owner_state<'a>(window: HWND) -> Option<&'a OwnerState> {
@@ -109,18 +112,35 @@ pub(super) struct EditOwner {
 impl EditOwner {
     pub(super) fn create() -> Self {
         let class_name = unique_class_name();
-        let (sender, receiver) = channel();
+        let (sender, receiver) = channel::<Result<PumpHandle, String>>();
         let state = Arc::new(OwnerState::default());
-        let state_address = Arc::as_ptr(&state) as isize;
         let pump = spawn({
             let class_name = class_name.clone();
+            let state = Arc::clone(&state);
             move || {
                 register_class_with_proc(&class_name, owner_proc).expect("class registers");
                 let window = create_owner(&class_name);
-                unsafe { SetWindowLongPtrW(window as HWND, GWLP_USERDATA, state_address) };
+                unsafe {
+                    SetWindowLongPtrW(window as HWND, GWLP_USERDATA, Arc::as_ptr(&state) as isize)
+                };
                 unsafe { ShowWindow(window as HWND, SW_SHOWNOACTIVATE) };
                 unsafe { PostMessageW(window as HWND, READY, 0, 0) };
-                pump_until_destroyed(window, sender, READY);
+                let mut message = MSG::default();
+                let mut ready = Some(sender);
+                while !state.exiting.load(Ordering::Acquire)
+                    && unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0
+                {
+                    unsafe { TranslateMessage(&message) };
+                    unsafe { DispatchMessageW(&message) };
+                    if message.message == READY
+                        && let Some(sender) = ready.take()
+                    {
+                        let _ = sender.send(Ok(PumpHandle {
+                            window,
+                            thread_id: unsafe { GetCurrentThreadId() },
+                        }));
+                    }
+                }
             }
         });
         let running = receiver
@@ -173,6 +193,17 @@ impl EditOwner {
         self.state.holding.store(false, Ordering::Release);
     }
 
+    pub(super) fn end_held_thread(&mut self) {
+        assert!(self.state.held.load(Ordering::Acquire));
+        self.state.exiting.store(true, Ordering::Release);
+        self.release();
+        self.pump
+            .take()
+            .expect("owner thread")
+            .join()
+            .expect("owner exits");
+    }
+
     /// Makes the owner, on every `EN_CHANGE`, send a message to `window`
     /// and wait for its answer before the edit's change completes.
     pub(super) fn echo_changes_to(&self, window: isize) {
@@ -183,12 +214,12 @@ impl EditOwner {
 impl Drop for EditOwner {
     fn drop(&mut self) {
         self.release();
-        close_window(self.window);
-        quit_pump(self.thread_id);
         if let Some(pump) = self.pump.take() {
+            close_window(self.window);
+            quit_pump(self.thread_id);
             let _ = pump.join();
+            destroy_window(self.window);
         }
-        destroy_window(self.window);
         unregister_class(&self.class_name);
     }
 }
@@ -257,6 +288,15 @@ pub(super) fn heard(control: isize, code: u32) -> bool {
         .lock()
         .map(|log| log.contains(&(control, code)))
         .unwrap_or(false)
+}
+
+pub(super) fn notification_count(control: isize, code: u32) -> usize {
+    NOTIFICATIONS
+        .lock()
+        .expect("notification log")
+        .iter()
+        .filter(|entry| **entry == (control, code))
+        .count()
 }
 
 pub(super) fn text_of(handle: isize) -> String {

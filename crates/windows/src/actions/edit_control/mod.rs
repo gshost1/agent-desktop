@@ -32,6 +32,8 @@ pub(crate) mod edit_replace;
 pub(crate) mod edit_route;
 #[cfg(target_os = "windows")]
 mod edit_send;
+#[cfg(target_os = "windows")]
+mod edit_worker;
 
 /// The step label of a value write delivered through `EM_REPLACESEL`.
 pub(crate) const EDIT_LABEL: &str = "EditControl.ReplaceSel";

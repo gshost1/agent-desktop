@@ -12,7 +12,6 @@ use super::edit_route::{EditHome, ThreadIdentity};
 use agent_desktop_core::Deadline;
 use std::ffi::c_void;
 use std::sync::Arc;
-use std::thread::Builder;
 use std::time::Instant;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Threading::{
@@ -21,14 +20,12 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, MSG, MsgWaitForMultipleObjects, PM_NOREMOVE, PM_QS_SENDMESSAGE,
     PeekMessageW, QS_SENDMESSAGE, SMTO_ABORTIFHUNG, SMTO_ERRORONEXIT, SendMessageTimeoutW,
-    SendMessageW,
 };
 
 pub(super) const EM_SETSEL: u32 = 0x00B1;
 pub(super) const EM_REPLACESEL: u32 = 0x00C2;
 pub(super) const EM_GETLIMITTEXT: u32 = 0x00D5;
 const SEND_TIMEOUT_CAP_MS: u64 = 2_000;
-const WORKER_STACK_BYTES: usize = 64 * 1024;
 
 static PENDING_REPLACEMENTS: PendingReplacements =
     PendingReplacements::new(MAX_PENDING_REPLACEMENTS);
@@ -102,7 +99,9 @@ pub(super) fn reserve_route(
 /// or once that thread has exited and its queue holding the message is
 /// gone, so no read of the buffer can follow its return, and the worker
 /// frees it then. The worker holds its pool slot for its whole life, which
-/// bounds the buffers and threads kept for unresponsive edits. The caller
+/// bounds the buffers and threads kept for unresponsive edits, and its own
+/// module reference until it exits so an FFI host can unload its handle.
+/// The caller
 /// waits up to the deadline and handles messages sent to its own windows
 /// meanwhile, as `SendMessageTimeoutW` would.
 pub(super) fn send_replace(
@@ -129,28 +128,7 @@ fn replace_on_worker(
     let done = Completion::new()
         .map(Arc::new)
         .ok_or_else(|| EditSendFailure::NotSent(format!("CreateEventW: {}", os_error())))?;
-    let signal = Arc::clone(&done);
-    Builder::new()
-        .name("agent-desktop-edit-replace".into())
-        .stack_size(WORKER_STACK_BYTES)
-        .spawn(move || {
-            let text = text;
-            let permit = permit;
-            unsafe {
-                SendMessageW(
-                    handle as *mut c_void,
-                    EM_REPLACESEL,
-                    1,
-                    text.as_ptr() as isize,
-                )
-            };
-            drop(text);
-            drop(permit);
-            signal.set();
-        })
-        .map_err(|error| {
-            EditSendFailure::NotSent(format!("the replacement thread did not start: {error}"))
-        })?;
+    super::edit_worker::start(handle, text, permit, Arc::clone(&done))?;
     let wait = send_timeout_ms(deadline);
     if wait_handling_sent_messages(&done, wait) {
         Ok(())
@@ -189,7 +167,7 @@ fn wait_handling_sent_messages(done: &Completion, limit_ms: u32) -> bool {
 }
 
 /// A manual-reset event the worker sets once its send has returned.
-struct Completion(HANDLE);
+pub(super) struct Completion(HANDLE);
 
 unsafe impl Send for Completion {}
 unsafe impl Sync for Completion {}
@@ -200,7 +178,7 @@ impl Completion {
         (!event.is_null()).then_some(Self(event))
     }
 
-    fn set(&self) {
+    pub(super) fn set(&self) {
         unsafe { SetEvent(self.0) };
     }
 

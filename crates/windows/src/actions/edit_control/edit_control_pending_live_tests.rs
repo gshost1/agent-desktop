@@ -4,10 +4,12 @@
 //! allows; a caller waiting on a worker must still answer messages sent to
 //! its own windows.
 
-use super::edit_pending::PendingReplacements;
+use super::edit_pending::{MAX_PENDING_REPLACEMENTS, PendingReplacements};
 use super::edit_replace::EditSendFailure;
 use super::edit_send::{EM_SETSEL, ReplaceRoute, reserve_route, send_replace};
-use super::test_support::{EditOwner, SINGLE_LINE_ID, text_of, wait_until};
+use super::test_support::{
+    EN_CHANGE, EditOwner, SINGLE_LINE_ID, notification_count, text_of, wait_until,
+};
 use crate::tree::fixture::fixture_window::{destroy_window, wide};
 use agent_desktop_core::Deadline;
 use std::time::Duration;
@@ -151,4 +153,38 @@ fn a_replace_on_the_calling_threads_own_edit_answers_inline_and_holds_no_slot() 
     assert!(inline, "a pool without slots is never asked");
     assert_eq!(answer, Ok(()));
     assert_eq!(landed, "inline");
+}
+
+#[test]
+fn an_edit_owner_that_exits_without_reading_returns_all_eight_worker_slots() {
+    static POOL: PendingReplacements = PendingReplacements::new(MAX_PENDING_REPLACEMENTS);
+    let mut owner = EditOwner::create();
+    let edit = owner.control(SINGLE_LINE_ID);
+    let changes = notification_count(edit, EN_CHANGE);
+    owner.hold();
+    for _ in 0..MAX_PENDING_REPLACEMENTS {
+        assert!(matches!(
+            replace(edit, "never read", &POOL, 30),
+            Err(EditSendFailure::Unanswered(_))
+        ));
+    }
+    assert_eq!(POOL.in_flight(), 8);
+    assert!(matches!(
+        replace(edit, "refused", &POOL, 30),
+        Err(EditSendFailure::NotSent(_))
+    ));
+    owner.end_held_thread();
+    assert!(wait_until(Duration::from_secs(20), || POOL.in_flight() == 0));
+    assert_eq!(
+        notification_count(edit, EN_CHANGE),
+        changes,
+        "the owner exited without delivering queued replacements"
+    );
+    let permits: Vec<_> = (0..MAX_PENDING_REPLACEMENTS)
+        .map(|_| POOL.try_acquire().expect("every slot returned"))
+        .collect();
+    assert_eq!(permits.len(), 8);
+    assert!(POOL.try_acquire().is_none());
+    drop(permits);
+    assert_eq!(POOL.in_flight(), 0);
 }
