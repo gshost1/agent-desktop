@@ -49,6 +49,6 @@ def screen_blank_value(ctx: LegContext) -> None:
     select_contract(ctx)
 
 
-@implementation("select.refusal_without_semantic_route")
-def refusal_without_semantic_route(ctx: LegContext) -> None:
+@implementation("select.absent_choice_refused")
+def absent_choice_refused(ctx: LegContext) -> None:
     select_contract(ctx, absent=True)

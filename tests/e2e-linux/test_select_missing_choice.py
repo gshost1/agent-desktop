@@ -40,7 +40,7 @@ class MissingChoiceTests(unittest.TestCase):
     def test_both_policies_refuse_the_absent_choice_without_changing_the_setting(self):
         for mode in ("headless", "headed"):
             with self.subTest(mode=mode), self.fixture(mode) as (ctx, state, restore):
-                select.refusal_without_semantic_route(ctx)
+                select.absent_choice_refused(ctx)
                 self.assertEqual(ctx.product.call_args.args[0], ["select", "@snapshot:e1", "absent-option"])
                 self.assertEqual(state[0], "uint32 300")
                 restore.assert_not_called()
@@ -51,7 +51,7 @@ class MissingChoiceTests(unittest.TestCase):
         for combos in ([], [SimpleNamespace(name="Screen Blank"), SimpleNamespace(name="Screen Blank")]):
             with self.subTest(combos=combos), self.fixture("headless", combos=combos) as (ctx, _, _):
                 with self.assertRaisesRegex(AssertionError, "missing or ambiguous"):
-                    select.refusal_without_semantic_route(ctx)
+                    select.absent_choice_refused(ctx)
                 ctx.product.assert_not_called()
 
     def test_unexpected_error_wrong_delivery_and_an_unclosed_popup_still_fail(self):
@@ -64,11 +64,11 @@ class MissingChoiceTests(unittest.TestCase):
         for error in errors:
             with self.subTest(error=error), self.fixture("headed", error=error) as (ctx, _, _):
                 with self.assertRaises(AssertionError):
-                    select.refusal_without_semantic_route(ctx)
+                    select.absent_choice_refused(ctx)
 
     def test_an_unexpected_mutation_fails_and_is_restored(self):
         with self.fixture("headless", mutate=True) as (ctx, state, restore):
             with self.assertRaises(AssertionError):
-                select.refusal_without_semantic_route(ctx)
+                select.absent_choice_refused(ctx)
             self.assertEqual(state[0], "uint32 300")
             restore.assert_called_once()
