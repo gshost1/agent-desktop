@@ -9,6 +9,8 @@
 # and which keeps every window from taking focus, is closed with an Escape key; one that fails the gate is killed by its process
 # group and started again.
 # WAYLAND_DISPLAY names the shell's socket for the command; the command is not run otherwise.
+# AGENT_DESKTOP_WAYLAND_MONITORS lists the virtual monitors, space separated (default 1280x800);
+# Mutter lays a second one out to the right of the first.
 set -euo pipefail
 
 [ -n "${AGENT_DESKTOP_PRIVATE_SESSION:-}" ] || {
@@ -21,6 +23,7 @@ no_input=0
 [ $# -gt 0 ] || { echo "usage: private-wayland-shell.sh [--] command [args...]" >&2; exit 2; }
 
 rt=$XDG_RUNTIME_DIR
+monitors=${AGENT_DESKTOP_WAYLAND_MONITORS:-1280x800}
 attempts=8
 health_reads=5
 shell_pid=
@@ -172,7 +175,9 @@ start_shell() {
   local before
   socket=
   before=$(sockets)
-  setsid env -u DISPLAY gnome-shell --headless --wayland --no-x11 --virtual-monitor 1280x800 \
+  local monitor_args=()
+  for monitor in $monitors; do monitor_args+=(--virtual-monitor "$monitor"); done
+  setsid env -u DISPLAY gnome-shell --headless --wayland --no-x11 "${monitor_args[@]}" \
     > "$AGENT_DESKTOP_PRIVATE_SESSION/gnome-shell-wayland.log" 2>&1 < /dev/null &
   shell_pid=$!
   for _ in $(seq 1 100); do

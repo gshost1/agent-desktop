@@ -39,9 +39,8 @@ function Get-TargetBinary {
 }
 
 function Invoke-AgentDesktop {
-    <# Every CLI call in this file goes through here, so binary-vs-stub lives
-       in one place. -RequireOk mirrors Invoke-Target's setup-call check for
-       the raw (non-ref) commands, e.g. focus-window. #>
+    <# Every CLI call in this file goes through here, so binary-vs-stub lives in one place. -RequireOk mirrors
+       Invoke-Target's setup-call check for the raw (non-ref) commands, e.g. focus-window. #>
     param([Parameter(Mandatory = $true)][string[]]$Arguments, [int]$TimeoutSeconds = 20, [switch]$RequireOk, [string]$Description = 'command')
     $bin = Get-TargetBinary
     $full = @($bin.PrefixArgs) + $Arguments
@@ -50,6 +49,7 @@ function Invoke-AgentDesktop {
         throw "Invoke-AgentDesktop: '$($Arguments -join ' ')' produced no stdout to parse (ExitCode=$($result.ExitCode), TimedOut=$($result.TimedOut), OutputLimited=$($result.OutputLimited)); stderr: $($result.StdErr.Trim())"
     }
     $envelope = ConvertFrom-AgentJson -Json $result.StdOut
+    if ($envelope['ok'] -ne $true -and $envelope['error']) { Set-LastErrorEnvelope -Text "$($envelope['error']['code']): $($envelope['error']['message']) (command: $(@($Arguments | Where-Object { $_ -notlike '-*' })[0]))" }
     if ($RequireOk -and $envelope['ok'] -ne $true) {
         throw "Invoke-AgentDesktop: setup command '$($Arguments -join ' ')' on $Description failed: $($envelope['error']['code'])"
     }
@@ -93,7 +93,7 @@ function Find-Target {
 }
 
 function Find-TargetMatches {
-    <# Cardinality-preserving sibling of Find-Target: omits --first - plural data.matches[]/data.total_matches. #>
+    <# Cardinality-preserving sibling of Find-Target: omits --first. find saves no snapshot_id when no match is ref-bearing, so Count counts every match and Targets holds only the ref-bearing ones. #>
     [CmdletBinding()]
     param(
         [string]$App, [string]$WindowId, [string]$NativeId, [string]$Name, [string]$Role,
@@ -113,8 +113,8 @@ function Find-TargetMatches {
         if ($envelope['ok'] -eq $true) {
             $matchList = $envelope['data']['matches']
             $snapshotId = $envelope['data']['snapshot_id']
-            if ($matchList -and $snapshotId) {
-                $targets = @($matchList | ForEach-Object { [pscustomobject]@{ RefId = $_['ref_id']; SnapshotId = $snapshotId } })
+            if ($matchList) {
+                $targets = @($matchList | Where-Object { $_['ref_id'] -and $snapshotId } | ForEach-Object { [pscustomobject]@{ RefId = $_['ref_id']; SnapshotId = $snapshotId } })
                 return [pscustomobject]@{ Targets = $targets; Count = [int]$envelope['data']['total_matches']; SnapshotId = $snapshotId }
             }
         }

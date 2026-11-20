@@ -4,7 +4,7 @@ use crate::{
     commands::{
         helpers::{apply_post_action_wait, validate_post_action_wait},
         operation_response::operation_response,
-        point_resolve::{PointResolveArgs, require_cursor_policy, require_pointer_capability},
+        point_resolve::{PointResolveArgs, require_cursor_policy, require_pointer_capability_for},
         pointer_action::{
             CommandFocus, PointResolveAttempt, before_first_event, ensure_point_deadline,
             point_deadline, refuse_unproven_refs, resolve_point_under_lease,
@@ -49,10 +49,6 @@ pub fn execute(
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     require_cursor_policy(context, "drag")?;
-    require_pointer_capability(adapter)?;
-    validate_post_action_wait(context)?;
-    let deadline = point_deadline(args.timeout_ms)?;
-    DragParams::validate_timing(args.duration_ms, args.drop_delay_ms, deadline)?;
     let from_args = PointResolveArgs {
         ref_id: args.from.ref_id.as_deref(),
         xy: args.from.xy,
@@ -65,6 +61,10 @@ pub fn execute(
         missing_input_message: "Provide --to <ref> or --to-xy x,y",
         headed_requirement: crate::HeadedRequirement::None,
     };
+    require_pointer_capability_for(&[from_args, to_args], adapter)?;
+    validate_post_action_wait(context)?;
+    let deadline = point_deadline(args.timeout_ms)?;
+    DragParams::validate_timing(args.duration_ms, args.drop_delay_ms, deadline)?;
     before_first_event(|| refuse_unproven_refs(&[from_args, to_args], context))?;
     let auto_wait = args.timeout_ms.is_some_and(|timeout_ms| timeout_ms > 0);
     let cursor = crate::cursor_overlay::hold_cursor(context, deadline);

@@ -5,6 +5,7 @@ use agent_desktop_core::{AdapterError, Deadline};
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
 
+use super::display_mutter_state::MutterState;
 use crate::system::bus::bus_deadline::within;
 use crate::system::bus::bus_slice::within_slice;
 use crate::system::bus::session_bus::SessionBus;
@@ -13,6 +14,7 @@ const SERVICE: &str = "org.gnome.Mutter.DisplayConfig";
 const PATH: &str = "/org/gnome/Mutter/DisplayConfig";
 const INTERFACE: &str = "org.gnome.Mutter.DisplayConfig";
 const LOGICAL_LAYOUT: u32 = 1;
+const PHYSICAL_LAYOUT: u32 = 2;
 
 /// The share of an X11 listing Mutter may take to supply scales.
 pub(crate) const OPTIONAL_SLICE: Duration = Duration::from_millis(500);
@@ -44,11 +46,17 @@ fn flag(properties: &Properties, key: &str) -> Option<bool> {
         .and_then(|value| value.downcast_ref::<bool>().ok())
 }
 
-fn logical_layout(properties: &Properties) -> bool {
-    properties
-        .get("layout-mode")
-        .and_then(|value| value.downcast_ref::<u32>().ok())
-        == Some(LOGICAL_LAYOUT)
+/// Whether the layout is logical. A missing mode keeps physical dimensions;
+/// a value other than logical or physical is unknown (`None`).
+fn logical_layout(properties: &Properties) -> Option<bool> {
+    match properties.get("layout-mode") {
+        None => Some(false),
+        Some(value) => match value.downcast_ref::<u32>().ok() {
+            Some(LOGICAL_LAYOUT) => Some(true),
+            Some(PHYSICAL_LAYOUT) => Some(false),
+            _ => None,
+        },
+    }
 }
 
 fn current_size(modes: &[Mode]) -> Option<(i32, i32)> {
@@ -73,13 +81,14 @@ fn logical_size(monitors: &[Physical], specs: &[Spec], scale: f64, logical: bool
     }
 }
 
-fn assemble(reply: Reply) -> Vec<LogicalMonitor> {
+fn assemble(reply: Reply) -> MutterState {
     let (_, monitors, logical, properties) = reply;
     let layout_is_logical = logical_layout(&properties);
-    logical
+    let monitors = logical
         .into_iter()
         .map(|(x, y, scale, _, primary, specs, _)| {
-            let (width, height) = logical_size(&monitors, &specs, scale, layout_is_logical);
+            let logical_sizes = layout_is_logical.unwrap_or(false);
+            let (width, height) = logical_size(&monitors, &specs, scale, logical_sizes);
             LogicalMonitor {
                 x,
                 y,
@@ -90,10 +99,14 @@ fn assemble(reply: Reply) -> Vec<LogicalMonitor> {
                 connectors: specs.into_iter().map(|spec| spec.0).collect(),
             }
         })
-        .collect()
+        .collect();
+    MutterState {
+        monitors,
+        layout_is_logical,
+    }
 }
 
-async fn get_current_state(session: Connection) -> Option<Vec<LogicalMonitor>> {
+async fn get_current_state(session: Connection) -> Option<MutterState> {
     let reply = session
         .call_method(Some(SERVICE), PATH, Some(INTERFACE), "GetCurrentState", &())
         .await
@@ -113,18 +126,16 @@ fn open_session(
     }
 }
 
-/// The compositor's logical monitor list, or `None` when the session bus has
-/// no Mutter answering it. Only the deadline itself is an error.
-pub(crate) fn logical_monitors(
-    deadline: Deadline,
-) -> Result<Option<Vec<LogicalMonitor>>, AdapterError> {
+/// The compositor's monitor configuration, or `None` when the session bus
+/// has no Mutter answering it. Only the deadline itself is an error.
+pub(crate) fn current_state(deadline: Deadline) -> Result<Option<MutterState>, AdapterError> {
     let Some(session) = open_session(deadline, deadline)? else {
         return Ok(None);
     };
     within(deadline, async { Ok(get_current_state(session).await) })
 }
 
-/// Like `logical_monitors`, but a Mutter that does not answer within `slice`
+/// Like `current_state`, but a Mutter that does not answer within `slice`
 /// is reported as absent instead of spending the caller's budget.
 pub(crate) fn logical_monitors_within(
     deadline: Deadline,
@@ -136,6 +147,11 @@ pub(crate) fn logical_monitors_within(
     within(deadline, async {
         Ok(within_slice(slice, get_current_state(session))
             .await
-            .flatten())
+            .flatten()
+            .map(|state| state.monitors))
     })
 }
+
+#[cfg(test)]
+#[path = "display_mutter_tests.rs"]
+mod tests;

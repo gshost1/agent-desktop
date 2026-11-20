@@ -1,6 +1,10 @@
 use super::*;
 use crate::notifications::fake::{DaemonFailure, FakeWorld, lease, log, reading, spec};
-use agent_desktop_core::{ActionResult, ErrorCode, InteractionPolicy, NotificationInfo};
+use crate::system::shell::kinds::ShellKind;
+use crate::system::shell::open::{Surface, open_with};
+use agent_desktop_core::{
+    ActionResult, DeliverySemantics, ErrorCode, InteractionPolicy, NotificationInfo, WindowInfo,
+};
 use serde_json::json;
 
 fn entry() -> NotificationInfo {
@@ -187,16 +191,143 @@ fn the_list_is_closed_even_when_the_command_spent_its_whole_budget() {
     assert!(!world.showing.get());
 }
 
+struct NeverShows;
+
+impl Surface for NeverShows {
+    fn backed(&self, _: ShellKind, _: Deadline) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
+    fn showing(&self, _: ShellKind, _: Deadline) -> Result<bool, AdapterError> {
+        Ok(false)
+    }
+
+    fn press_opener(&self, _: ShellKind, _: InteractionPolicy) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
+    fn window(&self, _: ShellKind, _: Deadline) -> Result<WindowInfo, AdapterError> {
+        Err(AdapterError::internal("the list never showed"))
+    }
+
+    fn pause(&self, _: std::time::Duration) {}
+}
+
+fn shell_open_error(policy: InteractionPolicy) -> AdapterError {
+    let deadline = Deadline::after(20).expect("a deadline");
+    open_with(&NeverShows, ShellKind::MessageList, policy, deadline).expect_err("never shows")
+}
+
+fn session_error(world: &FakeWorld) -> AdapterError {
+    let lease = lease(500);
+    Session::open(world, InteractionPolicy::headed(), &lease)
+        .err()
+        .expect("error")
+}
+
 #[test]
-fn an_open_that_fails_tells_the_agent_to_open_the_list_by_hand() {
+fn an_open_that_pressed_the_opener_keeps_the_shell_advice() {
+    for sticks in [false, true] {
+        let log = log();
+        let mut world = world(&log);
+        let shell = shell_open_error(InteractionPolicy::headed());
+        assert_eq!(shell.disposition, DeliverySemantics::delivered_unverified());
+        world.faults.open_error = Some(shell.clone());
+        world.faults.close_sticks = sticks;
+        let error = session_error(&world);
+        assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+        assert_eq!(error.suggestion, shell.suggestion);
+        let suggestion = error.suggestion.expect("a suggestion");
+        assert!(!suggestion.contains("by hand"), "{suggestion}");
+        let restore = if sticks { "unverified" } else { "closed" };
+        assert_eq!(error.details.expect("details")["list_restore"], restore);
+    }
+}
+
+#[test]
+fn an_open_refused_before_any_press_tells_the_agent_to_open_the_list_by_hand() {
     let log = log();
     let mut world = world(&log);
-    world.faults.open = true;
-    let lease = lease(500);
-    let error = Session::open(&world, InteractionPolicy::headed(), &lease)
-        .err()
-        .expect("error");
+    let shell = shell_open_error(InteractionPolicy::headless());
+    world.faults.open_error = Some(shell);
+    let error = session_error(&world);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
     let suggestion = error.suggestion.expect("a suggestion");
     assert!(suggestion.contains("by hand"), "{suggestion}");
     assert!(suggestion.contains("already showing"), "{suggestion}");
+}
+
+#[test]
+fn an_open_that_does_not_say_whether_it_pressed_is_never_advised_to_retry() {
+    let log = log();
+    let mut world = world(&log);
+    world.faults.open_error = Some(AdapterError::new(ErrorCode::Internal, "no progress"));
+    let error = session_error(&world);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(!suggestion.contains("by hand"), "{suggestion}");
+    assert!(suggestion.contains("before"), "{suggestion}");
+}
+
+fn unpressed_open_error(disposition: Option<DeliverySemantics>) -> AdapterError {
+    let error = AdapterError::new(ErrorCode::ActionFailed, "the opener was never pressed")
+        .with_details(json!({"surface_opened_by_call": false}));
+    match disposition {
+        Some(disposition) => error.with_disposition(disposition),
+        None => error,
+    }
+}
+
+#[test]
+fn an_unpressed_open_of_unknown_delivery_is_stamped_not_delivered() {
+    let log = log();
+    let mut world = world(&log);
+    world.faults.open_error = Some(unpressed_open_error(None));
+    let error = session_error(&world);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(suggestion.contains("by hand"), "{suggestion}");
+}
+
+#[test]
+fn an_unpressed_open_already_unsafe_to_retry_keeps_its_disposition() {
+    let log = log();
+    let mut world = world(&log);
+    let uncertain = DeliverySemantics::uncertain();
+    world.faults.open_error = Some(unpressed_open_error(Some(uncertain)));
+    let error = session_error(&world);
+    assert_eq!(error.disposition, uncertain);
+    let suggestion = error.suggestion.expect("a suggestion");
+    assert!(!suggestion.contains("by hand"), "{suggestion}");
+}
+
+#[test]
+fn a_possibly_pressed_open_with_advice_stamps_safe_errors_but_preserves_unsafe_ones() {
+    for opened in [None, Some(true)] {
+        for disposition in [
+            DeliverySemantics::not_delivered(),
+            DeliverySemantics::uncertain(),
+        ] {
+            let log = log();
+            let mut world = world(&log);
+            let mut error = AdapterError::internal("opener failed")
+                .with_disposition(disposition)
+                .with_suggestion("Inspect the list before pressing again");
+            if let Some(opened) = opened {
+                error = error.with_details(json!({"surface_opened_by_call": opened}));
+            }
+            world.faults.open_error = Some(error);
+            let error = session_error(&world);
+            let expected = if disposition == DeliverySemantics::uncertain() {
+                disposition
+            } else {
+                DeliverySemantics::delivered_unverified()
+            };
+            assert_eq!(error.disposition, expected);
+            assert_eq!(
+                error.suggestion.as_deref(),
+                Some("Inspect the list before pressing again")
+            );
+        }
+    }
 }
