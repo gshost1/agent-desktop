@@ -70,6 +70,15 @@ class MenuTests(unittest.TestCase):
 
 
 class LaunchTests(unittest.TestCase):
+    def test_dead_owner_target_skips_unrelated_and_same_named_non_buttons(self):
+        tree = {"role": "scrollarea", "ref_id": "@s:e1", "children": [
+            {"role": "label", "name": "7", "ref_id": "@s:e2"},
+            {"role": "button", "name": "7", "ref_id": "@s:e3"}]}
+        self.assertEqual(launch._first_ref(tree, name="7", role="button"), "@s:e3")
+        for missing in (None, {}, {"role": "label", "name": "7", "ref_id": "@s:e2"},
+                        {"role": "button", "name": "7", "ref_id": "unqualified"}):
+            self.assertIsNone(launch._first_ref(missing, name="7", role="button"))
+
     def test_first_ref_returns_the_root_ref(self) -> None:
         self.assertEqual(launch._first_ref({"ref_id": "@s:e1"}), "@s:e1")
 
