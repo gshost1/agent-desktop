@@ -43,3 +43,34 @@ fn file_older_than_margin_is_not_hashed_again() {
     assert!(Arc::ptr_eq(&first, &cache.index_at(&dirs, now)));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn racy_service_content_change_rebuilds_when_stamps_are_unchanged() {
+    let (root, _, cache) = fixture();
+    let applications = root.join("applications");
+    let services = root.join("dbus-1/services");
+    std::fs::create_dir_all(&applications).unwrap();
+    std::fs::create_dir_all(&services).unwrap();
+    let file = services.join("org.example.Editor.service");
+    std::fs::write(
+        &file,
+        "[D-BUS Service]\nName=org.example.Editor\nExec=one\n",
+    )
+    .unwrap();
+    let dirs = [applications];
+    let now = SystemTime::now();
+    let first = cache.index_at(&dirs, now);
+    assert!(Arc::ptr_eq(&first, &cache.index_at(&dirs, now)));
+    std::fs::write(
+        &file,
+        "[D-BUS Service]\nName=org.example.Editor\nExec=two\n",
+    )
+    .unwrap();
+    let mut stamps = super::stamps(&dirs);
+    stamps.extend(super::service_stamps(&dirs));
+    cache.state.lock().unwrap().as_mut().unwrap().0 = stamps;
+    let second = cache.index_at(&dirs, now);
+    assert!(!Arc::ptr_eq(&first, &second));
+    assert!(Arc::ptr_eq(&second, &cache.index_at(&dirs, now)));
+    std::fs::remove_dir_all(root).unwrap();
+}
