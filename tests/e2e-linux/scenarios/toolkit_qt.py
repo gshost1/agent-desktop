@@ -4,7 +4,7 @@ import time
 
 from oracle.atspi_raw import poll
 from oracle.proc import members
-from runner.helper import (changed, command, delayed, listed_app_name, managed, one, ref, require, root,
+from runner.helper import (command, delayed, listed_app_name, managed, one, ref, require, root,
                            snapshot, stale_twin, remove)
 from runner.legs import implementation
 from runner.verdict import LegContext
@@ -27,7 +27,8 @@ def qt_app(ctx):
             yield app
     finally:
         remove(path)
-        restored = changed(lambda: log_state(ctx), baseline)
+        restored = log_state(ctx)
+        require(restored == baseline)
         ctx.restored("applog", restored)
 
 
@@ -54,8 +55,8 @@ def open_raw(tree):
     require(menu.do_action("showMenu") or menu.do_action("press") or menu.do_action("click"))
 
 
-def wait_menu(ctx, app, opened, *, timeout=2000, code=None):
-    return command(ctx, ["wait", "--menu" if opened else "--menu-closed", "--app", listed_app_name(ctx, app),
+def wait_menu(ctx, name, opened, *, timeout=2000, code=None):
+    return command(ctx, ["wait", "--menu" if opened else "--menu-closed", "--app", name,
                          "--timeout", str(timeout)], code=code)
 
 
@@ -113,25 +114,26 @@ def scroll_refused_no_container(ctx: LegContext) -> None:
 
 def menu_transition(ctx, opening, *, already=False):
     with qt_app(ctx) as app:
+        name = listed_app_name(ctx, app)
         tree = root(ctx, app)
         path = ctx.tier.runtime_dir / "qt-window.log"
         require(not menu_open(path), "Qt menu initially open")
         initial = events(path)
         trigger = None
         try:
-            wait_menu(ctx, app, True, timeout=200, code="TIMEOUT")
+            wait_menu(ctx, name, True, timeout=200, code="TIMEOUT")
             require(not menu_open(path) and events(path) == initial)
             if not opening or already:
                 open_raw(tree)
                 require(poll(lambda: menu_open(path), 2))
             if already:
                 started = time.monotonic()
-                wait_menu(ctx, app, True)
+                wait_menu(ctx, name, True)
                 require(time.monotonic() - started < 1.5)
             else:
                 callback = (lambda: open_raw(tree)) if opening else (lambda: command(ctx, ["press", "escape"], app, headed=True))
                 trigger = delayed(0.4, callback)
-                wait_menu(ctx, app, opening)
+                wait_menu(ctx, name, opening)
                 trigger.join()
             require(poll(lambda: menu_open(path) == (opening or already), 2))
             after = events(path)
@@ -139,7 +141,7 @@ def menu_transition(ctx, opening, *, already=False):
             if not opening and not already:
                 require("menu-closed" in after[len(initial):])
             ctx.after("applog", log_state(ctx))
-            wait_menu(ctx, app, not (opening or already), timeout=200, code="TIMEOUT")
+            wait_menu(ctx, name, not (opening or already), timeout=200, code="TIMEOUT")
         finally:
             if trigger:
                 trigger.cancel()

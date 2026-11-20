@@ -32,12 +32,13 @@ class ListedAppNameTests(unittest.TestCase):
                 helper.listed_app_name(object(), SimpleNamespace(pid=73, name="qt_window.py"))
 
     def test_qt_wait_uses_the_listed_name_for_both_predicates(self):
-        ctx, app = object(), SimpleNamespace(name="qt_window.py")
+        ctx = object()
         for opened in (False, True):
             with self.subTest(opened=opened), \
                 patch.object(toolkit_qt, "listed_app_name", return_value="python3.12"), \
                 patch.object(toolkit_qt, "command") as command:
-                toolkit_qt.wait_menu(ctx, app, opened, timeout=123)
+                toolkit_qt.wait_menu(ctx, "python3.12", opened, timeout=123)
+                toolkit_qt.listed_app_name.assert_not_called()
                 self.assertEqual(command.call_args.args[1], [
                     "wait", "--menu" if opened else "--menu-closed", "--app", "python3.12", "--timeout", "123"])
 
@@ -62,21 +63,50 @@ class ListedAppNameTests(unittest.TestCase):
         self.assertEqual(waits, ["gnome-terminal-server", "gnome-terminal-server"])
         self.assertEqual(states, set())
 
-    def test_qt_cleanup_waits_for_exact_membership_and_still_refuses_a_persistent_leak(self):
+    def test_qt_transition_resolves_once_before_any_wait_timer_or_trigger(self):
+        for opening, already in ((True, True), (True, False), (False, False)):
+            with self.subTest(opening=opening, already=already):
+                ctx = Mock(tier=SimpleNamespace(runtime_dir=Path("/private/test")))
+                order = []
+                def lookup(*args):
+                    order.append("lookup")
+                    return "python3.12"
+                def wait(ctx, name, opened, **kwargs):
+                    self.assertEqual(name, "python3.12")
+                    order.append("wait")
+                def clock():
+                    order.append("clock")
+                    return 0
+                def delayed(*args):
+                    order.append("trigger")
+                    return Mock()
+                after = ["menu-open"] if opening else ["menu-open", "menu-closed"]
+                with patch.object(toolkit_qt, "qt_app", return_value=nullcontext(object())), \
+                    patch.object(toolkit_qt, "listed_app_name", side_effect=lookup) as lookup_mock, \
+                    patch.object(toolkit_qt, "root"), \
+                    patch.object(toolkit_qt, "menu_open", return_value=False), \
+                    patch.object(toolkit_qt, "events", side_effect=[[], [], after]), \
+                    patch.object(toolkit_qt, "poll", return_value=True), \
+                    patch.object(toolkit_qt, "open_raw"), \
+                    patch.object(toolkit_qt, "log_state"), \
+                    patch.object(toolkit_qt, "wait_menu", side_effect=wait), \
+                    patch.object(toolkit_qt.time, "monotonic", side_effect=clock), \
+                    patch.object(toolkit_qt, "delayed", side_effect=delayed):
+                    toolkit_qt.menu_transition(ctx, opening, already=already)
+                lookup_mock.assert_called_once()
+                self.assertEqual(order[0], "lookup")
+                self.assertIn("clock" if already else "trigger", order)
+
+    def test_qt_cleanup_requires_exact_membership_immediately(self):
         baseline = {"members": [(1, 2, "service")], "log": None}
         pending = {"members": [(1, 2, "service"), (3, 4, "holder")], "log": None}
         for settles in (True, False):
             with self.subTest(settles=settles):
                 ctx = Mock(tier=SimpleNamespace(runtime_dir=Path("/private/test")))
-                reads = [baseline, pending, baseline if settles else pending]
-                def read(_):
-                    return reads.pop(0) if len(reads) > 1 else reads[0]
-                def poll(predicate, *args, **kw):
-                    return any(predicate() for _ in range(2))
-                with patch.object(toolkit_qt, "log_state", side_effect=read), \
+                with patch.object(toolkit_qt, "log_state", side_effect=[baseline, baseline if settles else pending]), \
                     patch.object(toolkit_qt, "remove"), \
                     patch.object(toolkit_qt, "managed", return_value=nullcontext(object())), \
-                    patch.object(helper.raw, "poll", side_effect=poll):
+                    patch.object(helper.raw, "poll", side_effect=AssertionError("cleanup must not poll")):
                     if settles:
                         with toolkit_qt.qt_app(ctx):
                             pass
