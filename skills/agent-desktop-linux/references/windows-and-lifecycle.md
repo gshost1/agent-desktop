@@ -285,8 +285,7 @@ application reports it active: its frame or another frame of the app carries
 the input focus without `ACTIVE`. When the active window is already a modal
 dialog of the target window (transient for it and `_NET_WM_STATE_MODAL`), no
 request is sent: `ACTION_FAILED`, cause `blocked_by_modal_dialog`, naming the
-dialog, `not_delivered`, and a `--headed` ref action in that window ends the same
-way before any input. Only a dialog transient for the target window itself
+dialog, `not_delivered`, `retry: safe`. Only a dialog transient for the target window itself
 counts; for a modal dialog transient for another dialog of it, the request is
 sent and read back. After the request is sent, a failed read-back
 or a modal refusal is `delivered_unverified` and unsafe to retry. An unconfirmed
