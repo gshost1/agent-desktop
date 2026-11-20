@@ -69,6 +69,7 @@ fn an_unobserved_qt_popup_shares_the_overview_cause_and_recovery_advice() {
         let mut rows = Rows {
             opens: false,
             failure: Some(failure),
+            hidden: Some(true),
             ..Rows::closed()
         };
         let error = select(&mut rows).expect_err("popup not observed");
@@ -83,7 +84,94 @@ fn an_unobserved_qt_popup_shares_the_overview_cause_and_recovery_advice() {
         } else {
             assert!(details.get("cause").is_none());
         }
-        assert_eq!(details["popup_closed"], true);
+        assert_eq!(rows.operations, ["open"]);
+        assert_eq!(details["popup_close_attempted"], false);
+        assert!(details["popup_closed"].is_null());
         assert_eq!(details["combo_opener_clicked"], true);
+    }
+}
+
+#[test]
+fn a_visible_or_unread_popup_does_not_read_or_name_the_overview() {
+    for hidden in [Some(false), None] {
+        let mut rows = Rows {
+            opens: false,
+            failure: Some("overview-open"),
+            hidden,
+            ..Rows::closed()
+        };
+        let error = select(&mut rows).expect_err("expansion not observed");
+        assert_eq!(error.suggestion, popup_not_observed(None).suggestion);
+        let details = error.details.expect("details");
+        assert!(details.get("cause").is_none());
+        assert_eq!(details["popup_close_attempted"], hidden == Some(false));
+    }
+}
+
+struct BudgetRows {
+    rows: Rows,
+    chosen: Option<Deadline>,
+    cleanup: Cell<Option<Deadline>>,
+}
+
+impl ComboRows for BudgetRows {
+    fn satisfied(&mut self) -> Option<bool> {
+        self.rows.satisfied()
+    }
+
+    fn expanded(&mut self, deadline: Deadline) -> Option<bool> {
+        self.rows.expanded(deadline)
+    }
+
+    fn open(&mut self) -> Result<Vec<ActionStep>, AdapterError> {
+        self.rows.open()
+    }
+
+    fn popup_hidden(&self, deadline: Deadline) -> Option<bool> {
+        self.cleanup.set(Some(deadline));
+        self.rows.popup_hidden(deadline)
+    }
+
+    fn escape(&mut self) -> Option<()> {
+        self.rows.escape()
+    }
+
+    fn overview_open(&self) -> Option<bool> {
+        self.rows.overview_open()
+    }
+
+    fn choose(&mut self, deadline: Deadline) -> Result<ActionResult, AdapterError> {
+        self.chosen = Some(deadline);
+        self.rows.choose(deadline)
+    }
+}
+
+#[test]
+fn choosing_after_opening_keeps_the_close_reservation_and_cleanup_uses_the_full_deadline() {
+    for expanded in [false, true] {
+        let deadline = Deadline::after(5_000).expect("deadline");
+        let mut rows = BudgetRows {
+            rows: Rows {
+                expanded: Some(expanded),
+                failure: Some("choose"),
+                ..Rows::closed()
+            },
+            chosen: None,
+            cleanup: Cell::new(None),
+        };
+        choose(&mut rows, deadline).expect_err("choice refused");
+        let chosen = rows.chosen.expect("selection deadline");
+        if expanded {
+            assert_eq!(chosen, deadline);
+            assert_eq!(rows.cleanup.get(), None);
+        } else {
+            assert_ne!(chosen, deadline);
+            assert!(
+                deadline.remaining().saturating_sub(chosen.remaining())
+                    >= CLOSE_WAIT.saturating_sub(Duration::from_millis(10))
+            );
+            assert_eq!(rows.cleanup.get(), Some(deadline));
+            assert_eq!(rows.rows.operations, ["open", "choose", "escape"]);
+        }
     }
 }

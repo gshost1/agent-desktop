@@ -7,3 +7,5 @@
 * Report a popup close attempt only when cleanup sent Escape, not when its visibility recheck skipped the key.
 * Close Qt combo popups when choosing a row fails after opening, preserving opener input accounting and reporting whether cleanup sent Escape and observed closure.
 * Give unobserved Qt combo popups the same recovery advice and Activities Overview diagnosis as other pointer-opened dropdowns.
+* Keep the popup cleanup reservation while searching for and verifying a choice after opening; use the full remaining deadline for cleanup.
+* Name the Activities Overview only when the popup is observed absent, never when it is visible or unreadable.

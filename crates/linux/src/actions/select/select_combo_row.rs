@@ -55,7 +55,7 @@ trait ComboRows {
             ),
         )
     }
-    fn choose(&mut self) -> Result<ActionResult, AdapterError>;
+    fn choose(&mut self, deadline: Deadline) -> Result<ActionResult, AdapterError>;
 }
 
 struct BusCombo<'a> {
@@ -103,14 +103,18 @@ impl ComboRows for BusCombo<'_> {
         overview::overview_open()
     }
 
-    fn choose(&mut self) -> Result<ActionResult, AdapterError> {
+    fn choose(&mut self, deadline: Deadline) -> Result<ActionResult, AdapterError> {
+        let target = Target {
+            deadline,
+            ..*self.target
+        };
         let mut reader = BusReader {
             bus: self.target.bus,
-            deadline: self.target.deadline,
+            deadline,
             inspected_role: None,
         };
         match search(&mut reader, self.combo, self.wanted)? {
-            Search::Found(hit) => click_row(self.target, &hit, self.wanted, self.pointer),
+            Search::Found(hit) => click_row(&target, &hit, self.wanted, self.pointer),
             miss => Err(miss_error(&miss)),
         }
     }
@@ -129,7 +133,7 @@ fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, 
         return Ok(already_satisfied());
     }
     match rows.expanded(deadline) {
-        Some(true) => return rows.choose(),
+        Some(true) => return rows.choose(deadline),
         None => {
             return Err(AdapterError::new(
                 ErrorCode::ActionFailed,
@@ -162,12 +166,19 @@ fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, 
         |expanded| *expanded == Some(true),
     );
     if expanded != Some(true) {
-        let error = popup_not_observed(rows.overview_open());
-        return Err(close_after_opening(rows, deadline, error));
+        let hidden = rows.popup_hidden(deadline);
+        let overview = if hidden == Some(true) {
+            rows.overview_open()
+        } else {
+            None
+        };
+        let error = popup_not_observed(overview);
+        return Err(close_after_opening(rows, deadline, error, hidden));
     }
-    let mut result = rows
-        .choose()
-        .map_err(|error| close_after_opening(rows, deadline, error))?;
+    let mut result = rows.choose(popup_deadline).map_err(|error| {
+        let hidden = rows.popup_hidden(deadline);
+        close_after_opening(rows, deadline, error, hidden)
+    })?;
     let selected = std::mem::take(&mut result.steps);
     Ok(result.with_steps(opened.into_iter().chain(selected).collect()))
 }
@@ -176,8 +187,9 @@ fn close_after_opening(
     rows: &mut dyn ComboRows,
     deadline: Deadline,
     error: AdapterError,
+    hidden: Option<bool>,
 ) -> AdapterError {
-    let (attempted, closed) = if rows.popup_hidden(deadline) == Some(false) {
+    let (attempted, closed) = if hidden == Some(false) {
         rows.close(deadline)
     } else {
         (false, None)

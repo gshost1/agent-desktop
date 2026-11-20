@@ -55,7 +55,7 @@ impl ComboRows for Rows {
         ])
     }
 
-    fn choose(&mut self) -> Result<ActionResult, AdapterError> {
+    fn choose(&mut self, _deadline: Deadline) -> Result<ActionResult, AdapterError> {
         self.operations.push("choose");
         assert_eq!(self.expanded, Some(true));
         if let Some(failure) = self.failure {
@@ -106,6 +106,11 @@ impl ComboRows for Rows {
     }
 
     fn overview_open(&self) -> Option<bool> {
+        assert_eq!(
+            self.hidden,
+            Some(true),
+            "only an absent popup names the Overview"
+        );
         match self.failure {
             Some("overview-open") => Some(true),
             Some("overview-closed") => Some(false),
