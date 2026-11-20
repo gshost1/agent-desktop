@@ -6,6 +6,13 @@ import time
 from pathlib import Path
 
 
+def toolbar_overflow(toolbar, button_type):
+    button = toolbar.findChild(button_type, "qt_toolbar_ext_button")
+    if button is None:
+        raise RuntimeError("Qt fixture toolbar overflow button 'qt_toolbar_ext_button' was not found")
+    return button
+
+
 def main(argv):
     from PyQt6.QtCore import QModelIndex, Qt, QTimer
     from PyQt6.QtWidgets import (
@@ -140,7 +147,7 @@ def main(argv):
     disabled.setEnabled(False)
     hidden = add(QPushButton("zoo-hidden"), "zoo-hidden")
     toolbar = named(QToolBar(), "zoo-toolbar")
-    named(toolbar.findChild(QToolButton, "qt_toolbar_ext_button"), "zoo-toolbar-overflow")
+    named(toolbar_overflow(toolbar, QToolButton), "zoo-toolbar-overflow")
     toolbar.addWidget(named(QPushButton("zoo-toolbar-hidden"), "zoo-toolbar-hidden"))
     window.addToolBar(toolbar)
     scroll = add(QScrollArea(), "zoo-scroll")
