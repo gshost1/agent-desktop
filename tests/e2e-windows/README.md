@@ -81,9 +81,9 @@ that under one desktop lease: it builds the release binary and the fixture, runs
 the cursor-overlay teardown tests and frame budgets, the harness-core
 self-tests, and then `Run-E2E.ps1`. It refuses to run off Windows or without
 `AGENT_DESKTOP_NATIVE_E2E_RUNNER=1`. The `windows-e2e` workflow runs it nightly
-and by hand on hosted `windows-latest`, non-blocking until the suite is green
-there; it is never a pull-request gate. The refusal self-test in `ci.yml` runs
-it only to prove that guard exits 2.
+and by hand on hosted `windows-latest`, where failures fail the run. It also runs
+non-gating on pull requests that edit the workflow; it is never a pull-request
+gate. The refusal self-test in `ci.yml` runs it only to prove that guard exits 2.
 
 ## Conventions a scenario file must follow
 

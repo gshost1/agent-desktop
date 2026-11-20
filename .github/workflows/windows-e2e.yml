@@ -23,9 +23,8 @@ jobs:
     name: Windows live e2e
     runs-on: windows-latest
     timeout-minutes: 90
-    # Nightly and by hand only, never a pull-request gate, until the suite is green on the hosted
-    # runner. A pull request that edits this file runs it once to prove the workflow itself works.
-    continue-on-error: true
+    # Pull requests that edit this workflow run it without making it a merge gate.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
     permissions:
       contents: read
     env:
