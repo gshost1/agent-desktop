@@ -70,8 +70,13 @@ fn a_snapshot_applies_the_toolkit_placement_read_to_the_tokens_it_prints() {
 }
 
 #[test]
-fn a_snapshot_whose_toolkit_read_did_not_answer_withholds_the_index_select() {
-    assert!(!tab_actions(None, false).contains(&"Select".to_owned()));
+fn a_snapshot_whose_toolkit_read_did_not_answer_keeps_select_for_a_fresh_live_read() {
+    assert!(tab_actions(None, false).contains(&"Select".to_owned()));
+}
+
+#[test]
+fn a_snapshot_whose_toolkit_read_answered_without_a_name_withholds_the_index_select() {
+    assert!(!tab_actions(Some(ToolkitId::default()), false).contains(&"Select".to_owned()));
 }
 
 #[test]
