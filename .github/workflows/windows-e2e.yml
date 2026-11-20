@@ -1,0 +1,45 @@
+name: windows-e2e
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/windows-e2e.yml
+
+permissions: {}
+
+concurrency:
+  group: windows-e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  windows-e2e:
+    name: Windows live e2e
+    runs-on: windows-latest
+    timeout-minutes: 90
+    # Pull requests that edit this workflow run it without making it a merge gate.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+    env:
+      AGENT_DESKTOP_NATIVE_E2E_RUNNER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Live suite through the operator entry point
+        shell: powershell
+        run: |
+          $start = Get-Date
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-windows-e2e-ci.ps1
+          $code = $LASTEXITCODE
+          Write-Host ("E2E exit code {0} after {1:n1} min" -f $code, ((Get-Date) - $start).TotalMinutes)
+          exit $code

@@ -12,8 +12,9 @@
     guard-less one, observe the danger the guard exists to prevent, then
     restore) before continuing.
 
-    Cases live in U7SelfTestCasesAssert.ps1 (1-6c) and
-    U7SelfTestCasesVerdict.ps1 (7-14), dot-sourced below - split purely to
+    Cases live in U7SelfTestCasesAssert.ps1 (1-6c),
+    U7SelfTestCasesVerdict.ps1 (7-14) and U7SelfTestCasesShell.ps1 (15-18),
+    dot-sourced below - split purely to
     keep every file under the 400-line cap; this file is the one process
     entry point and owns the one exit call.
 #>
@@ -33,6 +34,8 @@ Import-Module (Join-Path $script:E2EWindowsDir 'BoundedProcess.psm1') -Force
 Import-Module (Join-Path $script:E2EWindowsDir 'DesktopLease.psm1') -Force
 Import-Module (Join-Path $script:E2EWindowsDir 'Harness.psm1') -Force
 Import-Module (Join-Path $script:E2EWindowsDir 'Lib.psm1') -Force
+Import-Module (Join-Path $script:E2EWindowsDir 'LibShell.psm1') -Force -Global
+Import-Module (Join-Path $script:E2EWindowsDir 'ForegroundContender.psm1') -Force -Global
 Import-Module (Join-Path $script:SelftestDir 'SelfTestSupport.psm1') -Force
 
 Reset-SelfTestResults
@@ -104,6 +107,7 @@ Invoke-AgentDesktop -Arguments @('version') -TimeoutSeconds 180 | Out-Null
 
 . (Join-Path $script:SelftestDir 'U7SelfTestCasesAssert.ps1')
 . (Join-Path $script:SelftestDir 'U7SelfTestCasesVerdict.ps1')
+. (Join-Path $script:SelftestDir 'U7SelfTestCasesShell.ps1')
 
 Remove-Item Env:\AGENT_DESKTOP_E2E_STUB_SCRIPT, Env:\AGENT_DESKTOP_E2E_STUB_STATE -ErrorAction SilentlyContinue
 
