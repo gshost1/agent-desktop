@@ -2,6 +2,7 @@ use agent_desktop_core::{AdapterError, Deadline, DisplayInfo, ErrorCode, Rect};
 
 use super::x11::{self, MonitorFault, MonitorReader, MonitorSource, X11Monitor};
 use crate::system::display::display_cause::Cause;
+use crate::system::display::display_layout::DisplayLayout;
 use crate::system::display::display_mutter::LogicalMonitor;
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::display::display_unavailable::Unavailable;
@@ -159,8 +160,41 @@ pub(crate) fn list_wayland_displays(deadline: Deadline) -> Result<Vec<DisplayInf
     decide(
         DisplayServer::Wayland,
         None,
-        display_mutter::logical_monitors(deadline)?,
+        display_mutter::current_state(deadline)?.map(|state| state.monitors),
     )
+}
+
+/// The Wayland displays with Mutter's layout mode, which decides what one
+/// stream unit of a pointer gesture is on each display.
+pub(crate) fn wayland_layout(deadline: Deadline) -> Result<DisplayLayout, AdapterError> {
+    pointer_layout(display_mutter::current_state(deadline)?)
+}
+
+fn pointer_layout(
+    state: Option<display_mutter_state::MutterState>,
+) -> Result<DisplayLayout, AdapterError> {
+    let stream_scaled = match &state {
+        Some(state) => state.layout_is_logical.ok_or_else(unknown_layout_mode)?,
+        None => false,
+    };
+    let displays = decide(
+        DisplayServer::Wayland,
+        None,
+        state.map(|state| state.monitors),
+    )?;
+    Ok(DisplayLayout {
+        displays,
+        stream_scaled,
+    })
+}
+
+fn unknown_layout_mode() -> AdapterError {
+    AdapterError::new(
+        agent_desktop_core::ErrorCode::PlatformNotSupported,
+        "Mutter reported a monitor layout mode that is neither logical nor physical",
+    )
+    .with_details(serde_json::json!({ "cause": "unknown_layout_mode" }))
+    .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
 }
 
 /// Lists the session's displays. On X11 the monitor list comes from RandR
@@ -192,9 +226,11 @@ mod tests;
 pub(crate) mod display_cause;
 pub(crate) mod display_env;
 pub(super) mod display_error;
+pub(crate) mod display_layout;
 #[cfg(test)]
 pub(super) mod display_live_tests;
 pub(super) mod display_mutter;
+pub(super) mod display_mutter_state;
 pub(super) mod display_probe;
 pub(crate) mod display_reach;
 pub(crate) mod display_server;

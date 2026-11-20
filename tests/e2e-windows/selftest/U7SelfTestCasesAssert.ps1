@@ -25,6 +25,42 @@ Invoke-SelfTest 'Find-Target returns null, not a partial target, when snapshot_i
 }
 
 <#
+    1a. Find-TargetMatches: find saves no snapshot when no match publishes a
+        ref, so a hit on a non-interactive container (the fixture's
+        example-link LinkLabel) arrives as matches with no snapshot_id. That
+        is a resolved id with no ref-bearing target, never "no match".
+        INVERT: rebinding the old "matches and snapshot_id" guard makes the
+        same envelope read as no match, the abort the hosted lane hit.
+#>
+Invoke-SelfTest 'Find-TargetMatches counts matches that carry no ref and no snapshot_id' {
+    $refless = '{"version":"2.3","ok":true,"command":"find","data":{"matches":[{"role":"text","name":"Example link","native_id":"example-link"}],"total_matches":1,"truncated":false}}'
+    New-StubConfig -Rules @(@{ Match = '*find*'; Responses = @($refless) }) | Out-Null
+    $hit = Find-TargetMatches -App 'Stub' -NativeId 'example-link' -TimeoutSeconds 1
+    Assert-True ($null -ne $hit -and $hit.Count -eq 1) 'a match set without snapshot_id must still resolve with Count 1'
+    Assert-True (@($hit.Targets).Count -eq 0) 'a match with no ref_id must not become a target'
+
+    $original = ((Get-Command Find-TargetMatches).ScriptBlock.ToString()) -replace "`r`n", "`n"
+    $fixedGuard = 'if ($matchList) {'
+    Assert-True ($original.Contains($fixedGuard)) 'the invert target must be present in the real Find-TargetMatches - if this fails, Lib.psm1 drifted from what this test expects'
+    try {
+        Set-LibFunctionText -Name 'Find-TargetMatches' -Text $original.Replace($fixedGuard, 'if ($matchList -and $snapshotId) {')
+        New-StubConfig -Rules @(@{ Match = '*find*'; Responses = @($refless) }) | Out-Null
+        $inverted = Find-TargetMatches -App 'Stub' -NativeId 'example-link' -TimeoutSeconds 1
+        Assert-True ($null -eq $inverted) 'INVERT: with the snapshot_id guard restored, the same envelope must read as no match'
+    } finally {
+        Set-LibFunctionText -Name 'Find-TargetMatches' -Text $original
+    }
+}
+
+Invoke-SelfTest 'Find-TargetMatches keeps ref-bearing matches as targets of their snapshot' {
+    $twins = '{"version":"2.3","ok":true,"command":"find","data":{"snapshot_id":"twin-snap","matches":[{"ref_id":"@twin-snap:e1","role":"button","name":"Twin"},{"ref_id":"@twin-snap:e2","role":"button","name":"Twin"}],"total_matches":2,"truncated":false}}'
+    New-StubConfig -Rules @(@{ Match = '*find*'; Responses = @($twins) }) | Out-Null
+    $hit = Find-TargetMatches -App 'Stub' -NativeId 'twin-control' -TimeoutSeconds 1
+    Assert-True ($null -ne $hit -and $hit.Count -eq 2) 'two ref-bearing matches must resolve with Count 2'
+    Assert-True (@($hit.Targets).Count -eq 2 -and $hit.Targets[1].RefId -eq '@twin-snap:e2' -and $hit.Targets[1].SnapshotId -eq 'twin-snap') 'each ref-bearing match must become a target carrying the snapshot id'
+}
+
+<#
     1b. Invoke-AgentDesktop refuses to hand ConvertFrom-AgentJson an empty
         stdout string (a timed-out or killed child, or a non-JSON tool)
         and instead throws with ExitCode/TimedOut context - fail-closed

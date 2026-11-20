@@ -33,6 +33,7 @@ Import-Module (Join-Path $PSScriptRoot 'NativeToken.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'StagedProcess.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'BoundedProcess.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'DesktopLease.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'ForegroundContender.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Harness.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Lib.psm1') -Force
 
@@ -159,6 +160,7 @@ try {
     if ($ok) { $exitCode = 0 } else { $exitCode = 1 }
 } catch {
     Write-Host "Run-E2E.ps1: aborting - $($_.Exception.Message)"
+    [void](Write-Verdict)
     $exitCode = 1
 } finally {
     if ($fixtureHandle) { try { Stop-GuardedDetached -Handle $fixtureHandle } catch { Write-Warning "fixture teardown: $($_.Exception.Message)" } }
