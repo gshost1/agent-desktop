@@ -56,7 +56,7 @@ class RawOracleTests(unittest.TestCase):
                 return (10, -20)
             if method == "GetSize":
                 return (80, 40)
-            return ((10, -20, 80, 40),)
+            raise AssertionError(method)
 
         with patch.object(raw, "call", side_effect=reply):
             node = raw.RawNode(None, ":1.4", "/node")
