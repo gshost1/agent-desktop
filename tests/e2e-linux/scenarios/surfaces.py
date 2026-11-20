@@ -18,12 +18,25 @@ def dialog_state(ctx, app):
                         for node in dialogs(ctx, app)))
 
 
+def unless_vanished(read):
+    try:
+        return read()
+    except Exception as error:
+        if raw.vanished(error):
+            return None
+        raise
+
+
 def about_items(ctx, app):
     _toggle(ctx.tier, app.owner_names[0])
     previous = [0]
 
     def settled():
-        items = [node for node in root(ctx, app).find(role=35) if "SHOWING" in node.states]
+        items = unless_vanished(lambda: [node for node in root(ctx, app).find(role=35)
+                                         if "SHOWING" in node.states])
+        if items is None:
+            previous[0] = 0
+            return None
         ready = bool(items) and previous[0] == len(items)
         previous[0] = len(items)
         return items if ready else None
@@ -35,7 +48,8 @@ def about_items(ctx, app):
 
 def open_about(ctx, app):
     activate(about_items(ctx, app)[-1])
-    require(raw.poll(lambda: len(dialogs(ctx, app)) == 1, 5), "About did not show")
+    require(raw.poll(lambda: unless_vanished(lambda: len(dialogs(ctx, app)) == 1), 5),
+            "About did not show")
     require("About" in dialog_state(ctx, app)[0][1], "the opener produced another dialog")
 
 

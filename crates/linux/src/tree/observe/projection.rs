@@ -198,7 +198,7 @@ pub(crate) fn project_node(
     Projector {
         limits,
         stats: LocatorStats::default(),
-        routes: &HeadlessRoutes::unread(),
+        routes: &HeadlessRoutes::every_token(),
     }
     .evidence_of(read, in_web_document)
 }
@@ -216,7 +216,7 @@ pub(crate) fn project(
         limits,
         &mut super::decorate::Plain,
         None,
-        &HeadlessRoutes::unread(),
+        &HeadlessRoutes::every_token(),
     )
 }
 
