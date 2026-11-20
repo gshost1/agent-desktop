@@ -175,11 +175,13 @@ cursor; on Wayland none is drawn.
   combo with no semantic opener with `POLICY_DENIED`, kind `pointer_required`,
   unless the combo already shows the choice. A snapshot leaves `Select` out of
   `available_actions` on such a list, its rows and a GTK4 tab list and tabs,
-  and on an index-only list of an application whose toolkit does not name
-  itself, because no
-  headless route exists; `--headed select` on the row or tab still works. An
-  unnamed GTK4 tab list whose only action was `Select` gets no ref; select one
-  of its tabs instead. A GTK4 drop-down that opens through
+  and on an index-only list of an application whose toolkit is not GTK 3,
+  Qt, Chromium or Gecko, including a toolkit read that answered without a
+  name, because no headless route exists; `--headed select` on the row or tab
+  still works. If the toolkit read times out or is not attempted, the snapshot
+  keeps the tokens for a fresh live read to judge at action time. An unnamed
+  index-only tab list whose only action was the withheld `Select` gets no ref;
+  select one of its tabs instead. A GTK4 drop-down that opens through
   its own toggle takes `select` without `--headed` and checks the value it
   shows.
 - A ref can expose no safe semantic mutation route. Headless requests then
@@ -214,4 +216,3 @@ cursor; on Wayland none is drawn.
   `setParent(None)`) lets a ref resolve onto a control the user can no longer
   see. GTK4 then answers `ok` with `delivered_unverified` and no effect. No
   identity rule reaches this; check the application's own effect.
-
