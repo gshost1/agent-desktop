@@ -43,6 +43,31 @@ pub(crate) fn require_pointer_capability(adapter: &dyn PlatformAdapter) -> Resul
     }
 }
 
+/// Refuses a gesture addressed only by screen coordinates that the session
+/// cannot deliver. A gesture with no element to prove asks the coordinate
+/// gate, which a session may open while it keeps element-aimed gestures shut.
+pub(crate) fn require_coordinate_pointer_capability(
+    adapter: &dyn PlatformAdapter,
+) -> Result<(), AppError> {
+    match adapter.coordinate_pointer_refusal() {
+        Some(error) => Err(error.into()),
+        None => Ok(()),
+    }
+}
+
+/// Picks the gate for a gesture from how its points are addressed: any ref
+/// endpoint needs the element-aimed gate, coordinates alone need the other.
+pub(crate) fn require_pointer_capability_for(
+    points: &[PointResolveArgs<'_>],
+    adapter: &dyn PlatformAdapter,
+) -> Result<(), AppError> {
+    if points.iter().any(|point| point.ref_id.is_some()) {
+        require_pointer_capability(adapter)
+    } else {
+        require_coordinate_pointer_capability(adapter)
+    }
+}
+
 pub(crate) fn resolve_point_from_ref_or_xy_with_context(
     args: PointResolveArgs<'_>,
     adapter: &dyn PlatformAdapter,

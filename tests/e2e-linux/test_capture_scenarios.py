@@ -1,6 +1,6 @@
 import base64
 import unittest
-from contextlib import contextmanager, ExitStack
+from contextlib import contextmanager, ExitStack, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -8,7 +8,7 @@ from unittest.mock import patch
 from runner import legs, verdict
 from runner.product import Envelope
 from runner.verdict import LegContext
-from scenarios import capture
+from scenarios import capture, headed_actions
 
 
 class CaptureScenarioTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class CaptureScenarioTests(unittest.TestCase):
             return Envelope(True, data, None, "{}", 0, argv)
         with ExitStack() as stack:
             replacements = [
-                (capture, "_editor", lambda _: (app, "w-editor")),
+                (capture, "_editor", lambda _: nullcontext((app, "w-editor"))),
                 (capture.apps, "stop", lambda _: None),
                 (capture, "_x11_id", lambda _, window: "0x1"),
                 (capture, "_xwd", xwd),
@@ -56,3 +56,48 @@ class CaptureScenarioTests(unittest.TestCase):
             capture.window_pixels_match_xwd(ctx)
             self.assertEqual(verdict.evaluate(ctx), [])
             self.assertGreaterEqual(state["raw_reads"], 2)
+
+    def test_capture_restores_empty_and_multiline_drafts_even_when_capture_or_typing_fails(self):
+        for initial in ("", "saved\ndraft"):
+            for failure in (None, "capture", "type"):
+                with self.subTest(initial=initial, failure=failure):
+                    document, commands = [initial], []
+                    tier = SimpleNamespace(runtime_dir=Path("/private/test"))
+                    ctx = LegContext(tier, "headless", legs.leg_by_id("capture.window_pixels_match_xwd"),
+                                     member_reader=lambda _: frozenset())
+                    app = SimpleNamespace(windows=["w-editor"])
+
+                    def product(tier, argv, **kw):
+                        commands.append(argv)
+                        if argv[0] == "type":
+                            document[0] += argv[-1]
+                            if failure == "type":
+                                raise RuntimeError("typing failed after writing")
+                        elif argv[0] == "clear":
+                            document[0] = ""
+                        elif argv[0] == "set-value":
+                            document[0] = argv[-1]
+                        return Envelope(True, {}, None, "{}", 0, argv)
+
+                    with ExitStack() as stack:
+                        stack.enter_context(patch.object(capture.apps, "launch", return_value=app))
+                        stop = stack.enter_context(patch.object(capture.apps, "stop"))
+                        stack.enter_context(patch.object(capture, "_document", side_effect=lambda *_: document[0]))
+                        for module in (capture, headed_actions):
+                            stack.enter_context(patch.object(module, "ref_for", return_value="@s:e1"))
+                            stack.enter_context(patch.object(module, "live_root", return_value=app))
+                        stack.enter_context(patch.object(capture.atspi_raw, "poll", side_effect=lambda read, *a, **kw: read()))
+                        stack.enter_context(patch("runner.verdict.run_product", side_effect=product))
+                        def run():
+                            with capture._editor(ctx):
+                                if failure == "capture":
+                                    raise RuntimeError("capture failed")
+                        if failure:
+                            with self.assertRaises(RuntimeError):
+                                run()
+                        else:
+                            run()
+                            self.assertEqual(verdict.evaluate(ctx), [])
+                        stop.assert_called_once_with(app)
+                    self.assertEqual(document[0], initial)
+                    self.assertEqual(commands[-1], ["set-value", "@s:e1", initial] if initial else ["clear", "@s:e1"])
