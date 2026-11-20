@@ -58,11 +58,24 @@ impl ComboRows for Rows {
     fn choose(&mut self) -> Result<ActionResult, AdapterError> {
         self.operations.push("choose");
         assert_eq!(self.expanded, Some(true));
-        if self.failure == Some("choose") {
-            return Err(
-                AdapterError::new(ErrorCode::ElementNotFound, "choice disappeared")
-                    .with_disposition(DeliverySemantics::not_delivered()),
-            );
+        if let Some(failure) = self.failure {
+            let (code, kind, clicks) = match failure {
+                "row-hidden" => (ErrorCode::StaleRef, "pointer_target_not_visible", 0),
+                "row-ambiguous" => (ErrorCode::AmbiguousTarget, "choice_ambiguous", 0),
+                "click-ignored" => (ErrorCode::ActionFailed, "click_not_observed", 1),
+                _ => (ErrorCode::ElementNotFound, "choice_missing", 0),
+            };
+            return Err(AdapterError::new(code, "choice refused")
+                .with_details(json!({
+                    "kind": kind,
+                    "delivered_clicks": clicks,
+                    "physical_delivery_started": clicks > 0,
+                }))
+                .with_disposition(if clicks > 0 {
+                    DeliverySemantics::delivered_unverified()
+                } else {
+                    DeliverySemantics::not_delivered()
+                }));
         }
         Ok(ActionResult::delivered_unverified("select")
             .with_steps(vec![ActionStep::succeeded("choose").with_verified(true)])
@@ -90,6 +103,14 @@ impl ComboRows for Rows {
             _ => Some(true),
         };
         Some(())
+    }
+
+    fn overview_open(&self) -> Option<bool> {
+        match self.failure {
+            Some("overview-open") => Some(true),
+            Some("overview-closed") => Some(false),
+            _ => None,
+        }
     }
 }
 
@@ -280,7 +301,7 @@ fn a_choice_missing_after_opening_is_not_reported_as_untouched() {
         ..Rows::closed()
     };
     let error = select(&mut rows).expect_err("choice disappeared");
-    assert_eq!(rows.operations, ["open", "choose"]);
+    assert_eq!(rows.operations, ["open", "choose", "escape"]);
     assert_eq!(error.code, ErrorCode::ElementNotFound);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }
@@ -299,16 +320,22 @@ fn a_choice_refused_in_an_already_open_popup_keeps_its_safe_disposition() {
 
 #[test]
 fn a_row_visibility_refusal_after_opening_accounts_for_the_opener_input() {
-    let error = AdapterError::new(ErrorCode::StaleRef, "row not visible")
-        .with_details(
-            json!({"kind": "pointer_target_not_visible", "delivered_clicks": 0,
-                            "physical_delivery_started": false}),
-        )
-        .with_disposition(DeliverySemantics::not_delivered());
-    let error = after_opener(error);
+    let mut rows = Rows {
+        failure: Some("row-hidden"),
+        ..Rows::closed()
+    };
+    let error = select(&mut rows).expect_err("row not visible");
+    assert_eq!(rows.operations, ["open", "choose", "escape"]);
+    assert_eq!(error.code, ErrorCode::StaleRef);
     let details = error.details.expect("details");
+    assert_eq!(details["kind"], "pointer_target_not_visible");
+    assert_eq!(details["popup_close_attempted"], true);
+    assert_eq!(details["popup_closed"], true);
     assert_eq!(details["delivered_clicks"], 1);
     assert_eq!(details["physical_delivery_started"], true);
     assert_eq!(details["combo_opener_clicked"], true);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }
+
+#[path = "select_combo_row_cleanup_tests.rs"]
+mod cleanup_tests;

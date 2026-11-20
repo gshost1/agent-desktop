@@ -5,13 +5,15 @@ use agent_desktop_core::{
 };
 use serde_json::json;
 
-use super::select_pointer::{Pointer, after_input_sent, already_satisfied};
+use super::select_pointer::{Pointer, after_input_sent, already_satisfied, with_detail};
+use super::select_pointer_combo::popup_not_observed;
 use super::select_row::click_row;
 use super::select_search::{Search, search};
 use super::select_verify::read_verification;
 use super::{BusReader, children_of, handle_of, miss_error};
 use crate::actions::click::{POLL_STEP, poll_until};
 use crate::actions::context::Target;
+use crate::system::menu::overview;
 use crate::tree::AtspiElement;
 use crate::tree::capabilities::action_read::{NodeView, read_node_view};
 use crate::tree::live_read::live_offscreen::toolkit_of;
@@ -37,6 +39,7 @@ trait ComboRows {
     fn open(&mut self) -> Result<Vec<ActionStep>, AdapterError>;
     fn popup_hidden(&self, deadline: Deadline) -> Option<bool>;
     fn escape(&mut self) -> Option<()>;
+    fn overview_open(&self) -> Option<bool>;
     fn close(&mut self, deadline: Deadline) -> (bool, Option<bool>) {
         if self.popup_hidden(deadline) != Some(false) || self.escape().is_none() {
             return (false, None);
@@ -94,6 +97,10 @@ impl ComboRows for BusCombo<'_> {
 
     fn escape(&mut self) -> Option<()> {
         self.pointer.escape().ok().map(|_| ())
+    }
+
+    fn overview_open(&self) -> Option<bool> {
+        overview::overview_open()
     }
 
     fn choose(&mut self) -> Result<ActionResult, AdapterError> {
@@ -155,26 +162,28 @@ fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, 
         |expanded| *expanded == Some(true),
     );
     if expanded != Some(true) {
-        let (attempted, closed) = if rows.popup_hidden(deadline) == Some(false) {
-            rows.close(deadline)
-        } else {
-            (false, None)
-        };
-        return Err(after_opener(
-            AdapterError::new(
-                ErrorCode::ActionFailed,
-                "The dropdown did not show its choices after the pointer click",
-            )
-            .with_details(
-                json!({"kind": "popup_not_observed", "popup_close_attempted": attempted,
-                                 "popup_closed": closed}),
-            )
-            .with_disposition(DeliverySemantics::delivered_unverified()),
-        ));
+        let error = popup_not_observed(rows.overview_open());
+        return Err(close_after_opening(rows, deadline, error));
     }
-    let mut result = rows.choose().map_err(after_opener)?;
+    let mut result = rows
+        .choose()
+        .map_err(|error| close_after_opening(rows, deadline, error))?;
     let selected = std::mem::take(&mut result.steps);
     Ok(result.with_steps(opened.into_iter().chain(selected).collect()))
+}
+
+fn close_after_opening(
+    rows: &mut dyn ComboRows,
+    deadline: Deadline,
+    error: AdapterError,
+) -> AdapterError {
+    let (attempted, closed) = if rows.popup_hidden(deadline) == Some(false) {
+        rows.close(deadline)
+    } else {
+        (false, None)
+    };
+    let error = with_detail(error, "popup_close_attempted", json!(attempted));
+    after_opener(with_detail(error, "popup_closed", json!(closed)))
 }
 
 fn after_opener(mut error: AdapterError) -> AdapterError {
