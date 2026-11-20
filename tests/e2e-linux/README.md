@@ -33,8 +33,6 @@ The runner inherits the caller's tool paths and libraries: supply tools through 
 
 ## Tiers
 
-Ref scrolling uses the native GTK4 fixture's only scroll area, without relying on an accessible name. The headed leg changes the visible rows without toggling checkboxes, then restores the viewport, pointer and focus. The headless leg asserts a no-input policy refusal. Settings remains covered by `ref_actions.settings_scroll_identity_refusal`, an asserted refusal for captured twins, not positive scrolling coverage. See [the scroll contract](scroll-contract.md).
-
 - `--tier x11-openbox`: private Xvfb and openbox.
 - `--tier x11-mutter`: private Xvfb and the private mutter shell wrapper.
 - `--tier wayland`: private bus and a health-gated headless GNOME Wayland shell.
@@ -101,6 +99,8 @@ The `batch_contract.entry_failure_and_stop_on_error` leg is an `asserted-refusal
 
 The `ref_actions.*` legs observe and restore native application state:
 
+Ref scrolling uses the native GTK4 fixture's only scroll area, without relying on an accessible name. The headed leg changes the visible rows without toggling checkboxes, then restores the viewport, pointer and focus. The headless leg asserts a no-input policy refusal. Settings remains covered by `ref_actions.settings_scroll_identity_refusal`, an asserted refusal for captured twins, not positive scrolling coverage. See [the scroll contract](scroll-contract.md).
+
 | Action | Independent effect |
 | --- | --- |
 | Focus | Qt Text entry gains `FOCUSED`; the prior button regains it on restoration. |
@@ -108,7 +108,7 @@ The `ref_actions.*` legs observe and restore native application state:
 | Right-click | Text Editor exposes a showing `Context menu` and its menu-item children. |
 | Hover | The Qt probe's native status tip appears and clears when the pointer leaves. |
 | Expand / collapse | Calculator's Main Menu changes `EXPANDED` and showing menu children together. |
-| Scroll | Settings Hot Corner leaves the viewport and Dynamic Workspaces enters it. |
+| Scroll | The GTK4 fixture's upper marker leaves the viewport and its lower marker enters it without toggling either. |
 | Scroll-to | Settings reveals the offscreen monitor checkbox without changing its checked state. |
 | Drag | Text Editor gains a nonempty text selection. |
 

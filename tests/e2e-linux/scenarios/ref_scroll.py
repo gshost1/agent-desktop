@@ -61,8 +61,10 @@ def no_input(response):
     error = response.error or {}
     details = error.get("details", {})
     require(error.get("disposition") == {"delivery": "not_delivered", "retry": "safe"}, response.raw)
-    require(details.get("delivered_clicks", 0) == 0 and not details.get("physical_delivery_started", False),
-            "refused scroll sent input")
+    if "delivered_clicks" in details:
+        require(details["delivered_clicks"] == 0, "refused scroll sent clicks")
+    if "physical_delivery_started" in details:
+        require(details["physical_delivery_started"] is False, "refused scroll started physical delivery")
 
 
 def identity_refusal(response):
@@ -81,18 +83,21 @@ def settings_scroll_identity_refusal(ctx):
         read = lambda: (bar.value(), tuple((node.extents(window_coords=True), "CHECKED" in node.states)
                                          for node in controls))
         before, desktop_before = read(), desktop(ctx.tier)
-        data = snapshot(ctx, app)
-        candidates = [item["ref_id"] for item in nodes(data.get("tree"))
-                      if item.get("ref_id") and item.get("role") == "scrollarea"
-                      and any(child.get("name") == "Hot Corner" for child in nodes(item))]
-        require(len(candidates) == 1, "no unique Settings content scroll ref")
         ctx.before("atspi.viewport", before)
-        identity_refusal(ctx.product(["scroll", candidates[0], "--direction", "down", "--amount", "3"]))
-        after = read()
-        require(after == before, "identity refusal changed Settings")
-        require(desktop(ctx.tier) == desktop_before, "identity refusal moved pointer or focus")
-        ctx.after("atspi.viewport", after)
-        ctx.restored("atspi.viewport", after)
+        try:
+            data = snapshot(ctx, app)
+            candidates = [item["ref_id"] for item in nodes(data.get("tree"))
+                          if item.get("ref_id") and item.get("role") == "scrollarea"
+                          and any(child.get("name") == "Hot Corner" for child in nodes(item))]
+            require(len(candidates) == 1, "no unique Settings content scroll ref")
+            identity_refusal(ctx.product(["scroll", candidates[0], "--direction", "down", "--amount", "3"]))
+            after = read()
+            require(after == before, "identity refusal changed Settings")
+            require(desktop(ctx.tier) == desktop_before, "identity refusal moved pointer or focus")
+            ctx.after("atspi.viewport", after)
+        finally:
+            raw_value(bar, before[0])
+            ctx.restored("atspi.viewport", changed(read, before))
 
 
 @implementation("ref_actions.scroll_to")
