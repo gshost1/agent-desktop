@@ -1,3 +1,7 @@
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from runner.helper import (changed, command, managed, one, ref, require, root, stale_twin)
 from runner.legs import implementation
 from runner.verdict import LegContext
@@ -28,14 +32,23 @@ def terminal_copy_follows_selection(ctx: LegContext) -> None:
             ctx.restored("atspi", "SENSITIVE" in copy.states)
 
 
+@contextmanager
+def _empty_editor(ctx):
+    with TemporaryDirectory(prefix="semantic-type-", dir=ctx.tier.runtime_dir) as directory:
+        document = Path(directory) / "empty.txt"
+        document.touch()
+        with managed(ctx, "Text Editor", ("--standalone", "--new-window", str(document))) as app:
+            yield app
+
+
 @implementation("state.text_editor_semantic_type")
 def text_editor_semantic_type(ctx: LegContext) -> None:
-    with managed(ctx, "Text Editor", ("--new-window",)) as app:
+    with _empty_editor(ctx) as app:
         tree = root(ctx, app)
         field = one(tree, role=61)
-        target = ref(ctx, app, role="textfield")
-        initial = field.text()
+        initial = changed(field.text, "")
         require(initial == "", "document must start empty")
+        target = ref(ctx, app, role="textfield")
         ctx.before("atspi", initial)
         try:
             command(ctx, ["type", target, "Desktop café"], app)
