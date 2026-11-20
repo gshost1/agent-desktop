@@ -232,6 +232,15 @@ Multi-agent cursors (macOS and Windows): start with `session start --cursor --mu
 - `permissions` returns `accessibility`, `screen_recording` and `automation`, each as `{ "state": "granted" | "denied" | "not_required" | "unknown" }`, with a `suggestion` when denied. It is cached per process. `permissions --request` asks the OS to prompt, through a bounded isolated helper so a stalled prompt cannot hang the command. It is the only path that prompts. On macOS, `permissions --guide` opens System Settings at the missing permission with an on-screen guide, adds `"guide": "started" | "already_running" | "not_needed"` to the result, and returns without waiting. Other platforms return `PLATFORM_NOT_SUPPORTED` for `--guide`. What to grant is in the platform skill.
 - `version` returns `{ version, target, os }`.
 
+## Daemon mode
+
+`export AGENT_DESKTOP_DAEMON=1` (or `--daemon` on one call) hands each call to a warm background process of the same binary. Output, stderr and exit codes are unchanged. Off by default.
+
+- One daemon serves one user, build, `--session`/`--agent-id` and environment. It exits after `AGENT_DESKTOP_DAEMON_IDLE_MS` (default 300000) without a call.
+- The CLI runs the command itself when the daemon is busy, cannot start, does not answer within 2 s, or the state root does not exist yet; for `--stdin`, `launch`, `--verbose` and help; and after a permission refusal the daemon alone got. Calls never queue.
+- If the daemon stops mid-command, a read-only command runs again in the CLI. Any other command returns `INTERNAL` with `delivery_uncertain` and `retry: unsafe`: snapshot and check before you repeat it.
+- Linux and macOS; on Windows it is ignored.
+
 ## skills
 
 Skills ship inside the binary. The JSON envelope holds the markdown in `data.content`.
