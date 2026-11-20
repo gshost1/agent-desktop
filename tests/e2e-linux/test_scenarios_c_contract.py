@@ -141,12 +141,15 @@ class CaptureHelperTests(unittest.TestCase):
             calls.append(argv)
             return Envelope(True, {"tree": TREE}, None, "{}", 0, argv)
 
-        ctx = SimpleNamespace(tier=object(), product=product)
+        ctx = SimpleNamespace(tier=object(), product=product,
+                              before=lambda *_: None, after=lambda *_: None)
         with patch.object(capture.apps, "launch", return_value=app), \
+            patch.object(capture.apps, "stop"), \
             patch.object(capture.atspi_raw, "poll", side_effect=lambda read, *_args, **_kw: read()), \
-            patch.object(capture, "live_root"), \
-            patch.object(capture, "longest_text", return_value="capture baseline"):
-            self.assertEqual(capture._editor(ctx), (app, "w-test"))
+            patch.object(capture, "_document", side_effect=["", "capture baseline", "capture baseline"]), \
+            patch.object(capture, "restore_text"):
+            with capture._editor(ctx) as opened:
+                self.assertEqual(opened, (app, "w-test"))
         self.assertIn(["type", "@s1:e3", "capture baseline"], calls)
 
     def test_a_solid_image_is_blank(self):

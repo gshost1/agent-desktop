@@ -203,3 +203,39 @@ fn a_lookup_resolves_only_the_entries_whose_words_can_run_the_process() {
     let alone = count() - before;
     assert_eq!(alone, 1, "ids resolved {alone} of {} entries", files.len());
 }
+
+#[test]
+fn a_process_started_by_an_entry_action_or_its_bus_activation_answers_to_the_entry() {
+    let root = std::env::temp_dir().join(crate::tree::live::live_launch::nonce("alias-activation"));
+    let applications = root.join("applications");
+    let services = root.join("dbus-1/services");
+    std::fs::create_dir_all(&applications).unwrap();
+    std::fs::create_dir_all(&services).unwrap();
+    std::fs::write(
+        services.join("org.example.Sleeper.service"),
+        "[D-BUS Service]\nName=org.example.Sleeper\nExec=/bin/sleep 40\n",
+    )
+    .unwrap();
+    let text = "[Desktop Entry]\nType=Application\nName=Sleeper\nExec=/bin/sleep 10 %U\nActions=long;\nDBusActivatable=true\n\n[Desktop Action long]\nName=Long\nExec=/bin/sleep 30\n";
+    let entry = ("org.example.Sleeper".to_owned(), text.to_owned());
+    let index = AliasIndex::build(std::slice::from_ref(&entry), &[applications]);
+    for argv in [
+        ["/bin/sleep", "10"],
+        ["/bin/sleep", "30"],
+        ["/bin/sleep", "40"],
+    ] {
+        let words: Vec<String> = argv.iter().map(|word| word.to_string()).collect();
+        let actual = ExecutableIdentity::requested(&words, &[]).unwrap();
+        assert_eq!(index.names_for(&actual), ["Sleeper"], "{argv:?}");
+        assert_eq!(index.ids_for(&actual), ["org.example.Sleeper"], "{argv:?}");
+    }
+    let other = ExecutableIdentity::requested(&["/bin/sleep".into(), "50".into()], &[]).unwrap();
+    assert!(index.names_for(&other).is_empty());
+    let unlisted = AliasIndex::build(
+        &[(entry.0.clone(), text.replace("Actions=long;\n", ""))],
+        &[],
+    );
+    let action = ExecutableIdentity::requested(&["/bin/sleep".into(), "30".into()], &[]).unwrap();
+    assert!(unlisted.names_for(&action).is_empty());
+    std::fs::remove_dir_all(root).unwrap();
+}
