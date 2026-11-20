@@ -215,15 +215,21 @@ fn hold_keys<S: PointerSession>(
         return Ok(());
     }
     for down in [true, false] {
+        if down {
+            progress.keys.push(KEYSYM_SHIFT_L);
+        }
         session
             .keysym(KEYSYM_SHIFT_L, down, deadline)
             .map_err(uncertain)?;
+        if !down {
+            progress.keys.retain(|key| *key != KEYSYM_SHIFT_L);
+        }
         progress.delivered += 1;
     }
     session.pause(KEY_LEAD_SETTLE);
     for keysym in modifiers {
-        session.keysym(*keysym, true, deadline).map_err(uncertain)?;
         progress.keys.push(*keysym);
+        session.keysym(*keysym, true, deadline).map_err(uncertain)?;
         progress.delivered += 1;
     }
     Ok(())
@@ -249,8 +255,8 @@ fn act_once<S: PointerSession>(
             gate().map_err(|error| {
                 delivery_error(error, DeliverySemantics::delivered_unverified())
             })?;
-            sent(progress, session, act, deadline).map_err(refused_or_uncertain)?;
             progress.buttons.push(*code);
+            sent(progress, session, act, deadline).map_err(refused_or_uncertain)?;
         }
         PointerAct::Button { code, down: false } => {
             sent(progress, session, act, deadline).map_err(uncertain)?;

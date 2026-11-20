@@ -46,12 +46,11 @@ fn flag(properties: &Properties, key: &str) -> Option<bool> {
         .and_then(|value| value.downcast_ref::<bool>().ok())
 }
 
-/// Whether the layout is logical: a missing `layout-mode` is logical, as
-/// Mutter's `DisplayConfig` interface states for a mode that cannot change;
+/// Whether the layout is logical. A missing mode keeps physical dimensions;
 /// a value other than logical or physical is unknown (`None`).
 fn logical_layout(properties: &Properties) -> Option<bool> {
     match properties.get("layout-mode") {
-        None => Some(true),
+        None => Some(false),
         Some(value) => match value.downcast_ref::<u32>().ok() {
             Some(LOGICAL_LAYOUT) => Some(true),
             Some(PHYSICAL_LAYOUT) => Some(false),
@@ -88,7 +87,7 @@ fn assemble(reply: Reply) -> MutterState {
     let monitors = logical
         .into_iter()
         .map(|(x, y, scale, _, primary, specs, _)| {
-            let logical_sizes = layout_is_logical.unwrap_or(true);
+            let logical_sizes = layout_is_logical.unwrap_or(false);
             let (width, height) = logical_size(&monitors, &specs, scale, logical_sizes);
             LogicalMonitor {
                 x,

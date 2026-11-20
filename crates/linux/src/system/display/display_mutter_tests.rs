@@ -74,15 +74,33 @@ fn a_physical_layout_keeps_the_mode_size_and_says_so() {
 }
 
 #[test]
-fn a_reply_without_a_layout_mode_is_read_as_logical_as_the_interface_states() {
+fn a_reply_without_a_layout_mode_preserves_physical_display_dimensions() {
     let (serial, monitors, logical, _) = reply(1);
     let state = assemble((serial, monitors, logical, HashMap::new()));
-    assert_eq!(state.layout_is_logical, Some(true));
-    assert_eq!(state.monitors[0].width, 800);
+    assert_eq!(state.layout_is_logical, Some(false));
+    assert_eq!(state.monitors[0].width, 1600);
+    assert!(
+        !super::super::pointer_layout(Some(state))
+            .unwrap()
+            .stream_scaled
+    );
 }
 
 #[test]
 fn a_layout_mode_neither_logical_nor_physical_is_unknown() {
     let state = assemble(reply(7));
     assert_eq!(state.layout_is_logical, None);
+    assert_eq!(state.monitors[0].width, 1600);
+    let displays = super::super::decide(
+        super::super::DisplayServer::Wayland,
+        None,
+        Some(state.monitors.clone()),
+    )
+    .unwrap();
+    assert_eq!(displays[0].bounds.width, 1600.0);
+    let error = super::super::pointer_layout(Some(state)).unwrap_err();
+    assert_eq!(
+        error.code,
+        agent_desktop_core::ErrorCode::PlatformNotSupported
+    );
 }

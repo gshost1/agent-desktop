@@ -157,13 +157,22 @@ pub(crate) fn decide_x11(
 /// The displays of a Wayland session as Mutter lists them, with no look at the
 /// environment: a caller that already chose the Wayland route asks here.
 pub(crate) fn list_wayland_displays(deadline: Deadline) -> Result<Vec<DisplayInfo>, AdapterError> {
-    wayland_layout(deadline).map(|layout| layout.displays)
+    decide(
+        DisplayServer::Wayland,
+        None,
+        display_mutter::current_state(deadline)?.map(|state| state.monitors),
+    )
 }
 
 /// The Wayland displays with Mutter's layout mode, which decides what one
 /// stream unit of a pointer gesture is on each display.
 pub(crate) fn wayland_layout(deadline: Deadline) -> Result<DisplayLayout, AdapterError> {
-    let state = display_mutter::current_state(deadline)?;
+    pointer_layout(display_mutter::current_state(deadline)?)
+}
+
+fn pointer_layout(
+    state: Option<display_mutter_state::MutterState>,
+) -> Result<DisplayLayout, AdapterError> {
     let stream_scaled = match &state {
         Some(state) => state.layout_is_logical.ok_or_else(unknown_layout_mode)?,
         None => false,

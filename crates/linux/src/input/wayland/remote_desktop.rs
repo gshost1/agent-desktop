@@ -344,7 +344,7 @@ pub(crate) fn classify_call(error: &zbus::Error) -> AdapterError {
         zbus::Error::InputOutput(io) | zbus::Error::Connection(io, _)
             if io.kind() == ErrorKind::TimedOut =>
         {
-            AdapterError::timeout("The compositor did not answer the keyboard request in time")
+            AdapterError::timeout("The compositor did not answer the input request in time")
                 .with_platform_detail(error.to_string())
         }
         zbus::Error::MethodError(name, _, _)
@@ -353,14 +353,12 @@ pub(crate) fn classify_call(error: &zbus::Error) -> AdapterError {
                 SERVICE_UNKNOWN | NAME_HAS_NO_OWNER | ACCESS_DENIED
             ) =>
         {
-            semantic_action_refusal(
-                "Keyboard input through the compositor is not available in this session",
-            )
-            .with_platform_detail(error.to_string())
+            semantic_action_refusal("Input through the compositor is not available in this session")
+                .with_platform_detail(error.to_string())
         }
         _ => AdapterError::new(
             ErrorCode::ActionFailed,
-            "The compositor rejected the keyboard request",
+            "The compositor rejected the input request",
         )
         .with_suggestion("Retry the command; report the platform detail if it persists")
         .with_platform_detail(error.to_string()),

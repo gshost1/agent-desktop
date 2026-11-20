@@ -16,15 +16,18 @@ use crate::system::DisplayLayout;
 #[derive(Default)]
 struct Recorder {
     log: Vec<String>,
-    fail: Option<&'static str>,
+    fail: Option<String>,
 }
 
 impl Recorder {
     fn step(&mut self, event: String) -> Result<(), AdapterError> {
-        let failed = self.fail.is_some_and(|fail| event.starts_with(fail));
+        let failed = self
+            .fail
+            .as_deref()
+            .is_some_and(|fail| event.starts_with(fail));
         self.log.push(event);
         if failed {
-            return Err(AdapterError::new(ErrorCode::ActionFailed, "failed"));
+            return Err(AdapterError::timeout("the compositor did not answer"));
         }
         Ok(())
     }
@@ -302,7 +305,7 @@ fn a_drag_across_monitors_links_both_streams_in_first_use_order() {
 fn a_failure_mid_drag_releases_the_held_button() {
     let gesture = drag_gesture((1650., 10.), (1750., 10.)).unwrap();
     let mut session = Recorder {
-        fail: Some("motion:0:64"),
+        fail: Some("motion:0:64".into()),
         ..Recorder::default()
     };
     let error = run_gesture(&mut session, &gesture, &mut || Ok(()), deadline())
@@ -338,4 +341,45 @@ fn a_long_wheel_turn_sends_one_call_per_burst_of_ten() {
         .filter(|event| event.starts_with("axis"))
         .collect();
     assert_eq!(axes, ["axis:0:10", "axis:0:10", "axis:0:5"]);
+}
+
+#[test]
+fn unanswered_presses_are_recorded_before_sending_and_released_before_session_stop() {
+    for (failed, release) in [
+        ("button:272:true".to_owned(), "button:272:false".to_owned()),
+        (
+            format!("key:{KEYSYM_CONTROL_L:x}:true"),
+            format!("key:{KEYSYM_CONTROL_L:x}:false"),
+        ),
+        (
+            format!("key:{KEYSYM_SHIFT_L:x}:true"),
+            format!("key:{KEYSYM_SHIFT_L:x}:false"),
+        ),
+    ] {
+        let mut session = Recorder::default();
+        let mut click = event(MouseEventKind::Click { count: 1 }, 1650., 10.);
+        click.modifiers = vec![Modifier::Ctrl];
+        session.fail = Some(failed.clone());
+        let error = run_pointer(
+            &mut session,
+            &click,
+            &two_monitors(),
+            &mut || Ok(()),
+            deadline(),
+        )
+        .unwrap_err();
+        assert_eq!(error.disposition, DeliverySemantics::uncertain());
+        let pressed = session
+            .log
+            .iter()
+            .position(|event| event == &failed)
+            .unwrap();
+        let released = session
+            .log
+            .iter()
+            .rposition(|event| event == &release)
+            .unwrap();
+        assert!(released > pressed, "{:?}", session.log);
+        assert_eq!(session.log.last().map(String::as_str), Some("stop"));
+    }
 }

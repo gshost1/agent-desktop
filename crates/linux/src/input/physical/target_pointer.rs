@@ -238,7 +238,11 @@ pub(crate) fn click_shell(
         .ok_or_else(geometry_refusal)?;
     let world = LiveWorld { bus, lease };
     let backend = world.backend()?;
-    let layout = DisplayLayout::unscaled(crate::system::list_displays(deadline)?);
+    let layout = shell_layout(
+        &backend,
+        || crate::system::list_displays(deadline),
+        || crate::system::wayland_layout(deadline),
+    )?;
     let point = super::shell_aim::aim(extents, &layout.displays)?;
     match backend {
         Backend::X11(_) => {
@@ -271,6 +275,21 @@ pub(crate) fn click_shell(
     }
     Ok(point)
 }
+
+fn shell_layout(
+    backend: &Backend,
+    x11: impl FnOnce() -> Result<Vec<agent_desktop_core::DisplayInfo>, AdapterError>,
+    wayland: impl FnOnce() -> Result<DisplayLayout, AdapterError>,
+) -> Result<DisplayLayout, AdapterError> {
+    match backend {
+        Backend::X11(_) => x11().map(DisplayLayout::unscaled),
+        Backend::Wayland => wayland(),
+    }
+}
+
+#[cfg(test)]
+#[path = "shell_pointer_layout_tests.rs"]
+mod shell_layout_tests;
 
 #[cfg(test)]
 #[path = "target_click_tests.rs"]
