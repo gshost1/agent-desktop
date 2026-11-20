@@ -91,11 +91,12 @@ def unresolved_handoff_pid(envelope):
 def unresolved_terminal_handoff(ctx: LegContext) -> None:
     read = lambda: [member[2] for member in members(ctx.tier.runtime_dir) if "gnome-terminal" in member[2]]
     before = read()
-    owners = lambda: apps._owners(ctx.tier, names=apps.ALIASES[TERMINAL])
+    owners = lambda: apps.owners_named(ctx.tier, TERMINAL)
     require(not owners(), "the handoff fixture must start without a resident Terminal")
     native = lambda: tuple((app.pid, app.start_time, tuple(app.windows)) for app in owners())
     ctx.before("proc.terminal_owner", before)
     ctx.before("atspi.terminal_owner", ())
+    succeeded = False
     try:
         spawned = unresolved_handoff_pid(ctx.product(["launch", TERMINAL, "--timeout", "5000"]))
         found = raw.poll(lambda: [app for app in owners() if app.windows], 5)
@@ -113,8 +114,28 @@ def unresolved_terminal_handoff(ctx: LegContext) -> None:
                 "the healthy native service must still be listed independently of launch attribution")
         ctx.after("proc.terminal_owner", read())
         ctx.after("atspi.terminal_owner", native())
+        succeeded = True
     finally:
-        for owner in owners():
+        problems = _cleanup_handoff(ctx, owners, (
+            ("atspi.terminal_owner", native, ()),
+            ("proc.terminal_owner", read, before),
+        ))
+        if problems:
+            message = "Terminal cleanup: " + "; ".join(problems)
+            if succeeded:
+                raise AssertionError(message)
+            ctx.finding(message)
+
+
+def _cleanup_handoff(ctx, owners, observations):
+    problems = []
+    try:
+        remaining = owners()
+    except Exception as error:
+        problems.append(str(error))
+        remaining = []
+    for owner in remaining:
+        try:
             inventory = ctx.product(["list-apps"])
             require(inventory.ok, inventory.raw)
             matches = [app["name"] for app in (inventory.data or {}).get("apps", ())
@@ -122,8 +143,14 @@ def unresolved_terminal_handoff(ctx: LegContext) -> None:
             require(len(matches) == 1, "cannot identify the private Terminal service for cleanup")
             closed = ctx.product(["close-app", matches[0]])
             require(closed.ok, closed.raw)
-        ctx.restored("atspi.terminal_owner", changed(native, (), seconds=6))
-        ctx.restored("proc.terminal_owner", changed(read, before, seconds=6))
+        except Exception as error:
+            problems.append(str(error))
+    for channel, read, expected in observations:
+        try:
+            ctx.restored(channel, changed(read, expected, seconds=6))
+        except Exception as error:
+            problems.append(str(error))
+    return problems
 
 
 @implementation("launch.list_apps_alias")
