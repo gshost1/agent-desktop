@@ -25,7 +25,8 @@ class ProcessOracleTests(unittest.TestCase):
             tier = SimpleNamespace(name="x11-openbox", runtime_dir=Path(directory), env={})
             owner = apps.OwnedApp("gnome-control-center", 42, 10, [":1.42"], ["w-1.42-frame"], ":1")
             child = Mock(pid=999)
-            with patch.object(apps, "_owners", side_effect=[[], [owner]]) as owners, \
+            with patch.object(apps, "which", return_value="/usr/bin/umockdev-run"), \
+                 patch.object(apps, "_owners", side_effect=[[], [owner]]) as owners, \
                  patch.object(apps, "_display_verified", return_value=True), \
                  patch.object(apps.subprocess, "Popen", return_value=child) as spawn, \
                  patch.dict(apps._SPAWNED, clear=True), patch.dict(apps._TIERS, clear=True):
@@ -40,12 +41,18 @@ class ProcessOracleTests(unittest.TestCase):
             self.assertEqual(apps.COMMANDS["Settings"], "gnome-control-center")
 
     def test_missing_mouse_fixture_tool_does_not_fall_back_to_host_hardware(self):
+        def spawn(argv, **kwargs):
+            self.assertEqual(argv[0], "umockdev-run", "fell back to host hardware")
+            raise FileNotFoundError("umockdev-run")
+
         with tempfile.TemporaryDirectory() as directory:
             tier = SimpleNamespace(name="x11-openbox", runtime_dir=Path(directory), env={})
-            with patch.object(apps, "_owners", return_value=[]), \
-                 patch.object(apps.subprocess, "Popen", side_effect=FileNotFoundError("umockdev-run")), \
-                 self.assertRaisesRegex(FileNotFoundError, "umockdev-run"):
+            with patch.object(apps, "which", return_value=None), \
+                 patch.object(apps, "_owners", return_value=[]), \
+                 patch.object(apps.subprocess, "Popen", side_effect=spawn) as launched, \
+                 self.assertRaisesRegex(apps.FixtureUnavailable, "umockdev-run"):
                 apps.launch(tier, "Settings Mouse", ("mouse",))
+            launched.assert_not_called()
 
     def test_launch_discovery_does_not_read_a_stalled_bystander(self):
         from unittest.mock import Mock

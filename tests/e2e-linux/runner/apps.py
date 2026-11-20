@@ -7,10 +7,15 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import which
 
 from oracle import atspi_raw as raw, proc, x11
 from oracle.gsettings import tool
 from runner.session import Tier
+
+
+class FixtureUnavailable(Exception):
+    """A fixture prerequisite is missing for this leg, not the whole tier."""
 
 
 @dataclass
@@ -120,6 +125,8 @@ def _display_verified(tier, app) -> bool:
 def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float = 5.0) -> OwnedApp:
     from runner.readiness import wait_ready
 
+    if app == "Settings Mouse" and which("umockdev-run", path=tier.env.get("PATH")) is None:
+        raise FixtureUnavailable("Settings Mouse requires umockdev-run; host mouse hardware is not a fallback")
     names = ALIASES.get(app, (Path(app).name.casefold(),))
     with raw.bounded_until(time.monotonic() + settle_s):
         before = {(item.pid, item.start_time): set(item.windows) for item in _owners(tier, names=names)}

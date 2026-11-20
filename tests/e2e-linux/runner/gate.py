@@ -20,7 +20,6 @@ BASE_TOOLS = (
     "xwd",
     "fusermount",
     "timeout",
-    "umockdev-run",
 )
 
 TIER_TOOLS = {
