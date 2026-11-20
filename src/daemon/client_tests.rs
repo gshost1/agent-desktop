@@ -194,13 +194,15 @@ fn a_daemon_that_never_answers_is_left_after_the_ready_timeout_without_a_go() {
 #[test]
 fn a_daemon_that_falls_silent_after_the_go_leaves_an_input_command_in_doubt() {
     let (client, mut server) = UnixStream::pair().unwrap();
+    let (finished, hold_open) = std::sync::mpsc::channel();
     let daemon = std::thread::spawn(move || {
         let _: DaemonRequest = read_message(&mut server, REQUEST_LIMIT).unwrap();
         write_message(&mut server, &ready(false)).unwrap();
         let _: String = read_message(&mut server, REQUEST_LIMIT).unwrap();
-        std::thread::sleep(super::STALL_LIMIT + std::time::Duration::from_millis(500));
+        hold_open.recv().unwrap();
     });
     let result = exchange(Box::new(client), &request());
+    finished.send(()).unwrap();
     daemon.join().unwrap();
 
     assert_eq!(

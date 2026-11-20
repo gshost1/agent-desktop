@@ -8,6 +8,9 @@ mod support;
 #[path = "daemon_fault_tests.rs"]
 mod faults;
 
+#[path = "daemon_held_session.rs"]
+mod held_session;
+
 use support::{
     Home, assert_same, is_permission_rerun, processes_using, seed_ref, wait_gone, wait_until,
 };

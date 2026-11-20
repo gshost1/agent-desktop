@@ -52,6 +52,19 @@ impl Home {
         } else {
             command.env_remove("AGENT_DESKTOP_DAEMON");
         }
+        #[cfg(target_os = "linux")]
+        command
+            .env("DISPLAY", "")
+            .env_remove("WAYLAND_DISPLAY")
+            .env("XDG_SESSION_TYPE", "x11")
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                format!("unix:path={}/no-session-bus", self.root.display()),
+            )
+            .env(
+                "AT_SPI_BUS_ADDRESS",
+                format!("unix:path={}/no-atspi-bus", self.root.display()),
+            );
         command
     }
 
@@ -89,14 +102,18 @@ impl Home {
 
     /// Starts this home's daemon with one call and waits until it answers.
     pub(super) fn warm(&self) -> i32 {
-        self.run(true, &["version"]);
+        self.warm_for(&["version"])
+    }
+
+    pub(super) fn warm_for(&self, args: &[&str]) -> i32 {
+        self.run(true, args);
         let pid = wait_until(Duration::from_secs(10), || {
             self.daemons().first().map(|(pid, _)| *pid)
         })
         .expect("a daemon starts after the first call");
         let before = self.served(pid);
         wait_until(Duration::from_secs(10), || {
-            self.run(true, &["version"]);
+            self.run(true, args);
             (self.served(pid) > before).then_some(())
         })
         .expect("the daemon serves a call");

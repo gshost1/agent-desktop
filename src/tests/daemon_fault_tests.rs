@@ -1,12 +1,12 @@
 use std::process::{Child, Output};
 use std::time::{Duration, Instant};
 
+use super::held_session::HeldSession;
 use super::support::{Home, assert_same, is_alive, processes_using, sockets_in, wait_gone};
 
 /// Matches `READY_TIMEOUT` and `STALL_LIMIT` in `src/daemon/client.rs`.
 const READY_TIMEOUT: Duration = Duration::from_secs(2);
 const STALL_LIMIT: Duration = Duration::from_secs(5);
-const LONG_INPUT: &str = r#"[{"command":"wait","args":{"ms":3000}}]"#;
 
 fn envelope(output: &Output) -> serde_json::Value {
     serde_json::from_slice(&output.stdout).unwrap()
@@ -19,7 +19,7 @@ fn signal(pid: i32, signal: i32) {
 fn assert_in_doubt(output: &Output) {
     let envelope = envelope(output);
     assert_eq!(output.status.code(), Some(1), "{envelope}");
-    assert_eq!(envelope["command"], "batch", "{envelope}");
+    assert_eq!(envelope["command"], "session", "{envelope}");
     assert_eq!(envelope["error"]["code"], "INTERNAL", "{envelope}");
     assert_eq!(
         envelope["error"]["disposition"]["delivery"],
@@ -52,8 +52,9 @@ fn assert_clean(home: &Home) {
 #[test]
 fn client_killed_mid_command_stops_its_daemon_like_a_killed_cli() {
     let home = Home::new();
-    let pid = home.warm();
-    let mut client = home.spawn(true, &["wait", "5000"]);
+    let held = HeldSession::new(&home);
+    let pid = held.pid;
+    let mut client = home.spawn(true, &held.read_args());
     std::thread::sleep(Duration::from_millis(500));
     client.kill().unwrap();
     client.wait().unwrap();
@@ -62,6 +63,7 @@ fn client_killed_mid_command_stops_its_daemon_like_a_killed_cli() {
         wait_gone(pid),
         "the daemon stops with the client whose command it ran"
     );
+    drop(held);
     assert!(home.run(true, &["version"]).status.success());
     let replacement = home.warm();
     assert_ne!(replacement, pid);
@@ -103,15 +105,18 @@ fn daemon_killed_between_commands_is_replaced_without_a_failed_call() {
 #[test]
 fn daemon_killed_during_a_read_only_command_lets_the_client_run_it() {
     let home = Home::new();
-    let pid = home.warm();
-    let client = home.spawn(true, &["wait", "1500"]);
+    let held = HeldSession::new(&home);
+    let pid = held.pid;
+    let client = home.spawn(true, &held.read_args());
     std::thread::sleep(Duration::from_millis(400));
     signal(pid, libc::SIGKILL);
+    let id = held.id.clone();
+    drop(held);
     let output = client.wait_with_output().unwrap();
 
     assert_same(
-        &["wait", "1500"],
-        &home.run(false, &["wait", "1500"]),
+        &["session", "list", "--session", &id],
+        &home.run(false, &["session", "list", "--session", &id]),
         &output,
     );
     assert!(!is_alive(pid));
@@ -121,9 +126,10 @@ fn daemon_killed_during_a_read_only_command_lets_the_client_run_it() {
 #[test]
 fn daemon_killed_during_an_input_command_reports_uncertain_delivery_and_never_reruns_it() {
     let home = Home::new();
-    let pid = home.warm();
+    let held = HeldSession::new(&home);
+    let pid = held.pid;
     let started = Instant::now();
-    let client = home.spawn(true, &["batch", LONG_INPUT]);
+    let client = home.spawn(true, &held.input_args());
     std::thread::sleep(Duration::from_millis(400));
     signal(pid, libc::SIGKILL);
     let output = client.wait_with_output().unwrap();
@@ -133,6 +139,7 @@ fn daemon_killed_during_an_input_command_reports_uncertain_delivery_and_never_re
         started.elapsed() < Duration::from_millis(2500),
         "no second run"
     );
+    drop(held);
     assert_clean(&home);
 }
 
@@ -163,18 +170,21 @@ fn hung_idle_daemon_is_bypassed_after_the_ready_timeout() {
 #[test]
 fn daemon_hung_mid_read_only_command_is_detected_and_the_client_runs_it() {
     let home = Home::new();
-    let pid = home.warm();
+    let held = HeldSession::new(&home);
+    let pid = held.pid;
     let started = Instant::now();
-    let client = home.spawn(true, &["wait", "800"]);
+    let client = home.spawn(true, &held.read_args());
     std::thread::sleep(Duration::from_millis(300));
     signal(pid, libc::SIGSTOP);
+    let id = held.id.clone();
+    drop(held);
     let output = finish_within(client, STALL_LIMIT * 3);
     let waited = started.elapsed();
     signal(pid, libc::SIGKILL);
 
     assert_same(
-        &["wait", "800"],
-        &home.run(false, &["wait", "800"]),
+        &["session", "list", "--session", &id],
+        &home.run(false, &["session", "list", "--session", &id]),
         &output,
     );
     assert!(waited >= STALL_LIMIT, "{waited:?}");
@@ -184,9 +194,10 @@ fn daemon_hung_mid_read_only_command_is_detected_and_the_client_runs_it() {
 #[test]
 fn daemon_hung_mid_input_command_reports_uncertain_delivery() {
     let home = Home::new();
-    let pid = home.warm();
+    let held = HeldSession::new(&home);
+    let pid = held.pid;
     let started = Instant::now();
-    let client = home.spawn(true, &["batch", LONG_INPUT]);
+    let client = home.spawn(true, &held.input_args());
     std::thread::sleep(Duration::from_millis(400));
     signal(pid, libc::SIGSTOP);
     let output = finish_within(client, STALL_LIMIT * 3);
@@ -198,5 +209,6 @@ fn daemon_hung_mid_input_command_reports_uncertain_delivery() {
         waited >= STALL_LIMIT && waited < STALL_LIMIT * 2,
         "{waited:?}"
     );
+    drop(held);
     assert_clean(&home);
 }
