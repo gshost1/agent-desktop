@@ -33,6 +33,8 @@ The runner inherits the caller's tool paths and libraries: supply tools through 
 
 ## Tiers
 
+Ref scrolling uses the native GTK4 fixture's only scroll area, without relying on an accessible name. The headed leg changes the visible rows without toggling checkboxes, then restores the viewport, pointer and focus. The headless leg asserts a no-input policy refusal. Settings remains covered by `ref_actions.settings_scroll_identity_refusal`, an asserted refusal for captured twins, not positive scrolling coverage. See [the scroll contract](scroll-contract.md).
+
 - `--tier x11-openbox`: private Xvfb and openbox.
 - `--tier x11-mutter`: private Xvfb and the private mutter shell wrapper.
 - `--tier wayland`: private bus and a health-gated headless GNOME Wayland shell.

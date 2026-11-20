@@ -47,8 +47,9 @@ class Leg:
 REGISTRY: tuple[Leg, ...] = (
     Leg('ref_actions.expand', 'A ref expands the Calculator menu and reveals its children, then restores', 'Calculator', ('x11-openbox',), ('headless', 'headed'), ('atspi', 'x11'), 'pass', ''),
     Leg('ref_actions.collapse', 'A ref collapses the Calculator menu and hides its children, then restores', 'Calculator', ('x11-openbox',), ('headless', 'headed'), ('atspi', 'x11'), 'pass', ''),
-    Leg('ref_actions.scroll', 'Ref scroll changes visible Settings rows, then restores', 'Settings', ('x11-openbox', 'x11-mutter'), ('headed',), ('atspi', 'x11'), 'pass', ''),
-    Leg('ref_actions.scroll_headless_refusal', 'Headless ref scroll is refused without changing visible rows', 'Settings', ('x11-openbox',), ('headless',), ('atspi', 'x11'), 'asserted-refusal', "the leg asserts the product's refusal as its expected outcome"),
+    Leg('ref_actions.scroll', 'Ref scroll changes visible native rows without toggling them, then restores', 'GTK4 scroll fixture', ('x11-openbox', 'x11-mutter'), ('headed',), ('atspi', 'x11'), 'pass', ''),
+    Leg('ref_actions.scroll_headless_refusal', 'Headless ref scroll is refused without changing visible rows', 'GTK4 scroll fixture', ('x11-openbox',), ('headless',), ('atspi', 'x11'), 'asserted-refusal', "the leg asserts the product's refusal as its expected outcome"),
+    Leg('ref_actions.settings_scroll_identity_refusal', 'Settings captured-twin scroll refuses before input without changing its viewport', 'Settings', ('x11-openbox',), ('headless', 'headed'), ('atspi', 'x11'), 'asserted-refusal', 'identity_not_unique must be not_delivered/safe with unchanged settings, pointer and focus'),
     Leg('ref_actions.scroll_to', 'Ref scroll-to reveals an offscreen control and restores the viewport', 'Settings', ('x11-openbox',), ('headless', 'headed'), ('atspi', 'x11'), 'pass', ''),
     Leg('ref_actions.focus', 'Ref focus changes the raw FOCUSED state and restores it', 'Qt window', ('x11-openbox',), ('headed',), ('atspi', 'x11'), 'pass', ''),
     Leg('ref_actions.focus_headless_refusal', 'Headless ref focus is refused without changing focus', 'Qt window', ('x11-openbox',), ('headless',), ('atspi', 'x11'), 'asserted-refusal', "the leg asserts the product's refusal as its expected outcome"),
