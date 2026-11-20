@@ -27,7 +27,7 @@ impl ComboRows for Rows {
         self.satisfied
     }
 
-    fn expanded(&mut self) -> Option<bool> {
+    fn expanded(&mut self, _deadline: Deadline) -> Option<bool> {
         if self.failure == Some("unread") && self.operations.contains(&"open") {
             None
         } else {
@@ -62,10 +62,15 @@ impl ComboRows for Rows {
             .with_steps(vec![ActionStep::succeeded("choose").with_verified(true)])
             .with_verified_delivery())
     }
+
+    fn close(&mut self, _deadline: Deadline) -> bool {
+        self.operations.push("escape");
+        self.failure != Some("close")
+    }
 }
 
 fn select(rows: &mut Rows) -> Result<ActionResult, AdapterError> {
-    choose(rows, Deadline::after(100).expect("test deadline"))
+    choose(rows, Deadline::after(1000).expect("test deadline"))
 }
 
 #[test]
@@ -124,6 +129,15 @@ fn an_unread_expansion_state_never_guesses_whether_to_toggle() {
 }
 
 #[test]
+fn a_combo_that_never_advertises_expansion_is_not_assumed_closed() {
+    assert_eq!(observed_expansion(Some(false), Some(false)), None);
+    assert_eq!(observed_expansion(Some(false), None), None);
+    assert_eq!(observed_expansion(None, Some(true)), None);
+    assert_eq!(observed_expansion(Some(false), Some(true)), Some(false));
+    assert_eq!(observed_expansion(Some(true), Some(false)), Some(true));
+}
+
+#[test]
 fn a_refused_opener_does_not_try_the_invisible_row() {
     let mut rows = Rows {
         failure: Some("open"),
@@ -135,7 +149,7 @@ fn a_refused_opener_does_not_try_the_invisible_row() {
 }
 
 #[test]
-fn absent_or_unread_popup_after_opening_is_unsafe_and_never_clicks_a_row() {
+fn absent_or_unread_expansion_after_opening_closes_the_popup_without_clicking_a_row() {
     for failure in [None, Some("unread")] {
         let mut rows = Rows {
             opens: false,
@@ -143,13 +157,40 @@ fn absent_or_unread_popup_after_opening_is_unsafe_and_never_clicks_a_row() {
             ..Rows::closed()
         };
         let error = select(&mut rows).expect_err("popup not observed");
-        assert_eq!(rows.operations, ["open"]);
+        assert_eq!(rows.operations, ["open", "escape"]);
         assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
-        assert_eq!(
-            error.details.expect("details")["kind"],
-            "popup_not_observed"
-        );
+        let details = error.details.expect("details");
+        assert_eq!(details["kind"], "popup_not_observed");
+        assert_eq!(details["popup_closed"], true);
     }
+}
+
+#[test]
+fn a_close_failure_keeps_the_original_unsafe_error_and_does_not_claim_restoration() {
+    let mut rows = Rows {
+        opens: false,
+        failure: Some("close"),
+        ..Rows::closed()
+    };
+    let error = select(&mut rows).expect_err("popup not observed");
+    assert_eq!(rows.operations, ["open", "escape"]);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let details = error.details.expect("details");
+    assert_eq!(details["kind"], "popup_not_observed");
+    assert_eq!(details["popup_closed"], false);
+}
+
+#[test]
+fn an_insufficient_cleanup_budget_refuses_before_opening() {
+    let mut rows = Rows::closed();
+    let error =
+        choose(&mut rows, Deadline::after(1).expect("deadline")).expect_err("no cleanup budget");
+    assert!(rows.operations.is_empty());
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.details.expect("details")["kind"],
+        "popup_cleanup_budget_insufficient"
+    );
 }
 
 #[test]

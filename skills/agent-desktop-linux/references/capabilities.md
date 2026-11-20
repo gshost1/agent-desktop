@@ -170,7 +170,12 @@ cursor; on Wayland none is drawn.
   A headed Qt selection clicks a collapsed combo open, waits for its expanded
   state, then finds the choice again and clicks its visible row. It leaves an
   already-open popup open until choosing and verifies the combo's displayed
-  value. A failure after clicking the opener is unsafe to retry.
+  value. A combo that does not advertise expansion refuses before input rather
+  than treating its missing expanded flag as a closed popup. If expansion
+  cannot be observed after opening, it sends Escape and reports whether
+  the popup was proven closed. It reserves cleanup time before opening; a
+  budget too short for cleanup refuses without input. A failure after clicking
+  the opener is unsafe to retry even when the popup was closed.
   Headed, on a list whose toolkit index cannot be mapped to the
   row (a GTK4 list) it clicks the row and checks its `selected` state; on a
   combo with no semantic opener (a libadwaita combo row) it clicks the combo

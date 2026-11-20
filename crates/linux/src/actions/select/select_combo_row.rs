@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use agent_desktop_core::{
     ActionResult, ActionStep, AdapterError, Deadline, DeliverySemantics, ErrorCode,
 };
@@ -7,15 +9,18 @@ use super::select_pointer::{Pointer, after_input_sent, already_satisfied};
 use super::select_row::click_row;
 use super::select_search::{Search, search};
 use super::select_verify::read_verification;
-use super::{BusReader, handle_of, miss_error};
+use super::{BusReader, children_of, handle_of, miss_error};
 use crate::actions::click::{POLL_STEP, poll_until};
 use crate::actions::context::Target;
 use crate::tree::AtspiElement;
 use crate::tree::capabilities::action_read::{NodeView, read_node_view};
 use crate::tree::live_read::live_offscreen::toolkit_of;
 use crate::tree::properties::toolkit_trust::{ToolkitKind, kind};
-use crate::tree::vocabulary::role_numbers::COMBO_BOX;
-use crate::tree::vocabulary::state_bits::EXPANDED;
+use crate::tree::vocabulary::role_numbers::{COMBO_BOX, LIST};
+use crate::tree::vocabulary::state_bits::{EXPANDABLE, EXPANDED, SHOWING};
+
+const POPUP_WAIT: Duration = Duration::from_millis(1500);
+const CLOSE_WAIT: Duration = Duration::from_millis(500);
 
 pub(super) fn owner(target: &Target<'_>, view: &NodeView) -> Option<AtspiElement> {
     let combo = if view.role() == Some(COMBO_BOX) {
@@ -28,8 +33,9 @@ pub(super) fn owner(target: &Target<'_>, view: &NodeView) -> Option<AtspiElement
 
 trait ComboRows {
     fn satisfied(&mut self) -> Option<bool>;
-    fn expanded(&mut self) -> Option<bool>;
+    fn expanded(&mut self, deadline: Deadline) -> Option<bool>;
     fn open(&mut self) -> Result<Vec<ActionStep>, AdapterError>;
+    fn close(&mut self, deadline: Deadline) -> bool;
     fn choose(&mut self) -> Result<ActionResult, AdapterError>;
 }
 
@@ -45,18 +51,27 @@ impl ComboRows for BusCombo<'_> {
         read_verification(self.target.bus, self.target, self.combo, self.wanted, None)
     }
 
-    fn expanded(&mut self) -> Option<bool> {
-        read_node_view(
-            self.target.bus,
-            &handle_of(self.combo),
-            self.target.deadline,
-        )
-        .ok()
-        .and_then(|view| view.state(EXPANDED))
+    fn expanded(&mut self, deadline: Deadline) -> Option<bool> {
+        read_node_view(self.target.bus, &handle_of(self.combo), deadline)
+            .ok()
+            .and_then(|view| observed_expansion(view.state(EXPANDED), view.state(EXPANDABLE)))
     }
 
     fn open(&mut self) -> Result<Vec<ActionStep>, AdapterError> {
         self.pointer.click(self.combo)
+    }
+
+    fn close(&mut self, deadline: Deadline) -> bool {
+        if self.pointer.escape().is_err() {
+            return false;
+        }
+        poll_until(
+            deadline,
+            CLOSE_WAIT,
+            POLL_STEP,
+            || self.popup_hidden(deadline),
+            |hidden| *hidden == Some(true),
+        ) == Some(true)
     }
 
     fn choose(&mut self) -> Result<ActionResult, AdapterError> {
@@ -72,11 +87,36 @@ impl ComboRows for BusCombo<'_> {
     }
 }
 
+fn observed_expansion(expanded: Option<bool>, expandable: Option<bool>) -> Option<bool> {
+    match (expanded, expandable) {
+        (Some(true), _) => Some(true),
+        (Some(false), Some(true)) => Some(false),
+        _ => None,
+    }
+}
+
+impl BusCombo<'_> {
+    fn popup_hidden(&self, deadline: Deadline) -> Option<bool> {
+        let children = children_of(self.target.bus, self.combo, Some(COMBO_BOX), deadline).ok()?;
+        let mut found = false;
+        for child in children {
+            let view = read_node_view(self.target.bus, &handle_of(&child), deadline).ok()?;
+            if view.role()? == LIST {
+                found = true;
+                if view.state(SHOWING)? {
+                    return Some(false);
+                }
+            }
+        }
+        found.then_some(true)
+    }
+}
+
 fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, AdapterError> {
     if rows.satisfied() == Some(true) {
         return Ok(already_satisfied());
     }
-    match rows.expanded() {
+    match rows.expanded(deadline) {
         Some(true) => return rows.choose(),
         None => {
             return Err(AdapterError::new(
@@ -88,21 +128,38 @@ fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, 
         }
         Some(false) => {}
     }
+    let available = deadline
+        .remaining()
+        .checked_sub(CLOSE_WAIT)
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| {
+            AdapterError::new(
+                ErrorCode::ActionFailed,
+                "Not enough time to open and safely close the dropdown",
+            )
+            .with_details(json!({"kind": "popup_cleanup_budget_insufficient"}))
+            .with_disposition(DeliverySemantics::not_delivered())
+        })?;
+    let popup_deadline = deadline.capped(available);
     let opened = rows.open()?;
     let expanded = poll_until(
-        deadline,
-        std::time::Duration::from_millis(1500),
+        popup_deadline,
+        POPUP_WAIT,
         POLL_STEP,
-        || rows.expanded(),
+        || rows.expanded(popup_deadline),
         |expanded| *expanded == Some(true),
     );
     if expanded != Some(true) {
+        let closed = rows.close(deadline);
         return Err(after_opener(
             AdapterError::new(
                 ErrorCode::ActionFailed,
                 "The dropdown did not show its choices after the pointer click",
             )
-            .with_details(json!({"kind": "popup_not_observed"}))
+            .with_details(
+                json!({"kind": "popup_not_observed", "popup_close_attempted": true,
+                                 "popup_closed": closed}),
+            )
             .with_disposition(DeliverySemantics::delivered_unverified()),
         ));
     }
