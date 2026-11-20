@@ -48,7 +48,9 @@ impl AliasCache {
 fn content_hashes(stamps: &[DesktopStamp], cutoff: Option<SystemTime>) -> ContentHashes {
     stamps
         .iter()
-        .filter(|stamp| stamp.is_desktop_file())
+        .filter(|stamp| {
+            stamp.is_desktop_file() || stamp.path().extension().is_some_and(|ext| ext == "service")
+        })
         .filter(|stamp| !cutoff.is_some_and(|cutoff| stamp.is_older_than(cutoff)))
         .map(|stamp| (stamp.path().clone(), hash_file(stamp.path())))
         .collect()

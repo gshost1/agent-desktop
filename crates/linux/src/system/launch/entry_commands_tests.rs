@@ -101,3 +101,44 @@ fn a_service_file_change_changes_the_service_stamps() {
     assert!(before != service_stamps(&dirs));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn the_first_matching_service_shadows_lower_priority_commands_even_without_an_exec() {
+    let (user, user_apps) = data_dir("entry-service-user", None);
+    let (system, system_apps) = data_dir(
+        "entry-service-system",
+        Some("[D-BUS Service]\nName=org.example.Editor\nExec=/usr/bin/editor --system\n"),
+    );
+    let services = user.join(SERVICES);
+    std::fs::create_dir_all(&services).unwrap();
+    let file = services.join("org.example.Editor.service");
+    let dirs = [user_apps, system_apps];
+    for command in ["Exec=/bin/false\nSystemdService=editor.service\n", ""] {
+        std::fs::write(
+            &file,
+            format!("[D-BUS Service]\nName=org.example.Editor\n{command}"),
+        )
+        .unwrap();
+        assert_eq!(activation_exec("org.example.Editor", EDITOR, &dirs), None);
+        assert_eq!(
+            other_execs("org.example.Editor", EDITOR, &dirs),
+            ["editor --new-window"]
+        );
+    }
+    std::fs::write(
+        &file,
+        "[D-BUS Service]\nName=org.example.Other\nExec=/bin/false\n",
+    )
+    .unwrap();
+    assert_eq!(
+        activation_exec("org.example.Editor", EDITOR, &dirs).as_deref(),
+        Some("/usr/bin/editor --system")
+    );
+    std::fs::remove_file(&file).unwrap();
+    assert_eq!(
+        activation_exec("org.example.Editor", EDITOR, &dirs).as_deref(),
+        Some("/usr/bin/editor --system")
+    );
+    std::fs::remove_dir_all(user).unwrap();
+    std::fs::remove_dir_all(system).unwrap();
+}

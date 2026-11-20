@@ -69,6 +69,7 @@ pub(in crate::system) fn activation_exec(
     services_dirs(applications_dirs)
         .map(|dir| dir.join(format!("{name}.service")))
         .find_map(|file| service_exec(&file, name))
+        .flatten()
 }
 
 fn services_dirs(applications_dirs: &[PathBuf]) -> impl Iterator<Item = PathBuf> + '_ {
@@ -81,13 +82,19 @@ fn services_dirs(applications_dirs: &[PathBuf]) -> impl Iterator<Item = PathBuf>
 /// The service's `Exec`, when the file names `name` and the bus runs that
 /// command itself. A service with `SystemdService` is started as that unit,
 /// and its `Exec` is then often a placeholder such as `/bin/false`.
-fn service_exec(file: &Path, name: &str) -> Option<String> {
+/// A matching service returns `Some` even when it contributes no command,
+/// because it shadows services in lower-priority directories.
+fn service_exec(file: &Path, name: &str) -> Option<Option<String>> {
     let text = std::fs::read_to_string(file).ok()?;
     let pairs = keys_of(&text, SERVICE_GROUP);
-    if value(&pairs, "Name").as_deref() != Some(name) || value(&pairs, "SystemdService").is_some() {
+    if value(&pairs, "Name").as_deref() != Some(name) {
         return None;
     }
-    value(&pairs, "Exec")
+    Some(if value(&pairs, "SystemdService").is_some() {
+        None
+    } else {
+        value(&pairs, "Exec")
+    })
 }
 
 /// Versions of the service directories beside the entry directories and of
