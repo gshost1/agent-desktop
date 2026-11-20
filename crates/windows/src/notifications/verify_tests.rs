@@ -1,8 +1,8 @@
 use agent_desktop_core::{DeliverySemantics, ErrorCode, NotificationInfo};
 
 use super::{
-    action_changed_state, dismiss_survived_error, entry_gone, matching_count, same_identity,
-    survivor_failures,
+    action_changed_state, departed, dismiss_survived_error, entry_gone, matching_count,
+    same_identity, survivor_failures,
 };
 
 fn info(index: usize, app: &str, title: &str, body: Option<&str>) -> NotificationInfo {
@@ -134,7 +134,11 @@ fn failure_strings_name_the_index_and_never_the_content() {
 fn an_action_that_removes_the_entry_counts_as_a_state_change() {
     let original = info(1, "App A", "Reminder", None);
 
-    assert!(action_changed_state(&original, &[]));
+    assert!(action_changed_state(
+        &original,
+        std::slice::from_ref(&original),
+        &[]
+    ));
 }
 
 #[test]
@@ -142,7 +146,11 @@ fn an_action_that_changes_the_entry_counts_as_a_state_change() {
     let original = info(1, "App A", "Reminder", Some("before"));
     let after = vec![info(1, "App A", "Reminder", Some("after"))];
 
-    assert!(action_changed_state(&original, &after));
+    assert!(action_changed_state(
+        &original,
+        std::slice::from_ref(&original),
+        &after
+    ));
 }
 
 #[test]
@@ -150,7 +158,40 @@ fn an_unacknowledged_entry_left_unchanged_is_not_reported_as_a_change() {
     let original = info(1, "App A", "Reminder", Some("same"));
     let after = vec![info(1, "App A", "Reminder", Some("same"))];
 
-    assert!(!action_changed_state(&original, &after));
+    assert!(!action_changed_state(
+        &original,
+        std::slice::from_ref(&original),
+        &after
+    ));
+}
+
+#[test]
+fn an_action_that_removes_one_of_two_identical_twins_counts_as_a_state_change() {
+    let before = vec![
+        info(1, "App A", "Reminder", Some("same")),
+        info(2, "App A", "Reminder", Some("same")),
+    ];
+    let after = vec![info(1, "App A", "Reminder", Some("same"))];
+
+    assert!(action_changed_state(&before[1], &before, &after));
+    assert!(!action_changed_state(&before[1], &before, &before));
+}
+
+#[test]
+fn a_target_departs_when_its_identical_entries_drop_by_the_targets_carrying_it() {
+    let twin = info(1, "App A", "Ping", None);
+    let other = info(3, "App B", "Other", None);
+    let before = vec![twin.clone(), twin.clone(), other.clone()];
+    let one_twin = std::slice::from_ref(&twin);
+
+    assert!(departed(one_twin, &before, one_twin));
+    assert!(!departed(one_twin, &before, &before));
+    assert!(!departed(
+        &[twin.clone(), twin.clone()],
+        &before,
+        &[twin.clone(), other.clone()]
+    ));
+    assert!(departed(&[twin.clone(), twin.clone()], &before, &[other]));
 }
 
 #[test]
