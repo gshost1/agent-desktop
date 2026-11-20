@@ -357,16 +357,10 @@ pub(crate) fn select(
                 own: hit.own && container.is_none(),
                 ..hit
             };
-            if (view.role() == Some(COMBO_BOX) || target.element.ancestry().combo_owner().is_some())
-                && crate::tree::properties::toolkit_trust::kind(&toolkit_of(
-                    target.bus,
-                    target.element,
-                    target.deadline,
-                )) == crate::tree::properties::toolkit_trust::ToolkitKind::Qt
-            {
-                return click_row(
+            if let Some(combo) = select_combo_row::owner(target, &view) {
+                return select_combo_row::select(
                     target,
-                    &hit,
+                    &combo,
                     display_value,
                     pointer.ok_or_else(select_pointer::pointer_required)?,
                 );
@@ -381,6 +375,7 @@ pub(crate) fn select(
     }
 }
 
+mod select_combo_row;
 pub(crate) mod select_exclusive;
 pub(super) mod select_identity;
 pub(super) mod select_index;

@@ -167,6 +167,10 @@ cursor; on Wayland none is drawn.
   route needs an explicit `--headed` request on X11. A Qt combo's semantic
   selection only highlights its popup row, so headless selection refuses with
   `POLICY_DENIED`, kind `pointer_required`, before changing that highlight.
+  A headed Qt selection clicks a collapsed combo open, waits for its expanded
+  state, then finds the choice again and clicks its visible row. It leaves an
+  already-open popup open until choosing and verifies the combo's displayed
+  value. A failure after clicking the opener is unsafe to retry.
   Headed, on a list whose toolkit index cannot be mapped to the
   row (a GTK4 list) it clicks the row and checks its `selected` state; on a
   combo with no semantic opener (a libadwaita combo row) it clicks the combo
@@ -214,4 +218,3 @@ cursor; on Wayland none is drawn.
   `setParent(None)`) lets a ref resolve onto a control the user can no longer
   see. GTK4 then answers `ok` with `delivered_unverified` and no effect. No
   identity rule reaches this; check the application's own effect.
-
