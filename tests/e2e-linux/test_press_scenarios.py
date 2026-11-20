@@ -41,6 +41,8 @@ class RestorationTests(unittest.TestCase):
         def product(tier, argv, **kw):
             if argv[0] == "type":
                 document[0] += argv[-1]
+            elif argv[0] == "set-value":
+                document[0] = argv[-1]
             elif argv[0] == "clear":
                 document[0] = ""
             elif argv[:2] == ["press", "return"]:
