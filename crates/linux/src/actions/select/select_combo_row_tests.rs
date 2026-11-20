@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use agent_desktop_core::{DeliveryDisposition, StepMechanism};
 
 use super::*;
@@ -9,6 +11,7 @@ struct Rows {
     failure: Option<&'static str>,
     operations: Vec<&'static str>,
     hidden: Option<bool>,
+    hidden_reads: Cell<usize>,
 }
 
 impl Rows {
@@ -20,6 +23,7 @@ impl Rows {
             failure: None,
             operations: Vec::new(),
             hidden: Some(false),
+            hidden_reads: Cell::new(0),
         }
     }
 }
@@ -66,16 +70,23 @@ impl ComboRows for Rows {
     }
 
     fn popup_hidden(&self, _deadline: Deadline) -> Option<bool> {
-        self.hidden
+        let reads = self.hidden_reads.get();
+        self.hidden_reads.set(reads + 1);
+        match (reads > 0, self.failure) {
+            (true, Some("hidden-before-close")) => Some(true),
+            (true, Some("unread-before-close")) => None,
+            _ => self.hidden,
+        }
     }
 
-    fn close(&mut self, _deadline: Deadline) -> Option<bool> {
+    fn escape(&mut self) -> Option<()> {
         self.operations.push("escape");
-        match self.failure {
+        self.hidden = match self.failure {
             Some("close") => Some(false),
             Some("close-unread") => None,
             _ => Some(true),
-        }
+        };
+        Some(())
     }
 }
 
@@ -203,6 +214,24 @@ fn an_unknown_or_hidden_popup_never_receives_a_global_escape() {
         assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
         let details = error.details.expect("details");
         assert_eq!(details["popup_close_attempted"], false);
+        assert!(details["popup_closed"].is_null());
+    }
+}
+
+#[test]
+fn cleanup_rechecks_visibility_immediately_before_sending_escape() {
+    for failure in ["hidden-before-close", "unread-before-close"] {
+        let mut rows = Rows {
+            opens: false,
+            failure: Some(failure),
+            ..Rows::closed()
+        };
+        let error = select(&mut rows).expect_err("popup not observed");
+        assert_eq!(rows.operations, ["open"]);
+        assert_eq!(rows.hidden_reads.get(), 2);
+        assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+        let details = error.details.expect("details");
+        assert_eq!(details["kind"], "popup_not_observed");
         assert!(details["popup_closed"].is_null());
     }
 }

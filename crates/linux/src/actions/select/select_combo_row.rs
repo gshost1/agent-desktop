@@ -36,7 +36,20 @@ trait ComboRows {
     fn expanded(&mut self, deadline: Deadline) -> Option<bool>;
     fn open(&mut self) -> Result<Vec<ActionStep>, AdapterError>;
     fn popup_hidden(&self, deadline: Deadline) -> Option<bool>;
-    fn close(&mut self, deadline: Deadline) -> Option<bool>;
+    fn escape(&mut self) -> Option<()>;
+    fn close(&mut self, deadline: Deadline) -> Option<bool> {
+        if self.popup_hidden(deadline) != Some(false) {
+            return None;
+        }
+        self.escape()?;
+        poll_until(
+            deadline,
+            CLOSE_WAIT,
+            POLL_STEP,
+            || self.popup_hidden(deadline),
+            |hidden| *hidden == Some(true),
+        )
+    }
     fn choose(&mut self) -> Result<ActionResult, AdapterError>;
 }
 
@@ -77,15 +90,8 @@ impl ComboRows for BusCombo<'_> {
         found.then_some(true)
     }
 
-    fn close(&mut self, deadline: Deadline) -> Option<bool> {
-        self.pointer.escape().ok()?;
-        poll_until(
-            deadline,
-            CLOSE_WAIT,
-            POLL_STEP,
-            || self.popup_hidden(deadline),
-            |hidden| *hidden == Some(true),
-        )
+    fn escape(&mut self) -> Option<()> {
+        self.pointer.escape().ok().map(|_| ())
     }
 
     fn choose(&mut self) -> Result<ActionResult, AdapterError> {
