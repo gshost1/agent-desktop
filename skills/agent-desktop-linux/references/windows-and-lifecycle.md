@@ -8,7 +8,11 @@ are not used.
 
 - `--app` takes the process name `list-apps` prints, or a desktop entry's `Name`
   or id whose `Exec` resolves to the running executable (`/proc/<pid>/exe`) with
-  matching full arguments. Every entry that runs that same command names the
+  matching full arguments. An entry's other start commands count too: the `Exec`
+  of each action its `Actions` key lists (`gnome-text-editor --new-window`), and,
+  for an entry with `DBusActivatable=true`, the `Exec` of the session service
+  file named after its id (`gnome-text-editor --gapplication-service`, how the
+  desktop shell starts it). Every entry that runs that same command names the
   process; a desktop name that an entry running another command also uses gets
   no alias. A process that `launch` spawned from a desktop entry, itself or
   through a wrapper that `exec`s the application, also answers to that entry's
