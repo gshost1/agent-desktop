@@ -33,6 +33,24 @@ pub(super) fn entry_gone(target: &NotificationInfo, current: &[NotificationInfo]
     matching_count(current, target) == 0
 }
 
+/// Whether every target left the listing it was picked from.
+///
+/// Entries with the same app, title and body are indistinguishable on a
+/// re-read, so a target counts as gone when the entries identical to it fell
+/// by at least the number of targets carrying that identity - never when none
+/// remain, which an untouched identical twin would forbid forever. `before` is
+/// the read the targets were taken from, under the same filter as `current`.
+pub(super) fn departed(
+    targets: &[NotificationInfo],
+    before: &[NotificationInfo],
+    current: &[NotificationInfo],
+) -> bool {
+    targets.iter().all(|target| {
+        matching_count(current, target) + matching_count(targets, target)
+            <= matching_count(before, target)
+    })
+}
+
 /// The captured set's members an ignored clear would leave behind.
 ///
 /// Only membership in the set captured before the clear counts as a failure:
@@ -57,13 +75,14 @@ pub(super) fn survivor_failures(
 }
 
 /// Whether the entry an action targeted is gone or no longer carries the
-/// identity it was read with - [`entry_gone`] under the name this call site's
+/// identity it was read with - [`departed`] under the name this call site's
 /// question reads by.
 pub(super) fn action_changed_state(
     original: &NotificationInfo,
+    before: &[NotificationInfo],
     current: &[NotificationInfo],
 ) -> bool {
-    entry_gone(original, current)
+    departed(std::slice::from_ref(original), before, current)
 }
 
 pub(super) fn dismiss_survived_error(index: usize) -> AdapterError {
@@ -79,8 +98,9 @@ pub(super) fn dismiss_survived_error(index: usize) -> AdapterError {
     .with_disposition(DeliverySemantics::delivered_unverified())
 }
 
-/// Re-reads the center until every target has vanished or the settle window
-/// closes, and returns the last listing either way.
+/// Re-reads the center until every target has [`departed`] the `before`
+/// listing or the settle window closes, and returns the last listing either
+/// way.
 ///
 /// The shell accepts an invoke and applies it a moment later, so the read that
 /// judges a mutation is a polled read, not the first one. An expired settle is
@@ -88,13 +108,14 @@ pub(super) fn dismiss_survived_error(index: usize) -> AdapterError {
 /// decides what survival means.
 pub(super) fn read_settling_without(
     targets: &[NotificationInfo],
+    before: &[NotificationInfo],
     hwnd: isize,
     filter: &NotificationFilter,
     deadline: Deadline,
 ) -> Result<Vec<NotificationInfo>, AdapterError> {
     let settle = deadline.capped(REMOVAL_SETTLE_TIME);
     let mut current = list_infos(filter, hwnd, settle)?;
-    while !targets.iter().all(|target| entry_gone(target, &current)) {
+    while !departed(targets, before, &current) {
         if settle.is_expired() {
             return Ok(current);
         }

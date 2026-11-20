@@ -194,6 +194,11 @@ def unresponsive(error) -> bool:
         ("org.freedesktop.DBus.Error.NoReply", "Timeout was reached", "g-io-error-quark: Timeout"))
 
 
+def vanished(error) -> bool:
+    return any(token in str(error) for token in
+        ("org.freedesktop.DBus.Error.UnknownObject", "Object does not exist at path"))
+
+
 def poll(predicate: Callable[[], object], deadline_s: float, *, floor_s: float = 0.0):
     if deadline_s < 0 or floor_s < 0 or floor_s > deadline_s:
         raise ValueError("invalid poll budget")

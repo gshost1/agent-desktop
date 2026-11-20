@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import base64
 import subprocess
+from contextlib import contextmanager
 
 from oracle import atspi_raw, pixels, x11
 from runner import apps
-from runner.helper import require
+from runner.helper import one, require
 from runner.legs import implementation
 from runner.verdict import LegContext
-from scenarios.headed_actions import assert_ok, longest_text, live_root, ref_for, window_of
+from scenarios.headed_actions import assert_ok, live_root, ref_for, restore_text, window_of
 from scenarios.pointer import frame_extents
 
 
@@ -48,12 +49,28 @@ def _xwd(ctx: LegContext, x11_window: str | None) -> bytes:
     return process.stdout
 
 
+def _document(ctx, app):
+    return one(live_root(ctx.tier, app), role=61).text()
+
+
+@contextmanager
 def _editor(ctx: LegContext):
     app = apps.launch(ctx.tier, "Text Editor")
-    window = window_of(app)
-    assert_ok(ctx.product(["type", ref_for(ctx, window, role="textfield"), "capture baseline"]))
-    atspi_raw.poll(lambda: "capture baseline" in longest_text(live_root(ctx.tier, app)), 6.0)
-    return app, window
+    try:
+        window = window_of(app)
+        initial = _document(ctx, app)
+        ctx.before("atspi.document_text", initial)
+        try:
+            assert_ok(ctx.product(["type", ref_for(ctx, window, role="textfield"), "capture baseline"]))
+            require(atspi_raw.poll(
+                lambda: "capture baseline" in _document(ctx, app), 6.0),
+                "capture text did not reach the document")
+            ctx.after("atspi.document_text", _document(ctx, app))
+            yield app, window
+        finally:
+            restore_text(ctx, app, initial, read=lambda: _document(ctx, app))
+    finally:
+        apps.stop(app)
 
 
 def _oracle_image(ctx, window=None):
@@ -79,8 +96,7 @@ def _matches(product, oracle):
 
 @implementation("capture.window_pixels_match_xwd")
 def window_pixels_match_xwd(ctx: LegContext) -> None:
-    app, window = _editor(ctx)
-    try:
+    with _editor(ctx) as (app, window):
         before = _oracle_image(ctx, window)
         ctx.before("pixels.window_dimensions", (before.width, before.height))
         product = _product_image(ctx, window)
@@ -89,5 +105,3 @@ def window_pixels_match_xwd(ctx: LegContext) -> None:
         _matches(product, after)
         final = _oracle_image(ctx, window)
         ctx.restored("pixels.window_dimensions", (final.width, final.height))
-    finally:
-        apps.stop(app)

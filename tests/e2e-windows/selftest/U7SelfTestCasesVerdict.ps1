@@ -49,6 +49,37 @@ Invoke-SelfTest 'Add-Fail fails the run and names the failing leg in the verdict
 }
 
 <#
+    8a. A failed leg's verdict line names the last ok:false envelope its
+        commands returned (code and message), and a disposition clears it,
+        so a later leg never inherits an earlier leg's error.
+#>
+Invoke-SelfTest 'a failed leg names the error envelope it saw, and a pass clears it' {
+    Reset-Verdict
+    Register-Legs -Names @('leg-saw-error', 'leg-after-pass', 'leg-clean-fail')
+    $failed = '{"version":"2.7","ok":false,"command":"click","error":{"code":"ACTION_FAILED","message":"stub refused the click"}}'
+    New-StubConfig -Rules @(@{ Match = '*click*'; Responses = @($failed) }) | Out-Null
+    Invoke-AgentDesktop -Arguments @('click', '@s:e1') | Out-Null
+    Add-Fail -Leg 'leg-saw-error' -Reason 'Assert-Envelope: expected ok=true, got ok=False'
+    Invoke-AgentDesktop -Arguments @('click', '@s:e1') | Out-Null
+    Add-Pass -Leg 'leg-after-pass'
+    Add-Fail -Leg 'leg-clean-fail' -Reason 'plain failure'
+    $records = Write-Verdict 6>&1
+    $hostText = ($records | Where-Object { $_ -is [System.Management.Automation.InformationRecord] } | ForEach-Object { $_.MessageData.ToString() }) -join "`n"
+    Assert-True ($hostText -match "'leg-saw-error': [^\n]*ACTION_FAILED: stub refused the click") "the failed leg's line must carry the envelope's code and message - saw: $hostText"
+    Assert-True ($hostText -match "'leg-clean-fail': plain failure(\r?\n|$)") "a disposition must clear the recorded envelope - saw: $hostText"
+}
+
+Invoke-SelfTest 'a skipped leg prints its token and its evidence' {
+    Reset-Verdict
+    Register-Legs -Names @('leg-pass', 'leg-skip')
+    Add-Pass -Leg 'leg-pass'
+    Add-Skip -Leg 'leg-skip' -Token 'shell-surface-absent' -Reason 'no host process runs'
+    $records = Write-Verdict 6>&1
+    $hostText = ($records | Where-Object { $_ -is [System.Management.Automation.InformationRecord] } | ForEach-Object { $_.MessageData.ToString() }) -join "`n"
+    Assert-True ($hostText -match "VERDICT skipped leg 'leg-skip' \[shell-surface-absent\]: no host process runs") "the skip's evidence must be printed - saw: $hostText"
+}
+
+<#
     9. A scenario that registers legs and dispositions none of them fails
        the run. Invert-verified by removing the leg-accounting checks and
        watching this scenario pass.
