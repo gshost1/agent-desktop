@@ -1,6 +1,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::refs::resolve_verdict::COMPLETE_ABSENCE_KINDS;
 use crate::{DeliverySemantics, ErrorCode, InteractionPolicy};
 
 #[derive(Debug, Error, Clone)]
@@ -67,6 +68,21 @@ impl AdapterError {
 
     pub fn permits_retry_by_default(&self) -> bool {
         self.retryability != crate::response::retryability::Retryability::NonRetryable
+    }
+
+    pub(crate) fn is_complete_absence(&self) -> bool {
+        let Some(details) = self.details.as_ref() else {
+            return false;
+        };
+        let kind = details.get("kind").and_then(Value::as_str);
+        let complete = details.get("complete").and_then(Value::as_bool) == Some(true);
+        let owner_gone = details
+            .get("process_state")
+            .and_then(Value::as_str)
+            .is_some_and(crate::system::process_state::ProcessState::names_a_gone_process);
+        self.code == ErrorCode::StaleRef
+            && complete
+            && (owner_gone || kind.is_some_and(|kind| COMPLETE_ABSENCE_KINDS.contains(&kind)))
     }
 
     /// Marks a lookup refusal raised before anything was sent to the

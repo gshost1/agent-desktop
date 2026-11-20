@@ -59,10 +59,10 @@ impl Response {
 fn ref_owner_gone(details: Option<&Value>) -> bool {
     details.is_some_and(|details| {
         details.get("kind").and_then(Value::as_str) == Some("resolve_owning_process_exited")
-            || matches!(
-                details.get("process_state").and_then(Value::as_str),
-                Some("exited" | "crashed")
-            )
+            || details
+                .get("process_state")
+                .and_then(Value::as_str)
+                .is_some_and(crate::system::process_state::ProcessState::names_a_gone_process)
     })
 }
 
@@ -123,6 +123,9 @@ impl ErrorPayload {
             let recover_stale_ref = adapter_error.code == ErrorCode::StaleRef
                 && (ref_owner_gone(details)
                     || details
+                        .filter(|details| {
+                            details.get("complete").and_then(Value::as_bool) != Some(false)
+                        })
                         .and_then(|details| details.get("kind"))
                         .and_then(Value::as_str)
                         .is_some_and(|kind| {

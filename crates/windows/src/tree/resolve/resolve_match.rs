@@ -24,6 +24,7 @@ pub(crate) fn stale_ref_error(_entry: &RefEntry) -> AdapterError {
 pub(crate) fn owning_process_exited_error(_entry: &RefEntry) -> AdapterError {
     AdapterError::stale_ref_because("Stored ref's owning process has exited").with_details(json!({
         "kind": "resolve_owning_process_exited",
+        "process_state": "exited",
         "complete": true,
         "retryable": false,
     }))

@@ -11,8 +11,7 @@ fn zero_timeout_click_on_removed_target_carries_refresh_recovery() {
         let error = crate::ref_action::execute_entry(
             &adapter,
             &entry(),
-            ActionRequest::headless(Action::Click)
-                .with_timeout_ms(crate::commands::helpers::normalize_action_timeout_ms(0)),
+            ActionRequest::headless(Action::Click).with_timeout_ms(None),
         )
         .expect_err("a removed target must not dispatch");
 

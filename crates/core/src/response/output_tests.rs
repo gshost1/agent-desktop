@@ -53,6 +53,7 @@ fn nonretryable_stale_ref_absence_carries_refresh_recovery_only_when_safe() {
         "retained_object_stale",
         "resolve_no_candidate",
         "resolution_complete_absence",
+        "resolve_target_destroyed",
     ] {
         for disposition in [
             DeliverySemantics::not_delivered(),
@@ -77,6 +78,22 @@ fn nonretryable_stale_ref_absence_carries_refresh_recovery_only_when_safe() {
                 assert!(payload.recovery.is_none(), "{kind}: {disposition:?}");
             }
         }
+    }
+}
+
+#[test]
+fn nonretryable_partial_or_nonstale_absence_does_not_carry_recovery() {
+    for code in [ErrorCode::StaleRef, ErrorCode::Timeout] {
+        let complete = code != ErrorCode::StaleRef;
+        let error = AdapterError::new(code, "no complete stale-ref absence")
+            .with_details(json!({
+                "kind": "saved_ref_absent",
+                "retryable": false,
+                "complete": complete,
+            }))
+            .with_disposition(DeliverySemantics::not_delivered());
+        let payload = ErrorPayload::from_app_error(&AppError::Adapter(error));
+        assert!(payload.recovery.is_none());
     }
 }
 
