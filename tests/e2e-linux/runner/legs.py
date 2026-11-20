@@ -61,7 +61,7 @@ REGISTRY: tuple[Leg, ...] = (
     Leg('ref_actions.hover_headless_refusal', 'Headless ref hover is refused without exposing status text', 'Qt window', ('x11-openbox',), ('headless',), ('atspi', 'x11'), 'asserted-refusal', "the leg asserts the product's refusal as its expected outcome"),
     Leg('ref_actions.drag', 'Ref drag selects document text and restores selection', 'Text Editor', ('x11-openbox',), ('headed',), ('atspi', 'x11'), 'pass', ''),
     Leg('ref_actions.drag_headless_refusal', 'Headless ref drag is refused without selecting text', 'Text Editor', ('x11-openbox',), ('headless',), ('atspi', 'x11'), 'asserted-refusal', "the leg asserts the product's refusal as its expected outcome"),
-    Leg('capture.window_pixels_match_xwd', 'A window capture matches the pixels xwd reads', 'Text Editor', ('x11-openbox', 'x11-mutter'), ('headless',), ('pixels', 'x11'), 'pass', ''),
+    Leg('capture.window_pixels_match_xwd', 'A window capture matches the pixels xwd reads', 'Text Editor', ('x11-openbox', 'x11-mutter'), ('headless',), ('pixels', 'x11', 'atspi'), 'pass', ''),
     Leg('gaps.event_surface-appeared_scoped_success', 'surface-appeared scoped success', 'Calculator About', ('x11-openbox',), ('headless',), ('atspi',), 'pass', ''),
     Leg('gaps.event_surface-appeared_scoped_quiet', 'surface-appeared scoped quiet', 'Calculator About', ('x11-openbox', 'x11-mutter'), ('headless',), ('atspi',), 'pass', ''),
     Leg('gaps.event_surface-appeared_unscoped_success', 'Unscoped surface-appeared is INVALID_ARGS with a showing About dialog', 'Calculator About', ('x11-openbox', 'x11-mutter'), ('headless',), ('atspi',), 'asserted-refusal', 'INVALID_ARGS: surface events require --app; raw surface state unchanged'),
