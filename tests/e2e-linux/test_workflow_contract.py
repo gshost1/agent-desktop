@@ -13,6 +13,13 @@ class WorkflowTests(unittest.TestCase):
         packages = install.split("\n          if ", 1)[0].replace("\\", "").split()
         self.assertIn("umockdev", packages)
 
+    def test_settings_panels_have_their_video_plugin_and_mutter_schemas(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        install = workflow.split("sudo apt-get install -y --no-install-recommends", 1)[1]
+        packages = install.split("\n          if ", 1)[0].replace("\\", "").split()
+        for package in ("gstreamer1.0-plugins-base", "mutter-common", "gnome-shell-common"):
+            self.assertIn(package, packages)
+
     def test_live_workflow_fails_closed(self):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
         self.assertIn("workflow_dispatch", workflow)

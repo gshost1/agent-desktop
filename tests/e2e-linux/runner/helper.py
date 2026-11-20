@@ -109,6 +109,15 @@ def root(ctx, app):
     return raw.app_root(ctx.tier, app.owner_names[0])
 
 
+def listed_app_name(ctx, app):
+    inventory = command(ctx, ["list-apps"]).data
+    matches = [item for item in inventory.get("apps", []) if item.get("pid") == app.pid]
+    require(len(matches) == 1, f"expected one listed application for owned pid {app.pid}")
+    name = matches[0].get("name")
+    require(isinstance(name, str) and name.strip(), "listed application has no name")
+    return name
+
+
 def one(node, *, role=None, name=None):
     matches = node.find(role=role, name=name)
     require(len(matches) == 1, f"expected one raw node for {role}/{name}: {len(matches)}")

@@ -29,6 +29,7 @@ Keep failed suites for diagnosis; the runner removes a successful suite. Use ano
 - `wayland`: `gnome-shell`, `wl-copy`, `wl-paste`.
 - The legs also drive the GNOME apps Calculator, Text Editor, Files, Terminal and Settings, and a PyQt6 test window. AT-SPI must be available in the private session.
 - `umockdev-run` supplies the Settings Mouse fixture's virtual udev mouse so the pointer-speed control is present without host hardware. Both Mouse legs still drive GNOME Settings and check the private GSettings value; the commit leg also closes and reopens the same fixture.
+- Settings' Mouse and Multitasking panels need the GStreamer `playbin` plugin (`gstreamer1.0-plugins-base` on Ubuntu) and Multitasking needs the Mutter and GNOME Shell schemas (`mutter-common` and `gnome-shell-common`). Without them, Settings aborts before it exposes a window; a launch-discovery deadline is not evidence of a slow accessibility walk.
 
 The runner inherits the caller's tool paths and libraries: supply tools through `PATH` and shared libraries through `LD_LIBRARY_PATH`. Qt legs run under `python3`; set `AGENT_DESKTOP_QT_PYTHON` when PyQt6 lives in a separate interpreter. That does not change the harness interpreter.
 
@@ -128,7 +129,7 @@ The registry is the inventory; these surfaces have no live claim, and their cove
 
 - Electron and Chromium: no leg in this registry.
 - Clipboard HTML import: unsupported by design. `clipboard-get` reads only the text and image targets (`formats::TEXT_TARGETS`, `targets::choose_target`; `x11_read_tests::an_owner_without_the_wanted_target_reads_as_absent`). The clipboard legs cover text, image, owner lifetime, clear and a foreign read after the CLI exited.
-- Positive `select` on a display value: only `select.refusal_without_semantic_route` is live. `crates/linux/src/actions/select/select_tests.rs` and `select_search_tests.rs` cover route, identity, effect and refusal.
+- Positive `select` on a display value: `select.screen_blank_value` is a headed live check of verified delivery and the independently observed setting change and restoration. `select.screen_blank_headless_refusal` separately asserts pointer-policy refusal and an unchanged setting. `select.absent_choice_refused` checks a missing choice under both policies. `crates/linux/src/actions/select/select_tests.rs` and `select_search_tests.rs` cover route, identity, effect and refusal.
 - Wayland: the private shell has no keyboard seat, so focus and window capture are live only as fail-closed refusals (`wayland_actions.*`, `gaps.wayland_window_capture_refused`). The other Wayland legs check that `list-windows` reports no position, that a seatless semantic click works, and that an unhealthy shell fails the tier with a named reason.
 
 ## Reading a failure

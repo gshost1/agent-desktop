@@ -4,8 +4,10 @@ use agent_desktop_core::{
     AdapterError, Deadline, DeliverySemantics, DisplayInfo, ErrorCode, MouseButton, Point, Rect,
 };
 
-use super::{PointerSession, monitor_under, run_pointer};
+use super::{PointerSession, run_pointer};
 use crate::input::wayland::key_session::KeySession;
+use crate::input::wayland::stream_point::StreamPoint;
+use crate::system::DisplayLayout;
 
 #[derive(Default)]
 struct Recording {
@@ -58,9 +60,12 @@ impl PointerSession for Recording {
             ))
         }
     }
-    fn motion_absolute(&mut self, x: f64, y: f64, _: Deadline) -> Result<(), AdapterError> {
-        self.pos = (x, y);
+    fn motion_absolute(&mut self, at: &StreamPoint, _: Deadline) -> Result<(), AdapterError> {
+        self.pos = (at.x, at.y);
         self.step("absolute")
+    }
+    fn axis_discrete(&mut self, _: u32, steps: i32, _: Deadline) -> Result<(), AdapterError> {
+        self.step(&format!("axis:{steps}"))
     }
 }
 fn deadline() -> Deadline {
@@ -96,7 +101,7 @@ fn receiver_loss_before_a_button_stops_dispatch_and_preserves_prior_motion() {
                 kind: agent_desktop_core::MouseEventKind::Click { count: 1 },
                 modifiers: Vec::new(),
             },
-            &[display("DP-1", 0., 0.)],
+            &DisplayLayout::unscaled(vec![display("DP-1", 0., 0.)]),
             &mut || {
                 checks += 1;
                 if checks > allowed {
@@ -116,7 +121,7 @@ fn receiver_loss_before_a_button_stops_dispatch_and_preserves_prior_motion() {
                 .iter()
                 .filter(|event| *event == "absolute")
                 .count(),
-            usize::from(allowed > 0)
+            if allowed > 0 { 2 } else { 0 }
         );
         assert_eq!(
             session.log.iter().filter(|event| *event == "down").count(),
@@ -144,7 +149,7 @@ fn receiver_loss_before_a_button_stops_dispatch_and_preserves_prior_motion() {
 
 #[test]
 fn missing_absolute_targeting_never_presses_a_shell_control() {
-    let displays = [display("DP-1", 100., 0.)];
+    let displays = DisplayLayout::unscaled(vec![display("DP-1", 100., 0.)]);
     for fail in [None, Some("start")] {
         let mut session = Recording {
             stream: fail.is_some(),
@@ -212,7 +217,7 @@ fn an_overlapping_control_with_an_off_display_center_is_not_aimed() {
 
 #[test]
 fn pointer_routing_and_failures() {
-    let displays = [display("DP-1", 600., 50.)];
+    let displays = DisplayLayout::unscaled(vec![display("DP-1", 600., 50.)]);
     let target = Point { x: 677., y: 71. };
     let mut session = Recording {
         stream: true,
@@ -234,7 +239,7 @@ fn pointer_routing_and_failures() {
     assert_eq!(
         session.log,
         [
-            "create", "attach", "start", "absolute", "down", "up", "stop"
+            "create", "attach", "start", "absolute", "absolute", "down", "up", "stop"
         ]
     );
     assert_eq!(session.pos, (77., 21.));
@@ -281,20 +286,4 @@ fn pointer_routing_and_failures() {
             assert_eq!(error.details.unwrap()["physical_delivery_started"], true);
         }
     }
-}
-
-#[test]
-fn monitor_routing() {
-    let ds = [
-        display("DP-1", 100., 50.),
-        display("HDMI-1+DP-2", 1380., 50.),
-    ];
-    for (p, expected) in [
-        (Point { x: 140., y: 70. }, ("DP-1", 40., 20.)),
-        (Point { x: 1500., y: 70. }, ("HDMI-1", 120., 20.)),
-    ] {
-        let (c, q) = monitor_under(&p, &ds).unwrap();
-        assert_eq!((c.as_str(), q.x, q.y), expected);
-    }
-    assert!(monitor_under(&Point { x: 1., y: 1. }, &ds).is_none());
 }

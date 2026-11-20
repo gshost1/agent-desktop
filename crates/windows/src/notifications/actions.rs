@@ -5,6 +5,7 @@ use agent_desktop_core::{
 
 use crate::tree::element::UIAElement;
 
+use super::dismiss_step::{DismissStep, after_dismiss};
 use super::list::list_entries;
 use super::read::ListEntry;
 use super::session::{ActionCenterSession, close_session};
@@ -79,43 +80,47 @@ pub fn notification_action(
 /// live runs): the shell can accept the entry's dismiss invoke without acting
 /// on it, while the top-level clear-all control does act. The clear-all is
 /// only a faithful substitute for the entry's own button when the target is
-/// the center's sole entry - with any other entry present it would remove
-/// notifications nobody asked to remove, so an accepted-and-ignored invoke
-/// stays an honest `ACTION_FAILED` there.
+/// the center's sole entry and had no identical twin when it was picked -
+/// with any other entry present, or a twin the re-read cannot tell from the
+/// target, it would remove notifications nobody asked to remove, so an
+/// accepted-and-ignored invoke stays an honest `ACTION_FAILED` there.
 fn dismiss_impl(
     target: &NotificationTarget,
     hwnd: isize,
     deadline: Deadline,
 ) -> Result<NotificationInfo, AdapterError> {
     let filter = NotificationFilter::default();
-    let entry = locate(target, &filter, hwnd, deadline)?;
+    let (entry, before) = locate(target, &filter, hwnd, deadline)?;
     let info = entry.info.clone();
     let index = info.index;
 
     invoke_dismiss(&entry.element, index)?;
     let mut current = read_settling_without(
         std::slice::from_ref(&info),
+        &before,
         hwnd,
-        &NotificationFilter::default(),
+        &filter,
         deadline,
     )?;
-    if !entry_gone(&info, &current)
-        && current.len() == 1
-        && clear_all_still_the_sole_target(hwnd, &info, deadline)?
+    let mut step = after_dismiss(&info, &before, &current);
+    if step == DismissStep::SubstituteClearAll
+        && clear_all_still_the_sole_target(hwnd, &info, &before, deadline)?
     {
         let root = crate::tree::automation::root_from_hwnd(hwnd, deadline)?;
         if let Some(clear) = super::read::find_clear_all_button(&root)? {
             invoke_element(&clear)?;
             current = read_settling_without(
                 std::slice::from_ref(&info),
+                &before,
                 hwnd,
-                &NotificationFilter::default(),
+                &filter,
                 deadline,
             )?;
+            step = after_dismiss(&info, &before, &current);
         }
     }
 
-    if !entry_gone(&info, &current) {
+    if step != DismissStep::Verified {
         return Err(dismiss_survived_error(index));
     }
     Ok(info)
@@ -132,18 +137,14 @@ fn dismiss_impl(
 /// substitute; the caller's survival check then reports the honest
 /// `ACTION_FAILED`. A re-read that cannot run surfaces as an error, for the
 /// same reason.
-#[cfg(target_os = "windows")]
 fn clear_all_still_the_sole_target(
     hwnd: isize,
     target: &NotificationInfo,
+    before: &[NotificationInfo],
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
     let current = super::list::list_infos(&NotificationFilter::default(), hwnd, deadline)?;
-    Ok(is_sole_target(target, &current))
-}
-
-fn is_sole_target(target: &NotificationInfo, current: &[NotificationInfo]) -> bool {
-    matches!(current, [only] if same_identity(target, only))
+    Ok(after_dismiss(target, before, &current) == DismissStep::SubstituteClearAll)
 }
 
 fn dismiss_all_impl(
@@ -172,7 +173,7 @@ fn dismiss_all_impl(
             .ok_or_else(super::read::missing_clear_all_error)?;
         invoke_element(&clear)?;
     }
-    let current = read_settling_without(&captured, hwnd, &filter, deadline)?;
+    let current = read_settling_without(&captured, &captured, hwnd, &filter, deadline)?;
     let failures = dismiss_all_failures(&captured, &current, &invoke_errors);
     let dismissed = captured
         .iter()
@@ -256,13 +257,19 @@ fn action_impl(
     deadline: Deadline,
 ) -> Result<ActionResult, AdapterError> {
     let filter = NotificationFilter::default();
-    let entry = locate(target, &filter, hwnd, deadline)?;
+    let (entry, before) = locate(target, &filter, hwnd, deadline)?;
     let original = entry.info.clone();
     let index = original.index;
     invoke_notification_action(&entry.element, action_name, index)?;
-    let current = read_settling_without(std::slice::from_ref(&original), hwnd, &filter, deadline)?;
+    let current = read_settling_without(
+        std::slice::from_ref(&original),
+        &before,
+        hwnd,
+        &filter,
+        deadline,
+    )?;
     let mut result = ActionResult::delivered_unverified(action_name);
-    if action_changed_state(&original, &current) {
+    if action_changed_state(&original, &before, &current) {
         result = result.with_verified_delivery();
     }
     Ok(result)
@@ -319,20 +326,22 @@ pub(crate) fn require_foreground_policy(policy: InteractionPolicy) -> Result<(),
     ))
 }
 
-/// The listing entry a mutation targets, picked by core from a fresh read -
-/// the prelude every mutation runs before it touches anything. A key that no
-/// longer names an entry, or an entry at the index that no longer carries the
-/// caller's identity, is `NOTIFICATION_NOT_FOUND`: the surface reordered
-/// under the caller, so acting anyway would hit the wrong notification.
+/// The listing entry a mutation targets, picked by core from a fresh read,
+/// beside that whole read - the prelude every mutation runs before it touches
+/// anything. A key that no longer names an entry, or an entry at the index
+/// that no longer carries the caller's identity, is `NOTIFICATION_NOT_FOUND`:
+/// the surface reordered under the caller, so acting anyway would hit the
+/// wrong notification.
 fn locate(
     target: &NotificationTarget,
     filter: &NotificationFilter,
     hwnd: isize,
     deadline: Deadline,
-) -> Result<ListEntry, AdapterError> {
-    take_target(target, list_entries(filter, hwnd, deadline)?, |entry| {
-        &entry.info
-    })
+) -> Result<(ListEntry, Vec<NotificationInfo>), AdapterError> {
+    let entries = list_entries(filter, hwnd, deadline)?;
+    let listed = entries.iter().map(|entry| entry.info.clone()).collect();
+    let entry = take_target(target, entries, |entry| &entry.info)?;
+    Ok((entry, listed))
 }
 
 /// Takes the one entry core's addressing rule picks from a fresh read, so the
