@@ -1,0 +1,19 @@
+{
+  "roles": {
+    "button": 82
+  },
+  "regions": [
+    {
+      "line": 1,
+      "role": "toolbar"
+    },
+    {
+      "line": 4,
+      "role": "scrollarea",
+      "name": "Rows",
+      "ref": "@s1:area",
+      "items": 80,
+      "partial": true
+    }
+  ]
+}

@@ -12,6 +12,8 @@ Concepts behind the flags are explained in [Skeleton and drill-down](/desktop/sk
 
 Captures an application's accessibility tree as JSON. Window-owned surfaces are read from a window; on macOS, `menu` and `menubar` are application-owned and need no document window. Interactive elements get qualified refs that later commands accept.
 
+A window tree of 80 or more nodes comes with `data.contents` before it: the commonest ref roles and the line, ref and loaded item count of each list and bar. See [Snapshot contents](/desktop/json-output#snapshot-contents).
+
 ```bash
 agent-desktop snapshot [--app NAME] [--window-id ID] [-i] [--compact] [--skeleton] \
                        [--root REF] [--surface KIND] [--max-depth N] [--include-bounds] \
