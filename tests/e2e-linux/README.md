@@ -28,6 +28,7 @@ Keep failed suites for diagnosis; the runner removes a successful suite. Use ano
 - `x11-mutter`: `gnome-shell`, `xdotool`, `wmctrl`, `xclip`.
 - `wayland`: `gnome-shell`, `wl-copy`, `wl-paste`.
 - The legs also drive the GNOME apps Calculator, Text Editor, Files, Terminal and Settings, and a PyQt6 test window. AT-SPI must be available in the private session.
+- Settings' Mouse and Multitasking panels need the GStreamer `playbin` plugin (`gstreamer1.0-plugins-base` on Ubuntu) and Multitasking needs the Mutter and GNOME Shell schemas (`mutter-common` and `gnome-shell-common`). Without them, Settings aborts before it exposes a window; a launch-discovery deadline is not evidence of a slow accessibility walk.
 
 The runner inherits the caller's tool paths and libraries: supply tools through `PATH` and shared libraries through `LD_LIBRARY_PATH`. Qt legs run under `python3`; set `AGENT_DESKTOP_QT_PYTHON` when PyQt6 lives in a separate interpreter. That does not change the harness interpreter.
 
