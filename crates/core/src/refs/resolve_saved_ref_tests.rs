@@ -360,6 +360,7 @@ fn a_landing_with_no_count_behind_it_that_does_not_match_is_absent() {
     .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::StaleRef);
-    assert!(!error.permits_retry_by_default());
+    assert!(error.permits_retry_by_default());
+    assert!(!crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(&error).retries());
     assert_eq!(error.details.unwrap()["kind"], "saved_ref_absent");
 }

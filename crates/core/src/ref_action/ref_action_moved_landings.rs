@@ -18,7 +18,7 @@ pub(crate) struct MovedLandings {
 impl MovedLandings {
     /// Notes the verdict of a refusal the action is about to retry. On the
     /// moved landing past the retry limit it returns the refusal the action
-    /// ends with: `STALE_REF` `saved_ref_absent`, which is not retryable.
+    /// ends with: `STALE_REF` `saved_ref_absent`, which ends retries of the saved ref.
     pub(crate) fn exhausted(
         &mut self,
         verdict: ResolveVerdict,
