@@ -17,8 +17,19 @@ class WorkflowTests(unittest.TestCase):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
         install = workflow.split("sudo apt-get install -y --no-install-recommends", 1)[1]
         packages = install.split("\n          if ", 1)[0].replace("\\", "").split()
-        for package in ("gstreamer1.0-plugins-base", "mutter-common", "gnome-shell-common"):
+        for package in ("gstreamer1.0-plugins-base", "mutter-common", "gnome-shell-common", "gnome-shell"):
             self.assertIn(package, packages)
+
+    def test_private_session_failure_logs_are_uploaded(self):
+        workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
+        checks = workflow.split("- name: Private session checks", 1)[1]
+        self.assertIn("if: ${{ !cancelled() }}", checks.split("run:", 1)[0])
+        self.assertIn("AGENT_DESKTOP_SESSION_LOG_DIR: ${{ runner.temp }}/private-session-logs", checks)
+        upload = checks.split("- name: Upload the private session logs", 1)[1]
+        self.assertIn("if: ${{ failure() && steps.private-session.outcome == 'failure' }}", upload)
+        self.assertIn("uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", upload)
+        self.assertIn("path: ${{ runner.temp }}/private-session-logs/", upload)
+        self.assertIn("retention-days: 7", upload)
 
     def test_live_workflow_fails_closed(self):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
