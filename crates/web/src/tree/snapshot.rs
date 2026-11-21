@@ -25,10 +25,11 @@ pub fn snapshot_page(
     snapshot_with(connection, session, FrameBudget::whole(deadline))
 }
 
-/// Reads the page as [`snapshot_page`] does, but stops reading iframes a
-/// reserve short of `deadline`, so a slow iframe cannot cost the page. An
-/// iframe that misses that budget is listed in `unreadable_frames`, and the
-/// child frames of an iframe reached after it are not looked for.
+/// Reads the page as [`snapshot_page`] does, but gives the concurrent
+/// iframe reads a deadline a reserve short of `deadline`, so a slow iframe
+/// cannot cost the page. An iframe that misses that budget is listed in
+/// `unreadable_frames`, and once the budget is spent the next nesting level
+/// of iframe targets is not looked for.
 pub fn snapshot_page_within_budget(
     connection: &mut CdpConnection,
     session: &PageSession,
