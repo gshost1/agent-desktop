@@ -88,6 +88,16 @@ cleanup() {
   for mount in "$rt/doc" "$rt/gvfs"; do
     fusermount -u "$mount" 2>/dev/null || true
   done
+  if [ -n "${AGENT_DESKTOP_SESSION_LOG_DIR:-}" ]; then
+    local destination="$AGENT_DESKTOP_SESSION_LOG_DIR/${rt##*/}" file
+    if mkdir -p "$destination"; then
+      for file in "$rt"/*.log; do
+        [ ! -f "$file" ] || cp -L -- "$file" "$destination/" || true
+      done
+    else
+      echo "private-session: could not preserve logs in $destination" >&2
+    fi
+  fi
   case "$rt" in
     "$base"/rt.?*)
       [ ! -d "$rt" ] || rm -rf -- "$rt" ;;

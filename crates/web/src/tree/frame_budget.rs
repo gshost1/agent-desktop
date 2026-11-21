@@ -1,9 +1,10 @@
-//! The time a snapshot gives its out-of-process iframes. Each iframe target is
-//! read in turn after the main page, so one that answers slowly would use up
-//! the whole snapshot deadline and lose the page with it. A budgeted read
-//! stops iframe reads a reserve short of the deadline and leaves out the
-//! iframes that miss it, while the page is still returned.
-
+//! The time a snapshot gives its iframes. The page's frames, and then the
+//! iframe targets of each nesting level, are read concurrently, so one slow
+//! iframe would hold the read until the snapshot deadline and lose the page
+//! with it. A budgeted read gives iframe reads a deadline a reserve short of
+//! the snapshot's and leaves out the iframes that miss it, while the page is
+//! still returned; once the budget is spent the next nesting level is not
+//! looked for.
 use std::time::Duration;
 
 use agent_desktop_core::{AdapterError, Deadline};

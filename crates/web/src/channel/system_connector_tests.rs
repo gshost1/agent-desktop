@@ -1,5 +1,7 @@
 use std::io::Write;
 
+use serde_json::json;
+
 use agent_desktop_core::system::cdp_endpoint::CdpEndpoint;
 use agent_desktop_core::{Deadline, DownloadScope, ProcessIdentity, StateFile};
 
@@ -7,6 +9,7 @@ use super::SystemConnector;
 use crate::channel::candidate_origin::CandidateOrigin;
 use crate::channel::cdp_connector::CdpConnector;
 use crate::channel::test_dir::TestDir;
+use crate::transport::scripted_transport::ScriptedTransport;
 
 fn endpoint(port: u16) -> CdpEndpoint {
     CdpEndpoint {
@@ -194,4 +197,96 @@ fn an_active_port_file_rewritten_after_the_check_is_not_followed() {
     let _ = connector.open(&candidates[0], Deadline::after(2_000).unwrap(), true);
     assert!(never_contacted(&planted));
     server.join().unwrap();
+}
+
+fn ready(transport: ScriptedTransport) -> Result<(), agent_desktop_core::AdapterError> {
+    let connection = crate::CdpConnection::new(transport.boxed());
+    super::ready_registry_connection(connection, None, Deadline::after(200).unwrap()).map(|_| ())
+}
+
+#[test]
+fn a_registry_connection_skips_the_version_probe_and_starts_with_downloads() {
+    let transport = ScriptedTransport::new().expect("Browser.setDownloadBehavior", json!({}));
+    let sent = transport.sent_log();
+
+    ready(transport).unwrap();
+
+    let sent = sent.lock().unwrap();
+    let methods: Vec<&str> = sent
+        .iter()
+        .filter_map(|request| request["method"].as_str())
+        .collect();
+    assert_eq!(methods, ["Browser.setDownloadBehavior"]);
+}
+
+#[test]
+fn a_registry_browser_that_refuses_downloads_still_connects_but_a_silent_one_does_not() {
+    let refused = ScriptedTransport::new().expect_error(
+        "Browser.setDownloadBehavior",
+        -32000,
+        "Browser context management is not supported.",
+    );
+    assert!(ready(refused).is_ok());
+
+    let silent = ScriptedTransport::new().expect_silence("Browser.setDownloadBehavior");
+    assert_eq!(
+        ready(silent).unwrap_err().code,
+        agent_desktop_core::ErrorCode::Timeout
+    );
+}
+
+#[test]
+fn a_registry_candidate_opens_with_set_download_behavior_as_its_only_call() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut socket = tungstenite::accept(stream).unwrap();
+        let mut methods = Vec::new();
+        while let Ok(message) = socket.read() {
+            let Ok(text) = message.into_text() else {
+                continue;
+            };
+            let request: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+            methods.push(request["method"].as_str().unwrap_or_default().to_owned());
+            let reply = json!({ "id": request["id"], "result": {} }).to_string();
+            if socket.send(tungstenite::Message::text(reply)).is_err() {
+                break;
+            }
+        }
+        methods
+    });
+    let connector = SystemConnector::with_sources(None, Vec::new());
+    let candidate = crate::channel::endpoint_candidate::EndpointCandidate {
+        port,
+        origin: CandidateOrigin::Registry {
+            websocket_url: format!("ws://127.0.0.1:{port}/devtools/browser/stub"),
+            download_folder: None,
+        },
+    };
+
+    let connection = connector.open(&candidate, Deadline::after(3_000).unwrap(), false);
+
+    assert!(connection.is_ok());
+    drop(connection);
+    assert_eq!(server.join().unwrap(), ["Browser.setDownloadBehavior"]);
+}
+
+#[test]
+fn a_registry_url_that_names_a_page_instead_of_the_browser_is_never_contacted() {
+    let (page, page_port) = watched_port();
+    let connector = SystemConnector::with_sources(None, Vec::new());
+    let candidate = crate::channel::endpoint_candidate::EndpointCandidate {
+        port: page_port,
+        origin: CandidateOrigin::Registry {
+            websocket_url: format!("ws://127.0.0.1:{page_port}/devtools/page/ABC"),
+            download_folder: None,
+        },
+    };
+    let error = connector
+        .open(&candidate, Deadline::after(1_000).unwrap(), true)
+        .err()
+        .unwrap();
+    assert_eq!(error.details.unwrap()["kind"], "cdp_endpoint_not_browser");
+    assert!(never_contacted(&page));
 }
