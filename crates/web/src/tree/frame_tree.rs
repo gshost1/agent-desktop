@@ -19,6 +19,11 @@ pub(crate) fn list_frames(
         Some(&session.session_id),
         deadline,
     )?;
+    frames_from_reply(&result)
+}
+
+/// The frames a `Page.getFrameTree` reply lists, in pre-order.
+pub(crate) fn frames_from_reply(result: &Value) -> Result<Vec<FrameEntry>, AdapterError> {
     let root = result
         .get("frameTree")
         .ok_or_else(|| transport_failed("Page.getFrameTree", "reply has no frameTree"))?;

@@ -1,11 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use agent_desktop_core::Deadline;
 use serde_json::json;
 
-use super::{collect_clickable, collect_dom_ids, read_dom_facts};
-use crate::transport::scripted_transport::ScriptedTransport;
-use crate::{CdpConnection, PageSession};
+use super::{capture_params, collect_clickable, collect_dom_ids, dom_facts_from_capture};
 
 #[test]
 fn ids_come_from_the_flat_capture_of_every_document() {
@@ -43,20 +40,10 @@ fn a_dom_too_deep_for_a_nested_reply_is_read_from_one_flat_capture() {
                 .collect::<Vec<_>>(),
         } }],
     });
-    let transport = ScriptedTransport::new().expect("DOMSnapshot.captureSnapshot", capture);
-    let sent = transport.sent_log();
-    let mut connection = CdpConnection::new(transport.boxed());
-    let session = PageSession {
-        target_id: "T".into(),
-        session_id: "S".into(),
-    };
-
-    let facts = read_dom_facts(&mut connection, &session, Deadline::after(1_000).unwrap()).unwrap();
+    let facts = dom_facts_from_capture(&capture);
 
     assert_eq!(facts.ids.get(&depth).map(String::as_str), Some("leaf"));
-    let sent = sent.lock().unwrap();
-    assert_eq!(sent[0]["params"], json!({ "computedStyles": ["display"] }));
-    assert!(connection.take_events().is_empty());
+    assert_eq!(capture_params(), json!({ "computedStyles": ["display"] }));
 }
 
 #[test]

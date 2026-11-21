@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 use serde_json::json;
 
@@ -8,7 +6,8 @@ use super::child_targets::{attach_child_targets, stop_child_targets};
 use super::flatten::flatten;
 use super::frame_budget::FrameBudget;
 use super::frame_graft::{FrameNodes, graft_frames};
-use super::target_read::{TargetReads, frame_owner, read_target};
+use super::target_job::TargetJob;
+use super::target_read::{TargetReads, read_targets};
 use crate::cdp::protocol_error::{is_protocol_error, is_target_gone};
 use crate::{CdpConnection, PageSession, WebSnapshot};
 
@@ -45,9 +44,8 @@ fn snapshot_with(
 ) -> Result<WebSnapshot, AdapterError> {
     let mut auto_attached = Vec::new();
     let read = read_page(connection, session, budget, &mut auto_attached);
-    for parent in auto_attached.iter().rev() {
-        stop_child_targets(connection, parent, budget.snapshot());
-    }
+    auto_attached.reverse();
+    stop_child_targets(connection, &auto_attached, budget.snapshot());
     let (frames, mut unreadable_frames) = read?;
     let (roots, dropped) = graft_frames(frames);
     unreadable_frames.extend(dropped);
@@ -64,83 +62,112 @@ fn snapshot_with(
     })
 }
 
+/// Reads the page target, then the out-of-process iframe targets one level
+/// of nesting at a time: every parent of a level is asked for its children
+/// at once, and every child of the level is read at once. Frames and
+/// unreadable frames are listed in the order a breadth-first read of one
+/// target after another gives, which the grafting and the depth-first ref
+/// order rely on.
 fn read_page(
     connection: &mut CdpConnection,
     session: &PageSession,
     budget: FrameBudget,
     auto_attached: &mut Vec<PageSession>,
 ) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
-    let page_reads = TargetReads {
-        budget,
-        is_page: true,
+    let page = TargetJob {
+        session,
+        reads: TargetReads {
+            budget,
+            is_page: true,
+        },
+        parent: None,
+        parent_frame_id: None,
     };
-    let (mut frames, mut unreadable) = read_target(connection, session, page_reads)?;
-    let mut parents = VecDeque::from([session.clone()]);
-    while let Some(parent) = parents.pop_front() {
-        let is_page = parent == *session;
-        if !is_page && budget.is_spent() {
-            continue;
+    let (mut frames, mut unreadable) = read_targets(connection, &[page])?
+        .pop()
+        .unwrap_or_else(|| Err(no_tree(&session.target_id)))?;
+    let mut parents = vec![session.clone()];
+    while !parents.is_empty() {
+        let level = attach_level(connection, session, budget, parents, auto_attached)?;
+        let mut jobs = Vec::with_capacity(level.len());
+        let mut asked = Vec::with_capacity(level.len());
+        for (parent, child) in &level {
+            let read = !budget.is_spent();
+            if read {
+                jobs.push(TargetJob {
+                    session: &child.session,
+                    reads: TargetReads {
+                        budget,
+                        is_page: false,
+                    },
+                    parent: Some(parent),
+                    parent_frame_id: child.parent_frame_id.as_deref(),
+                });
+            }
+            asked.push(read);
         }
-        let attach_deadline = if is_page {
-            budget.snapshot()
-        } else {
-            budget.iframes()
-        };
-        let children = match attach_child_targets(connection, &parent, attach_deadline) {
-            Ok(children) => children,
-            Err(error) if !is_page && is_target_gone(&error) => continue,
-            Err(error) if !is_page && budget.missed(&error) => {
-                auto_attached.push(parent.clone());
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        auto_attached.push(parent.clone());
-        for child in children {
-            if budget.is_spent() {
-                unreadable.push(child.session.target_id.clone());
-                continue;
-            }
-            match read_child(connection, &parent, &child, budget) {
-                Ok((child_frames, child_unreadable)) => {
+        let mut reads = read_targets(connection, &jobs)?.into_iter();
+        parents = Vec::new();
+        for ((_, child), read) in level.iter().zip(asked) {
+            let read = if read { reads.next() } else { None };
+            match read {
+                None => unreadable.push(child.session.target_id.clone()),
+                Some(Ok((child_frames, child_unreadable))) => {
                     frames.extend(child_frames);
                     unreadable.extend(child_unreadable);
+                    parents.push(child.session.clone());
                 }
-                Err(error)
+                Some(Err(error))
                     if is_protocol_error(&error)
                         || is_target_gone(&error)
                         || budget.missed(&error) =>
                 {
                     unreadable.push(child.session.target_id.clone());
-                    continue;
                 }
-                Err(error) => return Err(error),
+                Some(Err(error)) => return Err(error),
             }
-            parents.push_back(child.session);
         }
     }
     Ok((frames, unreadable))
 }
 
-fn read_child(
+fn attach_level(
     connection: &mut CdpConnection,
-    parent: &PageSession,
-    child: &ChildTarget,
+    page: &PageSession,
     budget: FrameBudget,
-) -> Result<(Vec<FrameNodes>, Vec<String>), AdapterError> {
-    let iframe_reads = TargetReads {
-        budget,
-        is_page: false,
-    };
-    let deadline = budget.iframes();
-    let (mut frames, unreadable) = read_target(connection, &child.session, iframe_reads)?;
-    if let Some(root) = frames.first_mut() {
-        if root.parent_id.is_none() {
-            root.parent_id.clone_from(&child.parent_frame_id);
+    parents: Vec<PageSession>,
+    auto_attached: &mut Vec<PageSession>,
+) -> Result<Vec<(PageSession, ChildTarget)>, AdapterError> {
+    let asked: Vec<(PageSession, Deadline)> = parents
+        .into_iter()
+        .filter_map(|parent| {
+            let is_page = parent == *page;
+            if !is_page && budget.is_spent() {
+                return None;
+            }
+            let deadline = if is_page {
+                budget.snapshot()
+            } else {
+                budget.iframes()
+            };
+            Some((parent, deadline))
+        })
+        .collect();
+    let attached = attach_child_targets(connection, &asked)?;
+    let mut level = Vec::new();
+    for ((parent, _), children) in asked.into_iter().zip(attached) {
+        let is_page = parent == *page;
+        match children {
+            Ok(children) => {
+                auto_attached.push(parent.clone());
+                level.extend(children.into_iter().map(|child| (parent.clone(), child)));
+            }
+            Err(error) if !is_page && is_target_gone(&error) => {}
+            Err(error) if !is_page && budget.missed(&error) => auto_attached.push(parent),
+            Err(error) => return Err(error),
         }
-        root.owner_backend_node_id = frame_owner(connection, parent, &root.frame_id, deadline)?;
     }
-    Ok((frames, unreadable))
+    Ok(level)
 }
 
 fn no_tree(target_id: &str) -> AdapterError {
