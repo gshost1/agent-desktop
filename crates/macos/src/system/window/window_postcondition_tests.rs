@@ -61,6 +61,10 @@ fn clamped_move_and_resize_fail_with_requested_fields_and_observed_frame() {
         assert_eq!(error.code, ErrorCode::ActionFailed);
         assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
         assert_eq!(
+            error.suggestion.as_deref(),
+            Some("Read the held position and size from 'list-windows'")
+        );
+        assert_eq!(
             error.details.unwrap(),
             json!({
                 "cause": "readback_mismatch",
@@ -131,22 +135,111 @@ fn a_return_to_the_original_frame_restarts_the_quiet_window() {
 }
 
 #[test]
-fn an_unchanged_frame_keeps_waiting_until_the_deadline() {
-    assert_stable_mismatch_times_out(Some(BEFORE), BEFORE);
+fn an_unchanged_frame_reports_a_mismatch_after_the_longer_quiet_window() {
+    let error = wait_with_samples(
+        MOVE,
+        [
+            (0, Some(BEFORE)),
+            (250, Some(BEFORE)),
+            (260, Some(BEFORE)),
+            (999, Some(BEFORE)),
+            (1000, Some(BEFORE)),
+            (1010, Some(BEFORE)),
+        ],
+    )
+    .unwrap_err();
+    assert_mismatch(error, BEFORE);
+}
+
+#[test]
+fn a_late_match_can_follow_an_unchanged_frame() {
+    wait_with_samples(
+        MOVE,
+        [
+            (0, Some(BEFORE)),
+            (250, Some(BEFORE)),
+            (260, Some(BEFORE)),
+            (900, Some(TARGET)),
+        ],
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_short_deadline_reports_the_latest_readable_clamped_frame() {
+    let mut samples = [Some(BEFORE), Some(CLAMPED)].into_iter();
+    let error = wait_for_geometry_with(
+        MOVE,
+        Some(BEFORE),
+        Deadline::detached_after(100).unwrap(),
+        || (Ok(samples.next().flatten()), Instant::now()),
+    )
+    .unwrap_err();
+    assert_mismatch(error, CLAMPED);
+}
+
+#[test]
+fn a_read_timeout_preserves_preceding_readback() {
+    let mut samples = [
+        Ok(Some(CLAMPED)),
+        Err(AdapterError::timeout("AX read expired")),
+    ]
+    .into_iter();
+    let error = wait_for_geometry_with(
+        MOVE,
+        Some(BEFORE),
+        Deadline::detached_after(1_000).unwrap(),
+        || (samples.next().unwrap(), Instant::now()),
+    )
+    .unwrap_err();
+    assert_mismatch(error, CLAMPED);
 }
 
 #[test]
 fn maximize_readback_still_requires_the_requested_frame() {
-    assert_stable_mismatch_times_out(None, CLAMPED);
+    let error = wait_for_requested_geometry(MOVE, Deadline::detached_after(450).unwrap(), || {
+        Ok(Some(CLAMPED))
+    })
+    .unwrap_err();
+    assert_timeout(error);
 }
 
 #[test]
-fn unavailable_geometry_still_times_out_after_dispatch() {
+fn never_readable_geometry_reports_readback_unavailable_after_the_fallback_budget() {
+    for sample in [
+        Ok(None),
+        Err(AdapterError::new(
+            ErrorCode::AppUnresponsive,
+            "AX read unavailable",
+        )),
+    ] {
+        let error = wait_for_geometry_with(
+            MOVE,
+            Some(BEFORE),
+            Deadline::detached_after(2_000).unwrap(),
+            || (sample.clone(), Instant::now()),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ActionFailed);
+        assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+        assert_eq!(
+            error.details.unwrap(),
+            json!({
+                "cause": "readback_unavailable",
+                "requested": { "x": 350.0, "y": -200.0 },
+                "observed": null,
+            })
+        );
+    }
+}
+
+#[test]
+fn never_readable_geometry_times_out_if_the_deadline_expires_first() {
     let error = wait_for_geometry_with(
         MOVE,
         Some(BEFORE),
         Deadline::detached_after(20).unwrap(),
-        || Ok((None, Instant::now())),
+        || (Ok(None), Instant::now()),
     )
     .unwrap_err();
     assert_timeout(error);
@@ -164,20 +257,19 @@ fn wait_with_samples(
         Deadline::detached_after(1_000).unwrap(),
         || {
             let (millis, frame) = samples.next().expect("unexpected extra geometry read");
-            Ok((frame, start + Duration::from_millis(millis)))
+            (Ok(frame), start + Duration::from_millis(millis))
         },
     );
     assert!(samples.next().is_none(), "completed before the final read");
     result
 }
 
-fn assert_stable_mismatch_times_out(before: Option<Rect>, observed: Rect) {
-    let error =
-        wait_for_geometry_with(MOVE, before, Deadline::detached_after(450).unwrap(), || {
-            Ok((Some(observed), Instant::now()))
-        })
-        .unwrap_err();
-    assert_timeout(error);
+fn assert_mismatch(error: AdapterError, observed: Rect) {
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let details = error.details.unwrap();
+    assert_eq!(details["cause"], "readback_mismatch");
+    assert_eq!(details["observed"], json!(observed));
 }
 
 fn assert_timeout(error: AdapterError) {

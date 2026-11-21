@@ -4,6 +4,27 @@ use std::time::{Duration, Instant};
 
 pub(crate) const TOLERANCE: f64 = 2.0;
 const GEOMETRY_SETTLE_TIME: Duration = Duration::from_millis(250);
+const GEOMETRY_FALLBACK_TIME: Duration = Duration::from_secs(1);
+const POLL: Duration = Duration::from_millis(10);
+
+#[derive(Clone, Copy)]
+pub(super) enum GeometryVerification {
+    RequestedOnly,
+    DetectClamp,
+}
+
+impl GeometryVerification {
+    pub(super) fn baseline(
+        self,
+        window: &crate::tree::AXElement,
+        deadline: Deadline,
+    ) -> Option<Rect> {
+        match self {
+            Self::RequestedOnly => None,
+            Self::DetectClamp => read_geometry(window, deadline).ok().flatten(),
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum GeometryRequest {
@@ -21,24 +42,36 @@ impl GeometryRequest {
         }
     }
 
-    fn mismatch(self, observed: Rect) -> AdapterError {
+    fn readback_error(self, observed: Option<Rect>) -> AdapterError {
         let requested = match self {
             Self::Move { x, y } => json!({ "x": x, "y": y }),
             Self::Resize { width, height } => json!({ "width": width, "height": height }),
         };
-        AdapterError::new(
-            ErrorCode::ActionFailed,
-            "The window manager left the window other than requested",
-        )
-        .with_details(json!({
-            "cause": "readback_mismatch",
-            "requested": requested,
-            "observed": observed,
-        }))
+        let (cause, message, suggestion) = if observed.is_some() {
+            (
+                "readback_mismatch",
+                "The window manager left the window other than requested",
+                "Read the held position and size from 'list-windows'",
+            )
+        } else {
+            (
+                "readback_unavailable",
+                "The window could not be read back after the request, so its effect is unknown",
+                "Run 'list-windows' to see the window as it is now",
+            )
+        };
+        AdapterError::new(ErrorCode::ActionFailed, message)
+            .with_suggestion(suggestion)
+            .with_details(json!({
+                "cause": cause,
+                "requested": requested,
+                "observed": observed,
+            }))
+            .with_disposition(DeliverySemantics::delivered_unverified())
     }
 }
 
-pub(super) fn read_geometry(
+fn read_geometry(
     element: &crate::tree::AXElement,
     deadline: Deadline,
 ) -> Result<Option<Rect>, AdapterError> {
@@ -48,11 +81,35 @@ pub(super) fn read_geometry(
 pub(super) fn wait_for_geometry(
     element: &crate::tree::AXElement,
     request: GeometryRequest,
+    verification: GeometryVerification,
     before: Option<Rect>,
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
+    if matches!(verification, GeometryVerification::RequestedOnly) {
+        return wait_for_requested_geometry(request, deadline, || read_geometry(element, deadline));
+    }
     wait_for_geometry_with(request, before, deadline, || {
-        Ok((read_geometry(element, deadline)?, Instant::now()))
+        (read_geometry(element, deadline), Instant::now())
+    })
+    .map_err(|mut error| {
+        if let Some(details) = &mut error.details
+            && details["cause"] == "readback_mismatch"
+        {
+            let displays = crate::system::display::list_displays_impl(deadline).unwrap_or_default();
+            details["display_bounds"] =
+                json!(displays.into_iter().map(|d| d.bounds).collect::<Vec<_>>());
+        }
+        error
+    })
+}
+
+fn wait_for_requested_geometry(
+    request: GeometryRequest,
+    deadline: Deadline,
+    mut read: impl FnMut() -> Result<Option<Rect>, AdapterError>,
+) -> Result<(), AdapterError> {
+    wait_until(deadline, || {
+        Ok(read()?.is_some_and(|frame| request.matches(frame)))
     })
 }
 
@@ -60,38 +117,60 @@ fn wait_for_geometry_with(
     request: GeometryRequest,
     before: Option<Rect>,
     deadline: Deadline,
-    mut read: impl FnMut() -> Result<(Option<Rect>, Instant), AdapterError>,
+    mut read: impl FnMut() -> (Result<Option<Rect>, AdapterError>, Instant),
 ) -> Result<(), AdapterError> {
+    let readback_limit = deadline.capped(GEOMETRY_FALLBACK_TIME);
+    let mut last_readable = None;
     let mut stable = None;
-    wait_until(deadline, || {
-        let (actual, now) = read()?;
-        let Some(actual) = actual else {
-            stable = None;
-            return Ok(false);
-        };
-        if request.matches(actual) {
-            return Ok(true);
-        }
-        if before.is_none_or(|before| frame_matches(actual, before)) {
-            stable = None;
-            return Ok(false);
-        }
-        if let Some((anchor, since, confirm_on_next_read)) = stable
-            && frame_matches(actual, anchor)
-        {
-            if confirm_on_next_read {
-                return Err(request.mismatch(actual));
+    loop {
+        let (actual, now) = read();
+        let actual = match actual {
+            Ok(actual) => actual,
+            Err(error) if error.code == ErrorCode::AppUnresponsive => None,
+            Err(error) if error.code == ErrorCode::Timeout && last_readable.is_some() => {
+                return Err(request.readback_error(last_readable));
             }
-            stable = Some((
-                anchor,
-                since,
-                now.duration_since(since) >= GEOMETRY_SETTLE_TIME,
-            ));
+            Err(error) => return Err(after_delivery(error)),
+        };
+        if let Some(actual) = actual {
+            if request.matches(actual) {
+                return Ok(());
+            }
+            last_readable = Some(actual);
+            if let Some((anchor, since, confirm_on_next_read)) = stable
+                && frame_matches(actual, anchor)
+            {
+                let quiet = if before.is_some_and(|before| {
+                    !frame_matches(actual, before) && !frame_matches(anchor, before)
+                }) {
+                    GEOMETRY_SETTLE_TIME
+                } else {
+                    GEOMETRY_FALLBACK_TIME
+                };
+                let held = now.duration_since(since) >= quiet;
+                if held && confirm_on_next_read {
+                    return Err(request.readback_error(last_readable));
+                }
+                stable = Some((anchor, since, held));
+            } else {
+                stable = Some((actual, now, false));
+            }
         } else {
-            stable = Some((actual, now, false));
+            stable = None;
         }
-        Ok(false)
-    })
+        let remaining = deadline.remaining();
+        if remaining <= POLL {
+            if last_readable.is_some() {
+                return Err(request.readback_error(last_readable));
+            }
+            if remaining.is_zero() {
+                return Err(after_delivery(deadline.timeout_error()));
+            }
+        } else if last_readable.is_none() && readback_limit.is_expired() {
+            return Err(request.readback_error(None));
+        }
+        std::thread::sleep(POLL.min(remaining));
+    }
 }
 
 pub(crate) fn wait_for_minimized(
@@ -122,9 +201,7 @@ fn wait_until(
                 "Window operation did not reach its requested postcondition",
             )));
         }
-        let pause = deadline
-            .remaining_slice(Duration::from_millis(10))
-            .map_err(after_delivery)?;
+        let pause = deadline.remaining_slice(POLL).map_err(after_delivery)?;
         std::thread::sleep(pause);
     }
 }

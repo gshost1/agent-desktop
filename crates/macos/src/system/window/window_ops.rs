@@ -1,6 +1,6 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo, WindowOp};
 
-use super::window_postcondition::{GeometryRequest, read_geometry, wait_for_geometry};
+use super::window_postcondition::{GeometryRequest, GeometryVerification, wait_for_geometry};
 
 mod imp {
     use super::*;
@@ -17,24 +17,6 @@ mod imp {
 
     unsafe extern "C" {
         fn AXValueCreate(value_type: u32, value_ptr: *const c_void) -> *mut c_void;
-    }
-
-    enum GeometryVerification {
-        RequestedOnly,
-        DetectClamp,
-    }
-
-    impl GeometryVerification {
-        fn baseline(
-            self,
-            window: &crate::tree::AXElement,
-            deadline: Deadline,
-        ) -> Option<agent_desktop_core::Rect> {
-            match self {
-                Self::RequestedOnly => None,
-                Self::DetectClamp => read_geometry(window, deadline).ok().flatten(),
-            }
-        }
     }
 
     pub fn execute(win: &WindowInfo, op: WindowOp, deadline: Deadline) -> Result<(), AdapterError> {
@@ -114,6 +96,7 @@ mod imp {
         wait_for_geometry(
             el,
             GeometryRequest::Resize { width, height },
+            verification,
             before,
             deadline,
         )
@@ -146,7 +129,13 @@ mod imp {
             deadline,
         )?;
         finish_mutation(err, "move window", deadline)?;
-        wait_for_geometry(el, GeometryRequest::Move { x, y }, before, deadline)
+        wait_for_geometry(
+            el,
+            GeometryRequest::Move { x, y },
+            verification,
+            before,
+            deadline,
+        )
     }
 
     fn set_minimized(
