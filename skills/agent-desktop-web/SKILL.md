@@ -35,11 +35,11 @@ agent-desktop snapshot --app "Google Chrome" --surface web -i --lines
 - `data.lines` holds one line per node, indented by depth: ref, role, quoted name, then `value=`, `desc=` (when it differs from the name), `placeholder=` and `[states]`. Copy the ref from the line that names the control.
 - Snapshot right after a click, with no `sleep`: it waits for the page the click opens. `data.url` names the page. For a slower change, add `-w 'role:text'` to the action to get the snapshot once that appears.
 - A search field's suggestions appear after a key: `press down --ref @field -w 'statictext:Honolulu'`, `press down --ref @field`, `press return --ref @field`.
-- `-i` keeps interactive nodes only. To read text such as a total or a sentence, search for it:
+- `-i` keeps interactive nodes only, never page text. To read or count text, drop `-i` or use `find`:
 
 ```bash
 agent-desktop find --app "Google Chrome" --surface web --text "late 1980s"
-agent-desktop snapshot --app "Google Chrome" --surface web --lines | grep -nE '"complete"|Total'
+agent-desktop find --app "Google Chrome" --surface web --role statictext --text "review" --count
 ```
 
 - `find --text` also returns the containers around the text. Read the match whose `name` holds the words.
