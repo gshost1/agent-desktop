@@ -264,7 +264,7 @@ def prime_desktop(tier: Tier) -> None:
         for key, value in (("index-recursive-directories", "[]"), ("index-single-directories", "[]"),
                            ("enable-monitors", "false"), ("crawling-interval", "-2"), ("initial-sleep", "0")):
             tool(tier, ["gsettings", "set", "org.freedesktop.Tracker3.Miner.Files", key, value])
-    names = ("Calculator", "Files", "Terminal", "Text Editor", "Settings Mouse") if tier.display else ("Calculator", "Text Editor")
+    names = ("Calculator", "Files", "Terminal", "Text Editor", "Settings") if tier.display else ("Calculator", "Text Editor")
     for index, name in enumerate(names):
         stderr_log = tier.runtime_dir / f"warmup-{index}.stderr.log"
         try:

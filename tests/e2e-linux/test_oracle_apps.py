@@ -174,7 +174,7 @@ class ProcessOracleTests(unittest.TestCase):
                 self.ready.assert_called_once_with(tier, app)
 
     def test_warmup_activates_private_app_services_before_the_leg_baseline(self):
-        for display, names in ((":150", ["Calculator", "Files", "Terminal", "Text Editor", "Settings Mouse"]),
+        for display, names in ((":150", ["Calculator", "Files", "Terminal", "Text Editor", "Settings"]),
                                (None, ["Calculator", "Text Editor"])):
             tier = SimpleNamespace(display=display, runtime_dir=Path("/private/a"))
             with patch.object(apps, "launch", side_effect=lambda tier, name, **kwargs: name) as launch, \
