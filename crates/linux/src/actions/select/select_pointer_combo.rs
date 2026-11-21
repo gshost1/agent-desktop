@@ -6,7 +6,7 @@ use agent_desktop_core::{
 use serde_json::json;
 
 use super::select_pointer::{
-    Pointer, after_input_sent, already_satisfied, pointer_required, with_detail,
+    Pointer, after_input_sent, already_satisfied, pointer_required, reserve_close, with_detail,
 };
 use super::select_popup::{Shown, commit, first_label};
 use super::select_search::{Hit, Search, name_matches, search};
@@ -51,6 +51,7 @@ pub(in crate::actions) fn is_pointer_combo(view: &NodeView) -> bool {
 /// that was found, and whether GNOME Shell reports its Activities Overview
 /// open, which a popup that never appeared names as its cause.
 trait Choices {
+    fn set_deadline(&mut self, deadline: Deadline);
     fn lists(&mut self) -> Result<Vec<AtspiElement>, AdapterError>;
     fn shown(&mut self, current: &AtspiElement) -> Option<String>;
     fn find(
@@ -73,6 +74,10 @@ struct BusChoices<'a> {
 }
 
 impl Choices for BusChoices<'_> {
+    fn set_deadline(&mut self, deadline: Deadline) {
+        self.reader.deadline = deadline;
+    }
+
     fn lists(&mut self) -> Result<Vec<AtspiElement>, AdapterError> {
         let mut lists = Vec::new();
         let mut stack = vec![(self.target.element.clone(), 0usize)];
@@ -113,9 +118,13 @@ impl Choices for BusChoices<'_> {
         current: &AtspiElement,
         wanted: &str,
     ) -> Result<ActionResult, AdapterError> {
+        let target = Target {
+            deadline: self.reader.deadline,
+            ..*self.target
+        };
         commit(
             &mut self.reader,
-            self.target,
+            &target,
             hit,
             wanted,
             &Shown::ListOf(current),
@@ -160,13 +169,27 @@ pub(super) fn popup_not_observed(overview: Option<bool>) -> AdapterError {
     )
 }
 
-fn wait_closed(choices: &mut dyn Choices, closed: &[AtspiElement], deadline: Deadline) -> bool {
+fn popup_hidden(choices: &mut dyn Choices, closed: &[AtspiElement]) -> Option<bool> {
+    Some(
+        choices
+            .lists()
+            .ok()?
+            .iter()
+            .all(|list| closed.iter().any(|known| same(known, list))),
+    )
+}
+
+fn wait_closed(
+    choices: &mut dyn Choices,
+    closed: &[AtspiElement],
+    deadline: Deadline,
+) -> Option<bool> {
     poll_until(
         deadline,
         CLOSE_WAIT,
         POLL_STEP,
-        || new_list(choices, closed).is_none(),
-        |gone| *gone,
+        || popup_hidden(choices, closed),
+        |gone| *gone == Some(true),
     )
 }
 
@@ -175,12 +198,15 @@ fn close_popup(
     pointer: &dyn Pointer,
     closed: &[AtspiElement],
     deadline: Deadline,
-) -> bool {
-    if new_list(choices, closed).is_none() {
-        return true;
+) -> (bool, Option<bool>) {
+    match popup_hidden(choices, closed) {
+        Some(false) => {}
+        hidden => return (false, hidden),
     }
-    let sent = pointer.escape().is_ok();
-    sent && wait_closed(choices, closed, deadline)
+    if pointer.escape().is_err() {
+        return (false, None);
+    }
+    (true, wait_closed(choices, closed, deadline))
 }
 
 fn after_opening(opened: Vec<ActionStep>, mut result: ActionResult) -> ActionResult {
@@ -208,12 +234,15 @@ fn choose_by_pointer(
         return Ok(already_satisfied());
     }
     let pointer = pointer.ok_or_else(pointer_required)?;
+    let popup_deadline = reserve_close(deadline, CLOSE_WAIT)?;
     let opened = pointer.click(combo)?;
+    choices.set_deadline(popup_deadline);
     let opened_list = OpenedList {
         closed: &closed,
         current: &current,
         wanted,
         deadline,
+        popup_deadline,
     };
     choose_in_opened(choices, pointer, &opened_list)
         .map(|result| after_opening(opened, result))
@@ -225,6 +254,18 @@ struct OpenedList<'a> {
     current: &'a AtspiElement,
     wanted: &'a str,
     deadline: Deadline,
+    popup_deadline: Deadline,
+}
+
+fn commit_in_popup(
+    choices: &mut dyn Choices,
+    popup: &AtspiElement,
+    list: &OpenedList<'_>,
+) -> Result<ActionResult, AdapterError> {
+    match choices.find(popup, list.wanted)? {
+        Search::Found(hit) => choices.commit(&hit, list.current, list.wanted),
+        miss => Err(miss_error(&miss)),
+    }
 }
 
 /// The part of a pointer select that runs after the click opened the combo.
@@ -235,28 +276,27 @@ fn choose_in_opened(
     list: &OpenedList<'_>,
 ) -> Result<ActionResult, AdapterError> {
     let (closed, deadline) = (list.closed, list.deadline);
-    let popup = poll_until(
-        deadline,
+    let committed = poll_until(
+        list.popup_deadline,
         POPUP_WAIT,
         POLL_STEP,
         || new_list(choices, closed),
         |popup| popup.is_some(),
     )
-    .ok_or_else(|| popup_not_observed(choices.overview_open()))?;
-    let hit = match choices.find(&popup, list.wanted)? {
-        Search::Found(hit) => hit,
-        miss => {
-            let shut = close_popup(choices, pointer, closed, deadline);
-            return Err(with_detail(miss_error(&miss), "popup_closed", json!(shut)));
-        }
-    };
-    let committed = choices.commit(&hit, list.current, list.wanted);
-    let shut = if committed.is_err() || !wait_closed(choices, closed, deadline) {
-        close_popup(choices, pointer, closed, deadline)
+    .ok_or_else(|| popup_not_observed(choices.overview_open()))
+    .and_then(|popup| commit_in_popup(choices, &popup, list));
+    let closed_itself =
+        committed.is_ok() && wait_closed(choices, closed, list.popup_deadline) == Some(true);
+    choices.set_deadline(deadline);
+    let (attempted, shut) = if closed_itself {
+        (false, Some(true))
     } else {
-        true
+        close_popup(choices, pointer, closed, deadline)
     };
-    committed.map_err(|error| with_detail(error, "popup_closed", json!(shut)))
+    committed.map_err(|error| {
+        let error = with_detail(error, "popup_close_attempted", json!(attempted));
+        with_detail(error, "popup_closed", json!(shut))
+    })
 }
 
 pub(in crate::actions) fn select_in_pointer_combo(

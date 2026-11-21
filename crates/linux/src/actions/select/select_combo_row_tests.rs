@@ -243,7 +243,7 @@ fn an_unknown_or_hidden_popup_never_receives_a_global_escape() {
         assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
         let details = error.details.expect("details");
         assert_eq!(details["popup_close_attempted"], false);
-        assert!(details["popup_closed"].is_null());
+        assert_eq!(details["popup_closed"], json!(hidden));
     }
 }
 
@@ -293,6 +293,12 @@ fn an_insufficient_cleanup_budget_refuses_before_opening() {
         choose(&mut rows, Deadline::after(1).expect("deadline")).expect_err("no cleanup budget");
     assert!(rows.operations.is_empty());
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.suggestion.as_deref(),
+        Some(
+            "Increase --timeout-ms to leave time to select the choice and close the popup, then retry."
+        )
+    );
     assert_eq!(
         error.details.expect("details")["kind"],
         "popup_cleanup_budget_insufficient"

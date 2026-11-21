@@ -1,5 +1,46 @@
 use super::*;
 
+#[test]
+fn the_linux_skill_explains_unread_popup_closure_and_escape_delivery() {
+    let result = get(GetArgs {
+        name: "linux".into(),
+        full: false,
+        reference: Some("shell-tray-and-notifications".into()),
+    })
+    .expect("linux popup guidance");
+    let content = result["content"].as_str().expect("content");
+    assert!(content.contains("`null` when its closed state could not be read"));
+    assert!(content.contains("Escape failed after the popup read as visible"));
+    assert!(content.contains("no popup list can be identified"));
+    assert!(content.contains("including a popup that just hid"));
+    assert!(
+        content.contains("`details.popup_close_attempted` is `true` only when Escape was sent")
+    );
+}
+
+#[test]
+fn the_linux_skill_names_both_cleanup_reserves_and_the_early_refusal() {
+    let result = get(GetArgs {
+        name: "linux".into(),
+        full: false,
+        reference: Some("shell-tray-and-notifications".into()),
+    })
+    .expect("linux popup guidance");
+    let content = result["content"].as_str().expect("content");
+    for claim in [
+        "`CLOSE_WAIT`",
+        "1000 ms",
+        "500 ms",
+        "`ACTION_FAILED`",
+        "popup_cleanup_budget_insufficient",
+        "`not_delivered`",
+        "`retry: safe`",
+        "`--timeout-ms`",
+    ] {
+        assert!(content.contains(claim), "missing {claim}");
+    }
+}
+
 fn macos_skill() -> String {
     let result = get(GetArgs {
         name: "macos".into(),
