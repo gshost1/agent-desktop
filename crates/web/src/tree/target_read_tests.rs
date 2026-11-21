@@ -108,7 +108,7 @@ type Summary = (String, Option<String>, Option<(String, i64)>);
 #[derive(Default)]
 struct ReorderingTransport {
     replies: HashMap<String, (Vec<Value>, Value)>,
-    silent: HashSet<String>,
+    timed_out: HashSet<String>,
     held: Vec<String>,
     inbound: VecDeque<String>,
     most_held: Arc<Mutex<usize>>,
@@ -121,8 +121,8 @@ impl ReorderingTransport {
         self
     }
 
-    fn silence(mut self, method: &str, session: &str) -> Self {
-        self.silent.insert(format!("{method}|{session}|"));
+    fn time_out(mut self, method: &str, session: &str) -> Self {
+        self.timed_out.insert(format!("{method}|{session}|"));
         self
     }
 
@@ -148,7 +148,7 @@ impl CdpTransport for ReorderingTransport {
             .cloned()
             .unwrap_or((Vec::new(), json!({})));
         self.inbound.extend(events.iter().map(Value::to_string));
-        if self.silent.contains(&key) {
+        if self.timed_out.contains(&key) {
             return Ok(());
         }
         let reply =
@@ -195,7 +195,8 @@ fn oopif_frames(frame: &str, parent_frame: &str) -> Value {
 }
 
 #[test]
-fn frames_read_concurrently_keep_the_sequential_content_and_depth_first_order() {
+fn frames_read_concurrently_with_a_nested_target_and_a_timed_out_iframe_keep_the_sequential_order()
+{
     let main = ax(&[
         ("RootWebArea", "Top", "", 1),
         ("button", "Go", "", 20),
@@ -239,7 +240,7 @@ fn frames_read_concurrently_keep_the_sequential_content_and_depth_first_order() 
         .answer("Page.getFrameTree", "S2", "", oopif_frames("A", "MAIN"))
         .answer("Page.getFrameTree", "S3", "", oopif_frames("B", "MAIN"))
         .answer("Page.getFrameTree", "S4", "", oopif_frames("C", "A"))
-        .silence("Page.getFrameTree", "S5")
+        .time_out("Page.getFrameTree", "S5")
         .answer("Accessibility.getFullAXTree", "S2", "A", alpha)
         .answer("Accessibility.getFullAXTree", "S3", "B", beta)
         .answer("Accessibility.getFullAXTree", "S4", "C", gamma)
