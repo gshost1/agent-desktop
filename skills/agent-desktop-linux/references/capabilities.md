@@ -58,9 +58,12 @@ Observation and semantic actions need no helper tool.
 - **A window appears before its content.** Run
   `wait --window "Text Editor" --app gnome-text-editor` first, then
   `wait --text`, which matches a node's own name, value or description.
-  Paragraph and document `Text` content is exposed as that node's value,
-  including read-only content; it is not copied to ancestor names. Reads keep
-  the per-field text budget, so text beyond a truncated value is not searchable.
+  Text searches read paragraph, heading and document `Text` content as that
+  node's value, including read-only content; it is not copied to ancestor
+  names. Plain snapshots and ref re-identification omit this content, while
+  document type-routing checks can read it directly. Plain element and value
+  reads omit it too. Reads keep the per-field text budget,
+  so text beyond a truncated value is not searchable.
   For a
   web-engine app (detected from its AT-SPI toolkit metadata), a window
   observation waits for three equal full reads and a web-document role, or a

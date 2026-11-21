@@ -178,6 +178,8 @@ fn settled_walk(
 fn full_read(request: &ObservationRequest) -> ReadPurpose {
     if request.observation_mode.identity_only {
         ReadPurpose::Count
+    } else if request.observation_mode.text_content {
+        ReadPurpose::TextSearch
     } else {
         ReadPurpose::Snapshot
     }

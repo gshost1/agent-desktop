@@ -15,6 +15,19 @@ const VALUE_INTERFACE: &str = "org.a11y.atspi.Value";
 const TEXT_INTERFACE: &str = "org.a11y.atspi.Text";
 const MAX_TEXT_CHARACTERS: i32 = 64 * 1024;
 
+pub(crate) fn reads_content(
+    node: &RawNode,
+    purpose: crate::tree::properties::read_purpose::ReadPurpose,
+) -> bool {
+    use crate::tree::properties::read_purpose::ReadPurpose;
+    !node
+        .traits
+        .role
+        .present()
+        .is_some_and(|role| is_document_content(*role))
+        || matches!(purpose, ReadPurpose::TextSearch | ReadPurpose::TypeTarget)
+}
+
 /// Where a node's value comes from, decided from what the node is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ValueSource {

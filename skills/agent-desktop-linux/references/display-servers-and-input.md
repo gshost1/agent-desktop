@@ -158,10 +158,19 @@ empty insertion is dispatched.
 - Headless `type @ref text` writes through `EditableText.InsertText`. Without
   `--timeout-ms`, `type` waits 5000 ms plus 30 ms per character; an explicit
   `--timeout-ms` replaces that.
-- Editable document and paragraph roles can take text when their observed
-  states and interfaces support it. A document without its own `Text`
+- Editable paragraphs and headings receive refs and `TypeText`/`SetValue`
+  capabilities when their observed states and text interfaces support them.
+  Their changing text is never stable ref identity. Direct `set-value` and
+  `clear` replace or empty that text target, not the whole document.
+  Anonymous paragraphs with no distinct native id, name or description remain
+  ambiguous, even when their text differs; use a uniquely identified document
+  ref with its caret in the intended paragraph instead. Paragraph and document
+  text is omitted from ordinary value reads, so verify writes with `wait --text`
+  or `find --text` rather than expecting element-value verification.
+  A text document without its own `Text`
   interface routes `type` to its uniquely focused writable `Text` and
-  `EditableText` descendant in a complete fresh subtree read. Focus the
+  `EditableText` descendant in a complete fresh subtree read, regardless of
+  the descendant's role. The result names its role and AT-SPI path. Focus the
   intended paragraph first. Missing or ambiguous focus refuses without input;
   read-only documents and labels do not become writable. This container route
   supports insertion, not whole-document `set-value` or `clear`.
@@ -199,7 +208,7 @@ empty insertion is dispatched.
   `delivered_unverified`.
 - Typing can change a document's window title without invalidating its ref.
   `get` reads the value of a text-bearing target; a container document without
-  `Text` has no own value. Use `wait --text` or inspect paragraph values to
+  `Text` has no own value. Use `wait --text` or `find --text` to
   verify insertion through a container ref.
 
 ## Wayland keys

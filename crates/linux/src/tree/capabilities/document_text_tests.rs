@@ -61,13 +61,49 @@ fn document_input_refuses_empty_ambiguous_read_only_or_incomplete_evidence() {
         )]))
         .is_err()
     );
-    assert!(focused_editor(&document(vec![node(LABEL, "/label", &[EDITABLE, FOCUSED])])).is_err());
+    assert!(focused_editor(&document(vec![node(LABEL, "/label", &[FOCUSED])])).is_err());
     let mut walk = document(vec![focused()]);
     walk.complete = false;
     assert!(focused_editor(&walk).is_err());
     walk.complete = true;
     walk.root.payload.node.traits.states = Field::Present(words(&[EDITABLE, READ_ONLY]));
     assert!(focused_editor(&walk).is_err());
+}
+
+#[test]
+fn heading_input_uses_capabilities_not_a_descendant_role_allowlist() {
+    let walk = document(vec![node(83, "/heading", &[EDITABLE, FOCUSED])]);
+    let editor = focused_editor(&walk).unwrap();
+    assert_eq!(editor.path(), "/heading");
+    assert_eq!(editor.resolved_role(), Some("heading"));
+}
+
+#[test]
+fn routed_input_details_name_the_observed_descendant() {
+    let walk = document(vec![node(83, "/heading", &[EDITABLE, FOCUSED])]);
+    let editor = focused_editor(&walk).unwrap();
+    let input = InputTarget::new(editor);
+    assert_eq!(
+        input.details,
+        serde_json::json!({"role": "heading", "path": "/heading"})
+    );
+}
+
+#[test]
+fn only_document_handles_need_an_extra_routing_read() {
+    assert!(needs_routing(Some("document")));
+    assert!(!needs_routing(Some("paragraph")));
+    assert!(!needs_routing(Some("textfield")));
+    assert!(!needs_routing(None));
+}
+
+#[test]
+fn spreadsheet_and_presentation_documents_route_to_capable_descendants() {
+    for role in [92, 93] {
+        let mut walk = document(vec![node(56, "/cell", &[EDITABLE, FOCUSED])]);
+        walk.root.payload.node.traits.role = Field::Present(role);
+        assert_eq!(focused_editor(&walk).unwrap().path(), "/cell");
+    }
 }
 
 #[test]

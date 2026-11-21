@@ -89,6 +89,9 @@ pub fn is_mutable_value_role(role: &str) -> bool {
     matches!(
         crate::Role::from_token(role),
         crate::Role::ComboBox
+            | crate::Role::Document
+            | crate::Role::Paragraph
+            | crate::Role::Heading
             | crate::Role::Checkbox
             | crate::Role::Handle
             | crate::Role::Incrementor

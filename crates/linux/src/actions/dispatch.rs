@@ -150,12 +150,17 @@ pub(crate) fn execute_action(
         return deliver(bus, &request.action, None, &request, lease);
     };
     verify_process(bus, element, request.expected_process(), deadline)?;
-    let input_handle = if matches!(request.action, Action::TypeText(_)) {
+    let input_handle = if matches!(request.action, Action::TypeText(_))
+        && crate::tree::capabilities::document_text::needs_routing(element.resolved_role())
+    {
         crate::tree::capabilities::document_text::input_target(bus, handle, deadline)?
     } else {
         None
     };
-    let handle = input_handle.as_ref().unwrap_or(handle);
+    let handle = input_handle
+        .as_ref()
+        .map(|target| &target.handle)
+        .unwrap_or(handle);
     let element = atspi_element(handle)?;
     let target = Target {
         bus,
@@ -207,7 +212,7 @@ pub(crate) fn execute_action(
             Err(handled_by_core(&request.action))
         }
     };
-    match semantic {
+    let mut result = match semantic {
         Err(error) if reaches_physical_without_verb(&request.action) && has_no_verb(&error) => {
             deliver(bus, &request.action, Some(element), &request, lease)
         }
@@ -218,7 +223,11 @@ pub(crate) fn execute_action(
                 crate::system::process::proc_stat::is_stopped,
             )
         }),
+    }?;
+    if let Some(input) = input_handle {
+        result.details.get_or_insert_with(|| json!({}))["text_input_target"] = input.details;
     }
+    Ok(result)
 }
 
 #[cfg(test)]

@@ -1,17 +1,33 @@
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, NativeHandle};
 
-use super::action_read::read_node_view;
+use super::action_read::read_type_target;
 use crate::system::SharedBus;
 use crate::tree::properties::read_purpose::ReadPurpose;
-use crate::tree::vocabulary::role_numbers::{
-    ENTRY, PASSWORD_TEXT, TERMINAL, TEXT, is_document_content, is_text_document,
-};
+use crate::tree::vocabulary::role_numbers::is_text_document;
 use crate::tree::vocabulary::state_bits::{EDITABLE, FOCUSED, READ_ONLY, StateBits};
 use crate::tree::walk::walker::walk_tree_for;
 use crate::tree::{AtspiElement, ObservedRead, Walk, WalkLimits, WalkedNode, atspi_element};
 
 const TEXT_INTERFACE: &str = "org.a11y.atspi.Text";
 const EDITABLE_TEXT: &str = "org.a11y.atspi.EditableText";
+
+pub(crate) struct InputTarget {
+    pub(crate) handle: NativeHandle,
+    pub(crate) details: serde_json::Value,
+}
+
+impl InputTarget {
+    fn new(element: AtspiElement) -> Self {
+        Self {
+            details: serde_json::json!({"role": element.resolved_role(), "path": element.path()}),
+            handle: element.into_native_handle(),
+        }
+    }
+}
+
+pub(crate) fn needs_routing(role: Option<&str>) -> bool {
+    role == Some("document")
+}
 
 fn refused() -> AdapterError {
     AdapterError::new(
@@ -38,16 +54,25 @@ fn collect(
     if bits.has(READ_ONLY) {
         return Ok(());
     }
-    let role = raw.traits.role.present().ok_or_else(refused)?;
-    let text_role =
-        matches!(*role, ENTRY | PASSWORD_TEXT | TEXT | TERMINAL) || is_document_content(*role);
-    if text_role && bits.has(EDITABLE) && bits.has(FOCUSED) {
+    if bits.has(EDITABLE) && bits.has(FOCUSED) {
         let interfaces = raw.traits.interfaces.present().ok_or_else(refused)?;
         if [TEXT_INTERFACE, EDITABLE_TEXT]
             .iter()
             .all(|needed| interfaces.iter().any(|name| name == needed))
         {
-            found.push(raw.element.clone());
+            let mut element = raw.element.clone();
+            let role = raw.traits.role.present().map(|role| {
+                crate::tree::vocabulary::roles::role_of(
+                    *role,
+                    &raw.traits.states,
+                    &raw.traits.interfaces,
+                    &raw.attributes,
+                )
+                .as_str()
+                .to_owned()
+            });
+            element.set_resolved_role(role.unwrap_or_else(|| "unknown".into()));
+            found.push(element);
         }
     }
     for child in &node.children {
@@ -86,8 +111,8 @@ pub(crate) fn input_target(
     bus: &SharedBus,
     handle: &NativeHandle,
     deadline: Deadline,
-) -> Result<Option<NativeHandle>, AdapterError> {
-    let view = read_node_view(bus, handle, deadline)?;
+) -> Result<Option<InputTarget>, AdapterError> {
+    let view = read_type_target(bus, handle, deadline)?;
     if !view.role().is_some_and(is_text_document)
         || view
             .interfaces()
@@ -106,7 +131,7 @@ pub(crate) fn input_target(
         deadline,
         ReadPurpose::Resolve,
     )?;
-    focused_editor(&walk).map(|element| Some(element.into_native_handle()))
+    focused_editor(&walk).map(|element| Some(InputTarget::new(element)))
 }
 
 #[cfg(test)]

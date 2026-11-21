@@ -193,7 +193,11 @@ pub(in crate::tree) async fn read_observed(
         },
         async {
             if purpose.value() {
-                read_value(connection, &node, max_field_bytes).await
+                if crate::tree::capabilities::value_read::reads_content(&node, purpose) {
+                    read_value(connection, &node, max_field_bytes).await
+                } else {
+                    Ok(crate::tree::capabilities::value_read::ValueRead::absent())
+                }
             } else {
                 Ok(crate::tree::capabilities::value_read::ValueRead {
                     value: crate::tree::Field::Failed("field not requested".to_owned()),

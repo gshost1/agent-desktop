@@ -207,7 +207,6 @@ pub(crate) fn rule_tokens(facts: &Facts) -> Vec<&'static str> {
                     && facts.bits.has(EDITABLE)
                     && !facts.bits.has(READ_ONLY)
                     && facts.advertises(COMPONENT_INTERFACE)
-                    && facts.advertises(SELECTION)
                     && facts.child_count.is_some_and(|count| count > 0)),
             capability::TYPE_TEXT,
         ),

@@ -113,6 +113,27 @@ pub(crate) fn first_surface_owner<T>(
     )
 }
 
+pub(crate) fn capture_text_window(
+    adapter: &dyn PlatformAdapter,
+    opts: &TreeOptions,
+    window: &WindowInfo,
+    deadline: crate::Deadline,
+) -> Result<WindowCapture, AppError> {
+    let mut request = ObservationRequest::snapshot(opts, deadline).validate()?;
+    request.observation_mode.text_content = true;
+    let observed = crate::tree::renderer_accessibility::observe_tree(
+        adapter,
+        ObservationRoot::Window(window),
+        &request,
+        None,
+    )?;
+    Ok(WindowCapture {
+        observed,
+        presentation_depth: None,
+        identity_unproven: None,
+    })
+}
+
 pub(crate) fn capture_application(
     adapter: &dyn PlatformAdapter,
     opts: &TreeOptions,

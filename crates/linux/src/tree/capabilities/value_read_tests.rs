@@ -1,4 +1,4 @@
-use super::{ValueSource, number_text, truncate_to_boundary, value_source};
+use super::{ValueSource, number_text, reads_content, truncate_to_boundary, value_source};
 use crate::tree::live::test_support::words;
 use crate::tree::vocabulary::role_numbers::{
     COMBO_BOX, ENTRY, PANEL, PASSWORD_TEXT, PROGRESS_BAR, PUSH_BUTTON, SLIDER, TEXT,
@@ -21,7 +21,7 @@ fn node(role: u32, interfaces: &[&str], state_bits: &[u32]) -> RawNode {
 
 #[test]
 fn document_and_paragraph_text_is_searchable_even_when_read_only() {
-    for role in [73, 82, 92, 93, 94, 96] {
+    for role in [73, 82, 83, 92, 93, 94, 96] {
         for states in [&[][..], &[EDITABLE][..], &[43][..]] {
             assert_eq!(
                 value_source(&node(role, &["Text"], states)),
@@ -33,6 +33,32 @@ fn document_and_paragraph_text_is_searchable_even_when_read_only() {
         failed.traits.interfaces = Field::Failed("NoReply".into());
         assert_eq!(value_source(&failed), ValueSource::Unknown);
     }
+}
+
+#[test]
+fn document_content_is_read_only_for_searches_and_target_checks() {
+    use crate::tree::properties::read_purpose::ReadPurpose;
+    for role in [73, 82, 83, 92, 93, 94, 96] {
+        let node = node(role, &["Text"], &[EDITABLE]);
+        for purpose in [
+            ReadPurpose::Snapshot,
+            ReadPurpose::Count,
+            ReadPurpose::Identity,
+            ReadPurpose::Resolve,
+            ReadPurpose::Sampling,
+            ReadPurpose::Element,
+            ReadPurpose::Value,
+        ] {
+            assert!(!reads_content(&node, purpose), "{role} {purpose:?}");
+        }
+        for purpose in [ReadPurpose::TextSearch, ReadPurpose::TypeTarget] {
+            assert!(reads_content(&node, purpose));
+        }
+    }
+    assert!(reads_content(
+        &node(79, &["Text"], &[EDITABLE]),
+        ReadPurpose::Snapshot
+    ));
 }
 
 #[test]

@@ -51,7 +51,7 @@ pub(crate) fn is_text_document(role: u32) -> bool {
 }
 
 pub(crate) fn is_document_content(role: u32) -> bool {
-    role == PARAGRAPH || is_text_document(role)
+    matches!(role, PARAGRAPH | 83 | 92 | 93) || is_text_document(role)
 }
 
 /// Whether a numeric role is a menu item: a plain row in a menu, a check or

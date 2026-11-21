@@ -1,3 +1,3 @@
 ### Bug Fixes
 
-* Linux: support typing into editable document and paragraph targets through observed text capabilities, route document insertion to a uniquely focused writable descendant, and include document and paragraph text in text searches and waits.
+* Linux: give writable paragraphs and headings refs with insertion and direct text replacement, keep changing text out of ref identity, route text-document insertion to a uniquely focused writable descendant, and read document content for text searches and target checks rather than plain snapshots or re-identification.

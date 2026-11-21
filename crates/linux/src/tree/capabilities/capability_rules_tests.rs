@@ -63,7 +63,7 @@ fn editable_document_and_paragraph_tokens_follow_states_and_interfaces() {
             assert!(!tokens.contains(&"TypeText"));
         }
     }
-    let tokens = rule_tokens_for(94, &[EDITABLE], &[COMPONENT, SELECTION], &[], 1);
+    let tokens = rule_tokens_for(94, &[EDITABLE], &[COMPONENT], &[], 1);
     assert!(tokens.contains(&"TypeText"));
     assert!(!tokens.contains(&"SetValue"));
     for role in [29, PANEL] {
@@ -76,6 +76,14 @@ fn editable_document_and_paragraph_tokens_follow_states_and_interfaces() {
         );
         assert!(!tokens.contains(&"SetValue"));
         assert!(!tokens.contains(&"TypeText"));
+    }
+}
+
+#[test]
+fn spreadsheet_and_presentation_documents_can_advertise_insertion_without_selection() {
+    for role in [92, 93] {
+        let tokens = rule_tokens_for(role, &[EDITABLE], &[COMPONENT], &[], 1);
+        assert!(tokens.contains(&"TypeText"));
     }
 }
 

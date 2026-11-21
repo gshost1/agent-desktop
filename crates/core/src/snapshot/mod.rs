@@ -65,9 +65,32 @@ pub(crate) fn build_for_owners(
     owners: Vec<SnapshotOwner>,
     deadline: crate::Deadline,
 ) -> Result<SnapshotResult, AppError> {
+    build_for_owners_with_text(adapter, opts, owners, deadline, false)
+}
+
+pub(crate) fn build_text_search(
+    adapter: &dyn PlatformAdapter,
+    opts: &TreeOptions,
+    app_name: Option<&str>,
+    deadline: crate::Deadline,
+) -> Result<SnapshotResult, AppError> {
+    let owners = surface_target::resolve_owners(adapter, app_name, None, opts.surface, deadline)?;
+    build_for_owners_with_text(adapter, opts, owners, deadline, true)
+}
+
+fn build_for_owners_with_text(
+    adapter: &dyn PlatformAdapter,
+    opts: &TreeOptions,
+    owners: Vec<SnapshotOwner>,
+    deadline: crate::Deadline,
+    text_content: bool,
+) -> Result<SnapshotResult, AppError> {
     let (owner, capture) = window_capture::first_surface_owner(owners, |owner| match owner {
         SnapshotOwner::Application(app) => {
             window_capture::capture_application(adapter, opts, app, opts.surface, deadline)
+        }
+        SnapshotOwner::Window(window) if text_content => {
+            window_capture::capture_text_window(adapter, opts, window, deadline)
         }
         SnapshotOwner::Window(window) => {
             window_capture::capture_window(adapter, opts, window, deadline)
