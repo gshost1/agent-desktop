@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use agent_desktop_core::system::cdp_endpoint::CdpEndpoint;
-use agent_desktop_core::{AdapterError, Deadline, DownloadScope, ProcessIdentity, StateFile};
+use agent_desktop_core::{
+    AdapterError, Deadline, DeliverySemantics, DownloadScope, ErrorCode, ProcessIdentity, StateFile,
+};
 
 use super::candidate_origin::CandidateOrigin;
 use super::cdp_connector::CdpConnector;
@@ -98,7 +100,7 @@ impl CdpConnector for SystemConnector {
         let discovery = Instant::now();
         let endpoint = match &candidate.origin {
             CandidateOrigin::Registry { websocket_url, .. } => BrowserEndpoint {
-                websocket_url: WebSocketUrl::parse(websocket_url)?,
+                websocket_url: registry_browser_url(websocket_url)?,
                 source: EndpointSource::JsonVersion,
             },
             CandidateOrigin::ActivePort { websocket_path } => {
@@ -182,6 +184,34 @@ fn ready_registry_connection(
         }
         Err(error) => Err(error),
     }
+}
+
+const BROWSER_PATH_PREFIX: &str = "/devtools/browser/";
+
+/// Parses a registry WebSocket URL and refuses one that does not name the
+/// browser endpoint. A page endpoint also completes the handshake and
+/// answers `Browser.setDownloadBehavior`, so without this check a page URL
+/// would pass as the browser.
+fn registry_browser_url(websocket_url: &str) -> Result<WebSocketUrl, AdapterError> {
+    let url = WebSocketUrl::parse(websocket_url)?;
+    if url.path().starts_with(BROWSER_PATH_PREFIX) {
+        return Ok(url);
+    }
+    Err(AdapterError::new(
+        ErrorCode::ActionFailed,
+        format!(
+            "The recorded DevTools endpoint on port {} is not the browser endpoint",
+            url.port()
+        ),
+    )
+    .with_suggestion(
+        "Relaunch the browser with `launch <browser> --cdp` to record a fresh endpoint",
+    )
+    .with_details(serde_json::json!({
+        "kind": "cdp_endpoint_not_browser",
+        "port": url.port(),
+    }))
+    .with_disposition(DeliverySemantics::not_delivered()))
 }
 
 fn warn_downloads_refused(error: &AdapterError) {

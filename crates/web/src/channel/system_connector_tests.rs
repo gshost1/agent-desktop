@@ -271,3 +271,22 @@ fn a_registry_candidate_opens_with_set_download_behavior_as_its_only_call() {
     drop(connection);
     assert_eq!(server.join().unwrap(), ["Browser.setDownloadBehavior"]);
 }
+
+#[test]
+fn a_registry_url_that_names_a_page_instead_of_the_browser_is_never_contacted() {
+    let (page, page_port) = watched_port();
+    let connector = SystemConnector::with_sources(None, Vec::new());
+    let candidate = crate::channel::endpoint_candidate::EndpointCandidate {
+        port: page_port,
+        origin: CandidateOrigin::Registry {
+            websocket_url: format!("ws://127.0.0.1:{page_port}/devtools/page/ABC"),
+            download_folder: None,
+        },
+    };
+    let error = connector
+        .open(&candidate, Deadline::after(1_000).unwrap(), true)
+        .err()
+        .unwrap();
+    assert_eq!(error.details.unwrap()["kind"], "cdp_endpoint_not_browser");
+    assert!(never_contacted(&page));
+}
