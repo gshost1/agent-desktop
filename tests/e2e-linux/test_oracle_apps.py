@@ -19,6 +19,41 @@ class ProcessOracleTests(unittest.TestCase):
         self.ready = patch("runner.readiness.wait_ready").start()
         self.addCleanup(patch.stopall)
 
+    def test_settings_mouse_fixture_supplies_udev_without_changing_native_settings(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as directory:
+            tier = SimpleNamespace(name="x11-openbox", runtime_dir=Path(directory), env={})
+            owner = apps.OwnedApp("gnome-control-center", 42, 10, [":1.42"], ["w-1.42-frame"], ":1")
+            child = Mock(pid=999)
+            with patch.object(apps, "which", return_value="/usr/bin/umockdev-run"), \
+                 patch.object(apps, "_owners", side_effect=[[], [owner]]) as owners, \
+                 patch.object(apps, "_display_verified", return_value=True), \
+                 patch.object(apps.subprocess, "Popen", return_value=child) as spawn, \
+                 patch.dict(apps._SPAWNED, clear=True), patch.dict(apps._TIERS, clear=True):
+                self.assertIs(apps.launch(tier, "Settings Mouse", ("mouse",)), owner)
+            argv = spawn.call_args.args[0]
+            self.assertEqual(argv[:2], ["umockdev-run", "--device"])
+            fixture = Path(argv[2])
+            self.assertTrue(fixture.is_file())
+            self.assertIn("E: ID_INPUT_MOUSE=1", fixture.read_text())
+            self.assertEqual(argv[3:], ["--", "gnome-control-center", "mouse"])
+            self.assertEqual(owners.call_args.kwargs["names"], apps.ALIASES["Settings"])
+            self.assertEqual(apps.COMMANDS["Settings"], "gnome-control-center")
+
+    def test_missing_mouse_fixture_tool_does_not_fall_back_to_host_hardware(self):
+        def spawn(argv, **kwargs):
+            self.assertEqual(argv[0], "umockdev-run", "fell back to host hardware")
+            raise FileNotFoundError("umockdev-run")
+
+        with tempfile.TemporaryDirectory() as directory:
+            tier = SimpleNamespace(name="x11-openbox", runtime_dir=Path(directory), env={})
+            with patch.object(apps, "which", return_value=None), \
+                 patch.object(apps, "_owners", return_value=[]), \
+                 patch.object(apps.subprocess, "Popen", side_effect=spawn) as launched, \
+                 self.assertRaisesRegex(apps.FixtureUnavailable, "umockdev-run"):
+                apps.launch(tier, "Settings Mouse", ("mouse",))
+            launched.assert_not_called()
+
     def test_launch_discovery_does_not_read_a_stalled_bystander(self):
         from unittest.mock import Mock
         with tempfile.TemporaryDirectory() as directory:
@@ -139,7 +174,7 @@ class ProcessOracleTests(unittest.TestCase):
                 self.ready.assert_called_once_with(tier, app)
 
     def test_warmup_activates_private_app_services_before_the_leg_baseline(self):
-        for display, names in ((":150", ["Calculator", "Files", "Terminal", "Text Editor", "Settings"]),
+        for display, names in ((":150", ["Calculator", "Files", "Terminal", "Text Editor", "Settings Mouse"]),
                                (None, ["Calculator", "Text Editor"])):
             tier = SimpleNamespace(display=display, runtime_dir=Path("/private/a"))
             with patch.object(apps, "launch", side_effect=lambda tier, name, **kwargs: name) as launch, \

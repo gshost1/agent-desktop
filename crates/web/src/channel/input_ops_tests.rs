@@ -30,3 +30,30 @@ fn preparing_keyboard_input_reaches_the_platform() {
     assert!(web.prepare_keyboard_input().is_ok());
     assert_eq!(web.inner().prepared.load(Ordering::SeqCst), 1);
 }
+
+#[derive(Default)]
+struct CoordinateOnlyPlatform;
+
+impl ObservationOps for CoordinateOnlyPlatform {}
+impl ActionOps for CoordinateOnlyPlatform {}
+impl InputOps for CoordinateOnlyPlatform {
+    fn physical_pointer_refusal(&self) -> Option<AdapterError> {
+        Some(AdapterError::not_supported("element-aimed pointer"))
+    }
+
+    fn coordinate_pointer_refusal(&self) -> Option<AdapterError> {
+        None
+    }
+}
+impl SystemOps for CoordinateOnlyPlatform {}
+
+#[test]
+fn both_pointer_gates_answer_as_the_platform_does() {
+    let web = WebChannelAdapter::with_connector(
+        CoordinateOnlyPlatform,
+        Box::new(ScriptedConnector::default()),
+    )
+    .with_download_ledger(None);
+    assert!(web.physical_pointer_refusal().is_some());
+    assert!(web.coordinate_pointer_refusal().is_none());
+}

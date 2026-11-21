@@ -8,6 +8,7 @@ import time
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import which
 
 from oracle import atspi_raw as raw, proc, x11
 from oracle.gsettings import tool
@@ -16,6 +17,10 @@ from runner.session import Tier
 
 WARMUP_MAPPING_S = 45.0
 WARMUP_STDERR_TAIL_BYTES = 2048
+
+
+class FixtureUnavailable(Exception):
+    """A fixture prerequisite is missing for this leg, not the whole tier."""
 
 
 @dataclass
@@ -36,6 +41,7 @@ ALIASES = {
     "Calculator": ("calculator",), "Files": ("nautilus", "files"),
     "Terminal": ("terminal",), "Text Editor": ("text-editor", "text editor"),
     "Settings": ("control-center", "settings"),
+    "Settings Mouse": ("control-center", "settings"),
     "Zoo GTK3": ("zoo gtk3", "zoo_gtk3.py"),
     "Zoo GTK4": ("zoo gtk4", "zoo_gtk4.py"),
     "Zoo Qt": ("zoo qt", "zoo_qt.py"),
@@ -125,6 +131,8 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
            stderr_log: Path | None = None) -> OwnedApp:
     from runner.readiness import wait_ready
 
+    if app == "Settings Mouse" and which("umockdev-run", path=tier.env.get("PATH")) is None:
+        raise FixtureUnavailable("Settings Mouse requires umockdev-run; host mouse hardware is not a fallback")
     names = ALIASES.get(app, (Path(app).name.casefold(),))
     with raw.bounded_until(time.monotonic() + settle_s):
         before = {(item.pid, item.start_time): set(item.windows) for item in _owners(tier, names=names)}
@@ -145,6 +153,9 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
     elif app.endswith(("zoo_gtk3.py", "zoo_gtk4.py")):
         command = ["python3", app]
         env["GTK_USE_PORTAL"] = "0"
+    elif app == "Settings Mouse":
+        device = Path(__file__).resolve().parents[1] / "apps" / "mouse.umockdev"
+        command = ["umockdev-run", "--device", str(device), "--", "gnome-control-center"]
     else:
         command = [COMMANDS.get(app, app)]
     if "code" in Path(command[0]).name:
@@ -253,7 +264,7 @@ def prime_desktop(tier: Tier) -> None:
         for key, value in (("index-recursive-directories", "[]"), ("index-single-directories", "[]"),
                            ("enable-monitors", "false"), ("crawling-interval", "-2"), ("initial-sleep", "0")):
             tool(tier, ["gsettings", "set", "org.freedesktop.Tracker3.Miner.Files", key, value])
-    names = ("Calculator", "Files", "Terminal", "Text Editor", "Settings") if tier.display else ("Calculator", "Text Editor")
+    names = ("Calculator", "Files", "Terminal", "Text Editor", "Settings Mouse") if tier.display else ("Calculator", "Text Editor")
     for index, name in enumerate(names):
         stderr_log = tier.runtime_dir / f"warmup-{index}.stderr.log"
         try:

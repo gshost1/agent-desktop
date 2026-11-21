@@ -124,6 +124,7 @@ def _recover_failed_members(ctx) -> None:
 
 
 def _run_leg(impl, leg, tier_obj, tier_name: str, mode: str, suite_dir: Path, verdict, report):
+    from runner.apps import FixtureUnavailable
     from runner.session import TierUnavailable
     from runner.verdict import LegContext
 
@@ -137,6 +138,9 @@ def _run_leg(impl, leg, tier_obj, tier_name: str, mode: str, suite_dir: Path, ve
         if failures:
             outcome = report.FAIL
             detail = "; ".join(failures)
+    except FixtureUnavailable as error:
+        outcome = report.TIER_UNAVAILABLE
+        detail = str(error)
     except TierUnavailable:
         raise
     except NotImplementedError as error:

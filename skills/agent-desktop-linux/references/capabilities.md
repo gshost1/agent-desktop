@@ -19,11 +19,11 @@ Observation and semantic actions need no helper tool.
 | Observation | `snapshot`, `find`, `get`, `is` | Works on X11 and Wayland through AT-SPI. Supports `window`, `sheet`, `alert` and `menu`; GNOME adds shell surfaces. Virtual tray getters have limits; see the shell reference and check `status` |
 | Surfaces | `list-surfaces` | Lists an app's windows, sheets and open menus; shell reads use `snapshot --surface` |
 | Ref interaction | `click`, `right-click`, `type`, `set-value`, `clear`, `select`, `toggle`, `check`, `uncheck`, `expand`, `collapse`, `scroll-to` | Need a readable live identity and the required AT-SPI capability. See the shell reference for menu-ref resolution limits; X11 headed fallback also needs usable geometry and does not bypass identity checks |
-| Wheel scrolling | `scroll`, `mouse-wheel` | Physical wheel input; X11 and `--headed` only |
-| Pointer gestures | `double-click`, `triple-click`, `hover`, `drag` | `--headed`, X11 only. On Wayland the pointer cannot be aimed and these refuse with `ACTION_NOT_SUPPORTED` |
+| Wheel scrolling | `scroll`, `mouse-wheel` | Physical wheel input, `--headed`. `scroll <ref>` is X11 only; `mouse-wheel` also works on GNOME Wayland |
+| Pointer gestures | `double-click`, `triple-click`, `hover`, `drag` | `--headed`. On Wayland a gesture aimed at a ref refuses with `ACTION_NOT_SUPPORTED`, cause `wayland_session`; `hover --xy` and `drag --from-xy --to-xy` work on GNOME Wayland, `delivered_unverified` |
 | Focus | `focus` | Needs `--headed` for the focus permission. Calls AT-SPI `Component.GrabFocus` on a focusable node that is not yet `focused`, not the pointer, and verifies the state; a GTK4 app rejects the call, so `focus` ends `ACTION_FAILED` `grab_focus_rejected` there and `focus-window` is the way to focus its window |
-| Keyboard and mouse | `press`, `mouse-click`, `mouse-move`, `mouse-wheel` | `press` and text keys work on X11 and capability-detected Mutter Wayland sessions; pointer commands are X11 and `--headed`. See `references/display-servers-and-input.md` |
-| Held input | `key-down`, `key-up`, `mouse-down`, `mouse-up` | Fail closed on every platform: on Linux, `key-down` and `key-up` with `ACTION_NOT_SUPPORTED`; `mouse-down` and `mouse-up` with `POLICY_DENIED` headless and `ACTION_NOT_SUPPORTED` with `--headed` |
+| Keyboard and mouse | `press`, `mouse-click`, `mouse-move`, `mouse-wheel` | `press` and text keys work on X11 and capability-detected Mutter Wayland sessions; pointer commands need `--headed` and work on X11 and on Wayland sessions with Mutter RemoteDesktop and ScreenCast. See `references/display-servers-and-input.md` |
+| Held input | `key-down`, `key-up`, `mouse-down`, `mouse-up` | Fail closed on every platform: on Linux, `key-down` and `key-up` with `ACTION_NOT_SUPPORTED`; `mouse-down` and `mouse-up` with `POLICY_DENIED` headless and `ACTION_NOT_SUPPORTED` with `--headed`, or first `PLATFORM_NOT_SUPPORTED`, cause `wayland_interface_missing`, on a Wayland session without Mutter RemoteDesktop and ScreenCast |
 | App and window | `launch`, `close-app`, `list-windows`, `list-apps`, `focus-window`, `move-window`, `resize-window`, `minimize`, `maximize`, `restore` | Launch and listing work on X11 and Wayland; `focus-window` requires X11. Other window control and graceful close need an X11 client. See `references/windows-and-lifecycle.md` |
 | Displays | `list-displays` | Works |
 | Capture | `screenshot` | X11: a window without permission; a display only under a non-compositing manager. Wayland: portal consent, with display cropping. No selector returns the primary display. See `references/capture-and-clipboard.md` |
@@ -77,8 +77,9 @@ Observation and semantic actions need no helper tool.
   fresh snapshot after a list changes. A menu entry twinned in a whole-window
   snapshot gets a unique ref from `snapshot --surface menu` once its menu is
   open. To pick one of two other identical controls on X11, use `--headed
-  mouse-click --xy`; a Wayland session refuses headed pointer input, so there
-  the twin has neither a ref nor a pointer path. A ref belongs
+  mouse-click --xy`. On Wayland snapshot bounds give no screen position, so there
+  the twin has no ref and its point must come from elsewhere, such as a
+  `screenshot`. A ref belongs
   to the window it was taken in, so two windows with the same title each
   resolve their own refs.
 - **Chromium and Qt apps need a launch flag or variable** to appear on the bus;
@@ -164,7 +165,9 @@ cursor; on Wayland none is drawn.
   Mutter RemoteDesktop capability. `references/display-servers-and-input.md`
   has the full rules.
 - `select` tries the semantic route first and the pointer second; the pointer
-  route needs an explicit `--headed` request on X11. A Qt combo's semantic
+  route needs an explicit `--headed` request on X11. Headless snapshots omit
+  `Select` on Qt combos and their choices; standalone list rows keep their
+  semantic selection route. A Qt combo's semantic
   selection only highlights its popup row, so headless selection refuses with
   `POLICY_DENIED`, kind `pointer_required`, before changing that highlight.
   Headed, on a list whose toolkit index cannot be mapped to the

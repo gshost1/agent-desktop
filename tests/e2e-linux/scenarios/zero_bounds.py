@@ -8,13 +8,21 @@ def zero_axis(bounds):
     return bounds[2] == 0 or bounds[3] == 0
 
 
+def zero_extents(raw_nodes):
+    empty = []
+    for node in raw_nodes:
+        bounds = node.extents()
+        if zero_axis(bounds):
+            empty.append((node.path, node.role, bounds))
+    return empty
+
+
 def geometry_only(ctx, name, args):
     with managed(ctx, name, args) as app:
         tree = root(ctx, app)
         raw_nodes = [node for node in tree.walk()
                      if "org.a11y.atspi.Component" in node.interfaces()]
-        empty = [(node.path, node.role, node.extents()) for node in raw_nodes
-                 if zero_axis(node.extents())]
+        empty = zero_extents(raw_nodes)
         require(empty, "no zero-axis raw container reached")
         ctx.before("atspi", empty)
         data = snapshot(ctx, app, "--include-bounds")
@@ -22,12 +30,10 @@ def geometry_only(ctx, name, args):
             bounds = node.get("bounds")
             if bounds and (bounds["width"] <= 0 or bounds["height"] <= 0):
                 require(not node.get("ref_id"), "zero-size container received a ref")
-        after = [(node.path, node.role, node.extents()) for node in raw_nodes
-                 if zero_axis(node.extents())]
+        after = zero_extents(raw_nodes)
         require(empty == after)
         ctx.after("atspi", after)
-        ctx.restored("atspi", [(node.path, node.role, node.extents()) for node in raw_nodes
-                               if zero_axis(node.extents())])
+        ctx.restored("atspi", zero_extents(raw_nodes))
 
 
 @implementation("zero_bounds.files_container_raw_only")

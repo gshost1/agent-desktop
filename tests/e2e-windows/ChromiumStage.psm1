@@ -38,8 +38,7 @@ function Test-ChromiumTargetAvailable {
        Electron. No browser is present under this grounding (G5). #>
     [CmdletBinding()]
     param()
-    $obsidianExe = Join-Path $env:LOCALAPPDATA 'Programs\Obsidian\Obsidian.exe'
-    return (Test-Path -LiteralPath $obsidianExe -PathType Leaf)
+    return (Test-Path -LiteralPath (Get-ChromiumObsidianExePath) -PathType Leaf)
 }
 
 function Get-ChromiumObsidianExePath {

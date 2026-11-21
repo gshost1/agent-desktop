@@ -39,9 +39,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             at-spi2-core dbus dbus-x11 libglib2.0-bin x11-apps x11-utils xvfb fuse3 \
-            openbox xdotool wmctrl xclip \
+            openbox xdotool wmctrl xclip umockdev \
             python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 gir1.2-gtk-4.0 python3-pyqt6 \
-            gnome-calculator gnome-text-editor nautilus gnome-terminal gnome-control-center
+            gnome-calculator gnome-text-editor nautilus gnome-terminal gnome-control-center \
+            gstreamer1.0-plugins-base mutter-common gnome-shell-common
           if ! command -v fusermount >/dev/null && command -v fusermount3 >/dev/null; then
             sudo ln -s "$(command -v fusermount3)" /usr/local/bin/fusermount
           fi
