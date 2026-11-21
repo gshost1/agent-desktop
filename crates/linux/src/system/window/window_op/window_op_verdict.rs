@@ -65,7 +65,20 @@ fn requested_of(write: &WindowWrite) -> Value {
             y,
             width,
             height,
-        } => json!({ "x": x, "y": y, "width": width, "height": height }),
+        } => {
+            let mut requested = serde_json::Map::new();
+            for (key, value) in [
+                ("x", x.map(i64::from)),
+                ("y", y.map(i64::from)),
+                ("width", width.map(i64::from)),
+                ("height", height.map(i64::from)),
+            ] {
+                if let Some(value) = value {
+                    requested.insert(key.to_owned(), json!(value));
+                }
+            }
+            Value::Object(requested)
+        }
         WindowWrite::Iconify => json!({ "hidden": true }),
         WindowWrite::SetMaximized(on) => json!({ "maximized": on }),
     }
