@@ -24,6 +24,7 @@ pub(crate) mod node_origin;
 pub(crate) mod node_read;
 pub(crate) mod node_states;
 pub(crate) mod snapshot;
+pub(crate) mod target_job;
 pub(crate) mod target_read;
 pub(crate) mod web_node;
 pub(crate) mod web_roles;

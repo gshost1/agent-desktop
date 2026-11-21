@@ -11,8 +11,8 @@ fn the_linux_skill_explains_unread_popup_closure_and_escape_delivery() {
     let content = result["content"].as_str().expect("content");
     assert!(content.contains("`null` when its closed state could not be read"));
     assert!(content.contains("Escape failed after the popup read as visible"));
-    assert!(content.contains("no popup list can be identified"));
-    assert!(content.contains("including a popup that just hid"));
+    assert!(content.contains("a popup that just hid reports `true`"));
+    assert!(content.contains("a popup list it cannot identify or read reports `null`"));
     assert!(
         content.contains("`details.popup_close_attempted` is `true` only when Escape was sent")
     );

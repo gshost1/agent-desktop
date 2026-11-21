@@ -209,3 +209,47 @@ fn a_session_detached_while_awaiting_a_reply_fails_as_target_gone_and_stays_gone
     assert_eq!(first.details.unwrap()["kind"], "cdp_target_gone");
     assert_eq!(second.code, ErrorCode::WindowNotFound);
 }
+
+#[test]
+fn the_browser_version_is_asked_once_per_connection() {
+    let transport = ScriptedTransport::new()
+        .expect("Browser.getVersion", json!({ "product": "Chrome/156" }))
+        .expect("Browser.getVersion", json!({ "product": "page-level" }));
+    let sent = transport.sent_log();
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let first = connection
+        .call("Browser.getVersion", json!({}), None, deadline())
+        .unwrap();
+    let again = connection
+        .call("Browser.getVersion", json!({}), None, deadline())
+        .unwrap();
+    let in_session = connection
+        .call("Browser.getVersion", json!({}), Some("S1"), deadline())
+        .unwrap();
+
+    assert_eq!(first, json!({ "product": "Chrome/156" }));
+    assert_eq!(again, first);
+    assert_eq!(in_session, json!({ "product": "page-level" }));
+    assert_eq!(sent.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn a_failed_browser_version_is_asked_again() {
+    let transport = ScriptedTransport::new()
+        .expect_silence("Browser.getVersion")
+        .expect("Browser.getVersion", json!({ "product": "Chrome/156" }));
+    let mut connection = CdpConnection::new(transport.boxed());
+
+    let short = Deadline::after(20).unwrap();
+    assert!(
+        connection
+            .call("Browser.getVersion", json!({}), None, short)
+            .is_err()
+    );
+    let version = connection
+        .call("Browser.getVersion", json!({}), None, deadline())
+        .unwrap();
+
+    assert_eq!(version, json!({ "product": "Chrome/156" }));
+}
