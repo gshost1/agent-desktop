@@ -23,9 +23,10 @@ class WorkflowTests(unittest.TestCase):
     def test_private_session_failure_logs_are_uploaded(self):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
         checks = workflow.split("- name: Private session checks", 1)[1]
+        self.assertIn("if: ${{ !cancelled() }}", checks.split("run:", 1)[0])
         self.assertIn("AGENT_DESKTOP_SESSION_LOG_DIR: ${{ runner.temp }}/private-session-logs", checks)
         upload = checks.split("- name: Upload the private session logs", 1)[1]
-        self.assertIn("if: ${{ failure() }}", upload)
+        self.assertIn("if: ${{ failure() && steps.private-session.outcome == 'failure' }}", upload)
         self.assertIn("uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", upload)
         self.assertIn("path: ${{ runner.temp }}/private-session-logs/", upload)
 

@@ -82,12 +82,14 @@ jobs:
         run: bash tests/e2e-linux/run.sh
 
       - name: Private session checks
+        id: private-session
+        if: ${{ !cancelled() }}
         env:
           AGENT_DESKTOP_SESSION_LOG_DIR: ${{ runner.temp }}/private-session-logs
         run: bash scripts/test-private-session.sh
 
       - name: Upload the private session logs
-        if: ${{ failure() }}
+        if: ${{ failure() && steps.private-session.outcome == 'failure' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-private-session-logs
