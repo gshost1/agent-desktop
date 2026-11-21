@@ -6,16 +6,17 @@
 /// area's first children that are not scroll bars, and `descendant` the frames
 /// of each content child's first children, which move even when a content
 /// frame is the viewport and the first content child is a pinned header.
-/// `sampled` counts the elements whose frames were read. `at_end` is true
-/// when the area showed it cannot move this way: its scroll bar sits at that
-/// end, or the axis has no scroll bar and its content fits inside the area.
+/// `sampled` counts the elements whose frames were read. `at_end` is
+/// `Some(true)` when the area showed it cannot move this way: its scroll bar
+/// sits at that end, or the axis has no scroll bar and its content fits inside
+/// the area. It is `None` when that was not read or could not be decided.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ScrollSignals {
     pub(crate) bar: Option<Option<u64>>,
     pub(crate) content: Option<Option<u64>>,
     pub(crate) descendant: Option<Option<u64>>,
     pub(crate) sampled: usize,
-    pub(crate) at_end: bool,
+    pub(crate) at_end: Option<bool>,
 }
 
 impl ScrollSignals {

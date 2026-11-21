@@ -1,4 +1,4 @@
-use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, Direction, ErrorCode};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, Direction, ErrorCode, Rect};
 use std::time::Duration;
 
 use super::scroll_signals::ScrollSignals;
@@ -9,16 +9,55 @@ const SETTLE_PAUSE: Duration = Duration::from_millis(25);
 const SAMPLED_CHILDREN: usize = 4;
 const AREA_CHILDREN: usize = 32;
 
+type ContentChild = (AXElement, Option<Rect>);
+
 /// Reads every signal a page scroll on `direction`'s axis could move: that
 /// axis's scroll bar value, the frames of the area's first children that are
 /// not scroll bars, and the frames of the first children of each of those,
 /// so a pinned first child does not hide rows that moved beside it. A signal
 /// that exists but cannot be read is recorded as unreadable, never as
 /// unchanged. An element without a frame is no signal and is not counted.
+/// Whether the area is at its end is taken from the bar value alone, which
+/// costs no read; [`capture_settled`] completes it for an area with no bar.
 pub(super) fn capture(
     area: &AXElement,
     direction: &Direction,
     deadline: Deadline,
+) -> ScrollSignals {
+    capture_sampling(area, direction, deadline, SAMPLED_CHILDREN)
+}
+
+/// [`capture`] for a search step, which only asks whether the area moved:
+/// it samples the children of the first content child only.
+pub(super) fn capture_for_search(
+    area: &AXElement,
+    direction: &Direction,
+    deadline: Deadline,
+) -> ScrollSignals {
+    capture_sampling(area, direction, deadline, 1)
+}
+
+/// [`capture`] for a read while a refusal settles, which also decides
+/// whether an area with no scroll bar on that axis is at its end.
+pub(super) fn capture_settled(
+    area: &AXElement,
+    direction: &Direction,
+    deadline: Deadline,
+) -> ScrollSignals {
+    let mut signals = capture(area, direction, deadline);
+    if signals.bar.is_none() {
+        signals.at_end = area_at_end(None, direction, || {
+            Some(content_fits(area, direction, deadline))
+        });
+    }
+    signals
+}
+
+fn capture_sampling(
+    area: &AXElement,
+    direction: &Direction,
+    deadline: Deadline,
+    parents: usize,
 ) -> ScrollSignals {
     let bar_attribute = match direction {
         Direction::Up | Direction::Down => "AXVerticalScrollBar",
@@ -33,42 +72,45 @@ pub(super) fn capture(
         Ok(None) => None,
         Err(_) => Some(None),
     };
-    let at_end = area_at_end(bar_value, direction, || {
-        content_fits(area, direction, deadline)
-    });
     let mut sampled = 0;
     let content_children = content_children(area, deadline);
     let descendant = match &content_children {
-        Some(Some(children)) => descendant_frames(children, &mut sampled, deadline),
+        Some(Some(children)) => {
+            let parents = &children[..children.len().min(parents)];
+            descendant_frames(parents, &mut sampled, deadline)
+        }
         Some(None) => Some(None),
         None => None,
     };
     let content = content_children.map(|children| {
-        children.and_then(|children| frames_hash(&children, &mut sampled, deadline))
+        children.and_then(|children| {
+            let frames = children.into_iter().map(|(_, frame)| frame);
+            frames_hash(&frames.collect::<Vec<_>>(), &mut sampled)
+        })
     });
     ScrollSignals {
         bar: bar_value.map(|value| value.map(f64::to_bits)),
         content,
         descendant,
         sampled,
-        at_end,
+        at_end: area_at_end(bar_value, direction, || None),
     }
 }
 
 /// Whether the area shows it cannot move toward `direction`: its scroll bar
 /// on that axis reads a value at that end, or, when the axis has no scroll
-/// bar, its content fits inside it on that axis. A bar whose value cannot be
-/// read proves nothing.
+/// bar, `content_fits` reports that its content fits inside it on that axis.
+/// A bar whose value cannot be read leaves it unknown.
 pub(super) fn area_at_end(
     bar_value: Option<Option<f64>>,
     direction: &Direction,
-    content_fits: impl FnOnce() -> bool,
-) -> bool {
+    content_fits: impl FnOnce() -> Option<bool>,
+) -> Option<bool> {
     match bar_value {
         Some(Some(value)) => {
-            value.is_finite() && !super::scroll_plan::bar_can_move(value, direction)
+            Some(value.is_finite() && !super::scroll_plan::bar_can_move(value, direction))
         }
-        Some(None) => false,
+        Some(None) => None,
         None => content_fits(),
     }
 }
@@ -94,16 +136,16 @@ fn content_fits(area: &AXElement, direction: &Direction, deadline: Deadline) -> 
     }
 }
 
-fn content_children(area: &AXElement, deadline: Deadline) -> Option<Option<Vec<AXElement>>> {
+fn content_children(area: &AXElement, deadline: Deadline) -> Option<Option<Vec<ContentChild>>> {
     let Ok(children) = super::scroll_read::children_up_to(area, AREA_CHILDREN, deadline) else {
         return Some(None);
     };
     let mut content = Vec::new();
     for child in children {
-        match super::scroll_read::string(&child, "AXRole", deadline) {
-            Ok(Some(role)) if role == "AXScrollBar" => continue,
-            Ok(_) => content.push(child),
-            Err(_) => return Some(None),
+        match super::scroll_frames::read_role_and_frame(&child, deadline) {
+            Ok(read) if read.role.as_deref() == Some("AXScrollBar") => continue,
+            Ok(read) => content.push((child, read.frame)),
+            Err(()) => return Some(None),
         }
         if content.len() == SAMPLED_CHILDREN {
             break;
@@ -113,42 +155,42 @@ fn content_children(area: &AXElement, deadline: Deadline) -> Option<Option<Vec<A
 }
 
 fn descendant_frames(
-    children: &[AXElement],
+    parents: &[ContentChild],
     sampled: &mut usize,
     deadline: Deadline,
 ) -> Option<Option<u64>> {
-    let mut inner = Vec::new();
-    for child in children {
-        match super::scroll_read::children_up_to(child, SAMPLED_CHILDREN, deadline) {
-            Ok(grandchildren) => inner.extend(grandchildren),
-            Err(_) => return Some(None),
+    let mut frames = Vec::new();
+    for (parent, _) in parents {
+        let Ok(children) = super::scroll_read::children_up_to(parent, SAMPLED_CHILDREN, deadline)
+        else {
+            return Some(None);
+        };
+        for child in children {
+            match super::scroll_frames::read_frame(&child, deadline) {
+                Ok(frame) => frames.push(frame),
+                Err(()) => return Some(None),
+            }
         }
     }
-    (!inner.is_empty()).then(|| frames_hash(&inner, sampled, deadline))
+    (!frames.is_empty()).then(|| frames_hash(&frames, sampled))
 }
 
-fn frames_hash(elements: &[AXElement], sampled: &mut usize, deadline: Deadline) -> Option<u64> {
+fn frames_hash(frames: &[Option<Rect>], sampled: &mut usize) -> Option<u64> {
     use std::hash::{Hash, Hasher};
 
     let mut hasher = rustc_hash::FxHasher::default();
-    elements.len().hash(&mut hasher);
+    frames.len().hash(&mut hasher);
     let mut framed = 0;
-    for element in elements {
-        let frame = frame_hash(element, deadline)?;
-        framed += usize::from(frame.is_some());
-        frame.hash(&mut hasher);
+    for frame in frames {
+        let hash = match frame {
+            Some(frame) => Some(frame.bounds_hash()?),
+            None => None,
+        };
+        framed += usize::from(hash.is_some());
+        hash.hash(&mut hasher);
     }
     *sampled += framed;
     Some(hasher.finish())
-}
-
-fn frame_hash(element: &AXElement, deadline: Deadline) -> Option<Option<u64>> {
-    let instant = crate::tree::locator_deadline::from_operation(deadline).ok()?;
-    let frame = crate::tree::element_bounds::read_bounds_with_deadline(element, instant).ok()?;
-    match frame {
-        Some(frame) => frame.bounds_hash().map(Some),
-        None => Some(None),
-    }
 }
 
 /// How long a refusal may take and still count as the application's answer.
@@ -170,7 +212,9 @@ pub(super) fn answered_in_time(elapsed: Duration, window: Duration) -> bool {
 /// move to. Any signal that moved means the scroll happened. The action counts
 /// as undelivered only when the area shows, before and after, that it is at
 /// its end in that direction, and every signal it has stayed readable and
-/// unchanged for the whole settle window. Unchanged signals alone are no
+/// unchanged for the whole settle window. Without a scroll bar on that axis
+/// the end is read only after the refusal: whether the content fits does not
+/// depend on the scroll position, so those reads stand for the read before. Unchanged signals alone are no
 /// proof: they may miss what moved, and an animated scroll may start after
 /// the window. Anything less keeps the original error and its uncertain
 /// disposition.
@@ -185,7 +229,7 @@ pub(super) fn settle_refusal(
         super::page_action(direction),
         before,
         error,
-        || capture(area, direction, deadline),
+        || capture_settled(area, direction, deadline),
         || pause_for_settle(deadline),
     )
 }
@@ -204,7 +248,7 @@ pub(super) fn settle_observed(
         let after = read_after();
         match before.movement(after) {
             Some(true) => return Ok(()),
-            Some(false) if before.at_end && after.at_end => {}
+            Some(false) if before.at_end != Some(false) && after.at_end == Some(true) => {}
             Some(false) | None => return Err(error),
         }
         if read + 1 < SETTLE_READS && !pause() {

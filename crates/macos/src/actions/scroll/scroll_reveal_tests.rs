@@ -5,9 +5,9 @@ use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, Direction, E
 use super::{RevealArea, reveal_steps};
 use crate::actions::DeliveryTracker;
 
-fn rect(y: f64) -> Rect {
+fn rect(x: f64, y: f64) -> Rect {
     Rect {
-        x: 10.0,
+        x,
         y,
         width: 100.0,
         height: 20.0,
@@ -15,6 +15,7 @@ fn rect(y: f64) -> Rect {
 }
 
 struct ScriptedArea {
+    target_x: f64,
     target_y: f64,
     steps: VecDeque<(f64, Result<Option<bool>, AdapterError>)>,
     taken: Vec<String>,
@@ -22,7 +23,7 @@ struct ScriptedArea {
 
 impl RevealArea for ScriptedArea {
     fn target_bounds(&mut self) -> Result<Option<Rect>, AdapterError> {
-        Ok(Some(rect(self.target_y)))
+        Ok(Some(rect(self.target_x, self.target_y)))
     }
 
     fn viewport(&mut self) -> Result<Option<Rect>, AdapterError> {
@@ -36,13 +37,17 @@ impl RevealArea for ScriptedArea {
 
     fn step(&mut self, direction: &Direction, _: Rect) -> Result<Option<bool>, AdapterError> {
         self.taken.push(format!("{direction:?}"));
-        let (moved_to, result) = self.steps.pop_front().unwrap_or((self.target_y, Ok(None)));
-        self.target_y = moved_to;
+        let axis = match direction {
+            Direction::Up | Direction::Down => &mut self.target_y,
+            Direction::Left | Direction::Right => &mut self.target_x,
+        };
+        let (moved_to, result) = self.steps.pop_front().unwrap_or((*axis, Ok(None)));
+        *axis = moved_to;
         result
     }
 
     fn target_moved(&mut self, target: Rect) -> Result<bool, AdapterError> {
-        Ok(target.y != self.target_y)
+        Ok(target.x != self.target_x || target.y != self.target_y)
     }
 }
 
@@ -54,7 +59,20 @@ fn reveal(
     ScriptedArea,
     usize,
 ) {
+    reveal_from(10.0, target_y, steps)
+}
+
+fn reveal_from(
+    target_x: f64,
+    target_y: f64,
+    steps: Vec<(f64, Result<Option<bool>, AdapterError>)>,
+) -> (
+    Result<Option<AdapterError>, AdapterError>,
+    ScriptedArea,
+    usize,
+) {
     let mut area = ScriptedArea {
+        target_x,
         target_y,
         steps: steps.into(),
         taken: Vec::new(),
@@ -100,6 +118,31 @@ fn a_failed_step_that_left_the_target_in_place_blocks_only_that_direction() {
 }
 
 #[test]
+fn a_step_that_was_not_delivered_marks_no_delivery_and_the_other_axis_still_scrolls() {
+    let refused = AdapterError::new(ErrorCode::ActionNotSupported, "page action refused")
+        .with_disposition(DeliverySemantics::not_delivered());
+    let (result, area, delivered) = reveal_from(
+        500.0,
+        900.0,
+        vec![(900.0, Err(refused)), (100.0, Ok(Some(true)))],
+    );
+
+    assert_eq!(
+        area.taken,
+        ["Down", "Right"],
+        "a refused step blocks only its own direction; the reveal goes on along the other axis"
+    );
+    assert_eq!(area.target_x, 100.0);
+    assert_eq!(
+        delivered, 1,
+        "only the step that moved the target was delivered; the refused one never reached the \
+         area"
+    );
+    let refusal = result.unwrap().expect("the refusal is kept for the caller");
+    assert_eq!(refusal.code, ErrorCode::ActionNotSupported);
+}
+
+#[test]
 fn a_timed_out_step_ends_the_reveal() {
     let (result, area, _) = reveal(
         900.0,
@@ -122,7 +165,9 @@ fn a_reveal_stopped_by_overshooting_says_so() {
         "the area could still move; only its page steps were too large"
     );
     assert!(
-        error.message.contains("the last scroll step") && !error.message.contains("each"),
+        error.message.contains("the last scroll step that moved it")
+            && error.message.contains("past the viewport edge")
+            && !error.message.contains("each"),
         "only the last step crossed the viewport, and it need not have been a page: {}",
         error.message
     );
