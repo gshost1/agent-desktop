@@ -76,7 +76,10 @@ impl<'a> Facts<'a> {
             names,
             child_count,
         };
-        if facts.advertises(SELECTION) && node.properties.child_count.is_failed() {
+        if (facts.advertises(SELECTION)
+            || (is_text_document(facts.role) && facts.bits.has(EDITABLE)))
+            && node.properties.child_count.is_failed()
+        {
             return None;
         }
         Some(facts)

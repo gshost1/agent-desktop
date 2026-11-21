@@ -65,9 +65,10 @@ A physical ref-addressed key needs the target frame `active` within a short
 wait, else `check: window_active`. Headed `type` and ref-addressed key presses
 also need the target, or its proven internal editor, `focused`: before each X11
 text plan and, on Wayland, before the bootstrap Shift and each subsequent
-key-down. The internal-editor proof needs an editable target, a same-owner hit,
-a parent chain back to the target and a focused editor that advertises
-`EditableText`.
+key-down. For an editable text document, the internal-editor proof walks the
+same-owner subtree for one uniquely focused writable `Text` and `EditableText`
+descendant; for other editable targets, it needs a same-owner hit, a parent
+chain back to the target and a focused editor that advertises `EditableText`.
 
 Closing a GTK4 menu can leave the document unfocused even while its window is
 active. GNOME 46's GTK4 bridge rejects AT-SPI `Component.GrabFocus` as

@@ -214,3 +214,148 @@ fn numbers_print_without_a_trailing_fraction_and_non_finite_numbers_are_refused(
     assert_eq!(number_text(f64::NAN), None);
     assert_eq!(number_text(f64::INFINITY), None);
 }
+
+#[test]
+fn text_is_not_read_on_the_stub_during_resolve_count_or_plain_snapshot_walks() {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::tree::properties::read_purpose::ReadPurpose;
+    use crate::tree::vocabulary::role_numbers::HEADING;
+    use crate::tree::vocabulary::role_numbers::PARAGRAPH;
+    use crate::tree::walk::walker_expand::read_observed;
+    use zbus::connection::Builder;
+
+    struct TextStub {
+        role: u32,
+        text: &'static str,
+        reads: Arc<AtomicUsize>,
+    }
+
+    #[zbus::interface(name = "org.a11y.atspi.Accessible")]
+    impl TextStub {
+        fn get_role(&self) -> u32 {
+            self.role
+        }
+
+        fn get_role_name(&self) -> &str {
+            "text"
+        }
+
+        fn get_state(&self) -> Vec<u32> {
+            words(&[EDITABLE])
+        }
+
+        fn get_interfaces(&self) -> Vec<&str> {
+            vec!["org.a11y.atspi.Text", "org.a11y.atspi.EditableText"]
+        }
+
+        fn get_attributes(&self) -> BTreeMap<String, String> {
+            BTreeMap::new()
+        }
+
+        fn get_children(&self) -> Vec<(String, zbus::zvariant::OwnedObjectPath)> {
+            Vec::new()
+        }
+
+        #[zbus(property)]
+        fn name(&self) -> &str {
+            ""
+        }
+
+        #[zbus(property)]
+        fn description(&self) -> &str {
+            ""
+        }
+
+        #[zbus(property)]
+        fn child_count(&self) -> i32 {
+            0
+        }
+
+        #[zbus(property)]
+        fn accessible_id(&self) -> &str {
+            ""
+        }
+    }
+
+    struct TextInterfaceStub {
+        text: &'static str,
+        reads: Arc<AtomicUsize>,
+    }
+
+    #[zbus::interface(name = "org.a11y.atspi.Text")]
+    impl TextInterfaceStub {
+        #[zbus(property)]
+        fn character_count(&self) -> i32 {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.text.chars().count() as i32
+        }
+
+        fn get_text(&self, _start: i32, _end: i32) -> String {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.text.to_owned()
+        }
+    }
+
+    for (role, path, text) in [
+        (PARAGRAPH, "/paragraph", "Body paragraph text"),
+        (HEADING, "/heading", "Chapter Heading"),
+        (94, "/document", "Document body text"),
+    ] {
+        let reads = Arc::new(AtomicUsize::new(0));
+        let (near, far) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (client, server) = zbus::block_on(futures_lite::future::zip(
+            Builder::async_io_unix_stream(near).p2p().build(),
+            Builder::async_io_unix_stream(far)
+                .server(zbus::Guid::generate())
+                .unwrap()
+                .p2p()
+                .serve_at(
+                    path,
+                    TextStub {
+                        role,
+                        text,
+                        reads: reads.clone(),
+                    },
+                )
+                .unwrap()
+                .serve_at(
+                    path,
+                    TextInterfaceStub {
+                        text,
+                        reads: reads.clone(),
+                    },
+                )
+                .unwrap()
+                .build(),
+        ));
+        let client = client.unwrap();
+        let _server = server.unwrap();
+        let element = AtspiElement::new(":1.1", path, 1);
+        for purpose in [
+            ReadPurpose::Resolve,
+            ReadPurpose::Count,
+            ReadPurpose::Snapshot,
+            ReadPurpose::Element,
+            ReadPurpose::Value,
+        ] {
+            let (observed, _) =
+                zbus::block_on(read_observed(&client, &element, 4096, purpose)).unwrap();
+            assert_eq!(observed.value.value, Field::Absent, "{role} {purpose:?}");
+            assert_eq!(reads.load(Ordering::SeqCst), 0, "{role} {purpose:?}");
+        }
+        for purpose in [ReadPurpose::TextSearch, ReadPurpose::TypeTarget] {
+            reads.store(0, Ordering::SeqCst);
+            let (observed, _) =
+                zbus::block_on(read_observed(&client, &element, 4096, purpose)).unwrap();
+            assert_eq!(
+                observed.value.value,
+                Field::Present(text.to_owned()),
+                "{role} {purpose:?}"
+            );
+            assert!(reads.load(Ordering::SeqCst) >= 2, "{role} {purpose:?}");
+        }
+    }
+}

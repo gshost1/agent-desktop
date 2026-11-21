@@ -227,7 +227,10 @@ pub(super) fn editable(evidence: &ActionabilityEvidence, action: &Action) -> Act
         return pass("editable");
     }
     if matches!(action, Action::TypeText(_))
-        && matches!(evidence.state.role.as_str(), "document" | "paragraph")
+        && matches!(
+            evidence.state.role.as_str(),
+            "document" | "paragraph" | "heading"
+        )
         && capability::contains(&evidence.available_actions, capability::TYPE_TEXT)
     {
         return pass("editable");

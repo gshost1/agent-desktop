@@ -1,7 +1,6 @@
 pub(crate) mod action_names;
 pub(crate) mod action_read;
 pub(crate) mod capability_rules;
-pub(crate) mod document_text;
 pub(crate) mod headless_routes;
 pub(crate) mod scroll_capability;
 pub(crate) mod text_selection;

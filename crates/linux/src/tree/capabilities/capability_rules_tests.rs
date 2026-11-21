@@ -53,19 +53,22 @@ fn rule_tokens_for(
 
 #[test]
 fn editable_document_and_paragraph_tokens_follow_states_and_interfaces() {
-    for role in [73, 82, 92, 93, 94, 96] {
+    for role in [73, 82, 83, 92, 93, 94, 96] {
         let tokens = rule_tokens_for(role, &[EDITABLE], &[EDITABLE_TEXT, TEXT_INTERFACE], &[], 0);
-        assert!(tokens.contains(&"SetValue"));
-        assert!(tokens.contains(&"TypeText"));
+        assert!(tokens.contains(&"SetValue"), "role {role}");
+        assert!(tokens.contains(&"TypeText"), "role {role}");
         for states in [&[][..], &[EDITABLE, READ_ONLY][..]] {
             let tokens = rule_tokens_for(role, states, &[EDITABLE_TEXT, TEXT_INTERFACE], &[], 0);
-            assert!(!tokens.contains(&"SetValue"));
-            assert!(!tokens.contains(&"TypeText"));
+            assert!(!tokens.contains(&"SetValue"), "role {role}");
+            assert!(!tokens.contains(&"TypeText"), "role {role}");
         }
     }
     let tokens = rule_tokens_for(94, &[EDITABLE], &[COMPONENT], &[], 1);
     assert!(tokens.contains(&"TypeText"));
     assert!(!tokens.contains(&"SetValue"));
+    let mut unread_children = node(94, &[EDITABLE], &[COMPONENT], &[], 1);
+    unread_children.properties.child_count = Field::Failed("x".to_owned());
+    assert_eq!(capabilities(&unread_children), LocatorField::Unknown);
     for role in [29, PANEL] {
         let tokens = rule_tokens_for(
             role,
