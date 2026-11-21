@@ -249,11 +249,11 @@ fn an_unknown_or_hidden_popup_never_receives_a_global_escape() {
 
 #[test]
 fn cleanup_rechecks_visibility_immediately_before_sending_escape() {
-    for (failure, sent) in [
-        ("hidden-before-close", false),
-        ("unread-before-close", false),
-        ("escape-refused", false),
-        ("visible-before-close", true),
+    for (failure, sent, closed) in [
+        ("hidden-before-close", false, Some(true)),
+        ("unread-before-close", false, None),
+        ("escape-refused", false, None),
+        ("visible-before-close", true, Some(true)),
     ] {
         let mut rows = Rows {
             opens: false,
@@ -268,7 +268,7 @@ fn cleanup_rechecks_visibility_immediately_before_sending_escape() {
         let details = error.details.expect("details");
         assert_eq!(details["kind"], "popup_not_observed");
         assert_eq!(details["popup_close_attempted"], sent);
-        assert_eq!(details["popup_closed"], json!(sent.then_some(true)));
+        assert_eq!(details["popup_closed"], json!(closed), "{failure}");
     }
 }
 
