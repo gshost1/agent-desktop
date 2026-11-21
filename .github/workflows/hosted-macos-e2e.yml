@@ -28,6 +28,7 @@ jobs:
           fetch-depth: 2
       - name: Decide whether this event needs the macOS jobs
         id: scope
+        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
@@ -36,7 +37,7 @@ jobs:
   e2e:
     name: Hosted macOS E2E (${{ matrix.image }})
     needs: macos-scope
-    if: needs.macos-scope.outputs.macos == 'true'
+    if: needs.macos-scope.outputs.macos != 'false'
     runs-on: ${{ matrix.image }}
     timeout-minutes: 45
     permissions:

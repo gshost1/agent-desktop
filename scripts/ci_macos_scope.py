@@ -34,25 +34,30 @@ NON_MACOS_FILES = frozenset(
         ".github/workflows/windows-competitive-latency.yml",
         ".github/workflows/codeql.yml",
         ".github/workflows/supply-chain.yml",
-        "scripts/check-elf-glibc-floor.sh",
-        "scripts/check-elf-glibc-floor-selftest.sh",
-        "scripts/check-linux-archive-contents.sh",
         "scripts/check-linux-capture-cli.py",
         "scripts/check-linux-findings.py",
         "scripts/ffi-archive-readme-linux.md",
         "scripts/linux-live-gate.py",
-        "scripts/linux-live-gate.sh",
         "scripts/linux_live_gate_rules.py",
-        "scripts/private-mutter-shell.sh",
-        "scripts/private-session.sh",
-        "scripts/private-wayland-shell.sh",
         "scripts/test-linux-live-gate.py",
-        "scripts/test-private-session.sh",
     }
 )
 
 
+def checked_by_macos_bash(path):
+    """The macOS job parses these with /bin/bash 3.2 (scripts/check-bash3-compat.sh)."""
+    if path == ".githooks/pre-commit":
+        return True
+    for folder in ("scripts/", "tests/e2e/", "tests/e2e-linux/"):
+        name = path[len(folder):] if path.startswith(folder) else ""
+        if name.endswith(".sh") and "/" not in name:
+            return True
+    return False
+
+
 def path_needs_macos(path):
+    if checked_by_macos_bash(path):
+        return True
     if path in NON_MACOS_FILES or path.startswith(NON_MACOS_PREFIXES):
         return False
     if path.startswith("scripts/") and path.endswith(".ps1"):
@@ -81,7 +86,7 @@ def event_needs_macos(event, draft, changed_paths):
 
 def read_merge_commit_changes():
     result = subprocess.run(
-        ["git", "diff", "--name-only", "HEAD^1", "HEAD"],
+        ["git", "diff", "--no-renames", "--name-only", "HEAD^1", "HEAD"],
         capture_output=True,
         text=True,
         check=False,

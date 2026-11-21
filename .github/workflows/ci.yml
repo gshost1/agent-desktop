@@ -39,6 +39,7 @@ jobs:
           fetch-depth: 2
       - name: Decide whether this event needs the macOS jobs
         id: scope
+        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
@@ -103,7 +104,7 @@ jobs:
   test:
     name: Test
     needs: macos-scope
-    if: needs.macos-scope.outputs.macos == 'true'
+    if: needs.macos-scope.outputs.macos != 'false'
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
