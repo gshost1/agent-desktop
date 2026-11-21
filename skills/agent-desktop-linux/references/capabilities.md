@@ -165,9 +165,21 @@ cursor; on Wayland none is drawn.
   Mutter RemoteDesktop capability. `references/display-servers-and-input.md`
   has the full rules.
 - `select` tries the semantic route first and the pointer second; the pointer
-  route needs an explicit `--headed` request on X11. A Qt combo's semantic
+  route needs an explicit `--headed` request on X11. Headless snapshots omit
+  `Select` on Qt combos and their choices; standalone list rows keep their
+  semantic selection route. A Qt combo's semantic
   selection only highlights its popup row, so headless selection refuses with
   `POLICY_DENIED`, kind `pointer_required`, before changing that highlight.
+  A headed Qt selection clicks a collapsed combo open, waits for its expanded
+  state, then finds the choice again and clicks its visible row. It leaves an
+  already-open popup open until choosing and verifies the combo's displayed
+  value. A combo that does not advertise expansion refuses before input rather
+  than treating its missing expanded flag as a closed popup. If expansion
+  cannot be observed after opening, it sends Escape only when a popup is
+  independently observed as visible. An unobserved popup reports an unknown
+  closure state rather than receiving a global key. It reserves cleanup time before opening; a
+  budget too short for cleanup refuses without input. A failure after clicking
+  the opener is unsafe to retry even when the popup was closed.
   Headed, on a list whose toolkit index cannot be mapped to the
   row (a GTK4 list) it clicks the row and checks its `selected` state; on a
   combo with no semantic opener (a libadwaita combo row) it clicks the combo
