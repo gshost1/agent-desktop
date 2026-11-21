@@ -4,7 +4,9 @@ use std::time::Duration;
 use accessibility_sys::{kAXErrorCannotComplete, kAXErrorFailure};
 use agent_desktop_core::{AdapterError, DeliveryDisposition, ErrorCode, RetryDisposition};
 
-use super::{answer_window, answered_in_time, settle_observed};
+use agent_desktop_core::Direction;
+
+use super::{answer_window, answered_in_time, area_at_end, settle_observed};
 use crate::actions::scroll::scroll_signals::ScrollSignals;
 
 fn signals(
@@ -21,6 +23,7 @@ fn signals(
         content,
         descendant,
         sampled,
+        at_end: true,
     }
 }
 
@@ -78,6 +81,7 @@ fn refused_page_action_that_moved_nothing_is_an_unavailable_action() {
         error.details.as_ref().unwrap()["kind"],
         "scroll_action_unavailable"
     );
+    assert_eq!(error.details.as_ref().unwrap()["scroll_area_at_end"], true);
 }
 
 #[test]
@@ -217,4 +221,55 @@ fn a_refusal_that_ran_into_its_messaging_timeout_is_not_settled() {
         "a call that waited out its messaging timeout reached the application, which may \
          still scroll after the settle window, so its delivery stays unknown"
     );
+}
+
+#[test]
+fn unchanged_signals_of_an_area_that_can_still_move_are_no_proof() {
+    let pinned_header = ScrollSignals {
+        sampled: 6,
+        at_end: false,
+        ..signals(None, Some(Some(88)), Some(Some(120)))
+    };
+    let (settled, reads) = settle(pinned_header, |_| pinned_header);
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(
+        reads, 1,
+        "a pinned header and a viewport-sized list stay put while their rows scroll, so \
+         unchanged frames of an area with room left do not show the scroll missed"
+    );
+
+    let lone_bar = ScrollSignals {
+        at_end: false,
+        ..signals(Some(Some(0.4f64.to_bits())), None, None)
+    };
+    let (settled, _) = settle(lone_bar, |_| lone_bar);
+    assert_uncertain(&settled.unwrap_err());
+}
+
+#[test]
+fn an_area_that_leaves_its_end_while_settling_keeps_the_uncertain_error() {
+    let (settled, reads) = settle(steady(), |read| ScrollSignals {
+        at_end: read < 5,
+        ..steady()
+    });
+
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(reads, 5);
+}
+
+#[test]
+fn an_area_is_at_its_end_only_by_its_bar_value_or_content_that_fits() {
+    let fits = || true;
+    let overflows = || false;
+    assert!(area_at_end(Some(Some(1.0)), &Direction::Down, overflows));
+    assert!(area_at_end(Some(Some(0.0)), &Direction::Left, overflows));
+    assert!(!area_at_end(Some(Some(1.0)), &Direction::Up, fits));
+    assert!(!area_at_end(Some(Some(0.5)), &Direction::Down, fits));
+    assert!(!area_at_end(Some(Some(f64::NAN)), &Direction::Down, fits));
+    assert!(
+        !area_at_end(Some(None), &Direction::Down, fits),
+        "a bar whose value cannot be read proves nothing, whatever the content size says"
+    );
+    assert!(area_at_end(None, &Direction::Right, fits));
+    assert!(!area_at_end(None, &Direction::Right, overflows));
 }

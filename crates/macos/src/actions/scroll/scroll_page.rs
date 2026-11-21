@@ -11,9 +11,10 @@ const AREA_CHILDREN: usize = 32;
 
 /// Reads every signal a page scroll on `direction`'s axis could move: that
 /// axis's scroll bar value, the frames of the area's first children that are
-/// not scroll bars, and the frames of the first such child's first children.
-/// A signal that exists but cannot be read is recorded as unreadable, never
-/// as unchanged.
+/// not scroll bars, and the frames of the first children of each of those,
+/// so a pinned first child does not hide rows that moved beside it. A signal
+/// that exists but cannot be read is recorded as unreadable, never as
+/// unchanged. An element without a frame is no signal and is not counted.
 pub(super) fn capture(
     area: &AXElement,
     direction: &Direction,
@@ -23,26 +24,22 @@ pub(super) fn capture(
         Direction::Up | Direction::Down => "AXVerticalScrollBar",
         Direction::Left | Direction::Right => "AXHorizontalScrollBar",
     };
-    let bar = match super::scroll_read::element(area, bar_attribute, deadline) {
+    let bar_value = match super::scroll_read::element(area, bar_attribute, deadline) {
         Ok(Some(bar)) => Some(
             super::scroll_read::number(&bar, "AXValue", deadline)
                 .ok()
-                .flatten()
-                .map(f64::to_bits),
+                .flatten(),
         ),
         Ok(None) => None,
         Err(_) => Some(None),
     };
+    let at_end = area_at_end(bar_value, direction, || {
+        content_fits(area, direction, deadline)
+    });
     let mut sampled = 0;
     let content_children = content_children(area, deadline);
     let descendant = match &content_children {
-        Some(Some(children)) => children.first().and_then(|first| {
-            match super::scroll_read::children_up_to(first, SAMPLED_CHILDREN, deadline) {
-                Ok(inner) if inner.is_empty() => None,
-                Ok(inner) => Some(frames_hash(sample(&inner), &mut sampled, deadline)),
-                Err(_) => Some(None),
-            }
-        }),
+        Some(Some(children)) => descendant_frames(children, &mut sampled, deadline),
         Some(None) => Some(None),
         None => None,
     };
@@ -50,10 +47,50 @@ pub(super) fn capture(
         children.and_then(|children| frames_hash(&children, &mut sampled, deadline))
     });
     ScrollSignals {
-        bar,
+        bar: bar_value.map(|value| value.map(f64::to_bits)),
         content,
         descendant,
         sampled,
+        at_end,
+    }
+}
+
+/// Whether the area shows it cannot move toward `direction`: its scroll bar
+/// on that axis reads a value at that end, or, when the axis has no scroll
+/// bar, its content fits inside it on that axis. A bar whose value cannot be
+/// read proves nothing.
+pub(super) fn area_at_end(
+    bar_value: Option<Option<f64>>,
+    direction: &Direction,
+    content_fits: impl FnOnce() -> bool,
+) -> bool {
+    match bar_value {
+        Some(Some(value)) => {
+            value.is_finite() && !super::scroll_plan::bar_can_move(value, direction)
+        }
+        Some(None) => false,
+        None => content_fits(),
+    }
+}
+
+fn content_fits(area: &AXElement, direction: &Direction, deadline: Deadline) -> bool {
+    let Ok(instant) = crate::tree::locator_deadline::from_operation(deadline) else {
+        return false;
+    };
+    let Some(frame) = crate::tree::element_bounds::read_bounds_with_deadline(area, instant)
+        .ok()
+        .flatten()
+    else {
+        return false;
+    };
+    let Some(clip) =
+        crate::tree::element_bounds::clip_bounds(area, "AXScrollArea", Some(frame), instant)
+    else {
+        return false;
+    };
+    match direction {
+        Direction::Up | Direction::Down => clip.height > frame.height,
+        Direction::Left | Direction::Right => clip.width > frame.width,
     }
 }
 
@@ -75,8 +112,19 @@ fn content_children(area: &AXElement, deadline: Deadline) -> Option<Option<Vec<A
     (!content.is_empty()).then_some(Some(content))
 }
 
-fn sample(elements: &[AXElement]) -> &[AXElement] {
-    &elements[..elements.len().min(SAMPLED_CHILDREN)]
+fn descendant_frames(
+    children: &[AXElement],
+    sampled: &mut usize,
+    deadline: Deadline,
+) -> Option<Option<u64>> {
+    let mut inner = Vec::new();
+    for child in children {
+        match super::scroll_read::children_up_to(child, SAMPLED_CHILDREN, deadline) {
+            Ok(grandchildren) => inner.extend(grandchildren),
+            Err(_) => return Some(None),
+        }
+    }
+    (!inner.is_empty()).then(|| frames_hash(&inner, sampled, deadline))
 }
 
 fn frames_hash(elements: &[AXElement], sampled: &mut usize, deadline: Deadline) -> Option<u64> {
@@ -84,19 +132,23 @@ fn frames_hash(elements: &[AXElement], sampled: &mut usize, deadline: Deadline) 
 
     let mut hasher = rustc_hash::FxHasher::default();
     elements.len().hash(&mut hasher);
+    let mut framed = 0;
     for element in elements {
-        frame_hash(element, deadline)?.hash(&mut hasher);
+        let frame = frame_hash(element, deadline)?;
+        framed += usize::from(frame.is_some());
+        frame.hash(&mut hasher);
     }
-    *sampled += elements.len();
+    *sampled += framed;
     Some(hasher.finish())
 }
 
-fn frame_hash(element: &AXElement, deadline: Deadline) -> Option<u64> {
+fn frame_hash(element: &AXElement, deadline: Deadline) -> Option<Option<u64>> {
     let instant = crate::tree::locator_deadline::from_operation(deadline).ok()?;
-    crate::tree::element_bounds::read_bounds_with_deadline(element, instant)
-        .ok()
-        .flatten()
-        .and_then(|frame| frame.bounds_hash())
+    let frame = crate::tree::element_bounds::read_bounds_with_deadline(element, instant).ok()?;
+    match frame {
+        Some(frame) => frame.bounds_hash().map(Some),
+        None => Some(None),
+    }
 }
 
 /// How long a refusal may take and still count as the application's answer.
@@ -116,10 +168,12 @@ pub(super) fn answered_in_time(elapsed: Duration, window: Duration) -> bool {
 /// Settles a page action that failed on its first step. `kAXErrorCannotComplete`
 /// alone cannot tell a hung application from a scroll area that has no page to
 /// move to. Any signal that moved means the scroll happened. The action counts
-/// as undelivered only when every signal the area has stayed readable and
-/// unchanged for the whole settle window, long enough for an animated scroll
-/// to start. Anything less keeps the original error and its uncertain
-/// disposition, because an unchanged or unreadable state is not proof.
+/// as undelivered only when the area shows, before and after, that it is at
+/// its end in that direction, and every signal it has stayed readable and
+/// unchanged for the whole settle window. Unchanged signals alone are no
+/// proof: they may miss what moved, and an animated scroll may start after
+/// the window. Anything less keeps the original error and its uncertain
+/// disposition.
 pub(super) fn settle_refusal(
     area: &AXElement,
     direction: &Direction,
@@ -147,10 +201,11 @@ pub(super) fn settle_observed(
         return Err(error);
     }
     for read in 0..SETTLE_READS {
-        match before.movement(read_after()) {
+        let after = read_after();
+        match before.movement(after) {
             Some(true) => return Ok(()),
-            Some(false) => {}
-            None => return Err(error),
+            Some(false) if before.at_end && after.at_end => {}
+            Some(false) | None => return Err(error),
         }
         if read + 1 < SETTLE_READS && !pause() {
             return Err(error);
@@ -180,7 +235,8 @@ fn unavailable_page_action(action: &str, source: &AdapterError) -> AdapterError 
     let error = AdapterError::new(
         ErrorCode::ActionNotSupported,
         format!(
-            "{action} is not available: the scroll area refused it and its content did not move"
+            "{action} is not available: the scroll area refused it, it is already at its end \
+             that way, and its content did not move"
         ),
     )
     .with_details(serde_json::json!({
@@ -188,6 +244,7 @@ fn unavailable_page_action(action: &str, source: &AdapterError) -> AdapterError 
         "operation": action,
         "ax_error": accessibility_sys::kAXErrorCannotComplete,
         "scroll_signals_unchanged": true,
+        "scroll_area_at_end": true,
     }))
     .with_disposition(DeliverySemantics::not_delivered())
     .with_suggestion(

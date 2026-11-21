@@ -4,25 +4,27 @@
 /// `Some(Some(fingerprint))` with the value's bit pattern or bounds hash.
 /// `bar` is the scroll bar on the scrolled axis, `content` the frames of the
 /// area's first children that are not scroll bars, and `descendant` the frames
-/// of the first content child's first children, which move even when the
-/// content's own frame is the viewport and its first child is a pinned header.
-/// `sampled` counts the elements whose frames were read.
+/// of each content child's first children, which move even when a content
+/// frame is the viewport and the first content child is a pinned header.
+/// `sampled` counts the elements whose frames were read. `at_end` is true
+/// when the area showed it cannot move this way: its scroll bar sits at that
+/// end, or the axis has no scroll bar and its content fits inside the area.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ScrollSignals {
     pub(crate) bar: Option<Option<u64>>,
     pub(crate) content: Option<Option<u64>>,
     pub(crate) descendant: Option<Option<u64>>,
     pub(crate) sampled: usize,
+    pub(crate) at_end: bool,
 }
 
 impl ScrollSignals {
     /// `Some(true)` when any signal readable in both reads changed, so the
     /// scroll happened. `Some(false)` only when every signal is readable in
     /// both reads and unchanged, and those signals include the scroll bar's
-    /// value or the frames of at least two elements, which proves the action
-    /// moved nothing. A single frame is no proof: a content view sized to the
-    /// viewport, or a pinned header, stays put while the scroll moves the rest.
-    /// `None` when the evidence cannot decide.
+    /// value or the frames of at least two elements. `None` when the evidence
+    /// cannot decide. Unchanged signals still need `at_end` to prove a refused
+    /// page action moved nothing.
     pub(crate) fn movement(self, after: ScrollSignals) -> Option<bool> {
         let pairs = [
             (self.bar, after.bar),
