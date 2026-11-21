@@ -177,7 +177,7 @@ class ProcessOracleTests(unittest.TestCase):
         for display, names in ((":150", ["Calculator", "Files", "Terminal", "Text Editor", "Settings"]),
                                (None, ["Calculator", "Text Editor"])):
             tier = SimpleNamespace(display=display, runtime_dir=Path("/private/a"))
-            with patch.object(apps, "launch", side_effect=lambda tier, name: name) as launch, \
+            with patch.object(apps, "launch", side_effect=lambda tier, name, **kwargs: name) as launch, \
                 patch.object(apps, "stop") as stop, \
                 patch.object(apps.proc, "members", return_value=[]), \
                 patch.object(apps.time, "sleep"), \

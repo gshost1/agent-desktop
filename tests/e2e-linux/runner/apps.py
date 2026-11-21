@@ -5,6 +5,7 @@ import re
 import signal
 import subprocess
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
@@ -12,6 +13,10 @@ from shutil import which
 from oracle import atspi_raw as raw, proc, x11
 from oracle.gsettings import tool
 from runner.session import Tier
+
+
+WARMUP_MAPPING_S = 45.0
+WARMUP_STDERR_TAIL_BYTES = 2048
 
 
 class FixtureUnavailable(Exception):
@@ -123,7 +128,8 @@ def _display_verified(tier, app) -> bool:
     return len(mapped) >= len(app.windows)
 
 
-def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float = 5.0) -> OwnedApp:
+def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float = 5.0,
+           stderr_log: Path | None = None) -> OwnedApp:
     from runner.readiness import wait_ready
 
     if app == "Settings Mouse" and which("umockdev-run", path=tier.env.get("PATH")) is None:
@@ -156,8 +162,9 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
     if "code" in Path(command[0]).name:
         env["ACCESSIBILITY_ENABLED"] = "1"
     log = tier.runtime_dir / "app-launch.log"
-    with log.open("ab") as stream:
-        child = subprocess.Popen(command + list(args), env=env, stdout=stream, stderr=stream,
+    with log.open("ab") as stream, \
+         (stderr_log.open("wb") if stderr_log is not None else nullcontext(stream)) as errors:
+        child = subprocess.Popen(command + list(args), env=env, stdout=stream, stderr=errors,
                                  start_new_session=True)
     _SPAWNED[child.pid] = child
 
@@ -242,6 +249,16 @@ def launch_qt(tier: Tier) -> OwnedApp:
     return launch(tier, str(path), (str(tier.runtime_dir / "qt-window.log"),))
 
 
+def _warmup_stderr_tail(path: Path) -> str:
+    try:
+        with path.open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, stream.tell() - WARMUP_STDERR_TAIL_BYTES))
+            return stream.read(WARMUP_STDERR_TAIL_BYTES).decode("utf-8", errors="replace").strip() or "<empty stderr>"
+    except OSError as error:
+        return f"<stderr unavailable: {error}>"
+
+
 def prime_desktop(tier: Tier) -> None:
     """Activate private portal/keyring services before a leg owns its baseline."""
     if tier.display:
@@ -249,9 +266,16 @@ def prime_desktop(tier: Tier) -> None:
                            ("enable-monitors", "false"), ("crawling-interval", "-2"), ("initial-sleep", "0")):
             tool(tier, ["gsettings", "set", "org.freedesktop.Tracker3.Miner.Files", key, value])
     names = ("Calculator", "Files", "Terminal", "Text Editor", "Settings") if tier.display else ("Calculator", "Text Editor")
-    for name in names:
-        app = launch(tier, name)
-        stop(app)
+    for index, name in enumerate(names):
+        stderr_log = tier.runtime_dir / f"warmup-{index}.stderr.log"
+        try:
+            app = launch(tier, name, settle_s=WARMUP_MAPPING_S, stderr_log=stderr_log)
+            stop(app)
+        except Exception as error:
+            raise RuntimeError(
+                f"{name}: {error}; stderr tail (last {WARMUP_STDERR_TAIL_BYTES} bytes): "
+                f"{_warmup_stderr_tail(stderr_log)}"
+            ) from error
     previous = proc.members(tier.runtime_dir)
     stable_since = time.monotonic()
     deadline = stable_since + 45.0
