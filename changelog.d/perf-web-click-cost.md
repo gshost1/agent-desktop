@@ -1,3 +1,4 @@
 ### Performance
 
 * Attaching to a page for a web ref action or snapshot no longer sends `Runtime.runIfWaitingForDebugger` when Chrome's `Target.attachedToTarget` event says the page is already running, which saves one round trip per command; a page reported paused, or one with no such event, is still released. In headless Chrome 156 on the local VM a web ref click through the core path went from a median of 5.1 ms to 4.7 ms (7 runs, warm-up dropped, three rounds).
+* A web ref's live read, which every ref action makes before it acts, proves the page's document once instead of twice: the value and checked-state read reuses the proof the accessibility read just made on the same connection, which saves one `Page.getFrameTree` round trip. In headless Chrome 156 on the local VM a web ref click went from a median of 3.7–3.9 ms to 3.6–3.7 ms (7 runs, warm-up dropped, three rounds).
