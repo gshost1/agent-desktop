@@ -1,4 +1,8 @@
-from runner.helper import (changed, command, managed, one, ref, require, root, stale_twin)
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from runner.helper import (changed, command, managed, one, ref, remove, require, root, stale_twin)
 from runner.legs import implementation
 from runner.verdict import LegContext
 
@@ -28,14 +32,45 @@ def terminal_copy_follows_selection(ctx: LegContext) -> None:
             ctx.restored("atspi", "SENSITIVE" in copy.states)
 
 
+@contextmanager
+def _empty_editor(ctx):
+    data_home = Path(ctx.tier.env["XDG_DATA_HOME"])
+    succeeded = False
+    try:
+        with TemporaryDirectory(prefix="semantic-type-", dir=ctx.tier.runtime_dir) as directory:
+            directory = Path(directory)
+            document = directory / f"{directory.name}.txt"
+            document.touch()
+            with managed(ctx, "Text Editor", ("--standalone", "--new-window", str(document))) as app:
+                yield app, document
+        succeeded = True
+    finally:
+        problems = []
+        for folder in ("gnome-text-editor", "org.gnome.TextEditor"):
+            for name in ("session.gvariant", "drafts"):
+                path = data_home / folder / name
+                try:
+                    remove(path)
+                except Exception as error:
+                    problems.append(f"{path}: {error}")
+        if problems:
+            message = "Text Editor session cleanup: " + "; ".join(problems)
+            if succeeded:
+                raise AssertionError(message)
+            ctx.finding(message)
+
+
 @implementation("state.text_editor_semantic_type")
 def text_editor_semantic_type(ctx: LegContext) -> None:
-    with managed(ctx, "Text Editor", ("--new-window",)) as app:
+    with _empty_editor(ctx) as (app, document):
+        changed(lambda: any(document.name in node.name
+                            for node in root(ctx, app).walk()
+                            if node.role in (23, 37, 69)), True)
         tree = root(ctx, app)
         field = one(tree, role=61)
-        target = ref(ctx, app, role="textfield")
-        initial = field.text()
+        initial = changed(field.text, "")
         require(initial == "", "document must start empty")
+        target = ref(ctx, app, role="textfield")
         ctx.before("atspi", initial)
         try:
             command(ctx, ["type", target, "Desktop café"], app)
