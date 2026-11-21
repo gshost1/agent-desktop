@@ -87,7 +87,7 @@ The report groups outcomes by tier and mode. Only `pass` and `asserted-refusal` 
 | `outstanding`, `owner-decision` | Registered but deliberately not run; the reason is printed. |
 | `tier-unavailable` | The tier's private session never became healthy or its desktop warm-up failed, so its legs did not run. |
 
-The `launch.recovery_strategy_on_error` leg is an `asserted-refusal`. It stops Calculator after a snapshot, then requires a click on the dead owner's ref to answer `STALE_REF` with `details.process_state=exited`, `details.retryable=false` and disposition `not_delivered`/`safe`, with no `recovery` object and no relaunch of the owner.
+The `launch.recovery_strategy_on_error` leg is an `asserted-refusal`. It stops Calculator after a snapshot, then requires a click on the dead owner's ref to answer `STALE_REF` with `details.process_state=exited`, `details.retryable=false` and disposition `not_delivered`/`safe`, with the `inspect_state_then_retry_original` recovery (`requires_fresh_snapshot: true`) and no relaunch of the owner.
 
 `launch.unresolved_terminal_handoff` checks the documented unsafe handoff result, not successful owner attribution or a no-effect refusal. The Terminal client exits successfully and D-Bus starts a different, unmarked executable. The leg requires `ACTION_FAILED`, `details.kind=exited`, status 0, the spawned pid, `delivered_unverified`/`unsafe` and no automatic recovery. Raw AT-SPI and process identity must independently prove the service window exists; cleanup closes its exact listed owner and restores both process and window observations. A 5 s product deadline leaves room for the result inside the harness deadline.
 
