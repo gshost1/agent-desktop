@@ -100,3 +100,14 @@ fn a_failed_call_or_a_missing_result_is_unreadable_unless_the_attributes_are_abs
     let absent = decode_call(kAXErrorNoValue, None, true).unwrap();
     assert!(absent.role.is_none() && absent.frame.is_none());
 }
+
+#[test]
+fn a_decoded_frame_that_fails_validation_is_unreadable_not_an_absent_frame() {
+    let nan = ax_value(kAXValueTypeCGPoint, &CGPoint::new(f64::NAN, 20.0));
+    let huge = ax_value(kAXValueTypeCGPoint, &CGPoint::new(1.0e300, 20.0));
+    let negative = ax_value(kAXValueTypeCGSize, &CGSize::new(-1.0, 30.0));
+
+    assert!(decode(&values(&[nan, size()]), false).is_err());
+    assert!(decode(&values(&[huge, size()]), false).is_err());
+    assert!(decode(&values(&[position(), negative]), false).is_err());
+}

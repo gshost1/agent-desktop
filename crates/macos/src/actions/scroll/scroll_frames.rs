@@ -1,8 +1,9 @@
 //! Role and frame reads for the scroll signals, one
 //! `AXUIElementCopyMultipleAttributeValues` call per element instead of one
 //! call per attribute. Only `kAXErrorAttributeUnsupported` and
-//! `kAXErrorNoValue` make a frame absent; every other failure is unreadable,
-//! so a transient error never reads as a frame that moved.
+//! `kAXErrorNoValue` make a frame absent; every other failure, and a decoded
+//! frame that fails validation, is unreadable, so a transient error or a bad
+//! value never reads as a frame that moved.
 
 use agent_desktop_core::{Deadline, Rect};
 
@@ -84,7 +85,8 @@ fn decode(
         extent,
         crate::tree::properties::node_attribute_decode::size,
     )?)
-    .and_then(|(point, size)| crate::tree::element_bounds::rect_from_parts(point, size));
+    .map(|(point, size)| crate::tree::element_bounds::rect_from_parts(point, size).ok_or(()))
+    .transpose()?;
     Ok(ElementRead { role, frame })
 }
 
