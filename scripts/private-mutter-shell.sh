@@ -19,6 +19,10 @@ set -euo pipefail
 }
 [ "${1:-}" = "--" ] && shift
 [ $# -gt 0 ] || { echo "usage: private-mutter-shell.sh [--] command [args...]" >&2; exit 2; }
+command -v gnome-shell >/dev/null || {
+  echo "private-mutter-shell: prerequisite missing: gnome-shell on PATH; install the gnome-shell package" >&2
+  exit 1
+}
 
 log=$AGENT_DESKTOP_PRIVATE_SESSION
 xvfb_pid=
@@ -92,21 +96,27 @@ cat > "$mode_root/gnome-shell/modes/ad-private.json" <<'JSON'
 }
 JSON
 
-for _ in $(seq 1 5); do
+for attempt in $(seq 1 5); do
+  ln -sf "gnome-shell-mutter-attempt-$attempt.log" "$log/gnome-shell-mutter.log"
   DISPLAY=$display GNOME_SHELL_SESSION_MODE=ad-private XDG_DATA_DIRS="$mode_root:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" setsid gnome-shell --x11 --replace > "$log/gnome-shell-mutter.log" 2>&1 < /dev/null &
   shell_pid=$!
   for _ in $(seq 1 60); do
+    kill -0 "$shell_pid" 2>/dev/null || break
     [ -n "$(overview_active)" ] && break
     sleep 0.5
   done
-  if [ -n "$(overview_active)" ]; then
+  if kill -0 "$shell_pid" 2>/dev/null && [ -n "$(overview_active)" ]; then
     break
   fi
   kill -KILL -- "-$shell_pid" 2>/dev/null || true
   wait "$shell_pid" 2>/dev/null || true
   shell_pid=
 done
-[ -n "$shell_pid" ] || { echo "private-mutter-shell: no healthy gnome-shell --x11" >&2; exit 1; }
+[ -n "$shell_pid" ] || {
+  echo "private-mutter-shell: no healthy gnome-shell --x11; last attempt log follows" >&2
+  tail -n 80 "$log/gnome-shell-mutter.log" >&2 || true
+  exit 1
+}
 
 DISPLAY=$display /usr/bin/python3 - "$log/mutter-mapped" <<'PY' &
 import pathlib
