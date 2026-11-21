@@ -1,5 +1,7 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo, WindowOp};
 
+use super::window_postcondition::{GeometryOutcome, wait_for_geometry};
+
 mod imp {
     use super::*;
     use accessibility_sys::{
@@ -17,16 +19,22 @@ mod imp {
         fn AXValueCreate(value_type: u32, value_ptr: *const c_void) -> *mut c_void;
     }
 
-    pub fn execute(win: &WindowInfo, op: WindowOp, deadline: Deadline) -> Result<(), AdapterError> {
+    pub(in crate::system) fn execute(
+        win: &WindowInfo,
+        op: &WindowOp,
+        deadline: Deadline,
+    ) -> Result<Option<GeometryOutcome>, AdapterError> {
         tracing::debug!(operation = ?op, "system: window operation");
         deadline.ensure_remaining()?;
         let win_el = crate::system::window::window_resolve::window_element_for_info(win, deadline)?;
-        match op {
-            WindowOp::Resize { width, height } => set_size(&win_el, width, height, deadline),
-            WindowOp::Move { x, y } => set_position(&win_el, x, y, deadline),
-            WindowOp::Minimize => set_minimized(&win_el, true, deadline),
-            WindowOp::Maximize => maximize_to_main_display(&win_el, deadline),
-            WindowOp::Restore => set_minimized(&win_el, false, deadline),
+        match *op {
+            WindowOp::Resize { width, height } => {
+                set_size(&win_el, width, height, deadline, true).map(Some)
+            }
+            WindowOp::Move { x, y } => set_position(&win_el, x, y, deadline, true).map(Some),
+            WindowOp::Minimize => set_minimized(&win_el, true, deadline).map(|()| None),
+            WindowOp::Maximize => maximize_to_main_display(&win_el, deadline).map(|()| None),
+            WindowOp::Restore => set_minimized(&win_el, false, deadline).map(|()| None),
         }
     }
 
@@ -41,10 +49,12 @@ mod imp {
                 .ok_or_else(|| AdapterError::internal("Window deadline is out of range"))?,
         )?;
         let work_area = crate::system::display_work_area::for_window(current, deadline)?;
-        set_position(el, work_area.x, work_area.y, deadline)?;
-        set_size(el, work_area.width, work_area.height, deadline).map_err(|error| {
-            crate::actions::DeliveryTracker::from_delivered_units(1).annotate(error)
-        })
+        set_position(el, work_area.x, work_area.y, deadline, false)?;
+        set_size(el, work_area.width, work_area.height, deadline, false)
+            .map(|_| ())
+            .map_err(|error| {
+                crate::actions::DeliveryTracker::from_delivered_units(1).annotate(error)
+            })
     }
 
     fn set_size(
@@ -52,7 +62,8 @@ mod imp {
         width: f64,
         height: f64,
         deadline: Deadline,
-    ) -> Result<(), AdapterError> {
+        accept_adjustment: bool,
+    ) -> Result<GeometryOutcome, AdapterError> {
         validate_size(width, height)?;
         prepare(el, deadline)?;
         let size = CGSize::new(width, height);
@@ -70,7 +81,7 @@ mod imp {
             deadline,
         )?;
         finish_mutation(err, "resize window", deadline)?;
-        crate::system::window::window_postcondition::wait_for_geometry(
+        wait_for_geometry(
             el,
             agent_desktop_core::Rect {
                 x: 0.0,
@@ -79,6 +90,7 @@ mod imp {
                 height,
             },
             false,
+            accept_adjustment,
             deadline,
         )
     }
@@ -88,7 +100,8 @@ mod imp {
         x: f64,
         y: f64,
         deadline: Deadline,
-    ) -> Result<(), AdapterError> {
+        accept_adjustment: bool,
+    ) -> Result<GeometryOutcome, AdapterError> {
         validate_position(x, y)?;
         prepare(el, deadline)?;
         let point = CGPoint::new(x, y);
@@ -108,7 +121,7 @@ mod imp {
             deadline,
         )?;
         finish_mutation(err, "move window", deadline)?;
-        crate::system::window::window_postcondition::wait_for_geometry(
+        wait_for_geometry(
             el,
             agent_desktop_core::Rect {
                 x,
@@ -117,6 +130,7 @@ mod imp {
                 height: 0.0,
             },
             true,
+            accept_adjustment,
             deadline,
         )
     }
@@ -321,4 +335,4 @@ mod raise {
 
 pub(crate) use raise::raise_window;
 
-pub(crate) use imp::execute;
+pub(in crate::system) use imp::execute;
