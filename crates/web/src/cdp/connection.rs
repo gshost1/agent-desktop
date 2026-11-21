@@ -66,16 +66,7 @@ impl CdpConnection {
         session_id: Option<&str>,
         deadline: Deadline,
     ) -> Result<Value, AdapterError> {
-        if session_id.is_some_and(|session| self.detached_sessions.contains(session)) {
-            return Err(session_detached(method));
-        }
-        let id = self.next_id;
-        self.next_id += 1;
-        let mut request = json!({ "id": id, "method": method, "params": params });
-        if let Some(session_id) = session_id {
-            request["sessionId"] = Value::String(session_id.to_owned());
-        }
-        self.transport.send_text(&request.to_string(), deadline)?;
+        let id = self.send_request(method, params, session_id, deadline)?;
         loop {
             let text = self.transport.receive_text(deadline)?;
             match Incoming::parse(&text) {
@@ -99,6 +90,38 @@ impl CdpConnection {
                 None => return Err(transport_failed(method, "unparseable DevTools frame")),
             }
         }
+    }
+
+    pub(super) fn send_request(
+        &mut self,
+        method: &str,
+        params: Value,
+        session_id: Option<&str>,
+        deadline: Deadline,
+    ) -> Result<u64, AdapterError> {
+        if session_id.is_some_and(|session| self.is_detached(session)) {
+            return Err(session_detached(method));
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut request = json!({ "id": id, "method": method, "params": params });
+        if let Some(session_id) = session_id {
+            request["sessionId"] = Value::String(session_id.to_owned());
+        }
+        self.transport.send_text(&request.to_string(), deadline)?;
+        Ok(id)
+    }
+
+    pub(super) fn receive_incoming(
+        &mut self,
+        deadline: Deadline,
+    ) -> Result<Option<Incoming>, AdapterError> {
+        let text = self.transport.receive_text(deadline)?;
+        Ok(Incoming::parse(&text))
+    }
+
+    pub(super) fn is_detached(&self, session_id: &str) -> bool {
+        self.detached_sessions.contains(session_id)
     }
 
     /// Returns the first event, buffered or newly read, that `matches`,
@@ -153,7 +176,7 @@ impl CdpConnection {
         self.dropped_events
     }
 
-    fn buffer(&mut self, event: CdpEvent) {
+    pub(super) fn buffer(&mut self, event: CdpEvent) {
         if event.method == DETACHED {
             if let Some(session) = event.params.get("sessionId").and_then(Value::as_str) {
                 if self.detached_sessions.len() >= MAX_DETACHED_SESSIONS {
@@ -170,11 +193,11 @@ impl CdpConnection {
     }
 }
 
-fn session_detached(method: &str) -> AdapterError {
+pub(super) fn session_detached(method: &str) -> AdapterError {
     target_gone(method, "the browser detached the target's session")
 }
 
-fn reply_unreadable(method: &str) -> AdapterError {
+pub(super) fn reply_unreadable(method: &str) -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionFailed,
         format!("The reply to '{method}' nests too deeply to read"),
@@ -182,7 +205,7 @@ fn reply_unreadable(method: &str) -> AdapterError {
     .with_details(json!({ "kind": "cdp_reply_unreadable", "method": method }))
 }
 
-fn reply_result(method: &str, mut body: Value) -> Result<Value, AdapterError> {
+pub(super) fn reply_result(method: &str, mut body: Value) -> Result<Value, AdapterError> {
     if let Some(error) = body.get("error") {
         return Err(protocol_error(method, error));
     }
