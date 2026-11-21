@@ -2,6 +2,7 @@ name: Hosted macOS E2E
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
@@ -13,8 +14,29 @@ concurrency:
 permissions: {}
 
 jobs:
+  macos-scope:
+    name: macOS scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      macos: ${{ steps.scope.outputs.macos }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Decide whether this event needs the macOS jobs
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: python3 -I scripts/ci_macos_scope.py --event "$EVENT_NAME" --draft "$PR_DRAFT" | tee -a "$GITHUB_OUTPUT"
+
   e2e:
     name: Hosted macOS E2E (${{ matrix.image }})
+    needs: macos-scope
+    if: needs.macos-scope.outputs.macos == 'true'
     runs-on: ${{ matrix.image }}
     timeout-minutes: 45
     permissions:
