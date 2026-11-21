@@ -1,56 +1,96 @@
-use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, Rect};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, Rect};
+use serde_json::json;
 use std::time::{Duration, Instant};
 
 pub(crate) const TOLERANCE: f64 = 2.0;
-const GEOMETRY_SETTLE_TIME: Duration = Duration::from_millis(100);
+const GEOMETRY_SETTLE_TIME: Duration = Duration::from_millis(250);
 
-#[derive(Debug, PartialEq)]
-pub(in crate::system) enum GeometryOutcome {
-    Matched,
-    Adjusted(Rect),
+#[derive(Clone, Copy)]
+pub(super) enum GeometryRequest {
+    Move { x: f64, y: f64 },
+    Resize { width: f64, height: f64 },
+}
+
+impl GeometryRequest {
+    fn matches(self, actual: Rect) -> bool {
+        match self {
+            Self::Move { x, y } => near(actual.x, x) && near(actual.y, y),
+            Self::Resize { width, height } => {
+                near(actual.width, width) && near(actual.height, height)
+            }
+        }
+    }
+
+    fn mismatch(self, observed: Rect) -> AdapterError {
+        let requested = match self {
+            Self::Move { x, y } => json!({ "x": x, "y": y }),
+            Self::Resize { width, height } => json!({ "width": width, "height": height }),
+        };
+        AdapterError::new(
+            ErrorCode::ActionFailed,
+            "The window manager left the window other than requested",
+        )
+        .with_details(json!({
+            "cause": "readback_mismatch",
+            "requested": requested,
+            "observed": observed,
+        }))
+    }
+}
+
+pub(super) fn read_geometry(
+    element: &crate::tree::AXElement,
+    deadline: Deadline,
+) -> Result<Option<Rect>, AdapterError> {
+    crate::tree::element_bounds::read_bounds_with_deadline(element, deadline_instant(deadline)?)
 }
 
 pub(super) fn wait_for_geometry(
     element: &crate::tree::AXElement,
-    expected: Rect,
-    position: bool,
-    accept_adjustment: bool,
+    request: GeometryRequest,
+    before: Option<Rect>,
     deadline: Deadline,
-) -> Result<GeometryOutcome, AdapterError> {
-    wait_for_geometry_with(expected, position, accept_adjustment, deadline, || {
-        crate::tree::element_bounds::read_bounds_with_deadline(element, deadline_instant(deadline)?)
+) -> Result<(), AdapterError> {
+    wait_for_geometry_with(request, before, deadline, || {
+        Ok((read_geometry(element, deadline)?, Instant::now()))
     })
 }
 
 fn wait_for_geometry_with(
-    expected: Rect,
-    position: bool,
-    accept_adjustment: bool,
+    request: GeometryRequest,
+    before: Option<Rect>,
     deadline: Deadline,
-    mut read: impl FnMut() -> Result<Option<Rect>, AdapterError>,
-) -> Result<GeometryOutcome, AdapterError> {
+    mut read: impl FnMut() -> Result<(Option<Rect>, Instant), AdapterError>,
+) -> Result<(), AdapterError> {
     let mut stable = None;
     wait_until(deadline, || {
-        let Some(actual) = read()? else {
+        let (actual, now) = read()?;
+        let Some(actual) = actual else {
             stable = None;
-            return Ok(None);
+            return Ok(false);
         };
-        if geometry_matches(actual, expected, position) {
-            return Ok(Some(GeometryOutcome::Matched));
+        if request.matches(actual) {
+            return Ok(true);
         }
-        if !accept_adjustment {
-            return Ok(None);
+        if before.is_none_or(|before| frame_matches(actual, before)) {
+            stable = None;
+            return Ok(false);
         }
-        let now = Instant::now();
-        if let Some((previous, since)) = stable
-            && geometry_matches(actual, previous, true)
-            && geometry_matches(actual, previous, false)
+        if let Some((anchor, since, confirm_on_next_read)) = stable
+            && frame_matches(actual, anchor)
         {
-            return Ok((now.duration_since(since) >= GEOMETRY_SETTLE_TIME)
-                .then_some(GeometryOutcome::Adjusted(actual)));
+            if confirm_on_next_read {
+                return Err(request.mismatch(actual));
+            }
+            stable = Some((
+                anchor,
+                since,
+                now.duration_since(since) >= GEOMETRY_SETTLE_TIME,
+            ));
+        } else {
+            stable = Some((actual, now, false));
         }
-        stable = Some((actual, now));
-        Ok(None)
+        Ok(false)
     })
 }
 
@@ -65,17 +105,17 @@ pub(crate) fn wait_for_minimized(
             "AXMinimized",
             deadline_instant(deadline)?,
         )?;
-        Ok((actual == Some(expected)).then_some(()))
+        Ok(actual == Some(expected))
     })
 }
 
-fn wait_until<T>(
+fn wait_until(
     deadline: Deadline,
-    mut complete: impl FnMut() -> Result<Option<T>, AdapterError>,
-) -> Result<T, AdapterError> {
+    mut complete: impl FnMut() -> Result<bool, AdapterError>,
+) -> Result<(), AdapterError> {
     loop {
-        if let Some(value) = complete().map_err(after_delivery)? {
-            return Ok(value);
+        if complete().map_err(after_delivery)? {
+            return Ok(());
         }
         if deadline.is_expired() {
             return Err(after_delivery(AdapterError::timeout(
@@ -83,28 +123,25 @@ fn wait_until<T>(
             )));
         }
         let pause = deadline
-            .remaining_slice(std::time::Duration::from_millis(10))
+            .remaining_slice(Duration::from_millis(10))
             .map_err(after_delivery)?;
         std::thread::sleep(pause);
     }
 }
 
-fn geometry_matches(actual: Rect, expected: Rect, position: bool) -> bool {
-    let values = if position {
-        [(actual.x, expected.x), (actual.y, expected.y)]
-    } else {
-        [
-            (actual.width, expected.width),
-            (actual.height, expected.height),
-        ]
-    };
-    values
-        .into_iter()
-        .all(|(actual, expected)| (actual - expected).abs() <= TOLERANCE)
+fn frame_matches(actual: Rect, expected: Rect) -> bool {
+    near(actual.x, expected.x)
+        && near(actual.y, expected.y)
+        && near(actual.width, expected.width)
+        && near(actual.height, expected.height)
 }
 
-fn deadline_instant(deadline: Deadline) -> Result<std::time::Instant, AdapterError> {
-    std::time::Instant::now()
+fn near(actual: f64, expected: f64) -> bool {
+    (actual - expected).abs() <= TOLERANCE
+}
+
+fn deadline_instant(deadline: Deadline) -> Result<Instant, AdapterError> {
+    Instant::now()
         .checked_add(deadline.remaining())
         .ok_or_else(|| AdapterError::internal("Window operation deadline is out of range"))
 }
@@ -114,124 +151,5 @@ fn after_delivery(error: AdapterError) -> AdapterError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn geometry_verification_tolerates_ax_rounding_only() {
-        let expected = Rect {
-            x: 10.0,
-            y: 20.0,
-            width: 100.0,
-            height: 80.0,
-        };
-        let rounded = Rect {
-            x: 11.0,
-            y: 19.0,
-            width: 99.0,
-            height: 81.0,
-        };
-        let wrong = Rect {
-            width: 90.0,
-            ..rounded
-        };
-
-        assert!(geometry_matches(rounded, expected, true));
-        assert!(geometry_matches(rounded, expected, false));
-        assert!(!geometry_matches(wrong, expected, false));
-    }
-
-    #[test]
-    fn clamped_move_and_resize_return_the_observed_frame() {
-        let observed = Rect {
-            x: 350.0,
-            y: 30.0,
-            width: 723.0,
-            height: 470.0,
-        };
-        for (position, expected) in [
-            (
-                true,
-                Rect {
-                    y: -200.0,
-                    ..observed
-                },
-            ),
-            (
-                false,
-                Rect {
-                    width: 100.0,
-                    height: 100.0,
-                    ..observed
-                },
-            ),
-        ] {
-            let mut reads = 0;
-            let outcome = wait_for_geometry_with(
-                expected,
-                position,
-                true,
-                Deadline::detached_after(1_000).unwrap(),
-                || {
-                    reads += 1;
-                    Ok(Some(observed))
-                },
-            )
-            .unwrap();
-            assert!(reads > 1);
-            assert_eq!(outcome, GeometryOutcome::Adjusted(observed));
-        }
-    }
-
-    #[test]
-    fn an_intermediate_frame_does_not_preempt_the_requested_frame() {
-        let expected = Rect {
-            x: 100.0,
-            y: 40.0,
-            width: 120.0,
-            height: 90.0,
-        };
-        let intermediate = Rect {
-            x: 80.0,
-            ..expected
-        };
-        let mut samples = [
-            intermediate,
-            Rect {
-                x: 90.0,
-                ..intermediate
-            },
-            expected,
-        ]
-        .into_iter();
-        let outcome = wait_for_geometry_with(
-            expected,
-            true,
-            true,
-            Deadline::detached_after(1_000).unwrap(),
-            || Ok(samples.next()),
-        )
-        .unwrap();
-        assert_eq!(outcome, GeometryOutcome::Matched);
-    }
-
-    #[test]
-    fn a_missing_readback_still_times_out_after_dispatch() {
-        let expected = Rect {
-            x: 100.0,
-            y: 40.0,
-            width: 120.0,
-            height: 90.0,
-        };
-        let error = wait_for_geometry_with(
-            expected,
-            true,
-            true,
-            Deadline::detached_after(20).unwrap(),
-            || Ok(None),
-        )
-        .unwrap_err();
-        assert_eq!(error.code, agent_desktop_core::ErrorCode::Timeout);
-        assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
-    }
-}
+#[path = "window_postcondition_tests.rs"]
+mod tests;

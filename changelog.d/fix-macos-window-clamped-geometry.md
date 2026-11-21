@@ -1,3 +1,3 @@
 ### Bug Fixes
 
-* On macOS, report the requested and observed frames when a move or resize settles at a different frame.
+* On macOS, a clamped move or resize now fails fast with the requested and observed geometry instead of timing out.
