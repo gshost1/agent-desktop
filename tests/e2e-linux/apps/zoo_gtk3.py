@@ -24,6 +24,7 @@ def main(argv):
     window = Gtk.Window(title="Zoo GTK3")
     window.set_default_size(600, 900)
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+    box.get_accessible().set_name("zoo-content")
     window.add(box)
 
     def named(widget, name):
@@ -120,17 +121,18 @@ def main(argv):
     disabled.set_sensitive(False)
     hidden = add(Gtk.Button(label="zoo-hidden"), "zoo-hidden")
     toolbar = add(Gtk.Toolbar(), "zoo-toolbar")
-    tool_item = Gtk.ToolItem()
+    tool_item = named(Gtk.ToolItem(), "zoo-toolbar-item")
     tool_item.add(named(Gtk.Button(label="zoo-toolbar-hidden"), "zoo-toolbar-hidden"))
     toolbar.insert(tool_item, -1)
     scroll = add(Gtk.ScrolledWindow(), "zoo-scroll")
     scroll.set_size_request(-1, 100)
-    tall = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    tall = named(Gtk.Box(orientation=Gtk.Orientation.VERTICAL), "zoo-scroll-content")
     tall.set_size_request(-1, 2000)
     offscreen = named(Gtk.Button(label="zoo-offscreen"), "zoo-offscreen")
     offscreen.connect("clicked", lambda *_: record("zoo-offscreen", "activate"))
     tall.pack_end(offscreen, False, False, 0)
     scroll.add(tall)
+    named(scroll.get_child(), "zoo-scroll-viewport")
 
     named(scroll.get_vscrollbar(), "zoo-scroll-vscroll")
     named(scroll.get_hscrollbar(), "zoo-scroll-hscroll")

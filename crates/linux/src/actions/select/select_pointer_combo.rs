@@ -145,7 +145,7 @@ fn shows(choices: &mut dyn Choices, current: &AtspiElement, wanted: &str) -> Opt
         .map(|shown| name_matches(&shown, wanted))
 }
 
-fn popup_not_observed(overview: Option<bool>) -> AdapterError {
+pub(super) fn popup_not_observed(overview: Option<bool>) -> AdapterError {
     name_open_overview(
         AdapterError::new(
             ErrorCode::ActionFailed,

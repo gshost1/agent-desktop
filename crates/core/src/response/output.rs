@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::refs::resolve_verdict::COMPLETE_ABSENCE_KINDS;
 use crate::response::recovery_hint::RecoveryHint;
 use crate::{AppError, DeliverySemantics, ErrorCode, RetryDisposition};
 
@@ -55,6 +56,16 @@ impl Response {
     }
 }
 
+fn ref_owner_gone(details: Option<&Value>) -> bool {
+    details.is_some_and(|details| {
+        details.get("kind").and_then(Value::as_str) == Some("resolve_owning_process_exited")
+            || details
+                .get("process_state")
+                .and_then(Value::as_str)
+                .is_some_and(crate::system::process_state::ProcessState::names_a_gone_process)
+    })
+}
+
 fn recovery_for_code(
     code: &ErrorCode,
     disposition: DeliverySemantics,
@@ -63,11 +74,8 @@ fn recovery_for_code(
     if disposition.retry() != RetryDisposition::Safe {
         return None;
     }
-    let process_exited = details
-        .and_then(|details| details.get("process_state"))
-        .is_some_and(|state| state == "exited");
     match code {
-        ErrorCode::StaleRef if process_exited => Some(RecoveryHint {
+        ErrorCode::StaleRef if ref_owner_gone(details) => Some(RecoveryHint {
             strategy: "inspect_state_then_retry_original".into(),
             retryable: true,
             requires_fresh_snapshot: true,
@@ -111,7 +119,20 @@ impl ErrorPayload {
             payload.platform_detail = adapter_error.platform_detail.clone();
             payload.details = adapter_error.details.clone();
             payload.disposition = adapter_error.disposition;
-            if adapter_error.permits_retry_by_default() {
+            let details = adapter_error.details.as_ref();
+            let recover_stale_ref = adapter_error.code == ErrorCode::StaleRef
+                && (ref_owner_gone(details)
+                    || details
+                        .filter(|details| {
+                            details.get("complete").and_then(Value::as_bool) != Some(false)
+                        })
+                        .and_then(|details| details.get("kind"))
+                        .and_then(Value::as_str)
+                        .is_some_and(|kind| {
+                            COMPLETE_ABSENCE_KINDS.contains(&kind)
+                                || kind == "retained_object_stale"
+                        }));
+            if adapter_error.permits_retry_by_default() || recover_stale_ref {
                 payload.recovery = recovery_for_code(
                     &adapter_error.code,
                     adapter_error.disposition,
@@ -143,3 +164,7 @@ impl ErrorPayload {
 #[cfg(test)]
 #[path = "output_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "output_owner_recovery_tests.rs"]
+mod owner_recovery_tests;
