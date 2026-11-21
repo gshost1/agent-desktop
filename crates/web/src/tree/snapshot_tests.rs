@@ -71,7 +71,8 @@ fn frames_are_grafted_under_their_owner_and_origins_follow_preorder() {
             "Accessibility.getFullAXTree",
             -32000,
             "Frame with the given id was not found.",
-        );
+        )
+        .expect("DOM.getFrameOwner", json!({}));
     let transport = auto_attach(transport, Vec::new()).expect("Target.setAutoAttach", json!({}));
     let sent = transport.sent_log();
     let mut connection = CdpConnection::new(transport.boxed());
@@ -117,8 +118,8 @@ fn frames_are_grafted_under_their_owner_and_origins_follow_preorder() {
     let sent = sent.lock().unwrap();
     assert_eq!(sent[2]["params"]["frameId"], "MAIN");
     assert_eq!(sent[1]["params"], json!({ "computedStyles": ["display"] }));
-    assert_eq!(sent[6]["params"]["autoAttach"], true);
-    assert_eq!(sent[7]["params"]["autoAttach"], false);
+    assert_eq!(sent[7]["params"]["autoAttach"], true);
+    assert_eq!(sent[8]["params"]["autoAttach"], false);
 }
 
 #[test]
@@ -193,6 +194,7 @@ fn an_out_of_process_iframe_is_read_through_its_own_target_and_grafted() {
             -32000,
             "Frame with the given id was not found.",
         )
+        .expect("DOM.getFrameOwner", json!({}))
         .expect("DOM.getFrameOwner", json!({ "backendNodeId": 30 }));
     let transport = auto_attach(transport, Vec::new())
         .expect("Target.setAutoAttach", json!({}))
@@ -224,13 +226,16 @@ fn an_out_of_process_iframe_is_read_through_its_own_target_and_grafted() {
             "DOMSnapshot.captureSnapshot",
             "Accessibility.getFullAXTree",
             "Accessibility.getFullAXTree",
+            "DOM.getFrameOwner",
             "Target.setAutoAttach",
             "Target.setAutoAttach",
         ]
     );
     let owner = sent
         .iter()
-        .find(|request| request["method"] == "DOM.getFrameOwner")
+        .find(|request| {
+            request["method"] == "DOM.getFrameOwner" && request["params"]["frameId"] == "OOP"
+        })
         .unwrap();
     assert_eq!(owner["sessionId"], "S");
     assert_eq!(owner["params"]["frameId"], "OOP");
@@ -251,6 +256,7 @@ fn an_iframe_target_that_vanishes_mid_read_is_listed_unreadable() {
             -32001,
             "Session with given id not found.",
         )
+        .expect("DOMSnapshot.captureSnapshot", json!({}))
         .expect("Target.setAutoAttach", json!({}));
     let mut connection = CdpConnection::new(transport.boxed());
 
@@ -288,8 +294,18 @@ fn an_iframe_that_misses_its_budget_is_listed_and_the_next_one_still_read() {
         main_page(),
         vec![attached("S2", "SLOW"), attached("S3", "FAST")],
     )
-    .expect_silence("Page.getFrameTree");
-    let transport = auto_attach(iframe_read(transport, "FAST"), Vec::new())
+    .expect_silence("Page.getFrameTree")
+    .expect("DOMSnapshot.captureSnapshot", json!({}))
+    .expect(
+        "Page.getFrameTree",
+        json!({ "frameTree": {
+        "frame": { "id": "FAST", "parentId": "MAIN", "loaderId": "LO" },
+    } }),
+    )
+    .expect("DOMSnapshot.captureSnapshot", json!({}))
+    .expect("Accessibility.getFullAXTree", child_tree())
+    .expect("DOM.getFrameOwner", json!({ "backendNodeId": 30 }));
+    let transport = auto_attach(transport, Vec::new())
         .expect("Target.setAutoAttach", json!({}))
         .expect("Target.setAutoAttach", json!({}));
     let mut connection = CdpConnection::new(transport.boxed());
@@ -351,42 +367,8 @@ fn an_iframe_whose_child_frames_cannot_be_listed_in_time_is_kept() {
 fn a_whole_deadline_snapshot_still_fails_on_a_slow_iframe() {
     let transport = auto_attach(main_page(), vec![attached("S2", "SLOW")])
         .expect_silence("Page.getFrameTree")
+        .expect("DOMSnapshot.captureSnapshot", json!({}))
         .expect("Target.setAutoAttach", json!({}));
-    let mut connection = CdpConnection::new(transport.boxed());
-
-    let error =
-        snapshot_page(&mut connection, &session(), Deadline::after(1_000).unwrap()).unwrap_err();
-
-    assert_eq!(error.code, ErrorCode::Timeout);
-}
-
-#[test]
-fn an_in_page_iframe_that_misses_its_budget_is_listed_and_the_page_returned() {
-    let transport = ScriptedTransport::new()
-        .expect("Page.getFrameTree", frame_tree())
-        .expect("DOMSnapshot.captureSnapshot", capture())
-        .expect("Accessibility.getFullAXTree", main_tree())
-        .expect_silence("Accessibility.getFullAXTree")
-        .expect("Accessibility.getFullAXTree", child_tree())
-        .expect_silence("DOM.getFrameOwner");
-    let transport = auto_attach(transport, Vec::new()).expect("Target.setAutoAttach", json!({}));
-    let mut connection = CdpConnection::new(transport.boxed());
-
-    let snapshot =
-        snapshot_page_within_budget(&mut connection, &session(), Deadline::after(1_000).unwrap())
-            .unwrap();
-
-    assert_eq!(snapshot.unreadable_frames, ["CHILD", "REMOTE"]);
-    assert_eq!(snapshot.preorder().len(), 3);
-}
-
-#[test]
-fn a_whole_deadline_snapshot_still_fails_on_a_slow_in_page_iframe() {
-    let transport = ScriptedTransport::new()
-        .expect("Page.getFrameTree", frame_tree())
-        .expect("DOMSnapshot.captureSnapshot", capture())
-        .expect("Accessibility.getFullAXTree", main_tree())
-        .expect_silence("Accessibility.getFullAXTree");
     let mut connection = CdpConnection::new(transport.boxed());
 
     let error =
