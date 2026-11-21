@@ -9,7 +9,7 @@ fn stale(details: serde_json::Value) -> AdapterError {
 
 #[test]
 fn a_known_complete_absence_is_final_for_a_ref_action_whatever_its_stamp() {
-    for kind in ["resolve_no_candidate", "resolution_complete_absence"] {
+    for kind in super::COMPLETE_ABSENCE_KINDS {
         let error = stale(json!({ "kind": kind, "complete": true, "retryable": true }));
 
         assert_eq!(ResolveVerdict::of(&error), ResolveVerdict::Absent);
@@ -18,6 +18,27 @@ fn a_known_complete_absence_is_final_for_a_ref_action_whatever_its_stamp() {
             ResolveVerdict::for_ref_action(&error),
             ResolveVerdict::Settled
         );
+    }
+}
+
+#[test]
+fn complete_gone_owners_are_final_for_ref_actions_but_keep_their_wait_stamp() {
+    for state in ["exited", "crashed"] {
+        for complete in [true, false] {
+            let error = stale(json!({
+                "kind": "source_window_identity_invalid",
+                "process_state": state,
+                "complete": complete,
+                "retryable": true,
+            }));
+            let expected = if complete {
+                ResolveVerdict::Settled
+            } else {
+                ResolveVerdict::Incomplete
+            };
+            assert_eq!(ResolveVerdict::for_ref_action(&error), expected);
+            assert!(ResolveVerdict::of(&error).retries());
+        }
     }
 }
 

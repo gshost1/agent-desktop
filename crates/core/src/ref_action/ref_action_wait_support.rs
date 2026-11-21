@@ -81,13 +81,10 @@ fn attach_process_state_detail(
         }
         None => details = json!({ "process_state": state.label() }),
     }
-    let exited_stale = err.code == ErrorCode::StaleRef
-        && matches!(
-            state,
-            crate::system::process_state::ProcessState::Exited { .. }
-        );
+    let gone_stale = err.code == ErrorCode::StaleRef
+        && crate::system::process_state::ProcessState::names_a_gone_process(state.label());
     let err = err.with_details(details);
-    if exited_stale {
+    if gone_stale {
         return err.with_suggestion(crate::refs::resolve_errors::EXITED_PROCESS_SUGGESTION);
     }
     err

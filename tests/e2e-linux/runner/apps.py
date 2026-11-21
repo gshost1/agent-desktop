@@ -45,8 +45,9 @@ ALIASES = {
     "Zoo GTK3": ("zoo gtk3", "zoo_gtk3.py"),
     "Zoo GTK4": ("zoo gtk4", "zoo_gtk4.py"),
     "Zoo Qt": ("zoo qt", "zoo_qt.py"),
+    "Zoo Scroll": ("zoo scroll", "zoo_scroll.py"),
 }
-ZOOS = {"Zoo GTK3": "zoo_gtk3", "Zoo GTK4": "zoo_gtk4", "Zoo Qt": "zoo_qt"}
+ZOOS = {"Zoo GTK3": "zoo_gtk3", "Zoo GTK4": "zoo_gtk4", "Zoo Qt": "zoo_qt", "Zoo Scroll": "zoo_scroll"}
 _TIERS = {}
 _SPAWNED = {}
 SHELL_HELPERS = frozenset({"gnome-shell", "mutter-x11-fram", "mutter-x11-frames"})
@@ -150,7 +151,7 @@ def launch(tier: Tier, app: str, args: tuple[str, ...] = (), *, settle_s: float 
         command = [os.environ.get("AGENT_DESKTOP_QT_PYTHON", "python3"), app]
         env.update(QT_ACCESSIBILITY="1", QT_LINUX_ACCESSIBILITY_ALWAYS_ON="1",
                    QT_QPA_PLATFORM="wayland" if tier.name == "wayland" else "xcb")
-    elif app.endswith(("zoo_gtk3.py", "zoo_gtk4.py")):
+    elif app.endswith(("zoo_gtk3.py", "zoo_gtk4.py", "zoo_scroll.py")):
         command = ["python3", app]
         env["GTK_USE_PORTAL"] = "0"
     elif app == "Settings Mouse":

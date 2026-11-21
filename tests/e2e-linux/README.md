@@ -87,7 +87,7 @@ The report groups outcomes by tier and mode. Only `pass` and `asserted-refusal` 
 | `outstanding`, `owner-decision` | Registered but deliberately not run; the reason is printed. |
 | `tier-unavailable` | The tier's private session never became healthy or its desktop warm-up failed, so its legs did not run. |
 
-The `launch.recovery_strategy_on_error` leg is an `asserted-refusal`. It stops Calculator after a snapshot, then requires a click on the dead owner's ref to answer `STALE_REF` with `details.process_state=exited`, `details.retryable=false` and disposition `not_delivered`/`safe`, with no `recovery` object and no relaunch of the owner.
+The `launch.recovery_strategy_on_error` leg is an `asserted-refusal`. It stops Calculator after a snapshot, then requires a click on the dead owner's ref to answer `STALE_REF` with `details.process_state=exited`, `details.retryable=false` and disposition `not_delivered`/`safe`, with the `inspect_state_then_retry_original` recovery (`requires_fresh_snapshot: true`) and no relaunch of the owner.
 
 `launch.unresolved_terminal_handoff` checks the documented unsafe handoff result, not successful owner attribution or a no-effect refusal. The Terminal client exits successfully and D-Bus starts a different, unmarked executable. The leg requires `ACTION_FAILED`, `details.kind=exited`, status 0, the spawned pid, `delivered_unverified`/`unsafe` and no automatic recovery. Raw AT-SPI and process identity must independently prove the service window exists; cleanup closes its exact listed owner and restores both process and window observations. A 5 s product deadline leaves room for the result inside the harness deadline.
 
@@ -103,6 +103,8 @@ The `batch_contract.entry_failure_and_stop_on_error` leg is an `asserted-refusal
 
 The `ref_actions.*` legs observe and restore native application state:
 
+Ref scrolling uses the native GTK4 fixture's only scroll area, without relying on an accessible name. The headed leg changes the visible rows without toggling checkboxes, then restores the viewport, pointer and focus. The headless leg asserts a no-input policy refusal. Settings remains covered by `ref_actions.settings_scroll_identity_refusal`, an asserted refusal for captured twins, not positive scrolling coverage. See [the scroll contract](scroll-contract.md).
+
 | Action | Independent effect |
 | --- | --- |
 | Focus | Qt Text entry gains `FOCUSED`; the prior button regains it on restoration. |
@@ -110,7 +112,7 @@ The `ref_actions.*` legs observe and restore native application state:
 | Right-click | Text Editor exposes a showing `Context menu` and its menu-item children. |
 | Hover | The Qt probe's native status tip appears and clears when the pointer leaves. |
 | Expand / collapse | Calculator's Main Menu changes `EXPANDED` and showing menu children together. |
-| Scroll | Settings Hot Corner leaves the viewport and Dynamic Workspaces enters it. |
+| Scroll | The GTK4 fixture's upper marker leaves the viewport and its lower marker enters it without toggling either. |
 | Scroll-to | Settings reveals the offscreen monitor checkbox without changing its checked state. |
 | Drag | Text Editor gains a nonempty text selection. |
 
