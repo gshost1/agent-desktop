@@ -195,7 +195,8 @@ pub(crate) fn rule_tokens(facts: &Facts) -> Vec<&'static str> {
     let editable_text = (is_text_entry(facts.role) || is_document_content(facts.role))
         && facts.bits.has(EDITABLE)
         && !facts.bits.has(READ_ONLY)
-        && facts.advertises(EDITABLE_TEXT);
+        && facts.advertises(EDITABLE_TEXT)
+        && (!is_document_content(facts.role) || facts.advertises(TEXT_INTERFACE));
     let stateful = facts.bits.has(EXPANDABLE) || facts.bits.has(EXPANDED);
     let clickable = facts.has_any_name(&DISCLOSURE_CLICKS);
     let both = (stateful && (clickable || facts.has_name(TOGGLE_EXPAND))) || menu_button(facts);

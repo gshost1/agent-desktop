@@ -6,7 +6,7 @@ use crate::{
     actions::capability,
     adapter::{ActionOps, InputOps, ObservationOps, SystemOps, TreeOptions, WindowFilter},
     commands::{
-        type_text::{self, TypeTextArgs},
+        type_text::{self, TypeArgs},
         wait::{self, WaitArgs, WaitModeArgs, WaitPredicateArgs},
     },
     context::CommandContext,
@@ -24,6 +24,7 @@ struct DocumentState {
 struct DocumentAdapter {
     window: WindowInfo,
     state: Mutex<DocumentState>,
+    always_read_values: bool,
 }
 
 impl DocumentAdapter {
@@ -40,25 +41,26 @@ impl DocumentAdapter {
                     width: 1000.0,
                     height: 800.0,
                 }),
-                is_focused: true,
-                bundle_id: None,
-                is_minimized: None,
-                is_fullscreen: None,
+                state: crate::WindowState {
+                    is_focused: true,
+                    ..Default::default()
+                },
                 process_instance: Some("writer-42".into()),
             },
             state: Mutex::new(DocumentState {
-                doc_value: None,
+                doc_value: Some("Initial document text".into()),
                 heading_text: "Quarterly Heading".into(),
                 paragraph_text: "Initial paragraph".into(),
                 typed_targets: Vec::new(),
             }),
+            always_read_values: false,
         }
     }
 
     fn tree(&self, text_content: bool) -> AccessibilityNode {
+        let text_content = text_content || self.always_read_values;
         let state = self.state.lock().unwrap();
-        let mut heading = AccessibilityNode::new("heading");
-        heading.identity.name = Some("Title Heading".into());
+        let mut heading = crate::adapter::minimal_accessibility_node("heading", "Title Heading");
         heading.identity.value = text_content.then(|| state.heading_text.clone());
         heading.presentation.bounds = Some(Rect {
             x: 20.0,
@@ -72,8 +74,8 @@ impl DocumentAdapter {
             capability::SET_FOCUS.into(),
         ];
 
-        let mut paragraph = AccessibilityNode::new("paragraph");
-        paragraph.identity.name = Some("Body Paragraph".into());
+        let mut paragraph =
+            crate::adapter::minimal_accessibility_node("paragraph", "Body Paragraph");
         paragraph.identity.value = text_content.then(|| state.paragraph_text.clone());
         paragraph.presentation.bounds = Some(Rect {
             x: 20.0,
@@ -87,11 +89,9 @@ impl DocumentAdapter {
             capability::SET_FOCUS.into(),
         ];
 
-        let mut document = AccessibilityNode::new("document");
-        document.identity.name = Some("Draft - Writer Document".into());
-        document.identity.value = text_content
-            .then(|| state.doc_value.clone())
-            .flatten();
+        let mut document =
+            crate::adapter::minimal_accessibility_node("document", "Draft - Writer Document");
+        document.identity.value = text_content.then(|| state.doc_value.clone()).flatten();
         document.presentation.bounds = Some(Rect {
             x: 10.0,
             y: 30.0,
@@ -102,8 +102,7 @@ impl DocumentAdapter {
             vec![capability::SELECT.into(), capability::TYPE_TEXT.into()];
         document.children = vec![heading, paragraph];
 
-        let mut root = AccessibilityNode::new("window");
-        root.identity.name = Some(self.window.title.clone());
+        let mut root = crate::adapter::minimal_accessibility_node("window", &self.window.title);
         root.presentation.bounds = self.window.bounds;
         root.children = vec![document];
         root
@@ -111,6 +110,29 @@ impl DocumentAdapter {
 }
 
 impl ObservationOps for DocumentAdapter {
+    fn list_windows(
+        &self,
+        _filter: &WindowFilter,
+        _deadline: Deadline,
+    ) -> Result<Vec<WindowInfo>, AdapterError> {
+        Ok(vec![self.window.clone()])
+    }
+
+    fn list_apps_scoped(
+        &self,
+        _name: &str,
+        _bundle_id: Option<&str>,
+        _deadline: Deadline,
+    ) -> Result<Vec<crate::AppInfo>, AdapterError> {
+        Ok(vec![crate::AppInfo {
+            name: self.window.app.clone(),
+            pid: self.window.pid,
+            bundle_id: None,
+            process_instance: self.window.process_instance.clone(),
+            presentation: None,
+        }])
+    }
+
     fn observe_tree(
         &self,
         root: ObservationRoot<'_>,
@@ -142,6 +164,28 @@ impl ObservationOps for DocumentAdapter {
         entry: &crate::RefEntry,
         _deadline: Deadline,
     ) -> Result<NativeHandle, AdapterError> {
+        use crate::LocatorField::{Absent, Known};
+
+        let tree = self.tree(false);
+        let node = match entry.identity.role.as_str() {
+            "document" => &tree.children[0],
+            "paragraph" => &tree.children[0].children[1],
+            "heading" => &tree.children[0].children[0],
+            role => panic!("unexpected anchor role {role}"),
+        };
+        let identity = super::identity_match(
+            entry,
+            &node.identity.name.clone().map_or(Absent, Known),
+            &node.identity.value.clone().map_or(Absent, Known),
+            &Absent,
+            &crate::IdentifierEvidence::absent(),
+        );
+        if identity != crate::IdentityMatch::Match {
+            return Err(AdapterError::new(
+                crate::ErrorCode::StaleRef,
+                "anchor identity changed",
+            ));
+        }
         Ok(NativeHandle::new(entry.identity.role.clone()))
     }
 
@@ -157,11 +201,20 @@ impl ObservationOps for DocumentAdapter {
             "paragraph" => self.tree(false).children[0].children[1].clone(),
             other => panic!("unexpected handle {other}"),
         };
-        let mut live = LiveElement::from_node(&node);
-        live.state.enabled = Some(true);
-        live.state.hidden = Some(false);
-        live.state.offscreen = Some(false);
-        Ok(live)
+        Ok(LiveElement {
+            identity: crate::adapter::live_identity(node.identity.name.as_deref().unwrap()),
+            state: crate::ElementState {
+                role: node.role,
+                states: Vec::new(),
+                value: node.identity.value,
+                enabled: Some(true),
+                hidden: Some(false),
+                offscreen: Some(false),
+            },
+            bounds: node.presentation.bounds,
+            states_complete: true,
+            available_actions: node.presentation.available_actions,
+        })
     }
 }
 
@@ -199,20 +252,15 @@ impl ActionOps for DocumentAdapter {
 
 impl InputOps for DocumentAdapter {}
 
-impl SystemOps for DocumentAdapter {
-    fn list_windows(
-        &self,
-        _filter: &WindowFilter,
-        _deadline: Deadline,
-    ) -> Result<Vec<WindowInfo>, AdapterError> {
-        Ok(vec![self.window.clone()])
-    }
-}
+impl SystemOps for DocumentAdapter {}
 
 #[test]
 fn consecutive_edits_on_same_document_ref_and_named_paragraph_ref_succeed_without_stale_ref() {
     let _guard = HomeGuard::new();
-    let adapter = DocumentAdapter::new();
+    let adapter = DocumentAdapter {
+        always_read_values: true,
+        ..DocumentAdapter::new()
+    };
     let context = CommandContext::default();
     let snap = snapshot::run_with_context(
         &adapter,
@@ -226,10 +274,7 @@ fn consecutive_edits_on_same_document_ref_and_named_paragraph_ref_succeed_withou
     )
     .expect("snapshot succeeds");
 
-    let doc_ref = snap.tree.children[0]
-        .ref_id
-        .clone()
-        .expect("document ref");
+    let doc_ref = snap.tree.children[0].ref_id.clone().expect("document ref");
     let para_ref = snap.tree.children[0].children[1]
         .ref_id
         .clone()
@@ -240,20 +285,22 @@ fn consecutive_edits_on_same_document_ref_and_named_paragraph_ref_succeed_withou
         (&para_ref, " para-one", " para-two"),
     ] {
         type_text::execute(
-            TypeTextArgs {
+            TypeArgs {
                 ref_id: ref_id.clone(),
                 text: first.into(),
                 timeout_ms: Some(5_000),
+                interval_ms: None,
             },
             &adapter,
             &context,
         )
         .expect("first edit succeeds");
         type_text::execute(
-            TypeTextArgs {
+            TypeArgs {
                 ref_id: ref_id.clone(),
                 text: second.into(),
                 timeout_ms: Some(5_000),
+                interval_ms: None,
             },
             &adapter,
             &context,

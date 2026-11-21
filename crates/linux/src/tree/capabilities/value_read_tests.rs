@@ -21,7 +21,7 @@ fn node(role: u32, interfaces: &[&str], state_bits: &[u32]) -> RawNode {
 
 #[test]
 fn document_and_paragraph_text_is_searchable_even_when_read_only() {
-    for role in [73, 82, 83, 92, 93, 94, 96] {
+    for role in [73, 82, 83, 92, 93, 94, 95, 96] {
         for states in [&[][..], &[EDITABLE][..], &[43][..]] {
             assert_eq!(
                 value_source(&node(role, &["Text"], states)),
@@ -38,7 +38,7 @@ fn document_and_paragraph_text_is_searchable_even_when_read_only() {
 #[test]
 fn document_content_is_read_only_for_searches_and_target_checks() {
     use crate::tree::properties::read_purpose::ReadPurpose;
-    for role in [73, 82, 83, 92, 93, 94, 96] {
+    for role in [73, 82, 83, 92, 93, 94, 95, 96] {
         let node = node(role, &["Text"], &[EDITABLE]);
         for purpose in [
             ReadPurpose::Snapshot,

@@ -151,9 +151,11 @@ pub(crate) fn execute_action(
     };
     verify_process(bus, element, request.expected_process(), deadline)?;
     let input_handle = if matches!(request.action, Action::TypeText(_))
-        && crate::input::physical::keyboard_focus::needs_document_routing(element.resolved_role())
+        && element.resolved_role() == Some("document")
     {
-        crate::input::physical::keyboard_focus::document_input_target(bus, handle, deadline)?
+        crate::input::physical::keyboard_focus::document::document_input_target(
+            bus, handle, deadline,
+        )?
     } else {
         None
     };

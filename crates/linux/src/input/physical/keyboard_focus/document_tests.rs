@@ -6,12 +6,11 @@ use agent_desktop_core::{DeliverySemantics, ErrorCode};
 use zbus::connection::Builder;
 use zbus::zvariant::OwnedObjectPath;
 
-use super::{
-    EDITABLE_TEXT, InputTarget, TEXT_INTERFACE, focused, focused_document_descendant,
-    internal_editor_focused, needs_document_routing,
-};
+use super::super::{focused, internal_editor_focused};
+use super::{EDITABLE_TEXT, InputTarget, TEXT_INTERFACE, focused_document_descendant};
 use crate::tree::AtspiElement;
 use crate::tree::element::ancestry;
+use crate::tree::live::test_support::words;
 use crate::tree::vocabulary::role_numbers::{DOCUMENT_FRAME, HEADING, LABEL, PARAGRAPH};
 use crate::tree::vocabulary::state_bits::{EDITABLE, FOCUSED, READ_ONLY};
 
@@ -19,7 +18,7 @@ const OWNER: &str = "org.agentdesktop.DocumentFocusFixture";
 
 struct DocNode {
     role: u32,
-    states: Option<u32>,
+    states: Option<Vec<u32>>,
     interfaces: Option<Vec<&'static str>>,
     children: Vec<(&'static str, &'static str)>,
 }
@@ -32,7 +31,7 @@ impl DocNode {
 
     fn get_state(&self) -> Result<Vec<u32>, zbus::fdo::Error> {
         self.states
-            .map(|bits| vec![bits, 0])
+            .clone()
             .ok_or_else(|| zbus::fdo::Error::Failed("state read failed".into()))
     }
 
@@ -72,20 +71,18 @@ impl CountingText {
     }
 }
 
-fn bits(list: &[u32]) -> u32 {
-    list.iter().fold(0u32, |mask, bit| mask | (1u32 << bit))
-}
-
 fn node(role: u32, states: &[u32], children: Vec<(&'static str, &'static str)>) -> DocNode {
     DocNode {
         role,
-        states: Some(bits(states)),
+        states: Some(words(states)),
         interfaces: Some(vec![TEXT_INTERFACE, EDITABLE_TEXT]),
         children,
     }
 }
 
-fn serve(nodes: Vec<(&'static str, DocNode)>) -> (zbus::Connection, zbus::Connection, Arc<AtomicUsize>) {
+fn serve(
+    nodes: Vec<(&'static str, DocNode)>,
+) -> (zbus::Connection, zbus::Connection, Arc<AtomicUsize>) {
     let reads = Arc::new(AtomicUsize::new(0));
     let (near, far) = std::os::unix::net::UnixStream::pair().expect("socket pair");
     let (client, server) = zbus::block_on(async {
@@ -129,7 +126,7 @@ fn caret_in_heading_and_caret_in_paragraph_both_route_with_role_path_and_ancestr
                 "/document",
                 DocNode {
                     role: 94,
-                    states: Some(bits(&[EDITABLE])),
+                    states: Some(words(&[EDITABLE])),
                     interfaces: Some(vec![]),
                     children: vec![(OWNER, "/heading"), (OWNER, "/paragraph")],
                 },
@@ -161,7 +158,7 @@ fn caret_in_heading_and_caret_in_paragraph_both_route_with_role_path_and_ancestr
         ]);
         let root = doc_root();
         assert!(zbus::block_on(focused(&client, &root)).unwrap());
-        let editor = zbus::block_on(internal_editor_focused(&client, &root))
+        let editor = zbus::block_on(internal_editor_focused(&client, &root, None))
             .unwrap()
             .expect("uniquely focused descendant");
         assert_eq!(editor.path(), focused_path);
@@ -189,7 +186,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                 "/document",
                 DocNode {
                     role: DOCUMENT_FRAME,
-                    states: Some(bits(&[EDITABLE])),
+                    states: Some(words(&[EDITABLE])),
                     interfaces: Some(vec![]),
                     children: vec![],
                 },
@@ -202,7 +199,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/heading"), (OWNER, "/p1")],
                     },
@@ -218,7 +215,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/heading"), (OWNER, "/p1")],
                     },
@@ -234,7 +231,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/p1")],
                     },
@@ -249,7 +246,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/p1")],
                     },
@@ -267,7 +264,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/p1")],
                     },
@@ -276,7 +273,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/p1",
                     DocNode {
                         role: PARAGRAPH,
-                        states: Some(bits(&[EDITABLE, FOCUSED])),
+                        states: Some(words(&[EDITABLE, FOCUSED])),
                         interfaces: Some(vec![TEXT_INTERFACE]),
                         children: vec![],
                     },
@@ -290,7 +287,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/label")],
                     },
@@ -305,7 +302,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/p1")],
                     },
@@ -328,7 +325,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/document",
                     DocNode {
                         role: DOCUMENT_FRAME,
-                        states: Some(bits(&[EDITABLE])),
+                        states: Some(words(&[EDITABLE])),
                         interfaces: Some(vec![]),
                         children: vec![(OWNER, "/known"), (OWNER, "/unknown")],
                     },
@@ -338,7 +335,7 @@ fn several_focused_candidates_and_none_fail_closed() {
                     "/unknown",
                     DocNode {
                         role: PARAGRAPH,
-                        states: Some(bits(&[EDITABLE, FOCUSED])),
+                        states: Some(words(&[EDITABLE, FOCUSED])),
                         interfaces: None,
                         children: vec![],
                     },
@@ -371,7 +368,7 @@ fn spreadsheet_and_presentation_documents_and_cycles_route_cleanly() {
                 "/document",
                 DocNode {
                     role,
-                    states: Some(bits(&[EDITABLE])),
+                    states: Some(words(&[EDITABLE])),
                     interfaces: Some(vec![]),
                     children: vec![(OWNER, "/group"), ("org.other.App", "/foreign")],
                 },
@@ -380,7 +377,7 @@ fn spreadsheet_and_presentation_documents_and_cycles_route_cleanly() {
                 "/group",
                 DocNode {
                     role: 39,
-                    states: Some(0),
+                    states: Some(words(&[])),
                     interfaces: Some(vec![]),
                     children: vec![(OWNER, "/document"), (OWNER, "/cell")],
                 },
@@ -392,13 +389,4 @@ fn spreadsheet_and_presentation_documents_and_cycles_route_cleanly() {
         assert_eq!(editor.path(), "/cell");
         assert_eq!(editor.resolved_role(), Some("cell"));
     }
-}
-
-#[test]
-fn only_document_handles_need_an_extra_routing_read() {
-    assert!(needs_document_routing(Some("document")));
-    assert!(!needs_document_routing(Some("paragraph")));
-    assert!(!needs_document_routing(Some("heading")));
-    assert!(!needs_document_routing(Some("textfield")));
-    assert!(!needs_document_routing(None));
 }

@@ -243,22 +243,7 @@ fn belongs_to_entry(window: &WindowInfo, entry: &RefEntry) -> bool {
 /// proof and a later resolution count the same evidence. `base` supplies the
 /// surface and the renderer-accessibility hint; its depth and presentation
 /// settings are ignored.
-pub(crate) fn observe_whole_window(
-    adapter: &dyn PlatformAdapter,
-    base: &TreeOptions,
-    window: &WindowInfo,
-    deadline: Deadline,
-    lease: Option<&crate::InteractionLease>,
-) -> Result<ObservedTree, AdapterError> {
-    observe_window(
-        adapter,
-        &whole_window_request(base, deadline)?,
-        window,
-        lease,
-    )
-}
-
-fn whole_window_request(
+pub(crate) fn whole_window_request(
     base: &TreeOptions,
     deadline: Deadline,
 ) -> Result<ObservationRequest, AdapterError> {
@@ -272,7 +257,7 @@ fn whole_window_request(
     ObservationRequest::snapshot(&options, deadline).validate()
 }
 
-fn observe_window(
+pub(crate) fn observe_window(
     adapter: &dyn PlatformAdapter,
     request: &ObservationRequest,
     window: &WindowInfo,

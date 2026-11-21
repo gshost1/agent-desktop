@@ -89,11 +89,8 @@ fn build_for_owners_with_text(
         SnapshotOwner::Application(app) => {
             window_capture::capture_application(adapter, opts, app, opts.surface, deadline)
         }
-        SnapshotOwner::Window(window) if text_content => {
-            window_capture::capture_text_window(adapter, opts, window, deadline)
-        }
         SnapshotOwner::Window(window) => {
-            window_capture::capture_window(adapter, opts, window, deadline)
+            window_capture::capture_window(adapter, opts, window, deadline, text_content)
         }
     })?;
     let identity_unproven = capture.identity_unproven.clone();

@@ -111,7 +111,7 @@ fn settled_walk(
     let mut sampling_deadline = request.deadline;
     let full = full_read(request);
     loop {
-        let purpose = if full == ReadPurpose::Snapshot
+        let purpose = if settles
             && tracker
                 .as_ref()
                 .is_some_and(|(readiness, _)| !readiness.needs_payload())
