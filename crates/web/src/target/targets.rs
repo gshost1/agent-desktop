@@ -23,9 +23,13 @@ pub fn list_page_targets(
 }
 
 /// Attaches a flattened session to `target_id` and releases the target if
-/// it is paused waiting for a debugger. The release costs a round trip that
-/// Chrome answers slowly, so it is skipped only when the browser's attach
-/// event says the target is already running.
+/// it is paused waiting for a debugger. The release costs a round trip, so
+/// it is skipped when the browser's attach event says the target is
+/// running. Chromium's `Target.attachToTarget` always reports
+/// `waitingForDebugger: false` (`TargetHandler::AttachToTarget` in
+/// `content/browser/devtools/protocol/target_handler.cc`), so there the
+/// release is always skipped; a browser that reports a pause, or sends no
+/// event, still gets it.
 pub fn attach_to_target(
     connection: &mut CdpConnection,
     target_id: &str,

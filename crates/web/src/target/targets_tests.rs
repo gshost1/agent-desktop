@@ -158,3 +158,35 @@ fn the_crate_never_raises_a_tab() {
     }
     assert!(scanned > 20);
 }
+
+fn release_is_sent_after(event: serde_json::Value) {
+    let transport = ScriptedTransport::new()
+        .expect_with_events(
+            "Target.attachToTarget",
+            vec![event],
+            json!({ "result": { "sessionId": "S9" } }),
+        )
+        .expect("Runtime.runIfWaitingForDebugger", json!({}));
+
+    assert_eq!(
+        methods_sent_by_attach(transport),
+        ["Target.attachToTarget", "Runtime.runIfWaitingForDebugger"]
+    );
+}
+
+#[test]
+fn an_attach_event_that_does_not_say_whether_it_waits_does_not_skip_the_release() {
+    let mut silent = attached(false);
+    silent["params"]
+        .as_object_mut()
+        .unwrap()
+        .remove("waitingForDebugger");
+    release_is_sent_after(silent);
+}
+
+#[test]
+fn an_attach_event_inside_another_session_does_not_skip_the_release() {
+    let mut nested = attached(false);
+    nested["sessionId"] = json!("S-outer");
+    release_is_sent_after(nested);
+}
