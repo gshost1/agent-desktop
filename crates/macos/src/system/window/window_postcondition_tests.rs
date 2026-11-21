@@ -167,12 +167,14 @@ fn a_late_match_can_follow_an_unchanged_frame() {
 
 #[test]
 fn a_short_deadline_reports_the_latest_readable_clamped_frame() {
-    let mut samples = [Some(BEFORE), Some(CLAMPED)].into_iter();
+    let mut samples = [BEFORE, CLAMPED]
+        .into_iter()
+        .chain(std::iter::repeat(CLAMPED));
     let error = wait_for_geometry_with(
         MOVE,
         Some(BEFORE),
         Deadline::detached_after(100).unwrap(),
-        || (Ok(samples.next().flatten()), Instant::now()),
+        || (Ok(samples.next()), Instant::now()),
     )
     .unwrap_err();
     assert_mismatch(error, CLAMPED);
@@ -192,7 +194,52 @@ fn a_read_timeout_preserves_preceding_readback() {
         || (samples.next().unwrap(), Instant::now()),
     )
     .unwrap_err();
-    assert_mismatch(error, CLAMPED);
+    assert_unavailable(error, Some(CLAMPED));
+}
+
+#[test]
+fn unreadable_after_a_clamped_sample_keeps_the_frame_as_evidence() {
+    let start = Instant::now();
+    let mut samples = [
+        (0, Ok(Some(BEFORE))),
+        (100, Ok(Some(CLAMPED))),
+        (101, Err(temporarily_unreadable())),
+        (1000, Err(temporarily_unreadable())),
+        (1099, Err(temporarily_unreadable())),
+        (1100, Err(temporarily_unreadable())),
+    ]
+    .into_iter();
+    let error = wait_for_geometry_with(
+        MOVE,
+        Some(BEFORE),
+        Deadline::detached_after(2_000).unwrap(),
+        || {
+            let (millis, sample) = samples.next().expect("unexpected extra geometry read");
+            (sample, start + Duration::from_millis(millis))
+        },
+    )
+    .unwrap_err();
+    assert!(
+        samples.next().is_none(),
+        "completed before the unreadable budget elapsed"
+    );
+    assert_unavailable(error, Some(CLAMPED));
+}
+
+#[test]
+fn display_bounds_preserve_inventory_order_and_are_omitted_if_empty() {
+    let mut details = json!({ "cause": "readback_mismatch" });
+    add_display_bounds(&mut details, &[]);
+    assert_eq!(details, json!({ "cause": "readback_mismatch" }));
+
+    add_display_bounds(&mut details, &[BEFORE, CLAMPED]);
+    assert_eq!(
+        details,
+        json!({
+            "cause": "readback_mismatch",
+            "display_bounds": [BEFORE, CLAMPED],
+        })
+    );
 }
 
 #[test]
@@ -206,13 +253,7 @@ fn maximize_readback_still_requires_the_requested_frame() {
 
 #[test]
 fn never_readable_geometry_reports_readback_unavailable_after_the_fallback_budget() {
-    for sample in [
-        Ok(None),
-        Err(AdapterError::new(
-            ErrorCode::AppUnresponsive,
-            "AX read unavailable",
-        )),
-    ] {
+    for sample in [Ok(None), Err(temporarily_unreadable())] {
         let error = wait_for_geometry_with(
             MOVE,
             Some(BEFORE),
@@ -220,16 +261,7 @@ fn never_readable_geometry_reports_readback_unavailable_after_the_fallback_budge
             || (sample.clone(), Instant::now()),
         )
         .unwrap_err();
-        assert_eq!(error.code, ErrorCode::ActionFailed);
-        assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
-        assert_eq!(
-            error.details.unwrap(),
-            json!({
-                "cause": "readback_unavailable",
-                "requested": { "x": 350.0, "y": -200.0 },
-                "observed": null,
-            })
-        );
+        assert_unavailable(error, None);
     }
 }
 
@@ -270,6 +302,31 @@ fn assert_mismatch(error: AdapterError, observed: Rect) {
     let details = error.details.unwrap();
     assert_eq!(details["cause"], "readback_mismatch");
     assert_eq!(details["observed"], json!(observed));
+}
+
+fn assert_unavailable(error: AdapterError, observed: Option<Rect>) {
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert_eq!(
+        error.message,
+        "The window could not be read back after the request, so its effect is unknown"
+    );
+    assert_eq!(
+        error.suggestion.as_deref(),
+        Some("Run 'list-windows' to see the window as it is now before sending the request again")
+    );
+    assert_eq!(
+        error.details.unwrap(),
+        json!({
+            "cause": "readback_unavailable",
+            "requested": { "x": 350.0, "y": -200.0 },
+            "observed": observed,
+        })
+    );
+}
+
+fn temporarily_unreadable() -> AdapterError {
+    AdapterError::new(ErrorCode::AppUnresponsive, "AX read unavailable")
 }
 
 fn assert_timeout(error: AdapterError) {

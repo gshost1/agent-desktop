@@ -21,7 +21,10 @@ impl GeometryVerification {
     ) -> Option<Rect> {
         match self {
             Self::RequestedOnly => None,
-            Self::DetectClamp => read_geometry(window, deadline).ok().flatten(),
+            Self::DetectClamp => {
+                super::window_ax_attributes::read_geometry_baseline(window, deadline)
+                    .or_else(|| read_geometry(window, deadline).ok().flatten())
+            }
         }
     }
 }
@@ -42,23 +45,34 @@ impl GeometryRequest {
         }
     }
 
-    fn readback_error(self, observed: Option<Rect>) -> AdapterError {
+    fn mismatch(self, observed: Rect) -> AdapterError {
+        self.readback_error(
+            Some(observed),
+            "readback_mismatch",
+            "The window manager left the window other than requested",
+            "Read the held position and size from 'list-windows'",
+        )
+    }
+
+    fn unavailable(self, observed: Option<Rect>) -> AdapterError {
+        self.readback_error(
+            observed,
+            "readback_unavailable",
+            "The window could not be read back after the request, so its effect is unknown",
+            "Run 'list-windows' to see the window as it is now before sending the request again",
+        )
+    }
+
+    fn readback_error(
+        self,
+        observed: Option<Rect>,
+        cause: &str,
+        message: &str,
+        suggestion: &str,
+    ) -> AdapterError {
         let requested = match self {
             Self::Move { x, y } => json!({ "x": x, "y": y }),
             Self::Resize { width, height } => json!({ "width": width, "height": height }),
-        };
-        let (cause, message, suggestion) = if observed.is_some() {
-            (
-                "readback_mismatch",
-                "The window manager left the window other than requested",
-                "Read the held position and size from 'list-windows'",
-            )
-        } else {
-            (
-                "readback_unavailable",
-                "The window could not be read back after the request, so its effect is unknown",
-                "Run 'list-windows' to see the window as it is now",
-            )
         };
         AdapterError::new(ErrorCode::ActionFailed, message)
             .with_suggestion(suggestion)
@@ -95,12 +109,21 @@ pub(super) fn wait_for_geometry(
         if let Some(details) = &mut error.details
             && details["cause"] == "readback_mismatch"
         {
-            let displays = crate::system::display::list_displays_impl(deadline).unwrap_or_default();
-            details["display_bounds"] =
-                json!(displays.into_iter().map(|d| d.bounds).collect::<Vec<_>>());
+            let bounds = crate::system::display::list_displays_impl(deadline)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|display| display.bounds)
+                .collect::<Vec<_>>();
+            add_display_bounds(details, &bounds);
         }
         error
     })
+}
+
+fn add_display_bounds(details: &mut serde_json::Value, bounds: &[Rect]) {
+    if !bounds.is_empty() {
+        details["display_bounds"] = json!(bounds);
+    }
 }
 
 fn wait_for_requested_geometry(
@@ -119,16 +142,19 @@ fn wait_for_geometry_with(
     deadline: Deadline,
     mut read: impl FnMut() -> (Result<Option<Rect>, AdapterError>, Instant),
 ) -> Result<(), AdapterError> {
-    let readback_limit = deadline.capped(GEOMETRY_FALLBACK_TIME);
-    let mut last_readable = None;
+    let started = Instant::now();
+    let mut last_readable: Option<(Rect, Instant)> = None;
     let mut stable = None;
     loop {
         let (actual, now) = read();
         let actual = match actual {
             Ok(actual) => actual,
             Err(error) if error.code == ErrorCode::AppUnresponsive => None,
-            Err(error) if error.code == ErrorCode::Timeout && last_readable.is_some() => {
-                return Err(request.readback_error(last_readable));
+            Err(error) if error.code == ErrorCode::Timeout => {
+                return Err(last_readable.map_or_else(
+                    || after_delivery(error),
+                    |(frame, _)| request.unavailable(Some(frame)),
+                ));
             }
             Err(error) => return Err(after_delivery(error)),
         };
@@ -136,7 +162,7 @@ fn wait_for_geometry_with(
             if request.matches(actual) {
                 return Ok(());
             }
-            last_readable = Some(actual);
+            last_readable = Some((actual, now));
             if let Some((anchor, since, confirm_on_next_read)) = stable
                 && frame_matches(actual, anchor)
             {
@@ -149,7 +175,7 @@ fn wait_for_geometry_with(
                 };
                 let held = now.duration_since(since) >= quiet;
                 if held && confirm_on_next_read {
-                    return Err(request.readback_error(last_readable));
+                    return Err(request.mismatch(actual));
                 }
                 stable = Some((anchor, since, held));
             } else {
@@ -157,17 +183,22 @@ fn wait_for_geometry_with(
             }
         } else {
             stable = None;
+            let since = last_readable.map_or(started, |(_, last_read_at)| last_read_at);
+            if now.duration_since(since) >= GEOMETRY_FALLBACK_TIME {
+                return Err(request.unavailable(last_readable.map(|(frame, _)| frame)));
+            }
         }
         let remaining = deadline.remaining();
         if remaining <= POLL {
-            if last_readable.is_some() {
-                return Err(request.readback_error(last_readable));
+            if let Some(frame) = actual {
+                return Err(request.mismatch(frame));
+            }
+            if let Some((frame, _)) = last_readable {
+                return Err(request.unavailable(Some(frame)));
             }
             if remaining.is_zero() {
                 return Err(after_delivery(deadline.timeout_error()));
             }
-        } else if last_readable.is_none() && readback_limit.is_expired() {
-            return Err(request.readback_error(None));
         }
         std::thread::sleep(POLL.min(remaining));
     }
