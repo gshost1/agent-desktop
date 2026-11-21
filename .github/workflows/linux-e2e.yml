@@ -42,7 +42,7 @@ jobs:
             openbox xdotool wmctrl xclip umockdev \
             python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 gir1.2-gtk-4.0 python3-pyqt6 \
             gnome-calculator gnome-text-editor nautilus gnome-terminal gnome-control-center \
-            gstreamer1.0-plugins-base mutter-common gnome-shell-common
+            gstreamer1.0-plugins-base mutter-common gnome-shell-common gnome-shell
           if ! command -v fusermount >/dev/null && command -v fusermount3 >/dev/null; then
             sudo ln -s "$(command -v fusermount3)" /usr/local/bin/fusermount
           fi
@@ -82,4 +82,14 @@ jobs:
         run: bash tests/e2e-linux/run.sh
 
       - name: Private session checks
+        env:
+          AGENT_DESKTOP_SESSION_LOG_DIR: ${{ runner.temp }}/private-session-logs
         run: bash scripts/test-private-session.sh
+
+      - name: Upload the private session logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-private-session-logs
+          path: ${{ runner.temp }}/private-session-logs/
+          if-no-files-found: warn
