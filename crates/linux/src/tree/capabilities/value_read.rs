@@ -6,7 +6,7 @@ use crate::system::PROPERTIES_INTERFACE;
 use crate::tree::properties::node_read::call;
 use crate::tree::vocabulary::role_numbers::{
     COMBO_BOX, DIAL, ENTRY, LEVEL_BAR, PROGRESS_BAR, SCROLL_BAR, SLIDER, SPIN_BUTTON, TERMINAL,
-    TEXT,
+    TEXT, is_document_content,
 };
 use crate::tree::vocabulary::state_bits::{EDITABLE, StateBits};
 use crate::tree::{AtspiElement, Field, RawNode};
@@ -63,8 +63,8 @@ fn editable(node: &RawNode) -> bool {
 
 /// Which read supplies this node's value. Only the roles that carry one are
 /// read, and only through an interface the node names. A password field has
-/// no value source. Free text counts only on an editable text node: a
-/// read-only text node is content, not a control value.
+/// no value source. Document and paragraph text is searchable content,
+/// including when read-only; other free text counts only when editable.
 pub(crate) fn value_source(node: &RawNode) -> ValueSource {
     let Some(role) = node.traits.role.present() else {
         return ValueSource::Unknown;
@@ -74,6 +74,7 @@ pub(crate) fn value_source(node: &RawNode) -> ValueSource {
             (ValueSource::Numeric, VALUE_INTERFACE)
         }
         ENTRY | COMBO_BOX => (ValueSource::Text, TEXT_INTERFACE),
+        role if is_document_content(role) => (ValueSource::Text, TEXT_INTERFACE),
         TEXT | TERMINAL if node.traits.states.is_failed() => return ValueSource::Unknown,
         TEXT | TERMINAL if editable(node) => (ValueSource::Text, TEXT_INTERFACE),
         _ => return ValueSource::None,

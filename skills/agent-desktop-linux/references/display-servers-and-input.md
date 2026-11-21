@@ -158,6 +158,13 @@ empty insertion is dispatched.
 - Headless `type @ref text` writes through `EditableText.InsertText`. Without
   `--timeout-ms`, `type` waits 5000 ms plus 30 ms per character; an explicit
   `--timeout-ms` replaces that.
+- Editable document and paragraph roles can take text when their observed
+  states and interfaces support it. A document without its own `Text`
+  interface routes `type` to its uniquely focused writable `Text` and
+  `EditableText` descendant in a complete fresh subtree read. Focus the
+  intended paragraph first. Missing or ambiguous focus refuses without input;
+  read-only documents and labels do not become writable. This container route
+  supports insertion, not whole-document `set-value` or `clear`.
 - Under `--headed` it sends physical keys first (step `XTEST.type_text` on X11,
   `RemoteDesktop.type_text` on Wayland, `physical_synthetic`; the result still
   reads the field back when it can) and falls back to `EditableText` only where

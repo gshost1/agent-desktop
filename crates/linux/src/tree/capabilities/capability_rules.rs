@@ -6,7 +6,7 @@ use crate::tree::properties::node_read::COMPONENT_INTERFACE;
 use crate::tree::vocabulary::role_numbers::{
     CHECK_BOX, CHECK_MENU_ITEM, COMBO_BOX, DIAL, ENTRY, LIST, LIST_ITEM, PAGE_TAB, PASSWORD_TEXT,
     PUSH_BUTTON, RADIO_BUTTON, RADIO_MENU_ITEM, SCROLL_BAR, SLIDER, SPIN_BUTTON, TERMINAL, TEXT,
-    TOGGLE_BUTTON, is_menu_item,
+    TOGGLE_BUTTON, is_document_content, is_menu_item, is_text_document,
 };
 use crate::tree::vocabulary::state_bits::{
     EDITABLE, EXPANDABLE, EXPANDED, FOCUSABLE, HAS_POPUP, READ_ONLY, SELECTABLE, StateBits,
@@ -38,6 +38,7 @@ pub(crate) struct Facts<'a> {
 
 fn interface_decides(role: u32, bits: &StateBits) -> bool {
     is_text_entry(role)
+        || is_document_content(role)
         || is_numeric_control(role)
         || matches!(role, LIST | COMBO_BOX)
         || bits.has(FOCUSABLE)
@@ -188,7 +189,7 @@ pub(crate) fn holds_selection_interface(facts: &Facts) -> bool {
 /// `Component` takes `SetFocus`, whatever names it advertises: the call is
 /// `Component.GrabFocus`, which a toolkit may reject when it is made.
 pub(crate) fn rule_tokens(facts: &Facts) -> Vec<&'static str> {
-    let editable_text = is_text_entry(facts.role)
+    let editable_text = (is_text_entry(facts.role) || is_document_content(facts.role))
         && facts.bits.has(EDITABLE)
         && !facts.bits.has(READ_ONLY)
         && facts.advertises(EDITABLE_TEXT);
@@ -201,7 +202,13 @@ pub(crate) fn rule_tokens(facts: &Facts) -> Vec<&'static str> {
     let rules = [
         (editable_text, capability::SET_VALUE),
         (
-            editable_text && facts.advertises(TEXT_INTERFACE),
+            (editable_text && facts.advertises(TEXT_INTERFACE))
+                || (is_text_document(facts.role)
+                    && facts.bits.has(EDITABLE)
+                    && !facts.bits.has(READ_ONLY)
+                    && facts.advertises(COMPONENT_INTERFACE)
+                    && facts.advertises(SELECTION)
+                    && facts.child_count.is_some_and(|count| count > 0)),
             capability::TYPE_TEXT,
         ),
         (

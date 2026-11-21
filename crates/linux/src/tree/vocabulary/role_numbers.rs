@@ -40,10 +40,19 @@ pub(crate) const VIEWPORT: u32 = 68;
 pub(crate) const APPLICATION: u32 = 75;
 pub(crate) const ENTRY: u32 = 79;
 pub(crate) const DOCUMENT_FRAME: u32 = 82;
+pub(crate) const PARAGRAPH: u32 = 73;
 pub(crate) const DOCUMENT_WEB: u32 = 95;
 pub(crate) const NOTIFICATION: u32 = 101;
 pub(crate) const LANDMARK: u32 = 110;
 pub(crate) const PUSH_BUTTON_MENU: u32 = 129;
+
+pub(crate) fn is_text_document(role: u32) -> bool {
+    matches!(role, DOCUMENT_FRAME | 92 | 93 | 94 | 96)
+}
+
+pub(crate) fn is_document_content(role: u32) -> bool {
+    role == PARAGRAPH || is_text_document(role)
+}
 
 /// Whether a numeric role is a menu item: a plain row in a menu, a check or
 /// radio row, all of which open their own submenu or run their own action.

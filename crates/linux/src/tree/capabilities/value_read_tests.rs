@@ -20,6 +20,22 @@ fn node(role: u32, interfaces: &[&str], state_bits: &[u32]) -> RawNode {
 }
 
 #[test]
+fn document_and_paragraph_text_is_searchable_even_when_read_only() {
+    for role in [73, 82, 92, 93, 94, 96] {
+        for states in [&[][..], &[EDITABLE][..], &[43][..]] {
+            assert_eq!(
+                value_source(&node(role, &["Text"], states)),
+                ValueSource::Text
+            );
+        }
+        assert_eq!(value_source(&node(role, &[], &[])), ValueSource::None);
+        let mut failed = node(role, &["Text"], &[]);
+        failed.traits.interfaces = Field::Failed("NoReply".into());
+        assert_eq!(value_source(&failed), ValueSource::Unknown);
+    }
+}
+
+#[test]
 fn a_slider_and_a_progress_bar_with_the_value_interface_read_a_number() {
     assert_eq!(
         value_source(&node(SLIDER, &["Value"], &[])),

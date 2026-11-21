@@ -150,6 +150,13 @@ pub(crate) fn execute_action(
         return deliver(bus, &request.action, None, &request, lease);
     };
     verify_process(bus, element, request.expected_process(), deadline)?;
+    let input_handle = if matches!(request.action, Action::TypeText(_)) {
+        crate::tree::capabilities::document_text::input_target(bus, handle, deadline)?
+    } else {
+        None
+    };
+    let handle = input_handle.as_ref().unwrap_or(handle);
+    let element = atspi_element(handle)?;
     let target = Target {
         bus,
         handle,
