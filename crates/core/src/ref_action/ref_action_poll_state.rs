@@ -169,8 +169,11 @@ fn is_live_read_incomplete(error: &AdapterError) -> bool {
 /// only when the snapshot also computed screen coordinates; every other
 /// entry's `bounds_hash` is already a screen rectangle.
 pub(crate) fn screen_bounds_hash(entry: &crate::RefEntry) -> Option<u64> {
-    let _ = is_window_space(entry);
-    entry.geometry.bounds_hash
+    if is_window_space(entry) {
+        entry.geometry.screen_bounds_hash.or(entry.geometry.bounds_hash)
+    } else {
+        None
+    }
 }
 
 fn is_window_space(entry: &crate::RefEntry) -> bool {

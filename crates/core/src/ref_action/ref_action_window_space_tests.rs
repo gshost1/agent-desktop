@@ -287,7 +287,7 @@ fn window_moved_to_origin_still_runs_stability_sampler() {
 
 #[test]
 fn window_space_ref_without_screen_hash_runs_stability_sampler() {
-    let adapter = CountingRow::new(live_on_screen());
+    let adapter = CountingRow::new(in_window());
     let target = window_entry_with_screen(in_window(), None);
     let request = ActionRequest::headed(Action::Click).with_timeout_ms(Some(400));
 

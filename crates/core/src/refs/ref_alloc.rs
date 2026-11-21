@@ -21,7 +21,7 @@ pub(crate) fn ref_entry_from_node(
         .or(node.presentation.bounds)
         .filter(|bounds| bounds.validate().is_ok());
     let screen_bounds_hash = window_bounds
-        .and(node.presentation.bounds)
+        .or(node.presentation.bounds)
         .and_then(|bounds| bounds.bounds_hash());
     RefEntry {
         process: crate::RefProcess {
