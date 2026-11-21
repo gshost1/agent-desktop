@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
@@ -108,6 +108,7 @@ type Summary = (String, Option<String>, Option<(String, i64)>);
 #[derive(Default)]
 struct ReorderingTransport {
     replies: HashMap<String, (Vec<Value>, Value)>,
+    silent: HashSet<String>,
     held: Vec<String>,
     inbound: VecDeque<String>,
     most_held: Arc<Mutex<usize>>,
@@ -117,6 +118,11 @@ impl ReorderingTransport {
     fn answer(mut self, method: &str, session: &str, frame: &str, reply: Value) -> Self {
         let key = format!("{method}|{session}|{frame}");
         self.replies.insert(key, (Vec::new(), reply));
+        self
+    }
+
+    fn silence(mut self, method: &str, session: &str) -> Self {
+        self.silent.insert(format!("{method}|{session}|"));
         self
     }
 
@@ -142,6 +148,9 @@ impl CdpTransport for ReorderingTransport {
             .cloned()
             .unwrap_or((Vec::new(), json!({})));
         self.inbound.extend(events.iter().map(Value::to_string));
+        if self.silent.contains(&key) {
+            return Ok(());
+        }
         let reply =
             json!({ "id": request["id"], "sessionId": request["sessionId"], "result": result });
         self.held.push(reply.to_string());
@@ -174,15 +183,15 @@ fn ax(nodes: &[(&str, &str, &str, i64)]) -> Value {
     json!({ "nodes": list })
 }
 
-fn oopif(session: &str, target: &str) -> Value {
-    json!({ "method": "Target.attachedToTarget", "sessionId": "S", "params": {
+fn oopif(parent: &str, session: &str, target: &str, parent_frame: &str) -> Value {
+    json!({ "method": "Target.attachedToTarget", "sessionId": parent, "params": {
         "sessionId": session, "waitingForDebugger": false,
-        "targetInfo": { "targetId": target, "type": "iframe", "parentFrameId": "MAIN" },
+        "targetInfo": { "targetId": target, "type": "iframe", "parentFrameId": parent_frame },
     } })
 }
 
-fn oopif_frames(frame: &str) -> Value {
-    json!({ "frameTree": { "frame": { "id": frame, "parentId": "MAIN", "loaderId": "L" } } })
+fn oopif_frames(frame: &str, parent_frame: &str) -> Value {
+    json!({ "frameTree": { "frame": { "id": frame, "parentId": parent_frame, "loaderId": "L" } } })
 }
 
 #[test]
@@ -193,7 +202,15 @@ fn frames_read_concurrently_keep_the_sequential_content_and_depth_first_order() 
         ("Iframe", "", "", 30),
         ("Iframe", "", "", 40),
         ("Iframe", "", "", 50),
+        ("Iframe", "", "", 60),
     ]);
+    let alpha = ax(&[
+        ("RootWebArea", "Alpha", "", 200),
+        ("button", "A1", "", 201),
+        ("Iframe", "", "", 202),
+    ]);
+    let beta = ax(&[("RootWebArea", "Beta", "", 300), ("link", "B1", "", 301)]);
+    let gamma = ax(&[("RootWebArea", "Gamma", "", 400), ("link", "C1", "", 401)]);
     let transport = ReorderingTransport::default()
         .answer("Page.getFrameTree", "S", "", frame_tree())
         .answer("Accessibility.getFullAXTree", "S", "MAIN", main)
@@ -210,21 +227,22 @@ fn frames_read_concurrently_keep_the_sequential_content_and_depth_first_order() 
             "REMOTE",
             json!({ "nodes": [] }),
         )
-        .announce("S", vec![oopif("S2", "A"), oopif("S3", "B")])
-        .answer("Page.getFrameTree", "S2", "", oopif_frames("A"))
-        .answer("Page.getFrameTree", "S3", "", oopif_frames("B"))
-        .answer(
-            "Accessibility.getFullAXTree",
-            "S2",
-            "A",
-            ax(&[("RootWebArea", "Alpha", "", 200), ("button", "A1", "", 201)]),
+        .announce(
+            "S",
+            vec![
+                oopif("S", "S2", "A", "MAIN"),
+                oopif("S", "S3", "B", "MAIN"),
+                oopif("S", "S5", "D", "MAIN"),
+            ],
         )
-        .answer(
-            "Accessibility.getFullAXTree",
-            "S3",
-            "B",
-            ax(&[("RootWebArea", "Beta", "", 300), ("link", "B1", "", 301)]),
-        )
+        .announce("S2", vec![oopif("S2", "S4", "C", "A")])
+        .answer("Page.getFrameTree", "S2", "", oopif_frames("A", "MAIN"))
+        .answer("Page.getFrameTree", "S3", "", oopif_frames("B", "MAIN"))
+        .answer("Page.getFrameTree", "S4", "", oopif_frames("C", "A"))
+        .silence("Page.getFrameTree", "S5")
+        .answer("Accessibility.getFullAXTree", "S2", "A", alpha)
+        .answer("Accessibility.getFullAXTree", "S3", "B", beta)
+        .answer("Accessibility.getFullAXTree", "S4", "C", gamma)
         .answer(
             "DOM.getFrameOwner",
             "S",
@@ -236,12 +254,19 @@ fn frames_read_concurrently_keep_the_sequential_content_and_depth_first_order() 
             "S",
             "B",
             json!({ "backendNodeId": 50 }),
+        )
+        .answer(
+            "DOM.getFrameOwner",
+            "S2",
+            "C",
+            json!({ "backendNodeId": 202 }),
         );
     let most_held = Arc::clone(&transport.most_held);
     let mut connection = CdpConnection::new(Box::new(transport));
 
     let snapshot =
-        snapshot_page(&mut connection, &session(), Deadline::after(1_000).unwrap()).unwrap();
+        snapshot_page_within_budget(&mut connection, &session(), Deadline::after(1_000).unwrap())
+            .unwrap();
 
     let summary: Vec<Summary> = snapshot
         .preorder()
@@ -263,9 +288,13 @@ fn frames_read_concurrently_keep_the_sequential_content_and_depth_first_order() 
         ("group", None, "MAIN", 40),
         ("webarea", Some("Alpha"), "A", 200),
         ("button", Some("A1"), "A", 201),
+        ("group", None, "A", 202),
+        ("webarea", Some("Gamma"), "C", 400),
+        ("link", Some("C1"), "C", 401),
         ("group", None, "MAIN", 50),
         ("webarea", Some("Beta"), "B", 300),
         ("link", Some("B1"), "B", 301),
+        ("group", None, "MAIN", 60),
     ]
     .map(|(role, name, frame, backend)| {
         (
@@ -275,6 +304,6 @@ fn frames_read_concurrently_keep_the_sequential_content_and_depth_first_order() 
         )
     });
     assert_eq!(summary, expected);
-    assert!(snapshot.unreadable_frames.is_empty());
+    assert_eq!(snapshot.unreadable_frames, ["D"]);
     assert!(*most_held.lock().unwrap() > 1);
 }

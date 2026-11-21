@@ -117,3 +117,25 @@ fn a_detached_session_fails_only_its_own_pending_requests() {
     assert_eq!(replies[1].as_ref().unwrap(), &json!({ "frameTree": {} }));
     assert_eq!(connection.take_events().len(), 1);
 }
+
+#[test]
+fn a_reply_arriving_after_its_request_timed_out_does_not_answer_a_later_request() {
+    let transport = ScriptedTransport::new()
+        .expect_silence("Page.getFrameTree")
+        .expect_with_events(
+            "Page.getFrameTree",
+            vec![json!({ "id": 1, "result": { "late": true } })],
+            json!({ "result": { "fresh": true } }),
+        );
+    let mut connection = CdpConnection::new(transport.boxed());
+    let mut early = request("Page.getFrameTree", "S");
+    early.deadline = Deadline::after(20).unwrap();
+
+    let timed_out = connection.call_batch(&[early]).unwrap();
+    let later = connection
+        .call_batch(&[request("Page.getFrameTree", "S")])
+        .unwrap();
+
+    assert_eq!(timed_out[0].as_ref().unwrap_err().code, ErrorCode::Timeout);
+    assert_eq!(later[0].as_ref().unwrap(), &json!({ "fresh": true }));
+}
