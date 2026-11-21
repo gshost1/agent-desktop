@@ -1,12 +1,29 @@
 use super::*;
 
 #[test]
+fn a_choice_failure_after_the_popup_hides_reports_closed_without_escape() {
+    let mut rows = Rows {
+        failure: Some("choose"),
+        hidden: Some(true),
+        ..Rows::closed()
+    };
+    let error = select(&mut rows).expect_err("choice refused");
+    assert_eq!(rows.operations, ["open", "choose"]);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    let details = error.details.expect("details");
+    assert_eq!(details["popup_closed"], true);
+    assert_eq!(details["popup_close_attempted"], false);
+    assert_eq!(details["delivered_clicks"], 1);
+    assert_eq!(details["combo_opener_clicked"], true);
+}
+
+#[test]
 fn choice_failures_close_only_a_popup_still_observed_as_visible() {
     for (failure, hidden, sent, closed) in [
         ("choose", Some(false), true, Some(true)),
         ("close", Some(false), true, Some(false)),
         ("close-unread", Some(false), true, None),
-        ("choose", Some(true), false, None),
+        ("choose", Some(true), false, Some(true)),
         ("choose", None, false, None),
         ("hidden-before-close", Some(false), false, None),
         ("unread-before-close", Some(false), false, None),
@@ -86,7 +103,7 @@ fn an_unobserved_qt_popup_shares_the_overview_cause_and_recovery_advice() {
         }
         assert_eq!(rows.operations, ["open"]);
         assert_eq!(details["popup_close_attempted"], false);
-        assert!(details["popup_closed"].is_null());
+        assert_eq!(details["popup_closed"], true);
         assert_eq!(details["combo_opener_clicked"], true);
     }
 }

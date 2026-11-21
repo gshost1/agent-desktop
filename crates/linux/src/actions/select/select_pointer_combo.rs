@@ -160,13 +160,27 @@ pub(super) fn popup_not_observed(overview: Option<bool>) -> AdapterError {
     )
 }
 
-fn wait_closed(choices: &mut dyn Choices, closed: &[AtspiElement], deadline: Deadline) -> bool {
+fn popup_hidden(choices: &mut dyn Choices, closed: &[AtspiElement]) -> Option<bool> {
+    Some(
+        choices
+            .lists()
+            .ok()?
+            .iter()
+            .all(|list| closed.iter().any(|known| same(known, list))),
+    )
+}
+
+fn wait_closed(
+    choices: &mut dyn Choices,
+    closed: &[AtspiElement],
+    deadline: Deadline,
+) -> Option<bool> {
     poll_until(
         deadline,
         CLOSE_WAIT,
         POLL_STEP,
-        || new_list(choices, closed).is_none(),
-        |gone| *gone,
+        || popup_hidden(choices, closed),
+        |gone| *gone == Some(true),
     )
 }
 
@@ -175,12 +189,15 @@ fn close_popup(
     pointer: &dyn Pointer,
     closed: &[AtspiElement],
     deadline: Deadline,
-) -> bool {
-    if new_list(choices, closed).is_none() {
-        return true;
+) -> (bool, Option<bool>) {
+    match popup_hidden(choices, closed) {
+        Some(false) => {}
+        hidden => return (false, hidden),
     }
-    let sent = pointer.escape().is_ok();
-    sent && wait_closed(choices, closed, deadline)
+    if pointer.escape().is_err() {
+        return (false, None);
+    }
+    (true, wait_closed(choices, closed, deadline))
 }
 
 fn after_opening(opened: Vec<ActionStep>, mut result: ActionResult) -> ActionResult {
@@ -227,6 +244,17 @@ struct OpenedList<'a> {
     deadline: Deadline,
 }
 
+fn commit_in_popup(
+    choices: &mut dyn Choices,
+    popup: &AtspiElement,
+    list: &OpenedList<'_>,
+) -> Result<ActionResult, AdapterError> {
+    match choices.find(popup, list.wanted)? {
+        Search::Found(hit) => choices.commit(&hit, list.current, list.wanted),
+        miss => Err(miss_error(&miss)),
+    }
+}
+
 /// The part of a pointer select that runs after the click opened the combo.
 /// Every failure here follows that click, so none of them is untouched.
 fn choose_in_opened(
@@ -243,20 +271,17 @@ fn choose_in_opened(
         |popup| popup.is_some(),
     )
     .ok_or_else(|| popup_not_observed(choices.overview_open()))?;
-    let hit = match choices.find(&popup, list.wanted)? {
-        Search::Found(hit) => hit,
-        miss => {
-            let shut = close_popup(choices, pointer, closed, deadline);
-            return Err(with_detail(miss_error(&miss), "popup_closed", json!(shut)));
-        }
-    };
-    let committed = choices.commit(&hit, list.current, list.wanted);
-    let shut = if committed.is_err() || !wait_closed(choices, closed, deadline) {
-        close_popup(choices, pointer, closed, deadline)
-    } else {
-        true
-    };
-    committed.map_err(|error| with_detail(error, "popup_closed", json!(shut)))
+    let committed = commit_in_popup(choices, &popup, list);
+    let (attempted, shut) =
+        if committed.is_err() || wait_closed(choices, closed, deadline) != Some(true) {
+            close_popup(choices, pointer, closed, deadline)
+        } else {
+            (false, Some(true))
+        };
+    committed.map_err(|error| {
+        let error = with_detail(error, "popup_close_attempted", json!(attempted));
+        with_detail(error, "popup_closed", json!(shut))
+    })
 }
 
 pub(in crate::actions) fn select_in_pointer_combo(

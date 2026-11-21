@@ -8,6 +8,9 @@ use crate::actions::chain::chain_delivery_outcome::DeliveryOutcome;
 use crate::actions::chain::chain_observed::Observed;
 use crate::actions::select::unchanged_is_ignored;
 
+#[path = "select_pointer_combo_cleanup_tests.rs"]
+mod cleanup_tests;
+
 struct World {
     shown: String,
     items: Vec<&'static str>,

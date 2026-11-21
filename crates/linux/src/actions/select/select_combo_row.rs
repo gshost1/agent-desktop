@@ -192,7 +192,7 @@ fn close_after_opening(
     let (attempted, closed) = if hidden == Some(false) {
         rows.close(deadline)
     } else {
-        (false, None)
+        (false, hidden)
     };
     let error = with_detail(error, "popup_close_attempted", json!(attempted));
     after_opener(with_detail(error, "popup_closed", json!(closed)))
