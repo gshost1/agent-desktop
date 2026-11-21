@@ -119,7 +119,7 @@ fn nodes_are_seen_in_document_order_with_the_index_their_children_end_at() {
         &WalkLimits::default(),
         &mut hook,
         None,
-        &HeadlessRoutes::unread(),
+        &HeadlessRoutes::every_token(),
     );
     assert_eq!(hook.prepared, 1);
     assert_eq!(
@@ -140,7 +140,7 @@ fn the_hook_changes_evidence_and_appends_children_after_the_node_own() {
         &WalkLimits::default(),
         &mut hook,
         None,
-        &HeadlessRoutes::unread(),
+        &HeadlessRoutes::every_token(),
     );
     let root = tree(subtree, stats);
     let names: Vec<_> = root
@@ -163,7 +163,7 @@ fn only_the_root_is_finished_and_it_ends_after_its_own_appended_children() {
         &WalkLimits::default(),
         &mut hook,
         None,
-        &HeadlessRoutes::unread(),
+        &HeadlessRoutes::every_token(),
     );
     assert_eq!(hook.finished_at, Some(4));
     assert_eq!(hook.finishes, 1);

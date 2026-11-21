@@ -2,7 +2,8 @@
     Resident = @(
         'appear-later', 'click-status', 'close-duplicate-windows', 'close-occluder', 'context-status', 'context-target',
         'delayed-action-status', 'delayed-button', 'delayed-text', 'double-status', 'double-target', 'enable-later',
-        'example-link', 'fixture-root', 'grid-panel', 'hover-status', 'hover-target', 'item-list',
+        'example-link', 'fixture-root', 'grid-panel', 'horizontal-edge-target', 'horizontal-scroll-area',
+        'hover-status', 'hover-target', 'item-list',
         'menu-disclosure', 'menu-fire-item', 'menu-status', 'move-twins', 'multiline-input', 'occluded-button',
         'occlusion-status', 'open-duplicate-windows', 'open-occluder', 'open-sheet', 'option-picker', 'outline-child-a',
         'outline-child-b', 'outline-parent', 'outline-tree', 'permanently-disabled', 'picker-status', 'primary-button',
