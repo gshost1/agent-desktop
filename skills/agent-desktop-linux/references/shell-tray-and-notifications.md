@@ -98,13 +98,24 @@ choice closes the popup with Escape and answers `ELEMENT_NOT_FOUND` with
 `delivered_unverified` and `retry: unsafe`: the click already focused and
 selected the row. Read the combobox before another select.
 `details.popup_closed` is `true` when the popup read closed afterwards, `false`
-when it stayed visible, or `null` when its closed state could not be read.
+when it stayed visible, or `null` when its closed state could not be read,
+or Escape failed after the popup read as visible. Qt combo-row cleanup
+also reports `null` if no popup list can be identified or the final
+pre-Escape recheck no longer shows it visible, including a popup that just hid.
 `details.popup_close_attempted` is `true` only when Escape was sent. If closure
 is `false` or `null`, inspect a fresh snapshot and close any visible popup
 before the next action.
 Without `--headed` that select is `POLICY_DENIED`, kind `pointer_required`,
 unless the combobox already shows the choice. Where `select` still refuses,
 adding `--headed` does not supply a missing semantic action.
+
+A headed select that opens a pointer-only combo or Qt combo row needs a
+`--timeout-ms` budget that leaves time to choose after reserving `CLOSE_WAIT`
+for cleanup: 1000 ms for pointer-only combos and 500 ms for Qt combo rows.
+If preliminary reads leave no time beyond that reserve, both refuse before
+opening with `ACTION_FAILED`, `details.kind: "popup_cleanup_budget_insufficient"`,
+`not_delivered` and `retry: safe`. Increase `--timeout-ms` before retrying that
+refusal. A combo that already shows the requested choice needs no opening.
 
 A dropdown that `select` expands semantically, such as a GTK4 `DropDown`, is
 collapsed again when the choice is missing or refused, and then read back. When

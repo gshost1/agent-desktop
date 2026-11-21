@@ -168,6 +168,9 @@ pub(super) fn reserve_close(
                 ErrorCode::ActionFailed,
                 "Not enough time to open and safely close the dropdown",
             )
+            .with_suggestion(
+                "Increase --timeout-ms to leave time to select the choice and close the popup, then retry.",
+            )
             .with_details(json!({"kind": "popup_cleanup_budget_insufficient"}))
             .with_disposition(DeliverySemantics::not_delivered())
         })?;

@@ -146,6 +146,12 @@ fn insufficient_cleanup_budget_refuses_before_opening_the_combo() {
     .expect_err("no budget to open");
     assert_eq!(error.disposition, DeliverySemantics::not_delivered());
     assert_eq!(
+        error.suggestion.as_deref(),
+        Some(
+            "Increase --timeout-ms to leave time to select the choice and close the popup, then retry."
+        )
+    );
+    assert_eq!(
         error.details.expect("details")["kind"],
         "popup_cleanup_budget_insufficient"
     );
