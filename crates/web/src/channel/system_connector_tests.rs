@@ -234,3 +234,40 @@ fn a_registry_browser_that_refuses_downloads_still_connects_but_a_silent_one_doe
         agent_desktop_core::ErrorCode::Timeout
     );
 }
+
+#[test]
+fn a_registry_candidate_opens_with_set_download_behavior_as_its_only_call() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut socket = tungstenite::accept(stream).unwrap();
+        let mut methods = Vec::new();
+        while let Ok(message) = socket.read() {
+            let Ok(text) = message.into_text() else {
+                continue;
+            };
+            let request: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+            methods.push(request["method"].as_str().unwrap_or_default().to_owned());
+            let reply = json!({ "id": request["id"], "result": {} }).to_string();
+            if socket.send(tungstenite::Message::text(reply)).is_err() {
+                break;
+            }
+        }
+        methods
+    });
+    let connector = SystemConnector::with_sources(None, Vec::new());
+    let candidate = crate::channel::endpoint_candidate::EndpointCandidate {
+        port,
+        origin: CandidateOrigin::Registry {
+            websocket_url: format!("ws://127.0.0.1:{port}/devtools/browser/stub"),
+            download_folder: None,
+        },
+    };
+
+    let connection = connector.open(&candidate, Deadline::after(3_000).unwrap(), false);
+
+    assert!(connection.is_ok());
+    drop(connection);
+    assert_eq!(server.join().unwrap(), ["Browser.setDownloadBehavior"]);
+}
