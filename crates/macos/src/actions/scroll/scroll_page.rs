@@ -210,14 +210,14 @@ pub(super) fn answered_in_time(elapsed: Duration, window: Duration) -> bool {
 /// Settles a page action that failed on its first step. `kAXErrorCannotComplete`
 /// alone cannot tell a hung application from a scroll area that has no page to
 /// move to. Any signal that moved means the scroll happened. The action counts
-/// as undelivered only when the area shows, before and after, that it is at
-/// its end in that direction, and every signal it has stayed readable and
-/// unchanged for the whole settle window. Without a scroll bar on that axis
-/// the end is read only after the refusal: whether the content fits does not
-/// depend on the scroll position, so those reads stand for the read before. Unchanged signals alone are no
-/// proof: they may miss what moved, and an animated scroll may start after
-/// the window. Anything less keeps the original error and its uncertain
-/// disposition.
+/// as undelivered only when the area shows that it is at its end in that
+/// direction, and every signal it has stayed readable and unchanged for the
+/// whole settle window. A scroll bar on that axis shows the end before and
+/// after the refusal. Without one the end is read only after the refusal:
+/// whether the content fits does not depend on the scroll position, so those
+/// reads stand for the read before. Unchanged signals alone are no proof: they
+/// may miss what moved, and an animated scroll may start after the window.
+/// Anything less keeps the original error and its uncertain disposition.
 pub(super) fn settle_refusal(
     area: &AXElement,
     direction: &Direction,

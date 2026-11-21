@@ -1,7 +1,8 @@
 //! Role and frame reads for the scroll signals, one
 //! `AXUIElementCopyMultipleAttributeValues` call per element instead of one
-//! call per attribute. A read that fails for any reason other than the
-//! attribute's absence is unreadable, never an absent frame.
+//! call per attribute. Only `kAXErrorAttributeUnsupported` and
+//! `kAXErrorNoValue` make a frame absent; every other failure is unreadable,
+//! so a transient error never reads as a frame that moved.
 
 use agent_desktop_core::{Deadline, Rect};
 
@@ -44,41 +45,54 @@ fn read(element: &AXElement, attributes: &[&str], deadline: Deadline) -> Result<
     );
     let values = crate::tree::properties::cf_type::created_cf_array(values);
     deadline.ensure_remaining().map_err(|_| ())?;
+    decode_call(error, values.as_ref(), attributes.len() == 3)
+}
+
+fn decode_call(
+    error: i32,
+    values: Option<&core_foundation::array::CFArray<core_foundation::base::CFType>>,
+    with_role: bool,
+) -> Result<ElementRead, ()> {
     if error != accessibility_sys::kAXErrorSuccess {
-        return crate::tree::properties::ax_absence::is_absent_attribute_error(error)
+        return is_absent_frame_error(error)
             .then(ElementRead::default)
             .ok_or(());
     }
-    let Some(values) = values else {
-        return Ok(ElementRead::default());
+    decode(values.ok_or(())?, with_role)
+}
+
+fn decode(
+    values: &core_foundation::array::CFArray<core_foundation::base::CFType>,
+    with_role: bool,
+) -> Result<ElementRead, ()> {
+    let slots = values.iter().map(|item| item.clone()).collect::<Vec<_>>();
+    let frame_at = usize::from(with_role);
+    if slots.len() != frame_at + 2 {
+        return Err(());
+    }
+    let role = match slots.first() {
+        Some(item) if with_role => role_slot(item)?,
+        _ => None,
     };
-    let slots = values
-        .iter()
-        .map(|item| slot(&item))
-        .collect::<Result<Vec<_>, ()>>()?;
-    let frame_at = attributes.len().checked_sub(2).ok_or(())?;
-    let role = (frame_at == 1)
-        .then(|| slots.first().cloned().flatten())
-        .flatten()
-        .and_then(|item| {
-            crate::tree::properties::cf_type::borrowed_cf_string(item.as_CFTypeRef())
-                .map(|role| role.to_string())
-        });
-    let point = slots
-        .get(frame_at)
-        .and_then(Option::as_ref)
-        .and_then(crate::tree::properties::node_attribute_decode::point);
-    let size = slots
-        .get(frame_at + 1)
-        .and_then(Option::as_ref)
-        .and_then(crate::tree::properties::node_attribute_decode::size);
-    let frame = point
-        .zip(size)
-        .and_then(|(point, size)| crate::tree::element_bounds::rect_from_parts(point, size));
+    let position = slots.get(frame_at).ok_or(())?;
+    let extent = slots.get(frame_at + 1).ok_or(())?;
+    let frame = frame_slot(
+        position,
+        crate::tree::properties::node_attribute_decode::point,
+    )?
+    .zip(frame_slot(
+        extent,
+        crate::tree::properties::node_attribute_decode::size,
+    )?)
+    .and_then(|(point, size)| crate::tree::element_bounds::rect_from_parts(point, size));
     Ok(ElementRead { role, frame })
 }
 
-fn slot(item: &core_foundation::base::CFType) -> Result<Option<core_foundation::base::CFType>, ()> {
+/// A role the element does not report is no role; any other failed read of
+/// it is unreadable.
+fn role_slot(item: &core_foundation::base::CFType) -> Result<Option<String>, ()> {
+    use core_foundation::base::TCFType;
+
     if crate::tree::properties::node_attribute_decode::is_null(item) {
         return Ok(None);
     }
@@ -87,6 +101,43 @@ fn slot(item: &core_foundation::base::CFType) -> Result<Option<core_foundation::
             Ok(None)
         }
         Some(_) => Err(()),
-        None => Ok(Some(item.clone())),
+        None => Ok(
+            crate::tree::properties::cf_type::borrowed_cf_string(item.as_CFTypeRef())
+                .map(|role| role.to_string()),
+        ),
     }
 }
+
+/// A position or size the element reports as unsupported or without a value
+/// is no frame. Any other error, a null slot or a value of another type is
+/// unreadable, as the single-attribute read classified it.
+fn frame_slot<T>(
+    item: &core_foundation::base::CFType,
+    decode: fn(&core_foundation::base::CFType) -> Option<T>,
+) -> Result<Option<T>, ()> {
+    use core_foundation::base::TCFType;
+
+    if crate::tree::properties::node_attribute_decode::is_null(item) {
+        return Err(());
+    }
+    if let Some(error) = crate::tree::properties::node_attribute_decode::slot_error(item) {
+        return is_absent_frame_error(error).then_some(None).ok_or(());
+    }
+    let is_ax_value = unsafe {
+        core_foundation_sys::base::CFGetTypeID(item.as_CFTypeRef())
+            == accessibility_sys::AXValueGetTypeID()
+    };
+    if !is_ax_value {
+        return Err(());
+    }
+    decode(item).map(Some).ok_or(())
+}
+
+fn is_absent_frame_error(error: i32) -> bool {
+    error == accessibility_sys::kAXErrorAttributeUnsupported
+        || error == accessibility_sys::kAXErrorNoValue
+}
+
+#[cfg(test)]
+#[path = "scroll_frames_tests.rs"]
+mod tests;

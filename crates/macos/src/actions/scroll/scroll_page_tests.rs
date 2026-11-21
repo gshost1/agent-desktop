@@ -310,3 +310,50 @@ fn an_area_is_at_its_end_only_by_its_bar_value_or_content_that_fits() {
         "an area with no bar whose content size was not read is not known to be at its end"
     );
 }
+
+#[test]
+fn a_transient_frame_read_failure_while_settling_keeps_the_uncertain_error() {
+    let (settled, reads) = settle(steady(), |read| {
+        if read == 3 {
+            signals(Some(Some(0.0f64.to_bits())), Some(Some(88)), Some(None))
+        } else {
+            steady()
+        }
+    });
+
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(
+        reads, 3,
+        "a frame read that failed once is unreadable, not a frame that moved or vanished"
+    );
+}
+
+#[test]
+fn an_area_without_a_bar_whose_content_fits_on_every_settled_read_is_not_delivered() {
+    let before = ScrollSignals {
+        at_end: None,
+        ..signals(None, Some(Some(88)), Some(Some(120)))
+    };
+    let after = signals(None, Some(Some(88)), Some(Some(120)));
+    let (settled, reads) = settle(before, |_| after);
+    let error = settled.unwrap_err();
+
+    assert_eq!(reads, super::SETTLE_READS);
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(
+        error.disposition.delivery(),
+        DeliveryDisposition::NotDelivered
+    );
+}
+
+#[test]
+fn an_area_without_a_bar_whose_end_was_never_read_keeps_the_uncertain_error() {
+    let unread = ScrollSignals {
+        at_end: None,
+        ..signals(None, Some(Some(88)), Some(Some(120)))
+    };
+    let (settled, reads) = settle(unread, |_| unread);
+
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(reads, 1);
+}
