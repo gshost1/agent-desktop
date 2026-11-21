@@ -197,9 +197,10 @@ empty insertion is dispatched.
   state is unsupported, the physical route refuses before that chunk's keys; the
   semantic fallback applies only if no key was sent, since earlier chunks report
   `delivered_unverified`.
-- The first `type` into a fresh document changes the window title, but the ref
-  from the snapshot still resolves: `get` on it reads the typed value. Take a
-  fresh snapshot only when the UI you address has changed for another reason.
+- Typing can change a document's window title without invalidating its ref.
+  `get` reads the value of a text-bearing target; a container document without
+  `Text` has no own value. Use `wait --text` or inspect paragraph values to
+  verify insertion through a container ref.
 
 ## Wayland keys
 
