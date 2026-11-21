@@ -1,5 +1,7 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo, WindowOp};
 
+use super::window_postcondition::{GeometryRequest, GeometryVerification, wait_for_geometry};
+
 mod imp {
     use super::*;
     use accessibility_sys::{
@@ -22,8 +24,16 @@ mod imp {
         deadline.ensure_remaining()?;
         let win_el = crate::system::window::window_resolve::window_element_for_info(win, deadline)?;
         match op {
-            WindowOp::Resize { width, height } => set_size(&win_el, width, height, deadline),
-            WindowOp::Move { x, y } => set_position(&win_el, x, y, deadline),
+            WindowOp::Resize { width, height } => set_size(
+                &win_el,
+                width,
+                height,
+                deadline,
+                GeometryVerification::DetectClamp,
+            ),
+            WindowOp::Move { x, y } => {
+                set_position(&win_el, x, y, deadline, GeometryVerification::DetectClamp)
+            }
             WindowOp::Minimize => set_minimized(&win_el, true, deadline),
             WindowOp::Maximize => maximize_to_main_display(&win_el, deadline),
             WindowOp::Restore => set_minimized(&win_el, false, deadline),
@@ -41,10 +51,21 @@ mod imp {
                 .ok_or_else(|| AdapterError::internal("Window deadline is out of range"))?,
         )?;
         let work_area = crate::system::display_work_area::for_window(current, deadline)?;
-        set_position(el, work_area.x, work_area.y, deadline)?;
-        set_size(el, work_area.width, work_area.height, deadline).map_err(|error| {
-            crate::actions::DeliveryTracker::from_delivered_units(1).annotate(error)
-        })
+        set_position(
+            el,
+            work_area.x,
+            work_area.y,
+            deadline,
+            GeometryVerification::RequestedOnly,
+        )?;
+        set_size(
+            el,
+            work_area.width,
+            work_area.height,
+            deadline,
+            GeometryVerification::RequestedOnly,
+        )
+        .map_err(|error| crate::actions::DeliveryTracker::from_delivered_units(1).annotate(error))
     }
 
     fn set_size(
@@ -52,6 +73,7 @@ mod imp {
         width: f64,
         height: f64,
         deadline: Deadline,
+        verification: GeometryVerification,
     ) -> Result<(), AdapterError> {
         validate_size(width, height)?;
         prepare(el, deadline)?;
@@ -63,6 +85,7 @@ mod imp {
         }
         let cf_attr = CFString::new(kAXSizeAttribute);
         let ax_value = unsafe { CFType::wrap_under_create_rule(ax_value as _) };
+        let before = verification.baseline(el, deadline);
         let err = crate::tree::properties::ax_ipc::set_attribute_value(
             el,
             cf_attr.as_concrete_TypeRef(),
@@ -70,15 +93,11 @@ mod imp {
             deadline,
         )?;
         finish_mutation(err, "resize window", deadline)?;
-        crate::system::window::window_postcondition::wait_for_geometry(
+        wait_for_geometry(
             el,
-            agent_desktop_core::Rect {
-                x: 0.0,
-                y: 0.0,
-                width,
-                height,
-            },
-            false,
+            GeometryRequest::Resize { width, height },
+            verification,
+            before,
             deadline,
         )
     }
@@ -88,6 +107,7 @@ mod imp {
         x: f64,
         y: f64,
         deadline: Deadline,
+        verification: GeometryVerification,
     ) -> Result<(), AdapterError> {
         validate_position(x, y)?;
         prepare(el, deadline)?;
@@ -101,6 +121,7 @@ mod imp {
         }
         let cf_attr = CFString::new(kAXPositionAttribute);
         let ax_value = unsafe { CFType::wrap_under_create_rule(ax_value as _) };
+        let before = verification.baseline(el, deadline);
         let err = crate::tree::properties::ax_ipc::set_attribute_value(
             el,
             cf_attr.as_concrete_TypeRef(),
@@ -108,15 +129,11 @@ mod imp {
             deadline,
         )?;
         finish_mutation(err, "move window", deadline)?;
-        crate::system::window::window_postcondition::wait_for_geometry(
+        wait_for_geometry(
             el,
-            agent_desktop_core::Rect {
-                x,
-                y,
-                width: 0.0,
-                height: 0.0,
-            },
-            true,
+            GeometryRequest::Move { x, y },
+            verification,
+            before,
             deadline,
         )
     }
