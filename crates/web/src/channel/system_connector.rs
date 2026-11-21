@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agent_desktop_core::system::cdp_endpoint::CdpEndpoint;
 use agent_desktop_core::{AdapterError, Deadline, DownloadScope, ProcessIdentity, StateFile};
@@ -13,6 +13,8 @@ use super::endpoint_mismatch::endpoint_mismatch;
 use super::endpoint_registry::{read_entries, record_entry, registry_file};
 use super::prompt_refusal::approval_needed;
 use super::registry_entry::RegistryEntry;
+use crate::cdp::protocol_error::is_protocol_error;
+use crate::transport::websocket::WebSocketTransport;
 use crate::{
     BrowserEndpoint, CdpConnection, EndpointSource, WebSocketUrl, connect, default_user_data_dirs,
     endpoint_from_port, read_active_port,
@@ -93,6 +95,7 @@ impl CdpConnector for SystemConnector {
         deadline: Deadline,
         may_prompt: bool,
     ) -> Result<CdpConnection, AdapterError> {
+        let discovery = Instant::now();
         let endpoint = match &candidate.origin {
             CandidateOrigin::Registry { websocket_url, .. } => BrowserEndpoint {
                 websocket_url: WebSocketUrl::parse(websocket_url)?,
@@ -109,20 +112,30 @@ impl CdpConnector for SystemConnector {
                 }
             }
         };
+        trace_phase("cdp discovery", candidate.port, discovery);
         if endpoint.port() != candidate.port {
             return Err(endpoint_mismatch(candidate.port, endpoint.port()));
         }
-        let started = std::time::Instant::now();
-        let mut connection = connect(&endpoint, deadline)?;
-        tracing::debug!(
-            port = candidate.port,
-            elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
-            "cdp connect"
-        );
+        let started = Instant::now();
         let download_folder = candidate.download_folder();
-        if let Err(error) = enable_downloads(&mut connection, download_folder.as_ref(), deadline) {
-            tracing::warn!(error = %error, "web downloads: the browser refused download events");
-        }
+        let connection = match &candidate.origin {
+            CandidateOrigin::Registry { .. } => {
+                let transport = WebSocketTransport::connect(&endpoint.websocket_url, deadline)?;
+                trace_phase("cdp handshake", candidate.port, started);
+                let connection = CdpConnection::new(Box::new(transport));
+                ready_registry_connection(connection, download_folder.as_ref(), deadline)?
+            }
+            CandidateOrigin::ActivePort { .. } => {
+                let mut connection = connect(&endpoint, deadline)?;
+                if let Err(error) =
+                    enable_downloads(&mut connection, download_folder.as_ref(), deadline)
+                {
+                    warn_downloads_refused(&error);
+                }
+                connection
+            }
+        };
+        trace_phase("cdp connect", candidate.port, started);
         Ok(connection)
     }
 
@@ -148,6 +161,39 @@ impl CdpConnector for SystemConnector {
             deadline,
         )
     }
+}
+
+/// Readies a connection opened from a registry entry. The registry holds
+/// the browser's own WebSocket URL, whose path names this browser run, so
+/// the handshake already proves the endpoint and no `Browser.getVersion`
+/// probe is sent: `Browser.setDownloadBehavior`, needed anyway, is the
+/// first call and proves the browser answers. A browser that refuses
+/// download events still serves pages.
+fn ready_registry_connection(
+    mut connection: CdpConnection,
+    download_folder: Option<&DownloadFolder>,
+    deadline: Deadline,
+) -> Result<CdpConnection, AdapterError> {
+    match enable_downloads(&mut connection, download_folder, deadline) {
+        Ok(()) => Ok(connection),
+        Err(error) if is_protocol_error(&error) => {
+            warn_downloads_refused(&error);
+            Ok(connection)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn warn_downloads_refused(error: &AdapterError) {
+    tracing::warn!(error = %error, "web downloads: the browser refused download events");
+}
+
+fn trace_phase(phase: &'static str, port: u16, started: Instant) {
+    tracing::debug!(
+        port,
+        elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+        "{phase}"
+    );
 }
 
 #[cfg(test)]

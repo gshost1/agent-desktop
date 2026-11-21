@@ -12,19 +12,23 @@ use crate::transport::transport_error::transport_failed;
 const MAX_BUFFERED_EVENTS: usize = 1024;
 const MAX_DETACHED_SESSIONS: usize = 1024;
 const DETACHED: &str = "Target.detachedFromTarget";
+const BROWSER_VERSION: &str = "Browser.getVersion";
 
 /// A CDP client over one transport. Requests carry monotonic ids; events
 /// that arrive while a reply is awaited are buffered, oldest dropped first
 /// once the buffer holds 1024. The connection remembers every flattened
 /// session the browser announced as detached: a request on one fails at once
 /// as `cdp_target_gone`, and so does a request whose session detaches while
-/// its reply is awaited, since a closing target may never answer.
+/// its reply is awaited, since a closing target may never answer. A
+/// browser's version does not change while it runs, so the first
+/// browser-level `Browser.getVersion` reply answers every later one.
 pub struct CdpConnection {
     transport: Box<dyn CdpTransport>,
     next_id: u64,
     events: VecDeque<CdpEvent>,
     dropped_events: u64,
     detached_sessions: HashSet<String>,
+    browser_version: Option<Value>,
 }
 
 impl CdpConnection {
@@ -35,6 +39,7 @@ impl CdpConnection {
             events: VecDeque::new(),
             dropped_events: 0,
             detached_sessions: HashSet::new(),
+            browser_version: None,
         }
     }
 
@@ -48,8 +53,15 @@ impl CdpConnection {
         session_id: Option<&str>,
         deadline: Deadline,
     ) -> Result<Value, AdapterError> {
+        let asks_version = method == BROWSER_VERSION && session_id.is_none();
+        if let Some(version) = self.browser_version.as_ref().filter(|_| asks_version) {
+            return Ok(version.clone());
+        }
         let started = std::time::Instant::now();
         let reply = self.exchange(method, params, session_id, deadline);
+        if let Some(version) = reply.as_ref().ok().filter(|_| asks_version) {
+            self.browser_version = Some(version.clone());
+        }
         tracing::debug!(
             method,
             elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
