@@ -172,6 +172,7 @@ check "a bus-activated Terminal under the mutter wrapper maps on its display" "$
 # shellcheck disable=SC2016
 "$helper" -- "$mutter" -- sh -c '
   [ "$(busctl --user --timeout=3 get-property org.gnome.Shell /org/gnome/Shell org.gnome.Shell Mode)" = "s \"ad-private\"" ] &&
+    [ -f "$AGENT_DESKTOP_PRIVATE_SESSION/gnome-shell-mutter.log" ] &&
     ! grep -q AuthenticationAgent "$AGENT_DESKTOP_PRIVATE_SESSION/gnome-shell-mutter.log"
 ' 2>/dev/null
 status=$?
