@@ -23,8 +23,9 @@ pub fn list_page_targets(
 }
 
 /// Attaches a flattened session to `target_id` and releases the target if
-/// it is paused waiting for a debugger, as targets reached through a
-/// browser's remote-debugging server arrive.
+/// it is paused waiting for a debugger. The release costs a round trip that
+/// Chrome answers slowly, so it is skipped only when the browser's attach
+/// event says the target is already running.
 pub fn attach_to_target(
     connection: &mut CdpConnection,
     target_id: &str,
@@ -37,16 +38,38 @@ pub fn attach_to_target(
         deadline,
     )?;
     let session_id = string_field(&result, "sessionId", "Target.attachToTarget")?;
-    connection.call(
-        "Runtime.runIfWaitingForDebugger",
-        json!({}),
-        Some(&session_id),
-        deadline,
-    )?;
+    if !reported_running(connection, &session_id) {
+        connection.call(
+            "Runtime.runIfWaitingForDebugger",
+            json!({}),
+            Some(&session_id),
+            deadline,
+        )?;
+    }
     Ok(PageSession {
         target_id: target_id.to_owned(),
         session_id,
     })
+}
+
+/// Whether the browser's `Target.attachedToTarget` event for `session_id`
+/// said the target is not waiting for a debugger. Chrome sends that event
+/// before it answers `Target.attachToTarget`. A missing event, or one that
+/// does not say, counts as paused, so the target is still released.
+fn reported_running(connection: &mut CdpConnection, session_id: &str) -> bool {
+    let attached = connection.drain_events(|event| {
+        event.method == "Target.attachedToTarget"
+            && event.session_id.is_none()
+            && event.params.get("sessionId").and_then(Value::as_str) == Some(session_id)
+    });
+    !attached.is_empty()
+        && attached.iter().all(|event| {
+            event
+                .params
+                .get("waitingForDebugger")
+                .and_then(Value::as_bool)
+                == Some(false)
+        })
 }
 
 /// Opens `url` in a new background tab and returns its target id. The tab
