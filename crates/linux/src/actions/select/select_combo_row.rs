@@ -43,7 +43,11 @@ trait ComboRows {
     fn escape(&mut self) -> Option<()>;
     fn overview_open(&self) -> Option<bool>;
     fn close(&mut self, deadline: Deadline) -> (bool, Option<bool>) {
-        if self.popup_hidden(deadline) != Some(false) || self.escape().is_none() {
+        match self.popup_hidden(deadline) {
+            Some(false) => {}
+            hidden => return (false, hidden),
+        }
+        if self.escape().is_none() {
             return (false, None);
         }
         (

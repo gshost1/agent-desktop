@@ -100,8 +100,9 @@ selected the row. Read the combobox before another select.
 `details.popup_closed` is `true` when the popup read closed afterwards, `false`
 when it stayed visible, or `null` when its closed state could not be read,
 or Escape failed after the popup read as visible. Qt combo-row cleanup
-also reports `null` if no popup list can be identified or the final
-pre-Escape recheck no longer shows it visible, including a popup that just hid.
+rechecks the popup just before Escape: a popup that just hid reports `true`
+without Escape, and a popup list it can no longer identify or read reports
+`null`.
 `details.popup_close_attempted` is `true` only when Escape was sent. If closure
 is `false` or `null`, inspect a fresh snapshot and close any visible popup
 before the next action.
