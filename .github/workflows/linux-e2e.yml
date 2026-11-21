@@ -95,3 +95,4 @@ jobs:
           name: linux-private-session-logs
           path: ${{ runner.temp }}/private-session-logs/
           if-no-files-found: warn
+          retention-days: 7

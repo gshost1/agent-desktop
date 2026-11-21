@@ -29,6 +29,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("if: ${{ failure() && steps.private-session.outcome == 'failure' }}", upload)
         self.assertIn("uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", upload)
         self.assertIn("path: ${{ runner.temp }}/private-session-logs/", upload)
+        self.assertIn("retention-days: 7", upload)
 
     def test_live_workflow_fails_closed(self):
         workflow = (REPO / ".github" / "workflows" / "linux-e2e.yml").read_text()
