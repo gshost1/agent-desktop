@@ -25,7 +25,7 @@ fn choice_failures_close_only_a_popup_still_observed_as_visible() {
         ("close-unread", Some(false), true, None),
         ("choose", Some(true), false, Some(true)),
         ("choose", None, false, None),
-        ("hidden-before-close", Some(false), false, None),
+        ("hidden-before-close", Some(false), false, Some(true)),
         ("unread-before-close", Some(false), false, None),
         ("escape-refused", Some(false), false, None),
     ] {

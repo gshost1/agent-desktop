@@ -4,6 +4,7 @@ use agent_desktop_core::{
 
 use crate::tree::AXElement;
 
+mod scroll_frames;
 pub(crate) mod scroll_into_view;
 mod scroll_loaded_items;
 mod scroll_page;

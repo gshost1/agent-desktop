@@ -42,14 +42,26 @@ def launch_calculator_attributed(ctx: LegContext) -> None:
     ctx.restored("proc.members", changed(lambda: members(ctx.tier.runtime_dir), before, seconds=6))
 
 
+def _frame_role(node):
+    try:
+        return node.role
+    except Exception as error:
+        if raw.vanished(error) or any(name in str(error) for name in (
+            "org.freedesktop.DBus.Error.UnknownMethod",
+            "org.freedesktop.DBus.Error.UnknownInterface",
+        )):
+            return None
+        raise
+
+
 def _window_ids(tier):
     return sorted(window_id(node) for node in app_root(tier, "gnome-text-editor").children()
-                  if node.role in (16, 23, 69))
+                  if _frame_role(node) in (16, 23, 69))
 
 
 def _close_added_windows(tier, existing):
     for frame in app_root(tier, "gnome-text-editor").children():
-        if frame.role in (16, 23, 69) and window_id(frame) not in existing:
+        if _frame_role(frame) in (16, 23, 69) and window_id(frame) not in existing:
             close = frame.find(role=43, name="Close")
             assert len(close) == 1, "new editor frame must have one Close action"
             assert close[0].do_action("click"), "new editor frame did not close"

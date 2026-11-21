@@ -2,9 +2,11 @@ use std::cell::Cell;
 use std::time::Duration;
 
 use accessibility_sys::{kAXErrorCannotComplete, kAXErrorFailure};
-use agent_desktop_core::{AdapterError, DeliveryDisposition, ErrorCode, RetryDisposition};
+use agent_desktop_core::{
+    AdapterError, DeliveryDisposition, Direction, ErrorCode, RetryDisposition,
+};
 
-use super::{answer_window, answered_in_time, settle_observed};
+use super::{answer_window, answered_in_time, area_at_end, settle_observed};
 use crate::actions::scroll::scroll_signals::ScrollSignals;
 
 fn signals(
@@ -21,12 +23,13 @@ fn signals(
         content,
         descendant,
         sampled,
+        at_end: Some(true),
     }
 }
 
 fn steady() -> ScrollSignals {
     signals(
-        Some(Some(0.25f64.to_bits())),
+        Some(Some(0.0f64.to_bits())),
         Some(Some(88)),
         Some(Some(120)),
     )
@@ -78,6 +81,7 @@ fn refused_page_action_that_moved_nothing_is_an_unavailable_action() {
         error.details.as_ref().unwrap()["kind"],
         "scroll_action_unavailable"
     );
+    assert_eq!(error.details.as_ref().unwrap()["scroll_area_at_end"], true);
 }
 
 #[test]
@@ -122,8 +126,8 @@ fn descendant_that_moved_inside_a_fixed_content_frame_counts_as_the_scroll() {
 fn signal_that_becomes_unreadable_keeps_the_uncertain_error() {
     for after in [
         signals(Some(None), Some(Some(88)), Some(Some(120))),
-        signals(Some(Some(0.25f64.to_bits())), Some(None), Some(Some(120))),
-        signals(Some(Some(0.25f64.to_bits())), Some(Some(88)), None),
+        signals(Some(Some(0.0f64.to_bits())), Some(None), Some(Some(120))),
+        signals(Some(Some(0.0f64.to_bits())), Some(Some(88)), None),
     ] {
         let (settled, _) = settle(steady(), |_| after);
         assert_uncertain(&settled.unwrap_err());
@@ -217,4 +221,139 @@ fn a_refusal_that_ran_into_its_messaging_timeout_is_not_settled() {
         "a call that waited out its messaging timeout reached the application, which may \
          still scroll after the settle window, so its delivery stays unknown"
     );
+}
+
+#[test]
+fn unchanged_signals_of_an_area_that_can_still_move_are_no_proof() {
+    let pinned_header = ScrollSignals {
+        sampled: 6,
+        at_end: Some(false),
+        ..signals(None, Some(Some(88)), Some(Some(120)))
+    };
+    let (settled, reads) = settle(pinned_header, |_| pinned_header);
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(
+        reads, 1,
+        "a pinned header and a viewport-sized list stay put while their rows scroll, so \
+         unchanged frames of an area with room left do not show the scroll missed"
+    );
+
+    let lone_bar = ScrollSignals {
+        at_end: Some(false),
+        ..signals(Some(Some(0.4f64.to_bits())), None, None)
+    };
+    let (settled, _) = settle(lone_bar, |_| lone_bar);
+    assert_uncertain(&settled.unwrap_err());
+}
+
+#[test]
+fn an_area_that_leaves_its_end_while_settling_keeps_the_uncertain_error() {
+    let (settled, reads) = settle(steady(), |read| ScrollSignals {
+        at_end: Some(read < 5),
+        ..steady()
+    });
+
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(reads, 5);
+}
+
+#[test]
+fn an_area_that_reaches_its_end_only_after_the_refusal_keeps_the_uncertain_error() {
+    let before = ScrollSignals {
+        at_end: Some(false),
+        ..steady()
+    };
+    let (settled, reads) = settle(before, |_| steady());
+
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(
+        reads, 1,
+        "an area that had room before the refusal and is at its end after it may have been \
+         scrolled there by the refused action"
+    );
+}
+
+#[test]
+fn an_area_is_at_its_end_only_by_its_bar_value_or_content_that_fits() {
+    let fits = || Some(true);
+    let overflows = || Some(false);
+    assert_eq!(
+        area_at_end(Some(Some(1.0)), &Direction::Down, overflows),
+        Some(true)
+    );
+    assert_eq!(
+        area_at_end(Some(Some(0.0)), &Direction::Left, overflows),
+        Some(true)
+    );
+    assert_eq!(
+        area_at_end(Some(Some(1.0)), &Direction::Up, fits),
+        Some(false)
+    );
+    assert_eq!(
+        area_at_end(Some(Some(0.5)), &Direction::Down, fits),
+        Some(false)
+    );
+    assert_eq!(
+        area_at_end(Some(Some(f64::NAN)), &Direction::Down, fits),
+        Some(false)
+    );
+    assert_eq!(
+        area_at_end(Some(None), &Direction::Down, fits),
+        None,
+        "a bar whose value cannot be read proves nothing, whatever the content size says"
+    );
+    assert_eq!(area_at_end(None, &Direction::Right, fits), Some(true));
+    assert_eq!(area_at_end(None, &Direction::Right, overflows), Some(false));
+    assert_eq!(
+        area_at_end(None, &Direction::Right, || None),
+        None,
+        "an area with no bar whose content size was not read is not known to be at its end"
+    );
+}
+
+#[test]
+fn a_transient_frame_read_failure_while_settling_keeps_the_uncertain_error() {
+    let (settled, reads) = settle(steady(), |read| {
+        if read == 3 {
+            signals(Some(Some(0.0f64.to_bits())), Some(Some(88)), Some(None))
+        } else {
+            steady()
+        }
+    });
+
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(
+        reads, 3,
+        "a frame read that failed once is unreadable, not a frame that moved or vanished"
+    );
+}
+
+#[test]
+fn an_area_without_a_bar_whose_content_fits_on_every_settled_read_is_not_delivered() {
+    let before = ScrollSignals {
+        at_end: None,
+        ..signals(None, Some(Some(88)), Some(Some(120)))
+    };
+    let after = signals(None, Some(Some(88)), Some(Some(120)));
+    let (settled, reads) = settle(before, |_| after);
+    let error = settled.unwrap_err();
+
+    assert_eq!(reads, super::SETTLE_READS);
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(
+        error.disposition.delivery(),
+        DeliveryDisposition::NotDelivered
+    );
+}
+
+#[test]
+fn an_area_without_a_bar_whose_end_was_never_read_keeps_the_uncertain_error() {
+    let unread = ScrollSignals {
+        at_end: None,
+        ..signals(None, Some(Some(88)), Some(Some(120)))
+    };
+    let (settled, reads) = settle(unread, |_| unread);
+
+    assert_uncertain(&settled.unwrap_err());
+    assert_eq!(reads, 1);
 }

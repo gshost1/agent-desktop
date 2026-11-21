@@ -3,8 +3,10 @@ use crate::commands::wait::refmap_cap_support::{
     LAST_BUTTON, OversizedTreeAdapter, oversized_window,
 };
 use crate::refs::refs_test_support::HomeGuard;
+use crate::wait::deadline::VirtualClock;
 
 fn wait_for(needles: &[usize]) -> Value {
+    let _clock = VirtualClock::freeze();
     let adapter = OversizedTreeAdapter {
         tree: oversized_window(needles),
     };

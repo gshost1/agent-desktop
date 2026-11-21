@@ -6,11 +6,44 @@
 //! joined from accessibility. A minimized state that fails for a transport
 //! reason still fails, as the single-attribute read did.
 
-use agent_desktop_core::AdapterError;
+use agent_desktop_core::{AdapterError, Deadline, Rect};
 use std::time::Instant;
 
 const TITLE: &str = "AXTitle";
 const MINIMIZED: &str = "AXMinimized";
+
+pub(super) fn read_geometry_baseline(
+    window: &crate::tree::AXElement,
+    deadline: Deadline,
+) -> Option<Rect> {
+    use accessibility_sys::{AXValueGetTypeID, kAXErrorSuccess};
+    use core_foundation::{array::CFArray, base::TCFType, string::CFString};
+
+    let position = CFString::new("AXPosition");
+    let size = CFString::new("AXSize");
+    let requested =
+        CFArray::from_copyable(&[position.as_concrete_TypeRef(), size.as_concrete_TypeRef()]);
+    let (error, values) = crate::tree::properties::ax_ipc::copy_multiple_attribute_values(
+        window,
+        requested.as_concrete_TypeRef(),
+        deadline,
+    );
+    let values = crate::tree::properties::cf_type::created_cf_array(values)?;
+    if error != kAXErrorSuccess || deadline.is_expired() || values.len() != 2 {
+        return None;
+    }
+    let position = values.get(0)?;
+    let size = values.get(1)?;
+    let ax_value_type = unsafe { AXValueGetTypeID() };
+    if position.type_of() != ax_value_type || size.type_of() != ax_value_type {
+        return None;
+    }
+    use crate::tree::properties::node_attribute_decode;
+    crate::tree::element_bounds::rect_from_parts(
+        node_attribute_decode::point(&position)?,
+        node_attribute_decode::size(&size)?,
+    )
+}
 
 pub(crate) fn read_title_and_minimized(
     window: &crate::tree::AXElement,
