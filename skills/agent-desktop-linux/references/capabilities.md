@@ -165,7 +165,9 @@ cursor; on Wayland none is drawn.
   Mutter RemoteDesktop capability. `references/display-servers-and-input.md`
   has the full rules.
 - `select` tries the semantic route first and the pointer second; the pointer
-  route needs an explicit `--headed` request on X11. A Qt combo's semantic
+  route needs an explicit `--headed` request on X11. Headless snapshots omit
+  `Select` on Qt combos and their choices; standalone list rows keep their
+  semantic selection route. A Qt combo's semantic
   selection only highlights its popup row, so headless selection refuses with
   `POLICY_DENIED`, kind `pointer_required`, before changing that highlight.
   A headed Qt selection clicks a collapsed combo open, waits for its expanded
