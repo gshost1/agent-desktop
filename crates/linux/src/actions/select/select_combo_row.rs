@@ -5,7 +5,9 @@ use agent_desktop_core::{
 };
 use serde_json::json;
 
-use super::select_pointer::{Pointer, after_input_sent, already_satisfied, with_detail};
+use super::select_pointer::{
+    Pointer, after_input_sent, already_satisfied, reserve_close, with_detail,
+};
 use super::select_pointer_combo::popup_not_observed;
 use super::select_row::click_row;
 use super::select_search::{Search, search};
@@ -144,19 +146,7 @@ fn choose(rows: &mut dyn ComboRows, deadline: Deadline) -> Result<ActionResult, 
         }
         Some(false) => {}
     }
-    let available = deadline
-        .remaining()
-        .checked_sub(CLOSE_WAIT)
-        .filter(|remaining| !remaining.is_zero())
-        .ok_or_else(|| {
-            AdapterError::new(
-                ErrorCode::ActionFailed,
-                "Not enough time to open and safely close the dropdown",
-            )
-            .with_details(json!({"kind": "popup_cleanup_budget_insufficient"}))
-            .with_disposition(DeliverySemantics::not_delivered())
-        })?;
-    let popup_deadline = deadline.capped(available);
+    let popup_deadline = reserve_close(deadline, CLOSE_WAIT)?;
     let opened = rows.open()?;
     let expanded = poll_until(
         popup_deadline,

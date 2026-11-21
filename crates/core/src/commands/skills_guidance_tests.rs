@@ -1,5 +1,20 @@
 use super::*;
 
+#[test]
+fn the_linux_skill_explains_unread_popup_closure_and_escape_delivery() {
+    let result = get(GetArgs {
+        name: "linux".into(),
+        full: false,
+        reference: Some("shell-tray-and-notifications".into()),
+    })
+    .expect("linux popup guidance");
+    let content = result["content"].as_str().expect("content");
+    assert!(content.contains("`null` when its closed state could not be read"));
+    assert!(
+        content.contains("`details.popup_close_attempted` is `true` only when Escape was sent")
+    );
+}
+
 fn macos_skill() -> String {
     let result = get(GetArgs {
         name: "macos".into(),

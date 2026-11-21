@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use agent_desktop_core::{
-    ActionResult, ActionStep, AdapterError, DeliverySemantics, InteractionLease, InteractionPolicy,
-    KeyCombo, StepMechanism,
+    ActionResult, ActionStep, AdapterError, Deadline, DeliverySemantics, ErrorCode,
+    InteractionLease, InteractionPolicy, KeyCombo, StepMechanism,
 };
 use serde_json::json;
 
@@ -151,6 +153,25 @@ pub(super) fn after_input_sent(error: AdapterError) -> AdapterError {
     } else {
         error
     }
+}
+
+pub(super) fn reserve_close(
+    deadline: Deadline,
+    close_wait: Duration,
+) -> Result<Deadline, AdapterError> {
+    let available = deadline
+        .remaining()
+        .checked_sub(close_wait)
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| {
+            AdapterError::new(
+                ErrorCode::ActionFailed,
+                "Not enough time to open and safely close the dropdown",
+            )
+            .with_details(json!({"kind": "popup_cleanup_budget_insufficient"}))
+            .with_disposition(DeliverySemantics::not_delivered())
+        })?;
+    Ok(deadline.capped(available))
 }
 
 /// Adds one entry to the details of a select error, keeping the entries the

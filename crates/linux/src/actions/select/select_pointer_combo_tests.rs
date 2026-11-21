@@ -11,6 +11,9 @@ use crate::actions::select::unchanged_is_ignored;
 #[path = "select_pointer_combo_cleanup_tests.rs"]
 mod cleanup_tests;
 
+#[path = "select_pointer_combo_budget_tests.rs"]
+mod budget_tests;
+
 struct World {
     shown: String,
     items: Vec<&'static str>,
@@ -57,6 +60,8 @@ fn element(path: &str) -> AtspiElement {
 }
 
 impl Choices for Fake {
+    fn set_deadline(&mut self, _: Deadline) {}
+
     fn lists(&mut self) -> Result<Vec<AtspiElement>, AdapterError> {
         let world = self.0.borrow();
         let mut lists = Vec::new();
@@ -156,7 +161,7 @@ fn choose_with(
     pointer: Option<&dyn Pointer>,
     wanted: &str,
 ) -> Result<ActionResult, AdapterError> {
-    let deadline = Deadline::after(300).expect("a short deadline");
+    let deadline = Deadline::after(1300).expect("a short deadline with cleanup reserved");
     choose_by_pointer(
         &mut Fake(world.clone()),
         pointer,

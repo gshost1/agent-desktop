@@ -97,8 +97,11 @@ popup's default action, and checks the value the combobox shows. A missing
 choice closes the popup with Escape and answers `ELEMENT_NOT_FOUND` with
 `delivered_unverified` and `retry: unsafe`: the click already focused and
 selected the row. Read the combobox before another select.
-`details.popup_closed` says whether the popup read closed afterwards; when it
-is `false`, the popup may still be open, so close it before the next action.
+`details.popup_closed` is `true` when the popup read closed afterwards, `false`
+when it stayed visible, or `null` when its closed state could not be read.
+`details.popup_close_attempted` is `true` only when Escape was sent. If closure
+is `false` or `null`, inspect a fresh snapshot and close any visible popup
+before the next action.
 Without `--headed` that select is `POLICY_DENIED`, kind `pointer_required`,
 unless the combobox already shows the choice. Where `select` still refuses,
 adding `--headed` does not supply a missing semantic action.

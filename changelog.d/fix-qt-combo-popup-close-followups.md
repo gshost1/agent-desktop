@@ -1,3 +1,4 @@
 ### Bug Fixes
 
-* Report a Qt combo popup already observed hidden as closed without sending Escape, and close pointer-opened combo popups after choice-read failures while preserving the original error and opener delivery disposition.
+* Keep time in reserve to close pointer-opened combo popups after choice-read or commit timeouts, preserving the original error and opener delivery disposition. Report an already-hidden Qt combo popup as closed without Escape.
+* Report `popup_closed: null` when closure cannot be read and `popup_close_attempted` to distinguish whether Escape was sent.

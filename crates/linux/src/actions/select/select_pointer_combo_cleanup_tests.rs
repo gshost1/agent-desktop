@@ -8,6 +8,8 @@ struct ReadFailure {
 }
 
 impl Choices for ReadFailure {
+    fn set_deadline(&mut self, _: Deadline) {}
+
     fn lists(&mut self) -> Result<Vec<AtspiElement>, AdapterError> {
         if self.failed && self.hidden.is_none() {
             return Err(AdapterError::new(ErrorCode::Timeout, "popup state unread"));
@@ -59,7 +61,7 @@ fn refuse_read(
         Some(pointer),
         &element("/combo"),
         "Never",
-        Deadline::after(300).expect("deadline"),
+        Deadline::after(1300).expect("deadline with cleanup reserved"),
     )
     .expect_err("popup read refused")
 }
