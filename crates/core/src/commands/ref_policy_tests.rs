@@ -140,9 +140,9 @@ fn snapshot_id() -> String {
             capture: crate::CaptureVerdict::Unique,
         },
         geometry: crate::RefGeometry {
-            bounds_space: None,
             bounds: Some(bounds),
             bounds_hash: bounds.bounds_hash(),
+            ..Default::default()
         },
         capabilities: crate::RefCapabilities {
             states: vec![],

@@ -276,11 +276,7 @@ fn ref_entry(pid: u32) -> RefEntry {
             native_id: None,
             capture: crate::CaptureVerdict::Unique,
         },
-        geometry: crate::RefGeometry {
-            bounds_space: None,
-            bounds: None,
-            bounds_hash: None,
-        },
+        geometry: crate::RefGeometry::default(),
         capabilities: crate::RefCapabilities {
             states: vec![],
             available_actions: vec![capability::CLICK.into()],

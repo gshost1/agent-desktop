@@ -34,6 +34,7 @@ fn entry() -> RefEntry {
                 height: 10.0,
             }),
             bounds_hash: Some(1),
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec![],

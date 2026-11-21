@@ -18,9 +18,9 @@ pub(crate) struct RefActionPollState {
 
 impl RefActionPollState {
     /// The poll's starting state. A headless action compares live bounds with
-    /// the snapshot's hash, but only a screen-space one: a window-space hash
-    /// never matches the live screen rectangle, so such a ref is primed from
-    /// its first live read instead (see [`Self::prime_from_live`]).
+    /// the snapshot's screen-space hash when available; a window-space ref
+    /// without a recorded screen hash is primed from its first live read
+    /// instead (see [`Self::prime_from_live`]).
     pub(crate) fn for_entry(entry: &crate::RefEntry, request: &crate::ActionRequest) -> Self {
         Self {
             expected_bounds_hash: screen_bounds_hash(entry).filter(|_| is_headless(request)),
@@ -29,9 +29,9 @@ impl RefActionPollState {
     }
 
     /// Takes the live screen bounds as the expected hash before the first
-    /// preflight of a headless window-space ref, so the stability check
-    /// compares two live screen reads instead of failing on a hash measured
-    /// in another frame.
+    /// preflight of a headless window-space ref that carries no snapshot
+    /// screen hash, so the stability check compares two live screen reads
+    /// instead of failing on a hash measured in another frame.
     pub(crate) fn prime_from_live(
         &mut self,
         target: (&crate::RefEntry, &crate::ActionRequest),
@@ -165,12 +165,12 @@ fn is_live_read_incomplete(error: &AdapterError) -> bool {
     })
 }
 
-/// The snapshot's bounds hash when it was measured on screen. A refmap entry
-/// without a space tag is a screen rectangle.
+/// The snapshot's bounds hash on screen. A window-space entry carries one
+/// only when the snapshot also computed screen coordinates; every other
+/// entry's `bounds_hash` is already a screen rectangle.
 pub(crate) fn screen_bounds_hash(entry: &crate::RefEntry) -> Option<u64> {
-    (!is_window_space(entry))
-        .then_some(entry.geometry.bounds_hash)
-        .flatten()
+    let _ = is_window_space(entry);
+    entry.geometry.bounds_hash
 }
 
 fn is_window_space(entry: &crate::RefEntry) -> bool {

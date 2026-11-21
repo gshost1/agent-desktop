@@ -88,6 +88,7 @@ fn entry() -> RefEntry {
         bounds_space: None,
         bounds: Some(bounds),
         bounds_hash: bounds.bounds_hash(),
+        screen_bounds_hash: None,
     };
     entry.capabilities.available_actions = vec![capability::SET_VALUE.into()];
     entry
