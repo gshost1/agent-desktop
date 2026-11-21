@@ -23,7 +23,8 @@ pub(super) trait RevealArea {
 /// moves, and the failure is returned only so the caller can report it if
 /// the target never becomes visible. A reveal that stops because the next
 /// step would reverse the last one returns an overshoot error instead, since
-/// the area could still move. The postcondition, not an intermediate return
+/// the area could still move: the last step carried the target past the
+/// viewport, and the next would only carry it back. The postcondition, not an intermediate return
 /// code, decides the outcome.
 pub(super) fn reveal_steps(
     area: &mut impl RevealArea,
@@ -79,11 +80,12 @@ fn is_step_refusal(error: &AdapterError) -> bool {
 fn overshoot_error() -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionFailed,
-        "Target remains clipped: each page-sized scroll step moved it past the viewport",
+        "Target remains clipped: the last scroll step moved it past the viewport, and the next \
+         step would move it back",
     )
     .with_details(serde_json::json!({ "kind": "scroll_step_overshoot" }))
     .with_suggestion(
-        "The area can still move, but its page steps are larger than the gap to the target. \
+        "The area can still move, but its scroll steps are larger than the gap to the target. \
          If the user allows physical input, scroll it with '--headed', whose wheel steps are \
          smaller, then retry.",
     )

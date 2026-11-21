@@ -121,6 +121,11 @@ fn a_reveal_stopped_by_overshooting_says_so() {
         !error.message.contains("as far as they can"),
         "the area could still move; only its page steps were too large"
     );
+    assert!(
+        error.message.contains("the last scroll step") && !error.message.contains("each"),
+        "only the last step crossed the viewport, and it need not have been a page: {}",
+        error.message
+    );
 }
 
 #[test]
