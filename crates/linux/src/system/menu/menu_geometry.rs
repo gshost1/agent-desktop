@@ -55,10 +55,8 @@ pub(super) fn fill(
         stream::iter(items.into_iter().map(|item| {
             let connection = connection.inner();
             async move {
-                let (read, _) =
-                    read_node_for(connection, &item.node.element, ReadPurpose::Bounds).await?;
-                item.node.extents = read.extents;
-                Ok::<_, AdapterError>(())
+                let read = read_node_for(connection, &item.node.element, ReadPurpose::Bounds).await;
+                apply_bounds(item, read.map(|(node, _)| node.extents))
             }
         }))
         .buffer_unordered(32)
@@ -66,6 +64,16 @@ pub(super) fn fill(
         .await?;
         Ok(())
     })
+}
+
+fn apply_bounds(
+    item: &mut ObservedRead,
+    read: Result<crate::tree::Field<crate::tree::Extents>, AdapterError>,
+) -> Result<(), AdapterError> {
+    if let Ok(bounds) = read {
+        item.node.extents = bounds;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

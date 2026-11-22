@@ -89,8 +89,13 @@ fn presented_items(
 
 fn open_menu(node: &Node, corroborate: &mut impl FnMut(&Node) -> bool) -> Option<usize> {
     let open = is_menu(role(node)) && has_state(node, SHOWING);
-    open.then(|| presented_items(node, 0, corroborate))
-        .filter(|items| *items > 0)
+    let native = open && super::menu_presentation::needs_corroboration(node) && corroborate(node);
+    open.then(|| {
+        presented_items(node, 0, &mut |item| {
+            native && super::menu_presentation::item_rect(item).is_some()
+        })
+    })
+    .filter(|items| *items > 0)
 }
 
 fn collect<'a>(
