@@ -6,6 +6,8 @@ are not used.
 
 ## Naming an app
 
+On X11, app-scoped `press`, `snapshot` and `find` follow an app's confirmed active dialog even when its accessible name differs from the native title.
+
 - `--app` takes the process name `list-apps` prints, or a desktop entry's `Name`
   or id whose `Exec` resolves to the running executable (`/proc/<pid>/exe`) with
   matching full arguments. An entry's other start commands count too: the `Exec`

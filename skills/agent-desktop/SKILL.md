@@ -44,6 +44,7 @@ agent-desktop wait --app "Font Book" --text "Saved" --timeout 5000
 - An action's result says what it proved in `data.disposition.delivery`: `delivered_verified` read the effect back; `delivered_unverified` did not read the effect, so when the task depends on it, read it back with `get` or `-w`. Otherwise do not snapshot just to confirm it. Snapshot when the next step needs new refs or text; `-w "role:text"` on the action waits for that text and returns the snapshot in the same call.
 - A menu, sheet or alert the action opened is in `data.surfaces`: read it with `snapshot --surface menu` (or `sheet`, `alert`).
 - Wait with `wait`, never a fixed `sleep`.
+- A command chained immediately after a key that opens a dialog may still see the parent window; re-snapshot or use `wait --window "<dialog title>" --app "<app>" --timeout 5000` before acting on the dialog.
 
 ## Reading output in a shell
 
