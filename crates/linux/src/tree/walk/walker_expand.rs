@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
-use futures_util::future::join;
+use futures_util::future::join3;
 use futures_util::stream::{self, StreamExt};
 use zbus::Connection;
 
@@ -196,7 +196,7 @@ pub(in crate::tree) async fn read_observed(
     purpose: ReadPurpose,
 ) -> Result<(ObservedRead, Liveness), AdapterError> {
     let (node, liveness) = read_node_for(connection, element, purpose).await?;
-    let (label, value) = join(
+    let (label, value, vertical_bar_range) = join3(
         async {
             if purpose.identity() {
                 read_label_if_needed(connection, &node).await
@@ -214,18 +214,18 @@ pub(in crate::tree) async fn read_observed(
                 })
             }
         },
+        async {
+            if purpose == ReadPurpose::Snapshot {
+                crate::tree::properties::scroll_evidence::read_bar(connection, &node).await
+            } else {
+                None
+            }
+        },
     )
     .await;
     Ok((
         ObservedRead {
-            vertical_bar_range: if matches!(
-                purpose,
-                ReadPurpose::Snapshot | ReadPurpose::TextSearch
-            ) {
-                crate::tree::properties::scroll_evidence::read_bar(connection, &node).await
-            } else {
-                None
-            },
+            vertical_bar_range,
             node,
             label: label?,
             value: value?,
@@ -234,6 +234,10 @@ pub(in crate::tree) async fn read_observed(
         liveness,
     ))
 }
+
+#[cfg(test)]
+#[path = "walker_expand_scroll_tests.rs"]
+mod scroll_tests;
 
 #[cfg(test)]
 mod tests {
