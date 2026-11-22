@@ -1,6 +1,34 @@
 use super::reconcile_dialog;
 use crate::system::window::window_test_support::{state, window};
 use crate::system::x11::X11State;
+use crate::tree::Extents;
+
+#[test]
+fn geometry_matches_including_competing_frames_cannot_be_reconciled() {
+    let bounds = Extents {
+        x: 12,
+        y: 34,
+        width: 500,
+        height: 200,
+    };
+    for competing in [false, true] {
+        let mut native = state(7);
+        if let X11State::Ready { clients, .. } = &mut native {
+            clients[0].bounds = Some(bounds);
+        }
+        let mut dialog = window(true, true);
+        dialog.frame.extents = Some(bounds);
+        let mut windows = vec![dialog.clone()];
+        if competing {
+            dialog.active = false;
+            windows.push(dialog);
+        }
+        assert_eq!(
+            reconcile_dialog(&windows, &native, |_| panic!("already matches")),
+            None
+        );
+    }
+}
 
 #[test]
 fn unmatched_active_modal_or_dialog_needs_native_pid_and_input_focus() {
