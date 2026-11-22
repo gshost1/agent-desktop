@@ -283,6 +283,14 @@ agent-desktop select @s30sxlstqzdq8x:e21 Middle
 
 If the control already shows the value, nothing is delivered. A combo box whose accessible name is its current value gets a new identity when the value changes, so the old ref returns `STALE_REF` afterward: find the control again before the next action.
 
+On macOS, pass a table or outline row ref and the row's name or cell text:
+
+```bash
+agent-desktop select @s8f3k2p9:e1 "Display P3"
+```
+
+The command matches the whole label, ignoring case. Selecting a different row can replace the existing selection; don't use `select` to add to a multi-selection. If the row is already selected, the command writes nothing and returns `data.disposition.delivery: not_delivered`.
+
 Platform limits: on macOS, dismiss any open menu first. On Linux, a Qt combo refuses headless with `details.kind: pointer_required`, and a GTK4 list refuses with `selection_index_unproven`. See the platform pages.
 
 ## toggle

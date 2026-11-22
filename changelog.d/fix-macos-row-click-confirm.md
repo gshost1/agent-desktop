@@ -1,7 +1,7 @@
 ### Bug Fixes
 
-* macOS: a `click` on a table or outline row no longer fails `ACTION_FAILED` with `AXConfirm did not establish a verifiable effect`; it skips the text labels inside the row and succeeds when the row's `AXSelected` or its container's `AXSelectedRows` shows the row newly selected.
+* macOS: a new table or outline row selection can verify an unconfirmed `AXConfirm`, selection step, or dispatched headed click. Selection alone won't confirm an uncertain `AXOpen` or `AXPress`.
 
 ### Features
 
-* macOS: `select @<row> "<label>"` selects a table or outline row by writing `AXSelected` or the container's `AXSelectedRows` and reading it back.
+* macOS: `select @<row> "<label>"` selects a table or outline row and can replace the current selection. If the row is already selected, it makes no write and returns `not_delivered`.

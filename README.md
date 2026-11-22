@@ -108,6 +108,8 @@ Each command prints one JSON envelope. Add `--lines` to get the tree as `data.li
   `snapshot --root @s8f3k2p9:e3 -i --compact`.
 - **Headless by default.** Ref actions use the accessibility API without moving the pointer or taking focus. The global
   `--headed` flag allows physical input.
+- **Select a row on macOS.** Pass the table or outline row's ref and exact label to `select`. This can replace an
+  existing selection. [Select command](https://agent-browser.dev/desktop/commands/interaction#select).
 - **Post-action waits** observe the ref's original process. Window-owned refs stay pinned to their original window,
   including refs captured from a sheet, alert, popover, focused view, or Linux menu. macOS application menus keep
   their application-owned surface and need no document window. The wait reads the whole pinned window, so overlay
