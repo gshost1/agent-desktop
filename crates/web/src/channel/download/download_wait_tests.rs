@@ -215,7 +215,7 @@ fn a_browser_no_endpoint_reaches_is_refused() {
         .with_download_ledger(Some(fixture.ledger()));
 
     let error = web
-        .wait_for_download(process(), deadline_ms(500))
+        .wait_for_download(process(), deadline_ms(10_000))
         .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ActionNotSupported);

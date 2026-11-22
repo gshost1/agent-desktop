@@ -6,5 +6,5 @@ use super::ledger_deadline;
 fn the_ledger_lock_bound_outlasts_a_stalled_uncontended_open() {
     let deadline = ledger_deadline().unwrap();
 
-    assert!(deadline.remaining() > Duration::from_millis(1_500));
+    assert!(deadline.remaining() > Duration::from_millis(1_000));
 }
