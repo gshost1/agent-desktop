@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use agent_desktop_core::{AdapterError, Deadline};
 use futures_util::stream::{self, StreamExt};
 use zbus::Connection;
@@ -9,13 +11,29 @@ use crate::system::{ACCESSIBLE_INTERFACE, within};
 use crate::tree::properties::node_read::{call, deserialize};
 use crate::tree::vocabulary::role_numbers::{MENU, MENU_BAR, POPUP_MENU, is_menu_item};
 use crate::tree::vocabulary::state_bits::{EXPANDED, SHOWING, StateBits};
-use crate::tree::{AtspiElement, Expansion, ObservedRead, RawNode, Walk, WalkLimits};
+use crate::tree::{AtspiElement, Expansion, ObservedRead, RawNode, Walk, WalkLimits, WalkedNode};
 
 fn is_unpresented_menubar(node: &RawNode) -> bool {
     node.traits.role.present() == Some(&MENU_BAR)
         && node.extents.present().is_some_and(|bounds| {
             bounds.width >= 0 && bounds.height >= 0 && (bounds.width == 0 || bounds.height == 0)
         })
+}
+
+fn is_presented_menubar(node: &RawNode) -> bool {
+    node.traits.role.present() == Some(&MENU_BAR)
+        && node
+            .extents
+            .present()
+            .is_some_and(|bounds| bounds.width > 0 && bounds.height > 0)
+}
+
+fn prune_suppressed_menubars(node: &mut WalkedNode<ObservedRead>) {
+    node.children
+        .retain(|child| !is_unpresented_menubar(&child.payload.node));
+    for child in &mut node.children {
+        prune_suppressed_menubars(child);
+    }
 }
 
 fn can_probe_children<K>(
@@ -43,18 +61,38 @@ pub(super) fn walk_menu_levels<K: Clone + PartialEq>(
     root: K,
     limits: &WalkLimits,
     deadline: Deadline,
-    expand: impl FnMut(&[K]) -> Result<Vec<Expansion<ObservedRead, K>>, AdapterError>,
+    mut expand: impl FnMut(&[K]) -> Result<Vec<Expansion<ObservedRead, K>>, AdapterError>,
     mut children_are_hidden: impl FnMut(&[K]) -> bool,
 ) -> Result<Walk<ObservedRead>, AdapterError> {
-    walk_levels_with(root, limits, deadline, expand, |parent, read| {
-        if parent.is_some() && is_unpresented_menubar(&read.payload.node) {
-            return None;
-        }
-        if can_probe_children(parent, read, limits) && children_are_hidden(&read.children) {
-            read.children.clear();
-        }
-        Some(classify(&read.payload))
-    })
+    let presented = Cell::new(false);
+    let mut walk = walk_levels_with(
+        root,
+        limits,
+        deadline,
+        |level| {
+            let reads = expand(level)?;
+            presented.set(
+                presented.get()
+                    || reads
+                        .iter()
+                        .any(|read| is_presented_menubar(&read.payload.node)),
+            );
+            Ok(reads)
+        },
+        |parent, read| {
+            if parent.is_some() && presented.get() && is_unpresented_menubar(&read.payload.node) {
+                return None;
+            }
+            if can_probe_children(parent, read, limits) && children_are_hidden(&read.children) {
+                read.children.clear();
+            }
+            Some(classify(&read.payload))
+        },
+    )?;
+    if presented.get() {
+        prune_suppressed_menubars(&mut walk.root);
+    }
+    Ok(walk)
 }
 
 fn is_hidden_state(words: Option<&[u32]>) -> bool {

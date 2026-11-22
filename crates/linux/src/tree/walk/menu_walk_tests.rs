@@ -153,3 +153,81 @@ fn menu_policy_applies_only_to_window_observations() {
         );
     }
 }
+
+fn twin_fixture(bounds: Field<crate::tree::Extents>, presented: bool) -> Walk<ObservedRead> {
+    walk_menu_levels(
+        0,
+        &WalkLimits::default(),
+        Deadline::standard().unwrap(),
+        |level| {
+            Ok(level
+                .iter()
+                .map(|key| {
+                    let (role, children) = match *key {
+                        0 => (FRAME, if presented { vec![1, 2] } else { vec![1] }),
+                        1 => (MENU_BAR, vec![3]),
+                        2 => (crate::tree::vocabulary::role_numbers::PANEL, vec![4]),
+                        4 => (MENU_BAR, vec![]),
+                        _ => (MENU_ITEM, vec![]),
+                    };
+                    let mut read = read_of(role, "", &[]);
+                    read.node.extents = if *key == 1 {
+                        bounds.clone()
+                    } else {
+                        Field::Present(crate::tree::Extents {
+                            x: 0,
+                            y: 0,
+                            width: 100,
+                            height: 24,
+                        })
+                    };
+                    Expansion::read(read, children)
+                })
+                .collect())
+        },
+        |_| false,
+    )
+    .unwrap()
+}
+
+#[test]
+fn only_zero_area_menubar_is_kept() {
+    for (width, height) in [(0, 0), (100, 0), (0, 24)] {
+        let walk = twin_fixture(
+            Field::Present(crate::tree::Extents {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            }),
+            false,
+        );
+        assert_eq!(walk.root.children.len(), 1);
+        assert_eq!(walk.root.children[0].children.len(), 1);
+    }
+}
+
+#[test]
+fn zero_area_twin_is_dropped_when_presented_bar_is_deeper() {
+    let walk = twin_fixture(
+        Field::Present(crate::tree::Extents {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 0,
+        }),
+        true,
+    );
+    assert_eq!(walk.root.children.len(), 1);
+    assert_eq!(walk.root.children[0].source_index, 1);
+    assert_eq!(walk.root.children[0].children.len(), 1);
+}
+
+#[test]
+fn unknown_menubar_extents_are_kept_even_with_presented_bar() {
+    for bounds in [Field::Absent, Field::Failed("unavailable".to_owned())] {
+        let walk = twin_fixture(bounds, true);
+        assert_eq!(walk.root.children.len(), 2);
+        assert_eq!(walk.root.children[0].children.len(), 1);
+    }
+}
