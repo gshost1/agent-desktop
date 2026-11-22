@@ -44,6 +44,8 @@ mod in_doubt;
 mod job;
 #[cfg(unix)]
 mod job_state;
+#[cfg(all(unix, any(target_os = "macos", test)))]
+mod macos_permissions;
 mod opt_in;
 #[cfg(unix)]
 mod peer;

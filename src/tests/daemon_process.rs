@@ -56,11 +56,22 @@ const DECLINED: &[&[&str]] = &[
 fn every_command_answers_the_same_bytes_and_status_in_both_modes() {
     let home = Home::new();
     let pid = home.warm();
+    #[cfg(target_os = "macos")]
+    let screen_recording_granted = {
+        let permissions = home.run(false, &["permissions"]);
+        let report: serde_json::Value = serde_json::from_slice(&permissions.stdout).unwrap();
+        report["data"]["screen_recording"]["state"] == "granted"
+    };
     for args in MATRIX {
         let in_process = home.run(false, args);
         let before = home.served(pid);
         let through_daemon = home.run(true, args);
         assert_same(args, &in_process, &through_daemon);
+        #[cfg(target_os = "macos")]
+        if *args == ["list-windows"] && !screen_recording_granted {
+            assert_eq!(home.served(pid), before, "window titles can be protected");
+            continue;
+        }
         assert!(
             home.served(pid) == before + 1 || is_permission_rerun(&through_daemon),
             "{args:?} must be served by the daemon"

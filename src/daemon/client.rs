@@ -26,6 +26,15 @@ const STALL_LIMIT: Duration = Duration::from_secs(5);
 /// Runs this invocation through its daemon, starting one when none answers.
 pub(crate) fn run(transport: &dyn DaemonTransport) -> Option<ExitCode> {
     let request = DaemonRequest::current()?;
+    #[cfg(target_os = "macos")]
+    if !super::macos_permissions::permits_forwarding(
+        &request.argv,
+        std::env::var_os("AGENT_DESKTOP_SESSION").is_some(),
+        agent_desktop_macos::preflight_accessibility,
+        agent_desktop_macos::preflight_screen_recording,
+    ) {
+        return None;
+    }
     let endpoint = DaemonEndpoint::for_request(&request)?;
     let stream = connect(transport, &endpoint)?;
     exchange(stream, &request)
