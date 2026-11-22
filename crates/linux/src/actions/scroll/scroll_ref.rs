@@ -110,6 +110,7 @@ fn translated(entry: &RefEntry, before: &Witness, after: &Witness) -> Option<Ref
         bounds: Some(bounds),
         bounds_hash: bounds.bounds_hash(),
         bounds_space: Some(BoundsSpace::Window),
+        screen_bounds_hash: None,
     })
 }
 

@@ -13,6 +13,7 @@ fn geometry(bounds: Rect) -> RefGeometry {
         bounds: Some(bounds),
         bounds_hash: bounds.bounds_hash(),
         bounds_space: None,
+        screen_bounds_hash: None,
     }
 }
 

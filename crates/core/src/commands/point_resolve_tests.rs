@@ -94,11 +94,7 @@ fn ref_snapshot(pid: u32) -> String {
             native_id: None,
             capture: crate::CaptureVerdict::Unique,
         },
-        geometry: crate::RefGeometry {
-            bounds_space: None,
-            bounds: None,
-            bounds_hash: None,
-        },
+        geometry: crate::RefGeometry::default(),
         capabilities: crate::RefCapabilities {
             states: vec![],
             available_actions: vec![capability::CLICK.into()],
@@ -258,11 +254,7 @@ fn focus_ref_entry() -> RefEntry {
             native_id: None,
             capture: crate::CaptureVerdict::Unique,
         },
-        geometry: crate::RefGeometry {
-            bounds_space: None,
-            bounds: None,
-            bounds_hash: None,
-        },
+        geometry: crate::RefGeometry::default(),
         capabilities: crate::RefCapabilities {
             states: vec![],
             available_actions: vec![capability::CLICK.into()],

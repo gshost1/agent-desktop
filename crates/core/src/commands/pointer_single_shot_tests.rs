@@ -186,6 +186,7 @@ fn ref_entry(pid: u32) -> RefEntry {
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: Vec::new(),
