@@ -59,6 +59,34 @@ fn compact_hoists_scroll_evidence_onto_the_survivor() {
 }
 
 #[test]
+fn only_a_scroll_areas_single_list_descendant_inherits_its_evidence() {
+    for count in [0, 1, 3] {
+        for nested in [false, true] {
+            let mut lists: Vec<_> = (0..count)
+                .map(|index| parent(node("list", &format!("list-{index}")), buttons(3, "r")))
+                .collect();
+            if nested && count == 3 {
+                let last = lists.pop().unwrap();
+                lists.push(parent(node("group", ""), vec![last]));
+            }
+            let mut area = parent(node("scrollarea", ""), lists);
+            area.presentation.scrolls_vertically = Some(true);
+            let contents = summarize(&window(vec![filler(), area])).unwrap();
+            let regions: Vec<_> = contents
+                .regions
+                .iter()
+                .filter(|region| region.role == "list")
+                .collect();
+            assert_eq!(regions.len(), count);
+            assert!(
+                regions.iter().all(|region| region.partial == (count == 1)),
+                "count={count}, nested={nested}"
+            );
+        }
+    }
+}
+
+#[test]
 fn regions_rank_largest_first_and_drop_trivial_lists() {
     let mut children = vec![filler(), parent(node("toolbar", ""), vec![])];
     children.extend((1..=7).map(|n| parent(node("list", &format!("L{n}")), buttons(n, "r"))));

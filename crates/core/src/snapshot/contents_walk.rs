@@ -29,7 +29,7 @@ impl Walk {
         }
         let role = node.role.as_str();
         let area = if role == "scrollarea" {
-            Some((node, 0))
+            has_one_list(node).then_some((node, 0))
         } else if !LIST_ROLES.contains(&role) && content_of(&node.children).len() == 1 {
             scroll_area
                 .and_then(|(area, depth)| (depth < MAX_WRAPPER_DEPTH).then_some((area, depth + 1)))
@@ -40,4 +40,19 @@ impl Walk {
             self.visit(child, area);
         }
     }
+}
+
+fn has_one_list(area: &AccessibilityNode) -> bool {
+    let mut pending: Vec<_> = area.children.iter().collect();
+    let mut lists = 0;
+    while let Some(node) = pending.pop() {
+        if LIST_ROLES.contains(&node.role.as_str()) {
+            lists += 1;
+            if lists > 1 {
+                return false;
+            }
+        }
+        pending.extend(&node.children);
+    }
+    lists == 1
 }

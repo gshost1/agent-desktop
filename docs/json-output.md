@@ -183,7 +183,8 @@ returns the whole tree in place of a diff.
   to establish overflow; clipping by an outer scrolling page is not list overflow.
   A row the toolkit reports as not showing beside showing rows is an item the
   view does not show. Unknown scroll evidence never claims partial. A list inherits its nearest scroll
-  area only through at most three non-list wrappers, each with one content child
+  area only when that area has exactly one list descendant, through at most three
+  non-list wrappers, each with one content child
   (scrollbars excluded).
 - With `--lines`, `contents` is an array of lines: `roles: button 62, cell 6, ...`,
   then one line per region such as
