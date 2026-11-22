@@ -54,6 +54,20 @@ else
 fi
 
 note "Snapshot contents index the lists before the tree"
+require_target contents_long_list scrollarea lazy-list
+act_target "$contents_long_list" scroll-to >/dev/null 2>&1
+contents_bar_json="$("$bin" find --root "$(target_ref "$contents_long_list")" --role scrollbar --first 2>/dev/null)"
+contents_bar="$(printf '%s' "$contents_bar_json" | "$e2e_python" "$json_tool" target 2>/dev/null)"
+contents_bar_before="$(json_field "$contents_bar_json" data.match.value)"
+contents_scroll="$(act_target "$contents_long_list" scroll --direction down --amount 3 2>/dev/null)"
+contents_bar_after_json="$(get_target "$contents_bar" --property value 2>/dev/null)"
+contents_bar_after="$(json_field "$contents_bar_after_json" data.value)"
+assert "the long contents list scroll changes its scrollbar before observation" \
+    "$([ "$(json_field "$contents_scroll" ok)" = "True" ] && \
+        [ "$(json_field "$contents_bar_after_json" ok)" = "True" ] && \
+        [ -n "$contents_bar_before" ] && [ -n "$contents_bar_after" ] && \
+        [ "$contents_bar_before" != "$contents_bar_after" ] && echo 1 || echo 0)" \
+    "before=$contents_bar_before after=$contents_bar_after"
 contents_json="$("$bin" snapshot --app "$app" -i --compact 2>/dev/null)"
 contents_check="$(printf '%s' "$contents_json" | "$e2e_python" -c '
 import json, sys
@@ -74,3 +88,13 @@ print("ok" if outline and outline.get("items") == 6 and line == outline.get("lin
 ' 2>/dev/null)"
 assert "snapshot contents name the item list, its six rows and its line" \
     "$([ "$contents_check" = "ok" ] && echo 1 || echo 0)" "$contents_check"
+contents_partial_check="$(printf '%s' "$contents_json" | "$e2e_python" -c '
+import json, sys
+regions = json.load(sys.stdin)["data"].get("contents", {}).get("regions", [])
+short = next((r for r in regions if r.get("name") == "short-item-list"), None)
+long = next((r for r in regions if r.get("name") == "lazy-list"), None)
+print("ok" if short and short.get("items") == 3 and not short.get("partial", False)
+      and long and long.get("partial") is True else f"bad short={short} long={long}")
+' 2>/dev/null)"
+assert "snapshot contents omit partial for the fitting list and mark the scrolled long list partial" \
+    "$([ "$contents_partial_check" = "ok" ] && echo 1 || echo 0)" "$contents_partial_check"

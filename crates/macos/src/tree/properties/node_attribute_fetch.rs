@@ -71,6 +71,7 @@ mod imp {
         let mut position = None;
         let mut size = None;
         let mut has_scrollbars = false;
+        let mut vertical_bar = None;
         let mut subrole = None;
         let mut status = NodeAttributeStatus::default();
         let mut deadline_exhausted = false;
@@ -117,7 +118,15 @@ mod imp {
                     Some(value) => size = Some(value),
                     None => status.record_slot_error(index, kAXErrorFailure),
                 },
-                20 | 21 => {
+                20 => {
+                    vertical_bar = ax_value::retained_ax_element(&item);
+                    if vertical_bar.is_some() {
+                        has_scrollbars = true;
+                    } else {
+                        status.record_slot_error(index, kAXErrorFailure);
+                    }
+                }
+                21 => {
                     if ax_value::retained_ax_element(&item).is_some() {
                         has_scrollbars = true;
                     } else {
@@ -133,6 +142,25 @@ mod imp {
             }
         }
         let role = texts[ROLE].take();
+        let scrolls_vertically = if requirements.states {
+            let enabled = vertical_bar.as_ref().map_or(Ok(None), |bar| {
+                requested_count += 1;
+                fallback_reads += 1;
+                let enabled = crate::tree::properties::attributes::copy_bool_attr_result(
+                    bar,
+                    "AXEnabled",
+                    deadline,
+                );
+                deadline_exhausted |= enabled == Err(accessibility_sys::kAXErrorCannotComplete);
+                enabled
+            });
+            crate::tree::properties::scroll_evidence::vertical_overflow(
+                (!status.field_unknown(20)).then_some(vertical_bar.is_some()),
+                enabled,
+            )
+        } else {
+            None
+        };
         if status.field_unknown(SUBROLE) {
             subrole = None;
         }
@@ -259,6 +287,7 @@ mod imp {
                 subrole,
                 value,
                 states: NodeAttrStates {
+                    scrolls_vertically,
                     enabled: parse_enabled(get(4)),
                     control: NodeControlStates {
                         focused: parse_bool_attr(get(5)),

@@ -210,7 +210,7 @@ pub(crate) fn read_node(
             LocatorField::Known(states.unwrap_or_default())
         },
         ref_evidence: LocatorRefEvidence {
-            scrolls_vertically: None,
+            scrolls_vertically: attrs.states.scrolls_vertically,
             window_bounds: LocatorField::Absent,
             bounds: if requirements.ref_evidence.bounds {
                 option_field(tree.bounds_for(attrs.bounds), read.status.bounds_unknown())
