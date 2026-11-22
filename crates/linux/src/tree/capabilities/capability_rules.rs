@@ -4,9 +4,9 @@ use super::scroll_capability::{eligible, wheel_target};
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::tree::properties::node_read::COMPONENT_INTERFACE;
 use crate::tree::vocabulary::role_numbers::{
-    CHECK_BOX, CHECK_MENU_ITEM, COMBO_BOX, DIAL, ENTRY, LIST, LIST_ITEM, PAGE_TAB, PASSWORD_TEXT,
-    PUSH_BUTTON, RADIO_BUTTON, RADIO_MENU_ITEM, SCROLL_BAR, SLIDER, SPIN_BUTTON, TERMINAL, TEXT,
-    TOGGLE_BUTTON, is_document_content, is_menu_item, is_text_document,
+    CHECK_BOX, CHECK_MENU_ITEM, COMBO_BOX, DIAL, DOCUMENT_WEB, ENTRY, LIST, LIST_ITEM, PAGE_TAB,
+    PASSWORD_TEXT, PUSH_BUTTON, RADIO_BUTTON, RADIO_MENU_ITEM, SCROLL_BAR, SLIDER, SPIN_BUTTON,
+    TERMINAL, TEXT, TOGGLE_BUTTON, is_document_content, is_menu_item, is_text_document,
 };
 use crate::tree::vocabulary::state_bits::{
     EDITABLE, EXPANDABLE, EXPANDED, FOCUSABLE, HAS_POPUP, READ_ONLY, SELECTABLE, StateBits,
@@ -192,7 +192,8 @@ pub(crate) fn holds_selection_interface(facts: &Facts) -> bool {
 /// `Component` takes `SetFocus`, whatever names it advertises: the call is
 /// `Component.GrabFocus`, which a toolkit may reject when it is made.
 pub(crate) fn rule_tokens(facts: &Facts) -> Vec<&'static str> {
-    let editable_text = (is_text_entry(facts.role) || is_document_content(facts.role))
+    let editable_text = facts.role != DOCUMENT_WEB
+        && (is_text_entry(facts.role) || is_document_content(facts.role))
         && facts.bits.has(EDITABLE)
         && !facts.bits.has(READ_ONLY)
         && facts.advertises(EDITABLE_TEXT)
