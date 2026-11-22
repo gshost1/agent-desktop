@@ -44,9 +44,16 @@ fn cut_short(deadline: Deadline) -> AdapterError {
     }
 }
 
+/// Semantic actions can bypass toolkit input grabs. A showing modal in the
+/// application blocks targets outside its subtree even when their controls
+/// remain enabled. A target whose own window is a showing modal is blocked
+/// only by a modal inside that window: the modal windows of an application,
+/// such as one save prompt for each unsaved document, answer in any order.
+/// Unknown modal membership refuses delivery.
+/// Shell surfaces are compositor controls, not application top-level windows.
 /// A provisional read may reuse an unblocked verdict established under the
 /// same deadline for the same target, frame and top-level windows. The read
-/// before input is always full. Unknown modal membership refuses delivery.
+/// before input is always full.
 pub(crate) fn ensure_unblocked(
     reader: &mut impl NodeReader,
     target: &AtspiElement,
@@ -54,42 +61,50 @@ pub(crate) fn ensure_unblocked(
     memo: Option<&GateMemo>,
     may_reuse: bool,
 ) -> Result<(), AdapterError> {
-    let result = (|| {
-        if reader.is_verified_shell(target, deadline) {
-            return Ok(());
-        }
-        let owner = target.menu_owner();
-        let frame = owner
-            .as_ref()
-            .or_else(|| target.frame())
-            .ok_or_else(unknown)?;
-        let gated = owner.as_ref().unwrap_or(target);
-        let windows = reader
-            .top_levels(frame, deadline)
-            .map_err(|error| unreadable(error, deadline))?;
-        if may_reuse && memo.is_some_and(|memo| memo.matches(deadline, (gated, frame), &windows)) {
-            return Ok(());
-        }
-        if let Some(memo) = memo {
-            memo.clear();
-        }
-        walk_windows(reader, (gated, frame), windows.clone(), deadline)?;
-        if let Some(memo) = memo {
-            memo.store(ModalGateVerdict {
-                deadline,
-                target: gated.address(),
-                frame: frame.address(),
-                windows,
-            });
-        }
-        Ok(())
-    })();
+    let result = check_unblocked(reader, target, deadline, memo, may_reuse);
     if result.is_err()
         && let Some(memo) = memo
     {
         memo.clear();
     }
     result
+}
+
+fn check_unblocked(
+    reader: &mut impl NodeReader,
+    target: &AtspiElement,
+    deadline: Deadline,
+    memo: Option<&GateMemo>,
+    may_reuse: bool,
+) -> Result<(), AdapterError> {
+    if reader.is_verified_shell(target, deadline) {
+        return Ok(());
+    }
+    let owner = target.menu_owner();
+    let frame = owner
+        .as_ref()
+        .or_else(|| target.frame())
+        .ok_or_else(unknown)?;
+    let gated = owner.as_ref().unwrap_or(target);
+    let windows = reader
+        .top_levels(frame, deadline)
+        .map_err(|error| unreadable(error, deadline))?;
+    if may_reuse && memo.is_some_and(|memo| memo.matches(deadline, (gated, frame), &windows)) {
+        return Ok(());
+    }
+    if let Some(memo) = memo {
+        memo.clear();
+    }
+    walk_windows(reader, (gated, frame), windows.clone(), deadline)?;
+    if let Some(memo) = memo {
+        memo.store(ModalGateVerdict {
+            deadline,
+            target: gated.address(),
+            frame: frame.address(),
+            windows,
+        });
+    }
+    Ok(())
 }
 
 fn walk_windows(

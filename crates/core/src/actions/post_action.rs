@@ -159,7 +159,9 @@ fn read_live(
     handle: &NativeHandle,
     deadline: crate::Deadline,
 ) -> Result<LiveElement, AdapterError> {
-    match adapter.get_live_element_provisional(handle, deadline)? {
+    match crate::adapter::optional_live_read(
+        adapter.get_live_element_provisional(handle, deadline),
+    )? {
         Some(live) => Ok(live),
         None => adapter.get_live_element(handle, deadline),
     }

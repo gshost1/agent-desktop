@@ -1,12 +1,12 @@
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 use agent_desktop_core::Deadline;
 
 use super::modal_gate_verdict::ModalGateVerdict;
 use crate::tree::AtspiElement;
 
-#[derive(Clone, Default)]
-pub(crate) struct GateMemo(Arc<Mutex<Option<ModalGateVerdict>>>);
+#[derive(Default)]
+pub(crate) struct GateMemo(Mutex<Option<ModalGateVerdict>>);
 
 impl GateMemo {
     pub(crate) fn matches(

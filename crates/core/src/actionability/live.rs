@@ -91,20 +91,33 @@ pub(crate) fn check_live_with_stability_or_gap(
     Ok(report)
 }
 
+/// Provisional unless an actionable request requires focus, when a full read follows.
 pub(crate) fn check_live_before_focus(
     target: &LiveCheckTarget<'_>,
     request: &ActionRequest,
     stability: StabilityExpectation,
 ) -> Result<ActionabilityReport, AdapterError> {
-    let (evidence, _) = observe(target, true).map_err(AdapterError::unsent)?;
-    super::evaluate::check_before_focus(
+    let (evidence, provisional) = observe(target, true).map_err(AdapterError::unsent)?;
+    let report = super::evaluate::check_before_focus(
         stability,
         &evidence,
         request,
         Some((target.handle, target.adapter)),
         target.deadline,
     )
-    .map_err(AdapterError::unsent)
+    .map_err(AdapterError::unsent)?;
+    if report.actionable && provisional && request.headed_requirement().requires_focus() {
+        let (evidence, _) = observe(target, false).map_err(AdapterError::unsent)?;
+        return super::evaluate::check_before_focus(
+            stability,
+            &evidence,
+            request,
+            Some((target.handle, target.adapter)),
+            target.deadline,
+        )
+        .map_err(AdapterError::unsent);
+    }
+    Ok(report)
 }
 
 fn read_live(
@@ -112,9 +125,11 @@ fn read_live(
     provisional: bool,
 ) -> Result<(LiveElement, bool), AdapterError> {
     if provisional
-        && let Some(live) = target
-            .adapter
-            .get_live_element_provisional(target.handle, target.deadline)?
+        && let Some(live) = crate::adapter::optional_live_read(
+            target
+                .adapter
+                .get_live_element_provisional(target.handle, target.deadline),
+        )?
     {
         return Ok((live, true));
     }
@@ -238,3 +253,7 @@ fn stale_live_element(message: &'static str) -> AdapterError {
         .with_details(serde_json::json!({ "retryable": true }))
         .with_disposition(DeliverySemantics::not_delivered())
 }
+
+#[cfg(test)]
+#[path = "live_dispatch_modal_tests.rs"]
+mod dispatch_modal_tests;

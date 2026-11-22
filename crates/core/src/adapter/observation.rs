@@ -1,4 +1,3 @@
-use crate::ErrorCode::{ActionNotSupported, PlatformNotSupported};
 use crate::{
     AccessibilityNode, AdapterError, AppInfo, Deadline, ErrorCode, Rect, SnapshotSurface,
     SurfaceInfo, WindowInfo,
@@ -10,18 +9,29 @@ use crate::{
     tree::element_state::ElementState,
     tree::tree_options::TreeOptions,
 };
+
 pub(crate) fn optional_live_read<T>(
     result: Result<Option<T>, AdapterError>,
 ) -> Result<Option<T>, AdapterError> {
     match result {
-        Err(err) if matches!(err.code, PlatformNotSupported | ActionNotSupported) => Ok(None),
-        other => other,
+        Ok(value) => Ok(value),
+        Err(err) if is_live_read_unsupported(&err) => Ok(None),
+        Err(err) => Err(err),
     }
 }
+
+fn is_live_read_unsupported(err: &AdapterError) -> bool {
+    matches!(
+        err.code,
+        ErrorCode::PlatformNotSupported | ErrorCode::ActionNotSupported
+    )
+}
+
 pub trait ObservationOps: Send + Sync {
     fn is_application_surface(&self, _surface: SnapshotSurface) -> bool {
         false
     }
+
     fn focused_app(&self, _deadline: Deadline) -> Result<Option<AppInfo>, AdapterError> {
         Err(AdapterError::not_supported("focused_app"))
     }
@@ -138,31 +148,7 @@ pub trait ObservationOps: Send + Sync {
         query: crate::AppInventoryQuery<'_>,
         deadline: Deadline,
     ) -> Result<crate::AppInventory, AdapterError> {
-        let name = match query {
-            crate::AppInventoryQuery::All => return self.list_apps_inventory(deadline),
-            crate::AppInventoryQuery::Exact { name, bundle_id } => {
-                return Ok(crate::AppInventory {
-                    apps: self.list_apps_scoped(name, bundle_id, deadline)?,
-                    skipped: Vec::new(),
-                });
-            }
-            crate::AppInventoryQuery::NameOrAlias(name) => name,
-        };
-        let mut inventory = self.list_apps_inventory(deadline)?;
-        inventory
-            .apps
-            .retain(|app| query.matches_display_name(&app.name));
-        let aliased = match self.list_apps_scoped(name, None, deadline) {
-            Ok(apps) => apps,
-            Err(err) if err.code == ErrorCode::PlatformNotSupported => Vec::new(),
-            Err(err) => return Err(err),
-        };
-        for app in aliased {
-            if !inventory.apps.iter().any(|kept| kept.pid == app.pid) {
-                inventory.apps.push(app);
-            }
-        }
-        Ok(inventory)
+        super::observation_inventory::query(self, query, deadline)
     }
 
     fn get_tree(

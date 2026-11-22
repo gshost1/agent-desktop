@@ -58,6 +58,14 @@ fn check(
     adapter: &dyn crate::PlatformAdapter,
     check: Check,
 ) -> Result<ActionabilityReport, AdapterError> {
+    check_request(adapter, check, ActionRequest::headed(Action::Click))
+}
+
+fn check_request(
+    adapter: &dyn crate::PlatformAdapter,
+    check: Check,
+    request: ActionRequest,
+) -> Result<ActionabilityReport, AdapterError> {
     let entry = entry();
     check(
         &LiveCheckTarget {
@@ -66,19 +74,27 @@ fn check(
             adapter,
             deadline: Deadline::standard().unwrap(),
         },
-        &ActionRequest::headed(Action::Click),
+        &request,
         StabilityExpectation::permissive(entry.geometry.bounds_hash),
     )
 }
 
 #[test]
-fn before_focus_uses_provisional_when_offered_and_full_when_not() {
+fn non_focus_request_uses_provisional_when_offered_and_full_when_not() {
     for offered in [true, false] {
         let mut adapter = adapter();
         if !offered {
             adapter.offered = Ok(None);
         }
-        assert!(check(&adapter, check_live_before_focus).unwrap().actionable);
+        assert!(
+            check_request(
+                &adapter,
+                check_live_before_focus,
+                ActionRequest::headless(Action::Click)
+            )
+            .unwrap()
+            .actionable
+        );
         assert_eq!(
             *adapter.reads.lock().unwrap(),
             if offered {
@@ -209,13 +225,60 @@ fn provisional_and_fallback_unsupported_errors_keep_observe_mapping() {
         let error = AdapterError::not_supported("live read");
         if provisional {
             adapter.offered = Err(error);
-        } else {
-            adapter.offered = Ok(None);
-            adapter.full = Err(error);
         }
+        adapter.full = Err(AdapterError::not_supported("full read"));
         let error = check(&adapter, check_live_before_focus).unwrap_err();
         assert_eq!(error.code, ErrorCode::ActionNotSupported);
         assert_eq!(error.disposition, DeliverySemantics::not_delivered());
         assert!(error.details.unwrap().get("source_code").is_some());
     }
+}
+
+#[test]
+fn before_focus_requires_full_evidence_and_propagates_modal_refusal() {
+    for blocked in [false, true] {
+        let mut adapter = adapter();
+        if blocked {
+            adapter.full = Err(
+                AdapterError::new(ErrorCode::ActionFailed, "Blocked by modal")
+                    .with_details(serde_json::json!({"cause": "blocked_by_modal_dialog"}))
+                    .with_disposition(DeliverySemantics::not_delivered()),
+            );
+        }
+        let result = check(&adapter, check_live_before_focus);
+        if blocked {
+            let error = result.unwrap_err();
+            assert_eq!(error.code, ErrorCode::ActionFailed);
+            assert_eq!(error.details.unwrap()["cause"], "blocked_by_modal_dialog");
+            assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+        } else {
+            assert!(result.unwrap().actionable);
+        }
+        assert_eq!(*adapter.reads.lock().unwrap(), vec!["provisional", "full"]);
+    }
+}
+
+#[test]
+fn unsupported_provisional_reads_fall_back_to_full() {
+    for code in [
+        ErrorCode::PlatformNotSupported,
+        ErrorCode::ActionNotSupported,
+    ] {
+        let mut adapter = adapter();
+        adapter.offered = Err(AdapterError::new(code, "unsupported"));
+        assert!(
+            check(&adapter, check_live_with_stability_or_gap)
+                .unwrap()
+                .actionable
+        );
+        assert_eq!(*adapter.reads.lock().unwrap(), vec!["provisional", "full"]);
+    }
+}
+
+#[test]
+fn before_focus_returns_report_from_full_evidence() {
+    let mut adapter = adapter();
+    adapter.full.as_mut().unwrap().state.enabled = Some(false);
+    assert!(check(&adapter, check_live_before_focus).is_err());
+    assert_eq!(*adapter.reads.lock().unwrap(), vec!["provisional", "full"]);
 }

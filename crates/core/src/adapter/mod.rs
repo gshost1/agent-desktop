@@ -6,6 +6,7 @@ pub mod live_element;
 pub(crate) mod live_identity;
 pub mod native_handle;
 pub(crate) mod observation;
+pub(crate) mod observation_inventory;
 #[cfg(test)]
 mod saved_ref_test_support;
 pub(crate) mod system;
