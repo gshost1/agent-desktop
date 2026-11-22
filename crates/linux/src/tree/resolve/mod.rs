@@ -252,3 +252,7 @@ mod shift_tests;
 #[cfg(test)]
 #[path = "resolve_nested_tests.rs"]
 mod nested_tests;
+
+#[cfg(test)]
+#[path = "resolve_document_tests.rs"]
+mod document_tests;

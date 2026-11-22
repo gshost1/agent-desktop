@@ -150,6 +150,20 @@ pub(crate) fn execute_action(
         return deliver(bus, &request.action, None, &request, lease);
     };
     verify_process(bus, element, request.expected_process(), deadline)?;
+    let input_handle = if matches!(request.action, Action::TypeText(_))
+        && element.resolved_role() == Some("document")
+    {
+        crate::input::physical::keyboard_focus::document::document_input_target(
+            bus, handle, deadline,
+        )?
+    } else {
+        None
+    };
+    let handle = input_handle
+        .as_ref()
+        .map(|target| &target.handle)
+        .unwrap_or(handle);
+    let element = atspi_element(handle)?;
     let target = Target {
         bus,
         handle,
@@ -200,7 +214,7 @@ pub(crate) fn execute_action(
             Err(handled_by_core(&request.action))
         }
     };
-    match semantic {
+    let mut result = match semantic {
         Err(error) if reaches_physical_without_verb(&request.action) && has_no_verb(&error) => {
             deliver(bus, &request.action, Some(element), &request, lease)
         }
@@ -212,8 +226,23 @@ pub(crate) fn execute_action(
             )
         }),
     }
+    .map_err(|mut error| {
+        if let Some(input) = &input_handle {
+            error.details.get_or_insert_with(|| json!({}))["text_input_target"] =
+                input.details.clone();
+        }
+        error
+    })?;
+    if let Some(input) = input_handle {
+        result.details.get_or_insert_with(|| json!({}))["text_input_target"] = input.details;
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
 #[path = "dispatch_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "dispatch_document_tests.rs"]
+mod document_tests;

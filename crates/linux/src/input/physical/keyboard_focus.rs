@@ -4,11 +4,17 @@ use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 use serde_json::json;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
+use crate::actions::write::mutation::{Fault, fault_of};
 use crate::input::deliver::ensure_budget;
 use crate::input::physical::target_world::PhysicalWorld;
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE, SharedBus, within};
-use crate::tree::vocabulary::state_bits::{EDITABLE, FOCUSED, StateBits};
+use crate::tree::vocabulary::role_numbers::is_text_document;
+use crate::tree::vocabulary::state_bits::{EDITABLE, FOCUSED, READ_ONLY, StateBits};
 use crate::tree::{AtspiElement, COMPONENT_INTERFACE, call};
+
+const EDITABLE_TEXT: &str = "org.a11y.atspi.EditableText";
+
+pub(crate) mod document;
 
 pub(in crate::input) fn refused() -> AdapterError {
     AdapterError::new(
@@ -23,9 +29,7 @@ pub(in crate::input) fn refused() -> AdapterError {
 }
 
 fn bus_error(error: zbus::Error) -> AdapterError {
-    if crate::actions::write::mutation::fault_of(&error)
-        == crate::actions::write::mutation::Fault::TimedOut
-    {
+    if fault_of(&error) == Fault::TimedOut {
         AdapterError::timeout("The target focus request did not answer in time")
             .with_platform_detail(error.to_string())
             .with_disposition(DeliverySemantics::not_delivered())
@@ -74,13 +78,45 @@ async fn focused(
     if bits.has(FOCUSED) {
         return Ok(true);
     }
-    if !bits.has(EDITABLE) {
+    if !bits.has(EDITABLE) || bits.has(READ_ONLY) {
         return Ok(false);
     }
-    match internal_editor_focused(connection, element).await {
+    match internal_editor_focused(connection, element, None).await {
         Err(error) if error.code != ErrorCode::Timeout => Ok(false),
-        result => result,
+        Ok(editor) => Ok(editor.is_some()),
+        Err(error) => Err(error),
     }
+}
+
+pub(in crate::input) fn keyboard_target(
+    bus: &SharedBus,
+    element: &AtspiElement,
+    deadline: Deadline,
+) -> Result<AtspiElement, AdapterError> {
+    if element
+        .resolved_role()
+        .is_some_and(|role| role != "document")
+    {
+        return Ok(element.clone());
+    }
+    let connection = bus.get(deadline)?;
+    within(deadline, async {
+        let role = role_number(connection.inner(), element).await?;
+        if !role.is_some_and(is_text_document) {
+            return Ok(element.clone());
+        }
+        let words = states(connection.inner(), element).await?;
+        let bits = StateBits::new(&words);
+        if bits.has(FOCUSED) {
+            return Ok(element.clone());
+        }
+        if !bits.has(EDITABLE) || bits.has(READ_ONLY) {
+            return Err(refused());
+        }
+        internal_editor_focused(connection.inner(), element, role)
+            .await?
+            .ok_or_else(refused)
+    })
 }
 
 async fn states(
@@ -93,6 +129,17 @@ async fn states(
         .body()
         .deserialize()
         .map_err(|_| refused())
+}
+
+async fn role_number(
+    connection: &zbus::Connection,
+    element: &AtspiElement,
+) -> Result<Option<u32>, AdapterError> {
+    match call(connection, element, ACCESSIBLE_INTERFACE, "GetRole", &()).await {
+        Ok(reply) => Ok(reply.body().deserialize::<u32>().ok()),
+        Err(error) if fault_of(&error) == Fault::TimedOut => Err(bus_error(error)),
+        Err(_) => Ok(None),
+    }
 }
 
 async fn parent(
@@ -116,7 +163,25 @@ async fn parent(
 async fn internal_editor_focused(
     connection: &zbus::Connection,
     element: &AtspiElement,
-) -> Result<bool, AdapterError> {
+    role: Option<u32>,
+) -> Result<Option<AtspiElement>, AdapterError> {
+    let role = match (role, element.resolved_role()) {
+        (Some(role), _) => Some(role),
+        (None, Some("document") | None) => role_number(connection, element).await?,
+        _ => None,
+    };
+    if let Some(role) = role.filter(|role| is_text_document(*role)) {
+        return document::focused_document_descendant(connection, element, role)
+            .await
+            .map(Some);
+    }
+    hit_internal_editor(connection, element).await
+}
+
+async fn hit_internal_editor(
+    connection: &zbus::Connection,
+    element: &AtspiElement,
+) -> Result<Option<AtspiElement>, AdapterError> {
     const PARENT_COORDINATES: u32 = 2;
     if !crate::tree::properties::interface_support::supports(
         connection,
@@ -126,7 +191,7 @@ async fn internal_editor_focused(
     .await
     .map_err(bus_error)?
     {
-        return Ok(false);
+        return Ok(None);
     }
     let extents = call(
         connection,
@@ -140,7 +205,7 @@ async fn internal_editor_focused(
     let (x, y, width, height): (i32, i32, i32, i32) =
         extents.body().deserialize().map_err(|_| refused())?;
     if width <= 0 || height <= 0 {
-        return Ok(false);
+        return Ok(None);
     }
     let x = x.checked_add(width / 2).ok_or_else(refused)?;
     let y = y.checked_add(height / 2).ok_or_else(refused)?;
@@ -157,7 +222,7 @@ async fn internal_editor_focused(
     let mut candidate = AtspiElement::new(bus, path.to_string(), element.pid());
     for _ in 0..2 {
         if candidate.bus_name() != element.bus_name() || candidate == *element {
-            return Ok(false);
+            return Ok(None);
         }
         let owner = parent(connection, &candidate).await?;
         if owner == *element {
@@ -171,14 +236,13 @@ async fn internal_editor_focused(
             .await
             .map_err(bus_error)?;
             let interfaces: Vec<String> = interfaces.body().deserialize().map_err(|_| refused())?;
-            return Ok(interfaces
-                .iter()
-                .any(|i| i == "org.a11y.atspi.EditableText")
-                && StateBits::new(&states(connection, &candidate).await?).has(FOCUSED));
+            let matched = interfaces.iter().any(|i| i == EDITABLE_TEXT)
+                && StateBits::new(&states(connection, &candidate).await?).has(FOCUSED);
+            return Ok(matched.then_some(candidate));
         }
         candidate = owner;
     }
-    Ok(false)
+    Ok(None)
 }
 
 pub(in crate::input) fn prepare(

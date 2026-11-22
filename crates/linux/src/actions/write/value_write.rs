@@ -12,7 +12,7 @@ use crate::actions::chain::chain_def::ChainDef;
 use crate::actions::chain::execute_chain;
 use crate::actions::context::Target;
 use crate::system::{PROPERTIES_INTERFACE, within};
-use crate::tree::capabilities::action_read::NodeView;
+use crate::tree::capabilities::action_read::{NodeView, read_type_target};
 use crate::tree::capabilities::text_selection::{CaretAndSelection, read_caret_and_selection};
 use crate::tree::capabilities::text_units::LengthUnit;
 use crate::tree::live_read::live_offscreen::toolkit_of;
@@ -51,6 +51,7 @@ pub(crate) fn route(role: Option<u32>, interfaces: Option<&[String]>) -> Route {
 
 struct LiveText<'a> {
     target: &'a Target<'a>,
+    typing: bool,
 }
 
 impl LiveText<'_> {
@@ -92,7 +93,12 @@ impl TextPort for LiveText<'_> {
 
     fn read(&self) -> Option<String> {
         let target = self.target;
-        let view = target.view().ok()?;
+        let view = if self.typing {
+            read_type_target(target.bus, target.handle, target.deadline)
+        } else {
+            target.view()
+        }
+        .ok()?;
         view.value().map(str::to_owned)
     }
 
@@ -223,7 +229,10 @@ pub(crate) fn set_value(
         Route::Text => {
             ensure_writable(&view)?;
             ensure_toolkit_applies_writes(target, policy, SET_VALUE.action)?;
-            let port = LiveText { target };
+            let port = LiveText {
+                target,
+                typing: false,
+            };
             let mut rungs = text_write::replace_rungs(&port, text, secure_view(&view));
             execute_chain(&SET_VALUE, &mut rungs, target.deadline)
         }
@@ -240,7 +249,10 @@ pub(crate) fn clear(
     }
     ensure_writable(&view)?;
     ensure_toolkit_applies_writes(target, policy, CLEAR.action)?;
-    let port = LiveText { target };
+    let port = LiveText {
+        target,
+        typing: false,
+    };
     let mut rungs = text_write::replace_rungs(&port, "", secure_view(&view));
     execute_chain(&CLEAR, &mut rungs, target.deadline)
 }
@@ -258,7 +270,10 @@ pub(crate) fn type_text(
     }
     ensure_writable(&view)?;
     ensure_toolkit_applies_writes(target, policy, TYPE.action)?;
-    let port = LiveText { target };
+    let port = LiveText {
+        target,
+        typing: true,
+    };
     let mut rungs = text_write::insert_rungs(&port, text, secure_view(&view));
     execute_chain(&TYPE, &mut rungs, target.deadline)
 }
