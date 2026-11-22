@@ -107,12 +107,12 @@ pub(in crate::tree) async fn read_label_with_parent(
     if !needs_label(node) {
         return Ok(LabelOutcome::Unlabelled);
     }
-    let label = match read_label(connection, &node.element).await? {
+    let (label, parent) = match read_label(connection, &node.element).await? {
         LabelOutcome::Unlabelled => read_composite_label(connection, node).await,
-        label => Ok(label),
+        label => Ok((label, None)),
     }?;
     if label == LabelOutcome::Unlabelled {
-        match read_wrapper_description(connection, node, summary).await? {
+        match read_wrapper_description(connection, node, summary.or(parent.as_ref())).await? {
             Field::Present(description) => {
                 return Ok(LabelOutcome::WrapperDescription(description));
             }

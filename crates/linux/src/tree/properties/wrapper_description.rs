@@ -79,6 +79,17 @@ async fn read_description(
     let liveness = Liveness::of(role.as_ref().err());
     let role = optional(role)?;
     let children = read_children(children, Liveness::Alive)?;
+    read_proven_description(connection, element, &parent, (role, liveness), children).await
+}
+
+async fn read_proven_description(
+    connection: &Connection,
+    element: &AtspiElement,
+    parent: &AtspiElement,
+    role: (Field<u32>, Liveness),
+    children: Field<Vec<(String, String)>>,
+) -> Result<Field<String>, AdapterError> {
+    let (role, liveness) = role;
     if role.is_failed() || children.is_failed() {
         return Ok(Field::Failed("Wrapper prerequisites unreadable".into()));
     }
@@ -91,7 +102,34 @@ async fn read_description(
     {
         return Ok(Field::Absent);
     }
-    read_parent_text(connection, &parent, liveness).await
+    read_parent_text(connection, parent, liveness).await
+}
+
+async fn read_from_children(
+    connection: &Connection,
+    element: &AtspiElement,
+    parent: &AtspiElement,
+    children: &[(String, OwnedObjectPath)],
+) -> Result<Field<String>, AdapterError> {
+    if children.len() > 1 {
+        return Ok(Field::Absent);
+    }
+    let role =
+        deserialize::<u32>(call(connection, parent, ACCESSIBLE_INTERFACE, "GetRole", &()).await);
+    let liveness = Liveness::of(role.as_ref().err());
+    read_proven_description(
+        connection,
+        element,
+        parent,
+        (optional(role)?, liveness),
+        Field::Present(
+            children
+                .iter()
+                .map(|(bus, path)| (bus.clone(), path.to_string()))
+                .collect(),
+        ),
+    )
+    .await
 }
 
 async fn read_parent_text(
@@ -164,6 +202,9 @@ pub(in crate::tree) async fn read_wrapper_description(
         Some(WrapperParent::Known(description)) => Ok(description.clone()),
         Some(WrapperParent::Listing(parent)) => {
             read_parent_text(connection, parent, Liveness::Alive).await
+        }
+        Some(WrapperParent::Children(parent, children)) => {
+            read_from_children(connection, &node.element, parent, children).await
         }
         None => read_description(connection, &node.element).await,
     }
