@@ -5,6 +5,14 @@ use agent_desktop_core::{ActionStep, AdapterError, DeliveryDisposition, ErrorCod
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
 
 pub(crate) const SELECTION_POSTCONDITION: &str = "selection_postcondition";
+const MAX_SELECTED_ROWS: usize = 256;
+
+fn complete_selection_contains<T>(
+    selected: &[T],
+    matches_row: impl FnMut(&T) -> bool,
+) -> Option<bool> {
+    (selected.len() <= MAX_SELECTED_ROWS).then(|| selected.iter().any(matches_row))
+}
 
 /// The selection is read from the member's own `AXSelected` when it exposes
 /// one and otherwise from the `AXSelectedRows` of the table or outline that
@@ -65,7 +73,6 @@ mod imp {
     };
     use crate::tree::AXElement;
 
-    const MAX_SELECTED_ROWS: usize = 256;
     const MAX_CONTAINER_DEPTH: usize = 3;
 
     pub(crate) fn click_settled_by_selection(
@@ -119,17 +126,15 @@ mod imp {
                 crate::tree::properties::attributes::copy_ax_array_prefix_result(
                     &current,
                     SELECTED_ROWS,
-                    MAX_SELECTED_ROWS,
+                    super::MAX_SELECTED_ROWS + 1,
                     deadline,
                 )
                 .ok()
                 .flatten()
             {
-                return Some(
-                    selected.iter().any(|row| {
-                        crate::tree::properties::capabilities::same_element(row, element)
-                    }),
-                );
+                return super::complete_selection_contains(&selected, |row| {
+                    crate::tree::properties::capabilities::same_element(row, element)
+                });
             }
         }
         None

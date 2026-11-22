@@ -1,6 +1,32 @@
 use super::*;
 use agent_desktop_core::DeliverySemantics;
 
+#[test]
+fn a_truncated_selection_read_never_proves_membership_or_absence() {
+    let selected: Vec<_> = (0..=MAX_SELECTED_ROWS).collect();
+    let contains = |selected: &[usize], id| complete_selection_contains(selected, |row| *row == id);
+    assert_eq!(contains(&selected[..MAX_SELECTED_ROWS], 0), Some(true));
+    assert_eq!(
+        contains(&selected[..MAX_SELECTED_ROWS], MAX_SELECTED_ROWS),
+        Some(false)
+    );
+    assert_eq!(contains(&selected, 0), None);
+    let before = contains(&selected, MAX_SELECTED_ROWS);
+    assert_eq!(before, None);
+    assert!(
+        settle_by_selection(before, "AXConfirm", &Err(uncertain_confirm()), |_| {
+            panic!("unknown initial selection must not verify the click")
+        })
+        .is_none()
+    );
+    assert!(
+        settle_by_selection(Some(false), "AXConfirm", &Err(uncertain_confirm()), |_| {
+            contains(&selected, 0) == Some(true)
+        })
+        .is_none()
+    );
+}
+
 fn uncertain_confirm() -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionFailed,
