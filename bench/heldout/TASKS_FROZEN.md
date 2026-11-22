@@ -50,3 +50,14 @@ Public tasks carry the bench's rule: no login, no submit, decline cookie banners
 - tasks_heldout.py sha256 `55a13cb15cec84e348630caf2d89dc254a6b6beaafc5ea0405b6ae56ecdac7c8`
 - web/server.py sha256 `b6b60b534ed17aea189fc004973436514128874c3b831551b0f28507f2be8f0f`
 - ho_probe.swift sha256 `b9ce7173673ba88a85e20d4bec09aab0676c5e607b8eb40f45808e020bf4379a`
+
+## heldout3.1 (2026-11-22): verifier fix for an autosave artifact
+
+The heldout3 task set is kept outside version control. heldout3.1 changes one verifier guard and no task: Chess autosaves its `.game` file about 3 s after every move, and the heldout3 game-file guard required that file to be unchanged, so the two move tasks failed whenever the verifier read the file more than about 3 s after the move. This happened to every arm alike. In heldout3.1 the move tasks accept the seeded players and moves plus exactly the requested move, and the read tasks keep the strict guard. The live-board check still decides the position. Task file sha256: heldout3 `093261da0e68d6200af153a081dba7b2c7360b5329c156580a098dae467ffbb1`, heldout3.1 `493c65a514e5697c180eea408a99c0db502a6a077f57b490446283e3abd21a65`. The 2026-11-22 run was re-scored from its recorded verdicts with no new runs, and heldout3 results stay as recorded.
+
+| arm | pass, heldout3 | pass, heldout3.1 |
+|---|---|---|
+| fork (f2ff750d1) | 45/50 | 48/50 |
+| upstream (8e8dd7cbe) | 39/50 | 45/50 |
+| Peekaboo 4.9.8 | 36/50 | 43/50 |
+| Cua 0.47.7 | 43/50 | 44/50 |
