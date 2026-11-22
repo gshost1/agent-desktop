@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use agent_desktop_core::{AdapterError, Deadline};
 use futures_util::stream::{self, StreamExt};
 use zbus::Connection;
@@ -11,7 +9,7 @@ use crate::system::{ACCESSIBLE_INTERFACE, within};
 use crate::tree::properties::node_read::{call, deserialize};
 use crate::tree::vocabulary::role_numbers::{MENU, MENU_BAR, POPUP_MENU, is_menu_item};
 use crate::tree::vocabulary::state_bits::{EXPANDED, SHOWING, StateBits};
-use crate::tree::{AtspiElement, Expansion, ObservedRead, RawNode, Walk, WalkLimits, WalkedNode};
+use crate::tree::{AtspiElement, Expansion, ObservedRead, RawNode, Walk, WalkLimits};
 
 fn is_unpresented_menubar(node: &RawNode) -> bool {
     node.traits.role.present() == Some(&MENU_BAR)
@@ -26,14 +24,6 @@ fn is_presented_menubar(node: &RawNode) -> bool {
             .extents
             .present()
             .is_some_and(|bounds| bounds.width > 0 && bounds.height > 0)
-}
-
-fn prune_suppressed_menubars(node: &mut WalkedNode<ObservedRead>) {
-    node.children
-        .retain(|child| !is_unpresented_menubar(&child.payload.node));
-    for child in &mut node.children {
-        prune_suppressed_menubars(child);
-    }
 }
 
 fn can_probe_children<K>(
@@ -64,23 +54,24 @@ pub(super) fn walk_menu_levels<K: Clone + PartialEq>(
     mut expand: impl FnMut(&[K]) -> Result<Vec<Expansion<ObservedRead, K>>, AdapterError>,
     mut children_are_hidden: impl FnMut(&[K]) -> bool,
 ) -> Result<Walk<ObservedRead>, AdapterError> {
-    let presented = Cell::new(false);
-    let mut walk = walk_levels_with(
-        root,
+    let mut presented = false;
+    let mut deferred = false;
+    let mut cached = Vec::new();
+    let walk = walk_levels_with(
+        root.clone(),
         limits,
         deadline,
         |level| {
             let reads = expand(level)?;
-            presented.set(
-                presented.get()
-                    || reads
-                        .iter()
-                        .any(|read| is_presented_menubar(&read.payload.node)),
-            );
+            presented |= reads
+                .iter()
+                .any(|read| is_presented_menubar(&read.payload.node));
+            cached.extend(level.iter().cloned().zip(reads.iter().cloned()));
             Ok(reads)
         },
         |parent, read| {
-            if parent.is_some() && presented.get() && is_unpresented_menubar(&read.payload.node) {
+            if parent.is_some() && is_unpresented_menubar(&read.payload.node) {
+                deferred = true;
                 return None;
             }
             if can_probe_children(parent, read, limits) && children_are_hidden(&read.children) {
@@ -89,10 +80,52 @@ pub(super) fn walk_menu_levels<K: Clone + PartialEq>(
             Some(classify(&read.payload))
         },
     )?;
-    if presented.get() {
-        prune_suppressed_menubars(&mut walk.root);
+    if presented || !deferred {
+        return Ok(walk);
     }
-    Ok(walk)
+    walk_levels_with(
+        root,
+        limits,
+        deadline,
+        |level| expand_cached(level, &mut cached, &mut expand),
+        |parent, read| {
+            if can_probe_children(parent, read, limits) && children_are_hidden(&read.children) {
+                read.children.clear();
+            }
+            Some(classify(&read.payload))
+        },
+    )
+}
+
+fn expand_cached<K: Clone + PartialEq>(
+    level: &[K],
+    cached: &mut Vec<(K, Expansion<ObservedRead, K>)>,
+    expand: &mut impl FnMut(&[K]) -> Result<Vec<Expansion<ObservedRead, K>>, AdapterError>,
+) -> Result<Vec<Expansion<ObservedRead, K>>, AdapterError> {
+    let mut reads: Vec<_> = level
+        .iter()
+        .map(|key| {
+            cached
+                .iter()
+                .position(|(saved, _)| saved == key)
+                .map(|index| cached.swap_remove(index).1)
+        })
+        .collect();
+    let missing: Vec<_> = level
+        .iter()
+        .zip(&reads)
+        .filter(|(_, read)| read.is_none())
+        .map(|(key, _)| key.clone())
+        .collect();
+    if !missing.is_empty() {
+        let mut fresh = expand(&missing)?.into_iter();
+        for read in &mut reads {
+            if read.is_none() {
+                *read = fresh.next();
+            }
+        }
+    }
+    Ok(reads.into_iter().flatten().collect())
 }
 
 fn is_hidden_state(words: Option<&[u32]>) -> bool {

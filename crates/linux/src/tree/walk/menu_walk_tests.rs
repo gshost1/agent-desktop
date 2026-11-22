@@ -154,12 +154,17 @@ fn menu_policy_applies_only_to_window_observations() {
     }
 }
 
-fn twin_fixture(bounds: Field<crate::tree::Extents>, presented: bool) -> Walk<ObservedRead> {
-    walk_menu_levels(
+fn twin_fixture(
+    bounds: Field<crate::tree::Extents>,
+    presented: bool,
+) -> (Walk<ObservedRead>, Vec<u32>) {
+    let mut visited = Vec::new();
+    let walk = walk_menu_levels(
         0,
         &WalkLimits::default(),
         Deadline::standard().unwrap(),
         |level| {
+            visited.extend_from_slice(level);
             Ok(level
                 .iter()
                 .map(|key| {
@@ -187,13 +192,14 @@ fn twin_fixture(bounds: Field<crate::tree::Extents>, presented: bool) -> Walk<Ob
         },
         |_| false,
     )
-    .unwrap()
+    .unwrap();
+    (walk, visited)
 }
 
 #[test]
 fn only_zero_area_menubar_is_kept() {
     for (width, height) in [(0, 0), (100, 0), (0, 24)] {
-        let walk = twin_fixture(
+        let (walk, visited) = twin_fixture(
             Field::Present(crate::tree::Extents {
                 x: 0,
                 y: 0,
@@ -204,12 +210,13 @@ fn only_zero_area_menubar_is_kept() {
         );
         assert_eq!(walk.root.children.len(), 1);
         assert_eq!(walk.root.children[0].children.len(), 1);
+        assert_eq!(visited, [0, 1, 3]);
     }
 }
 
 #[test]
 fn zero_area_twin_is_dropped_when_presented_bar_is_deeper() {
-    let walk = twin_fixture(
+    let (walk, visited) = twin_fixture(
         Field::Present(crate::tree::Extents {
             x: 0,
             y: 0,
@@ -218,6 +225,7 @@ fn zero_area_twin_is_dropped_when_presented_bar_is_deeper() {
         }),
         true,
     );
+    assert_eq!(visited, [0, 1, 2, 4]);
     assert_eq!(walk.root.children.len(), 1);
     assert_eq!(walk.root.children[0].source_index, 1);
     assert_eq!(walk.root.children[0].children.len(), 1);
@@ -226,8 +234,41 @@ fn zero_area_twin_is_dropped_when_presented_bar_is_deeper() {
 #[test]
 fn unknown_menubar_extents_are_kept_even_with_presented_bar() {
     for bounds in [Field::Absent, Field::Failed("unavailable".to_owned())] {
-        let walk = twin_fixture(bounds, true);
+        let (walk, _) = twin_fixture(bounds, true);
         assert_eq!(walk.root.children.len(), 2);
         assert_eq!(walk.root.children[0].children.len(), 1);
     }
+}
+
+#[test]
+fn deferred_expansion_reads_only_uncached_nodes() {
+    let read = Expansion::read(read_of(MENU_BAR, "", &[]), vec![3]);
+    let mut cached = vec![(1, read.clone())];
+    let mut requested = Vec::new();
+    let reads = expand_cached(&[1, 2], &mut cached, &mut |keys| {
+        requested.extend_from_slice(keys);
+        Ok(vec![read.clone()])
+    })
+    .unwrap();
+    assert_eq!(requested, [2]);
+    assert_eq!(reads, [read.clone(), read]);
+    assert!(cached.is_empty());
+}
+
+#[test]
+fn empty_deferred_expansion_does_not_read() {
+    let reads = expand_cached::<u32>(&[], &mut Vec::new(), &mut |_| {
+        panic!("an empty level needs no reads")
+    })
+    .unwrap();
+    assert!(reads.is_empty());
+}
+
+#[test]
+fn deferred_expansion_propagates_read_errors() {
+    let error = AdapterError::internal("transport lost");
+    let result = expand_cached(&[1], &mut Vec::new(), &mut |_| Err(error.clone()));
+    let actual = result.unwrap_err();
+    assert_eq!(actual.code, error.code);
+    assert_eq!(actual.message, error.message);
 }
