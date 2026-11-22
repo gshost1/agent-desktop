@@ -17,6 +17,13 @@ use crate::tree::AtspiElement;
 /// The desktop observations and input used by each physical leg.
 pub(crate) trait PhysicalWorld {
     fn backend(&self) -> Result<Backend, AdapterError>;
+    fn keyboard_target(
+        &self,
+        element: &AtspiElement,
+        _deadline: Deadline,
+    ) -> Result<AtspiElement, AdapterError> {
+        Ok(element.clone())
+    }
     fn focus_target(&self, element: &AtspiElement, deadline: Deadline) -> Result<(), AdapterError>;
     fn target_focused(
         &self,
@@ -118,6 +125,14 @@ pub(crate) struct LiveWorld<'a> {
 impl PhysicalWorld for LiveWorld<'_> {
     fn backend(&self) -> Result<Backend, AdapterError> {
         crate::input::backend::backend()
+    }
+
+    fn keyboard_target(
+        &self,
+        element: &AtspiElement,
+        deadline: Deadline,
+    ) -> Result<AtspiElement, AdapterError> {
+        crate::input::physical::keyboard_focus::keyboard_target(self.bus, element, deadline)
     }
 
     fn focus_target(&self, element: &AtspiElement, deadline: Deadline) -> Result<(), AdapterError> {

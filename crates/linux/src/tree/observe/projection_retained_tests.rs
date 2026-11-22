@@ -53,3 +53,16 @@ fn a_node_whose_identity_read_failed_stores_no_retained_object() {
 
     assert_eq!(evidence.identifiers.retained_object(), None);
 }
+
+#[test]
+fn mutable_paragraph_text_does_not_suppress_location_evidence() {
+    for role in [73, 83, 94] {
+        let mut read = placed(read_of(role, "", &[]), (4, 8, 120, 24));
+        read.value.value = Field::Present("same text".into());
+        let before = evidence_of(read.clone());
+        read.value.value = Field::Present("changed text".into());
+        let after = evidence_of(read);
+        assert_eq!(before.identifiers.retained_object(), Some(":1.1/p"));
+        assert_eq!(before.identifiers, after.identifiers);
+    }
+}

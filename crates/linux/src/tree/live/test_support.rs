@@ -67,6 +67,7 @@ pub(crate) fn read_of(role: u32, name: &str, actions: &[&str]) -> ObservedRead {
             accessible_id: Field::Present(String::new()),
         },
         traits: NodeTraits {
+            text_content_requested: false,
             role: Field::Present(role),
             role_name: Field::Present("role".to_owned()),
             states: Field::Present(words(&[8, 25])),

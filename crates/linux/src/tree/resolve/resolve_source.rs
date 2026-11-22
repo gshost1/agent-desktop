@@ -163,7 +163,10 @@ pub(crate) fn resolve_element_strict(
         return resolve_menu(bus, entry, deadline);
     }
     let mut source = BusSource::open(bus, deadline)?;
-    resolve(&mut source, entry, deadline).map(AtspiElement::into_native_handle)
+    resolve(&mut source, entry, deadline).map(|mut element| {
+        element.set_resolved_role(entry.identity.role.clone());
+        element.into_native_handle()
+    })
 }
 
 /// Lands the element a locator match names by its stored path, gated by the
@@ -175,7 +178,10 @@ pub(crate) fn resolve_locator_anchor(
     deadline: Deadline,
 ) -> Result<NativeHandle, AdapterError> {
     let mut source = BusSource::open(bus, deadline)?;
-    resolve_anchor(&mut source, entry, deadline).map(AtspiElement::into_native_handle)
+    resolve_anchor(&mut source, entry, deadline).map(|mut element| {
+        element.set_resolved_role(entry.identity.role.clone());
+        element.into_native_handle()
+    })
 }
 
 #[cfg(test)]

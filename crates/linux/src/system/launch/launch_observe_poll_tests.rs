@@ -43,7 +43,7 @@ fn stop_after_reads(
 }
 
 #[test]
-fn a_running_child_absent_from_a_read_registry_settles_after_the_not_on_bus_grace() {
+fn a_bridge_turned_off_ends_the_wait_after_the_grace() {
     let identity = keys(&["plain-x11-tool"]);
     let before = empty_baseline();
     let query = query_with_grace(&identity, &before, std::time::Duration::ZERO);
@@ -54,7 +54,7 @@ fn a_running_child_absent_from_a_read_registry_settles_after_the_not_on_bus_grac
         &query,
         stop_after_reads(&reads, 3, Some(vec![app(9, "other")])),
         |_, _| Step::Wait,
-        || OffBus::Windowed,
+        || OffBus::BridgeOff,
     );
     assert_eq!(owner.unwrap(), None);
     assert_eq!(reads.get(), 1);
@@ -137,7 +137,7 @@ fn a_grace_that_expires_during_a_read_is_settled_only_by_the_next_read() {
             Ok(Some(Vec::new()))
         },
         |_, _| Step::Wait,
-        || OffBus::Windowed,
+        || OffBus::BridgeOff,
     );
     assert_eq!(owner.unwrap(), None);
     assert_eq!(reads.get(), 2);
@@ -176,28 +176,6 @@ fn a_process_that_may_still_be_starting_is_waited_for_until_the_deadline() {
     assert!(started.elapsed() >= std::time::Duration::from_millis(400));
     assert!(observed.get() > 1, "observed {} times", observed.get());
     assert_eq!(query.seen.get(), Seen::OffBus(OffBus::Starting));
-}
-
-#[test]
-fn a_window_or_a_bridge_turned_off_ends_the_wait_after_the_grace() {
-    let identity = keys(&["plain-x11-tool"]);
-    let before = empty_baseline();
-    for seen in [OffBus::Windowed, OffBus::BridgeOff] {
-        let query =
-            query_until(&identity, &before, 30_000).settling_after(std::time::Duration::ZERO);
-        let reads = std::cell::Cell::new(0);
-        let mut spawned = running_child(4242);
-        let owner = poll_owner(
-            &mut spawned,
-            &query,
-            stop_after_reads(&reads, 3, Some(Vec::new())),
-            |_, _| Step::Wait,
-            || seen,
-        );
-        assert_eq!(owner.unwrap(), None);
-        assert_eq!(reads.get(), 1);
-        assert_eq!(query.seen.get(), Seen::OffBus(seen));
-    }
 }
 
 #[test]
@@ -263,21 +241,49 @@ fn a_clean_launcher_exit_is_settled_only_after_the_query_settle() {
 }
 
 #[test]
-fn a_window_off_the_bus_must_stay_off_for_its_settle() {
+fn a_window_off_the_bus_is_waited_for_until_an_owner_appears() {
     let identity = keys(&["late-registering-app"]);
     let before = empty_baseline();
-    let query = query_until(&identity, &before, 30_000)
-        .settling_after(std::time::Duration::from_secs(3_600));
+    let query = query_until(&identity, &before, 30_000);
     let reads = std::cell::Cell::new(0);
     let mut spawned = running_child(4242);
-    let error = poll_owner(
+    let own = app(4242, "late-registering-app");
+    let owner = poll_owner(
         &mut spawned,
         &query,
-        stop_after_reads(&reads, 3, Some(Vec::new())),
+        || {
+            reads.set(reads.get() + 1);
+            Ok(Some(if reads.get() < 14 {
+                Vec::new()
+            } else {
+                vec![own.clone()]
+            }))
+        },
         |_, _| Step::Wait,
         || OffBus::Windowed,
     )
-    .unwrap_err();
-    assert_eq!(error.code, ErrorCode::Internal);
+    .unwrap();
+    assert_eq!(owner, Some(own));
+    assert_eq!(reads.get(), 14);
+    assert_eq!(query.seen.get(), Seen::OffBus(OffBus::Windowed));
+}
+
+#[test]
+fn a_window_off_the_bus_is_waited_for_until_the_deadline() {
+    let identity = None;
+    let before = empty_baseline();
+    let query = query_until(&identity, &before, 2_300);
+    let mut spawned = running_child(4242);
+    let started = std::time::Instant::now();
+    let owner = poll_owner(
+        &mut spawned,
+        &query,
+        || Ok(Some(Vec::new())),
+        |_, _| Step::Wait,
+        || OffBus::Windowed,
+    )
+    .unwrap();
+    assert_eq!(owner, None);
+    assert!(started.elapsed() >= std::time::Duration::from_millis(2_300));
     assert_eq!(query.seen.get(), Seen::OffBus(OffBus::Windowed));
 }

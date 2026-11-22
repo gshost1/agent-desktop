@@ -5,6 +5,7 @@ pub(super) mod menu_anchor;
 pub(super) mod menu_fixture;
 pub(super) mod menu_focus;
 pub(crate) mod menu_found;
+pub(super) mod menu_geometry;
 #[cfg(test)]
 pub(super) mod menu_inventory_live_tests;
 #[cfg(test)]
@@ -12,6 +13,7 @@ pub(super) mod menu_item_live_tests;
 #[cfg(test)]
 pub(super) mod menu_live_rig;
 pub(super) mod menu_popup;
+pub(super) mod menu_presentation;
 pub(crate) mod menu_surface;
 #[cfg(test)]
 pub(super) mod menu_surface_live_tests;

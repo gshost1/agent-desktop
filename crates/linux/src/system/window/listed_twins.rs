@@ -1,6 +1,6 @@
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::x11::X11State;
-use crate::system::x11::map::ClientMatch;
+use crate::system::x11::map::{ClientMatch, has_title_match, match_frames};
 use crate::system::x11::twin_tie::{Twins, client_among_twins};
 
 /// The listed windows of one process that share the title of window `index`,
@@ -30,7 +30,14 @@ pub(crate) fn listed_client(
     let (Some(window), X11State::Ready { active, clients }) = (listed.get(index), state) else {
         return ClientMatch::NoClient;
     };
-    client_among_twins(&window.frame, clients, *active, || twins_of(listed, index))
+    if has_title_match(&window.frame, clients) {
+        return client_among_twins(&window.frame, clients, *active, || twins_of(listed, index));
+    }
+    let frames: Vec<_> = listed.iter().map(|window| window.frame.clone()).collect();
+    match_frames(&frames, clients)
+        .get(index)
+        .cloned()
+        .unwrap_or(ClientMatch::NoClient)
 }
 
 #[cfg(test)]

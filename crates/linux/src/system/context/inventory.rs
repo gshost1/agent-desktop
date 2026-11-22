@@ -1,15 +1,17 @@
 use std::collections::HashSet;
 
-use agent_desktop_core::{AdapterError, AppInventory, AppInventoryQuery, Deadline};
+use agent_desktop_core::{AdapterError, AppInfo, AppInventory, AppInventoryQuery, Deadline};
 
 use crate::system::SharedBus;
+use crate::system::app::app_alias::{AliasIndex, current_index};
+use crate::system::app::app_name::any_desktop_name;
 use crate::system::app::app_ops::{info, one_entry_per_process, scoped_outcome};
 use crate::system::process::unresponsive::{settle_matches, stopped_target};
 use crate::system::process::{proc_scan::find_running, proc_stat};
 use crate::system::registry::app_outcome::AppOutcome;
 use crate::system::registry::registry_app::RegistryApp;
 use crate::system::registry::registry_frames::RootRead;
-use crate::system::registry::{Registry, read_registry_query};
+use crate::system::registry::{Registry, read_processes, read_registry_query};
 use crate::system::signal::signal_inventory::read_selected;
 
 pub(crate) fn matches(query: AppInventoryQuery<'_>, app: &RegistryApp) -> bool {
@@ -18,6 +20,7 @@ pub(crate) fn matches(query: AppInventoryQuery<'_>, app: &RegistryApp) -> bool {
         AppInventoryQuery::NameOrAlias(name) => {
             query.matches_display_name(&app.name) || app.matches(name)
         }
+        AppInventoryQuery::NearMatches(_) => matches_near_name(query, app, &current_index()),
         AppInventoryQuery::Exact { name, bundle_id } => match bundle_id {
             Some(id) => crate::system::app::app_name::desktop_id(app.root.pid(), &app.facts)
                 .is_some_and(|actual| actual.eq_ignore_ascii_case(id)),
@@ -26,12 +29,47 @@ pub(crate) fn matches(query: AppInventoryQuery<'_>, app: &RegistryApp) -> bool {
     }
 }
 
+fn matches_near_name(query: AppInventoryQuery<'_>, app: &RegistryApp, index: &AliasIndex) -> bool {
+    query.matches_display_name(&app.name)
+        || any_desktop_name(index, app.root.pid(), &app.facts, |alias| {
+            query.matches_display_name(alias)
+        })
+}
+
+fn near_matches(
+    bus: &SharedBus,
+    query: AppInventoryQuery<'_>,
+    deadline: Deadline,
+) -> Result<AppInventory, AdapterError> {
+    let registry = read_processes(bus, deadline)?;
+    let index = current_index();
+    let apps = registry
+        .apps
+        .iter()
+        .filter(|app| matches_near_name(query, app, &index))
+        .map(|app| AppInfo {
+            name: app.name.clone(),
+            pid: app.root.pid().into(),
+            bundle_id: None,
+            process_instance: Some(app.facts.instance.clone()),
+            presentation: None,
+        })
+        .collect();
+    Ok(AppInventory {
+        apps: one_entry_per_process(apps),
+        skipped: registry.skipped,
+    })
+}
+
 /// Reads one selected registry population, then enriches only its presentation.
 pub(crate) fn query(
     bus: &SharedBus,
     query: AppInventoryQuery<'_>,
     deadline: Deadline,
 ) -> Result<AppInventory, AdapterError> {
+    if matches!(query, AppInventoryQuery::NearMatches(_)) {
+        return near_matches(bus, query, deadline);
+    }
     let mut registry = read_registry_query(
         bus,
         &crate::system::registry::app_query::AppQuery {

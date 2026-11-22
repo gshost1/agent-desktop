@@ -24,6 +24,54 @@ fn app(pid: u32, name: &str, aliases: &[&str]) -> RegistryApp {
 }
 
 #[test]
+fn near_matches_accept_desktop_entry_names_and_ids_but_exact_lookup_does_not() {
+    let shell = "/bin/sh";
+    let mut app = app(2, "binary", &[]);
+    app.facts.executable = Some(
+        crate::system::process::executable_identity::ExecutableIdentity::requested(
+            &[shell.to_owned()],
+            &[],
+        )
+        .unwrap(),
+    );
+    let index = AliasIndex::build(
+        &[
+            (
+                "org.example.Photo".into(),
+                format!(
+                    "[Desktop Entry]\nType=Application\nName=Photo Editing Suite\nExec={shell}\n"
+                ),
+            ),
+            (
+                "org.example.Other".into(),
+                "[Desktop Entry]\nType=Application\nName=Photo Editing Suite\nExec=/bin/false\n"
+                    .into(),
+            ),
+        ],
+        &[],
+    );
+    for name in ["photo edit", "ORG.EXAMPLE.PHO"] {
+        assert!(matches_near_name(
+            AppInventoryQuery::NearMatches(name),
+            &app,
+            &index
+        ));
+        assert!(!matches(
+            AppInventoryQuery::Exact {
+                name,
+                bundle_id: None
+            },
+            &app
+        ));
+    }
+    assert!(!matches_near_name(
+        AppInventoryQuery::NearMatches("Editing"),
+        &app,
+        &index
+    ));
+}
+
+#[test]
 fn one_inventory_preserves_substring_alias_union_instances_and_incomplete_evidence() {
     let mut duplicate = app(2, "editor", &["Notes"]);
     duplicate.root = AtspiElement::new(":2.2", "/root", 2);

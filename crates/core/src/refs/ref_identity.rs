@@ -313,3 +313,7 @@ fn numeric_text(value: Option<&str>) -> Option<f64> {
 #[cfg(test)]
 #[path = "ref_identity_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ref_identity_document_tests.rs"]
+mod document_tests;

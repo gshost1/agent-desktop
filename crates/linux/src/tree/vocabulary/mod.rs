@@ -1,3 +1,4 @@
+mod composite_label;
 pub(super) mod descriptor;
 pub(super) mod gtk_switch;
 pub(super) mod identity;
@@ -7,7 +8,7 @@ pub(super) mod name_evidence;
 pub(super) mod placeholder;
 pub(crate) mod role_numbers;
 pub(super) mod role_table;
-pub(super) mod roles;
+pub(crate) mod roles;
 pub(crate) mod state_bits;
 pub(super) mod states;
 
