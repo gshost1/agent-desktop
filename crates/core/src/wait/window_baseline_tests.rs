@@ -147,3 +147,116 @@ fn with_no_window_focused_the_command_acts_in_the_first_shown_window_not_a_minim
 
     assert_eq!(acted_on, ["w-shown"]);
 }
+
+/// Windows whose ids say what the adapter reports: a `panel` is auxiliary,
+/// and the first `main` window it lists is the application's main window,
+/// named even when it is not among the windows it is asked about.
+struct PanelWindows(Vec<WindowInfo>);
+
+impl ObservationOps for PanelWindows {
+    fn list_windows(
+        &self,
+        _filter: &WindowFilter,
+        _deadline: Deadline,
+    ) -> Result<Vec<WindowInfo>, AdapterError> {
+        Ok(self.0.clone())
+    }
+
+    fn is_auxiliary_window(&self, window: &WindowInfo, _deadline: Deadline) -> bool {
+        window.id.contains("panel")
+    }
+
+    fn main_window(&self, _windows: &[WindowInfo], _deadline: Deadline) -> Option<String> {
+        self.0
+            .iter()
+            .find(|window| window.id.starts_with("main"))
+            .map(|window| window.id.clone())
+    }
+}
+
+impl ActionOps for PanelWindows {}
+
+impl InputOps for PanelWindows {}
+
+impl SystemOps for PanelWindows {}
+
+fn acted_on_ids(windows: Vec<WindowInfo>) -> Vec<String> {
+    let adapter = PanelWindows(windows);
+    let process = ProcessIdentity::new(crate::ProcessId::new(1), "instance");
+    let baseline = WindowBaseline::capture(&adapter, "TestApp", process, long()).unwrap();
+    baseline
+        .acted_on(&adapter, long())
+        .unwrap()
+        .into_iter()
+        .map(|window| window.id)
+        .collect()
+}
+
+fn shown(id: &str, visible: Option<bool>) -> WindowInfo {
+    let mut window = window(id, 1, Some("instance"));
+    window.state.visible = visible;
+    window
+}
+
+#[test]
+fn with_no_window_focused_the_command_acts_in_the_document_behind_a_floating_panel() {
+    let acted = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("w-document", Some(true)),
+    ]);
+
+    assert_eq!(acted, ["w-document"]);
+}
+
+#[test]
+fn a_panel_stays_the_front_window_beside_a_hidden_document_or_other_panels() {
+    let beside_hidden = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("w-document", Some(false)),
+    ]);
+    let only_panels = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("panel-colors", Some(true)),
+    ]);
+
+    assert_eq!(beside_hidden, ["panel-inspector"]);
+    assert_eq!(only_panels, ["panel-inspector"]);
+}
+
+#[test]
+fn with_no_window_focused_the_command_acts_in_the_main_window_among_documents() {
+    let acted = acted_on_ids(vec![
+        shown("panel-inspector", Some(true)),
+        shown("w-first", Some(true)),
+        shown("main-document", Some(true)),
+    ]);
+
+    assert_eq!(acted, ["main-document"]);
+}
+
+#[test]
+fn without_a_main_window_the_command_acts_in_the_first_listed_document() {
+    let acted = acted_on_ids(vec![
+        shown("w-first", Some(true)),
+        shown("w-second", Some(true)),
+    ]);
+
+    assert_eq!(acted, ["w-first"]);
+}
+
+#[test]
+fn a_main_window_that_is_a_panel_or_hidden_falls_back_to_the_first_listed_document() {
+    let named_panel = acted_on_ids(vec![
+        shown("main-panel", Some(true)),
+        shown("w-first", Some(true)),
+        shown("w-second", Some(true)),
+    ]);
+    let named_hidden = acted_on_ids(vec![
+        shown("main-hidden", Some(false)),
+        shown("w-first", Some(true)),
+        shown("w-second", Some(true)),
+    ]);
+
+    assert_eq!(named_panel, ["w-first"]);
+    assert_eq!(named_hidden, ["w-first"]);
+}
