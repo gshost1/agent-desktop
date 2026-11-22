@@ -40,9 +40,10 @@ pub(crate) fn run_until_idle(
                     let _ = record.record(served);
                 }
                 if let Some((writer, exit, output)) = finished {
-                    reply(&writer, exit, output);
+                    reply(&writer, exit, output, server);
+                } else {
+                    server.release();
                 }
-                server.release();
                 timer.touch(clock.now());
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -58,8 +59,8 @@ pub(crate) fn run_until_idle(
 
 /// Runs one job and returns its result for the client, or `None` when it did not run. The
 /// caller counts it before it replies, so a client that reads the state file after its answer
-/// sees its call counted, and frees the slot after the reply, so no new command is committed
-/// while a reply to a stalled client is still being written.
+/// sees its call counted. The slot is freed before the reply, so the client's next call can
+/// be admitted while the executor finishes writing this result.
 fn run_job(job: Job, server: &ServerState) -> Option<(SharedWriter, u8, CapturedOutput)> {
     let Job {
         writer,
@@ -117,8 +118,9 @@ fn send(writer: &SharedWriter, reply: &DaemonReply) -> std::io::Result<()> {
 
 /// Sends the result in one locked write, so no heartbeat lands between its three frames. A
 /// client that left gets nothing; its command already ran, as a killed CLI's would have.
-fn reply(writer: &SharedWriter, exit: u8, (stdout, stderr): CapturedOutput) {
+fn reply(writer: &SharedWriter, exit: u8, (stdout, stderr): CapturedOutput, server: &ServerState) {
     let mut stream = writer.lock().unwrap_or_else(PoisonError::into_inner);
+    server.release();
     if exit == 1 && is_undelivered_permission_refusal(&stdout) {
         let rerun = DaemonReply::Rerun {
             reason: "permission".to_owned(),

@@ -1,14 +1,18 @@
-use super::{exit_byte, run_until_idle};
+use super::{exit_byte, reply, run_until_idle};
 use crate::daemon::build_identity::BuildIdentity;
 use crate::daemon::clock::Clock;
 use crate::daemon::endpoint::DaemonEndpoint;
 use crate::daemon::env_subset::EnvSubset;
 use crate::daemon::idle_policy::IdlePolicy;
+use crate::daemon::job::SharedWriter;
 use crate::daemon::server_state::ServerState;
 use crate::daemon::state_file::DaemonStateFile;
+use crate::daemon::transport::DaemonStream;
 use std::cell::Cell;
+use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A virtual clock that moves `step` every time it is read, counting its reads.
@@ -103,4 +107,68 @@ fn a_daemon_whose_listener_is_gone_exits_at_once() {
     std::fs::remove_dir_all(&dir).unwrap();
 
     assert_eq!(clock.reads.get(), 1);
+}
+
+struct AdmissionCheckingStream {
+    server: Arc<ServerState>,
+    fail: bool,
+}
+
+impl Read for AdmissionCheckingStream {
+    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+        unreachable!()
+    }
+}
+
+impl Write for AdmissionCheckingStream {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        assert!(
+            self.server.claim(),
+            "the next call can enter before any reply bytes"
+        );
+        self.server.release();
+        if self.fail {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        } else {
+            Ok(bytes.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl DaemonStream for AdmissionCheckingStream {
+    fn try_clone_stream(&self) -> std::io::Result<Box<dyn DaemonStream>> {
+        unreachable!()
+    }
+
+    fn set_read_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn replies_release_admission_before_writing_even_when_empty_or_disconnected() {
+    for (stdout, fail) in [
+        (b"result".to_vec(), false),
+        (Vec::new(), false),
+        (Vec::new(), true),
+    ] {
+        let server = Arc::new(server());
+        assert!(server.claim());
+        let writer: SharedWriter = Arc::new(Mutex::new(Box::new(AdmissionCheckingStream {
+            server: Arc::clone(&server),
+            fail,
+        })));
+
+        reply(&writer, 0, (stdout, Vec::new()), &server);
+
+        assert!(server.claim());
+    }
 }
