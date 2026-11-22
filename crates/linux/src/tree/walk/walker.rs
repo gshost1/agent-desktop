@@ -93,7 +93,7 @@ where
     K: Clone + PartialEq,
 {
     walk_levels_with(root, limits, deadline, expand, |_, read| {
-        classify(&read.payload)
+        Some(classify(&read.payload))
     })
 }
 
@@ -102,7 +102,7 @@ pub(super) fn walk_levels_with<K: Clone + PartialEq, P>(
     limits: &WalkLimits,
     deadline: Deadline,
     mut expand: impl FnMut(&[K]) -> Result<Vec<Expansion<P, K>>, AdapterError>,
-    mut classify: impl FnMut(Option<&P>, &mut Expansion<P, K>) -> NodeClass,
+    mut classify: impl FnMut(Option<&P>, &mut Expansion<P, K>) -> Option<NodeClass>,
 ) -> Result<Walk<P>, AdapterError> {
     let mut slots: Vec<Slot<K, P>> = Vec::new();
     let mut frontier = vec![Pending {
@@ -135,7 +135,9 @@ pub(super) fn walk_levels_with<K: Clone + PartialEq, P>(
         let mut next = Vec::new();
         for (pending, mut read) in frontier.into_iter().zip(reads) {
             let parent = pending.parent.map(|parent| &slots[parent].node.payload);
-            let class = classify(parent, &mut read);
+            let Some(class) = classify(parent, &mut read) else {
+                continue;
+            };
             let Expansion {
                 payload,
                 children,
@@ -249,23 +251,16 @@ pub(in crate::tree) fn walk_tree_for(
     let connection = bus.get(deadline)?;
     let mut reader =
         LevelReader::new(connection.inner(), root, limits, deadline).for_purpose(purpose);
-    if limits.children.prune_closed_menus {
-        walk_menu_levels(
-            root.clone(),
-            limits,
-            deadline,
-            |level| reader.expand(level),
-            |children| children_are_hidden(connection.inner(), children, deadline),
-        )
-    } else {
-        walk_levels(
-            root.clone(),
-            limits,
-            deadline,
-            |level| reader.expand(level),
-            super::wrapper::classify,
-        )
-    }
+    walk_menu_levels(
+        root.clone(),
+        limits,
+        deadline,
+        |level| reader.expand(level),
+        |children| {
+            limits.children.prune_closed_menus
+                && children_are_hidden(connection.inner(), children, deadline)
+        },
+    )
 }
 
 pub(crate) fn walk_native_tree(

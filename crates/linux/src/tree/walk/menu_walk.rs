@@ -9,7 +9,14 @@ use crate::system::{ACCESSIBLE_INTERFACE, within};
 use crate::tree::properties::node_read::{call, deserialize};
 use crate::tree::vocabulary::role_numbers::{MENU, MENU_BAR, POPUP_MENU, is_menu_item};
 use crate::tree::vocabulary::state_bits::{EXPANDED, SHOWING, StateBits};
-use crate::tree::{AtspiElement, Expansion, ObservedRead, Walk, WalkLimits};
+use crate::tree::{AtspiElement, Expansion, ObservedRead, RawNode, Walk, WalkLimits};
+
+fn is_unpresented_menubar(node: &RawNode) -> bool {
+    node.traits.role.present() == Some(&MENU_BAR)
+        && node.extents.present().is_some_and(|bounds| {
+            bounds.width >= 0 && bounds.height >= 0 && (bounds.width == 0 || bounds.height == 0)
+        })
+}
 
 fn can_probe_children<K>(
     parent: Option<&ObservedRead>,
@@ -40,10 +47,13 @@ pub(super) fn walk_menu_levels<K: Clone + PartialEq>(
     mut children_are_hidden: impl FnMut(&[K]) -> bool,
 ) -> Result<Walk<ObservedRead>, AdapterError> {
     walk_levels_with(root, limits, deadline, expand, |parent, read| {
+        if parent.is_some() && is_unpresented_menubar(&read.payload.node) {
+            return None;
+        }
         if can_probe_children(parent, read, limits) && children_are_hidden(&read.children) {
             read.children.clear();
         }
-        classify(&read.payload)
+        Some(classify(&read.payload))
     })
 }
 
@@ -87,3 +97,7 @@ mod tests;
 #[cfg(test)]
 #[path = "menu_state_tests.rs"]
 mod state_tests;
+
+#[cfg(test)]
+#[path = "menu_presentation_tests.rs"]
+mod presentation_tests;

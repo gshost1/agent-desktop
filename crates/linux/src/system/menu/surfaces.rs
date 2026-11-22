@@ -98,7 +98,7 @@ pub(crate) fn nested_dialog_titles(
 ) -> Result<Vec<String>, AdapterError> {
     let windows = windows_of_process(bus, pid, deadline)?;
     let mut inventory = Inventory::structural(bus, deadline);
-    let scan = scan_windows(&windows, |window| inventory.read(window));
+    let scan = scan_windows(&windows, deadline, |window| inventory.read(window));
     Ok(scan
         .found
         .into_iter()
@@ -117,7 +117,7 @@ pub(crate) fn list_surfaces(
     require_same_process(process)?;
     let windows = windows_of_process(bus, process.pid.get(), deadline)?;
     let mut inventory = Inventory::structural(bus, deadline);
-    let scan = scan_windows(&windows, |window| inventory.read(window));
+    let scan = scan_windows(&windows, deadline, |window| inventory.read(window));
     let mut surfaces = surfaces_of(&windows);
     mark_unread(&mut surfaces, &windows, &scan);
     surfaces.extend(nested_entries(&scan));
