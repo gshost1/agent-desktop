@@ -1,18 +1,12 @@
 use std::collections::HashSet;
 
 use crate::system::registry::listed_window::ListedWindow;
-use crate::system::x11::map::{ClientMatch, match_client};
-use crate::system::x11::{X11Client, X11State};
+use crate::system::window::listed_twins::listed_client;
+use crate::system::x11::X11State;
+use crate::system::x11::map::ClientMatch;
 
-fn clients_of(state: &X11State) -> &[X11Client] {
-    match state {
-        X11State::Ready { clients, .. } => clients,
-        _ => &[],
-    }
-}
-
-fn matched(window: &ListedWindow, clients: &[X11Client]) -> Vec<u32> {
-    match match_client(&window.frame, clients) {
+fn matched(found: ClientMatch) -> Vec<u32> {
+    match found {
         ClientMatch::One(id) => vec![id],
         ClientMatch::Several(ids) => ids,
         ClientMatch::NoClient => Vec::new(),
@@ -32,20 +26,22 @@ pub(crate) fn without_ghosts(windows: Vec<ListedWindow>, state: &X11State) -> Ve
     if !windows.iter().any(|window| window.unshown) {
         return windows;
     }
-    let clients = clients_of(state);
+    let matches: Vec<_> = (0..windows.len())
+        .map(|index| matched(listed_client(&windows, index, state)))
+        .collect();
     let claimed: HashSet<u32> = windows
         .iter()
-        .filter(|window| !window.unshown)
-        .flat_map(|window| matched(window, clients))
+        .zip(&matches)
+        .filter(|(window, _)| !window.unshown)
+        .flat_map(|(_, found)| found.iter().copied())
         .collect();
     windows
         .into_iter()
-        .filter(|window| {
-            !window.unshown
-                || matched(window, clients)
-                    .iter()
-                    .any(|client| !claimed.contains(client))
+        .zip(matches)
+        .filter(|(window, found)| {
+            !window.unshown || found.iter().any(|client| !claimed.contains(client))
         })
+        .map(|(window, _)| window)
         .collect()
 }
 

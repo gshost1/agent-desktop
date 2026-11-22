@@ -56,6 +56,7 @@ pub(super) struct World {
     pub(super) menu_open: bool,
     pub(super) app_frame_active: bool,
     pub(super) twins: Option<Twins>,
+    pub(super) frames: Option<(Vec<crate::system::x11::FrameFacts>, usize)>,
 }
 
 pub(super) fn facts() -> ProcessFacts {
@@ -117,6 +118,7 @@ impl World {
             menu_open: false,
             app_frame_active: false,
             twins: None,
+            frames: None,
         }
     }
 
@@ -134,6 +136,10 @@ impl World {
 }
 
 impl ClientWorld for World {
+    fn frames(&self, _win: &WindowInfo) -> Option<(Vec<crate::system::x11::FrameFacts>, usize)> {
+        self.frames.clone()
+    }
+
     fn global_position(&self) -> bool {
         self.global
     }

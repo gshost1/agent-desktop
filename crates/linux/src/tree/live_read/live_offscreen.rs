@@ -7,7 +7,9 @@ use zbus::Connection;
 
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::process::toolkit_id::ToolkitId;
-use crate::system::x11::stacking::frame_window_state;
+use crate::system::x11::map::has_title_match;
+use crate::system::x11::stacking::matched_window_state;
+use crate::system::x11::twin_tie::client_among_twins;
 use crate::system::x11::window::frame_window::FrameWindow;
 use crate::system::x11::window::window_x11_state::WindowX11State;
 use crate::system::x11::{self, DisplayReader, FrameFacts, MonitorReader, MonitorSource};
@@ -176,14 +178,7 @@ fn place(bus: &SharedBus, element: &AtspiElement, deadline: Deadline) -> Placeme
     let skipped = placed.frame_iconified == Some(true) || (wholly_outside(&placed) && global);
     let facts = || {
         read.title.clone().map(|title| FrameFacts {
-            size_identity: title.is_empty()
-                && crate::system::window::frame_identity::permits_on_bus(
-                    bus,
-                    frame,
-                    &placed.toolkit,
-                    read.screen,
-                    deadline,
-                ),
+            size_identity: false,
             pid: frame.pid(),
             title,
             extents: read.screen,
@@ -211,8 +206,19 @@ fn place(bus: &SharedBus, element: &AtspiElement, deadline: Deadline) -> Placeme
                 return None;
             }
             let facts = facts()?;
-            let found =
-                frame_window_state(&DisplayReader, deadline, &facts, || twins(&facts.title));
+            let found = matched_window_state(&DisplayReader, deadline, |active, clients| {
+                if global || has_title_match(&facts, clients) {
+                    client_among_twins(&facts, clients, active, || twins(&facts.title))
+                } else {
+                    crate::system::window::frame_client::read_client(
+                        bus,
+                        frame,
+                        &placed.toolkit,
+                        clients,
+                        deadline,
+                    )
+                }
+            });
             window.set(found);
             match found {
                 FrameWindow::Client(state) => Some(state),
