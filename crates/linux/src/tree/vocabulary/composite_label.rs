@@ -17,6 +17,7 @@ use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
 use crate::tree::properties::absence::failure;
 use crate::tree::properties::failure::Failure;
 use crate::tree::properties::node_read::{call, deserialize};
+use crate::tree::properties::wrapper_parent::WrapperParent;
 use crate::tree::{AtspiElement, LabelOutcome, RawNode};
 
 const LABEL_FOR: u32 = 1;
@@ -31,6 +32,7 @@ struct Composite {
     children: Vec<Address>,
     editable: Vec<Address>,
     label: Option<AtspiElement>,
+    parent: Option<WrapperParent>,
 }
 
 #[derive(Clone)]
@@ -55,23 +57,24 @@ struct Lead(Arc<Slot>);
 pub(super) async fn read_composite_label(
     connection: &Connection,
     node: &RawNode,
-) -> Result<LabelOutcome, AdapterError> {
+) -> Result<(LabelOutcome, Option<WrapperParent>), AdapterError> {
     if node.element.in_web_document() || !editable_textfield(node) {
-        return Ok(LabelOutcome::Unlabelled);
+        return Ok((LabelOutcome::Unlabelled, None));
     }
     let parent = parent_address(connection, &node.element).await;
     let target = match parent.map(|address| owned_address(&node.element, &address)) {
         Ok(Some(parent)) => composite_of(connection, &parent, &node.element)
             .await
-            .map(|composite| label_of(&composite, &node.element)),
-        Ok(None) => Ok(None),
+            .map(|composite| (label_of(&composite, &node.element), composite.parent)),
+        Ok(None) => Ok((None, None)),
         Err(error) => Err(fault(error)),
     };
     match target {
-        Ok(Some(target)) => label_text(connection, &target).await,
-        Ok(None) | Err(Fault::Vanished) => Ok(LabelOutcome::Unlabelled),
+        Ok((Some(target), parent)) => Ok((label_text(connection, &target).await?, parent)),
+        Ok((None, parent)) => Ok((LabelOutcome::Unlabelled, parent)),
+        Err(Fault::Vanished) => Ok((LabelOutcome::Unlabelled, None)),
         Err(Fault::Connection(error)) => Err(error),
-        Err(Fault::Failed) => Ok(LabelOutcome::Failed),
+        Err(Fault::Failed) => Ok((LabelOutcome::Failed, None)),
     }
 }
 
@@ -199,12 +202,16 @@ async fn read_composite(
         accessible::<Vec<Address>>(connection, parent, "GetChildren"),
     )
     .await?;
+    let evidence = Some(WrapperParent::Children(parent.clone(), children.clone()));
     let Some(elements) = children
         .iter()
         .map(|address| owned_address(parent, address))
         .collect::<Option<Vec<_>>>()
     else {
-        return Ok(Composite::default());
+        return Ok(Composite {
+            parent: evidence,
+            ..Composite::default()
+        });
     };
     let (fields, others): (Vec<_>, Vec<_>) = (0..)
         .zip(elements)
@@ -218,7 +225,10 @@ async fn read_composite(
         .map(|index| children[index].clone())
         .collect();
     if editable.len() > 1 {
-        return Ok(Composite::default());
+        return Ok(Composite {
+            parent: evidence,
+            ..Composite::default()
+        });
     }
     let label = match targets.as_slice() {
         [target] => proven_label(connection, parent, target, false).await?,
@@ -238,6 +248,7 @@ async fn read_composite(
         children,
         editable,
         label,
+        parent: evidence,
     })
 }
 

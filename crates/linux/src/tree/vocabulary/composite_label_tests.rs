@@ -76,11 +76,18 @@ impl Accessible {
 
     #[zbus(property)]
     fn name(&self) -> &str {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         self.name
+    }
+
+    #[zbus(property)]
+    fn description(&self) -> &str {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        "Wrapper description"
     }
 }
 
-fn address(path: &str) -> Address {
+pub(super) fn address(path: &str) -> Address {
     (OWNER.to_owned(), path.try_into().unwrap())
 }
 

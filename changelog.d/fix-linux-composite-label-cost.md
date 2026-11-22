@@ -6,3 +6,4 @@
 ### Performance
 
 * Linux: the composite-label read for unnamed editable fields reads each parent once for all of its fields read together and stops reading siblings at the second editable child, so a form of unnamed inputs no longer costs one full sibling scan per field.
+* Linux: wrapper-description fallback reuses the composite-label parent's identity and child list, avoiding duplicate parent lookups and skipping wrapper reads for parents with multiple children.
