@@ -3,6 +3,32 @@ use agent_desktop_core::{AdapterError, WindowInfo, WindowState};
 use super::menu_popup::Node;
 use super::{MenuPopup, PopupReader, entries_across, entry, find_popups, inventory};
 use crate::system::menu::menu_fixture::*;
+use crate::tree::{Extents, Field};
+
+#[test]
+fn completed_inventory_accounts_for_menu_geometry_even_when_no_menu_is_presented() {
+    let bounds = Extents {
+        x: 100,
+        y: 100,
+        width: 80,
+        height: 20,
+    };
+    let mut item = node(ITEM, "Closed", &[], vec![]);
+    item.payload.node.extents = Field::Present(bounds);
+    let mut reader = Fake::new(frame_with(vec![node(MENU, "File", &[], vec![item])]));
+    let mut accounted = Vec::new();
+    assert!(
+        super::find_popups_accounted(&mut reader, &mut accounted)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(accounted.contains(&bounds));
+    assert!(
+        super::find_popups_accounted(&mut Fake::new(frame_with(vec![])), &mut Vec::new())
+            .unwrap()
+            .is_empty()
+    );
+}
 
 fn roots_in_tree(tree: &Node) -> Option<Vec<crate::tree::AtspiElement>> {
     super::roots_in_tree(tree, agent_desktop_core::Deadline::after(0).unwrap())

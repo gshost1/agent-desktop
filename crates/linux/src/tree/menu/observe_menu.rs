@@ -5,7 +5,7 @@ use agent_desktop_core::{
 
 use super::menu_identity::MenuIdentity;
 use crate::system::SharedBus;
-use crate::system::menu::menu_surface::{MenuPopup, popups_of};
+use crate::system::menu::menu_surface::{MenuPopup, popups_of_accounted};
 use crate::tree::capabilities::headless_routes::HeadlessRoutes;
 use crate::tree::element::ancestry;
 use crate::tree::placement::node_position::place_nodes;
@@ -112,10 +112,12 @@ pub(crate) fn observe_menu(
     request: &ObservationRequest,
 ) -> Result<ObservedTree, AdapterError> {
     let request = (*request).validate()?;
+    let accounted = std::cell::RefCell::new(Vec::new());
+    let mut pending = crate::system::x11::menu_pending::probe(window.pid.get());
     let popup = super::menu_opening::await_popup(
         request.deadline,
-        |deadline| popups_of(bus, window, deadline),
-        |deadline| crate::system::x11::menu_pending::is_pending(window.pid.get(), deadline),
+        |deadline| popups_of_accounted(bus, window, deadline, &mut accounted.borrow_mut()),
+        |deadline| pending(deadline, &accounted.borrow()),
     )?;
     let mut root = rooted(&popup.root);
     let (owner_bus, owner_path) = crate::system::window::window_id::decode(&window.id)?;

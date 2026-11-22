@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
+use agent_desktop_core::{AdapterError, Deadline};
 
 use crate::system::menu::menu_surface::MenuPopup;
 
@@ -22,16 +22,13 @@ pub(super) fn await_popup(
         if opening.remaining().is_zero() || !pending(opening) {
             break;
         }
-        let popups = match read(opening) {
-            Ok(popups) => popups,
-            Err(error) if error.code == ErrorCode::Timeout && opening.remaining().is_zero() => {
-                break;
-            }
-            Err(error) => return Err(error),
-        };
+        let popups = read(opening)?;
         if !popups.is_empty() {
             return super::observe_menu::outermost(popups);
         }
+    }
+    if deadline.is_expired() {
+        return Err(deadline.timeout_error());
     }
     super::observe_menu::outermost(Vec::new())
 }

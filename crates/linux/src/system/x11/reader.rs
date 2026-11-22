@@ -67,7 +67,10 @@ impl DisplayReader {
         let DisplayServer::X11(display) = session_server() else {
             return None;
         };
-        bounded(deadline, None, move || read_popup_windows(&display, pid))
+        bounded(deadline, None, move || {
+            let (connection, screen) = Self::connect(&display).ok()?;
+            read_popups(&connection, screen, pid, true)
+        })
     }
 
     pub(crate) fn popup_origin(pid: u32, size: (i32, i32), caller: Deadline) -> Option<(i32, i32)> {
@@ -101,52 +104,67 @@ fn read_popup_window(display: &str, pid: u32, size: (i32, i32)) -> Option<PopupW
 
 fn read_popup_windows(display: &str, pid: u32) -> Option<Vec<PopupWindow>> {
     let (connection, screen) = DisplayReader::connect(display).ok()?;
+    read_popups(&connection, screen, pid, false)
+}
+
+pub(super) fn read_popups(
+    connection: &RustConnection,
+    screen: usize,
+    pid: u32,
+    menu_only: bool,
+) -> Option<Vec<PopupWindow>> {
     let root = connection.setup().roots.get(screen)?.root;
-    let pid_atom = atom(&connection, b"_NET_WM_PID")?;
+    let menus = if menu_only {
+        Some(super::menu_pending::menu_atoms(connection)?)
+    } else {
+        None
+    };
     let windows = connection.query_tree(root).ok()?.reply().ok()?.children;
-    let mut popups = Vec::new();
-    for window in windows {
-        let attributes = connection
-            .get_window_attributes(window)
-            .ok()?
-            .reply()
-            .ok()?;
-        if !attributes.override_redirect || attributes.map_state != MapState::VIEWABLE {
-            continue;
-        }
-        let owner = cardinals(property(
-            &connection,
-            window,
-            pid_atom,
-            AtomEnum::CARDINAL,
-            1,
-        ))
-        .and_then(|values| values.first().copied());
-        let geometry = connection.get_geometry(window).ok()?.reply().ok()?;
-        let rect = Extents {
-            x: 0,
-            y: 0,
-            width: i32::from(geometry.width),
-            height: i32::from(geometry.height),
-        };
-        if owner != Some(pid) {
-            continue;
-        }
-        let origin = connection
-            .translate_coordinates(window, root, 0, 0)
-            .ok()?
-            .reply()
-            .ok()?;
-        popups.push(PopupWindow {
-            id: window,
-            bounds: Extents {
-                x: i32::from(origin.dst_x),
-                y: i32::from(origin.dst_y),
-                ..rect
-            },
-        });
-    }
-    Some(popups)
+    scan_popups(connection, root, pid, menus.as_deref(), windows)
+}
+
+fn scan_popups(
+    connection: &RustConnection,
+    root: Window,
+    pid: u32,
+    menus: Option<&[Atom]>,
+    windows: Vec<Window>,
+) -> Option<Vec<PopupWindow>> {
+    let pid_atom = atom(connection, b"_NET_WM_PID")?;
+    Some(
+        windows
+            .into_iter()
+            .filter_map(|window| {
+                let attributes = connection
+                    .get_window_attributes(window)
+                    .ok()?
+                    .reply()
+                    .ok()?;
+                if !attributes.override_redirect || attributes.map_state != MapState::VIEWABLE {
+                    return None;
+                }
+                let owner = cardinals(property(
+                    connection,
+                    window,
+                    pid_atom,
+                    AtomEnum::CARDINAL,
+                    1,
+                ))
+                .and_then(|values| values.first().copied());
+                if owner != Some(pid)
+                    || menus.is_some_and(|atoms| {
+                        !super::menu_pending::is_menu_window(connection, window, atoms)
+                    })
+                {
+                    return None;
+                }
+                Some(PopupWindow {
+                    id: window,
+                    bounds: bounds(connection, root, window)?,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn unique_popup(popups: &[PopupWindow]) -> Option<PopupWindow> {

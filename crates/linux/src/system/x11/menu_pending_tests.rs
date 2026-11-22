@@ -1,4 +1,19 @@
 use super::*;
+use crate::system::display::{display_cause::Cause, display_unavailable::Unavailable};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::ConnectionExt;
+
+fn read(display: &str, pid: u32) -> Option<bool> {
+    let (connection, screen) = DisplayReader::connect(display).ok()?;
+    Some(unaccounted(
+        &super::super::reader::read_popups(&connection, screen, pid, true)?,
+        &[],
+    ))
+}
 
 #[test]
 fn only_explicit_menu_types_establish_pending_evidence() {
@@ -12,19 +27,96 @@ fn only_explicit_menu_types_establish_pending_evidence() {
     assert!(!has_menu_type(None, &menus));
 }
 
-#[test]
-fn unreadable_native_evidence_never_starts_a_wait() {
-    assert!(!read_on(DisplayServer::X11(":7".into()), |_| None));
-    assert!(!read_on(DisplayServer::X11(":7".into()), |_| Some(false)));
-    assert!(read_on(DisplayServer::X11(":7".into()), |display| {
-        assert_eq!(display, ":7");
-        Some(true)
-    }));
+fn popup(id: u32, x: i32) -> PopupWindow {
+    PopupWindow {
+        id,
+        bounds: Extents {
+            x,
+            y: 20,
+            width: 100,
+            height: 100,
+        },
+    }
 }
 
 #[test]
-fn wayland_never_reads_xwayland_for_pending_evidence() {
-    assert!(!read_on(DisplayServer::Wayland, |_| panic!("not X11")));
+fn only_unaccounted_popups_are_pending() {
+    let first = popup(1, 10);
+    let second = popup(2, 200);
+    let item = Extents {
+        x: 20,
+        y: 30,
+        width: 20,
+        height: 20,
+    };
+    assert!(!unaccounted(&[], &[]));
+    assert!(unaccounted(&[first], &[]));
+    assert!(!unaccounted(&[first], &[item]));
+    assert!(unaccounted(&[first, second], &[item]));
+    assert!(!unaccounted(&[first, second], &[item, second.bounds]));
+    assert!(unaccounted(&[first], &[Extents { width: 0, ..item }]));
+    assert!(unaccounted(&[first], &[Extents { x: 0, ..item }]));
+}
+
+#[test]
+fn repeated_pending_probes_connect_once_and_read_fresh_windows() {
+    let connections = Arc::new(AtomicUsize::new(0));
+    let reads = Arc::new(AtomicUsize::new(0));
+    let connected = connections.clone();
+    let scanned = reads.clone();
+    let session = MenuProbe::with_reader(move || {
+        connected.fetch_add(1, Ordering::SeqCst);
+        Some(move || {
+            scanned.fetch_add(1, Ordering::SeqCst);
+            Some(vec![popup(1, 10)])
+        })
+    });
+    for accounted in [vec![], vec![popup(1, 10).bounds], vec![]] {
+        session
+            .requests
+            .as_ref()
+            .unwrap()
+            .send(accounted.clone())
+            .unwrap();
+        assert_eq!(
+            session
+                .answers
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap(),
+            accounted.is_empty()
+        );
+    }
+    drop(session);
+    assert_eq!(connections.load(Ordering::SeqCst), 1);
+    assert_eq!(reads.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn unreadable_and_non_x11_probes_close_without_pending_evidence() {
+    for server in [
+        DisplayServer::Wayland,
+        DisplayServer::Unavailable(Unavailable {
+            cause: Cause::Missing,
+            detail: "no display".into(),
+        }),
+    ] {
+        let session = MenuProbe::new(server, 1);
+        session.requests.as_ref().unwrap().send(vec![]).ok();
+        assert!(
+            session
+                .answers
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .is_err()
+        );
+    }
+    let session = MenuProbe::with_reader(|| Some(|| None));
+    session.requests.as_ref().unwrap().send(vec![]).unwrap();
+    assert!(
+        session
+            .answers
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .is_err()
+    );
 }
 
 #[test]
@@ -54,7 +146,7 @@ fn pending_live_requires_an_owned_mapped_override_redirect_menu() {
         .unwrap()
         .check()
         .unwrap();
-    let atoms = atoms(
+    let atoms = super::super::control_display::atoms(
         &connection,
         &[
             b"_NET_WM_PID",

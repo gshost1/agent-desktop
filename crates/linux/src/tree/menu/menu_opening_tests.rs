@@ -79,12 +79,7 @@ fn pending_evidence_is_bounded_and_keeps_the_surface_absent_error() {
 fn the_callers_shorter_deadline_bounds_the_opening_wait() {
     let started = Instant::now();
     let result = await_popup(Deadline::after(40).unwrap(), |_| Ok(Vec::new()), |_| true);
-    assert!(
-        result
-            .err()
-            .unwrap()
-            .is_confirmed_surface_absence(SnapshotSurface::Menu)
-    );
+    assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
     assert!(started.elapsed() < OPENING_BUDGET);
 }
 
@@ -110,7 +105,7 @@ fn inventory_errors_are_not_retried_or_reported_as_absence() {
 }
 
 #[test]
-fn expiry_during_a_retry_preserves_the_completed_initial_absence() {
+fn expiry_during_a_retry_returns_timeout_not_initial_absence() {
     let mut reads = 0;
     let result = await_popup(
         Deadline::after(70).unwrap(),
@@ -124,13 +119,28 @@ fn expiry_during_a_retry_preserves_the_completed_initial_absence() {
         },
         |_| true,
     );
-    assert!(
-        result
-            .err()
-            .unwrap()
-            .is_confirmed_surface_absence(SnapshotSurface::Menu)
-    );
+    assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
     assert_eq!(reads, 2);
+}
+
+#[test]
+fn incomplete_retry_at_the_opening_budget_returns_timeout_with_caller_time_left() {
+    let deadline = Deadline::after(5_000).unwrap();
+    let mut reads = 0;
+    let result = await_popup(
+        deadline,
+        |budget| {
+            reads += 1;
+            if reads == 1 {
+                return Ok(Vec::new());
+            }
+            std::thread::sleep(budget.remaining());
+            Err(budget.timeout_error())
+        },
+        |_| true,
+    );
+    assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
+    assert!(!deadline.is_expired());
 }
 
 #[test]
