@@ -1,5 +1,7 @@
 ### Bug Fixes
 
+* Restore element bounds and ref clicks for local-position dialogs with different native titles by matching complete sibling-frame inventories with size-identity proofs.
+
 * Keep Linux key focus checks on the command deadline while bounding X11 activation checks to 300 ms, and preserve the last valid window listing when a focus re-read fails.
 * Prevent Linux window commands on a stale dialog from targeting a same-size sibling window.
 * Refuse Linux key input to dialogs with stale ACTIVE state unless X11 geometry identifies the dialog as active or a same-process transient window has identity proof and a unique listed size.

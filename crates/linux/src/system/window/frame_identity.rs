@@ -1,12 +1,8 @@
-use agent_desktop_core::Deadline;
-
 use crate::system::process::toolkit_id::ToolkitId;
-use crate::system::registry::registry_frames::{RootRead, read_frames};
-use crate::system::{REGISTRY_ROOT_PATH, SharedBus};
 use crate::tree::properties::toolkit_trust::reports_global_position;
 use crate::tree::surfaces::top_level::is_top_level;
 use crate::tree::vocabulary::state_bits::{SHOWING, StateBits};
-use crate::tree::{AtspiElement, Extents, RawNode};
+use crate::tree::{Extents, RawNode};
 
 fn size(node: &RawNode) -> Option<(i32, i32)> {
     let bounds = node.extents.present()?;
@@ -48,29 +44,6 @@ pub(crate) fn permits_size_match(
         }
     }
     matching == 1
-}
-
-pub(crate) fn permits_on_bus(
-    bus: &SharedBus,
-    frame: &AtspiElement,
-    toolkit: &ToolkitId,
-    expected: Option<Extents>,
-    deadline: Deadline,
-) -> bool {
-    if reports_global_position(toolkit) {
-        return false;
-    }
-    let root = AtspiElement::new(frame.bus_name(), REGISTRY_ROOT_PATH, frame.pid());
-    let Ok(mut apps) = read_frames(bus, &[root], deadline) else {
-        return false;
-    };
-    let Some(app) = apps.pop().filter(|app| app.read == RootRead::Read) else {
-        return false;
-    };
-    app.nodes
-        .iter()
-        .find(|node| node.element == *frame)
-        .is_some_and(|node| permits_size_match(node, &app.nodes, toolkit, expected))
 }
 
 #[cfg(test)]
