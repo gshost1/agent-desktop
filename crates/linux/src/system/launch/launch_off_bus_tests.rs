@@ -44,3 +44,14 @@ fn a_window_owned_by_a_process_started_from_the_spawned_one_counts() {
     assert!(descends_from(me, parent));
     assert!(!descends_from(parent, me));
 }
+
+#[test]
+fn a_native_title_is_readable_only_when_nonempty_and_valid() {
+    assert_eq!(
+        decode_title(b" Editor's window\0".to_vec()),
+        Some("Editor's window".to_owned())
+    );
+    for bytes in [Vec::new(), b" \0".to_vec(), vec![255], b"one\0two".to_vec()] {
+        assert_eq!(decode_title(bytes), None);
+    }
+}

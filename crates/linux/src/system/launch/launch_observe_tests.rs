@@ -203,3 +203,44 @@ fn a_launcher_that_exited_is_reported_under_the_name_the_caller_asked_for() {
             .contains("no running instance of the executable opened a window")
     );
 }
+
+#[test]
+fn only_new_descendants_can_own_a_running_wrapper_launch() {
+    let identity = keys(&["wrapper"]);
+    let descendant = app(200, "different-executable");
+    let sibling = app(201, "unrelated-executable");
+    let other_descendant = app(202, "another-executable");
+    let cases = [
+        (
+            vec![descendant.clone()],
+            HashSet::new(),
+            Step::Owner(descendant.clone()),
+        ),
+        (
+            vec![descendant.clone()],
+            HashSet::from([descendant.identity()]),
+            Step::Wait,
+        ),
+        (vec![sibling], HashSet::new(), Step::Wait),
+        (
+            vec![descendant, other_descendant],
+            HashSet::new(),
+            Step::Ambiguous(vec![200, 202]),
+        ),
+        (Vec::new(), HashSet::new(), Step::Wait),
+    ];
+    for (apps, before, expected) in cases {
+        let actual = step_with_ancestry(
+            &Sample {
+                child_pid: 100,
+                child: None,
+                apps: &apps,
+                before: &before,
+                identity: &identity,
+                settled: false,
+            },
+            |pid, ancestor| ancestor == 100 && [200, 202].contains(&pid),
+        );
+        assert_eq!(actual, expected);
+    }
+}
