@@ -131,7 +131,7 @@ check_fixture_contention || { finish; exit 1; }
 panel_suite headed "--headed"
 
 form_suite() {
-    local open_form form target written report action_count search_count plain_status counts
+    local open_form form target written report action_count search_count plain_status counts action_before
     note "[form] set-value never presses a default button or submits, and reports what it cannot see"
     "$bin" focus-window --app "$app" >/dev/null 2>&1
     main_window="$(fixture_window_id "AgentDesk Fixture")"
@@ -191,6 +191,32 @@ form_suite() {
     assert "clear on a commit-on-end-editing field leaves the commit to the caller like set-value" \
         "$([ "$report" = "True/delivered_unverified/unobserved" ] && [ "$plain_status" = "written-plain" ] && echo 1 || echo 0)" \
         "ok/delivery/commit=$report committed=$plain_status"
+    "$bin" focus-window --window-id "$form" >/dev/null 2>&1
+    target="$(panel_target "$form" textfield form-plain)"
+    written="$(act_target "$target" set-value "committed-plain" --commit 2>/dev/null)"
+    report="$(written_report "$written")"
+    plain_status="$(main_window_value form-plain-status committed-plain)"
+    assert "set-value --commit ends the edit and commits the plain field" \
+        "$([ "$report" = "True/delivered_verified/committed" ] && [ "$plain_status" = "committed-plain" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report committed=$plain_status"
+
+    target="$(panel_target "$form" textfield form-action)"
+    action_before="$(main_window_value form-action-count 2)"
+    written="$(act_target "$target" set-value "committed-action" --commit 2>/dev/null)"
+    report="$(written_report "$written")"
+    action_count="$(main_window_value form-action-count 3)"
+    assert "set-value --commit on a field with an action ends the edit and runs its action" \
+        "$([ "$report" = "True/delivered_verified/committed" ] && [ "$action_before" = "2" ] && [ "$action_count" = "3" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report action=$action_before->$action_count"
+
+    "$bin" focus-window --window-id "$main_window" >/dev/null 2>&1
+    require_target target textfield swift-submit
+    written="$(act_target "$target" set-value "committed-swift" --commit 2>/dev/null)"
+    report="$(written_report "$written")"
+    counts="$(main_window_value form-default-count 0)/$(main_window_value swift-default-count 0)/$(main_window_value swift-submit-count 0)"
+    assert "set-value --commit ends the SwiftUI edit without pressing a default button or running submit" \
+        "$([ "$report" = "True/delivered_verified/committed" ] && [ "$counts" = "0/0/0" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report default/swift-default/swift-submit=$counts"
     act_target "$(panel_target "$form" button Close)" click >/dev/null 2>&1
 }
 
