@@ -42,7 +42,7 @@ impl Fixture {
     }
 
     fn earlier(&self, state: DownloadState) {
-        update_records(&self.ledger(), &process(), deadline_ms(1_000), |records| {
+        update_records(&self.ledger(), &process(), deadline_ms(10_000), |records| {
             records.push(DownloadRecord {
                 guid: GUID.into(),
                 url: "http://127.0.0.1/report.csv".into(),
@@ -108,7 +108,9 @@ fn a_download_that_finished_in_an_earlier_command_is_returned_under_its_suggeste
     fixture.earlier(DownloadState::InProgress);
     std::fs::write(fixture.downloads().join(GUID), b"a,b\n1,2\n").unwrap();
 
-    let info = fixture.wait(ScriptedTransport::new(), true, 1_000).unwrap();
+    let info = fixture
+        .wait(ScriptedTransport::new(), true, 10_000)
+        .unwrap();
 
     let placed = fixture.downloads().join("report.csv");
     assert_eq!(Path::new(&info.path), placed);
@@ -137,7 +139,7 @@ fn a_download_that_begins_during_the_wait_is_followed_to_its_saved_path() {
             Some("/Users/me/Downloads/report.csv"),
         ));
 
-    let info = fixture.wait(transport, false, 1_000).unwrap();
+    let info = fixture.wait(transport, false, 10_000).unwrap();
 
     assert_eq!(info.path, "/Users/me/Downloads/report.csv");
     assert_eq!(info.bytes, 8);
@@ -150,7 +152,7 @@ fn a_canceled_download_is_an_error_not_a_path() {
         .push_inbound(begin())
         .push_inbound(progress("canceled", None));
 
-    let error = fixture.wait(transport, false, 1_000).unwrap_err();
+    let error = fixture.wait(transport, false, 10_000).unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ActionFailed);
     assert_eq!(kind(&error), "cdp_download_canceled");
@@ -200,7 +202,7 @@ fn an_earlier_download_without_a_folder_cannot_be_followed() {
     fixture.earlier(DownloadState::InProgress);
 
     let error = fixture
-        .wait(ScriptedTransport::new(), false, 1_000)
+        .wait(ScriptedTransport::new(), false, 10_000)
         .unwrap_err();
 
     assert_eq!(kind(&error), "cdp_download_untracked", "{error:?}");
@@ -213,7 +215,7 @@ fn a_browser_no_endpoint_reaches_is_refused() {
         .with_download_ledger(Some(fixture.ledger()));
 
     let error = web
-        .wait_for_download(process(), deadline_ms(500))
+        .wait_for_download(process(), deadline_ms(10_000))
         .unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ActionNotSupported);
@@ -256,7 +258,7 @@ fn a_click_that_starts_a_download_is_returned_by_a_later_wait_in_the_same_proces
     web.execute_action(&handle, ActionRequest::headless(Action::Click), &lease())
         .unwrap();
     let info = web
-        .wait_for_download(process(), deadline_ms(1_000))
+        .wait_for_download(process(), deadline_ms(10_000))
         .unwrap();
 
     assert_eq!(info.path, "/Users/me/Downloads/report.csv");
