@@ -128,10 +128,10 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   `The process shows a window but did not join the accessibility bus`,
   `The process runs with its accessibility bridge turned off`, or
   `The application is still starting`. The pid may be a wrapper of the application.
-  For a mapped window with a readable native title, the suggestion gives a state
-  wait that works even if registration finishes before you run it:
+  When the app's largest mapped normal window has a UTF-8 title, the suggestion
+  gives a state wait that works even if registration finishes before you run it:
   `agent-desktop wait --app '<app>' --window '<title>' --timeout 30000`.
-  Without a readable title, it gives
+  When that title is missing, or two equally large windows disagree, it gives
   `agent-desktop wait --event window-opened --app '<app>' --timeout 30000`.
   The mapped-window suggestion also names toolkit settings that may be needed,
   such as `QT_ACCESSIBILITY=1` for Qt. A bridge-disabled suggestion tells you to

@@ -2,13 +2,18 @@ use std::time::Duration;
 
 use agent_desktop_core::Deadline;
 use x11rb::protocol::res::{ClientIdMask, ClientIdSpec, ConnectionExt as _};
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, MapState, Window};
+use x11rb::protocol::xproto::{
+    Atom, AtomEnum, ConnectionExt as _, GetPropertyReply, MapState, Window,
+};
 use x11rb::rust_connection::RustConnection;
 
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::process::proc_stat::read_stat;
 use crate::system::x11::control_display::open;
 use crate::system::x11::stacking::bounded;
+
+#[path = "launch_main_window.rs"]
+mod main_window;
 
 /// The longest one window read of the off-bus check may take. It may run as
 /// the launch deadline expires, so it is bounded on its own and stays well
@@ -66,7 +71,8 @@ fn maps_window(pid: u32) -> bool {
     })
 }
 
-/// A readable title of a mapped window owned by the process or its descendants.
+/// A trusted UTF-8 title of the largest mapped normal window owned by the
+/// process or its descendants, absent when equally large windows disagree.
 pub(in crate::system::launch) fn window_title(pid: u32) -> Option<String> {
     let display = match session_server() {
         DisplayServer::X11(display) => display,
@@ -76,24 +82,132 @@ pub(in crate::system::launch) fn window_title(pid: u32) -> Option<String> {
     let deadline = Deadline::from_duration(WINDOW_READ).ok()?;
     bounded(deadline, None, move || {
         let (connection, root) = open(&display)?;
-        toplevels(&connection, root)?
+        let atoms = TitleAtoms::intern(&connection)?;
+        let owned = toplevels(&connection, root)?
             .into_iter()
-            .filter(|window| owns_one(&connection, std::slice::from_ref(window), pid))
-            .find_map(|window| {
-                read_title(&connection, window, b"_NET_WM_NAME")
-                    .or_else(|| read_title(&connection, window, b"WM_NAME"))
+            .enumerate()
+            .filter(|(_, window)| {
+                connection
+                    .get_window_attributes(*window)
+                    .ok()
+                    .and_then(|cookie| cookie.reply().ok())
+                    .is_some_and(|attributes| attributes.map_state == MapState::VIEWABLE)
             })
+            .filter(|(_, window)| owns_one(&connection, std::slice::from_ref(window), pid));
+        main_window::select_title(&read_candidates(&connection, &atoms, owned))
     })
 }
 
-fn read_title(connection: &RustConnection, window: Window, name: &[u8]) -> Option<String> {
-    let atom = connection.intern_atom(true, name).ok()?.reply().ok()?.atom;
-    let property = connection
+/// The atoms a title read compares against, interned once per connection
+/// without creating any: one the server does not know yet is on no window.
+struct TitleAtoms {
+    window_type: Atom,
+    normal: Atom,
+    name: Atom,
+    utf8: Atom,
+}
+
+impl TitleAtoms {
+    fn intern(connection: &RustConnection) -> Option<Self> {
+        let [window_type, normal, name, utf8] = intern_existing(
+            connection,
+            [
+                b"_NET_WM_WINDOW_TYPE".as_slice(),
+                b"_NET_WM_WINDOW_TYPE_NORMAL",
+                b"_NET_WM_NAME",
+                b"UTF8_STRING",
+            ],
+        )?;
+        Some(Self {
+            window_type,
+            normal,
+            name,
+            utf8,
+        })
+    }
+}
+
+/// The atoms the server already knows by these names, [`x11rb::NONE`] for
+/// one it does not, asked in one round trip and creating none.
+fn intern_existing<const N: usize>(
+    connection: &RustConnection,
+    names: [&[u8]; N],
+) -> Option<[Atom; N]> {
+    let cookies = names.map(|name| connection.intern_atom(true, name).ok());
+    let replies = cookies.map(|cookie| cookie.and_then(|cookie| cookie.reply().ok()));
+    replies
+        .iter()
+        .all(Option::is_some)
+        .then(|| replies.map(|reply| reply.map_or(x11rb::NONE, |reply| reply.atom)))
+}
+
+/// The title facts of each window that could be read whole, in stacking
+/// order; a window that vanished or is malformed mid-read is left out.
+fn read_candidates(
+    connection: &RustConnection,
+    atoms: &TitleAtoms,
+    windows: impl IntoIterator<Item = (usize, Window)>,
+) -> Vec<main_window::Candidate> {
+    windows
+        .into_iter()
+        .filter_map(|(order, window)| read_candidate(connection, atoms, window, order))
+        .collect()
+}
+
+/// One window's facts for the title choice, absent when the window went
+/// away or carries a malformed window type, so it is left out of the choice.
+fn read_candidate(
+    connection: &RustConnection,
+    atoms: &TitleAtoms,
+    window: Window,
+    order: usize,
+) -> Option<main_window::Candidate> {
+    let normal = match read_property(connection, window, atoms.window_type)? {
+        None => None,
+        Some(kind) => {
+            if kind.type_ != u32::from(AtomEnum::ATOM) || kind.format != 32 {
+                return None;
+            }
+            let first = kind.value32()?.next()?;
+            Some(atoms.normal != x11rb::NONE && first == atoms.normal)
+        }
+    };
+    let transient = read_property(connection, window, AtomEnum::WM_TRANSIENT_FOR.into())?;
+    let geometry = connection.get_geometry(window).ok()?.reply().ok()?;
+    Some(main_window::Candidate {
+        normal,
+        transient: transient.is_some(),
+        area: u32::from(geometry.width) * u32::from(geometry.height),
+        order,
+        title: read_title(connection, atoms, window),
+    })
+}
+
+/// A window's property: `Some(None)` when it is not set, `None` when the
+/// window could not be read.
+fn read_property(
+    connection: &RustConnection,
+    window: Window,
+    atom: Atom,
+) -> Option<Option<GetPropertyReply>> {
+    if atom == x11rb::NONE {
+        return Some(None);
+    }
+    let reply = connection
         .get_property(false, window, atom, AtomEnum::ANY, 0, 1_024)
         .ok()?
         .reply()
         .ok()?;
-    if property.format != 8 || property.bytes_after != 0 {
+    Some((reply.type_ != u32::from(AtomEnum::NONE)).then_some(reply))
+}
+
+fn read_title(connection: &RustConnection, atoms: &TitleAtoms, window: Window) -> Option<String> {
+    let property = read_property(connection, window, atoms.name)??;
+    if atoms.utf8 == x11rb::NONE
+        || property.type_ != atoms.utf8
+        || property.format != 8
+        || property.bytes_after != 0
+    {
         return None;
     }
     decode_title(property.value)
