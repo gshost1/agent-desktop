@@ -16,6 +16,10 @@ pub(crate) fn role_activates_by_selection(role: &str) -> bool {
     )
 }
 
+pub(crate) fn is_selection_row(role: &str) -> bool {
+    matches!(role, "AXRow" | "AXOutlineRow")
+}
+
 fn verify_selection(
     delivered: bool,
     verify: impl FnOnce() -> bool,
@@ -50,14 +54,17 @@ mod imp {
     /// or out of this set, because the ones that redefine a native role keep a
     /// row a row and a cell a cell.
     pub(crate) fn element_activates_by_selection(element: &AXElement, deadline: Deadline) -> bool {
+        read_selection_role(element, deadline).is_some_and(|role| {
+            super::role_activates_by_selection(crate::tree::roles::ax_role_and_subrole_to_str(
+                &role, None,
+            ))
+        })
+    }
+
+    pub(crate) fn read_selection_role(element: &AXElement, deadline: Deadline) -> Option<String> {
         crate::tree::properties::attributes::copy_string_attr_result(element, "AXRole", deadline)
             .ok()
             .flatten()
-            .is_some_and(|role| {
-                super::role_activates_by_selection(crate::tree::roles::ax_role_and_subrole_to_str(
-                    &role, None,
-                ))
-            })
     }
 
     /// Every write is verified by readback. Which element to select depends on
@@ -247,7 +254,7 @@ mod imp {
     }
 }
 
-pub(crate) use imp::{element_activates_by_selection, select_within_container};
+pub(crate) use imp::{read_selection_role, select_within_container};
 
 #[cfg(test)]
 mod tests {

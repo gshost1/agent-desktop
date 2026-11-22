@@ -8,12 +8,9 @@ mod imp {
     const FOCUS_DESCENT_WALK: usize = 3;
 
     /// The readback for `perform`, which has no written attribute to re-read.
-    /// Focus alone misses a whole family of controls: a sidebar row answers an
-    /// unsupported code to the action that navigates it, and moves its
-    /// selection rather than the focus. Selection is therefore read as well,
-    /// on every element, because an attribute an element does not publish reads
-    /// as absent and the rule simply never fires for it. The focused editor's
-    /// value is read because a press can replace what that editor shows.
+    /// Selection is relevant only to actions whose effect it can establish.
+    /// The focused editor's value is read because a press can replace what
+    /// that editor shows.
     #[derive(Default)]
     pub(crate) struct FocusState {
         focused_element: Option<AXElement>,
@@ -42,7 +39,11 @@ mod imp {
         }
     }
 
-    pub(crate) fn focus_state(element: &AXElement, deadline: Deadline) -> Option<FocusState> {
+    pub(crate) fn focus_state(
+        element: &AXElement,
+        deadline: Deadline,
+        observe_selection: bool,
+    ) -> Option<FocusState> {
         let app = crate::system::app::app_ops::pid_from_element(element, deadline)
             .map(crate::tree::element_for_pid)?;
         let focused_element = crate::tree::properties::attributes::copy_element_attr_result(
@@ -56,13 +57,15 @@ mod imp {
                 .as_ref()
                 .and_then(|focused| crate::tree::copy_value_typed(focused, deadline)),
             focused_element,
-            selected: crate::tree::properties::attributes::copy_bool_attr_result(
-                element,
-                crate::actions::select::container_select::SELECTED,
-                deadline,
-            )
-            .ok()
-            .flatten(),
+            selected: observe_selection
+                .then(|| {
+                    crate::tree::properties::attributes::copy_bool_attr(
+                        element,
+                        crate::actions::select::container_select::SELECTED,
+                        deadline,
+                    )
+                })
+                .flatten(),
             menu_open: owned_menu_open(element, deadline),
         })
     }
@@ -115,7 +118,10 @@ mod imp {
         element: &AXElement,
         deadline: Deadline,
     ) -> bool {
-        let after = focus_state(element, deadline);
+        let observe_selection = before
+            .as_ref()
+            .is_some_and(|state| state.selected.is_some());
+        let after = focus_state(element, deadline, observe_selection);
         let focused = after
             .as_ref()
             .and_then(|state| state.focused_element.as_ref());

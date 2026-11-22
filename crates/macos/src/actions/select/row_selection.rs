@@ -60,7 +60,9 @@ mod imp {
     };
 
     use crate::actions::chain::{ChainContext, ChainDef, execute_observed_chain};
-    use crate::actions::select::container_select::{SELECTED, element_activates_by_selection};
+    use crate::actions::select::container_select::{
+        SELECTED, is_selection_row, read_selection_role,
+    };
     use crate::tree::AXElement;
 
     const MAX_SELECTED_ROWS: usize = 256;
@@ -74,7 +76,10 @@ mod imp {
         policy: InteractionPolicy,
     ) -> Result<Vec<ActionStep>, AdapterError> {
         let deadline = context.deadline;
-        let before = if element_activates_by_selection(element, deadline) {
+        let before = if read_selection_role(element, deadline)
+            .as_deref()
+            .is_some_and(is_selection_row)
+        {
             member_selected(element, deadline)
         } else {
             None

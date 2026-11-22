@@ -5,8 +5,8 @@ const LABEL_ROLES: [&str; 4] = ["AXTextField", "AXTextArea", "AXStaticText", "AX
 
 /// A label inside a selectable member is its text, not a control: its
 /// `AXConfirm` commits an edit and never activates the row around it.
-fn is_member_label(role: Option<&str>) -> bool {
-    role.is_some_and(|role| LABEL_ROLES.contains(&role))
+fn is_member_label(selectable: bool, role: Option<&str>) -> bool {
+    selectable && role.is_some_and(|role| LABEL_ROLES.contains(&role))
 }
 
 fn activate_candidates<T>(
@@ -28,6 +28,9 @@ mod imp {
     use agent_desktop_core::{AdapterError, Deadline};
 
     use crate::actions::chain::chain_delivery::DeliveryOutcome;
+    use crate::actions::select::container_select::{
+        is_selection_row, read_selection_role, role_activates_by_selection,
+    };
     use crate::tree::AXElement;
 
     const MAX_CANDIDATES: usize = 4;
@@ -48,14 +51,13 @@ mod imp {
         deadline: Deadline,
     ) -> Result<DeliveryOutcome, AdapterError> {
         let instant = crate::tree::locator_deadline::from_operation(deadline)?;
-        let selectable = crate::actions::select::container_select::element_activates_by_selection(
-            element, deadline,
-        );
-        if selectable
-            && crate::tree::properties::selection_owner::selects_only_through_container(
-                element, instant,
-            )
-        {
+        let role = read_selection_role(element, deadline);
+        let selectable = role.as_deref().is_some_and(is_selection_row);
+        if role.as_deref().is_some_and(|role| {
+            role_activates_by_selection(crate::tree::roles::ax_role_to_str(role))
+        }) && crate::tree::properties::selection_owner::selects_only_through_container(
+            element, instant,
+        ) {
             return Ok(DeliveryOutcome::NotDelivered);
         }
         let mut children = crate::tree::properties::attributes::copy_ax_array_prefix_result(
@@ -70,6 +72,7 @@ mod imp {
         if selectable {
             children.retain(|child| {
                 !super::is_member_label(
+                    selectable,
                     crate::tree::properties::attributes::copy_string_attr_result(
                         child, "AXRole", instant,
                     )
@@ -95,12 +98,24 @@ mod tests {
     #[test]
     fn a_label_inside_a_selectable_member_is_not_an_activation_candidate() {
         for role in ["AXTextField", "AXTextArea", "AXStaticText", "AXImage"] {
-            assert!(is_member_label(Some(role)));
+            assert!(is_member_label(true, Some(role)));
         }
         for role in ["AXCell", "AXButton", "AXGroup", "AXCheckBox"] {
-            assert!(!is_member_label(Some(role)));
+            assert!(!is_member_label(true, Some(role)));
         }
-        assert!(!is_member_label(None));
+        assert!(!is_member_label(true, None));
+    }
+
+    #[test]
+    fn a_pressable_image_remains_an_activation_candidate_outside_a_selectable_row() {
+        for role in ["AXCell", "AXListItem", "AXOption", "AXTab", "AXGroup"] {
+            let selectable = crate::actions::select::container_select::is_selection_row(role);
+            assert!(!is_member_label(selectable, Some("AXImage")));
+        }
+        for role in ["AXRow", "AXOutlineRow"] {
+            let selectable = crate::actions::select::container_select::is_selection_row(role);
+            assert!(is_member_label(selectable, Some("AXImage")));
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
 
-/// `AXPress` on a row or a cell means "select me", and a grid that is not the
+/// `AXPress` on a selectable row means "select me", and a grid that is not the
 /// key view accepts it, answers `kAXErrorSuccess`, and selects nothing. The
 /// responder is not lying about reaching the application, only about what
 /// happened there, so reading the selection back is what tells the two apart.
@@ -25,6 +25,7 @@ mod imp {
 
     use super::outcome_from_selection;
     use crate::actions::chain::chain_delivery::DeliveryOutcome;
+    use crate::actions::select::container_select::{is_selection_row, read_selection_role};
     use crate::tree::AXElement;
 
     pub(crate) fn press_or_report_no_effect(
@@ -48,9 +49,10 @@ mod imp {
     /// bounded one the container write uses, and it ends the instant the
     /// selection turns on.
     fn selection_after_press(element: &AXElement, deadline: Deadline) -> Option<bool> {
-        if !crate::actions::select::container_select::element_activates_by_selection(
-            element, deadline,
-        ) {
+        if !read_selection_role(element, deadline)
+            .as_deref()
+            .is_some_and(is_selection_row)
+        {
             return None;
         }
         let settle_end = std::time::Instant::now()
