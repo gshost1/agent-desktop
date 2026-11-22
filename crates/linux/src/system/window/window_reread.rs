@@ -37,7 +37,10 @@ pub(super) fn reread_with(
         if budget.is_expired() {
             break;
         }
-        current = read(budget)?;
+        match read(budget) {
+            Ok(next) => current = next,
+            Err(_) => break,
+        }
     }
     Ok(current)
 }

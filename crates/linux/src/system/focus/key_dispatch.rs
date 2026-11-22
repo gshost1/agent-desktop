@@ -147,6 +147,7 @@ fn require_active(
 }
 
 fn display_active(world: &impl KeyWorld, pid: u32, deadline: Deadline) -> bool {
+    let deadline = deadline.capped(Duration::from_millis(300));
     match world.active_client_pid(deadline) {
         Some(owner) => return owner == pid,
         None if deadline.is_expired() => return false,
@@ -224,10 +225,9 @@ fn press_in(
         deadline,
     } = request;
     let backend = physical.backend()?;
-    let activation = deadline.capped(Duration::from_millis(300));
     let mut gate = || {
         require_process(keys, process)?;
-        require_active(keys, &backend, process, window, activation)
+        require_active(keys, &backend, process, window, deadline)
     };
     let result = press_for_process(physical, combo, policy, &mut gate, deadline)?;
     after_delivery(keys, process, result)

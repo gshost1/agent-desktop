@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 
-use agent_desktop_core::{Deadline, ErrorCode};
+use agent_desktop_core::Deadline;
 
 use super::*;
 use crate::system::window::window_test_support::{pass, state};
@@ -124,17 +124,43 @@ fn reread_checks_budget_again_after_waiting() {
 }
 
 #[test]
-fn reread_propagates_read_errors() {
-    let error = reread_with(
+fn reread_preserves_the_last_valid_listing_when_a_read_fails() {
+    let calls = Cell::new(0);
+    let (result, native) = reread_with(
         (pass(), state(7)),
         Deadline::standard().unwrap(),
         &[],
+        |_| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                let mut next = pass();
+                next.windows[0].info.title = "latest valid listing".into();
+                Ok((next, state(7)))
+            } else {
+                Err(AdapterError::timeout("read failed"))
+            }
+        },
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(result.windows[0].info.title, "latest valid listing");
+    assert_eq!(active_client(&native).unwrap().1, 7);
+    assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn reread_preserves_an_initial_empty_listing_when_the_first_read_fails() {
+    let mut initial = pass();
+    initial.windows.clear();
+    let (result, _) = reread_with(
+        (initial, state(7)),
+        Deadline::standard().unwrap(),
+        &[7],
         |_| Err(AdapterError::timeout("read failed")),
         |_| {},
     )
-    .err()
     .unwrap();
-    assert_eq!(error.code, ErrorCode::Timeout);
+    assert!(result.windows.is_empty());
 }
 
 #[test]
