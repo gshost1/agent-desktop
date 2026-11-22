@@ -150,6 +150,7 @@ fn element_root_derives_surface_with_relative_depth_budgets() {
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: Vec::new(),

@@ -201,7 +201,7 @@ pub(super) async fn focused_document_descendant(
     let limits = WalkLimits::default();
     let owner = root.bus_name();
     let root_children = list_children(connection, root).await?;
-    if root_children.len() > limits.max_children {
+    if root_children.len() > limits.max_children_per_node() {
         return Err(document_refused());
     }
     let root_ancestry = ancestry::child(root, Some(root_role));
@@ -250,7 +250,9 @@ pub(super) async fn focused_document_descendant(
             if step.children.is_empty() {
                 continue;
             }
-            if pending.depth >= limits.max_raw_depth || step.children.len() > limits.max_children {
+            if pending.depth >= limits.max_raw_depth
+                || step.children.len() > limits.max_children_per_node()
+            {
                 return Err(document_refused());
             }
             let child_ancestry = ancestry::child(&pending.element, step.role);

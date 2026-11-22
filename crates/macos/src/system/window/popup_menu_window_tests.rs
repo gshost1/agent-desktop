@@ -38,6 +38,14 @@ fn floating_panels_tooltips_and_status_items_are_not_menus() {
 }
 
 #[test]
+fn main_menu_bar_windows_do_not_count_as_pop_up_menus() {
+    let windows = [window(41, 24, 1), window(52, 101, 2)];
+
+    assert!(menu_numbers_from(&windows, 41).is_empty());
+    assert_eq!(menu_numbers_from(&windows, 52), [2]);
+}
+
+#[test]
 fn a_window_without_a_layer_is_not_a_menu() {
     let bare = CFDictionary::from_CFType_pairs(&[
         (

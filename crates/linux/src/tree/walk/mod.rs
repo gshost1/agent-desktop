@@ -1,7 +1,9 @@
 pub(super) mod admission;
 pub(super) mod admit;
+mod child_walk;
 pub(super) mod expansion;
 pub(super) mod level;
+mod menu_walk;
 pub(super) mod node_class;
 pub(super) mod walk_counts;
 pub(super) mod walk_limits;

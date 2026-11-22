@@ -103,11 +103,7 @@ fn entry(states: Vec<String>, value: Option<&str>, actions: Vec<&str>) -> RefEnt
             native_id: None,
             capture: crate::CaptureVerdict::Unique,
         },
-        geometry: crate::RefGeometry {
-            bounds_space: None,
-            bounds: None,
-            bounds_hash: None,
-        },
+        geometry: crate::RefGeometry::default(),
         capabilities: crate::RefCapabilities {
             states,
             available_actions: actions.into_iter().map(str::to_string).collect(),

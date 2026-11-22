@@ -97,6 +97,13 @@ input on their bounds.
   neither live `offscreen` nor `hidden`. `offscreen` is not a supported
   `get`/`is` property: use the live evidence in an actionability refusal.
 
+## Labelled editable fields
+
+An unnamed text field can appear in a snapshot with its composite control's
+explicit AT-SPI label when it is the only editable child. Use that field's ref
+with `set-value` and read the value back. The ref must still be unique over the
+complete captured window.
+
 ## GTK editor tabs
 
 GNOME Text Editor can expose the focused document's editor under both tab
