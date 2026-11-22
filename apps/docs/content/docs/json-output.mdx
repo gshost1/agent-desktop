@@ -208,7 +208,7 @@ Each match carries `role` and `interactive`, and `ref_id`, `name`, `value`, `sta
 
 ## Snapshot contents
 
-A window snapshot whose tree holds 80 or more nodes carries `contents` in `data`, before the tree (a `--root` drill does not): a short index of what the tree holds and where, so a read that stops early still shows which lists exist and how much of each is loaded.
+A snapshot whose tree holds 80 or more nodes, including a `--surface` snapshot, carries `contents` in `data`, before the tree (a `--root` drill does not): a short index of what the tree holds and where, so a read that stops early still shows which lists exist and how much of each is loaded.
 
 ```json
 "contents": {

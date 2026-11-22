@@ -140,8 +140,9 @@ Each line, in order:
 
 ## Snapshot contents
 
-A window snapshot whose tree holds 80 or more nodes carries `data.contents`, a short
-index of what the tree holds and where, so a read that stops early still shows
+A snapshot whose tree holds 80 or more nodes, including a `--surface` snapshot,
+carries `data.contents`, a short index of what the tree holds and where, so a read
+that stops early still shows
 which lists exist, how much of each is loaded and what comes after them. The
 key sorts before `lines` and `tree`, so it prints first. A `--root` drill omits it,
 and so does a tree with nothing to index. `snapshot --since` carries it when it

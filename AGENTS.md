@@ -231,8 +231,8 @@ Every command prints one envelope. `docs/json-output.md` holds the full contract
 ```
 
 - Omit `None` fields and empty arrays. Compact mode omits bounds. `ref_count` and `tree` live inside `data`.
-- The global `--lines` flag replaces `data.tree` with `data.lines`, one line per node with its ref first, prints `data.contents` as lines, and indents the envelope; nothing else changes.
-- A window snapshot of 80 or more nodes carries `data.contents` before its tree (a `--root` drill does not): the commonest ref roles and where each list and bar starts, with loaded item counts.
+- The global `--lines` flag replaces `data.tree` with `data.lines`, one line per node with its ref first, converts `data.contents` to lines, and indents the envelope; all other fields are unchanged.
+- A snapshot of 80 or more nodes, including `--surface` snapshots, carries `data.contents` before its tree (a `--root` drill does not): the commonest ref roles and where each list and bar starts, with loaded item counts.
 - Snapshot `data.window` is present for window-owned surfaces. macOS `menu` and `menubar` snapshots are application-owned and omit it.
 - Every snapshot carries `data.complete`. A snapshot that runs out of observation budget succeeds with
   `"complete": false`, `"truncated": true`, `"nodes_observed"` and the tree it saw; each cut node carries
