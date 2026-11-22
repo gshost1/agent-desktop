@@ -33,13 +33,22 @@ mod imp {
                 let native_menu = crate::tree::native_menu::is_native_menu(el, deadline)?
                     || (request.policy.is_headed()
                         && probe_click_role(el, deadline)?.as_deref() == Some("AXMenuBarItem"));
-                steps.extend(run_chain(
-                    el,
-                    chain_defs::click_chain(native_menu),
-                    None,
-                    request,
-                    deadline,
-                )?);
+                let click = || {
+                    run_chain(
+                        el,
+                        chain_defs::click_chain(native_menu),
+                        None,
+                        request,
+                        deadline,
+                    )
+                };
+                steps.extend(if native_menu {
+                    click()?
+                } else {
+                    crate::actions::select::row_selection::click_settled_by_selection(
+                        el, deadline, click,
+                    )?
+                });
             }
 
             Action::DoubleClick => {
