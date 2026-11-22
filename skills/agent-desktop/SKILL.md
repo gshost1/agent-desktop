@@ -38,7 +38,7 @@ agent-desktop wait --app "Font Book" --text "Saved" --timeout 5000
 ```
 
 - `--app` takes the name `list-apps` prints.
-- A control you can name: `find` it. Snapshot only to learn what is there, and once: a large app (an office suite, a browser) first gets `snapshot --skeleton`, then `snapshot --root <ref>` on one region. A line ending `children_count=N` is a cut branch; `--root` on its ref reads it.
+- A control you can name: `find` it. Snapshot only to learn what is there, and once: a large app (an office suite, a browser) first gets `snapshot --skeleton`, then `snapshot --root <ref>` on one region. `--wait-for` on a skeleton returns the full tree down to a deep match. A line ending `children_count=N` is a cut branch; `--root` on its ref reads it.
 - Roles are tokens such as `button`, `textfield` (single and multi-line text), `checkbox`, `switch`, `combobox`, `menuitem`, `tab`, `cell`.
 - Refs (`@<snapshot_id>:e<N>`) belong to their snapshot; take one from the start of the line that names the control. After the UI changes, snapshot again before you use refs in the changed part.
 - An action's result says what it proved in `data.disposition.delivery`: `delivered_verified` read the effect back; `delivered_unverified` did not read the effect, so when the task depends on it, read it back with `get` or `-w`. Otherwise do not snapshot just to confirm it. Snapshot when the next step needs new refs or text; `-w "role:text"` on the action waits for that text and returns the snapshot in the same call.

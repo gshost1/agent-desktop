@@ -29,6 +29,7 @@ mod locator_stats;
 #[cfg(test)]
 mod locator_stats_tests;
 mod locator_traversal_stats;
+mod match_depth;
 mod match_verdict;
 mod materialize;
 mod observation_budget;

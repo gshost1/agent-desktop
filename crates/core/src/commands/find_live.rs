@@ -324,6 +324,7 @@ mod tests {
     #[test]
     fn all_response_exposes_total_and_truncation() {
         let resolution = LocatorResolution {
+            match_depth: None,
             matches: Vec::new(),
             refmap: None,
             stats: LocatorStats::default(),
