@@ -45,6 +45,72 @@ fn app_with_pid(pid: u32, instance: Option<&str>) -> AppInfo {
     }
 }
 
+#[test]
+fn an_exact_refusal_suggests_only_running_near_matches() {
+    let mut version = app_with_pid(43, Some("generation-b"));
+    version.name = "EDIT-2.10".into();
+    let mut by_id = app_with_pid(44, Some("generation-c"));
+    by_id.name = "editor-backend".into();
+    by_id.bundle_id = Some("edit.bin".into());
+    let adapter = InventoryAdapter {
+        apps: vec![app(Some("generation-a")), by_id, version],
+        windows: vec![],
+    };
+    let Err(AppError::Adapter(error)) =
+        resolve_app(Some("edit-2.9"), &adapter, Deadline::standard().unwrap())
+    else {
+        panic!("a near match must not resolve");
+    };
+    assert_eq!(error.code, ErrorCode::AppNotFound);
+    assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.suggestion.as_deref(),
+        Some(
+            "did you mean 'EDIT-2.10' (pid 43)? retry with --app EDIT-2.10; or 'editor-backend' (pid 44)? retry with --app editor-backend"
+        )
+    );
+    assert_eq!(
+        error.details.unwrap()["candidates"],
+        json!([{"name": "EDIT-2.10", "pid": 43}, {"name": "editor-backend", "pid": 44}])
+    );
+}
+
+#[test]
+fn a_failed_suggestion_lookup_preserves_the_exact_refusal() {
+    let adapter = ScopedInventorySpy::new(vec![]);
+    let Err(AppError::Adapter(error)) =
+        resolve_app(Some("missing"), &adapter, Deadline::standard().unwrap())
+    else {
+        panic!("a missing app must not resolve");
+    };
+    assert_eq!(error.code, ErrorCode::AppNotFound);
+    assert_eq!(
+        error.suggestion.as_deref(),
+        Some("Application name as reported by list-apps")
+    );
+    assert!(error.details.is_none());
+}
+
+#[test]
+fn near_names_match_prefixes_but_not_substrings_or_empty_queries() {
+    for (actual, query) in [
+        ("Drawer Preview", "dRaW"),
+        ("drawer", "Drawer.BIN"),
+        ("drawer", "Drawer-v2.3"),
+        ("drawer2.3", "Drawer.2.7"),
+    ] {
+        assert!(is_near_app_name(actual, query), "{actual:?}, {query:?}");
+    }
+    for (actual, query) in [
+        ("Drawer Preview", "Preview"),
+        ("drawer", ""),
+        ("drawer", "  "),
+        ("drawer", "drawer-2beta"),
+    ] {
+        assert!(!is_near_app_name(actual, query), "{actual:?}, {query:?}");
+    }
+}
+
 struct ScopedInventorySpy {
     apps: Vec<AppInfo>,
     global_calls: AtomicUsize,
