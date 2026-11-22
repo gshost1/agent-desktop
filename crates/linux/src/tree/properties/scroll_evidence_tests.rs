@@ -1,10 +1,71 @@
 use super::{decide_bar, of_children};
+use crate::tree::vocabulary::state_bits::{SHOWING, VISIBLE};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
 
 struct Range(Arc<AtomicUsize>);
+
+#[test]
+fn child_visibility_only_marks_showing_lists_with_mixed_known_children() {
+    let shown = [1 << SHOWING, 0];
+    let hidden = [0, 0];
+    let visible = [1 << VISIBLE, 0];
+    let decide = |bar, role, parent, children: Vec<Option<&[u32]>>| {
+        super::with_child_visibility(bar, role, parent, children.into_iter())
+    };
+    for role in ["list", "listbox", "table", "outline", "grid", "browser"] {
+        for offscreen in [&hidden, &visible] {
+            let children = vec![Some(shown.as_slice()), Some(offscreen.as_slice())];
+            assert_eq!(
+                decide(None, Some(role), Some(&shown), children.clone()),
+                Some(true)
+            );
+            assert_eq!(
+                decide(Some(false), Some(role), Some(&shown), children.clone()),
+                Some(false)
+            );
+            assert_eq!(
+                decide(Some(true), Some(role), Some(&shown), children),
+                Some(true)
+            );
+        }
+    }
+    for role in [
+        None,
+        Some("toolbar"),
+        Some("group"),
+        Some("scrollarea"),
+        Some("option"),
+    ] {
+        assert_eq!(
+            decide(None, role, Some(&shown), vec![Some(&shown), Some(&hidden)]),
+            None
+        );
+    }
+    for parent in [None, Some(hidden.as_slice())] {
+        assert_eq!(
+            decide(
+                None,
+                Some("list"),
+                parent,
+                vec![Some(&shown), Some(&hidden)]
+            ),
+            None
+        );
+    }
+    for children in [
+        vec![],
+        vec![None],
+        vec![Some(shown.as_slice())],
+        vec![Some(hidden.as_slice())],
+        vec![Some(shown.as_slice()), None],
+        vec![Some(hidden.as_slice()), None],
+    ] {
+        assert_eq!(decide(None, Some("list"), Some(&shown), children), None);
+    }
+}
 
 #[zbus::interface(name = "org.a11y.atspi.Value")]
 impl Range {

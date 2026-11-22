@@ -384,3 +384,6 @@ fn the_walk_statistics_reach_the_observation() {
 
 #[path = "projection_retained_tests.rs"]
 mod retained_tests;
+
+#[path = "projection_scroll_tests.rs"]
+mod scroll_tests;
