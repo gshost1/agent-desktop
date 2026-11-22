@@ -1,3 +1,17 @@
+/// The binary under test. `cli_process_daemon` includes this suite to run every case through
+/// daemon mode; as its own crate, `cli_process` runs every case in-process.
+pub(super) fn binary() -> std::process::Command {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_agent-desktop"));
+    if module_path!().starts_with("cli_process_daemon") {
+        command
+            .env("AGENT_DESKTOP_DAEMON", "1")
+            .env("AGENT_DESKTOP_DAEMON_IDLE_MS", "3000");
+    } else {
+        command.env_remove("AGENT_DESKTOP_DAEMON");
+    }
+    command
+}
+
 #[cfg(target_os = "linux")]
 static SESSION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
