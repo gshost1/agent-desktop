@@ -296,3 +296,64 @@ fn a_window_off_the_bus_is_waited_for_until_the_deadline() {
     assert!(started.elapsed() >= std::time::Duration::from_millis(2_300));
     assert_eq!(query.seen.get(), Seen::OffBus(OffBus::Windowed));
 }
+
+#[test]
+fn a_windowless_descendant_is_found_before_the_registry_deadline_expires() {
+    let identity = keys(&["wrapper"]);
+    let before = empty_baseline();
+    let query = query_until(&identity, &before, 700);
+    let mut child = std::process::Command::new("/bin/sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let descendant = app(child.id(), "tray");
+    let mut spawned = running_child(std::process::id());
+    let reads = std::cell::Cell::new(0);
+    let owner = poll_owner(
+        &mut spawned,
+        &query,
+        || {
+            reads.set(reads.get() + 1);
+            Ok((!query.deadline.is_expired()).then(|| vec![descendant.clone()]))
+        },
+        |_, _| Step::Wait,
+        (|| OffBus::Starting, |_| false),
+    );
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert_eq!(owner.unwrap(), Some(descendant));
+    assert!(reads.get() > 1);
+    assert!(query.deadline.remaining() < POLL_LIMIT * 2);
+}
+
+#[test]
+fn a_late_windowed_descendant_beats_an_early_windowless_outside_match() {
+    let identity = keys(&["tool"]);
+    let before = empty_baseline();
+    let query = query_until(&identity, &before, 2_000);
+    let mut child = std::process::Command::new("/bin/sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let descendant = app(child.id(), "application");
+    let outside = app(u32::MAX, "tool");
+    let mut spawned = running_child(std::process::id());
+    let reads = std::cell::Cell::new(0);
+    let owner = poll_owner(
+        &mut spawned,
+        &query,
+        || {
+            reads.set(reads.get() + 1);
+            Ok(Some(vec![outside.clone(), descendant.clone()]))
+        },
+        |_, _| Step::Wait,
+        (
+            || OffBus::Starting,
+            |app| app.pid == descendant.pid && reads.get() >= 3,
+        ),
+    );
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert_eq!(owner.unwrap(), Some(descendant));
+    assert_eq!(reads.get(), 3);
+}

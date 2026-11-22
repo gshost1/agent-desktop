@@ -5,7 +5,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::process::{Child, ExitStatus};
 use std::time::Duration;
 
-use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode, ProcessId};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, ProcessId};
 
 use super::launch_adopt;
 use super::launch_attach::matches;
@@ -33,9 +33,10 @@ fn pick(mut found: Vec<&Running>) -> Option<Step> {
 /// on the registry. Otherwise, with no new descendant on the registry, it is
 /// an application matching the executable identity that was absent before
 /// the spawn. With new descendants, it is one with an accessible window, else
-/// such an identity match started outside the spawned process's tree (by bus
-/// activation or in a service scope, for example), a windowed one first, else
-/// at the deadline any new descendant. After the launcher exits cleanly having forwarded, it is the
+/// a windowed identity match outside the spawned process's tree (by bus
+/// activation or in a service scope, for example). Near the deadline, a
+/// windowless descendant owns it, else a windowless outside identity match.
+/// After the launcher exits cleanly having forwarded, it is the
 /// identity match that was already running. A launcher killed by a signal or
 /// exiting with a failure and no owner is a failed launch, and a clean exit
 /// with no owner is one too at the launch deadline.
@@ -86,8 +87,11 @@ fn step_with_ancestry(
                     .collect();
                 pick(windowed(&descendants, &mut has_window))
                     .or_else(|| pick(windowed(&outside, &mut has_window)))
-                    .or_else(|| pick(outside))
-                    .or_else(|| sample.settled.then(|| pick(descendants)).flatten())
+                    .or_else(|| {
+                        (sample.near_deadline || sample.settled)
+                            .then(|| pick(descendants).or_else(|| pick(outside)))
+                            .flatten()
+                    })
             })
             .unwrap_or(Step::Wait),
         Some(status) if status.code().is_none() => Step::Failed(status),
@@ -242,13 +246,20 @@ pub(super) fn find_owner(
     let mut probe = WindowProbe::new(
         |app: &Running| launch_window_probe::root_children(bus, &roots, app, deadline),
         |owner: &Running| {
-            crate::system::window::window_ops::windows_of_process(bus, owner.pid, deadline)
-                .is_ok_and(|(windows, _)| {
+            let Ok(slice) = deadline
+                .remaining_slice(POLL_LIMIT)
+                .and_then(Deadline::from_duration)
+            else {
+                return false;
+            };
+            crate::system::window::window_ops::windows_of_process(bus, owner.pid, slice).is_ok_and(
+                |(windows, _)| {
                     windows.iter().any(|window| {
                         window.pid.get() == owner.pid
                             && window.process_instance.as_deref() == Some(owner.instance.as_str())
                     })
-                })
+                },
+            )
         },
     );
     let found = poll_owner(
@@ -303,6 +314,7 @@ fn poll_owner(
     loop {
         let child = spawned.state();
         let expired = deadline.is_expired();
+        let near_deadline = deadline.remaining() < interval + POLL_LIMIT;
         let grace_over = query.not_on_bus.is_expired();
         let listed = read().map_err(after_spawn)?;
         let registry_read = listed.is_some();
@@ -314,6 +326,7 @@ fn poll_owner(
             before: &query.before.processes,
             identity: query.identity,
             settled: expired,
+            near_deadline,
         };
         let mut next = step(&sample, &mut has_window);
         if let Some(status) = child

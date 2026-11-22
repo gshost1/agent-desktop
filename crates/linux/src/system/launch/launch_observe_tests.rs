@@ -1,7 +1,6 @@
+use super::*;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
-
-use super::*;
 
 pub(in crate::system::launch) fn app(pid: u32, name: &str) -> Running {
     Running {
@@ -11,7 +10,6 @@ pub(in crate::system::launch) fn app(pid: u32, name: &str) -> Running {
         name: name.to_owned(),
     }
 }
-
 pub(super) fn keys(
     items: &[&str],
 ) -> Option<crate::system::process::executable_identity::ExecutableIdentity> {
@@ -22,11 +20,9 @@ pub(super) fn keys(
         },
     )
 }
-
 fn exited(code: u8) -> ExitStatus {
     ExitStatus::from_raw(i32::from(code) << 8)
 }
-
 fn killed(signal: i32) -> ExitStatus {
     ExitStatus::from_raw(signal)
 }
@@ -45,6 +41,7 @@ fn a_new_process_instance_with_a_reused_pid_is_a_new_launch_owner() {
             before: &before,
             identity: &identity,
             settled: false,
+            near_deadline: false,
         },
         |_| true,
     );
@@ -171,6 +168,7 @@ fn launch_observation_selects_the_owner_or_reports_the_exact_failure() {
                 before: &before,
                 identity: &wanted,
                 settled,
+                near_deadline: false,
             },
             |_| true,
         );
@@ -244,6 +242,7 @@ fn only_new_descendants_can_own_a_running_wrapper_launch() {
                 before: &before,
                 identity: &identity,
                 settled: false,
+                near_deadline: false,
             },
             |pid, ancestor| ancestor == 100 && [200, 202].contains(&pid),
             |_| true,
@@ -252,7 +251,7 @@ fn only_new_descendants_can_own_a_running_wrapper_launch() {
     }
 }
 
-fn descendant_step(apps: &[Running], windowed: &[u32], settled: bool) -> Step {
+fn descendant_step(apps: &[Running], windowed: &[u32], near_deadline: bool) -> Step {
     step_with_ancestry(
         &Sample {
             child_pid: 100,
@@ -260,7 +259,8 @@ fn descendant_step(apps: &[Running], windowed: &[u32], settled: bool) -> Step {
             apps,
             before: &HashSet::new(),
             identity: &keys(&["tool"]),
-            settled,
+            settled: false,
+            near_deadline,
         },
         |pid, ancestor| ancestor == 100 && [200, 202].contains(&pid),
         |app| windowed.contains(&app.pid),
@@ -291,7 +291,7 @@ fn two_windowed_descendants_are_ambiguous() {
 }
 
 #[test]
-fn a_windowless_descendant_waits_until_settled() {
+fn a_windowless_descendant_waits_until_near_deadline() {
     let helper = app(200, "helper");
     assert_eq!(
         descendant_step(std::slice::from_ref(&helper), &[], false),
@@ -321,12 +321,17 @@ fn a_windowed_identity_match_outside_the_tree_beats_a_windowless_descendant_help
 }
 
 #[test]
-fn an_identity_match_outside_the_tree_owns_before_a_windowless_descendant_settles() {
+fn a_windowless_outside_match_waits_and_then_loses_to_a_windowless_descendant() {
     let activated = app(201, "tool");
-    for settled in [false, true] {
+    let descendant = app(200, "helper");
+    for near_deadline in [false, true] {
         assert_eq!(
-            descendant_step(&[app(200, "helper"), activated.clone()], &[], settled),
-            Step::Owner(activated.clone())
+            descendant_step(&[descendant.clone(), activated.clone()], &[], near_deadline),
+            if near_deadline {
+                Step::Owner(descendant.clone())
+            } else {
+                Step::Wait
+            }
         );
     }
 }
@@ -348,7 +353,7 @@ fn a_windowed_identity_match_outside_the_tree_is_chosen_over_a_windowless_one() 
             &[],
             false
         ),
-        Step::Ambiguous(vec![201, 203])
+        Step::Wait
     );
 }
 
@@ -384,6 +389,7 @@ fn window_checks_are_skipped_without_new_descendants_or_after_exit() {
                     before: &HashSet::new(),
                     identity: &identity,
                     settled: false,
+                    near_deadline: false,
                 },
                 |_, _| false,
                 |_| panic!("only new descendants need window checks"),
