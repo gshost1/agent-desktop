@@ -4,6 +4,10 @@ use super::menu_popup::Node;
 use super::{MenuPopup, PopupReader, entries_across, entry, find_popups, inventory};
 use crate::system::menu::menu_fixture::*;
 
+fn roots_in_tree(tree: &Node) -> Option<Vec<crate::tree::AtspiElement>> {
+    super::roots_in_tree(tree, agent_desktop_core::Deadline::after(0).unwrap())
+}
+
 struct Fake {
     window: Node,
     top: Vec<Node>,
@@ -23,6 +27,9 @@ impl Fake {
 }
 
 impl PopupReader for Fake {
+    fn deadline(&self) -> agent_desktop_core::Deadline {
+        agent_desktop_core::Deadline::after(0).unwrap()
+    }
     fn incomplete(&self) -> bool {
         self.incomplete
     }
@@ -197,22 +204,18 @@ fn a_window_that_sees_no_popup_does_not_claim_a_top_level_one() {
 fn an_incomplete_popup_scan_never_proves_that_the_popup_is_closed() {
     use crate::tree::Field;
     let mut tree = frame_with(vec![gtk4_popover(true)]);
-    assert_eq!(super::roots_in_tree(&tree).expect("open scan").len(), 1);
+    assert_eq!(roots_in_tree(&tree).expect("open scan").len(), 1);
     tree.children[0].payload.node.traits.states = Field::Failed("read failed".to_owned());
-    assert!(super::roots_in_tree(&tree).is_none());
+    assert!(roots_in_tree(&tree).is_none());
     tree.children.clear();
     tree.payload.node.children = Field::Failed("children unread".to_owned());
-    assert!(super::roots_in_tree(&tree).is_none());
+    assert!(roots_in_tree(&tree).is_none());
 }
 
 #[test]
 fn an_open_popover_with_only_a_label_is_a_popup_root_below_its_opener() {
     let open = label_popover_opener(true);
-    assert_eq!(super::roots_in_tree(&open).expect("complete read").len(), 1);
+    assert_eq!(roots_in_tree(&open).expect("complete read").len(), 1);
     let closed = label_popover_opener(false);
-    assert!(
-        super::roots_in_tree(&closed)
-            .expect("complete read")
-            .is_empty()
-    );
+    assert!(roots_in_tree(&closed).expect("complete read").is_empty());
 }
