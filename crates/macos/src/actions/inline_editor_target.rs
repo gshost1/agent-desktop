@@ -10,6 +10,17 @@ pub(crate) const COMMIT_KEY: &str = "return";
 
 const EDITABLE_ROLES: [&str; 2] = ["textfield", "combobox"];
 
+pub(crate) fn refuse_commit(action: &agent_desktop_core::Action) -> Result<(), AdapterError> {
+    if matches!(action, agent_desktop_core::Action::SetValueAndCommit(_)) {
+        return Err(AdapterError::new(agent_desktop_core::ErrorCode::ActionNotSupported,
+            "Ending an inline editor's edit safely is not supported")
+            .with_details(serde_json::json!({"kind": "edit_commit_unsupported_target"}))
+            .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
+            .with_suggestion("Drop --commit to write into the inline editor, then end that edit using the app's documented commit mechanism and verify the result."));
+    }
+    Ok(())
+}
+
 pub(crate) fn editor_for(
     field: &AXElement,
     deadline: Deadline,

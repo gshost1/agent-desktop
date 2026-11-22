@@ -2,7 +2,7 @@
 
 use agent_desktop_core::{
     Action, ActionResult, ActionStep, AdapterError, Deadline, DeliverySemantics, ErrorCode,
-    StepMechanism,
+    InteractionPolicy, StepMechanism,
 };
 use serde_json::{Value, json};
 
@@ -16,7 +16,7 @@ pub(crate) enum EndedEdit {
     NotRestored(Value),
     NotAttempted,
     NoSafePeer(Value),
-    Delegated,
+    Delegated(bool),
 }
 
 const REFUSED_SUGGESTION: &str = "The app would not end the edit, which it does when it rejects the value; it may be showing an alert. Run `snapshot --app <App> --surface alert -i`, answer the alert (a Discard or Revert button restores the old value), then write a value the field accepts, in its range and format.";
@@ -26,19 +26,36 @@ const NOT_RESTORED_SUGGESTION: &str = "Editing ended, so the app has had the val
 pub(crate) fn set_value_result(
     action: &Action,
     field: &crate::tree::AXElement,
-    mut steps: Vec<ActionStep>,
+    steps: Vec<ActionStep>,
     deadline: Deadline,
+    policy: InteractionPolicy,
 ) -> Result<ActionResult, AdapterError> {
     use crate::actions::edit_commit::{self, EditCommit};
     if !edit_commit::wrote_value_semantically(&steps) {
         return Ok(ActionResult::from_execution(action, steps));
     }
+    if deadline.is_expired() {
+        return Err(not_attempted_error());
+    }
     let commit = edit_commit::read_edit_commit(field, deadline);
     let ended = if commit == EditCommit::OnEndEditing {
-        imp::end_edit(field, deadline)
+        imp::end_edit(field, deadline, policy)
     } else {
         EndedEdit::NotAttempted
     };
+    finish_commit(action, steps, commit, ended)
+}
+
+pub(crate) fn finish_commit(
+    action: &Action,
+    mut steps: Vec<ActionStep>,
+    commit: crate::actions::edit_commit::EditCommit,
+    ended: EndedEdit,
+) -> Result<ActionResult, AdapterError> {
+    use crate::actions::edit_commit::{self, EditCommit};
+    if commit != EditCommit::OnEndEditing {
+        return Ok(edit_commit::value_write_result(action, steps, || commit));
+    }
     match ended {
         EndedEdit::Committed(evidence) => {
             steps.push(
@@ -51,8 +68,8 @@ pub(crate) fn set_value_result(
         EndedEdit::Refused => Err(refused_commit_error()),
         EndedEdit::NotRestored(evidence) => Err(focus_not_restored_error(evidence)),
         EndedEdit::NoSafePeer(details) => Err(no_safe_peer_error(details)),
-        EndedEdit::Delegated => Err(focus_delegated_error()),
-        EndedEdit::NotAttempted => Ok(edit_commit::value_write_result(action, steps, || commit)),
+        EndedEdit::Delegated(returned) => Err(focus_delegated_error(returned)),
+        EndedEdit::NotAttempted => Err(not_attempted_error()),
     }
 }
 
@@ -90,12 +107,27 @@ pub(crate) fn no_safe_peer_error(mut details: Value) -> AdapterError {
         .with_suggestion("Run `focus` on another field you know does not act, then check the result. The value is written, but the app showed no sign of taking it. Do not press Return.")
 }
 
-pub(crate) fn focus_delegated_error() -> AdapterError {
+pub(crate) fn focus_delegated_error(focus_returned: bool) -> AdapterError {
     AdapterError::new(ErrorCode::ActionFailed,
         "The value was written, but the app delegated focus to a control")
-        .with_details(json!({"kind": "edit_commit_focus_delegated", "application_commit": "not_verified"}))
+        .with_details(json!({"kind": "edit_commit_focus_delegated", "application_commit": "not_verified", "focus_returned": focus_returned}))
         .with_disposition(DeliverySemantics::delivered_unverified())
         .with_suggestion("Read the value back with `get <ref> --property value` and check the app's result before acting again.")
+}
+
+pub(crate) fn not_attempted_error() -> AdapterError {
+    AdapterError::new(ErrorCode::ActionFailed, "The value was written, but ending the edit could not be attempted because the field was not focused or the deadline expired")
+        .with_details(json!({"kind": "edit_commit_not_attempted", "application_commit": "unobserved"}))
+        .with_disposition(DeliverySemantics::delivered_unverified())
+        .with_suggestion("Focus the field's window with `focus-window`, then retry, or end the edit yourself by running `focus` on a field you know does not act. Check the result before saving.")
+}
+
+pub(crate) fn safe_actions(actions: Option<&[String]>) -> bool {
+    actions.is_some_and(|actions| {
+        !actions
+            .iter()
+            .any(|action| matches!(action.as_str(), "AXPress" | "AXConfirm"))
+    })
 }
 
 pub(crate) fn safe_text_area(actions: Option<&[String]>) -> bool {
@@ -103,18 +135,53 @@ pub(crate) fn safe_text_area(actions: Option<&[String]>) -> bool {
 }
 
 pub(crate) fn safe_focused_role(role: Option<&str>, actions: Option<&[String]>) -> bool {
-    match role {
-        Some("AXWindow" | "AXGroup" | "AXScrollArea" | "AXStaticText") => true,
-        Some("AXTextArea") => safe_text_area(actions),
-        _ => false,
-    }
+    safe_actions(actions)
+        && match role {
+            Some("AXWindow" | "AXGroup" | "AXScrollArea" | "AXStaticText") => true,
+            Some("AXTextArea") => safe_text_area(actions),
+            _ => false,
+        }
 }
 
-pub(crate) fn safe_subtree_node(role: Option<&str>, focus_settable: Option<bool>) -> bool {
-    matches!(
-        role,
-        Some("AXGroup" | "AXScrollArea" | "AXStaticText" | "AXImage" | "AXTextArea")
-    ) || focus_settable == Some(false)
+pub(crate) fn safe_subtree_node(
+    role: Option<&str>,
+    focus_settable: Option<bool>,
+    actions: Option<&[String]>,
+) -> bool {
+    safe_actions(actions)
+        && (matches!(
+            role,
+            Some("AXGroup" | "AXScrollArea" | "AXStaticText" | "AXImage" | "AXTextArea")
+        ) || focus_settable == Some(false))
+}
+
+pub(crate) fn permits_focus_target(policy: InteractionPolicy, role: Option<&str>) -> bool {
+    role != Some("AXWindow") || policy.allow_focus_steal
+}
+
+pub(crate) fn stable_values(first: &[Option<String>], second: &[Option<String>]) -> Vec<bool> {
+    first
+        .iter()
+        .zip(second)
+        .map(|(first, second)| first.is_some() && first == second)
+        .collect()
+}
+
+pub(crate) fn mechanism_trial(
+    mechanism: &str,
+    field_focused: Option<bool>,
+    safe_focus: bool,
+    changes: Vec<Value>,
+) -> Trial {
+    if !safe_focus {
+        Trial::Delegated
+    } else if (mechanism == "confirm" && confirm_evidence(field_focused, !changes.is_empty()))
+        || field_focused == Some(false)
+    {
+        Trial::Ended(changes)
+    } else {
+        Trial::Continue
+    }
 }
 
 pub(crate) fn confirm_evidence(field_focused: Option<bool>, changed: bool) -> bool {
@@ -149,7 +216,7 @@ pub(crate) fn ordered_attempts<T>(
                     Some(mechanism),
                 );
             }
-            Trial::Delegated => return (EndedEdit::Delegated, Some(mechanism)),
+            Trial::Delegated => return (EndedEdit::Delegated(false), Some(mechanism)),
             Trial::Refused => return (EndedEdit::Refused, Some(mechanism)),
         }
     }

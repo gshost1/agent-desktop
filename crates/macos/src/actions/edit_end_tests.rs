@@ -16,7 +16,8 @@ fn text_areas_require_exactly_one_observed_show_menu_action() {
 #[test]
 fn only_non_controls_or_safe_text_areas_may_receive_delegated_focus() {
     for role in ["AXWindow", "AXGroup", "AXScrollArea", "AXStaticText"] {
-        assert!(safe_focused_role(Some(role), None));
+        assert!(safe_focused_role(Some(role), Some(&[])));
+        assert!(!safe_focused_role(Some(role), None));
     }
     assert!(safe_focused_role(
         Some("AXTextArea"),
@@ -49,7 +50,8 @@ fn containers_with_focusable_or_unread_controls_are_excluded() {
         "AXImage",
         "AXTextArea",
     ] {
-        assert!(safe_subtree_node(Some(role), Some(true)));
+        assert!(safe_subtree_node(Some(role), Some(true), Some(&[])));
+        assert!(!safe_subtree_node(Some(role), Some(true), None));
     }
     for role in [
         None,
@@ -58,9 +60,9 @@ fn containers_with_focusable_or_unread_controls_are_excluded() {
         Some("AXButton"),
         Some("AXComboBox"),
     ] {
-        assert!(!safe_subtree_node(role, Some(true)));
-        assert!(!safe_subtree_node(role, None));
-        assert!(safe_subtree_node(role, Some(false)));
+        assert!(!safe_subtree_node(role, Some(true), Some(&[])));
+        assert!(!safe_subtree_node(role, None, Some(&[])));
+        assert!(safe_subtree_node(role, Some(false), Some(&[])));
     }
 }
 
@@ -139,7 +141,7 @@ fn delegation_and_app_refusal_stop_before_confirm() {
         });
         assert_eq!(calls, 1);
         assert!(if delegated {
-            matches!(result, EndedEdit::Delegated)
+            matches!(result, EndedEdit::Delegated(false))
         } else {
             matches!(result, EndedEdit::Refused)
         });
@@ -155,7 +157,7 @@ fn both_new_errors_are_delivered_failures_with_recovery_and_commit_status() {
             "unobserved",
         ),
         (
-            focus_delegated_error(),
+            focus_delegated_error(false),
             "edit_commit_focus_delegated",
             "not_verified",
         ),
@@ -171,6 +173,149 @@ fn both_new_errors_are_delivered_failures_with_recovery_and_commit_status() {
             assert_eq!(details["confirm_sent"], true);
             assert!(error.suggestion.unwrap().contains("Do not press Return"));
         }
+    }
+}
+
+#[test]
+fn every_mechanism_refuses_a_control_destination_even_with_commit_evidence() {
+    for mechanism in ["focus_off", "container_focus", "text_area_focus", "confirm"] {
+        for focused in [Some(true), Some(false), None] {
+            assert!(matches!(
+                mechanism_trial(mechanism, focused, false, vec![json!({"changed": true})]),
+                Trial::Delegated
+            ));
+        }
+        assert!(matches!(
+            mechanism_trial(mechanism, Some(false), true, vec![]),
+            Trial::Ended(_)
+        ));
+        assert!(matches!(
+            mechanism_trial(mechanism, Some(true), true, vec![]),
+            Trial::Continue
+        ));
+    }
+    assert!(matches!(
+        mechanism_trial("confirm", Some(true), true, vec![json!({"changed": true})]),
+        Trial::Ended(_)
+    ));
+    assert!(matches!(
+        mechanism_trial(
+            "focus_off",
+            Some(true),
+            true,
+            vec![json!({"changed": true})]
+        ),
+        Trial::Continue
+    ));
+}
+
+#[test]
+fn unobserved_or_actionable_containers_and_subtree_nodes_are_rejected() {
+    for role in [
+        "AXWindow",
+        "AXGroup",
+        "AXScrollArea",
+        "AXStaticText",
+        "AXTextArea",
+    ] {
+        for actions in [
+            None,
+            Some(vec!["AXPress".into()]),
+            Some(vec!["AXConfirm".into()]),
+            Some(vec!["AXShowMenu".into(), "AXPress".into()]),
+        ] {
+            assert!(!safe_focused_role(Some(role), actions.as_deref()));
+            assert!(!safe_subtree_node(
+                Some(role),
+                Some(false),
+                actions.as_deref()
+            ));
+        }
+    }
+}
+
+#[test]
+fn confirmation_ignores_values_that_are_in_flight_or_unread_before_the_action() {
+    let first = vec![
+        Some("stable".into()),
+        Some("clock-1".into()),
+        None,
+        Some("read".into()),
+    ];
+    let second = vec![
+        Some("stable".into()),
+        Some("clock-2".into()),
+        Some("late".into()),
+        None,
+    ];
+    assert_eq!(stable_values(&first, &second), [true, false, false, false]);
+    assert!(stable_values(&[], &[]).is_empty());
+    let before = vec![("slider".into(), "after-write".into())];
+    assert!(changed_values(&before, &[Some("after-write".into())]).is_empty());
+    assert_eq!(
+        changed_values(&before, &[Some("after-confirm".into())])[0]["before"],
+        "after-write"
+    );
+}
+
+#[test]
+fn headless_policy_excludes_window_focus_but_keeps_local_element_focus() {
+    let headless = InteractionPolicy::headless();
+    assert!(!permits_focus_target(headless, Some("AXWindow")));
+    assert!(permits_focus_target(
+        InteractionPolicy::headed(),
+        Some("AXWindow")
+    ));
+    for role in ["AXGroup", "AXScrollArea", "AXTextArea"] {
+        assert!(permits_focus_target(headless, Some(role)));
+    }
+}
+
+#[test]
+fn delegation_reports_whether_refocusing_succeeded() {
+    for returned in [true, false] {
+        assert_eq!(
+            focus_delegated_error(returned).details.unwrap()["focus_returned"],
+            returned
+        );
+    }
+}
+
+#[test]
+fn an_opted_in_unattempted_edit_is_an_error_instead_of_a_looping_hint() {
+    use crate::actions::edit_commit::EditCommit;
+    let action = Action::SetValueAndCommit("new".into());
+    let steps =
+        || vec![ActionStep::succeeded("AXValue").with_mechanism(StepMechanism::SemanticApi)];
+    let error = finish_commit(
+        &action,
+        steps(),
+        EditCommit::OnEndEditing,
+        EndedEdit::NotAttempted,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert_eq!(
+        error.details.as_ref().unwrap()["kind"],
+        "edit_commit_not_attempted"
+    );
+    assert_eq!(error.details.unwrap()["application_commit"], "unobserved");
+    let suggestion = error.suggestion.unwrap();
+    assert!(suggestion.contains("focus-window") && suggestion.contains("does not act"));
+    for commit in [
+        EditCommit::Immediate,
+        EditCommit::TextView,
+        EditCommit::Unread,
+    ] {
+        let result = finish_commit(&action, steps(), commit, EndedEdit::NotAttempted).unwrap();
+        assert!(
+            !result
+                .details
+                .unwrap_or_default()
+                .to_string()
+                .contains("--commit")
+        );
     }
 }
 

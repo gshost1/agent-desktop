@@ -254,6 +254,20 @@ form_suite() {
         "$([ "$report" = "True/delivered_verified/committed" ] && [ "${deltas%/*}" = "0/0/0" ] && \
             [ "$submit_delta" -ge 0 ] && [ "$submit_delta" -le 1 ] && echo 1 || echo 0)" \
         "ok/delivery/commit=$report mechanism=$mechanism action/default/swift-default/swift-submit=$counts_before->$counts deltas=$deltas submit_delta=$submit_delta"
+    local background_before background_after background_front background_order background_result background_value
+    target="$(panel_target "$form" textfield form-plain)"
+    osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1
+    background_before="$(swift "$here/window-state.swift" "$fixture_pid")"
+    background_result="$(act_target "$target" set-value "background-plain" --commit 2>/dev/null)"
+    background_after="$(swift "$here/window-state.swift" "$fixture_pid")"
+    background_value="$(json_field "$("$bin" find --window-id "$form" --name form-plain --first 2>/dev/null)" data.match.value)"
+    background_front="$(json_field "$background_before" frontmost)"
+    background_order="$(json_field "$background_before" window_order)"
+    assert "headless set-value --commit preserves the frontmost app and background fixture window order" \
+        "$([ "$background_front" = Finder ] && [ -n "$background_order" ] && [ "$background_order" != '[]' ] && \
+            [ "$background_before" = "$background_after" ] && [ "$background_value" = background-plain ] && echo 1 || echo 0)" \
+        "before=$background_before after=$background_after value=$background_value result=$(commit_delivery_report "$background_result")"
+    "$bin" focus-window --window-id "$form" >/dev/null 2>&1
     act_target "$(panel_target "$form" button Close)" click >/dev/null 2>&1
 }
 

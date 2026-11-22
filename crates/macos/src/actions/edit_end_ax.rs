@@ -5,7 +5,11 @@ use std::time::Instant;
 
 type Neighbour = (AXElement, String, String);
 
-pub(super) fn end_edit(field: &AXElement, deadline: Deadline) -> EndedEdit {
+pub(super) fn end_edit(
+    field: &AXElement,
+    deadline: Deadline,
+    policy: InteractionPolicy,
+) -> EndedEdit {
     let Ok(instant) = crate::tree::locator_deadline::from_operation(deadline) else {
         return EndedEdit::NotAttempted;
     };
@@ -21,8 +25,9 @@ pub(super) fn end_edit(field: &AXElement, deadline: Deadline) -> EndedEdit {
         .filter(|e| role(e, deadline).as_deref() == Some("AXWindow"));
     let mut candidates = vec![("focus_off", (field.clone(), "AXFocused"))];
     if let Some(window) = window {
-        candidates.push(("container_focus", (window.clone(), "AXMain")));
-        candidates.push(("container_focus", (window.clone(), "AXFocused")));
+        if permits_focus_target(policy, Some("AXWindow")) {
+            candidates.push(("container_focus", (window.clone(), "AXFocused")));
+        }
         let nodes = bounded_nodes(window, instant);
         if let Some(nodes) = nodes {
             for element in &nodes {
@@ -44,6 +49,9 @@ pub(super) fn end_edit(field: &AXElement, deadline: Deadline) -> EndedEdit {
         }
     }
     candidates.push(("confirm", (field.clone(), "AXConfirm")));
+    if deadline.is_expired() {
+        return EndedEdit::NotAttempted;
+    }
     let (ended, _) = ordered_attempts(
         candidates
             .into_iter()
@@ -52,6 +60,16 @@ pub(super) fn end_edit(field: &AXElement, deadline: Deadline) -> EndedEdit {
             if deadline.remaining().is_zero() {
                 return Trial::Continue;
             }
+            let stable = if mechanism == "confirm" {
+                stable_neighbours(&neighbours, deadline)
+            } else {
+                Vec::new()
+            };
+            let evidence_neighbours = if mechanism == "confirm" {
+                &stable
+            } else {
+                &neighbours
+            };
             let succeeded = if mechanism == "confirm" {
                 ax_helpers::try_ax_action_or_err(field, "AXConfirm", deadline)
             } else {
@@ -63,14 +81,13 @@ pub(super) fn end_edit(field: &AXElement, deadline: Deadline) -> EndedEdit {
                 )
             }
             .unwrap_or(false);
+            if !safe_app_focus(field, instant, deadline) {
+                return Trial::Delegated;
+            }
             if !succeeded {
                 return Trial::Continue;
             }
-            if mechanism == "container_focus" && !safe_app_focus(field, instant, deadline) {
-                let _ = ax_helpers::ax_focus_or_err(field, deadline);
-                return Trial::Delegated;
-            }
-            let mut changes = read_changes(&neighbours, deadline);
+            let mut changes = read_changes(evidence_neighbours, deadline);
             if mechanism == "confirm" {
                 for _ in 0..5 {
                     if confirm_evidence(focused(field, deadline), !changes.is_empty())
@@ -83,16 +100,17 @@ pub(super) fn end_edit(field: &AXElement, deadline: Deadline) -> EndedEdit {
                             .remaining()
                             .min(std::time::Duration::from_millis(20)),
                     );
-                    changes = read_changes(&neighbours, deadline);
+                    changes = read_changes(evidence_neighbours, deadline);
                 }
             }
-            let ended = if mechanism == "confirm" {
-                confirm_evidence(focused(field, deadline), !changes.is_empty())
-            } else {
-                focused(field, deadline) == Some(false)
-            };
-            if ended {
-                return Trial::Ended(changes);
+            let trial = mechanism_trial(
+                mechanism,
+                focused(field, deadline),
+                safe_app_focus(field, instant, deadline),
+                changes,
+            );
+            if !matches!(trial, Trial::Continue) {
+                return trial;
             }
             if has_sheet(window, instant) {
                 return Trial::Refused;
@@ -105,13 +123,16 @@ pub(super) fn end_edit(field: &AXElement, deadline: Deadline) -> EndedEdit {
             let returned = ax_helpers::ax_focus_or_err(field, deadline).ok() == Some(true)
                 && focused(field, deadline) == Some(true);
             evidence["focus_returned"] = json!(returned);
-            evidence["dependent_changes"] = json!(read_changes(&neighbours, deadline));
             if returned {
                 EndedEdit::Committed(evidence)
             } else {
                 EndedEdit::NotRestored(evidence)
             }
         }
+        EndedEdit::Delegated(_) => EndedEdit::Delegated(
+            ax_helpers::ax_focus_or_err(field, deadline).ok() == Some(true)
+                && focused(field, deadline) == Some(true),
+        ),
         other => other,
     }
 }
@@ -188,14 +209,38 @@ fn bounded_nodes(root: &AXElement, instant: Instant) -> Option<Vec<AXElement>> {
 }
 
 fn safe_container(element: &AXElement, instant: Instant, deadline: Deadline) -> bool {
-    bounded_nodes(element, instant).is_some_and(|nodes| {
-        nodes.iter().all(|node| {
-            safe_subtree_node(
-                role(node, deadline).as_deref(),
-                ax_helpers::is_attr_settable(node, "AXFocused", deadline).ok(),
-            )
+    safe_actions(action_names(element, deadline).as_deref())
+        && bounded_nodes(element, instant).is_some_and(|nodes| {
+            nodes.iter().all(|node| {
+                safe_subtree_node(
+                    role(node, deadline).as_deref(),
+                    ax_helpers::is_attr_settable(node, "AXFocused", deadline).ok(),
+                    action_names(node, deadline).as_deref(),
+                )
+            })
         })
-    })
+}
+
+fn stable_neighbours(neighbours: &[Neighbour], deadline: Deadline) -> Vec<Neighbour> {
+    let read = || {
+        neighbours
+            .iter()
+            .map(|(element, _, _)| crate::tree::copy_value_typed(element, deadline))
+            .collect::<Vec<_>>()
+    };
+    let first = read();
+    let second = read();
+    neighbours
+        .iter()
+        .zip(stable_values(&first, &second))
+        .zip(second)
+        .filter_map(|(((element, role, _), stable), value)| {
+            if !stable {
+                return None;
+            }
+            value.map(|value| (element.clone(), role.clone(), value))
+        })
+        .collect()
 }
 
 fn read_changes(neighbours: &[Neighbour], deadline: Deadline) -> Vec<Value> {

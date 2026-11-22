@@ -1,6 +1,22 @@
 use agent_desktop_core::actions::capability;
 
 #[test]
+fn inline_commit_is_refused_before_writing_but_plain_writes_are_unchanged() {
+    use agent_desktop_core::{Action, DeliverySemantics, ErrorCode};
+    let error = super::refuse_commit(&Action::SetValueAndCommit("new".into())).unwrap_err();
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.details.unwrap()["kind"],
+        "edit_commit_unsupported_target"
+    );
+    assert!(error.suggestion.unwrap().contains("Drop --commit"));
+    for value in ["", "new"] {
+        super::refuse_commit(&Action::SetValue(value.into())).unwrap();
+    }
+}
+
+#[test]
 fn a_field_under_an_editor_gains_type_and_set_value_once() {
     let mut actions = vec![capability::SET_VALUE.to_string()];
     super::add_editor_capabilities(&mut actions);

@@ -61,6 +61,7 @@ mod imp {
 
             Action::SetValue(val) | Action::SetValueAndCommit(val) => {
                 if let Some(editor) = inline_editor_target::editor_for(el, deadline)? {
+                    inline_editor_target::refuse_commit(action)?;
                     let steps = run_chain(
                         &editor,
                         &chain_defs::SET_VALUE_CHAIN,
@@ -81,7 +82,15 @@ mod imp {
                     action,
                     steps,
                     || crate::actions::edit_commit::read_edit_commit(el, deadline),
-                    |steps| crate::actions::edit_end::set_value_result(action, el, steps, deadline),
+                    |steps| {
+                        crate::actions::edit_end::set_value_result(
+                            action,
+                            el,
+                            steps,
+                            deadline,
+                            request.policy,
+                        )
+                    },
                 );
             }
 
