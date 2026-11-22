@@ -1,6 +1,6 @@
 ### Features
 
-* macOS `set-value --commit` opts in to ending the edit with a focus round trip through another enabled plain text field in the same window and back, so the app commits the value at once; it may trigger the app’s own end-of-editing action (a field action, default button, or SwiftUI submit) and returns `application_commit: "committed"` only when focus came back and the read-back matches exactly or with trailing decimal zeros, with the neighbouring values the commit changed, fails with `details.kind: "edit_focus_not_restored"` when focus did not come back, and fails with `ACTION_FAILED` when the app did not keep the value, or with `details.kind: "edit_commit_refused"` when the app would not let the edit end, as when it opens an alert rejecting the value.
+* macOS `set-value --commit` opts in to ending an edit without focusing another control or pressing a default button; it may fire the edited field's own end-of-edit action, such as a SwiftUI `onSubmit`, verifies focus and value evidence, and reports `edit_commit_no_safe_peer` with recovery guidance when commitment is unobserved or `edit_commit_focus_delegated` if a container passes focus to a control. Linux, Windows, and web refs reject the flag with `ACTION_NOT_SUPPORTED` before writing.
 
 ### Bug Fixes
 

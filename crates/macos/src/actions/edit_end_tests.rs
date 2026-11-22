@@ -1,70 +1,176 @@
-use super::{
-    EndedEdit, changed_values, focus_not_restored_error, nearest_peer, refused_commit_error,
-    reports_value, settle_round_trip, takes_focus_without_acting,
-};
+use super::*;
 
 #[test]
-fn only_an_enabled_plain_text_field_with_every_fact_read_is_a_focus_peer() {
-    assert!(takes_focus_without_acting(
-        Some("AXTextField"),
-        Some(None),
-        Some(true),
-        Some(true)
-    ));
-    for (role, subrole, enabled, settable) in [
-        (
-            Some("AXTextField"),
-            Some(Some("AXSearchField")),
-            Some(true),
-            Some(true),
-        ),
-        (
-            Some("AXTextField"),
-            Some(Some("AXSecureTextField")),
-            Some(true),
-            Some(true),
-        ),
-        (Some("AXTextField"), None, Some(true), Some(true)),
-        (Some("AXTextField"), Some(None), None, Some(true)),
-        (Some("AXTextField"), Some(None), Some(false), Some(true)),
-        (Some("AXTextField"), Some(None), Some(true), None),
-        (Some("AXTextField"), Some(None), Some(true), Some(false)),
-        (Some("AXButton"), Some(None), Some(true), Some(true)),
-        (Some("AXPopUpButton"), Some(None), Some(true), Some(true)),
-        (Some("AXMenuItem"), Some(None), Some(true), Some(true)),
-        (Some("AXTextArea"), Some(None), Some(true), Some(true)),
-        (None, Some(None), Some(true), Some(true)),
+fn text_areas_require_exactly_one_observed_show_menu_action() {
+    assert!(safe_text_area(Some(&["AXShowMenu".into()])));
+    for names in [
+        None,
+        Some(vec![]),
+        Some(vec!["AXConfirm".into()]),
+        Some(vec!["AXShowMenu".into(), "AXPress".into()]),
     ] {
-        assert!(
-            !takes_focus_without_acting(role, subrole, enabled, settable),
-            "{role:?} {subrole:?} {enabled:?} {settable:?}"
-        );
+        assert!(!safe_text_area(names.as_deref()));
     }
 }
 
 #[test]
-fn a_round_trip_commits_only_when_focus_left_and_came_back() {
-    let evidence = || serde_json::json!({ "mechanism": "focus_round_trip" });
-    assert!(matches!(
-        settle_round_trip(Some(true), Some(false), Some(true), evidence()),
-        EndedEdit::Committed(_)
-    ));
-    for back in [Some(false), None] {
-        assert!(matches!(
-            settle_round_trip(Some(true), Some(false), back, evidence()),
-            EndedEdit::NotRestored(_)
-        ));
+fn only_non_controls_or_safe_text_areas_may_receive_delegated_focus() {
+    for role in ["AXWindow", "AXGroup", "AXScrollArea", "AXStaticText"] {
+        assert!(safe_focused_role(Some(role), None));
     }
-    for (peer, kept) in [
-        (Some(false), Some(false)),
-        (None, Some(false)),
-        (Some(true), Some(true)),
-        (Some(true), None),
+    assert!(safe_focused_role(
+        Some("AXTextArea"),
+        Some(&["AXShowMenu".into()])
+    ));
+    for role in [
+        None,
+        Some("AXTextField"),
+        Some("AXTable"),
+        Some("AXButton"),
+        Some("AXComboBox"),
+        Some("AXMenu"),
+        Some("AXImage"),
     ] {
-        assert!(matches!(
-            settle_round_trip(peer, kept, Some(true), evidence()),
-            EndedEdit::Refused
-        ));
+        assert!(!safe_focused_role(role, None));
+    }
+    assert!(!safe_focused_role(Some("AXTextArea"), None));
+    assert!(!safe_focused_role(
+        Some("AXTextArea"),
+        Some(&["AXPress".into()])
+    ));
+}
+
+#[test]
+fn containers_with_focusable_or_unread_controls_are_excluded() {
+    for role in [
+        "AXGroup",
+        "AXScrollArea",
+        "AXStaticText",
+        "AXImage",
+        "AXTextArea",
+    ] {
+        assert!(safe_subtree_node(Some(role), Some(true)));
+    }
+    for role in [
+        None,
+        Some("AXTextField"),
+        Some("AXTable"),
+        Some("AXButton"),
+        Some("AXComboBox"),
+    ] {
+        assert!(!safe_subtree_node(role, Some(true)));
+        assert!(!safe_subtree_node(role, None));
+        assert!(safe_subtree_node(role, Some(false)));
+    }
+}
+
+#[test]
+fn confirm_requires_focus_loss_or_a_dependent_change_not_just_success() {
+    assert!(confirm_evidence(Some(false), false));
+    assert!(confirm_evidence(Some(true), true));
+    assert!(confirm_evidence(None, true));
+    assert!(!confirm_evidence(Some(true), false));
+    assert!(!confirm_evidence(None, false));
+}
+
+#[test]
+fn ordered_mechanisms_stop_at_the_first_ended_edit() {
+    let candidates = [
+        ("focus_off", 0),
+        ("container_focus", 1),
+        ("text_area_focus", 2),
+        ("confirm", 3),
+    ];
+    for end in 0..4 {
+        let mut seen = Vec::new();
+        let (result, mechanism) = ordered_attempts(candidates, |_, value| {
+            seen.push(value);
+            if value == end {
+                Trial::Ended(vec![])
+            } else {
+                Trial::Continue
+            }
+        });
+        assert!(matches!(result, EndedEdit::Committed(_)));
+        assert_eq!(mechanism, Some(candidates[end].0));
+        assert_eq!(seen, (0..=end).collect::<Vec<_>>());
+    }
+    let (result, _) = ordered_attempts(candidates, |_, _| Trial::Continue);
+    let EndedEdit::NoSafePeer(details) = result else {
+        panic!("expected refusal");
+    };
+    assert_eq!(
+        details["attempted"],
+        json!(["focus_off", "container_focus", "text_area_focus", "confirm"])
+    );
+    assert_eq!(details["confirm_sent"], true);
+}
+
+#[test]
+fn empty_or_failed_attempts_do_not_claim_confirm_was_sent() {
+    for candidates in [
+        vec![],
+        vec![
+            ("focus_off", 0),
+            ("container_focus", 1),
+            ("container_focus", 2),
+        ],
+    ] {
+        let (result, _) = ordered_attempts(candidates, |_, _| Trial::Continue);
+        let EndedEdit::NoSafePeer(details) = result else {
+            panic!("expected refusal");
+        };
+        assert_eq!(details["confirm_sent"], false);
+        assert!(details["attempted"].as_array().unwrap().len() <= 2);
+    }
+}
+
+#[test]
+fn delegation_and_app_refusal_stop_before_confirm() {
+    for delegated in [true, false] {
+        let mut calls = 0;
+        let (result, _) = ordered_attempts([("container_focus", ()), ("confirm", ())], |_, _| {
+            calls += 1;
+            if delegated {
+                Trial::Delegated
+            } else {
+                Trial::Refused
+            }
+        });
+        assert_eq!(calls, 1);
+        assert!(if delegated {
+            matches!(result, EndedEdit::Delegated)
+        } else {
+            matches!(result, EndedEdit::Refused)
+        });
+    }
+}
+
+#[test]
+fn both_new_errors_are_delivered_failures_with_recovery_and_commit_status() {
+    for (error, kind, commit) in [
+        (
+            no_safe_peer_error(json!({"attempted": ["confirm"], "confirm_sent": true})),
+            "edit_commit_no_safe_peer",
+            "unobserved",
+        ),
+        (
+            focus_delegated_error(),
+            "edit_commit_focus_delegated",
+            "not_verified",
+        ),
+    ] {
+        assert_eq!(error.code, ErrorCode::ActionFailed);
+        assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+        let details = error.details.unwrap();
+        assert_eq!(details["kind"], kind);
+        assert_eq!(details["application_commit"], commit);
+        assert!(error.suggestion.is_some());
+        if kind == "edit_commit_no_safe_peer" {
+            assert_eq!(details["attempted"], json!(["confirm"]));
+            assert_eq!(details["confirm_sent"], true);
+            assert!(error.suggestion.unwrap().contains("Do not press Return"));
+        }
     }
 }
 
@@ -97,41 +203,6 @@ fn a_secure_or_unread_neighbour_is_never_read_as_evidence() {
     ));
     assert!(!reports_value("AXSecureTextField", Some(None)));
     assert!(!reports_value("AXTextField", None));
-}
-
-fn tree(node: &u32) -> Vec<u32> {
-    match node {
-        1 => vec![10, 11],
-        10 => vec![100, 101],
-        11 => vec![110],
-        2 => vec![1, 20],
-        20 => vec![200],
-        _ => vec![],
-    }
-}
-
-#[test]
-fn the_nearest_peer_comes_from_the_closest_ancestor_and_never_from_the_field() {
-    let peers = [101, 110, 200];
-    let found = nearest_peer(
-        &[10, 1, 2],
-        |node| *node == 100,
-        tree,
-        |node| peers.contains(node),
-    );
-    assert_eq!(found, Some(101));
-
-    let found = nearest_peer(&[10, 1, 2], |node| *node == 100, tree, |node| *node == 200);
-    assert_eq!(found, Some(200));
-
-    let found = nearest_peer(&[10, 1, 2], |node| *node == 100, tree, |node| *node == 100);
-    assert_eq!(found, None, "the written field is never its own peer");
-}
-
-#[test]
-fn a_field_nested_under_the_written_field_is_not_searched() {
-    let found = nearest_peer(&[1], |node| *node == 10, tree, |node| *node == 101);
-    assert_eq!(found, None);
 }
 
 #[test]

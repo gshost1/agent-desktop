@@ -130,8 +130,30 @@ panel_suite headless ""
 check_fixture_contention || { finish; exit 1; }
 panel_suite headed "--headed"
 
+form_commit_counts() {
+    printf '%s/%s/%s/%s' "$(main_window_value form-action-count "")" \
+        "$(main_window_value form-default-count "")" "$(main_window_value swift-default-count "")" \
+        "$(main_window_value swift-submit-count "")"
+}
+
+form_commit_deltas() {
+    local a b c d w x y z
+    [[ "$1" =~ ^[0-9]+/[0-9]+/[0-9]+/[0-9]+$ && "$2" =~ ^[0-9]+/[0-9]+/[0-9]+/[0-9]+$ ]] || return 1
+    IFS=/ read -r a b c d <<< "$1"
+    IFS=/ read -r w x y z <<< "$2"
+    printf '%s/%s/%s/%s' "$((w - a))" "$((x - b))" "$((y - c))" "$((z - d))"
+}
+
+commit_delivery_report() {
+    local section=data
+    [ "$(json_field "$1" ok)" = "True" ] || section=error
+    printf '%s/%s/%s/%s' "$(json_field "$1" ok)" "$(json_field "$1" "$section.disposition.delivery")" \
+        "$(json_field "$1" "$section.details.kind")$(json_field "$1" "$section.details.application_commit" | sed 's/^unobserved$//')" \
+        "$(json_field "$1" "$section.details.confirm_sent")"
+}
+
 form_suite() {
-    local open_form form target written report action_count search_count plain_status counts action_before
+    local open_form form target written report action_count search_count plain_status counts action_before counts_before deltas mechanism submit_delta
     note "[form] set-value never presses a default button or submits, and reports what it cannot see"
     "$bin" focus-window --app "$app" >/dev/null 2>&1
     main_window="$(fixture_window_id "AgentDesk Fixture")"
@@ -193,30 +215,45 @@ form_suite() {
         "ok/delivery/commit=$report committed=$plain_status"
     "$bin" focus-window --window-id "$form" >/dev/null 2>&1
     target="$(panel_target "$form" textfield form-plain)"
+    counts_before="$(form_commit_counts)"
     written="$(act_target "$target" set-value "committed-plain" --commit 2>/dev/null)"
     report="$(written_report "$written")"
     plain_status="$(main_window_value form-plain-status committed-plain)"
-    assert "set-value --commit ends the edit and commits the plain field" \
-        "$([ "$report" = "True/delivered_verified/committed" ] && [ "$plain_status" = "committed-plain" ] && echo 1 || echo 0)" \
-        "ok/delivery/commit=$report committed=$plain_status"
+    counts="$(form_commit_counts)"
+    deltas="$(form_commit_deltas "$counts_before" "$counts")"
+    mechanism="$(json_field "$written" data.details.commit_evidence.mechanism)"
+    assert "set-value --commit commits the plain field without another action or default button" \
+        "$([ "$report" = "True/delivered_verified/committed" ] && [ "$plain_status" = "committed-plain" ] && \
+            [ "$deltas" = "0/0/0/0" ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report committed=$plain_status mechanism=$mechanism action/default/swift-default/swift-submit=$counts_before->$counts deltas=$deltas"
 
     target="$(panel_target "$form" textfield form-action)"
-    action_before="$(main_window_value form-action-count 2)"
+    counts_before="$(form_commit_counts)"
+    action_before="${counts_before%%/*}"
     written="$(act_target "$target" set-value "committed-action" --commit 2>/dev/null)"
-    report="$(written_report "$written")"
-    action_count="$(main_window_value form-action-count 3)"
-    assert "set-value --commit on a field with an action ends the edit and runs its action" \
-        "$([ "$report" = "True/delivered_verified/committed" ] && [ "$action_before" = "2" ] && [ "$action_count" = "3" ] && echo 1 || echo 0)" \
-        "ok/delivery/commit=$report action=$action_before->$action_count"
+    report="$(commit_delivery_report "$written")"
+    action_count="$(main_window_value form-action-count "$((action_before + 1))")"
+    counts="$(form_commit_counts)"
+    deltas="$(form_commit_deltas "$counts_before" "$counts")"
+    assert "set-value --commit on a field with an action runs only its own action" \
+        "$([ "$report" = "False/delivered_unverified/edit_commit_no_safe_peer/True" ] && \
+            [ "$deltas" = "1/0/0/0" ] && \
+            [ "$action_count" = "$((action_before + 1))" ] && echo 1 || echo 0)" \
+        "ok/delivery/kind/confirm_sent=$report action/default/swift-default/swift-submit=$counts_before->$counts deltas=$deltas"
 
     "$bin" focus-window --window-id "$main_window" >/dev/null 2>&1
     require_target target textfield swift-submit
+    counts_before="$(form_commit_counts)"
     written="$(act_target "$target" set-value "committed-swift" --commit 2>/dev/null)"
     report="$(written_report "$written")"
-    counts="$(main_window_value form-default-count 0)/$(main_window_value swift-default-count 0)/$(main_window_value swift-submit-count 0)"
-    assert "set-value --commit ends the SwiftUI edit without pressing a default button or running submit" \
-        "$([ "$report" = "True/delivered_verified/committed" ] && [ "$counts" = "0/0/0" ] && echo 1 || echo 0)" \
-        "ok/delivery/commit=$report default/swift-default/swift-submit=$counts"
+    counts="$(form_commit_counts)"
+    deltas="$(form_commit_deltas "$counts_before" "$counts")"
+    submit_delta="${deltas##*/}"
+    mechanism="$(json_field "$written" data.details.commit_evidence.mechanism)"
+    assert "set-value --commit on SwiftUI runs at most its own submit and no default button" \
+        "$([ "$report" = "True/delivered_verified/committed" ] && [ "${deltas%/*}" = "0/0/0" ] && \
+            [ "$submit_delta" -ge 0 ] && [ "$submit_delta" -le 1 ] && echo 1 || echo 0)" \
+        "ok/delivery/commit=$report mechanism=$mechanism action/default/swift-default/swift-submit=$counts_before->$counts deltas=$deltas submit_delta=$submit_delta"
     act_target "$(panel_target "$form" button Close)" click >/dev/null 2>&1
 }
 

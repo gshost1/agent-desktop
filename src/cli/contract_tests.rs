@@ -352,7 +352,14 @@ fn set_value_commit_is_a_command_flag_with_end_editing_warning() {
     let mut root = Cli::command();
     let command = root.find_subcommand_mut("set-value").unwrap();
     let help = command.render_long_help().to_string();
-    for phrase in ["--commit", "macOS only", "default button", "SwiftUI submit"] {
+    for phrase in [
+        "--commit",
+        "macOS only",
+        "without focusing another control",
+        "edited field's own end-of-edit action",
+        "SwiftUI onSubmit",
+        "never presses a default button",
+    ] {
         assert!(help.contains(phrase), "{phrase}: {help}");
     }
     assert!(

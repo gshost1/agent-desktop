@@ -103,7 +103,7 @@ pub(crate) struct SetValueArgs {
     pub stdin: bool,
     #[arg(
         long,
-        help = "End editing with a focus round trip (macOS only). May trigger the app\'s own end-of-editing action: an action the field sends when editing ends, a default button, or a SwiftUI submit"
+        help = "End the edit without focusing another control (macOS only). May fire the edited field's own end-of-edit action, such as a SwiftUI onSubmit; never presses a default button"
     )]
     #[serde(default)]
     pub commit: bool,
