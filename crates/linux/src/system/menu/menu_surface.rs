@@ -19,6 +19,7 @@ pub(crate) struct MenuPopup {
 /// What a scan for open popups reads: the walk of one window and the
 /// top-level children of its application root.
 pub(in crate::system) trait PopupReader {
+    fn deadline(&self) -> Deadline;
     fn window(&mut self) -> Result<Option<Node>, AdapterError>;
     fn top_levels(&mut self) -> Result<Vec<Node>, AdapterError>;
     fn incomplete(&self) -> bool;
@@ -47,10 +48,15 @@ pub(in crate::system) fn find_popups(
 ) -> Result<Vec<MenuPopup>, AdapterError> {
     let mut popups = Vec::new();
     let mut unread = false;
+    let deadline = reader.deadline();
     if let Some(frame) = reader.window()? {
         unread |= !popup_read_complete(&frame);
-        if menu_popup::top_level(&frame).is_none() {
-            popups.extend(menu_popup::in_window(&frame).into_iter().map(popup_of));
+        if menu_popup::top_level(&frame, deadline).is_none() {
+            popups.extend(
+                menu_popup::in_window(&frame, deadline)
+                    .into_iter()
+                    .map(popup_of),
+            );
         }
     }
     let windows = reader.top_levels()?;
@@ -58,7 +64,7 @@ pub(in crate::system) fn find_popups(
     popups.extend(
         windows
             .iter()
-            .filter_map(menu_popup::top_level)
+            .filter_map(|window| menu_popup::top_level(window, deadline))
             .map(popup_of),
     );
     if unread && popups.is_empty() {
@@ -168,16 +174,16 @@ pub(crate) fn roots_below(
 ) -> Option<Vec<AtspiElement>> {
     use crate::tree::menu::observe_menu::{rooted, scan_walk_pruned};
     let tree = scan_walk_pruned(bus, &rooted(opener), 500, deadline).ok()?;
-    roots_in_tree(&tree)
+    roots_in_tree(&tree, deadline)
 }
 
-fn roots_in_tree(tree: &Node) -> Option<Vec<AtspiElement>> {
+fn roots_in_tree(tree: &Node, deadline: Deadline) -> Option<Vec<AtspiElement>> {
     use crate::tree::menu::observe_menu::is_cut_short_beyond_pruning;
     if is_cut_short_beyond_pruning(tree) || !popup_read_complete(tree) {
         return None;
     }
     Some(
-        menu_popup::popup_roots(tree)
+        menu_popup::popup_roots(tree, deadline)
             .into_iter()
             .map(|root| root.payload.node.element.address())
             .collect(),
