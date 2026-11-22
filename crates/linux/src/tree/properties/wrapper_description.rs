@@ -5,6 +5,7 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use super::liveness::Liveness;
 use super::node_read::{call, deserialize, get_one, string_value};
+use super::read_purpose::ReadPurpose;
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
 use crate::tree::vocabulary::role_numbers::{FILLER, PANEL};
 use crate::tree::vocabulary::roles::role_of;
@@ -118,7 +119,14 @@ fn select_description(name: &Field<String>, description: Field<String>) -> Field
     }
 }
 
-pub(in crate::tree) fn parent_summary(node: &RawNode) -> Field<String> {
+pub(in crate::tree) fn parent_summary(
+    node: &RawNode,
+    purpose: ReadPurpose,
+) -> Option<Field<String>> {
+    purpose.children().then(|| summarize_parent(node))
+}
+
+fn summarize_parent(node: &RawNode) -> Field<String> {
     if node.traits.role.is_failed()
         || node.properties.name.is_failed()
         || node.properties.description.is_failed()

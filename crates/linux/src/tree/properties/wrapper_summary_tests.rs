@@ -1,4 +1,4 @@
-use super::{parent_summary, read_wrapper_description};
+use super::{read_wrapper_description, summarize_parent as parent_summary};
 use crate::tree::element::ancestry::Ancestry;
 use crate::tree::live::test_support::{closed_connection, read_of};
 use crate::tree::vocabulary::role_numbers::{FILLER, PANEL, PUSH_BUTTON};

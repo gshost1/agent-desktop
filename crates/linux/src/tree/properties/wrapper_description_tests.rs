@@ -1,9 +1,10 @@
 use super::{needs_description, read_wrapper_description, select_description};
 use crate::tree::live::test_support::read_of;
+use crate::tree::properties::node_read::read_node_for;
 use crate::tree::properties::read_purpose::ReadPurpose;
 use crate::tree::vocabulary::label_read::read_label_if_needed;
 use crate::tree::vocabulary::role_numbers::{PANEL, PUSH_BUTTON, TOGGLE_BUTTON};
-use crate::tree::walk::walker_expand::{LevelReader, read_observed};
+use crate::tree::walk::walker_expand::{LevelReader, read_observed, read_observed_with_parent};
 use crate::tree::{AtspiElement, Field, LabelOutcome, resolve_vocabulary};
 use agent_desktop_core::Deadline;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -317,4 +318,50 @@ fn walked_child_reuses_parent_without_parent_calls() {
             .unwrap();
         assert_eq!(parent.get().await.role_reads.load(Ordering::Relaxed), 1);
     });
+}
+
+#[test]
+fn identity_purposes_without_children_use_live_wrapper_fallback() {
+    let (client, _server) = connection(Some(wrapper()), false);
+    let element = AtspiElement::new(":1.1", "/parent", 1);
+    for purpose in [
+        ReadPurpose::Snapshot,
+        ReadPurpose::TextSearch,
+        ReadPurpose::TypeTarget,
+        ReadPurpose::Sampling,
+        ReadPurpose::Count,
+        ReadPurpose::Identity,
+        ReadPurpose::Resolve,
+        ReadPurpose::Element,
+    ] {
+        assert!(purpose.identity());
+        let (node, _) = zbus::block_on(read_node_for(&client, &element, purpose)).unwrap();
+        assert!(!node.properties.name.is_failed(), "{purpose:?}");
+        assert!(!node.properties.description.is_failed(), "{purpose:?}");
+        let summary = super::parent_summary(&node, purpose);
+        if purpose.children() {
+            assert_eq!(
+                summary,
+                Some(Field::Present("Paint smooth strokes".into())),
+                "{purpose:?}"
+            );
+        } else {
+            assert!(node.children.is_failed(), "{purpose:?}");
+            assert_eq!(summary, None, "{purpose:?}");
+        }
+        let child = AtspiElement::new(":1.1", "/child", 1);
+        let (read, _) = zbus::block_on(read_observed_with_parent(
+            &client,
+            &child,
+            4096,
+            purpose,
+            summary.as_ref(),
+        ))
+        .unwrap();
+        assert_eq!(
+            read.label,
+            LabelOutcome::WrapperDescription("Paint smooth strokes".into()),
+            "{purpose:?}"
+        );
+    }
 }

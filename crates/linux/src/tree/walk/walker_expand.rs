@@ -189,12 +189,13 @@ impl<'a> LevelReader<'a> {
                 .into_iter()
                 .map(|(read, gone)| {
                     let children = child_elements(&read.node, pids);
-                    let summary = parent_summary(&read.node);
-                    for child in &children {
-                        parents.insert(
-                            (child.bus_name().to_owned(), child.path().to_owned()),
-                            summary.clone(),
-                        );
+                    if let Some(summary) = parent_summary(&read.node, purpose) {
+                        for child in &children {
+                            parents.insert(
+                                (child.bus_name().to_owned(), child.path().to_owned()),
+                                summary.clone(),
+                            );
+                        }
                     }
                     Expansion {
                         children_unread: read.node.children.is_failed(),
