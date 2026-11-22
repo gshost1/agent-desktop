@@ -284,14 +284,14 @@ fn notification_addressing(
     )?)
 }
 
-pub(crate) fn requires_accessibility(permission: PermissionNeed) -> bool {
+fn requires_accessibility(permission: PermissionNeed) -> bool {
     matches!(
         permission,
         PermissionNeed::Accessibility | PermissionNeed::AccessibilityAndScreenRecording
     )
 }
 
-pub(crate) fn requires_screen_recording(permission: PermissionNeed) -> bool {
+fn requires_screen_recording(permission: PermissionNeed) -> bool {
     matches!(
         permission,
         PermissionNeed::ScreenRecording | PermissionNeed::AccessibilityAndScreenRecording
