@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode, KeyCombo, Modifier};
 
 use super::key_names::{keysym_for_key, modifier_keysym};
@@ -5,6 +7,8 @@ use super::keymap::Keymap;
 use super::keysym_step::KeysymStep;
 use crate::input::plan::Plan;
 use crate::input::step::Step;
+
+const MODIFIER_SETTLE: Duration = Duration::from_millis(10);
 
 pub(crate) fn distinct_modifiers(modifiers: &[Modifier]) -> Vec<&Modifier> {
     let mut seen: Vec<&Modifier> = Vec::new();
@@ -81,6 +85,9 @@ pub(crate) fn plan_combo(map: &Keymap, combo: &KeyCombo) -> Result<Plan, Adapter
         held.push((Modifier::Shift, code));
     }
     let mut steps = key_down_steps(&held);
+    if !held.is_empty() {
+        steps.push(Step::Pause(MODIFIER_SETTLE));
+    }
     steps.push(Step::Key {
         code: lookup.code,
         down: true,

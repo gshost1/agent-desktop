@@ -8,6 +8,7 @@ pub(super) mod stopped_live_tests;
 pub(super) mod stopped_windows;
 pub(super) mod window_client;
 pub(crate) mod window_filter;
+mod window_focus;
 pub(crate) mod window_id;
 pub(super) mod window_ids;
 pub(super) mod window_listing;
@@ -18,4 +19,7 @@ pub(super) mod window_ops;
 pub(super) mod window_order;
 pub(crate) mod window_position;
 pub(super) mod window_report;
+mod window_reread;
 pub(super) mod window_resolve;
+#[cfg(test)]
+mod window_test_support;

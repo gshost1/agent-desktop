@@ -29,12 +29,16 @@ fn pick(mut found: Vec<&Running>) -> Option<Step> {
 }
 
 /// The next move of a launch. The owner is the child while it runs and shows
-/// on the registry, else an application matching the executable identity that was
-/// absent before the spawn, else (when the launcher exited cleanly after
+/// on the registry, else a new descendant, else an application matching the
+/// executable identity that was absent before the spawn, else (when the launcher exited cleanly after
 /// forwarding) the one that was already running. A launcher killed by a signal
 /// or exiting with a failure and no owner is a failed launch, and a clean
 /// exit with no owner is one too at the launch deadline.
 pub(crate) fn step(sample: &Sample<'_>) -> Step {
+    step_with_ancestry(sample, off_bus::descends_from)
+}
+
+fn step_with_ancestry(sample: &Sample<'_>, descends: impl Fn(u32, u32) -> bool) -> Step {
     let candidates: Vec<&Running> = sample
         .apps
         .iter()
@@ -49,6 +53,16 @@ pub(crate) fn step(sample: &Sample<'_>) -> Step {
     match sample.child {
         None => own
             .map(|app| Step::Owner(app.clone()))
+            .or_else(|| {
+                pick(
+                    sample
+                        .apps
+                        .iter()
+                        .filter(|app| !sample.before.contains(&app.identity()))
+                        .filter(|app| descends(app.pid, sample.child_pid))
+                        .collect(),
+                )
+            })
             .or_else(|| pick(new))
             .unwrap_or(Step::Wait),
         Some(status) if status.code().is_none() => Step::Failed(status),
@@ -185,8 +199,8 @@ fn after_spawn(error: AdapterError) -> AdapterError {
 
 /// Polls the registry until the launch has an owner, the launcher failed, or
 /// the deadline. A child that is alive with no registry entry at the deadline,
-/// or after the query's not-on-bus grace once it shows it will not join, is
-/// reported as not on the bus: the pid is the spawned process's, and what was
+/// or after the query's not-on-bus grace when its environment disables the
+/// bridge, is reported as not on the bus: the pid is the spawned process's, and what was
 /// seen of it is in the query, read once more if the search never looked. A
 /// launcher that exited cleanly with no resident gaining a window may hand
 /// the launch to the one running instance ([`launch_adopt::adopt`]), which
@@ -229,8 +243,8 @@ pub(super) fn find_owner(
 /// registry could not be read in time, which is not evidence that the
 /// spawned process is off the bus. Only a read that began after the
 /// not-on-bus grace expired can settle the search on it, and only when
-/// `observe` shows the process will not join. `handoff` looks for a resident
-/// that received the launch from a launcher that exited cleanly, and is told
+/// `observe` shows the environment disables the bridge. `handoff` looks for a
+/// resident that received the launch from a launcher that exited cleanly, and is told
 /// when the query's `settle` has passed since that exit.
 fn poll_owner(
     spawned: &mut Spawned,
@@ -242,7 +256,6 @@ fn poll_owner(
     let deadline = query.deadline;
     let mut interval = POLL_INTERVAL;
     let mut exited_at = None;
-    let mut windowed_at = None;
     loop {
         let child = spawned.state();
         let expired = deadline.is_expired();
@@ -265,7 +278,7 @@ fn poll_owner(
         {
             let exited: &mut std::time::Instant =
                 exited_at.get_or_insert_with(std::time::Instant::now);
-            next = handoff(&apps, expired || exited.elapsed() >= query.settles.handoff);
+            next = handoff(&apps, expired || exited.elapsed() >= query.handoff_settle);
             if next == Step::Wait && expired {
                 next = Step::Failed(status);
             }
@@ -273,18 +286,7 @@ fn poll_owner(
         let not_on_bus = next == Step::Wait && child.is_none() && registry_read && grace_over && {
             let seen = observe();
             query.seen.set(Seen::OffBus(seen));
-            match seen {
-                OffBus::Windowed => {
-                    let since: &mut std::time::Instant =
-                        windowed_at.get_or_insert_with(std::time::Instant::now);
-                    since.elapsed() >= query.settles.window_off_bus
-                }
-                OffBus::BridgeOff => true,
-                OffBus::Starting => {
-                    windowed_at = None;
-                    false
-                }
-            }
+            seen == OffBus::BridgeOff
         };
         match next {
             Step::Owner(owner) => return Ok(Some(owner)),

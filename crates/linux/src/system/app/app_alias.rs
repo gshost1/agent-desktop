@@ -92,6 +92,16 @@ impl AliasIndex {
         (names, ids)
     }
 
+    pub(super) fn matching_names_and_ids(
+        &self,
+        actual: &ExecutableIdentity,
+    ) -> impl Iterator<Item = &str> {
+        let path = crate::system::launch::launch_search::Search::from_env().path_dirs;
+        self.matching_entries(actual, &path)
+            .into_iter()
+            .flat_map(|entry| [entry.name.as_str(), entry.id.as_str()])
+    }
+
     /// Whether every other entry with this entry's `Name` runs the same
     /// command, so the name can stand for the process. The entry itself is
     /// not resolved against itself.

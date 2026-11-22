@@ -57,4 +57,9 @@ impl WalkLimits {
             root_in_web: false,
         }
     }
+
+    /// The most children one node may contribute before the walk truncates it.
+    pub(crate) fn max_children_per_node(&self) -> usize {
+        self.children.max_per_node
+    }
 }

@@ -12,7 +12,7 @@ use crate::system::window::stopped_windows::of_stopped_apps;
 use crate::system::window::window_ids::WindowIds;
 use crate::system::window::window_listing::collect;
 use crate::system::window::window_listing::read_frames;
-use crate::system::x11::map::{ClientMatch, match_client};
+use crate::system::x11::map::{ClientMatch, match_client, match_frames};
 use crate::system::x11::{self, DisplayReader, FrameFacts, X11Evidence, X11Source, X11State};
 use crate::system::{
     SharedBus,
@@ -133,11 +133,11 @@ fn remember_ids(listed: &[ListedWindow], state: &X11State, ids: Option<&WindowId
     let (Some(ids), X11State::Ready { clients, .. }) = (ids, state) else {
         return;
     };
-    for window in listed {
-        let (ClientMatch::One(client), Some(instance)) = (
-            match_client(&window.frame, clients),
-            window.info.process_instance.as_deref(),
-        ) else {
+    let frames: Vec<_> = listed.iter().map(|window| window.frame.clone()).collect();
+    for (window, found) in listed.iter().zip(match_frames(&frames, clients)) {
+        let (ClientMatch::One(client), Some(instance)) =
+            (found, window.info.process_instance.as_deref())
+        else {
             continue;
         };
         ids.remember(client, instance, &window.info.id);

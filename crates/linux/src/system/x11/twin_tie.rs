@@ -1,4 +1,4 @@
-use super::map::{ClientMatch, match_client};
+use super::map::{ClientMatch, has_title_match, match_client};
 use super::{FrameFacts, X11Client};
 
 /// The frames of one process that share one title, as the toolkit reports
@@ -53,7 +53,7 @@ pub(crate) fn client_among_twins(
     twins: impl FnOnce() -> Option<Twins>,
 ) -> ClientMatch {
     match match_client(frame, clients) {
-        ClientMatch::Several(ids) => twins()
+        ClientMatch::Several(ids) if has_title_match(frame, clients) => twins()
             .and_then(|twins| broken_tie(&ids, active_client, &twins))
             .map_or(ClientMatch::Several(ids), ClientMatch::One),
         other => other,

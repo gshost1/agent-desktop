@@ -55,7 +55,7 @@ impl CaptureWorld for BusWorld<'_> {
 
     fn nested(&self, windows: &[ListedWindow], deadline: Deadline) -> NestedScan {
         let mut inventory = Inventory::new(self.0, deadline);
-        scan_windows(windows, |window| inventory.read(window))
+        scan_windows(windows, deadline, |window| inventory.read(window))
     }
 }
 

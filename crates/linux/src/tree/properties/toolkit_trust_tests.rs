@@ -10,6 +10,21 @@ fn toolkit_policy_matrix() {
             [true, true, true, false, false, true, false],
         ),
         (
+            Some("GAIL"),
+            Some("2.24.33"),
+            [false, false, true, false, false, false, false],
+        ),
+        (
+            Some("GAIL"),
+            None,
+            [false, false, false, false, false, false, false],
+        ),
+        (
+            Some("GAIL"),
+            Some("3.0"),
+            [false, false, false, false, false, false, false],
+        ),
+        (
             Some("GTK"),
             Some("4.14.5"),
             [false, false, true, false, false, false, false],
@@ -67,4 +82,16 @@ fn toolkit_policy_matrix() {
         ];
         assert_eq!(actual, expected, "toolkit {name:?} {version:?}");
     }
+}
+
+#[test]
+fn gail_two_requires_a_positive_landing_without_gtk_selection_assumptions() {
+    let toolkit = ToolkitId {
+        name: Some("gail".to_owned()),
+        version: Some("2.24.33".to_owned()),
+    };
+    assert!(trusts_descent(&toolkit));
+    assert_eq!(kind(&toolkit), ToolkitKind::Gtk2);
+    assert!(!stops_above_target(&toolkit));
+    assert!(!selection_indices_are_accessible(&toolkit));
 }

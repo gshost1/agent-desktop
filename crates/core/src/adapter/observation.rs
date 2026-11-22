@@ -148,31 +148,7 @@ pub trait ObservationOps: Send + Sync {
         query: crate::AppInventoryQuery<'_>,
         deadline: Deadline,
     ) -> Result<crate::AppInventory, AdapterError> {
-        let name = match query {
-            crate::AppInventoryQuery::All => return self.list_apps_inventory(deadline),
-            crate::AppInventoryQuery::Exact { name, bundle_id } => {
-                return Ok(crate::AppInventory {
-                    apps: self.list_apps_scoped(name, bundle_id, deadline)?,
-                    skipped: Vec::new(),
-                });
-            }
-            crate::AppInventoryQuery::NameOrAlias(name) => name,
-        };
-        let mut inventory = self.list_apps_inventory(deadline)?;
-        inventory
-            .apps
-            .retain(|app| query.matches_display_name(&app.name));
-        let aliased = match self.list_apps_scoped(name, None, deadline) {
-            Ok(apps) => apps,
-            Err(err) if err.code == ErrorCode::PlatformNotSupported => Vec::new(),
-            Err(err) => return Err(err),
-        };
-        for app in aliased {
-            if !inventory.apps.iter().any(|kept| kept.pid == app.pid) {
-                inventory.apps.push(app);
-            }
-        }
-        Ok(inventory)
+        query.collect(self, deadline)
     }
 
     fn get_tree(

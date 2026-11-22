@@ -1,11 +1,48 @@
-use agent_desktop_core::{ErrorCode, WindowInfo, WindowState};
+use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo, WindowState};
 
-use super::{finish_process_listing, require_answered};
+use super::{finish_listing, finish_process_listing, require_answered, settle_pass};
 use crate::system::registry::app_outcome::AppOutcome;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::registry::registry_frames::RootRead;
 use crate::system::signal::signal_inventory::pass_over_with_menu;
+use crate::system::window::window_reread::reread_with;
+use crate::system::window::window_test_support::{
+    pass as inventory_pass, state as inventory_state,
+};
 use crate::system::x11::{FrameExtents, FrameFacts, X11Client, X11State};
+use crate::tree::Extents;
+
+#[test]
+fn geometry_focus_does_not_also_run_dialog_reconciliation() {
+    let bounds = Extents {
+        x: 12,
+        y: 34,
+        width: 500,
+        height: 200,
+    };
+    let mut dialog = window("Question", true, true);
+    dialog.frame.extents = Some(bounds);
+    let mut native = client(2, "native name");
+    native.bounds = Some(bounds);
+    let state = X11State::Ready {
+        active: Some(2),
+        clients: vec![native],
+    };
+    let mut pass = pass_over_with_menu(
+        vec![dialog],
+        Vec::new(),
+        Vec::new(),
+        &state,
+        |_| Ok(false),
+        |_| true,
+    );
+    assert_eq!(pass.focused, Some(0));
+    assert_eq!(
+        finish_listing(&mut pass, &state, None, |_| panic!("must not reconcile")),
+        Some(0)
+    );
+    assert!(pass.windows[0].info.state.is_focused);
+}
 
 fn window(title: &str, active: bool, modal: bool) -> ListedWindow {
     ListedWindow {
@@ -43,6 +80,72 @@ fn client(id: u32, title: &str) -> X11Client {
         extents: None::<FrameExtents>,
         bounds: None,
         hidden: false,
+    }
+}
+
+#[test]
+fn finish_reconciles_unmatched_dialog_and_marks_its_public_focus_flag() {
+    let mut pass = crate::system::window::window_test_support::pass();
+    let state = crate::system::window::window_test_support::state(7);
+    assert_eq!(finish_listing(&mut pass, &state, None, |_| true), Some(0));
+    assert!(pass.windows[0].info.state.is_focused);
+}
+
+#[test]
+fn finish_preserves_an_existing_focus_decision() {
+    let mut pass = crate::system::window::window_test_support::pass();
+    pass.focused = Some(0);
+    assert_eq!(
+        finish_listing(&mut pass, &X11State::Unavailable, None, |_| panic!(
+            "must not reconcile"
+        )),
+        Some(0)
+    );
+    assert!(pass.windows[0].info.state.is_focused);
+}
+
+#[test]
+fn initial_and_reread_passes_refuse_stopped_targets_in_both_scoped_paths() {
+    for named in [false, true] {
+        let stopped = || Some(AdapterError::app_unresponsive("app"));
+        let initial = settle_pass(inventory_pass(), stopped(), named)
+            .err()
+            .unwrap();
+        assert_eq!(initial.code, ErrorCode::AppUnresponsive);
+        let error = reread_with(
+            (
+                settle_pass(inventory_pass(), None, named).unwrap(),
+                inventory_state(7),
+            ),
+            Deadline::standard().unwrap(),
+            &[7],
+            |_| {
+                settle_pass(inventory_pass(), stopped(), named)
+                    .map(|pass| (pass, inventory_state(7)))
+            },
+            |_| {},
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code, initial.code);
+        assert_eq!(error.message, initial.message);
+    }
+}
+
+#[test]
+fn settlement_preserves_each_scoped_paths_unanswered_frame_contract() {
+    for named in [false, true] {
+        let mut unread = inventory_pass();
+        unread.windows.clear();
+        unread.outcomes = outcome(RootRead::TimedOut);
+        let settled = settle_pass(unread, None, named);
+        if named {
+            assert_eq!(settled.err().unwrap().code, ErrorCode::Timeout);
+        } else {
+            let (windows, read) = finish_process_listing(settled.unwrap());
+            assert!(windows.is_empty());
+            assert_eq!(read, RootRead::TimedOut);
+        }
     }
 }
 
@@ -162,7 +265,7 @@ fn process_inventory_keeps_windows_and_reports_any_unanswered_frames() {
                 |_| Ok(false),
                 |_| false,
             );
-            let (windows, read) = finish_process_listing(pass, &X11State::Unavailable, None);
+            let (windows, read) = finish_process_listing(pass);
             assert_eq!(windows.len(), expected_count);
             assert_eq!(
                 read == RootRead::TimedOut,

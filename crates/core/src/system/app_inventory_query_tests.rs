@@ -18,6 +18,9 @@ impl ObservationOps for FilteredInventory {
                 assert!(bundle_id.is_none() || bundle_id == Some("org.example.editor"));
             }
             AppInventoryQuery::All => panic!("unrelated applications must not be enriched"),
+            AppInventoryQuery::NearMatches(_) => {
+                panic!("near-match discovery must not run for an exact match")
+            }
         }
         Ok(AppInventory {
             apps: vec![app()],

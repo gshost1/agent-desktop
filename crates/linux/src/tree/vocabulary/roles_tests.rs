@@ -130,6 +130,7 @@ fn a_failed_role_read_is_unknown_not_the_unknown_role() {
 
 fn traits_of(number: u32, role_name: &str) -> NodeTraits {
     NodeTraits {
+        text_content_requested: false,
         role: Field::Present(number),
         role_name: Field::Present(role_name.to_owned()),
         states: states(&[SENSITIVE]),

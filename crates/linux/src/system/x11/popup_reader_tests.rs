@@ -176,6 +176,20 @@ fn popup_live_reads_the_private_override_redirect_window() {
     connection.map_window(window).expect("map popup");
     connection.sync().expect("popup mapped before read");
     assert_eq!(
+        super::read_popup_windows(&display, pid)
+            .unwrap()
+            .iter()
+            .filter(|popup| popup.id == window)
+            .count(),
+        1
+    );
+    assert!(
+        super::read_popup_windows(&display, pid.wrapping_add(1))
+            .unwrap()
+            .iter()
+            .all(|popup| popup.id != window)
+    );
+    assert_eq!(
         super::DisplayReader::popup_window(
             pid,
             (280, 190),
@@ -190,5 +204,29 @@ fn popup_live_reads_the_private_override_redirect_window() {
                 height: 190
             },
         })
+    );
+    connection.unmap_window(window).unwrap().check().unwrap();
+    connection.sync().unwrap();
+    assert!(
+        super::read_popup_windows(&display, pid)
+            .unwrap()
+            .iter()
+            .all(|popup| popup.id != window)
+    );
+    connection
+        .change_window_attributes(
+            window,
+            &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().override_redirect(0),
+        )
+        .unwrap()
+        .check()
+        .unwrap();
+    connection.map_window(window).unwrap().check().unwrap();
+    connection.sync().unwrap();
+    assert!(
+        super::read_popup_windows(&display, pid)
+            .unwrap()
+            .iter()
+            .all(|popup| popup.id != window)
     );
 }

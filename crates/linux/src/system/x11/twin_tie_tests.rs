@@ -147,3 +147,26 @@ fn tied_clients_agree_on_hidden_or_say_nothing() {
     );
     assert_eq!(tied_agree(&mixed, &[], |client| client.hidden), None);
 }
+
+#[test]
+fn geometry_twins_are_not_disambiguated_as_title_twins() {
+    let rect = crate::tree::Extents {
+        x: 100,
+        y: 100,
+        width: 320,
+        height: 200,
+    };
+    let clients: Vec<_> = [client(7, "Native", false), client(8, "Other", false)]
+        .into_iter()
+        .map(|mut client| {
+            client.bounds = Some(rect);
+            client
+        })
+        .collect();
+    let mut accessible = frame("Question");
+    accessible.extents = Some(rect);
+    assert_eq!(
+        client_among_twins(&accessible, &clients, Some(7), || panic!("not title twins")),
+        ClientMatch::Several(vec![7, 8])
+    );
+}

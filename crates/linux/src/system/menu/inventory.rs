@@ -1,5 +1,5 @@
 use crate::system::menu::nested_surface::Nested;
-use agent_desktop_core::AdapterError;
+use agent_desktop_core::{AdapterError, Deadline};
 
 use super::{menu_popup, surface_scan::NestedScan};
 use crate::system::registry::listed_window::ListedWindow;
@@ -12,6 +12,7 @@ use crate::tree::surfaces::nested_dialog::{Node, find, is_incomplete};
 /// short, makes the scan incomplete: a dialog may sit where it did not look.
 pub(crate) fn scan_windows(
     windows: &[ListedWindow],
+    deadline: Deadline,
     mut read: impl FnMut(&AtspiElement) -> Result<Node, AdapterError>,
 ) -> NestedScan {
     let mut scan = NestedScan::complete_and_empty();
@@ -36,14 +37,14 @@ pub(crate) fn scan_windows(
                 None => whole = false,
             }
         }
-        if menu_popup::top_level(&root).is_some() {
+        if menu_popup::top_level(&root, deadline).is_some() {
             scan.menus.push(Nested {
                 window: index,
                 id: window.info.id.clone(),
                 title: None,
             });
         } else {
-            for menu in menu_popup::in_window(&root) {
+            for menu in menu_popup::in_window(&root, deadline) {
                 let element = &menu.root.payload.node.element;
                 match window_id::encode(element.bus_name(), element.path()) {
                     Some(id) => scan.menus.push(Nested {

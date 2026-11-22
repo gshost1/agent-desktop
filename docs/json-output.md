@@ -354,6 +354,15 @@ owner was reported. A late report never replaces an earlier one:
 `keyboard_target`, `modal_key` and `menu_shortcut` sit side by side in
 `details`.
 
+On Linux, `type` through a compound document ref reports the actual focused
+paragraph or heading in `data.details.text_input_target`, for example
+`{"role":"paragraph","path":"/org/a11y/atspi/accessible/42"}`. `role` is the
+canonical accessibility role; `path` is the target's AT-SPI object path, not a
+ref or a persistent identity. Once the descendant is selected, failures also
+carry this object in `error.details.text_input_target`, including failures after
+delivery. The target alone does not prove delivery or success; inspect the
+disposition and read back the effect before retrying.
+
 ## Version 2.4 migration
 
 Stateful ref actions (`set-value`, `type`, `clear`, `check`, `uncheck`, `toggle`, `expand`, and `collapse`) now reject observed postcondition contradictions after one delivery attempt. Readback failures preserve the adapter's error code and carry `details.kind: "post_action_verification"`. Missing evidence alone remains a successful `delivered_unverified` result with `details.verification_scope: "unavailable"`; neither that result nor verified element state proves application-level persistence.
