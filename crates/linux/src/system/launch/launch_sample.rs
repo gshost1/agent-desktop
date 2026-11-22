@@ -11,4 +11,5 @@ pub(crate) struct Sample<'a> {
     pub(crate) identity:
         &'a Option<crate::system::process::executable_identity::ExecutableIdentity>,
     pub(crate) settled: bool,
+    pub(crate) near_deadline: bool,
 }
