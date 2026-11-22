@@ -115,17 +115,25 @@ agent-desktop launch gnome-text-editor --arg=/tmp/note.txt
   `launch` answers `ACTION_NOT_SUPPORTED` with that kind: `not_delivered` when it
   spawned nothing, `delivered_unverified` after the spawn.
 - A spawned process that is still running but not on the accessibility bus is
-  waited for until `--timeout`. The wait ends after 5 s (never past `--timeout`)
-  only when the process, or one it started, maps a window on X11 or Xwayland
-  that stays off the bus for 2 s more, or its environment sets `NO_AT_BRIDGE=1`
-  or `GTK_A11Y=none` (Qt reads neither, but is treated the same). `launch` then
-  answers `ok: true` with no `window`, the spawned pid, and a `data.suggestion`
-  that names the case: `The process shows a window but did not join the
-  accessibility bus`, `The process runs with its accessibility bridge turned
-  off`, or, at the timeout, `The application is still starting` with the command
-  to run next, `agent-desktop wait --event window-opened --app '<app>' --timeout 30000`.
-  The pid may be a wrapper of the application. Only a registry read that
-  answered counts toward the 5 s.
+  waited for until `--timeout`, even if it has already mapped an X11 or Xwayland
+  window. A new registry app descended from the spawned process can be the
+  owner even when its executable differs from the launcher's. Only an environment
+  setting that disables the bridge, `NO_AT_BRIDGE=1` or `GTK_A11Y=none`, permits
+  an early return after 5 s (never past `--timeout`; Qt reads neither, but is
+  treated the same). That early return also requires a registry read that
+  began after the grace and answered. With no owner, `launch` answers `ok: true`
+  with no `window`, the spawned pid, and a `data.suggestion` that names the case:
+  `The process shows a window but did not join the accessibility bus`,
+  `The process runs with its accessibility bridge turned off`, or
+  `The application is still starting`. The pid may be a wrapper of the application.
+  For a mapped window with a readable native title, the suggestion gives a state
+  wait that works even if registration finishes before you run it:
+  `agent-desktop wait --app '<app>' --window '<title>' --timeout 30000`.
+  Without a readable title, it gives
+  `agent-desktop wait --event window-opened --app '<app>' --timeout 30000`.
+  The mapped-window suggestion also names toolkit settings that may be needed,
+  such as `QT_ACCESSIBILITY=1` for Qt. A bridge-disabled suggestion tells you to
+  remove the disabling setting before relaunching.
 - A launcher that exits with no owner is `ACTION_FAILED`,
   `details.kind: exited` (`crashed` after a signal), `delivered_unverified`. An
   owner that exits before its window appears is `ACTION_FAILED`,

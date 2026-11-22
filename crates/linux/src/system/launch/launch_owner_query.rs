@@ -4,17 +4,14 @@ use std::time::Duration;
 use agent_desktop_core::Deadline;
 
 use self::seen::Seen;
-use self::settles::Settles;
 use super::baseline::Baseline;
 use crate::system::process::executable_identity::ExecutableIdentity;
 
 /// How long a launch that was not asked to bring its window forward waits
-/// for a running spawned process to join the accessibility bus before it may
-/// report the process without a window. After it, the launch ends early only
-/// on evidence that the process will not join (see `off_bus::OffBus`); a
-/// process that may still be starting is waited for until the deadline. A
-/// launch asked to bring the window forward waits until its deadline, as its
-/// window wait does.
+/// before it may report a running spawned process whose environment disables
+/// its accessibility bridge. Other off-bus processes are waited for until the
+/// deadline. A launch asked to bring the window forward waits until its
+/// deadline, as its window wait does.
 const NOT_ON_BUS_GRACE: Duration = Duration::from_millis(5_000);
 
 /// How long after a launcher exited cleanly the launch waits for a resident
@@ -23,25 +20,18 @@ const NOT_ON_BUS_GRACE: Duration = Duration::from_millis(5_000);
 /// is still reported as the launch's.
 const HANDOFF_SETTLE: Duration = super::NEW_WINDOW_WAIT;
 
-/// How long a spawned process's window must stay off the bus before the
-/// process is taken never to join. A GTK 4 window registers up to about a
-/// second after it maps (under a second when measured), later on a loaded host.
-const WINDOW_OFF_BUS_SETTLE: Duration = Duration::from_millis(2_000);
-
 #[path = "launch_off_bus.rs"]
 pub(super) mod off_bus;
 #[path = "launch_seen.rs"]
 pub(super) mod seen;
-#[path = "launch_settles.rs"]
-pub(super) mod settles;
 
 /// What an owner search looks for and how long it may look. `not_on_bus`
 /// ends the search early when the spawned process is still running, a
 /// registry read that began after it expired answered, nothing on the
-/// registry is the launch's, and the process will not join. `seen` keeps what
-/// the search learned beyond the registry. `desktop_id` names the desktop
-/// entry the launch started, and `settles` how long evidence must hold before
-/// the search acts on it.
+/// registry is the launch's, and the environment disables the bridge. `seen`
+/// keeps what the search learned beyond the registry. `desktop_id` names the desktop
+/// entry the launch started, and `handoff_settle` bounds the exited launcher's
+/// wait for a resident to gain a window.
 pub(super) struct OwnerQuery<'a> {
     pub(super) identity: &'a Option<ExecutableIdentity>,
     pub(super) before: &'a Baseline,
@@ -49,7 +39,7 @@ pub(super) struct OwnerQuery<'a> {
     pub(super) not_on_bus: Deadline,
     pub(super) seen: Cell<Seen>,
     pub(super) desktop_id: Option<&'a str>,
-    pub(super) settles: Settles,
+    pub(super) handoff_settle: Duration,
 }
 
 impl<'a> OwnerQuery<'a> {
@@ -82,10 +72,7 @@ impl<'a> OwnerQuery<'a> {
             not_on_bus: grace.map_or(deadline, |grace| deadline.capped(grace)),
             seen: Cell::new(Seen::Nothing),
             desktop_id: None,
-            settles: Settles {
-                handoff: HANDOFF_SETTLE,
-                window_off_bus: WINDOW_OFF_BUS_SETTLE,
-            },
+            handoff_settle: HANDOFF_SETTLE,
         }
     }
 
@@ -94,14 +81,11 @@ impl<'a> OwnerQuery<'a> {
         Self { desktop_id, ..self }
     }
 
-    /// The query with every settle `settle` instead of the standard ones.
+    /// The query with handoff settle `settle` instead of the standard one.
     #[cfg(test)]
     pub(super) fn settling_after(self, settle: Duration) -> Self {
         Self {
-            settles: Settles {
-                handoff: settle,
-                window_off_bus: settle,
-            },
+            handoff_settle: settle,
             ..self
         }
     }
