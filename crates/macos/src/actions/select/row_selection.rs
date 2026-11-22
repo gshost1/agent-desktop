@@ -61,13 +61,12 @@ mod imp {
 
     use crate::actions::chain::{ChainContext, ChainDef, execute_observed_chain};
     use crate::actions::select::container_select::{
-        SELECTED, is_selection_row, read_selection_role,
+        SELECTED, SELECTED_ROWS, is_selection_row, read_selection_role,
     };
     use crate::tree::AXElement;
 
     const MAX_SELECTED_ROWS: usize = 256;
     const MAX_CONTAINER_DEPTH: usize = 3;
-    const SELECTED_ROWS: &str = "AXSelectedRows";
 
     pub(crate) fn click_settled_by_selection(
         element: &AXElement,
@@ -97,7 +96,7 @@ mod imp {
         })
     }
 
-    fn member_selected(element: &AXElement, deadline: Deadline) -> Option<bool> {
+    pub(crate) fn member_selected(element: &AXElement, deadline: Deadline) -> Option<bool> {
         if let Some(own) =
             crate::tree::properties::attributes::copy_bool_attr_result(element, SELECTED, deadline)
                 .ok()
@@ -137,7 +136,7 @@ mod imp {
     }
 }
 
-pub(crate) use imp::click_settled_by_selection;
+pub(crate) use imp::{click_settled_by_selection, member_selected};
 
 #[cfg(test)]
 #[path = "row_selection_tests.rs"]

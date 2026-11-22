@@ -221,7 +221,7 @@ fn role_allows_context_menu_action(role: &str) -> bool {
 }
 
 fn role_supports_collection_select(role: &str) -> bool {
-    matches!(role, "list" | "table" | "outline")
+    matches!(role, "list" | "table" | "outline" | "row" | "treeitem")
 }
 
 fn has_scroll_mechanism(has: &impl Fn(&str) -> bool, has_scrollbars: bool) -> bool {
@@ -234,6 +234,13 @@ fn has_scroll_mechanism(has: &impl Fn(&str) -> bool, has_scrollbars: bool) -> bo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_rows_offer_select_even_without_a_click_action() {
+        assert!(super::role_supports_collection_select("row"));
+        assert!(super::role_supports_collection_select("treeitem"));
+        assert!(!super::role_supports_collection_select("cell"));
+    }
+
     #[test]
     fn an_editable_text_field_offers_select_but_a_combo_box_keeps_its_option_select() {
         assert!(super::role_selects_text_by_content("textfield"));

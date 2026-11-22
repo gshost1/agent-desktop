@@ -1,4 +1,5 @@
 pub(crate) const SELECTED: &str = "AXSelected";
+pub(crate) const SELECTED_ROWS: &str = "AXSelectedRows";
 
 /// `AXOutline` and `AXTable` make `AXSelectedRows` writable; `AXList` and
 /// `AXBrowser` columns make `AXSelectedChildren` writable; a spreadsheet
@@ -6,7 +7,7 @@ pub(crate) const SELECTED: &str = "AXSelected";
 /// other two. Most elements publish several of these names and accept
 /// writes to only one, so each write is verified by readback.
 pub(crate) const SELECTION_ATTRIBUTES: [&str; 3] =
-    ["AXSelectedRows", "AXSelectedChildren", "AXSelectedCells"];
+    [SELECTED_ROWS, "AXSelectedChildren", "AXSelectedCells"];
 
 /// Kept narrow so the settability probe never runs on generic containers.
 pub(crate) fn role_activates_by_selection(role: &str) -> bool {
@@ -45,21 +46,10 @@ mod imp {
     use crate::actions::chain::chain_delivery::DeliveryOutcome;
     use crate::tree::AXElement;
 
-    use super::{SELECTED, SELECTION_ATTRIBUTES};
+    use super::{SELECTED, SELECTED_ROWS, SELECTION_ATTRIBUTES};
 
     const MAX_ANCESTOR_WALK: usize = 6;
     const MAX_SELECTION_READBACK: usize = 64;
-
-    /// Reading the subrole would add nothing: no subrole moves an element into
-    /// or out of this set, because the ones that redefine a native role keep a
-    /// row a row and a cell a cell.
-    pub(crate) fn element_activates_by_selection(element: &AXElement, deadline: Deadline) -> bool {
-        read_selection_role(element, deadline).is_some_and(|role| {
-            super::role_activates_by_selection(crate::tree::roles::ax_role_and_subrole_to_str(
-                &role, None,
-            ))
-        })
-    }
 
     pub(crate) fn read_selection_role(element: &AXElement, deadline: Deadline) -> Option<String> {
         crate::tree::properties::attributes::copy_string_attr_result(element, "AXRole", deadline)
@@ -77,10 +67,29 @@ mod imp {
         if select_member_directly(element, deadline)? {
             return Ok(DeliveryOutcome::DeliveredVerified);
         }
-        if element_activates_by_selection(element, deadline) {
-            return select_in_ancestor_containers(element, deadline);
+        if let Some(role) = read_selection_role(element, deadline) {
+            if super::is_selection_row(&role) {
+                return select_in_ancestor_containers(element, &[SELECTED_ROWS], deadline);
+            }
+            if super::role_activates_by_selection(crate::tree::roles::ax_role_to_str(&role)) {
+                return select_in_ancestor_containers(element, &SELECTION_ATTRIBUTES, deadline);
+            }
         }
         climb_to_selectable_ancestor(element, deadline)
+    }
+
+    pub(crate) fn write_row_selection(
+        row: &AXElement,
+        deadline: Deadline,
+    ) -> Result<DeliveryOutcome, AdapterError> {
+        let outcome = select_in_ancestor_containers(row, &[SELECTED_ROWS], deadline)?;
+        if outcome != DeliveryOutcome::NotDelivered {
+            return Ok(outcome);
+        }
+        Ok(DeliveryOutcome::from_delivery(
+            select_member_directly(row, deadline)?,
+            true,
+        ))
     }
 
     /// The target is selectable, so the search is for the container that owns
@@ -89,6 +98,7 @@ mod imp {
     /// selecting the row in between would answer a question nobody asked.
     fn select_in_ancestor_containers(
         element: &AXElement,
+        attributes: &[&str],
         deadline: Deadline,
     ) -> Result<DeliveryOutcome, AdapterError> {
         let mut container = element.clone();
@@ -96,7 +106,7 @@ mod imp {
             let Some(parent) = parent_of(&container, deadline) else {
                 return Ok(DeliveryOutcome::NotDelivered);
             };
-            if select_member_in_container(&parent, element, deadline)? {
+            if select_member_in_container(&parent, element, attributes, deadline)? {
                 return Ok(DeliveryOutcome::DeliveredVerified);
             }
             container = parent;
@@ -115,7 +125,7 @@ mod imp {
             let Some(parent) = parent_of(&member, deadline) else {
                 return Ok(DeliveryOutcome::NotDelivered);
             };
-            if select_member_in_container(&parent, &member, deadline)? {
+            if select_member_in_container(&parent, &member, &SELECTION_ATTRIBUTES, deadline)? {
                 return Ok(DeliveryOutcome::DeliveredVerified);
             }
             member = parent;
@@ -145,9 +155,10 @@ mod imp {
     fn select_member_in_container(
         container: &AXElement,
         member: &AXElement,
+        attributes: &[&str],
         deadline: Deadline,
     ) -> Result<bool, AdapterError> {
-        for attribute in SELECTION_ATTRIBUTES {
+        for &attribute in attributes {
             if !crate::actions::ax_helpers::is_attr_settable(container, attribute, deadline)? {
                 continue;
             }
@@ -254,7 +265,7 @@ mod imp {
     }
 }
 
-pub(crate) use imp::{read_selection_role, select_within_container};
+pub(crate) use imp::{read_selection_role, select_within_container, write_row_selection};
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,6 @@
-//! `select` on a table or outline row writes the selection directly: the
-//! row's own `AXSelected`, or the owning container's `AXSelectedRows`, each
-//! verified by reading it back. The value names the row by any of its labels,
-//! so a stale or mistyped ref cannot select a different row.
+//! `select` on a table or outline row replaces the container's selection when
+//! it exposes a writable `AXSelectedRows`, or selects the row directly.
+//! The value must match one of the row's labels before any write.
 
 use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode};
 
@@ -20,9 +19,9 @@ fn labels_match(labels: &[String], value: &str) -> bool {
             .any(|label| label.trim().eq_ignore_ascii_case(wanted))
 }
 
-fn verified_from_outcome(outcome: DeliveryOutcome) -> Result<bool, AdapterError> {
+fn verified_from_outcome(outcome: DeliveryOutcome) -> Result<DeliveryOutcome, AdapterError> {
     match outcome {
-        DeliveryOutcome::DeliveredVerified | DeliveryOutcome::SatisfiedNoDelivery => Ok(true),
+        DeliveryOutcome::DeliveredVerified | DeliveryOutcome::SatisfiedNoDelivery => Ok(outcome),
         DeliveryOutcome::NotDelivered => Err(AdapterError::new(
             ErrorCode::ActionNotSupported,
             "Neither the row nor its table or outline accepts a selection write",
@@ -40,6 +39,16 @@ fn verified_from_outcome(outcome: DeliveryOutcome) -> Result<bool, AdapterError>
     }
 }
 
+fn select_row_with(
+    selected: Option<bool>,
+    write: impl FnOnce() -> Result<DeliveryOutcome, AdapterError>,
+) -> Result<DeliveryOutcome, AdapterError> {
+    if selected == Some(true) {
+        return Ok(DeliveryOutcome::SatisfiedNoDelivery);
+    }
+    verified_from_outcome(write()?)
+}
+
 fn no_matching_label(value: &str) -> AdapterError {
     AdapterError::new(
         ErrorCode::ElementNotFound,
@@ -54,19 +63,23 @@ mod imp {
 
     use crate::tree::AXElement;
 
-    use super::{LABEL_ATTRIBUTES, MAX_LABEL_CHILDREN, MAX_LABEL_DEPTH, MAX_LABEL_NODES};
+    use super::{
+        DeliveryOutcome, LABEL_ATTRIBUTES, MAX_LABEL_CHILDREN, MAX_LABEL_DEPTH, MAX_LABEL_NODES,
+    };
+    use crate::actions::select::container_select::write_row_selection;
+    use crate::actions::select::row_selection::member_selected;
 
     pub(crate) fn select_row(
         row: &AXElement,
         value: &str,
         deadline: Deadline,
-    ) -> Result<bool, AdapterError> {
+    ) -> Result<DeliveryOutcome, AdapterError> {
         if !super::labels_match(&row_labels(row, deadline), value) {
             return Err(super::no_matching_label(value));
         }
-        super::verified_from_outcome(
-            crate::actions::select::container_select::select_within_container(row, deadline)?,
-        )
+        super::select_row_with(member_selected(row, deadline), || {
+            write_row_selection(row, deadline)
+        })
     }
 
     fn row_labels(row: &AXElement, deadline: Deadline) -> Vec<String> {

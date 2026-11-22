@@ -1,22 +1,23 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 
+use crate::actions::chain::chain_delivery::DeliveryOutcome;
 use crate::tree::AXElement;
 
 pub(crate) fn select_value(
     element: &AXElement,
     value: &str,
     deadline: Deadline,
-) -> Result<bool, AdapterError> {
+) -> Result<DeliveryOutcome, AdapterError> {
     prepare(element, deadline)?;
     let role = crate::actions::ax_helpers::element_role(element, deadline)?;
-    match select_role_family(role.as_deref()) {
+    let verified = match select_role_family(role.as_deref()) {
         Some("value_or_menu") => select_combobox(element, value, deadline),
         Some("menu") => crate::actions::select::select_menu::select_from_menu(element, value, deadline),
         Some("collection") => {
             crate::actions::select::select_menu::select_collection_item(element, value, deadline)
         }
         Some("text") => crate::actions::select::select_text::select_text(element, value, deadline),
-        Some("row") => crate::actions::select::select_row::select_row(element, value, deadline),
+        Some("row") => return crate::actions::select::select_row::select_row(element, value, deadline),
         _ => Err(AdapterError::new(
             ErrorCode::ActionNotSupported,
             format!(
@@ -27,7 +28,8 @@ pub(crate) fn select_value(
         .with_suggestion(
             "Target a combobox, popup button, menu button, list, table, outline, row, or text field; otherwise use click.",
         )),
-    }
+    }?;
+    Ok(DeliveryOutcome::from_delivery(true, verified))
 }
 
 fn select_combobox(

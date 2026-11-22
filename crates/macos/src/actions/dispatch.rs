@@ -7,6 +7,7 @@ mod imp {
     use super::*;
     use crate::actions::{
         chain::chain_defs,
+        chain::chain_delivery::DeliveryOutcome,
         chain::{ChainContext, ChainDef, execute_chain},
         inline_editor_target, toggle_state,
     };
@@ -138,11 +139,15 @@ mod imp {
             }
 
             Action::Select(value) => {
-                let verified = crate::actions::extras::select_value(el, value.as_str(), deadline)?;
-                steps.push(
+                let outcome = crate::actions::extras::select_value(el, value.as_str(), deadline)?;
+                let step = if outcome == DeliveryOutcome::SatisfiedNoDelivery {
+                    ActionStep::skipped("Select")
+                } else {
                     ActionStep::succeeded("Select")
-                        .with_mechanism(StepMechanism::SemanticApi)
-                        .with_verified(verified),
+                };
+                steps.push(
+                    step.with_mechanism(StepMechanism::SemanticApi)
+                        .with_verified(outcome.was_verified()),
                 );
             }
 

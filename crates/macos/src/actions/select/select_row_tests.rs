@@ -21,8 +21,22 @@ fn a_row_never_matches_a_partial_or_empty_value() {
 
 #[test]
 fn only_a_read_back_selection_reports_verified() {
-    assert!(verified_from_outcome(DeliveryOutcome::DeliveredVerified).unwrap());
-    assert!(verified_from_outcome(DeliveryOutcome::SatisfiedNoDelivery).unwrap());
+    assert_eq!(
+        verified_from_outcome(DeliveryOutcome::DeliveredVerified).unwrap(),
+        DeliveryOutcome::DeliveredVerified
+    );
+    assert_eq!(
+        verified_from_outcome(DeliveryOutcome::SatisfiedNoDelivery).unwrap(),
+        DeliveryOutcome::SatisfiedNoDelivery
+    );
+}
+
+#[test]
+fn an_already_selected_row_does_not_write() {
+    let outcome = select_row_with(Some(true), || {
+        panic!("must not write an already-selected row")
+    });
+    assert_eq!(outcome.unwrap(), DeliveryOutcome::SatisfiedNoDelivery);
 }
 
 #[test]
