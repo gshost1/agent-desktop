@@ -285,6 +285,17 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         }
     }
 
+    fn get_live_element_provisional(
+        &self,
+        handle: &NativeHandle,
+        deadline: Deadline,
+    ) -> Result<Option<LiveElement>, AdapterError> {
+        match WebHandle::of(handle) {
+            Some(_) => Ok(None),
+            None => self.inner.get_live_element_provisional(handle, deadline),
+        }
+    }
+
     fn get_element_bounds(
         &self,
         handle: &NativeHandle,

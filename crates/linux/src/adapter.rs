@@ -6,27 +6,21 @@ use agent_desktop_core::{
     Rect, RefEntry, SnapshotSurface, SurfaceInfo, TreeOptions, WindowFilter, WindowInfo,
 };
 
-use crate::system::SharedBus;
+use crate::{system::SharedBus, tree::surfaces::modal_gate_memo::GateMemo};
 
+#[derive(Default)]
 pub struct LinuxAdapter {
     bus: SharedBus,
+    gate: GateMemo,
 }
 
 impl LinuxAdapter {
     pub fn new() -> Self {
-        Self {
-            bus: SharedBus::default(),
-        }
+        Self::default()
     }
 
     pub(crate) fn bus(&self) -> &SharedBus {
         &self.bus
-    }
-}
-
-impl Default for LinuxAdapter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -135,7 +129,19 @@ impl ObservationOps for LinuxAdapter {
         if let Some(target) = crate::system::tray::target_of(handle) {
             return crate::system::tray::live_element(target, deadline);
         }
-        crate::tree::get_live_element(self.bus(), handle, deadline)
+        crate::tree::get_live_element(self.bus(), &self.gate, handle, deadline)
+    }
+
+    fn get_live_element_provisional(
+        &self,
+        handle: &NativeHandle,
+        deadline: Deadline,
+    ) -> Result<Option<LiveElement>, AdapterError> {
+        if crate::system::tray::target_of(handle).is_some() {
+            return Ok(None);
+        }
+        crate::tree::get_live_element_provisional(self.bus(), &self.gate, handle, deadline)
+            .map(Some)
     }
 
     fn get_element_bounds(

@@ -16,7 +16,7 @@ pub fn execute_verified_action(
     }
     let deadline = lease.deadline();
     let before = matches!(action, Action::TypeText(_) | Action::Toggle)
-        .then(|| adapter.get_live_element(handle, deadline).ok())
+        .then(|| read_live(adapter, handle, deadline).ok())
         .flatten();
     if matches!(action, Action::Toggle)
         && let Some(checked) = before.as_ref().and_then(checked)
@@ -55,7 +55,7 @@ pub fn execute_verified_action(
     {
         return execution;
     }
-    let mut observed = adapter.get_live_element(handle, deadline);
+    let mut observed = read_live(adapter, handle, deadline);
     let settle = std::time::Duration::from_millis(50);
     let settle_deadline = deadline.capped(std::time::Duration::from_millis(400));
     let drains = execution
@@ -71,7 +71,7 @@ pub fn execute_verified_action(
             || (drains && changing && deadline.remaining() > settle))
     {
         crate::wait::deadline::sleep(settle);
-        let next = adapter.get_live_element(handle, deadline);
+        let next = read_live(adapter, handle, deadline);
         changing = value_of(&next) != value_of(&observed);
         observed = next;
     }
@@ -152,6 +152,17 @@ pub fn execute_verified_action(
         }
     }
     Ok(result)
+}
+
+fn read_live(
+    adapter: &dyn PlatformAdapter,
+    handle: &NativeHandle,
+    deadline: crate::Deadline,
+) -> Result<LiveElement, AdapterError> {
+    match adapter.get_live_element_provisional(handle, deadline)? {
+        Some(live) => Ok(live),
+        None => adapter.get_live_element(handle, deadline),
+    }
 }
 
 /// Keys sent to a field reach it through the application's event queue, so

@@ -14,6 +14,15 @@ struct PreparingPlatform {
 }
 
 impl ObservationOps for PreparingPlatform {
+    fn get_live_element_provisional(
+        &self,
+        _: &agent_desktop_core::NativeHandle,
+        _: Deadline,
+    ) -> Result<Option<agent_desktop_core::LiveElement>, AdapterError> {
+        self.connected.fetch_add(1, Ordering::SeqCst);
+        Err(AdapterError::not_supported("native provisional read"))
+    }
+
     fn prepare_window_inventory(&self) -> Result<(), AdapterError> {
         self.prepared.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -35,6 +44,29 @@ impl ObservationOps for PreparingPlatform {
 impl ActionOps for PreparingPlatform {}
 impl InputOps for PreparingPlatform {}
 impl SystemOps for PreparingPlatform {}
+
+#[test]
+fn provisional_live_read_forwards_native_handles_and_declines_web_handles() {
+    let web = WebChannelAdapter::with_connector(
+        PreparingPlatform::default(),
+        Box::new(ScriptedConnector::default()),
+    )
+    .with_download_ledger(None);
+    let deadline = Deadline::after(1000).unwrap();
+    let native = agent_desktop_core::NativeHandle::null();
+    assert!(web.get_live_element_provisional(&native, deadline).is_err());
+    assert_eq!(web.inner().connected.load(Ordering::SeqCst), 1);
+    let handle = agent_desktop_core::NativeHandle::new(crate::channel::web_handle::WebHandle {
+        process: crate::channel::test_support::process(),
+        token: crate::ElementToken::parse("cdp:page:frame:loader:1").unwrap(),
+    });
+    assert!(
+        web.get_live_element_provisional(&handle, deadline)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(web.inner().connected.load(Ordering::SeqCst), 1);
+}
 
 #[test]
 fn preparing_a_window_inventory_reaches_the_platform() {

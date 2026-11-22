@@ -30,6 +30,8 @@ pub(crate) fn is_surface(node: &RawNode, surface: agent_desktop_core::SnapshotSu
 }
 
 pub(super) mod modal_gate;
+pub(crate) mod modal_gate_memo;
+pub(super) mod modal_gate_verdict;
 pub(crate) mod nested_dialog;
 #[cfg(test)]
 #[path = "surfaces_tests.rs"]

@@ -1,9 +1,7 @@
-use std::sync::{Mutex, PoisonError};
-use std::time::{Duration, Instant};
-
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode};
 use serde_json::json;
 
+use super::{modal_gate_memo::GateMemo, modal_gate_verdict::ModalGateVerdict};
 use crate::tree::AtspiElement;
 use crate::tree::live_read::NodeReader;
 use crate::tree::vocabulary::state_bits::{MODAL, SHOWING, StateBits};
@@ -46,123 +44,52 @@ fn cut_short(deadline: Deadline) -> AdapterError {
     }
 }
 
-/// How long an unblocked verdict may stand in for a new walk. Each reuse
-/// still needs the watch to have stayed quiet and the same top-level windows.
-pub(crate) const VERDICT_LIFETIME: Duration = Duration::from_millis(1_000);
-
-/// Reports whether an application has stayed still since the watch opened:
-/// true only when the application answered a round trip and emitted no
-/// accessibility event before answering.
-pub(crate) trait GateWatch: Send {
-    fn quiet(&mut self, deadline: Deadline) -> bool;
-}
-
-/// The last unblocked verdict of this process, kept with the watch that
-/// opened before its walk began.
-pub(crate) struct UnblockedVerdict {
-    target: AtspiElement,
-    frame: AtspiElement,
-    windows: Vec<AtspiElement>,
-    at: Instant,
-    watch: Box<dyn GateWatch>,
-}
-
-pub(crate) type GateMemo = Mutex<Option<UnblockedVerdict>>;
-
-static PROCESS_MEMO: GateMemo = Mutex::new(None);
-
-pub(crate) fn process_memo() -> &'static GateMemo {
-    &PROCESS_MEMO
-}
-
-fn same_windows(kept: &[AtspiElement], now: &[AtspiElement]) -> bool {
-    kept.len() == now.len() && now.iter().all(|window| kept.contains(window))
-}
-
-fn reuse(
-    memo: &GateMemo,
-    key: (&AtspiElement, &AtspiElement),
-    windows: &[AtspiElement],
-    deadline: Deadline,
-) -> bool {
-    let mut slot = memo.lock().unwrap_or_else(PoisonError::into_inner);
-    let fresh = slot.as_mut().is_some_and(|kept| {
-        kept.at.elapsed() < VERDICT_LIFETIME
-            && &kept.target == key.0
-            && &kept.frame == key.1
-            && same_windows(&kept.windows, windows)
-            && kept.watch.quiet(deadline)
-    });
-    if !fresh {
-        *slot = None;
-    }
-    fresh
-}
-
-fn remember(memo: &'static GateMemo, verdict: UnblockedVerdict) {
-    let at = verdict.at;
-    *memo.lock().unwrap_or_else(PoisonError::into_inner) = Some(verdict);
-    let _ = std::thread::Builder::new()
-        .name("modal-verdict-expiry".into())
-        .spawn(move || {
-            std::thread::sleep(VERDICT_LIFETIME);
-            let mut slot = memo.lock().unwrap_or_else(PoisonError::into_inner);
-            if slot.as_ref().is_some_and(|kept| kept.at == at) {
-                *slot = None;
-            }
-        });
-}
-
-/// Semantic actions can bypass toolkit input grabs. A showing modal in the
-/// application blocks targets outside its subtree even when their controls
-/// remain enabled. A target whose own window is a showing modal is blocked
-/// only by a modal inside that window: the modal windows of an application,
-/// such as one save prompt for each unsaved document, answer in any order.
-/// Unknown modal membership refuses delivery.
-/// Shell surfaces are compositor controls, not application top-level windows.
-///
-/// One command reads the same target several times. An unblocked verdict is
-/// reused instead of walking again only while it is younger than
-/// [`VERDICT_LIFETIME`], the application lists the same top-level windows and
-/// the watch opened before the walk saw no accessibility event from it. A
-/// modal shown inside a window emits events, so it ends the reuse; a blocked
-/// or unknown verdict is never kept.
+/// A provisional read may reuse an unblocked verdict established under the
+/// same deadline for the same target, frame and top-level windows. The read
+/// before input is always full. Unknown modal membership refuses delivery.
 pub(crate) fn ensure_unblocked(
     reader: &mut impl NodeReader,
     target: &AtspiElement,
     deadline: Deadline,
+    memo: Option<&GateMemo>,
+    may_reuse: bool,
 ) -> Result<(), AdapterError> {
-    if reader.is_verified_shell(target, deadline) {
-        return Ok(());
-    }
-    let owner = target.menu_owner();
-    let frame = owner
-        .as_ref()
-        .or_else(|| target.frame())
-        .ok_or_else(unknown)?;
-    let gated = owner.as_ref().unwrap_or(target);
-    let windows = reader
-        .top_levels(frame, deadline)
-        .map_err(|error| unreadable(error, deadline))?;
-    let memo = reader.gate_memo();
-    if memo.is_some_and(|memo| reuse(memo, (gated, frame), &windows, deadline)) {
-        return Ok(());
-    }
-    let watch = memo.and_then(|_| reader.watch_app(frame, deadline));
-    walk_windows(reader, (gated, frame), windows.clone(), deadline)?;
-    if let (Some(memo), Some(watch)) = (memo, watch) {
-        remember(
-            memo,
-            UnblockedVerdict {
+    let result = (|| {
+        if reader.is_verified_shell(target, deadline) {
+            return Ok(());
+        }
+        let owner = target.menu_owner();
+        let frame = owner
+            .as_ref()
+            .or_else(|| target.frame())
+            .ok_or_else(unknown)?;
+        let gated = owner.as_ref().unwrap_or(target);
+        let windows = reader
+            .top_levels(frame, deadline)
+            .map_err(|error| unreadable(error, deadline))?;
+        if may_reuse && memo.is_some_and(|memo| memo.matches(deadline, (gated, frame), &windows)) {
+            return Ok(());
+        }
+        if let Some(memo) = memo {
+            memo.clear();
+        }
+        walk_windows(reader, (gated, frame), windows.clone(), deadline)?;
+        if let Some(memo) = memo {
+            memo.store(ModalGateVerdict {
+                deadline,
                 target: gated.address(),
                 frame: frame.address(),
                 windows,
-                at: Instant::now(),
-                watch,
-            },
-        );
+            });
+        }
+        Ok(())
+    })();
+    if result.is_err()
+        && let Some(memo) = memo
+    {
+        memo.clear();
     }
-    Ok(())
+    result
 }
 
 fn walk_windows(

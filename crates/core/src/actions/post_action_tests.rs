@@ -365,3 +365,6 @@ fn clear_that_leaves_a_newline_is_not_verified() {
     assert_eq!(error.code, ErrorCode::ActionFailed);
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }
+
+#[path = "post_action_provisional_tests.rs"]
+mod provisional_tests;

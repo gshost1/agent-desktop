@@ -1,3 +1,3 @@
 ### Performance
 
-* Linux: a command that reads the same target several times now walks the application's accessibility tree for modal dialogs once and reuses the unblocked verdict for up to one second, while the application lists the same top-level windows and emits no accessibility event; any event, new window, other target or blocked verdict walks again.
+* Linux: reads before the final pre-dispatch check reuse an unblocked modal verdict established earlier in the same command for the same target, frame and top-level windows; the read right before input still walks the whole tree.

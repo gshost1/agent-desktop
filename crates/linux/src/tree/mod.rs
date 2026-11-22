@@ -18,7 +18,8 @@ pub(crate) use element::child_list::list_children;
 pub(crate) use element::raw_node::{ChildAddress, RawNode};
 pub(crate) use hit_test::hit_test;
 pub(crate) use live_read::{
-    get_element_bounds, get_live_actions, get_live_element, get_live_state, get_live_value,
+    get_element_bounds, get_live_actions, get_live_element, get_live_element_provisional,
+    get_live_state, get_live_value,
 };
 pub(crate) use menu::menu_resolve::is_menu_entry;
 pub(crate) use observe::observe_tree;

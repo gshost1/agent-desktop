@@ -52,7 +52,7 @@ pub(crate) fn check_live_with_stability(
     request: &ActionRequest,
     stability: StabilityExpectation,
 ) -> Result<ActionabilityReport, AdapterError> {
-    let evidence = observe(target).map_err(AdapterError::unsent)?;
+    let (evidence, _) = observe(target, false).map_err(AdapterError::unsent)?;
     check_with_stability(
         stability,
         &evidence,
@@ -70,14 +70,25 @@ pub(crate) fn check_live_with_stability_or_gap(
     request: &ActionRequest,
     stability: StabilityExpectation,
 ) -> Result<ActionabilityReport, AdapterError> {
-    let evidence = observe(target)?;
-    check_with_stability_or_gap(
+    let (evidence, provisional) = observe(target, true)?;
+    let report = check_with_stability_or_gap(
         stability,
         &evidence,
         request,
         Some((target.handle, target.adapter)),
         target.deadline,
-    )
+    )?;
+    if report.actionable && provisional {
+        let (evidence, _) = observe(target, false)?;
+        return check_with_stability_or_gap(
+            stability,
+            &evidence,
+            request,
+            Some((target.handle, target.adapter)),
+            target.deadline,
+        );
+    }
+    Ok(report)
 }
 
 pub(crate) fn check_live_before_focus(
@@ -85,7 +96,7 @@ pub(crate) fn check_live_before_focus(
     request: &ActionRequest,
     stability: StabilityExpectation,
 ) -> Result<ActionabilityReport, AdapterError> {
-    let evidence = observe(target).map_err(AdapterError::unsent)?;
+    let (evidence, _) = observe(target, true).map_err(AdapterError::unsent)?;
     super::evaluate::check_before_focus(
         stability,
         &evidence,
@@ -96,11 +107,28 @@ pub(crate) fn check_live_before_focus(
     .map_err(AdapterError::unsent)
 }
 
-fn observe(target: &LiveCheckTarget<'_>) -> Result<ActionabilityEvidence, AdapterError> {
-    let live = match target
+fn read_live(
+    target: &LiveCheckTarget<'_>,
+    provisional: bool,
+) -> Result<(LiveElement, bool), AdapterError> {
+    if provisional
+        && let Some(live) = target
+            .adapter
+            .get_live_element_provisional(target.handle, target.deadline)?
+    {
+        return Ok((live, true));
+    }
+    target
         .adapter
         .get_live_element(target.handle, target.deadline)
-    {
+        .map(|live| (live, false))
+}
+
+fn observe(
+    target: &LiveCheckTarget<'_>,
+    provisional: bool,
+) -> Result<(ActionabilityEvidence, bool), AdapterError> {
+    let (live, provisional) = match read_live(target, provisional) {
         Ok(live) => live,
         Err(err)
             if matches!(
@@ -118,16 +146,19 @@ fn observe(target: &LiveCheckTarget<'_>) -> Result<ActionabilityEvidence, Adapte
         Err(err) => return Err(err),
     };
     validate_live_identity(target.entry, &live)?;
-    Ok(ActionabilityEvidence {
-        nonspatial: live.bounds.is_none()
-            && target
-                .adapter
-                .is_nonspatial_target_with_deadline(target.handle, target.deadline)?,
-        state: live.state,
-        states_complete: live.states_complete,
-        bounds: live.bounds,
-        available_actions: live.available_actions,
-    })
+    Ok((
+        ActionabilityEvidence {
+            nonspatial: live.bounds.is_none()
+                && target
+                    .adapter
+                    .is_nonspatial_target_with_deadline(target.handle, target.deadline)?,
+            state: live.state,
+            states_complete: live.states_complete,
+            bounds: live.bounds,
+            available_actions: live.available_actions,
+        },
+        provisional,
+    ))
 }
 
 fn validate_live_identity(entry: &RefEntry, live: &LiveElement) -> Result<(), AdapterError> {

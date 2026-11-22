@@ -38,8 +38,7 @@ fn an_unanswered_read_is_the_timeout_only_once_the_deadline_has_passed() {
 }
 
 mod reuse {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use crate::tree::surfaces::modal_gate_memo::GateMemo;
 
     use super::*;
     use crate::tree::element::ancestry;
@@ -50,29 +49,17 @@ mod reuse {
     use crate::tree::vocabulary::role_numbers::{DIALOG, FRAME, PUSH_BUTTON};
     use crate::tree::{Field, ObservedRead};
 
-    struct Watch(Arc<AtomicBool>);
-
-    impl GateWatch for Watch {
-        fn quiet(&mut self, _: Deadline) -> bool {
-            !self.0.load(Ordering::SeqCst)
-        }
-    }
-
     struct App {
-        memo: &'static GateMemo,
-        watched: bool,
-        changed: Arc<AtomicBool>,
-        walks: Arc<AtomicUsize>,
+        walks: usize,
+        inventories: usize,
         in_window_modal: bool,
         dialog_window: bool,
     }
 
-    fn app(watched: bool) -> App {
+    fn app() -> App {
         App {
-            memo: Box::leak(Box::new(Mutex::new(None))),
-            watched,
-            changed: Arc::new(AtomicBool::new(false)),
-            walks: Arc::new(AtomicUsize::new(0)),
+            walks: 0,
+            inventories: 0,
             in_window_modal: false,
             dialog_window: false,
         }
@@ -112,7 +99,7 @@ mod reuse {
             root: &AtspiElement,
             deadline: Deadline,
         ) -> Result<crate::tree::Walk<ObservedRead>, AdapterError> {
-            self.walks.fetch_add(1, Ordering::SeqCst);
+            self.walks += 1;
             crate::tree::walk::walker::walk_levels(
                 root.clone(),
                 &crate::tree::WalkLimits::default(),
@@ -153,21 +140,12 @@ mod reuse {
             _: &AtspiElement,
             _: Deadline,
         ) -> Result<Vec<AtspiElement>, AdapterError> {
+            self.inventories += 1;
             let mut windows = vec![element("/frame")];
             if self.dialog_window {
                 windows.push(element("/dialog"));
             }
             Ok(windows)
-        }
-
-        fn gate_memo(&mut self) -> Option<&'static GateMemo> {
-            Some(self.memo)
-        }
-
-        fn watch_app(&mut self, _: &AtspiElement, _: Deadline) -> Option<Box<dyn GateWatch>> {
-            self.changed.store(false, Ordering::SeqCst);
-            self.watched
-                .then(|| Box::new(Watch(Arc::clone(&self.changed))) as Box<dyn GateWatch>)
         }
 
         fn stopped_app(&mut self, _: u32) -> Option<String> {
@@ -183,8 +161,13 @@ mod reuse {
         }
     }
 
-    fn gate(app: &mut App, path: &str) -> Result<(), AdapterError> {
-        ensure_unblocked(app, &target(path), Deadline::standard().expect("deadline"))
+    fn gate(
+        app: &mut App,
+        memo: Option<&GateMemo>,
+        deadline: Deadline,
+        may_reuse: bool,
+    ) -> Result<(), AdapterError> {
+        ensure_unblocked(app, &target("/frame/row"), deadline, memo, may_reuse)
     }
 
     fn blocked_cause(result: Result<(), AdapterError>) -> serde_json::Value {
@@ -192,77 +175,107 @@ mod reuse {
     }
 
     #[test]
-    fn a_quiet_application_reuses_the_unblocked_verdict_instead_of_walking_again() {
-        let mut app = app(true);
-        for _ in 0..4 {
-            gate(&mut app, "/frame/row").expect("unblocked");
-        }
-        assert_eq!(app.walks.load(Ordering::SeqCst), 1);
+    fn a_provisional_read_after_a_full_read_reuses_the_same_deadline_verdict() {
+        let mut app = app();
+        let memo = GateMemo::default();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, Some(&memo), deadline, false).unwrap();
+        gate(&mut app, Some(&memo), deadline, true).unwrap();
+        assert_eq!(app.walks, 1);
+        assert_eq!(app.inventories, 2);
     }
 
     #[test]
-    fn an_in_window_modal_shown_after_the_verdict_blocks_the_next_read() {
-        let mut app = app(true);
-        gate(&mut app, "/frame/row").expect("unblocked");
+    fn a_full_read_always_walks_even_with_a_matching_verdict() {
+        let mut app = app();
+        let memo = GateMemo::default();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, Some(&memo), deadline, false).unwrap();
+        gate(&mut app, Some(&memo), deadline, false).unwrap();
+        assert_eq!(app.walks, 2);
+    }
+
+    #[test]
+    fn an_in_window_modal_after_a_provisional_verdict_blocks_the_next_full_read() {
+        let mut app = app();
+        let memo = GateMemo::default();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, Some(&memo), deadline, true).unwrap();
         app.in_window_modal = true;
-        app.changed.store(true, Ordering::SeqCst);
         assert_eq!(
-            blocked_cause(gate(&mut app, "/frame/row")),
+            blocked_cause(gate(&mut app, Some(&memo), deadline, false)),
             "blocked_by_modal_dialog"
         );
-        assert_eq!(app.walks.load(Ordering::SeqCst), 2);
+        assert_eq!(app.walks, 2);
     }
 
     #[test]
-    fn a_new_top_level_dialog_ends_the_reuse_even_when_no_event_arrived() {
-        let mut app = app(true);
-        gate(&mut app, "/frame/row").expect("unblocked");
+    fn a_new_top_level_dialog_makes_a_provisional_read_walk_and_block() {
+        let mut app = app();
+        let memo = GateMemo::default();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, Some(&memo), deadline, false).unwrap();
         app.dialog_window = true;
         assert_eq!(
-            blocked_cause(gate(&mut app, "/frame/row")),
+            blocked_cause(gate(&mut app, Some(&memo), deadline, true)),
             "blocked_by_modal_dialog"
         );
-        assert_eq!(app.walks.load(Ordering::SeqCst), 3);
+        assert_eq!(app.walks, 3);
     }
 
     #[test]
-    fn without_a_watch_every_read_walks() {
-        let mut app = app(false);
-        gate(&mut app, "/frame/row").expect("unblocked");
-        gate(&mut app, "/frame/row").expect("unblocked");
-        assert_eq!(app.walks.load(Ordering::SeqCst), 2);
+    fn another_deadline_walks_again() {
+        let mut app = app();
+        let memo = GateMemo::default();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, Some(&memo), deadline, false).unwrap();
+        let another = Deadline::after(60_000).unwrap();
+        assert_ne!(deadline, another);
+        gate(&mut app, Some(&memo), another, true).unwrap();
+        assert_eq!(app.walks, 2);
     }
 
     #[test]
-    fn a_blocked_verdict_is_never_reused() {
-        let mut app = app(true);
+    fn a_blocked_full_verdict_is_never_reused_by_a_provisional_read() {
+        let mut app = app();
+        let memo = GateMemo::default();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, Some(&memo), deadline, false).unwrap();
         app.dialog_window = true;
         assert_eq!(
-            blocked_cause(gate(&mut app, "/frame/row")),
+            blocked_cause(gate(&mut app, Some(&memo), deadline, false)),
             "blocked_by_modal_dialog"
         );
         assert_eq!(
-            blocked_cause(gate(&mut app, "/frame/row")),
+            blocked_cause(gate(&mut app, Some(&memo), deadline, true)),
             "blocked_by_modal_dialog"
         );
-        assert_eq!(app.walks.load(Ordering::SeqCst), 4);
+        assert_eq!(app.walks, 5);
     }
 
     #[test]
     fn another_target_in_the_same_window_walks_again() {
-        let mut app = app(true);
-        gate(&mut app, "/frame/row").expect("unblocked");
-        gate(&mut app, "/frame/other").expect("unblocked");
-        assert_eq!(app.walks.load(Ordering::SeqCst), 2);
+        let mut app = app();
+        let memo = GateMemo::default();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, Some(&memo), deadline, false).unwrap();
+        ensure_unblocked(
+            &mut app,
+            &target("/frame/other"),
+            deadline,
+            Some(&memo),
+            true,
+        )
+        .unwrap();
+        assert_eq!(app.walks, 2);
     }
 
     #[test]
-    fn a_verdict_older_than_its_lifetime_walks_again() {
-        let mut app = app(true);
-        gate(&mut app, "/frame/row").expect("unblocked");
-        std::thread::sleep(VERDICT_LIFETIME + Duration::from_millis(50));
-        assert!(app.memo.lock().expect("memo").is_none());
-        gate(&mut app, "/frame/row").expect("unblocked");
-        assert_eq!(app.walks.load(Ordering::SeqCst), 2);
+    fn without_a_memo_every_read_walks() {
+        let mut app = app();
+        let deadline = Deadline::standard().unwrap();
+        gate(&mut app, None, deadline, false).unwrap();
+        gate(&mut app, None, deadline, true).unwrap();
+        assert_eq!(app.walks, 2);
     }
 }

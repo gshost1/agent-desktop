@@ -1,3 +1,4 @@
+use crate::ErrorCode::{ActionNotSupported, PlatformNotSupported};
 use crate::{
     AccessibilityNode, AdapterError, AppInfo, Deadline, ErrorCode, Rect, SnapshotSurface,
     SurfaceInfo, WindowInfo,
@@ -9,29 +10,18 @@ use crate::{
     tree::element_state::ElementState,
     tree::tree_options::TreeOptions,
 };
-
 pub(crate) fn optional_live_read<T>(
     result: Result<Option<T>, AdapterError>,
 ) -> Result<Option<T>, AdapterError> {
     match result {
-        Ok(value) => Ok(value),
-        Err(err) if is_live_read_unsupported(&err) => Ok(None),
-        Err(err) => Err(err),
+        Err(err) if matches!(err.code, PlatformNotSupported | ActionNotSupported) => Ok(None),
+        other => other,
     }
 }
-
-fn is_live_read_unsupported(err: &AdapterError) -> bool {
-    matches!(
-        err.code,
-        ErrorCode::PlatformNotSupported | ErrorCode::ActionNotSupported
-    )
-}
-
 pub trait ObservationOps: Send + Sync {
     fn is_application_surface(&self, _surface: SnapshotSurface) -> bool {
         false
     }
-
     fn focused_app(&self, _deadline: Deadline) -> Result<Option<AppInfo>, AdapterError> {
         Err(AdapterError::not_supported("focused_app"))
     }
@@ -291,6 +281,16 @@ pub trait ObservationOps: Send + Sync {
         _deadline: Deadline,
     ) -> Result<LiveElement, AdapterError> {
         Err(AdapterError::not_supported("get_live_element"))
+    }
+
+    /// A live read that is not the last before input; may reuse blocking evidence
+    /// established earlier under the same deadline. None requests get_live_element.
+    fn get_live_element_provisional(
+        &self,
+        _handle: &NativeHandle,
+        _deadline: Deadline,
+    ) -> Result<Option<LiveElement>, AdapterError> {
+        Ok(None)
     }
 
     fn get_element_bounds(
