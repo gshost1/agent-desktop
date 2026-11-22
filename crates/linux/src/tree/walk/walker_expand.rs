@@ -12,8 +12,10 @@ use crate::tree::element::bounded::collect_bounded;
 use crate::tree::properties::liveness::Liveness;
 use crate::tree::properties::node_read::read_node_for;
 use crate::tree::properties::read_purpose::ReadPurpose;
+use crate::tree::properties::wrapper_description::parent_summary;
+use crate::tree::properties::wrapper_parent::WrapperParent;
 use crate::tree::surfaces::window_extents::read_extents_async;
-use crate::tree::vocabulary::label_read::read_label_if_needed;
+use crate::tree::vocabulary::label_read::read_label_with_parent;
 use crate::tree::vocabulary::role_numbers::MENU_BAR;
 use crate::tree::{AtspiElement, Expansion, Field, ObservedRead, RawNode, WalkLimits};
 
@@ -92,6 +94,7 @@ pub(in crate::tree) struct LevelReader<'a> {
     deadline: Deadline,
     at_root: bool,
     purpose: ReadPurpose,
+    parents: HashMap<(String, String), WrapperParent>,
 }
 
 impl<'a> LevelReader<'a> {
@@ -108,6 +111,7 @@ impl<'a> LevelReader<'a> {
             deadline,
             at_root: true,
             purpose: ReadPurpose::Snapshot,
+            parents: HashMap::new(),
         }
     }
 
@@ -128,14 +132,24 @@ impl<'a> LevelReader<'a> {
         let (connection, max_bytes) = (self.connection, self.max_field_bytes);
         let pids = &mut self.pids;
         let purpose = self.purpose;
+        let parents = &mut self.parents;
         within(self.deadline, async {
+            let previous = std::mem::take(parents);
+            let previous = &previous;
             let reads: Vec<Result<ObservedRead, AdapterError>> =
                 stream::iter(level.iter().map(|element| async move {
                     if !at_root && element.pid() == UNKNOWN_PID {
                         Err(AdapterError::new(ErrorCode::ElementNotFound, UNIDENTIFIED))
                     } else {
-                        let (mut read, _) =
-                            read_observed(connection, element, max_bytes, purpose).await?;
+                        let (mut read, _) = read_observed_with_parent(
+                            connection,
+                            element,
+                            max_bytes,
+                            purpose,
+                            previous
+                                .get(&(element.bus_name().to_owned(), element.path().to_owned())),
+                        )
+                        .await?;
                         if matches!(
                             purpose,
                             ReadPurpose::Sampling | ReadPurpose::Count | ReadPurpose::Shape
@@ -176,6 +190,18 @@ impl<'a> LevelReader<'a> {
                 .into_iter()
                 .map(|(read, gone)| {
                     let children = child_elements(&read.node, pids);
+                    if let Some(summary) = parent_summary(&read.node, purpose) {
+                        for child in &children {
+                            let description = if child.bus_name() == read.node.element.bus_name() {
+                                summary.clone()
+                            } else {
+                                Field::Absent
+                            };
+                            parents
+                                .entry((child.bus_name().to_owned(), child.path().to_owned()))
+                                .or_insert(WrapperParent::Known(description));
+                        }
+                    }
                     Expansion {
                         children_unread: read.node.children.is_failed(),
                         payload: read,
@@ -195,11 +221,21 @@ pub(in crate::tree) async fn read_observed(
     max_field_bytes: usize,
     purpose: ReadPurpose,
 ) -> Result<(ObservedRead, Liveness), AdapterError> {
+    read_observed_with_parent(connection, element, max_field_bytes, purpose, None).await
+}
+
+pub(in crate::tree) async fn read_observed_with_parent(
+    connection: &Connection,
+    element: &AtspiElement,
+    max_field_bytes: usize,
+    purpose: ReadPurpose,
+    summary: Option<&WrapperParent>,
+) -> Result<(ObservedRead, Liveness), AdapterError> {
     let (node, liveness) = read_node_for(connection, element, purpose).await?;
     let (label, value) = join(
         async {
             if purpose.identity() {
-                read_label_if_needed(connection, &node).await
+                read_label_with_parent(connection, &node, summary).await
             } else {
                 Ok(crate::tree::LabelOutcome::Failed)
             }

@@ -5,7 +5,7 @@ use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 use super::frame_geometry::{pointer_bounds, popup_origin};
 use crate::system::process::toolkit_id::ToolkitId;
 use crate::system::window::window_position::{origin_of_client, rect_of_client};
-use crate::system::x11::map::ClientMatch;
+use crate::system::x11::map::{ClientMatch, has_title_match};
 use crate::system::x11::stacking::stacking_source::StackingSource;
 use crate::system::x11::twin_tie::client_among_twins;
 use crate::system::x11::{DisplayReader, FrameFacts, X11State};
@@ -195,10 +195,7 @@ fn place_of(
         }));
     }
     let facts = FrameFacts {
-        size_identity: title.is_empty()
-            && crate::system::window::frame_identity::permits_on_bus(
-                bus, frame, toolkit, screen, deadline,
-            ),
+        size_identity: false,
         pid: frame.pid(),
         title,
         extents: screen,
@@ -207,13 +204,17 @@ fn place_of(
     let X11State::Ready { active, clients } = DisplayReader.clients_within(deadline) else {
         return Ok(None);
     };
-    let found = client_among_twins(&facts, &clients, active, || {
-        within(deadline, async {
-            Ok(read_twins(connection, frame, &facts.title).await)
+    let found = if has_title_match(&facts, &clients) {
+        client_among_twins(&facts, &clients, active, || {
+            within(deadline, async {
+                Ok(read_twins(connection, frame, &facts.title).await)
+            })
+            .ok()
+            .flatten()
         })
-        .ok()
-        .flatten()
-    });
+    } else {
+        crate::system::window::frame_client::read_client(bus, frame, toolkit, &clients, deadline)
+    };
     Ok(match found {
         ClientMatch::One(id) => origin_of_client(&clients, id).map(|origin| FramePlace {
             origin,

@@ -1,7 +1,7 @@
 use crate::system::registry::listed_window::ListedWindow;
-use crate::system::x11::X11State;
 use crate::system::x11::map::{ClientMatch, has_title_match, match_frames};
 use crate::system::x11::twin_tie::{Twins, client_among_twins};
+use crate::system::x11::{FrameFacts, X11Client, X11State};
 
 /// The listed windows of one process that share the title of window `index`,
 /// and whether the toolkit reports each active.
@@ -27,14 +27,33 @@ pub(crate) fn listed_client(
     index: usize,
     state: &X11State,
 ) -> ClientMatch {
-    let (Some(window), X11State::Ready { active, clients }) = (listed.get(index), state) else {
+    let X11State::Ready { active, clients } = state else {
         return ClientMatch::NoClient;
     };
-    if has_title_match(&window.frame, clients) {
-        return client_among_twins(&window.frame, clients, *active, || twins_of(listed, index));
-    }
     let frames: Vec<_> = listed.iter().map(|window| window.frame.clone()).collect();
-    match_frames(&frames, clients)
+    coherent_client(
+        &frames,
+        index,
+        clients,
+        || *active,
+        || twins_of(listed, index),
+    )
+}
+
+pub(crate) fn coherent_client(
+    frames: &[FrameFacts],
+    index: usize,
+    clients: &[X11Client],
+    active: impl FnOnce() -> Option<u32>,
+    twins: impl FnOnce() -> Option<Twins>,
+) -> ClientMatch {
+    let Some(frame) = frames.get(index) else {
+        return ClientMatch::NoClient;
+    };
+    if has_title_match(frame, clients) {
+        return client_among_twins(frame, clients, active(), twins);
+    }
+    match_frames(frames, clients)
         .get(index)
         .cloned()
         .unwrap_or(ClientMatch::NoClient)

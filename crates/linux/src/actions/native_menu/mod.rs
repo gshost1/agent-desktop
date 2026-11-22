@@ -54,6 +54,10 @@ async fn name(
     Ok(text.to_owned())
 }
 
+/// Resolves a process-owned GTK menu export from one frame, without a frame
+/// inventory. Matching is title-only: local coordinates and no size-identity
+/// proof prevent geometry from claiming another frame's client. The export's
+/// bus owner must also match the target process before an action is sent.
 pub(super) fn try_click(
     target: &Target<'_>,
     view: &NodeView,

@@ -18,7 +18,7 @@ fn window(role: u32, name: &str, width: i32) -> RawNode {
 }
 
 #[test]
-fn an_unnamed_showing_top_level_needs_a_complete_unique_accessible_window_size() {
+fn a_showing_top_level_needs_a_complete_unique_accessible_window_size() {
     let gtk4 = ToolkitId {
         name: Some("GTK".into()),
         version: Some("4.14.5".into()),
@@ -56,9 +56,15 @@ fn an_unnamed_showing_top_level_needs_a_complete_unique_accessible_window_size()
         expected
     ));
     let plain = window(FRAME, "Named", 702);
-    assert!(!permits_size_match(
+    assert!(permits_size_match(
         &plain,
         std::slice::from_ref(&plain),
+        &gtk4,
+        expected
+    ));
+    assert!(!permits_size_match(
+        &plain,
+        &[plain.clone(), panel.clone()],
         &gtk4,
         expected
     ));
