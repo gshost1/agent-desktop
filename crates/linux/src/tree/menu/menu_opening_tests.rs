@@ -89,6 +89,56 @@ fn the_callers_shorter_deadline_bounds_the_opening_wait() {
 }
 
 #[test]
+fn a_complete_empty_read_at_expiry_remains_absent() {
+    let mut absent = Vec::new();
+    for complete_on in [1, 2] {
+        let deadline = Deadline::after(100).unwrap();
+        let mut reads = 0;
+        let result = await_popup(
+            deadline,
+            |budget| {
+                reads += 1;
+                if reads == complete_on {
+                    std::thread::sleep(budget.remaining());
+                    assert!(deadline.is_expired());
+                }
+                Ok(Vec::new())
+            },
+            |_| true,
+        );
+        absent.push(
+            result
+                .err()
+                .unwrap()
+                .is_confirmed_surface_absence(SnapshotSurface::Menu),
+        );
+        assert_eq!(reads, complete_on);
+    }
+    assert_eq!(absent, [true, true]);
+}
+
+#[test]
+fn a_cut_read_at_expiry_remains_timeout() {
+    for cut_on in [1, 2] {
+        let mut reads = 0;
+        let result = await_popup(
+            Deadline::after(100).unwrap(),
+            |budget| {
+                reads += 1;
+                if reads == cut_on {
+                    std::thread::sleep(budget.remaining());
+                    return Err(budget.timeout_error());
+                }
+                Ok(Vec::new())
+            },
+            |_| true,
+        );
+        assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
+        assert_eq!(reads, cut_on);
+    }
+}
+
+#[test]
 fn inventory_errors_are_not_retried_or_reported_as_absence() {
     for fail_on in [1, 2] {
         let mut reads = 0;
@@ -110,7 +160,7 @@ fn inventory_errors_are_not_retried_or_reported_as_absence() {
 }
 
 #[test]
-fn expiry_during_a_retry_preserves_the_completed_initial_absence() {
+fn expiry_during_a_retry_returns_timeout_not_initial_absence() {
     let mut reads = 0;
     let result = await_popup(
         Deadline::after(70).unwrap(),
@@ -124,13 +174,28 @@ fn expiry_during_a_retry_preserves_the_completed_initial_absence() {
         },
         |_| true,
     );
-    assert!(
-        result
-            .err()
-            .unwrap()
-            .is_confirmed_surface_absence(SnapshotSurface::Menu)
-    );
+    assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
     assert_eq!(reads, 2);
+}
+
+#[test]
+fn incomplete_retry_at_the_opening_budget_returns_timeout_with_caller_time_left() {
+    let deadline = Deadline::after(5_000).unwrap();
+    let mut reads = 0;
+    let result = await_popup(
+        deadline,
+        |budget| {
+            reads += 1;
+            if reads == 1 {
+                return Ok(Vec::new());
+            }
+            std::thread::sleep(budget.remaining());
+            Err(budget.timeout_error())
+        },
+        |_| true,
+    );
+    assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
+    assert!(!deadline.is_expired());
 }
 
 #[test]
