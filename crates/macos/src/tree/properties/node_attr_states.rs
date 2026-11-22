@@ -5,6 +5,7 @@ pub(crate) struct NodeAttrStates {
     pub(crate) enabled: bool,
     pub(crate) control: NodeControlStates,
     pub(crate) semantic: NodeSemanticStates,
+    pub(crate) scrolls_vertically: Option<bool>,
 }
 
 impl Default for NodeAttrStates {
@@ -13,6 +14,7 @@ impl Default for NodeAttrStates {
             enabled: true,
             control: NodeControlStates::default(),
             semantic: NodeSemanticStates::default(),
+            scrolls_vertically: None,
         }
     }
 }

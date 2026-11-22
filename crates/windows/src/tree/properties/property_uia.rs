@@ -51,6 +51,7 @@ pub fn uia_property(property: TreeProperty) -> UIProperty {
         TreeProperty::ValueAvailable => UIProperty::IsValuePatternAvailable,
         TreeProperty::RangeValueAvailable => UIProperty::IsRangeValuePatternAvailable,
         TreeProperty::ScrollAvailable => UIProperty::IsScrollPatternAvailable,
+        TreeProperty::ScrollVerticallyScrollable => UIProperty::ScrollVerticallyScrollable,
         TreeProperty::ScrollItemAvailable => UIProperty::IsScrollItemPatternAvailable,
         TreeProperty::WindowAvailable => UIProperty::IsWindowPatternAvailable,
         TreeProperty::GridItemAvailable => UIProperty::IsGridItemPatternAvailable,

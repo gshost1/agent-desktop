@@ -1,5 +1,36 @@
 use super::*;
 
+#[test]
+fn vertical_scroll_evidence_requires_a_known_scroll_pattern_and_property() {
+    let flag = |value| PropertyOutcome::Known(PropertyValue::Flag(value));
+    for available in [
+        flag(true),
+        flag(false),
+        PropertyOutcome::Absent,
+        PropertyOutcome::Unknown,
+    ] {
+        for outcome in [
+            flag(true),
+            flag(false),
+            PropertyOutcome::Absent,
+            PropertyOutcome::Unknown,
+        ] {
+            let expected = if available == flag(true) {
+                outcome.flag()
+            } else {
+                None
+            };
+            let properties = ElementProperties::from_reads(vec![
+                (TreeProperty::ScrollAvailable, available.clone()),
+                (TreeProperty::ScrollVerticallyScrollable, outcome),
+            ]);
+            let evidence = properties.locator_evidence(ResolvedVocabulary::unknown());
+            assert_eq!(evidence.ref_evidence.scrolls_vertically, expected);
+        }
+    }
+    assert!(TreeProperty::WALK_SET.contains(&TreeProperty::ScrollVerticallyScrollable));
+}
+
 /// Code review found the `IsPassword` divergence `withholds_content` guards
 /// against - a provider answering a documented-`VT_BOOL` property as
 /// `VT_I4(1)` - reaching every other gate too, because `gate_open` read only

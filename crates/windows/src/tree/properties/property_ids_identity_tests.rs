@@ -43,6 +43,7 @@ pub(super) const ALL_PROPERTIES: &[TreeProperty] = &[
     TreeProperty::ValueAvailable,
     TreeProperty::RangeValueAvailable,
     TreeProperty::ScrollAvailable,
+    TreeProperty::ScrollVerticallyScrollable,
     TreeProperty::ScrollItemAvailable,
     TreeProperty::WindowAvailable,
     TreeProperty::GridItemAvailable,

@@ -10,4 +10,5 @@ pub(super) mod node_read;
 pub(super) mod node_traits;
 pub(crate) mod read_failure;
 pub(super) mod read_purpose;
+pub(crate) mod scroll_evidence;
 pub(crate) mod toolkit_trust;
