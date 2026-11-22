@@ -47,16 +47,6 @@ fn disagrees(pass: &Pass, state: &X11State, selected: &[u32]) -> bool {
         })
 }
 
-fn stable(previous: &(Pass, X11State), next: &(Pass, X11State)) -> bool {
-    let ids = |pass: &Pass| -> std::collections::BTreeSet<String> {
-        pass.windows
-            .iter()
-            .map(|window| window.info.id.clone())
-            .collect()
-    };
-    active_client(&previous.1) == active_client(&next.1) && ids(&previous.0) == ids(&next.0)
-}
-
 pub(super) fn reread_with(
     mut current: (Pass, X11State),
     deadline: Deadline,
@@ -74,13 +64,7 @@ pub(super) fn reread_with(
             break;
         }
         match read(budget) {
-            Ok(next) => {
-                let settled = stable(&current, &next);
-                current = next;
-                if settled {
-                    break;
-                }
-            }
+            Ok(next) => current = next,
             Err(error) if error.code == ErrorCode::Timeout => break,
             Err(error) => return Err(error),
         }

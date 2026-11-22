@@ -253,30 +253,3 @@ fn new_unclaimed_client_rereads_claimed_frames_until_focus_appears() {
     assert_eq!(calls.get(), 2);
     assert_eq!(result.focused, Some(0));
 }
-
-#[test]
-fn stable_frame_ids_and_active_client_stop_after_one_reread() {
-    let calls = Cell::new(0);
-    let mut initial = pass();
-    let mut foreign = initial.windows[0].clone();
-    foreign.info.id = "foreign".into();
-    foreign.info.pid = 8.into();
-    foreign.frame.pid = 8;
-    initial.windows.push(foreign);
-    let windows = initial.windows.clone();
-    reread_with(
-        (initial, state(7)),
-        Deadline::standard().unwrap(),
-        &[7],
-        |_| {
-            calls.set(calls.get() + 1);
-            let mut next = pass();
-            next.windows = windows.clone();
-            next.windows.reverse();
-            Ok((next, state(7)))
-        },
-        |_| {},
-    )
-    .unwrap();
-    assert_eq!(calls.get(), 1);
-}
