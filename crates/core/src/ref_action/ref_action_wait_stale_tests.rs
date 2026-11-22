@@ -1,4 +1,45 @@
 use super::*;
+use crate::DeliverySemantics;
+use crate::refs::resolve_saved_ref::test_support::{RuleAdapter, node, tree_with};
+use crate::response::output::ErrorPayload;
+
+#[test]
+fn zero_timeout_click_on_removed_target_carries_refresh_recovery() {
+    let _guard = crate::refs::refs_test_support::HomeGuard::new();
+    for children in [vec![], vec![node("button", "Other")]] {
+        let adapter = RuleAdapter::new(tree_with(children));
+        let error = crate::ref_action::execute_entry(
+            &adapter,
+            &entry(),
+            ActionRequest::headless(Action::Click).with_timeout_ms(None),
+        )
+        .expect_err("a removed target must not dispatch");
+
+        assert_eq!(error.code, ErrorCode::StaleRef);
+        assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+        assert_eq!(error.details.as_ref().unwrap()["kind"], "saved_ref_absent");
+        assert_eq!(error.details.as_ref().unwrap()["retryable"], false);
+        assert!(!error.permits_retry_by_default());
+        assert!(!crate::refs::resolve_verdict::ResolveVerdict::for_ref_action(&error).retries());
+        let payload = ErrorPayload::from_app_error(&crate::AppError::Adapter(error));
+        let envelope =
+            serde_json::to_value(crate::response::output::Response::err("click", payload)).unwrap();
+        assert_eq!(
+            envelope["error"]["disposition"],
+            serde_json::json!({
+                "delivery": "not_delivered", "retry": "safe"
+            })
+        );
+        assert_eq!(
+            envelope["error"]["recovery"]["strategy"],
+            "refresh_snapshot_then_retry_original"
+        );
+        assert_eq!(
+            envelope["error"]["recovery"]["requires_fresh_snapshot"],
+            true
+        );
+    }
+}
 
 struct CompleteNoCandidateAdapter {
     resolve_calls: AtomicU32,

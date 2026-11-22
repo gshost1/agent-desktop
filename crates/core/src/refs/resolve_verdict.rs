@@ -11,7 +11,8 @@
 //!
 //! - A refusal without `retryable: true` is settled.
 //! - A known complete absence (`resolve_no_candidate`,
-//!   `resolution_complete_absence`, `saved_ref_absent`) is final whatever its
+//!   `resolution_complete_absence`, `saved_ref_absent`, `resolve_target_destroyed`,
+//!   or an owner that exited or crashed) is final whatever its
 //!   `retryable` stamp: the element is not there, and the recovery is a new
 //!   snapshot, so the action answers `STALE_REF` at once. That includes a list
 //!   rebuilt under the lease while the action resolved it.
@@ -30,10 +31,11 @@ use serde_json::Value;
 
 use crate::{AdapterError, ErrorCode};
 
-const COMPLETE_ABSENCE_KINDS: [&str; 3] = [
+pub(crate) const COMPLETE_ABSENCE_KINDS: [&str; 4] = [
     "resolve_no_candidate",
     "resolution_complete_absence",
     "saved_ref_absent",
+    "resolve_target_destroyed",
 ];
 
 /// The retry disposition of one resolution refusal.
@@ -72,11 +74,7 @@ impl ResolveVerdict {
             == Some(true);
         match (&error.code, kind) {
             (ErrorCode::StaleRef, Some("saved_ref_landing_moved")) => Self::Moved,
-            (ErrorCode::StaleRef, Some(kind))
-                if complete && COMPLETE_ABSENCE_KINDS.contains(&kind) =>
-            {
-                Self::Absent
-            }
+            _ if error.is_complete_absence() => Self::Absent,
             (ErrorCode::StaleRef | ErrorCode::AmbiguousTarget, _) if complete => Self::Unsettled,
             _ => Self::Incomplete,
         }

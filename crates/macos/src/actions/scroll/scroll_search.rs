@@ -37,7 +37,7 @@ pub(crate) fn page_scroll_area(
     if room == Some(false) {
         return Ok(ScrollPage::AtEnd { delivered: false });
     }
-    let before = super::scroll_page::capture(&area, direction, deadline);
+    let before = super::scroll_page::capture_for_search(&area, direction, deadline);
     let anchor = match room {
         None => backward_anchor(&area, direction, deadline),
         Some(_) => None,
@@ -61,7 +61,7 @@ pub(crate) fn page_scroll_area(
         || {
             let page = settle(
                 before,
-                || super::scroll_page::capture(&area, direction, deadline),
+                || super::scroll_page::capture_for_search(&area, direction, deadline),
                 || pause(deadline),
             );
             match (&page, &anchor) {

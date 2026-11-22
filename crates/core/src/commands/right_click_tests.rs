@@ -126,6 +126,7 @@ fn save_refmap(source_app: Option<String>) -> String {
             bounds_space: None,
             bounds: Some(bounds),
             bounds_hash: bounds.bounds_hash(),
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: Vec::new(),

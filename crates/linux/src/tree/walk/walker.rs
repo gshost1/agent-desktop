@@ -1,6 +1,7 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 
 use super::admit::admit_children;
+use super::menu_walk::{children_are_hidden, walk_menu_levels};
 use super::walker_expand::LevelReader;
 use crate::system::SharedBus;
 use crate::tree::properties::read_purpose::ReadPurpose;
@@ -85,12 +86,24 @@ pub(crate) fn walk_levels<K, P>(
     root: K,
     limits: &WalkLimits,
     deadline: Deadline,
-    mut expand: impl FnMut(&[K]) -> Result<Vec<Expansion<P, K>>, AdapterError>,
+    expand: impl FnMut(&[K]) -> Result<Vec<Expansion<P, K>>, AdapterError>,
     classify: impl Fn(&P) -> NodeClass,
 ) -> Result<Walk<P>, AdapterError>
 where
     K: Clone + PartialEq,
 {
+    walk_levels_with(root, limits, deadline, expand, |_, read| {
+        classify(&read.payload)
+    })
+}
+
+pub(super) fn walk_levels_with<K: Clone + PartialEq, P>(
+    root: K,
+    limits: &WalkLimits,
+    deadline: Deadline,
+    mut expand: impl FnMut(&[K]) -> Result<Vec<Expansion<P, K>>, AdapterError>,
+    mut classify: impl FnMut(Option<&P>, &mut Expansion<P, K>) -> NodeClass,
+) -> Result<Walk<P>, AdapterError> {
     let mut slots: Vec<Slot<K, P>> = Vec::new();
     let mut frontier = vec![Pending {
         key: root,
@@ -120,14 +133,15 @@ where
             Err(error) => return Err(error),
         };
         let mut next = Vec::new();
-        for (pending, read) in frontier.into_iter().zip(reads) {
+        for (pending, mut read) in frontier.into_iter().zip(reads) {
+            let parent = pending.parent.map(|parent| &slots[parent].node.payload);
+            let class = classify(parent, &mut read);
             let Expansion {
                 payload,
                 children,
                 children_unread,
                 gone,
             } = read;
-            let class = classify(&payload);
             counts.note_node(class, pending.logical);
             let unreadable = children_unread || gone;
             let index = slots.len();
@@ -167,10 +181,13 @@ where
             } else {
                 let path = ancestor_path(&slots, index);
                 let node_limits = WalkLimits {
-                    max_children: if class.bulk {
-                        limits.bulk_children.min(limits.max_children)
-                    } else {
-                        limits.max_children
+                    children: super::child_walk::ChildWalk {
+                        max_per_node: if class.bulk {
+                            limits.bulk_children.min(limits.children.max_per_node)
+                        } else {
+                            limits.children.max_per_node
+                        },
+                        ..limits.children
                     },
                     ..*limits
                 };
@@ -232,13 +249,23 @@ pub(in crate::tree) fn walk_tree_for(
     let connection = bus.get(deadline)?;
     let mut reader =
         LevelReader::new(connection.inner(), root, limits, deadline).for_purpose(purpose);
-    walk_levels(
-        root.clone(),
-        limits,
-        deadline,
-        |level| reader.expand(level),
-        super::wrapper::classify,
-    )
+    if limits.children.prune_closed_menus {
+        walk_menu_levels(
+            root.clone(),
+            limits,
+            deadline,
+            |level| reader.expand(level),
+            |children| children_are_hidden(connection.inner(), children, deadline),
+        )
+    } else {
+        walk_levels(
+            root.clone(),
+            limits,
+            deadline,
+            |level| reader.expand(level),
+            super::wrapper::classify,
+        )
+    }
 }
 
 pub(crate) fn walk_native_tree(

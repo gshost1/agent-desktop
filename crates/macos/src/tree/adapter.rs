@@ -167,6 +167,18 @@ impl ObservationOps for MacOSAdapter {
         )
     }
 
+    fn list_raised_surfaces(
+        &self,
+        process: agent_desktop_core::ProcessIdentity,
+        deadline: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        let identity = crate::system::process::process_identity::require_core(&process)?;
+        crate::tree::surface_inventory::list_raised_surfaces_for_process(
+            identity,
+            crate::tree::locator_deadline::from_operation(deadline)?,
+        )
+    }
+
     fn hit_test(
         &self,
         handle: &NativeHandle,

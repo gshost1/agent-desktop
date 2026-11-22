@@ -97,6 +97,7 @@ fn entry_with_bounds(bounds: Option<Rect>) -> RefEntry {
         bounds_space: None,
         bounds,
         bounds_hash: bounds.and_then(|b| b.bounds_hash()),
+        screen_bounds_hash: None,
     };
     entry
 }

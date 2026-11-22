@@ -3,12 +3,26 @@ use serde_json::json;
 
 use super::live_element;
 use crate::channel::test_support::{
-    PORT, ScriptedConnector, StubPlatform, TOKEN, adapter, attach, deadline, element_read, node,
-    node_read, process, proven, web_entry,
+    PORT, ScriptedConnector, StubPlatform, TOKEN, adapter, attach, deadline, node, node_read,
+    process, proven, web_entry,
 };
 use crate::channel::web_handle::WebHandle;
 use crate::transport::scripted_transport::ScriptedTransport;
 use crate::{ElementReading, ElementToken};
+
+fn proven_element_read(
+    transport: ScriptedTransport,
+    value: serde_json::Value,
+    checked: serde_json::Value,
+) -> ScriptedTransport {
+    transport
+        .expect("DOM.resolveNode", json!({ "object": { "objectId": "r" } }))
+        .expect(
+            "Runtime.callFunctionOn",
+            json!({ "result": { "value": { "value": value, "text": null, "checked": checked } } }),
+        )
+        .expect("Runtime.releaseObject", json!({}))
+}
 
 fn web_with(transport: ScriptedTransport) -> crate::WebChannelAdapter<StubPlatform> {
     adapter(
@@ -122,7 +136,7 @@ fn the_live_read_reports_dom_state_without_bounds() {
         "checkbox",
         "Agree",
     );
-    transport = element_read(transport, json!("on"), json!(true));
+    transport = proven_element_read(transport, json!("on"), json!(true));
     let web = web_with(transport);
     let handle = agent_desktop_core::NativeHandle::new(WebHandle {
         process: process(),
@@ -155,4 +169,66 @@ fn dom_checked_state_wins_over_the_accessibility_state() {
     );
     assert_eq!(live.state.offscreen, Some(false));
     assert_eq!(live.state.hidden, Some(false));
+}
+
+#[test]
+fn a_live_read_proves_the_document_once_before_both_reads() {
+    let transport = proven_element_read(
+        node_read(attach(ScriptedTransport::new(), "T"), 7, "button", "Go"),
+        json!(null),
+        json!(null),
+    );
+    let sent = transport.sent_log();
+    let web = web_with(transport);
+    let handle = agent_desktop_core::NativeHandle::new(WebHandle {
+        process: process(),
+        token: ElementToken::parse(TOKEN).unwrap(),
+    });
+
+    web.get_live_element(&handle, deadline()).unwrap();
+
+    let sent = sent.lock().unwrap();
+    let methods: Vec<&str> = sent
+        .iter()
+        .filter_map(|request| request["method"].as_str())
+        .collect();
+    let proof = methods
+        .iter()
+        .position(|method| *method == "Page.getFrameTree");
+    let resolve = methods
+        .iter()
+        .position(|method| *method == "DOM.resolveNode");
+    assert_eq!(
+        methods
+            .iter()
+            .filter(|method| **method == "Page.getFrameTree")
+            .count(),
+        1
+    );
+    assert!(proof < resolve);
+}
+
+#[test]
+fn a_live_read_of_a_replaced_document_is_stale_before_any_element_read() {
+    let transport = attach(ScriptedTransport::new(), "T").expect(
+        "Page.getFrameTree",
+        json!({ "frameTree": { "frame": { "id": "F", "loaderId": "L-next" } } }),
+    );
+    let sent = transport.sent_log();
+    let web = web_with(transport);
+    let handle = agent_desktop_core::NativeHandle::new(WebHandle {
+        process: process(),
+        token: ElementToken::parse(TOKEN).unwrap(),
+    });
+
+    let error = web.get_live_element(&handle, deadline()).err().unwrap();
+
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(error.details.unwrap()["kind"], "cdp_document_replaced");
+    assert!(
+        sent.lock()
+            .unwrap()
+            .iter()
+            .all(|request| request["method"] != "DOM.resolveNode")
+    );
 }

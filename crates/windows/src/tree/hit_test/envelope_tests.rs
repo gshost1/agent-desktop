@@ -186,9 +186,9 @@ fn entry_for(live: &LiveElement) -> RefEntry {
             ..Default::default()
         },
         geometry: RefGeometry {
-            bounds_space: None,
             bounds: Some(bounds),
             bounds_hash: bounds.bounds_hash(),
+            ..Default::default()
         },
         capabilities: RefCapabilities {
             states: Vec::new(),

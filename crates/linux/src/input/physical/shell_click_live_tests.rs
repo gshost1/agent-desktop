@@ -173,7 +173,7 @@ fn assert_stream_error_is_preserved(pointer: &mut RemoteDesktop, log: &CallLog) 
             kind: agent_desktop_core::MouseEventKind::Click { count: 1 },
             modifiers: Vec::new(),
         },
-        &[agent_desktop_core::DisplayInfo {
+        &crate::system::DisplayLayout::unscaled(vec![agent_desktop_core::DisplayInfo {
             id: "refused".into(),
             bounds: agent_desktop_core::Rect {
                 x: 0.,
@@ -183,7 +183,7 @@ fn assert_stream_error_is_preserved(pointer: &mut RemoteDesktop, log: &CallLog) 
             },
             is_primary: true,
             scale: 1.,
-        }],
+        }]),
         &mut || Ok(()),
         deadline(),
     )
@@ -217,7 +217,7 @@ fn a_completed_wayland_click_with_refused_stop_is_delivered_once_and_unsafe_to_r
             kind: agent_desktop_core::MouseEventKind::Click { count: 1 },
             modifiers: Vec::new(),
         },
-        &[agent_desktop_core::DisplayInfo {
+        &crate::system::DisplayLayout::unscaled(vec![agent_desktop_core::DisplayInfo {
             id: "private".into(),
             bounds: agent_desktop_core::Rect {
                 x: 0.,
@@ -227,7 +227,7 @@ fn a_completed_wayland_click_with_refused_stop_is_delivered_once_and_unsafe_to_r
             },
             is_primary: true,
             scale: 1.,
-        }],
+        }]),
         &mut || Ok(()),
         deadline(),
     )

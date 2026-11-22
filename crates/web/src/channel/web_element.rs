@@ -7,7 +7,8 @@ use agent_desktop_core::{
 
 use super::web_channel_adapter::WebChannelAdapter;
 use super::web_handle::WebHandle;
-use crate::{ElementReading, ElementToken, read_element, read_node};
+use crate::act::read::read_proven_element;
+use crate::{ElementReading, ElementToken, read_node};
 
 impl<P: PlatformAdapter> WebChannelAdapter<P> {
     /// Re-identifies a ref captured over CDP: reconnects to its browser,
@@ -52,7 +53,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         let (node, reading) = self.with_required_link(&handle.process, deadline, |link| {
             let session = link.session(&token.target_id, deadline)?;
             let node = read_node(&mut link.connection, &session, token, deadline)?;
-            let reading = read_element(&mut link.connection, &session, token, deadline)?;
+            let reading = read_proven_element(&mut link.connection, &session, token, deadline)?;
             Ok((node, reading))
         })?;
         Ok(live_element(node, reading, token))

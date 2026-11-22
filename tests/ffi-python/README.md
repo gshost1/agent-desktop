@@ -47,7 +47,7 @@ python3 tests/ffi-python/smoke.py
 
 ## Stub enforcement (`AD_EXPECT_STUB=1`)
 
-Set `AD_EXPECT_STUB=1` when you run the harness against a stub build. The harness then fails if `ad_snapshot()` returns `ok:true`, which would mean the dylib was not built with `--features stub-adapter`. The arm64 macOS leg of the `ffi-panic-guard` CI job sets this variable. A real-adapter dylib therefore cannot pass the stub gate.
+Set `AD_EXPECT_STUB=1` when you run the harness against a stub build. The harness then fails if `ad_snapshot()` returns `ok:true`, which would mean the dylib was not built with `--features stub-adapter`. The FFI smoke step of the macOS `Test` CI job sets this variable. A real-adapter dylib therefore cannot pass the stub gate.
 
 ## Dependencies
 

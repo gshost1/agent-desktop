@@ -38,6 +38,7 @@ fn snapshot_with_ref(role: &str, available_actions: &[&str]) -> String {
             bounds_space: None,
             bounds: Some(bounds),
             bounds_hash: bounds.bounds_hash(),
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec![],
