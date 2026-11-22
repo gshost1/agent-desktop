@@ -49,9 +49,6 @@ pub(super) fn selected_matches(
             has_bounds,
             "hydrating selected locator anchor"
         );
-        if !proven && !has_identity && !has_bounds {
-            return Err(anchor_missing(&preliminary).into());
-        }
         if matched.fully_observed {
             let name = observed
                 .nodes
@@ -61,6 +58,9 @@ pub(super) fn selected_matches(
             let value = preliminary.identity.value.clone();
             record_match(matched, preliminary, name, value, &mut refmap)?;
             continue;
+        }
+        if !proven && !has_identity && !has_bounds {
+            return Err(anchor_missing(&preliminary).into());
         }
         let handle = adapter.resolve_locator_anchor(&preliminary, deadline)?;
         ensure_remaining(deadline)?;
