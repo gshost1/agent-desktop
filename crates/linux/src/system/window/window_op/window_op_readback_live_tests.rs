@@ -34,6 +34,7 @@ fn window_op_live_missing_client_list_does_not_claim_a_live_window_disappeared()
         assert_eq!(maximized(&xid), (true, true), "xprop verifies the write");
         let deadline = Deadline::after(10_000).expect("budget");
         let live = Live {
+            bus: &bus,
             frame: FrameWorld::new(&bus, &win, deadline).expect("live frame"),
             owner: ProcessIdentity::new(pid, win.process_instance.clone().expect("instance")),
             deadline,

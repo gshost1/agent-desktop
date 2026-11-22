@@ -65,12 +65,17 @@ trait OpWorld: ClientWorld {
 }
 
 struct Live<'a> {
+    bus: &'a SharedBus,
     frame: FrameWorld<'a>,
     owner: agent_desktop_core::ProcessIdentity,
     deadline: Deadline,
 }
 
 impl ClientWorld for Live<'_> {
+    fn frames(&self, win: &WindowInfo) -> Option<(Vec<crate::system::x11::FrameFacts>, usize)> {
+        super::window_client::frames_on_bus(self.bus, win, self.deadline)
+    }
+
     fn global_position(&self) -> bool {
         self.frame.global_position()
     }
@@ -355,6 +360,7 @@ pub(crate) fn window_op(
     );
     run(
         &Live {
+            bus,
             frame,
             owner,
             deadline,

@@ -2,18 +2,11 @@ use super::*;
 
 struct BudgetKeys<'a> {
     inner: Keys<'a>,
-    until: Cell<Option<std::time::Instant>>,
 }
 
 impl BudgetKeys<'_> {
     fn check_budget(&self, deadline: Deadline) {
         assert!(deadline.remaining() <= Duration::from_millis(300));
-        let until = std::time::Instant::now() + deadline.remaining();
-        if let Some(first) = self.until.get() {
-            assert!(until <= first + Duration::from_millis(1));
-        } else {
-            self.until.set(Some(until));
-        }
     }
 }
 
@@ -36,7 +29,7 @@ impl KeyWorld for BudgetKeys<'_> {
         pid: u32,
         deadline: Deadline,
     ) -> Result<Option<WindowInfo>, AdapterError> {
-        self.check_budget(deadline);
+        assert!(deadline.remaining() > Duration::from_millis(300));
         self.inner.focused_window(pid, deadline)
     }
 
@@ -47,11 +40,10 @@ impl KeyWorld for BudgetKeys<'_> {
 }
 
 #[test]
-fn native_and_accessibility_rechecks_share_one_budget_across_both_delivery_gates() {
+fn accessibility_reads_keep_the_command_budget_while_native_rechecks_are_capped() {
     let physical = FakeWorld::x11();
     let keys = BudgetKeys {
         inner: Keys::owning(&physical),
-        until: Cell::new(None),
     };
     *keys.inner.active.borrow_mut() = VecDeque::from([None, Some(PID)]);
     press_in(Press {
@@ -67,6 +59,17 @@ fn native_and_accessibility_rechecks_share_one_budget_across_both_delivery_gates
     assert_eq!(keys.inner.read_count("pause"), 1);
     assert_eq!(keys.inner.read_count("focused"), 2);
     assert_eq!(physical.count("sent"), 1);
+}
+
+#[test]
+fn native_checks_cap_the_initial_read_and_rechecks() {
+    let physical = FakeWorld::x11();
+    let keys = BudgetKeys {
+        inner: Keys::owning(&physical),
+    };
+    *keys.inner.active.borrow_mut() = VecDeque::from([None, Some(PID)]);
+    assert!(display_active(&keys, PID, deadline()));
+    assert_eq!(keys.inner.read_count("active"), 2);
 }
 
 #[test]

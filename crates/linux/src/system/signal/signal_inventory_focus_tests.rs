@@ -1,4 +1,7 @@
 use super::*;
+use crate::system::x11::X11Client;
+use crate::system::x11::map::{ClientMatch, match_client};
+use crate::tree::Extents;
 
 #[test]
 fn one_active_candidate_without_x11_evidence_is_the_focused_window() {
@@ -129,4 +132,51 @@ fn an_active_window_with_a_client_keeps_its_candidacy() {
     let pass = pass_over(windows, outcomes, Vec::new(), &state);
     assert_eq!(pass.candidates, [0]);
     assert_eq!(pass.focused, Some(0));
+}
+
+#[test]
+fn geometry_cannot_make_an_active_frame_a_candidate_for_another_frames_client() {
+    let registry = registry(vec![app(":1.1", 1, "alpha", true)]);
+    let frames = vec![read(
+        vec![
+            frame(":1.1", "/org/a11y/atspi/accessible/1", 1, &[25, 1]),
+            frame(":1.1", "/org/a11y/atspi/accessible/2", 1, &[25]),
+        ],
+        RootRead::Read,
+    )];
+    let (windows, _, _) = gathered(&registry, |_| true, frames);
+    let bounds = Extents {
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 200,
+    };
+    let native = X11Client {
+        id: 7,
+        pid: Some(1),
+        title: "Native".into(),
+        extents: None,
+        bounds: Some(bounds),
+        hidden: false,
+        shadow: (0, 0, 0, 0),
+    };
+    for named in [false, true] {
+        let mut windows = windows.clone();
+        for window in &mut windows {
+            window.frame.size_identity = true;
+            window.frame.extents = Some(bounds);
+        }
+        windows[1].frame.title = if named { "Native" } else { "Other" }.into();
+        assert_eq!(
+            match_client(&windows[0].frame, std::slice::from_ref(&native)),
+            ClientMatch::One(7)
+        );
+        let state = X11State::Ready {
+            active: Some(7),
+            clients: vec![native.clone()],
+        };
+        let pass = pass_over(windows, Vec::new(), Vec::new(), &state);
+        assert!(pass.candidates.is_empty());
+        assert_eq!(pass.focused, None);
+    }
 }
