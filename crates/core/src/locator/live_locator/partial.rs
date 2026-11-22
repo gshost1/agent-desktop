@@ -52,6 +52,7 @@ fn hydrate_one(
         refmap: None,
         stats: super::LocatorStats::default(),
         meta: resolution.meta.clone(),
+        match_depth: None,
     };
     let hydrated =
         super::hydrate::selected_matches(adapter, query, request, &mut single, observed).is_ok();

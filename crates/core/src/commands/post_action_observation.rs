@@ -55,7 +55,9 @@ pub(crate) fn observe(
             }
             latest = Probe::new("timed_out");
             Ok(match observed {
-                Ok(SelectorObservation::Selector { matches, complete }) if matches || complete => {
+                Ok(SelectorObservation::Selector {
+                    matches, complete, ..
+                }) if matches || complete => {
                     latest.selector_matches = Some(matches);
                     if matches != wait.gone {
                         latest.outcome = "expected_state_observed";
