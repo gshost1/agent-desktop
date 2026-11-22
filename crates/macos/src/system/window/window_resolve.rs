@@ -47,7 +47,16 @@ pub(crate) fn resolve_capture_window(
     win: &WindowInfo,
     deadline: std::time::Instant,
 ) -> Result<WindowInfo, AdapterError> {
-    let (_, record) = locate_verified_record_until(win, deadline, &LiveWindowSources)?;
+    resolve_capture_window_with(win, deadline, &LiveWindowSources)
+}
+
+fn resolve_capture_window_with(
+    win: &WindowInfo,
+    deadline: std::time::Instant,
+    sources: &impl WindowSources,
+) -> Result<WindowInfo, AdapterError> {
+    let (_, record) = locate_verified_record_until(win, deadline, sources)?;
+    require_live_offscreen_window(win, &record, deadline, sources)?;
     window_info_from_record(win, &record)
 }
 
@@ -70,7 +79,7 @@ fn resolve_window_strict_with(
         &win.id,
         &record,
         &ax_state,
-        |number| sources.is_on_any_space(number),
+        |number| sources.is_on_any_space(number, deadline),
     )?;
     ax_state.titles.fill_missing(&mut record);
     let mut resolved = window_info_from_record(win, &record)?;
@@ -167,16 +176,23 @@ fn resolve_window_element_strict(
     if let Some(element) = sources.element(pid, window_number, record.title.as_deref(), deadline)? {
         return Ok(element);
     }
-    if !record.presence.is_onscreen() {
-        let state = sources.ax_state(pid, deadline)?;
-        crate::system::window::window_liveness::require_live_window(
-            &win.id,
-            &record,
-            &state,
-            |number| sources.is_on_any_space(number),
-        )?;
-    }
+    require_live_offscreen_window(win, &record, deadline, sources)?;
     Err(window_not_accessible(&win.id))
+}
+
+fn require_live_offscreen_window(
+    win: &WindowInfo,
+    record: &WindowRecord,
+    deadline: std::time::Instant,
+    sources: &impl WindowSources,
+) -> Result<(), AdapterError> {
+    if record.presence.is_onscreen() {
+        return Ok(());
+    }
+    let state = sources.ax_state(record.pid, deadline)?;
+    crate::system::window::window_liveness::require_live_window(&win.id, record, &state, |number| {
+        sources.is_on_any_space(number, deadline)
+    })
 }
 
 pub(crate) fn parse_window_number(id: &str) -> Option<i64> {

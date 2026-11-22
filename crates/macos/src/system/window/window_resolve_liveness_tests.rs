@@ -13,6 +13,7 @@ struct FakeSources {
     on_any_space: Option<bool>,
     element: bool,
     ax_reads: Cell<usize>,
+    space_deadline: Cell<Option<Instant>>,
 }
 
 impl FakeSources {
@@ -37,6 +38,7 @@ impl FakeSources {
             on_any_space: Some(false),
             element: false,
             ax_reads: Cell::new(0),
+            space_deadline: Cell::new(None),
         }
     }
 }
@@ -61,7 +63,8 @@ impl WindowSources for FakeSources {
         })
     }
 
-    fn is_on_any_space(&self, _: i64) -> Option<bool> {
+    fn is_on_any_space(&self, _: i64, deadline: Instant) -> Option<bool> {
+        self.space_deadline.set(Some(deadline));
         self.on_any_space
     }
 
@@ -193,5 +196,37 @@ fn element_path_returns_a_published_element_without_reading_ax_state() {
     let mut sources = FakeSources::new(WindowPresence::Offscreen);
     sources.element = true;
     assert!(resolve_window_element_strict(&requested(), deadline(), &sources).is_ok());
+    assert_eq!(sources.ax_reads.get(), 0);
+}
+
+#[test]
+fn the_space_read_runs_within_the_command_deadline() {
+    let sources = FakeSources::new(WindowPresence::Offscreen);
+    let command_deadline = deadline();
+    let _ = resolve_window_strict_with(&requested(), command_deadline, &sources);
+    assert_eq!(sources.space_deadline.get(), Some(command_deadline));
+}
+
+#[test]
+fn capture_resolve_reports_an_ordered_out_window_closed() {
+    let sources = FakeSources::new(WindowPresence::Offscreen);
+    let error = resolve_capture_window_with(&requested(), deadline(), &sources).unwrap_err();
+    assert_eq!(error.code, ErrorCode::WindowNotFound);
+}
+
+#[test]
+fn capture_resolve_keeps_a_window_on_another_space_or_without_proof() {
+    for on_any_space in [Some(true), None] {
+        let mut sources = FakeSources::new(WindowPresence::Offscreen);
+        sources.on_any_space = on_any_space;
+        let resolved = resolve_capture_window_with(&requested(), deadline(), &sources).unwrap();
+        assert_eq!(resolved.state.visible, Some(false));
+    }
+}
+
+#[test]
+fn capture_resolve_reads_no_ax_state_for_an_onscreen_window() {
+    let sources = FakeSources::new(WindowPresence::Onscreen);
+    assert!(resolve_capture_window_with(&requested(), deadline(), &sources).is_ok());
     assert_eq!(sources.ax_reads.get(), 0);
 }

@@ -91,3 +91,25 @@ fn an_onscreen_window_is_never_closed_and_skips_the_space_read() {
         ));
     }
 }
+
+#[test]
+fn the_focused_window_on_no_space_is_not_closed() {
+    let mut focused_state = state(false, true);
+    focused_state.focused = Some((Some("Fixture".into()), Some(42)));
+    assert!(!is_ordered_out(
+        &record(WindowPresence::Offscreen),
+        &focused_state,
+        |_| panic!("the focused window needs no Space read"),
+    ));
+}
+
+#[test]
+fn another_focused_window_does_not_keep_an_ordered_out_window() {
+    let mut focused_state = state(false, true);
+    focused_state.focused = Some((Some("Other".into()), Some(7)));
+    assert!(is_ordered_out(
+        &record(WindowPresence::Offscreen),
+        &focused_state,
+        |_| Some(false)
+    ));
+}

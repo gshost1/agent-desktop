@@ -5,7 +5,9 @@
 //! behind a full-screen Space; CoreGraphics lists both off screen. Only an
 //! ordered-out window belongs to no Space, so a window counts as closed only
 //! when it is off screen, missing from a complete `AXWindows` read, and the
-//! window server places it on no Space. Any unknown keeps it present.
+//! window server places it on no Space. A window entering or leaving full
+//! screen briefly matches all three while it stays the application's focused
+//! window, so the focused window is never closed. Any unknown keeps it present.
 
 use agent_desktop_core::AdapterError;
 
@@ -32,7 +34,15 @@ fn is_ordered_out(
     !record.presence.is_onscreen()
         && state.window_numbers_complete
         && !state.accessible_window_ids.contains(&record.window_number)
+        && !is_focused_window(record, state)
         && is_on_any_space(record.window_number) == Some(false)
+}
+
+fn is_focused_window(record: &WindowRecord, state: &WindowAxState) -> bool {
+    state
+        .focused
+        .as_ref()
+        .is_some_and(|(_, number)| *number == Some(record.window_number))
 }
 
 #[cfg(test)]
