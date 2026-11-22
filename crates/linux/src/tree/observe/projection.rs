@@ -134,6 +134,7 @@ impl Projector<'_> {
             identifiers,
             states: vocabulary.states,
             ref_evidence: LocatorRefEvidence {
+                scrolls_vertically: None,
                 window_bounds,
                 bounds,
                 available_actions: capabilities(&read.node),
@@ -152,6 +153,12 @@ impl Projector<'_> {
         visibility: &SnapshotVisibility,
     ) -> ObservedSubtree {
         let mut evidence = self.evidence_of(&node.payload, node.in_web_document);
+        evidence.ref_evidence.scrolls_vertically =
+            crate::tree::properties::scroll_evidence::of_children(
+                node.children
+                    .iter()
+                    .map(|child| child.payload.vertical_bar_range),
+            );
         visibility.append(&node.payload, &mut evidence);
         self.routes.withhold(&node, &mut evidence);
         let wrapper = crate::tree::walk::wrapper::classify(&node.payload).wrapper;

@@ -229,6 +229,7 @@ impl ElementProperties {
             identifiers: self.identifier_evidence(),
             states: vocabulary.states,
             ref_evidence: LocatorRefEvidence {
+                scrolls_vertically: None,
                 window_bounds: LocatorField::Absent,
                 bounds,
                 available_actions: vocabulary.available_actions,

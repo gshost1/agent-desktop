@@ -125,6 +125,34 @@ fn a_walked_tree_projects_roles_names_values_and_capabilities_as_read() {
 }
 
 #[test]
+fn hidden_vertical_bar_evidence_reaches_its_direct_parent() {
+    use crate::tree::vocabulary::role_numbers::{LIST, SCROLL_BAR};
+    for range in [None, Some(Ok(false)), Some(Ok(true)), Some(Err(()))] {
+        let edges = HashMap::from([(0, vec![1])]);
+        let limits = WalkLimits::default();
+        let walked = walk(
+            &edges,
+            |key| {
+                let mut read = read_of(if key == 0 { LIST } else { SCROLL_BAR }, "", &[]);
+                if key == 1 {
+                    read.node.traits.states = Field::Present(vec![0, 0]);
+                    read.vertical_bar_range = range;
+                }
+                read
+            },
+            &limits,
+        );
+        let tree = tree_of(walked, &limits);
+        assert_eq!(
+            tree.presentation.scrolls_vertically,
+            range.and_then(Result::ok)
+        );
+        let json = serde_json::to_value(&tree).unwrap();
+        assert!(json.get("scrolls_vertically").is_none());
+    }
+}
+
+#[test]
 fn a_failed_state_read_is_unknown_not_an_empty_list() {
     let mut read = read_of(PUSH_BUTTON, "Save", &["click"]);
     read.node.traits.states = Field::Failed("timed out".to_owned());

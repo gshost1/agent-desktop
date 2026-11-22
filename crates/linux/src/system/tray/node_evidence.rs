@@ -51,6 +51,7 @@ pub(super) fn fresh(
         identifiers: identifiers(target),
         states: LocatorField::Known(states),
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             bounds: LocatorField::Absent,
             window_bounds: LocatorField::Absent,
             available_actions: LocatorField::Known(actions),

@@ -218,6 +218,14 @@ pub(in crate::tree) async fn read_observed(
     .await;
     Ok((
         ObservedRead {
+            vertical_bar_range: if matches!(
+                purpose,
+                ReadPurpose::Snapshot | ReadPurpose::TextSearch
+            ) {
+                crate::tree::properties::scroll_evidence::read_bar(connection, &node).await
+            } else {
+                None
+            },
             node,
             label: label?,
             value: value?,
