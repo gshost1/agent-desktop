@@ -314,7 +314,9 @@ fn find_scopes_matches_to_requested_window_id() {
 #[test]
 fn a_traversal_timeout_names_the_budget_and_other_errors_are_untouched() {
     let timed_out = AppError::Adapter(AdapterError::timeout("traversal ran out"));
-    let AppError::Adapter(renamed) = name_the_traversal_remedy(timed_out) else {
+    let AppError::Adapter(renamed) =
+        name_the_traversal_remedy(timed_out, crate::SnapshotSurface::Window)
+    else {
         panic!("a timeout stays an adapter error");
     };
     let suggestion = renamed.suggestion.expect("a timeout carries a suggestion");
@@ -331,7 +333,9 @@ fn a_traversal_timeout_names_the_budget_and_other_errors_are_untouched() {
         AdapterError::new(crate::ErrorCode::AppNotFound, "no such app")
             .with_suggestion("Launch it first"),
     );
-    let AppError::Adapter(untouched) = name_the_traversal_remedy(missing) else {
+    let AppError::Adapter(untouched) =
+        name_the_traversal_remedy(missing, crate::SnapshotSurface::Window)
+    else {
         panic!("a non-timeout stays an adapter error");
     };
     assert_eq!(

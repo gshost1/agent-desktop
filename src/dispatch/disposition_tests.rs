@@ -118,6 +118,24 @@ fn a_timeout_of_a_mutation_keeps_its_unknown_delivery() {
 }
 
 #[test]
+fn a_read_only_unreadable_menubar_refusal_is_safe_to_retry_but_not_retryable() {
+    let error = settle_unknown_delivery(
+        AdapterError::new(
+            ErrorCode::ElementNotFound,
+            "The unread part could change the pick",
+        )
+        .with_details(json!({ "kind": "locator_unreadable_part", "retryable": false }))
+        .into(),
+        CommandEffect::ReadOnly,
+    )
+    .into_adapter_error();
+    assert_eq!(error.code, ErrorCode::ElementNotFound);
+    assert!(!error.permits_retry_by_default());
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(error.disposition.retry(), RetryDisposition::Safe);
+}
+
+#[test]
 fn evidence_the_error_already_carries_is_never_replaced() {
     let uncertain = AdapterError::new(ErrorCode::InvalidArgs, "payload rejected after the write")
         .with_disposition(DeliverySemantics::uncertain());

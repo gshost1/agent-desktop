@@ -42,6 +42,7 @@ mod observed_observation;
 mod observed_subtree;
 mod observed_tree;
 mod partial;
+mod partial_answers;
 mod predicate;
 mod ref_evidence_requirements;
 mod resolve;
@@ -92,6 +93,7 @@ pub use ref_evidence_requirements::RefEvidenceRequirements;
 pub use resolve::resolve_query;
 pub(crate) use resolve::{
     resolve_query_allowing_partial, resolve_query_from, resolve_query_from_allowing_partial,
+    resolve_query_keeping_observed_matches,
 };
 pub(crate) use row_reading::RowReading;
 pub(crate) use select::is_exact_name;
