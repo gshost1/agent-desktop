@@ -39,10 +39,12 @@ bus. The CLI says so when a process is running but not on the bus. `launch`
 waits up to `--timeout` for an app that is still starting, even when it has
 already mapped an X11 or Xwayland window. It ends early after 5 s only when
 the process environment disables the bridge with `NO_AT_BRIDGE=1` or
-`GTK_A11Y=none`. The suggestion names the case and, for a mapped window with
-a readable native title, gives a state wait that also works after registration
-finishes: `agent-desktop wait --app '<app>' --window '<title>' --timeout 30000`.
-Without a readable title, it suggests the `window-opened` event wait instead.
+`GTK_A11Y=none`. The suggestion names the case. When the app's largest mapped
+normal window has a UTF-8 title, it gives a state wait that also works after
+registration finishes:
+`agent-desktop wait --app '<app>' --window '<title>' --timeout 30000`.
+When that title is missing, or two equally large windows disagree, it suggests
+the `window-opened` event wait instead.
 
 | App | Needs |
 |-----|-------|

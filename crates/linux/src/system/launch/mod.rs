@@ -154,7 +154,7 @@ impl Launch<'_> {
     /// application this launch spawned: the read goes on for a window and ends
     /// if the owner exits. An attach passes false and reads only until it has
     /// an answer. A read that could not prove a window is read again until the
-    /// launch deadline.
+    /// launch deadline. A complete empty read stands when the deadline ends.
     fn wait_for_window(
         &self,
         owner: &Running,
@@ -209,6 +209,10 @@ impl Launch<'_> {
                 return unproven.map_or(Ok(None), |error| Err(unproven_at_deadline(error, waits)));
             }
             std::thread::sleep(POLL_INTERVAL.min(until.remaining()));
+            if waits && unproven.is_none() && self.deadline.is_expired() {
+                exited_early(owner, liveness(owner.pid, &owner.instance))?;
+                return Ok(None);
+            }
         }
     }
 
@@ -390,3 +394,4 @@ mod launch_spawn;
 pub(crate) mod launch_step;
 pub(super) mod launch_target;
 mod launch_unlisted;
+mod launch_window_probe;
