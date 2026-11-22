@@ -1,44 +1,62 @@
-use super::{
-    Address, COMBO_BOX, EDITABLE, EDITABLE_TEXT, LABEL, LABEL_FOR, LABELLED_BY, NULL_PATH,
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use super::document_tests::composite;
+use super::{Address, EDITABLE, LABEL, LABEL_FOR, LABELLED_BY, NULL_PATH};
+use crate::tree::element::ancestry;
 use crate::tree::live::test_support::read_of;
+use crate::tree::vocabulary::composite_sibling::{CHILDREN_IN_FLIGHT, EDITABLE_TEXT};
 use crate::tree::vocabulary::label_read::{RelationSet, read_label_if_needed};
-use crate::tree::vocabulary::role_numbers::{ENTRY, FILLER, PUSH_BUTTON};
+use crate::tree::vocabulary::role_numbers::{COMBO_BOX, DOCUMENT_WEB, ENTRY, FILLER, PUSH_BUTTON};
 use crate::tree::{AtspiElement, Field, LabelOutcome};
 use zbus::connection::Builder;
 
 const OWNER: &str = "org.agentdesktop.CompositeLabelFixture";
 
 #[derive(Default)]
-struct Accessible {
-    role: u32,
-    editable: bool,
-    interfaces: Vec<&'static str>,
-    name: &'static str,
-    parent: &'static str,
-    children: Vec<&'static str>,
-    relations: Vec<(u32, &'static str)>,
+pub(super) struct Accessible {
+    pub(super) role: u32,
+    pub(super) editable: bool,
+    pub(super) interfaces: Vec<&'static str>,
+    pub(super) name: &'static str,
+    pub(super) parent: &'static str,
+    pub(super) children: Vec<&'static str>,
+    pub(super) relations: Vec<(u32, &'static str)>,
+    pub(super) refuses: bool,
+    pub(super) lacks_interfaces: bool,
+    pub(super) calls: Arc<AtomicUsize>,
 }
 
 #[zbus::interface(name = "org.a11y.atspi.Accessible")]
 impl Accessible {
     fn get_role(&self) -> u32 {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         self.role
     }
 
-    fn get_state(&self) -> Vec<u32> {
-        vec![u32::from(self.editable) << EDITABLE, 0]
+    fn get_state(&self) -> zbus::fdo::Result<Vec<u32>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        match self.refuses {
+            true => Err(zbus::fdo::Error::Failed("busy".to_owned())),
+            false => Ok(vec![u32::from(self.editable) << EDITABLE, 0]),
+        }
     }
 
-    fn get_interfaces(&self) -> Vec<&str> {
-        self.interfaces.clone()
+    fn get_interfaces(&self) -> zbus::fdo::Result<Vec<&str>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        match self.lacks_interfaces {
+            true => Err(zbus::fdo::Error::UnknownMethod("GetInterfaces".to_owned())),
+            false => Ok(self.interfaces.clone()),
+        }
     }
 
     fn get_children(&self) -> Vec<Address> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         self.children.iter().map(|path| address(path)).collect()
     }
 
     fn get_relation_set(&self) -> RelationSet {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         self.relations
             .iter()
             .map(|(kind, path)| (*kind, vec![address(path)]))
@@ -52,17 +70,80 @@ impl Accessible {
 
     #[zbus(property)]
     fn parent(&self) -> Address {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         address(self.parent)
     }
 
     #[zbus(property)]
     fn name(&self) -> &str {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         self.name
+    }
+
+    #[zbus(property)]
+    fn description(&self) -> &str {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        "Wrapper description"
     }
 }
 
-fn address(path: &str) -> Address {
+pub(super) fn address(path: &str) -> Address {
     (OWNER.to_owned(), path.try_into().unwrap())
+}
+
+pub(super) fn entry(calls: &Arc<AtomicUsize>) -> Accessible {
+    Accessible {
+        editable: true,
+        parent: "/composite",
+        calls: calls.clone(),
+        ..Accessible::default()
+    }
+}
+
+pub(super) fn serve(
+    objects: impl IntoIterator<Item = (&'static str, Accessible)>,
+) -> [zbus::Connection; 2] {
+    let (near, far) = std::os::unix::net::UnixStream::pair().unwrap();
+    let mut server = Builder::async_io_unix_stream(far)
+        .server(zbus::Guid::generate())
+        .unwrap()
+        .p2p();
+    for (path, object) in objects {
+        server = server.serve_at(path, object).unwrap();
+    }
+    let (client, server) = zbus::block_on(futures_lite::future::zip(
+        Builder::async_io_unix_stream(near).p2p().build(),
+        server.build(),
+    ));
+    [client.unwrap(), server.unwrap()]
+}
+
+pub(super) fn labels_of(
+    connection: &zbus::Connection,
+    entries: &[&str],
+    in_web_document: bool,
+) -> Vec<LabelOutcome> {
+    let reads = entries.iter().map(|path| {
+        let mut read = read_of(ENTRY, "", &[]);
+        read.node.element = AtspiElement::new(OWNER, *path, 1);
+        if in_web_document {
+            let document = AtspiElement::new(OWNER, "/document", 1);
+            read.node
+                .element
+                .set_ancestry(ancestry::child(&document, Some(DOCUMENT_WEB)));
+        }
+        read.node.traits.states = Field::Present(vec![1 << EDITABLE, 0]);
+        read
+    });
+    let reads: Vec<_> = reads.collect();
+    zbus::block_on(futures_util::future::join_all(
+        reads
+            .iter()
+            .map(|read| read_label_if_needed(connection, &read.node)),
+    ))
+    .into_iter()
+    .map(Result::unwrap)
+    .collect()
 }
 
 fn label_for(
@@ -70,38 +151,17 @@ fn label_for(
     siblings: impl IntoIterator<Item = (&'static str, Accessible)>,
     label: Accessible,
 ) -> LabelOutcome {
-    let (near, far) = std::os::unix::net::UnixStream::pair().unwrap();
-    let mut server = Builder::async_io_unix_stream(far)
-        .server(zbus::Guid::generate())
-        .unwrap()
-        .p2p()
-        .serve_at("/composite", parent)
-        .unwrap()
-        .serve_at("/label", label)
-        .unwrap()
-        .serve_at(
-            "/entry",
-            Accessible {
-                parent: "/composite",
-                ..Accessible::default()
-            },
-        )
-        .unwrap();
-    for (path, sibling) in siblings {
-        server = server.serve_at(path, sibling).unwrap();
-    }
-    let (client, server) = zbus::block_on(futures_lite::future::zip(
-        Builder::async_io_unix_stream(near).p2p().build(),
-        server.build(),
-    ));
-    let _server = server.unwrap();
-    let mut read = read_of(ENTRY, "", &[]);
-    read.node.element = AtspiElement::new(OWNER, "/entry", 1);
-    read.node.traits.states = Field::Present(vec![1 << EDITABLE, 0]);
-    zbus::block_on(read_label_if_needed(&client.unwrap(), &read.node)).unwrap()
+    let calls = Arc::default();
+    let objects = [
+        ("/composite", parent),
+        ("/label", label),
+        ("/entry", entry(&calls)),
+    ];
+    let [client, _server] = serve(objects.into_iter().chain(siblings));
+    labels_of(&client, &["/entry"], false).remove(0)
 }
 
-fn label(relations: Vec<(u32, &'static str)>) -> Accessible {
+pub(super) fn label(relations: Vec<(u32, &'static str)>) -> Accessible {
     Accessible {
         role: LABEL,
         name: "Find:",
@@ -193,7 +253,6 @@ fn a_second_editable_child_refuses_the_label_even_without_a_showing_state() {
 #[test]
 fn unread_or_unconfirmed_siblings_cannot_prove_ownership() {
     for (children, expected) in [
-        (vec!["/entry", "/missing"], LabelOutcome::Failed),
         (vec!["/entry", NULL_PATH], LabelOutcome::Unlabelled),
         (vec!["/entry", "/entry"], LabelOutcome::Unlabelled),
         (vec![], LabelOutcome::Unlabelled),
@@ -204,5 +263,103 @@ fn unread_or_unconfirmed_siblings_cannot_prove_ownership() {
             ..Accessible::default()
         };
         assert_eq!(label_for(parent, [], label(Vec::new())), expected);
+    }
+}
+
+#[test]
+fn a_vanished_sibling_is_absent_but_a_refusing_one_leaves_the_label_unknown() {
+    for (refusing, expected) in [
+        (None, LabelOutcome::Text("Find:".to_owned())),
+        (Some(false), LabelOutcome::Text("Find:".to_owned())),
+        (Some(true), LabelOutcome::Failed),
+    ] {
+        let parent = Accessible {
+            children: vec!["/entry", "/vanished", "/toggle"],
+            relations: vec![(LABELLED_BY, "/label")],
+            ..Accessible::default()
+        };
+        let toggle = refusing.map(|refuses| {
+            (
+                "/toggle",
+                Accessible {
+                    refuses,
+                    ..Accessible::default()
+                },
+            )
+        });
+        assert_eq!(label_for(parent, toggle, label(Vec::new())), expected);
+    }
+}
+
+#[test]
+fn a_live_sibling_without_an_interface_read_leaves_the_label_unknown() {
+    let lacking = || Accessible {
+        editable: true,
+        lacks_interfaces: true,
+        ..Accessible::default()
+    };
+    let labelled = Accessible {
+        children: vec!["/entry", "/lacking"],
+        relations: vec![(LABELLED_BY, "/label")],
+        ..Accessible::default()
+    };
+    assert_eq!(
+        label_for(labelled, [("/lacking", lacking())], label(Vec::new())),
+        LabelOutcome::Failed
+    );
+    let wrapper = Accessible {
+        role: FILLER,
+        children: vec!["/entry", "/combo", "/lacking"],
+        ..Accessible::default()
+    };
+    let combo = Accessible {
+        role: COMBO_BOX,
+        relations: vec![(LABELLED_BY, "/label")],
+        ..Accessible::default()
+    };
+    assert_eq!(
+        label_for(
+            wrapper,
+            [("/combo", combo), ("/lacking", lacking())],
+            label(vec![(LABEL_FOR, "/composite")])
+        ),
+        LabelOutcome::Failed
+    );
+}
+
+#[test]
+fn reading_stops_at_the_second_editable_child_and_reads_crowded_parents() {
+    let siblings: Vec<&'static str> = (0..2 * CHILDREN_IN_FLIGHT)
+        .map(|index| &*format!("/s{index}").leak())
+        .collect();
+    for (second_editable, expected, sibling_calls) in [
+        (true, LabelOutcome::Unlabelled, 2 * CHILDREN_IN_FLIGHT),
+        (
+            false,
+            LabelOutcome::Text("Find:".to_owned()),
+            4 * CHILDREN_IN_FLIGHT,
+        ),
+    ] {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let children = std::iter::once("/entry").chain(siblings.iter().copied());
+        let objects = siblings.iter().enumerate().map(|(index, path)| {
+            let sibling = Accessible {
+                editable: second_editable && index == 0,
+                calls: calls.clone(),
+                ..Accessible::default()
+            };
+            (*path, sibling)
+        });
+        let [client, _server] = serve(
+            [
+                ("/composite", composite(children.collect(), &Arc::default())),
+                ("/label", label(Vec::new())),
+                ("/entry", entry(&Arc::default())),
+            ]
+            .into_iter()
+            .chain(objects),
+        );
+        assert_eq!(labels_of(&client, &["/entry"], false), [expected]);
+        assert_eq!(calls.load(Ordering::SeqCst), sibling_calls);
     }
 }

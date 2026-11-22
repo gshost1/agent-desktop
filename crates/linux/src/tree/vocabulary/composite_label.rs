@@ -1,38 +1,80 @@
+use std::collections::HashMap;
+use std::future::poll_fn;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
+use std::task::{Poll, Waker};
+
 use agent_desktop_core::{AdapterError, Role};
-use futures_util::future::{join, try_join};
+use futures_util::future::try_join;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
+use super::composite_sibling::read_children;
 use super::label_read::{LABELLED_BY, RelationSet, label_text, read_relations};
-use super::role_numbers::{COMBO_BOX, LABEL};
+use super::role_numbers::LABEL;
 use super::roles::role_of;
 use super::state_bits::{EDITABLE, StateBits};
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
-use crate::tree::element::bounded::collect_bounded;
+use crate::tree::properties::absence::failure;
+use crate::tree::properties::failure::Failure;
 use crate::tree::properties::node_read::{call, deserialize};
+use crate::tree::properties::wrapper_parent::WrapperParent;
 use crate::tree::{AtspiElement, LabelOutcome, RawNode};
 
 const LABEL_FOR: u32 = 1;
 const NULL_PATH: &str = "/org/a11y/atspi/null";
-const EDITABLE_TEXT: &str = "org.a11y.atspi.EditableText";
-const CHILDREN_IN_FLIGHT: usize = 8;
 
-type Address = (String, OwnedObjectPath);
+pub(super) type Address = (String, OwnedObjectPath);
+type ParentKey = (String, String, String);
+type Analysis = Result<Composite, Fault>;
+
+#[derive(Clone, Default)]
+struct Composite {
+    children: Vec<Address>,
+    editable: Vec<Address>,
+    label: Option<AtspiElement>,
+    parent: Option<WrapperParent>,
+}
+
+#[derive(Clone)]
+enum Fault {
+    Connection(AdapterError),
+    Vanished,
+    Failed,
+}
+
+enum SlotState {
+    Pending(Vec<Waker>),
+    Ready(Box<Analysis>),
+    Abandoned,
+}
+
+/// One parent's analysis, shared by the fields of that parent read together.
+struct Slot(Mutex<SlotState>);
+
+/// The read that analyses a parent; dropped unfinished, it frees the waiters.
+struct Lead(Arc<Slot>);
 
 pub(super) async fn read_composite_label(
     connection: &Connection,
     node: &RawNode,
-) -> Result<LabelOutcome, AdapterError> {
-    if !editable_textfield(node) {
-        return Ok(LabelOutcome::Unlabelled);
+) -> Result<(LabelOutcome, Option<WrapperParent>), AdapterError> {
+    if node.element.in_web_document() || !editable_textfield(node) {
+        return Ok((LabelOutcome::Unlabelled, None));
     }
-    match composite_target(connection, &node.element).await {
-        Ok(Some(target)) => label_text(connection, &target).await,
-        Ok(None) => Ok(LabelOutcome::Unlabelled),
-        Err(error) if crate::system::is_connection_failure(&error) => {
-            Err(crate::system::classify(&error))
-        }
-        Err(_) => Ok(LabelOutcome::Failed),
+    let parent = parent_address(connection, &node.element).await;
+    let target = match parent.map(|address| owned_address(&node.element, &address)) {
+        Ok(Some(parent)) => composite_of(connection, &parent, &node.element)
+            .await
+            .map(|composite| (label_of(&composite, &node.element), composite.parent)),
+        Ok(None) => Ok((None, None)),
+        Err(error) => Err(fault(error)),
+    };
+    match target {
+        Ok((Some(target), parent)) => Ok((label_text(connection, &target).await?, parent)),
+        Ok((None, parent)) => Ok((LabelOutcome::Unlabelled, parent)),
+        Err(Fault::Vanished) => Ok((LabelOutcome::Unlabelled, None)),
+        Err(Fault::Connection(error)) => Err(error),
+        Err(Fault::Failed) => Ok((LabelOutcome::Failed, None)),
     }
 }
 
@@ -50,80 +92,175 @@ fn editable_textfield(node: &RawNode) -> bool {
         ) == Role::TextField
 }
 
-async fn composite_target(
-    connection: &Connection,
-    child: &AtspiElement,
-) -> Result<Option<AtspiElement>, zbus::Error> {
-    let Some(parent) = owned_address(child, &parent_address(connection, child).await?) else {
-        return Ok(None);
-    };
-    let (relations, children) = try_join(
-        read_relations(connection, &parent),
-        accessible::<Vec<Address>>(connection, &parent, "GetChildren"),
-    )
-    .await?;
-    let Some(siblings) = siblings(child, &children) else {
-        return Ok(None);
-    };
-    let targets: Vec<&Address> = relation_targets(&relations, LABELLED_BY).collect();
-    let sibling_reads = collect_bounded(
-        CHILDREN_IN_FLIGHT,
-        siblings
-            .iter()
-            .map(|sibling| read_sibling(connection, sibling, targets.is_empty())),
-    )
-    .await;
-    let sibling_reads: Vec<_> = sibling_reads.into_iter().collect::<Result<_, _>>()?;
-    if sibling_reads.iter().any(|(editable, _)| *editable) {
-        return Ok(None);
-    }
-    match targets.as_slice() {
-        [target] => proven_label(connection, &parent, target, false).await,
-        [] => {
-            let mut combos = siblings
-                .iter()
-                .zip(sibling_reads)
-                .filter_map(|(sibling, (_, combo))| combo.then_some(sibling));
-            match (combos.next(), combos.next()) {
-                (Some(combo), None) => shared_label(connection, &parent, combo).await,
-                _ => Ok(None),
-            }
-        }
-        _ => Ok(None),
+fn fault(error: zbus::Error) -> Fault {
+    match crate::system::is_connection_failure(&error) {
+        true => Fault::Connection(crate::system::classify(&error)),
+        false if failure(&error) == Failure::AppGone => Fault::Vanished,
+        false => Fault::Failed,
     }
 }
 
-async fn read_sibling(
+fn label_of(composite: &Composite, child: &AtspiElement) -> Option<AtspiElement> {
+    let label = composite.label.as_ref()?;
+    let mut listed = composite.children.iter().filter(|a| is_address(child, a));
+    (listed.next().is_some()
+        && listed.next().is_none()
+        && composite
+            .editable
+            .iter()
+            .all(|address| is_address(child, address)))
+    .then(|| label.clone())
+}
+
+async fn composite_of(
     connection: &Connection,
-    sibling: &AtspiElement,
-    need_role: bool,
-) -> Result<(bool, bool), zbus::Error> {
-    let (editability, role) = join(
-        try_join(
-            accessible::<Vec<u32>>(connection, sibling, "GetState"),
-            accessible::<Vec<String>>(connection, sibling, "GetInterfaces"),
-        ),
-        async {
-            if need_role {
-                accessible::<u32>(connection, sibling, "GetRole").await
-            } else {
-                Ok(0)
-            }
+    parent: &AtspiElement,
+    field: &AtspiElement,
+) -> Analysis {
+    let key = (
+        connection.server_guid().to_string(),
+        parent.bus_name().to_owned(),
+        parent.path().to_owned(),
+    );
+    let analyse = || read_composite(connection, parent, field);
+    match claim(key) {
+        Err(slot) => match wait_for(&slot).await {
+            Some(analysis) => analysis,
+            None => analyse().await.map_err(fault),
         },
+        Ok(lead) => {
+            let analysis = analyse().await.map_err(fault);
+            lead.0.settle(SlotState::Ready(Box::new(analysis.clone())));
+            analysis
+        }
+    }
+}
+
+fn parents() -> &'static Mutex<HashMap<ParentKey, Weak<Slot>>> {
+    static PARENTS: OnceLock<Mutex<HashMap<ParentKey, Weak<Slot>>>> = OnceLock::new();
+    PARENTS.get_or_init(Mutex::default)
+}
+
+fn claim(key: ParentKey) -> Result<Lead, Arc<Slot>> {
+    let mut parents = parents().lock().unwrap_or_else(PoisonError::into_inner);
+    parents.retain(|_, slot| slot.strong_count() > 0);
+    if let Some(slot) = parents
+        .get(&key)
+        .and_then(Weak::upgrade)
+        .filter(|slot| !matches!(*slot.state(), SlotState::Abandoned))
+    {
+        return Err(slot);
+    }
+    let slot = Arc::new(Slot(Mutex::new(SlotState::Pending(Vec::new()))));
+    parents.insert(key, Arc::downgrade(&slot));
+    Ok(Lead(slot))
+}
+
+impl Slot {
+    fn state(&self) -> std::sync::MutexGuard<'_, SlotState> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn settle(&self, outcome: SlotState) {
+        let mut state = self.state();
+        if let SlotState::Pending(wakers) = &mut *state {
+            let wakers = std::mem::take(wakers);
+            *state = outcome;
+            drop(state);
+            wakers.into_iter().for_each(Waker::wake);
+        }
+    }
+}
+
+impl Drop for Lead {
+    fn drop(&mut self) {
+        self.0.settle(SlotState::Abandoned);
+    }
+}
+
+async fn wait_for(slot: &Slot) -> Option<Analysis> {
+    poll_fn(|context| match &mut *slot.state() {
+        SlotState::Ready(analysis) => Poll::Ready(Some((**analysis).clone())),
+        SlotState::Abandoned => Poll::Ready(None),
+        SlotState::Pending(wakers) => {
+            if !wakers.iter().any(|waker| waker.will_wake(context.waker())) {
+                wakers.push(context.waker().clone());
+            }
+            Poll::Pending
+        }
+    })
+    .await
+}
+
+async fn read_composite(
+    connection: &Connection,
+    parent: &AtspiElement,
+    field: &AtspiElement,
+) -> Result<Composite, zbus::Error> {
+    let (relations, children) = try_join(
+        read_relations(connection, parent),
+        accessible::<Vec<Address>>(connection, parent, "GetChildren"),
     )
-    .await;
-    let (states, interfaces) = editability?;
-    let editable = StateBits::new(&states).has(EDITABLE)
-        || interfaces.iter().any(|name| name == EDITABLE_TEXT);
-    Ok((editable, role? == COMBO_BOX))
+    .await?;
+    let evidence = Some(WrapperParent::Children(parent.clone(), children.clone()));
+    let Some(elements) = children
+        .iter()
+        .map(|address| owned_address(parent, address))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(Composite {
+            parent: evidence,
+            ..Composite::default()
+        });
+    };
+    let (fields, others): (Vec<_>, Vec<_>) = (0..)
+        .zip(elements)
+        .partition(|(index, _)| is_address(field, &children[*index]));
+    let targets: Vec<&Address> = relation_targets(&relations, LABELLED_BY).collect();
+    let reads = read_children(connection, &others, fields.len(), targets.is_empty()).await?;
+    let editable: Vec<Address> = fields
+        .iter()
+        .map(|(index, _)| *index)
+        .chain(reads.iter().filter(|read| read.1).map(|read| read.0))
+        .map(|index| children[index].clone())
+        .collect();
+    if editable.len() > 1 {
+        return Ok(Composite {
+            parent: evidence,
+            ..Composite::default()
+        });
+    }
+    let label = match targets.as_slice() {
+        [target] => proven_label(connection, parent, target, false).await?,
+        [] => {
+            let mut combos = reads
+                .iter()
+                .filter(|(_, editable, combo)| *combo && !*editable)
+                .map(|(index, _, _)| &children[*index]);
+            match (combos.next(), combos.next()) {
+                (Some(combo), None) => shared_label(connection, parent, combo).await?,
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    Ok(Composite {
+        children,
+        editable,
+        label,
+        parent: evidence,
+    })
 }
 
 async fn shared_label(
     connection: &Connection,
     parent: &AtspiElement,
-    combo: &AtspiElement,
+    combo: &Address,
 ) -> Result<Option<AtspiElement>, zbus::Error> {
-    let relations = read_relations(connection, combo).await?;
+    let Some(combo) = owned_address(parent, combo) else {
+        return Ok(None);
+    };
+    let relations = read_relations(connection, &combo).await?;
     let mut targets = relation_targets(&relations, LABELLED_BY);
     let (Some(target), None) = (targets.next(), targets.next()) else {
         return Ok(None);
@@ -154,18 +291,6 @@ async fn proven_label(
         (None, None) if !require_label_for => Some(label),
         _ => None,
     })
-}
-
-fn siblings(child: &AtspiElement, children: &[Address]) -> Option<Vec<AtspiElement>> {
-    let mut matches = children.iter().filter(|address| is_address(child, address));
-    if matches.next().is_none() || matches.next().is_some() {
-        return None;
-    }
-    children
-        .iter()
-        .filter(|address| !is_address(child, address))
-        .map(|address| owned_address(child, address))
-        .collect()
 }
 
 fn relation_targets(relations: &RelationSet, kind: u32) -> impl Iterator<Item = &Address> {
@@ -201,7 +326,7 @@ async fn parent_address(
     Ok(Address::try_from(value)?)
 }
 
-async fn accessible<T>(
+pub(super) async fn accessible<T>(
     connection: &Connection,
     element: &AtspiElement,
     method: &str,
@@ -215,3 +340,7 @@ where
 #[cfg(test)]
 #[path = "composite_label_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "composite_label_document_tests.rs"]
+mod document_tests;
