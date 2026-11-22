@@ -142,7 +142,7 @@ mod imp {
             }
         }
         let role = texts[ROLE].take();
-        let scrolls_vertically = if requirements.states {
+        let scrolls_vertically = if requirements.states && usage.contents_index {
             let enabled = vertical_bar.as_ref().map_or(Ok(None), |bar| {
                 requested_count += 1;
                 fallback_reads += 1;

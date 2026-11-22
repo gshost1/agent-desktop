@@ -1,3 +1,7 @@
+pub(crate) fn reads_contents_index(mode: agent_desktop_core::ObservationMode) -> bool {
+    mode.contents_index && !mode.identity_only && !mode.text_content
+}
+
 pub(crate) fn vertical_overflow(
     bar_present: Option<bool>,
     enabled: Result<Option<bool>, i32>,

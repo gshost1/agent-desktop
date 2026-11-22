@@ -1,6 +1,29 @@
 use super::vertical_overflow;
 
 #[test]
+fn only_index_snapshots_request_vertical_bar_enabled_evidence() {
+    use agent_desktop_core::ObservationMode;
+    let index = ObservationMode {
+        contents_index: true,
+        ..Default::default()
+    };
+    assert!(super::reads_contents_index(index));
+    for mode in [
+        ObservationMode::default(),
+        ObservationMode {
+            identity_only: true,
+            ..index
+        },
+        ObservationMode {
+            text_content: true,
+            ..index
+        },
+    ] {
+        assert!(!super::reads_contents_index(mode));
+    }
+}
+
+#[test]
 fn presentation_states_request_vertical_bar_without_actions() {
     use crate::tree::properties::node_attribute_names::attribute_mask;
     use crate::tree::properties::node_attribute_status::{
