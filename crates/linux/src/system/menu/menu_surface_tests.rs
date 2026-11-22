@@ -1,8 +1,33 @@
-use agent_desktop_core::{AdapterError, WindowInfo, WindowState};
+use agent_desktop_core::{AdapterError, ErrorCode, WindowInfo, WindowState};
 
 use super::menu_popup::Node;
-use super::{MenuPopup, PopupReader, entries_across, entry, find_popups, inventory};
+use super::{MenuPopup, PopupReader, entries_across, entry, find_popups, inventory, popups_from};
 use crate::system::menu::menu_fixture::*;
+use crate::tree::{Extents, Field};
+
+#[test]
+fn stale_menu_item_geometry_does_not_establish_an_open_menu() {
+    let bounds = Extents {
+        x: 100,
+        y: 100,
+        width: 80,
+        height: 20,
+    };
+    let mut item = node(
+        ITEM,
+        "Closed",
+        &[crate::tree::vocabulary::state_bits::VISIBLE],
+        vec![],
+    );
+    item.payload.node.extents = Field::Present(bounds);
+    let mut reader = Fake::new(frame_with(vec![node(MENU, "File", &[], vec![item])]));
+    assert!(find_popups(&mut reader).unwrap().is_empty());
+    assert!(
+        find_popups(&mut Fake::new(frame_with(vec![])))
+            .unwrap()
+            .is_empty()
+    );
+}
 
 fn roots_in_tree(tree: &Node) -> Option<Vec<crate::tree::AtspiElement>> {
     super::roots_in_tree(tree, agent_desktop_core::Deadline::after(0).unwrap())
@@ -13,6 +38,7 @@ struct Fake {
     top: Vec<Node>,
     scans: usize,
     incomplete: bool,
+    error: Option<ErrorCode>,
 }
 
 impl Fake {
@@ -22,6 +48,7 @@ impl Fake {
             top: Vec::new(),
             scans: 0,
             incomplete: false,
+            error: None,
         }
     }
 }
@@ -40,7 +67,57 @@ impl PopupReader for Fake {
     }
 
     fn top_levels(&mut self) -> Result<Vec<Node>, AdapterError> {
+        if let Some(code) = self.error.clone() {
+            return Err(AdapterError::new(code, "top-level read failed"));
+        }
         Ok(self.top.clone())
+    }
+}
+
+#[test]
+fn a_vanished_owner_after_a_partial_menu_read_is_empty() {
+    for code in [
+        ErrorCode::ElementNotFound,
+        ErrorCode::AppNotFound,
+        ErrorCode::WindowNotFound,
+    ] {
+        let mut reader = Fake::new(frame_with(Vec::new()));
+        reader.incomplete = true;
+        reader.error = Some(code);
+        assert!(popups_from(&mut reader).unwrap().is_empty());
+    }
+}
+
+#[test]
+fn a_partial_menu_read_keeps_the_original_error() {
+    for code in [
+        ErrorCode::PermDenied,
+        ErrorCode::Internal,
+        ErrorCode::Timeout,
+    ] {
+        let mut reader = Fake::new(frame_with(Vec::new()));
+        reader.incomplete = true;
+        reader.error = Some(code.clone());
+        let error = popups_from(&mut reader).err().unwrap();
+        assert_eq!(error.code, code);
+        assert_eq!(error.message, "top-level read failed");
+    }
+}
+
+#[test]
+fn only_a_successful_incomplete_empty_menu_read_becomes_timeout() {
+    for incomplete in [false, true] {
+        let mut empty = Fake::new(frame_with(Vec::new()));
+        empty.incomplete = incomplete;
+        let result = popups_from(&mut empty);
+        if incomplete {
+            assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
+        } else {
+            assert!(result.unwrap().is_empty());
+        }
+        let mut open = Fake::new(frame_with(vec![gtk4_popover(true)]));
+        open.incomplete = incomplete;
+        assert_eq!(popups_from(&mut open).unwrap().len(), 1);
     }
 }
 
