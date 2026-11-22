@@ -14,6 +14,7 @@ pub(super) fn evidence_of(live: &LiveElement) -> LocatorEvidence {
         identifiers: live.identity.identifiers.clone(),
         states: LocatorField::Known(live.state.states.clone()),
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             bounds: live
                 .bounds
                 .map_or(LocatorField::Absent, LocatorField::Known),

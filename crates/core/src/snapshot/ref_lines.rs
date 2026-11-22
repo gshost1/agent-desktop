@@ -19,8 +19,8 @@ pub fn render_ref_lines(tree: &AccessibilityNode) -> Vec<String> {
     lines
 }
 
-/// Replaces `data.tree` with `data.lines` and leaves every other key as it
-/// was. Returns `false`, changing nothing, when `data` holds no tree; a
+/// Replaces `data.tree` with `data.lines`, and `data.contents` with its
+/// line form, and leaves every other key as it was. Returns `false`, changing nothing, when `data` holds no tree; a
 /// tree that does not read back leaves `data` unchanged and is an error.
 pub fn replace_tree_with_lines(data: &mut Value) -> Result<bool, AppError> {
     let Some(body) = data.as_object_mut() else {
@@ -30,8 +30,15 @@ pub fn replace_tree_with_lines(data: &mut Value) -> Result<bool, AppError> {
         return Ok(false);
     };
     let tree = AccessibilityNode::deserialize(tree)?;
+    let contents = body
+        .get("contents")
+        .map(super::snapshot_contents::SnapshotContents::deserialize)
+        .transpose()?;
     body.remove("tree");
     body.insert("lines".into(), Value::from(render_ref_lines(&tree)));
+    if let Some(contents) = contents {
+        body.insert("contents".into(), Value::from(contents.lines()));
+    }
     Ok(true)
 }
 

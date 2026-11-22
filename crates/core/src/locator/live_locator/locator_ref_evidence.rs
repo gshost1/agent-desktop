@@ -3,6 +3,7 @@ use crate::{NodeDescriptor, Rect};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocatorRefEvidence {
+    pub scrolls_vertically: Option<bool>,
     pub bounds: LocatorField<Rect>,
     /// The same node's rectangle in its window, when the toolkit reports no
     /// global position. It does not move when the window does, so it can

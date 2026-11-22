@@ -221,6 +221,7 @@ fn locator_evidence(role: &str) -> LocatorEvidence {
         identifiers: IdentifierEvidence::absent(),
         states: LocatorField::Absent,
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             window_bounds: LocatorField::Absent,
             bounds: LocatorField::Absent,
             available_actions: LocatorField::Absent,

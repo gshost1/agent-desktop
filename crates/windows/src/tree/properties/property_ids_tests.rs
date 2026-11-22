@@ -40,6 +40,7 @@ fn every_pattern_state_property_carries_a_gate() {
         TreeProperty::ValueIsReadOnly,
         TreeProperty::SelectionCanSelectMultiple,
         TreeProperty::WindowIsModal,
+        TreeProperty::ScrollVerticallyScrollable,
     ] {
         assert!(
             property.gate().is_some(),

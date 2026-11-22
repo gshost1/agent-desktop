@@ -96,6 +96,7 @@ fn evidence(
         identifiers: IdentifierEvidence::typed(ids, Some(preferred), true),
         states: LocatorField::Known(Vec::new()),
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             window_bounds: LocatorField::Absent,
             bounds: LocatorField::Absent,
             available_actions: LocatorField::Known(Vec::new()),

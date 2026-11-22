@@ -262,6 +262,7 @@ mod tests {
             identifiers: IdentifierEvidence::absent(),
             states: LocatorField::Unknown,
             ref_evidence: LocatorRefEvidence {
+                scrolls_vertically: None,
                 window_bounds: LocatorField::Absent,
                 bounds: LocatorField::Unknown,
                 available_actions: LocatorField::Known(vec!["Click".into()]),

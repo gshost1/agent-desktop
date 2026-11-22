@@ -238,6 +238,14 @@ struct ContentView: View {
                 Text("Outline Child B").accessibilityLabel("outline-child-b")
             }
             .accessibilityLabel("outline-parent")
+
+            List {
+                ForEach(1...3, id: \.self) { i in
+                    Text("Short Item \(i)").accessibilityLabel("short-item-\(i)")
+                }
+            }
+            .frame(height: 140)
+            .accessibilityLabel("short-item-list")
         }
     }
 

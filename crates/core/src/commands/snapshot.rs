@@ -78,14 +78,15 @@ pub fn execute(
     let opts = tree_options(&args);
 
     if let Some(root) = args.root_ref {
-        return format_result(snapshot_ref::run_from_ref_with_context(
+        let drill = snapshot_ref::run_from_ref_with_context(
             adapter,
             &opts,
             &root,
             context,
             args.timeout_ms
                 .unwrap_or(snapshot::DEFAULT_SNAPSHOT_TIMEOUT_MS),
-        )?);
+        )?;
+        return Ok(without_contents(format_result(drill)?));
     }
 
     if let Some(wait) = context.wait_selector() {
@@ -118,6 +119,13 @@ pub fn execute(
     format_result(result)
 }
 
+fn without_contents(mut body: Value) -> Value {
+    if let Some(fields) = body.as_object_mut() {
+        fields.remove("contents");
+    }
+    body
+}
+
 fn format_result(result: snapshot::SnapshotResult) -> Result<Value, AppError> {
     format_snapshot_fields(&result, None, None)
 }
@@ -128,6 +136,9 @@ pub(crate) fn format_snapshot_fields(
     matched_selector: Option<&str>,
 ) -> Result<Value, AppError> {
     let mut body = snapshot_fields_without_tree(result);
+    if let Some(contents) = crate::snapshot::snapshot_contents::summarize(&result.tree) {
+        body["contents"] = serde_json::to_value(contents)?;
+    }
     body["tree"] = serde_json::to_value(&result.tree)?;
     if let Some(ms) = elapsed_ms {
         body["elapsed_ms"] = json!(ms);

@@ -30,6 +30,7 @@ pub(crate) fn evidence(role: &str, name: Option<&str>) -> LocatorEvidence {
         identifiers: IdentifierEvidence::absent(),
         states: LocatorField::Known(Vec::new()),
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             window_bounds: LocatorField::Absent,
             bounds: LocatorField::Absent,
             available_actions: LocatorField::Known(Vec::new()),

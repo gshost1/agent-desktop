@@ -50,6 +50,7 @@ pub enum TreeProperty {
     ValueAvailable,
     RangeValueAvailable,
     ScrollAvailable,
+    ScrollVerticallyScrollable,
     ScrollItemAvailable,
     WindowAvailable,
     GridItemAvailable,
@@ -132,7 +133,7 @@ impl TreeProperty {
     /// nothing consumes it on the pinned stack (A16-6 measured it carrying no
     /// `class` token, so `dom_classes` ships schema-only), and the standing
     /// rule is that nothing unread is paid for.
-    pub const WALK_SET: [TreeProperty; 43] = [
+    pub const WALK_SET: [TreeProperty; 44] = [
         TreeProperty::Name,
         TreeProperty::AutomationId,
         TreeProperty::ClassName,
@@ -169,6 +170,7 @@ impl TreeProperty {
         TreeProperty::ValueAvailable,
         TreeProperty::RangeValueAvailable,
         TreeProperty::ScrollAvailable,
+        TreeProperty::ScrollVerticallyScrollable,
         TreeProperty::ScrollItemAvailable,
         TreeProperty::WindowAvailable,
         TreeProperty::GridItemAvailable,
@@ -231,6 +233,7 @@ impl TreeProperty {
             | TreeProperty::ValueAvailable
             | TreeProperty::RangeValueAvailable
             | TreeProperty::ScrollAvailable
+            | TreeProperty::ScrollVerticallyScrollable
             | TreeProperty::ScrollItemAvailable
             | TreeProperty::WindowAvailable
             | TreeProperty::GridItemAvailable
@@ -275,6 +278,7 @@ impl TreeProperty {
             TreeProperty::RangeValueIsReadOnly => Some(TreeProperty::RangeValueAvailable),
             TreeProperty::SelectionCanSelectMultiple => Some(TreeProperty::SelectionAvailable),
             TreeProperty::WindowIsModal => Some(TreeProperty::WindowAvailable),
+            TreeProperty::ScrollVerticallyScrollable => Some(TreeProperty::ScrollAvailable),
             _ => None,
         }
     }
@@ -318,6 +322,7 @@ impl TreeProperty {
             Self::ValueAvailable => "IsValuePatternAvailable",
             Self::RangeValueAvailable => "IsRangeValuePatternAvailable",
             Self::ScrollAvailable => "IsScrollPatternAvailable",
+            Self::ScrollVerticallyScrollable => "ScrollVerticallyScrollable",
             Self::ScrollItemAvailable => "IsScrollItemPatternAvailable",
             Self::WindowAvailable => "IsWindowPatternAvailable",
             Self::GridItemAvailable => "IsGridItemPatternAvailable",

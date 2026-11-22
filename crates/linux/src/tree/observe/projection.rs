@@ -77,6 +77,7 @@ struct Projector<'a> {
     limits: &'a WalkLimits,
     stats: LocatorStats,
     routes: &'a HeadlessRoutes,
+    scroll_area: Option<Field<Extents>>,
 }
 
 impl Projector<'_> {
@@ -134,6 +135,7 @@ impl Projector<'_> {
             identifiers,
             states: vocabulary.states,
             ref_evidence: LocatorRefEvidence {
+                scrolls_vertically: None,
                 window_bounds,
                 bounds,
                 available_actions: capabilities(&read.node),
@@ -152,6 +154,33 @@ impl Projector<'_> {
         visibility: &SnapshotVisibility,
     ) -> ObservedSubtree {
         let mut evidence = self.evidence_of(&node.payload, node.in_web_document);
+        let bar = crate::tree::properties::scroll_evidence::of_children(
+            node.children
+                .iter()
+                .map(|child| child.payload.vertical_bar_range),
+        );
+        evidence.ref_evidence.scrolls_vertically =
+            crate::tree::properties::scroll_evidence::with_child_visibility(
+                bar,
+                evidence.role.known().map(String::as_str),
+                node.payload.node.traits.states.present().map(Vec::as_slice),
+                crate::tree::properties::scroll_evidence::is_own_viewport(
+                    node.payload.node.extents.present(),
+                    self.scroll_area.as_ref().map(Field::present),
+                ),
+                node.children.iter().map(|child| {
+                    (
+                        child.payload.node.traits.role.present().copied(),
+                        child
+                            .payload
+                            .node
+                            .traits
+                            .states
+                            .present()
+                            .map(Vec::as_slice),
+                    )
+                }),
+            );
         visibility.append(&node.payload, &mut evidence);
         self.routes.withhold(&node, &mut evidence);
         let wrapper = crate::tree::walk::wrapper::classify(&node.payload).wrapper;
@@ -171,10 +200,15 @@ impl Projector<'_> {
             .max(child_count.map_or(0, |count| count as usize));
         let mut appended = decorate.decorate(&payload, &mut evidence, after_own);
         let end = after_own + appended.len();
+        let previous_area = self.scroll_area.clone();
+        if evidence.role.known().map(String::as_str) == Some("scrollarea") {
+            self.scroll_area = Some(payload.node.extents.clone());
+        }
         let mut children: Vec<ObservedSubtree> = children
             .into_iter()
             .map(|child| self.subtree(child, false, decorate, visibility))
             .collect();
+        self.scroll_area = previous_area;
         children.append(&mut appended);
         if is_root {
             children.append(&mut decorate.finish(end));
@@ -199,6 +233,7 @@ pub(crate) fn project_node(
         limits,
         stats: LocatorStats::default(),
         routes: &HeadlessRoutes::every_token(),
+        scroll_area: None,
     }
     .evidence_of(read, in_web_document)
 }
@@ -236,6 +271,7 @@ pub(crate) fn project_with(
         limits,
         stats: LocatorStats::default(),
         routes,
+        scroll_area: None,
     };
     let counts = walk.counts;
     projector.stats.traversal.nodes_visited = walk.node_count as u64;
