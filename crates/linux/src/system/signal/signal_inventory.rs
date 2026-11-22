@@ -8,11 +8,12 @@ use crate::system::registry::frame_read::FrameRead;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::registry::registry_app::RegistryApp;
 use crate::system::window::ghost_window::without_ghosts;
+use crate::system::window::listed_twins::listed_client;
 use crate::system::window::stopped_windows::of_stopped_apps;
 use crate::system::window::window_ids::WindowIds;
 use crate::system::window::window_listing::collect;
 use crate::system::window::window_listing::read_frames;
-use crate::system::x11::map::{ClientMatch, match_client, match_frames};
+use crate::system::x11::map::{ClientMatch, match_frames};
 use crate::system::x11::{self, DisplayReader, FrameFacts, X11Evidence, X11Source, X11State};
 use crate::system::{
     SharedBus,
@@ -158,9 +159,8 @@ fn candidates_of(windows: &[ListedWindow], state: &X11State) -> Vec<usize> {
         .iter()
         .enumerate()
         .filter(|(_, window)| window.active)
-        .filter(|(_, window)| {
-            managed
-                .is_none_or(|clients| match_client(&window.frame, clients) != ClientMatch::NoClient)
+        .filter(|(index, _)| {
+            managed.is_none() || listed_client(windows, *index, state) != ClientMatch::NoClient
         })
         .map(|(index, _)| index)
         .collect()

@@ -164,6 +164,7 @@ fn geometry_twins_are_not_disambiguated_as_title_twins() {
         })
         .collect();
     let mut accessible = frame("Question");
+    accessible.size_identity = true;
     accessible.extents = Some(rect);
     assert_eq!(
         client_among_twins(&accessible, &clients, Some(7), || panic!("not title twins")),

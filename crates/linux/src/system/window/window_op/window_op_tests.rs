@@ -34,6 +34,9 @@ mod twin;
 #[path = "window_op_shadow_world_tests.rs"]
 mod shadow;
 
+#[path = "window_op_ghost_tests.rs"]
+mod ghost;
+
 pub(super) const CLIENT: u32 = 0x0040_0003;
 pub(super) const INSTANCE: &str = "abcd1234:99";
 
@@ -56,6 +59,8 @@ pub(super) struct World {
     pub(super) remember_calls: RefCell<Vec<Option<RememberedPlace>>>,
     pub(super) twins: Option<Twins>,
     pub(super) active: Option<u32>,
+    pub(super) global: bool,
+    pub(super) frames: Option<(Vec<crate::system::x11::FrameFacts>, usize)>,
 }
 
 pub(super) fn process(instance: &str) -> Lookup {
@@ -114,6 +119,8 @@ impl World {
             remember_calls: RefCell::new(Vec::new()),
             twins: None,
             active: None,
+            global: false,
+            frames: None,
         }
     }
 
@@ -147,7 +154,11 @@ fn next<T: Clone>(queue: &RefCell<VecDeque<T>>) -> T {
 
 impl ClientWorld for World {
     fn global_position(&self) -> bool {
-        false
+        self.global
+    }
+
+    fn frames(&self, _win: &WindowInfo) -> Option<(Vec<crate::system::x11::FrameFacts>, usize)> {
+        self.frames.clone()
     }
 
     fn twins(&self, _win: &WindowInfo) -> Option<Twins> {

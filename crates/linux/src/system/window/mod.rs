@@ -1,4 +1,6 @@
+mod dialog_evidence;
 mod embedded_group;
+pub(crate) mod frame_client;
 pub(crate) mod frame_identity;
 pub(super) mod ghost_window;
 pub(crate) mod listed_twins;
