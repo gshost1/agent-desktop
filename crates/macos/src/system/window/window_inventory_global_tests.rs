@@ -391,6 +391,7 @@ fn ax_state(focused: Option<(Option<String>, Option<i64>)>) -> WindowAxState {
         focused,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: FxHashSet::default(),
+        window_numbers_complete: false,
         titles: Default::default(),
     }
 }

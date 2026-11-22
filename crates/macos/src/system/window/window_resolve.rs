@@ -52,6 +52,7 @@ pub(crate) fn resolve_window_strict(
     let (window_number, mut record) = locate_verified_record_until(win, deadline)?;
     let ax_state = crate::system::window::window_ax_state::read_until(record.pid, deadline)?;
     verify_window_record(win, &record)?;
+    require_live_window(&win.id, &record, &ax_state)?;
     ax_state.titles.fill_missing(&mut record);
     let mut resolved = window_info_from_record(win, &record)?;
     resolved.state.minimized = ax_state.minimized_by_id.get(&window_number).copied();
@@ -142,8 +143,26 @@ fn resolve_window_element_strict(
     let (window_number, record) = locate_verified_record_until(win, deadline)?;
     crate::tree::locator_deadline::remaining(deadline)?;
     let pid = crate::system::process::process_identity::to_pid_t(win.pid)?;
+    if !record.presence.is_onscreen() {
+        let state = crate::system::window::window_ax_state::read_until(pid, deadline)?;
+        require_live_window(&win.id, &record, &state)?;
+    }
     ax_window_element_for_number(pid, window_number, record.title.as_deref(), deadline)?
         .ok_or_else(|| window_not_accessible(&win.id))
+}
+
+fn require_live_window(
+    id: &str,
+    record: &WindowRecord,
+    state: &crate::system::window::window_ax_state::WindowAxState,
+) -> Result<(), AdapterError> {
+    if !record.presence.is_onscreen()
+        && state.window_numbers_complete
+        && !state.accessible_window_ids.contains(&record.window_number)
+    {
+        return Err(window_not_found(id));
+    }
+    Ok(())
 }
 
 pub(crate) fn parse_window_number(id: &str) -> Option<i64> {

@@ -10,6 +10,7 @@ fn ax_state(
         focused,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: rustc_hash::FxHashSet::default(),
+        window_numbers_complete: true,
         titles: Default::default(),
     }
 }

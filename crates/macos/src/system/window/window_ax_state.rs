@@ -9,6 +9,7 @@ pub(crate) struct WindowAxState {
     pub(crate) focused: Option<AxWindowIdentity>,
     pub(crate) minimized_by_id: FxHashMap<i64, bool>,
     pub(crate) accessible_window_ids: FxHashSet<i64>,
+    pub(crate) window_numbers_complete: bool,
     pub(crate) titles: crate::system::window::window_ax_titles::WindowAxTitles,
 }
 
@@ -18,7 +19,7 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
     let mut minimized_by_id = FxHashMap::default();
     let mut accessible_window_ids = FxHashSet::default();
     let mut titles = crate::system::window::window_ax_titles::WindowAxTitles::default();
-    for_each_window(pid, deadline, |window, window_id| {
+    let window_numbers_complete = for_each_window(pid, deadline, |window, window_id| {
         accessible_window_ids.insert(window_id);
         let (title, minimized) =
             crate::system::window::window_ax_attributes::read_title_and_minimized(
@@ -34,6 +35,7 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
         focused,
         minimized_by_id,
         accessible_window_ids,
+        window_numbers_complete,
         titles,
     })
 }
@@ -47,6 +49,7 @@ pub(crate) fn read_frontmost_until(
         focused: focused_identity(&app, pid, deadline)?,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: FxHashSet::default(),
+        window_numbers_complete: false,
         titles: Default::default(),
     })
 }
@@ -79,17 +82,19 @@ fn for_each_window(
     pid: i32,
     deadline: Instant,
     mut visit: impl FnMut(&crate::tree::AXElement, i64) -> Result<(), AdapterError>,
-) -> Result<(), AdapterError> {
+) -> Result<bool, AdapterError> {
     let app = crate::tree::element_for_pid(pid);
     for window in crate::tree::surface_read::elements(&app, "AXWindows", deadline)? {
         match crate::system::window::window_resolve::ax_window_id_with_deadline(&window, deadline) {
             Ok(Some(id)) => visit(&window, id)?,
             Ok(None) => {}
-            Err(error) if crate::system::window::window_bridge::is_unavailable(&error) => break,
+            Err(error) if crate::system::window::window_bridge::is_unavailable(&error) => {
+                return Ok(false);
+            }
             Err(error) => return Err(error),
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Labels each window's accessibility and gives a window with an unknown title
