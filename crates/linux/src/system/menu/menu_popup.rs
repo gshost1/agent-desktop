@@ -9,6 +9,7 @@ use crate::tree::vocabulary::state_bits::{
     CHECKED, EXPANDED, HAS_POPUP, MODAL, PRESSED, SHOWING, StateBits,
 };
 use crate::tree::{ObservedRead, WalkedNode};
+use agent_desktop_core::Deadline;
 
 pub(in crate::system) type Node = WalkedNode<ObservedRead>;
 
@@ -59,6 +60,14 @@ fn is_menu(role: Option<u32>) -> bool {
 }
 
 fn showing_items(node: &Node, depth: usize) -> usize {
+    presented_items(node, depth, &mut |_| false)
+}
+
+fn presented_items(
+    node: &Node,
+    depth: usize,
+    corroborate: &mut impl FnMut(&Node) -> bool,
+) -> usize {
     if depth > ITEM_SEARCH_DEPTH {
         return 0;
     }
@@ -67,23 +76,29 @@ fn showing_items(node: &Node, depth: usize) -> usize {
         .map(|child| {
             let child_role = role(child);
             if is_item(child_role) {
-                usize::from(has_state(child, SHOWING)) + showing_items(child, depth + 1)
+                usize::from(has_state(child, SHOWING) || corroborate(child))
+                    + presented_items(child, depth + 1, corroborate)
             } else if is_menu(child_role) {
                 0
             } else {
-                showing_items(child, depth + 1)
+                presented_items(child, depth + 1, corroborate)
             }
         })
         .sum()
 }
 
-fn open_menu(node: &Node) -> Option<usize> {
+fn open_menu(node: &Node, corroborate: &mut impl FnMut(&Node) -> bool) -> Option<usize> {
     let open = is_menu(role(node)) && has_state(node, SHOWING);
-    open.then(|| showing_items(node, 0))
+    open.then(|| presented_items(node, 0, corroborate))
         .filter(|items| *items > 0)
 }
 
-fn collect<'a>(node: &'a Node, in_bar: bool, found: &mut Vec<Found<'a>>) {
+fn collect<'a>(
+    node: &'a Node,
+    in_bar: bool,
+    found: &mut Vec<Found<'a>>,
+    corroborate: &mut impl FnMut(&Node) -> bool,
+) {
     if node.in_web_document || is_web_document(role(node)) {
         return;
     }
@@ -92,7 +107,7 @@ fn collect<'a>(node: &'a Node, in_bar: bool, found: &mut Vec<Found<'a>>) {
         found.push(popup);
         return;
     }
-    if let Some(items) = open_menu(node) {
+    if let Some(items) = open_menu(node, corroborate) {
         let family = match kind {
             Some(POPUP_MENU) => MenuFamily::Qt,
             _ if in_bar => MenuFamily::Gtk3Bar,
@@ -106,7 +121,7 @@ fn collect<'a>(node: &'a Node, in_bar: bool, found: &mut Vec<Found<'a>>) {
     }
     let in_bar = in_bar || kind == Some(MENU_BAR);
     for child in &node.children {
-        collect(child, in_bar, found);
+        collect(child, in_bar, found, corroborate);
     }
 }
 
@@ -214,13 +229,18 @@ fn gtk3_popover(frame: &Node) -> Option<Found<'_>> {
 }
 
 /// The popups open inside one window's tree, outermost first. A menu is open
-/// when it shows and one of its items shows: a closed Qt popup and a closed
-/// GTK 3 menu keep their nodes with the items cleared, and the menu-bar items
-/// of every toolkit show while idle, so neither node presence nor a showing
-/// bar item says anything.
-pub(in crate::system) fn in_window(frame: &Node) -> Vec<Found<'_>> {
+/// when an item shows, or a visible item's real bounds are covered by an
+/// app-owned mapped native popup. Closed menus can retain real item bounds.
+pub(in crate::system) fn in_window(frame: &Node, deadline: Deadline) -> Vec<Found<'_>> {
+    in_window_with(frame, &mut super::menu_presentation::corroborate(deadline))
+}
+
+pub(super) fn in_window_with<'a>(
+    frame: &'a Node,
+    corroborate: &mut impl FnMut(&Node) -> bool,
+) -> Vec<Found<'a>> {
     let mut found = Vec::new();
-    collect(frame, false, &mut found);
+    collect(frame, false, &mut found, corroborate);
     if found.is_empty() {
         found.extend(gtk3_popover(frame));
     }
@@ -233,8 +253,8 @@ pub(in crate::system) fn in_window(frame: &Node) -> Vec<Found<'_>> {
 /// verify an opener against and no menu surface, so it has no item count and
 /// `in_window` never reports it. An opener that advertises a popup and shows
 /// no popover node is never one, whatever its own states say.
-pub(in crate::system) fn popup_roots(opener: &Node) -> Vec<&Node> {
-    let menus: Vec<&Node> = in_window(opener)
+pub(in crate::system) fn popup_roots(opener: &Node, deadline: Deadline) -> Vec<&Node> {
+    let menus: Vec<&Node> = in_window(opener, deadline)
         .into_iter()
         .map(|popup| popup.root)
         .collect();
@@ -264,11 +284,16 @@ pub(in crate::system) fn only_menu_content(node: &Node) -> bool {
     is_popup_content(role(node)) && node.children.iter().all(only_menu_content)
 }
 
-fn first_open_menu(node: &Node) -> Option<(&Node, usize)> {
-    if let Some(items) = open_menu(node) {
+fn first_open_menu<'a>(
+    node: &'a Node,
+    corroborate: &mut impl FnMut(&Node) -> bool,
+) -> Option<(&'a Node, usize)> {
+    if let Some(items) = open_menu(node, corroborate) {
         return Some((node, items));
     }
-    node.children.iter().find_map(first_open_menu)
+    node.children
+        .iter()
+        .find_map(|child| first_open_menu(child, corroborate))
 }
 
 pub(in crate::system) fn is_popup_candidate(window: &Node) -> bool {
@@ -307,7 +332,7 @@ pub(in crate::system) fn is_popup_candidate(window: &Node) -> bool {
 /// nameless showing Component child whose whole subtree is menu content.
 /// GTK 3 context menus are such a window and Chromium menus such a frame; a
 /// real window has a title or holds something besides menus.
-pub(in crate::system) fn top_level(window: &Node) -> Option<Found<'_>> {
+pub(in crate::system) fn top_level(window: &Node, deadline: Deadline) -> Option<Found<'_>> {
     if !is_popup_candidate(window) {
         return None;
     }
@@ -323,7 +348,9 @@ pub(in crate::system) fn top_level(window: &Node) -> Option<Found<'_>> {
     if !window.children.iter().all(only_menu_content) {
         return None;
     }
-    let (root, items) = window.children.iter().find_map(first_open_menu)?;
+    let (root, items) = window.children.iter().find_map(|child| {
+        first_open_menu(child, &mut super::menu_presentation::corroborate(deadline))
+    })?;
     Some(Found {
         root,
         family,

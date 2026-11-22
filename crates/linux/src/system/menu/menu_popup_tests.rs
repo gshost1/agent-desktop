@@ -1,5 +1,17 @@
-use super::{MenuFamily, in_window, popup_roots, top_level};
+use super::MenuFamily;
 use crate::system::menu::menu_fixture::*;
+
+fn in_window(node: &super::Node) -> Vec<super::Found<'_>> {
+    super::in_window(node, agent_desktop_core::Deadline::after(0).unwrap())
+}
+
+fn top_level(node: &super::Node) -> Option<super::Found<'_>> {
+    super::top_level(node, agent_desktop_core::Deadline::after(0).unwrap())
+}
+
+fn popup_roots(node: &super::Node) -> Vec<&super::Node> {
+    super::popup_roots(node, agent_desktop_core::Deadline::after(0).unwrap())
+}
 
 fn families(found: &[super::Found<'_>]) -> Vec<MenuFamily> {
     found.iter().map(|popup| popup.family).collect()

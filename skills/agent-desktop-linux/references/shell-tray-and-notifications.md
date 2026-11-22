@@ -33,6 +33,14 @@ agent-desktop wait --menu-closed --app gnome-calculator --timeout 5000
   `item_count` on the menu.
 - `snapshot --surface menu` roots at the popup. `find --surface menu` uses the
   same scope.
+- After a complete scan finds no menu, the snapshot retries for up to 500 ms
+  within the command timeout, checking every 25 ms between inventory reads.
+  A menu found on the first read has no retry delay. An incomplete initial
+  inventory still returns an error, not a confirmed absence.
+- Menu items with SHOWING establish presentation directly. On X11, an item
+  with only VISIBLE needs non-empty, non-sentinel screen bounds covered by a
+  mapped override-redirect window owned by the app process. Closed menus can
+  retain real bounds, so those bounds alone do not establish presentation.
 - Menu refs identify the actual AT-SPI object within a freshly verified,
   complete popup context, labels and tree shape included.
 - A named GTK4 popover item (Calculator's Preferences) can be found and clicked

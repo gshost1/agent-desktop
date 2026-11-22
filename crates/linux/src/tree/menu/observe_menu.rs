@@ -99,7 +99,7 @@ fn menu_absent() -> AdapterError {
     )
 }
 
-fn outermost(popups: Vec<MenuPopup>) -> Result<MenuPopup, AdapterError> {
+pub(super) fn outermost(popups: Vec<MenuPopup>) -> Result<MenuPopup, AdapterError> {
     popups.into_iter().next().ok_or_else(menu_absent)
 }
 
@@ -112,8 +112,9 @@ pub(crate) fn observe_menu(
     request: &ObservationRequest,
 ) -> Result<ObservedTree, AdapterError> {
     let request = (*request).validate()?;
-    let popups = popups_of(bus, window, request.deadline)?;
-    let popup = outermost(popups)?;
+    let popup = super::menu_opening::await_popup(request.deadline, |deadline| {
+        popups_of(bus, window, deadline)
+    })?;
     let mut root = rooted(&popup.root);
     let (owner_bus, owner_path) = crate::system::window::window_id::decode(&window.id)?;
     root.set_menu_owner(&AtspiElement::new(owner_bus, owner_path, window.pid.get()));

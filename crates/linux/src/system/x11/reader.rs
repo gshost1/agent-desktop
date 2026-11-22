@@ -62,6 +62,14 @@ impl super::stacking::stacking_source::StackingSource for DisplayReader {
 }
 
 impl DisplayReader {
+    pub(crate) fn menu_popups(pid: u32, caller: Deadline) -> Option<Vec<PopupWindow>> {
+        let deadline = capped(caller)?;
+        let DisplayServer::X11(display) = session_server() else {
+            return None;
+        };
+        bounded(deadline, None, move || read_popup_windows(&display, pid))
+    }
+
     pub(crate) fn popup_origin(pid: u32, size: (i32, i32), caller: Deadline) -> Option<(i32, i32)> {
         Self::popup_window(pid, size, caller).map(|window| (window.bounds.x, window.bounds.y))
     }
