@@ -1,5 +1,6 @@
-use agent_desktop_core::LocatorField;
+use agent_desktop_core::{LocatorField, SlotStatus};
 
+use super::label_slot;
 use super::name_fields as resolve_names;
 use crate::tree::live::test_support::attributes;
 use crate::tree::vocabulary::placeholder::read_placeholder;
@@ -31,6 +32,23 @@ fn text(value: &str) -> Field<String> {
 
 fn known(value: &str) -> LocatorField<String> {
     LocatorField::Known(value.to_owned())
+}
+
+#[test]
+fn unread_wrapper_changes_only_description_slot() {
+    let properties = properties(text(""), text(""));
+    assert_eq!(
+        label_slot(&properties.name, &LabelOutcome::WrapperUnread),
+        SlotStatus::Suppressed
+    );
+    let (name, description) = name_fields(
+        &properties,
+        &Field::Present(PUSH_BUTTON),
+        &Field::Absent,
+        &LabelOutcome::WrapperUnread,
+    );
+    assert_eq!(name, LocatorField::Unknown);
+    assert_eq!(description, LocatorField::Absent);
 }
 
 #[test]

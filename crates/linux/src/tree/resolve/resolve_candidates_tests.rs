@@ -12,7 +12,7 @@ fn only_nodes_whose_role_can_be_the_stored_role_are_read_in_full() {
     let walk = fake.walk();
     let mut found = Vec::new();
     targets(&walk.root, &entry, &mut found);
-    let paths: Vec<&str> = found.iter().map(AtspiElement::path).collect();
+    let paths: Vec<&str> = found.iter().map(|(element, _)| element.path()).collect();
     assert_eq!(paths, ["/one", "/three"]);
 }
 
