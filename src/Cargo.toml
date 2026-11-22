@@ -51,6 +51,10 @@ name = "cli_process"
 path = "tests/cli_process.rs"
 
 [[test]]
+name = "cli_process_daemon"
+path = "tests/cli_process_daemon.rs"
+
+[[test]]
 name = "cli_stdin"
 path = "tests/cli_stdin.rs"
 
@@ -59,8 +63,16 @@ name = "mcp_process"
 path = "tests/mcp_process.rs"
 
 [[test]]
+name = "daemon_process"
+path = "tests/daemon_process.rs"
+
+[[test]]
 name = "command_host_absent"
 path = "tests/command_host_absent.rs"
+
+[[test]]
+name = "daemon_windows_fallback"
+path = "tests/daemon_windows_fallback.rs"
 
 [[test]]
 name = "windows_private_file_install"
