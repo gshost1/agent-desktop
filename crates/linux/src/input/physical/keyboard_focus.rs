@@ -88,6 +88,37 @@ async fn focused(
     }
 }
 
+pub(in crate::input) fn keyboard_target(
+    bus: &SharedBus,
+    element: &AtspiElement,
+    deadline: Deadline,
+) -> Result<AtspiElement, AdapterError> {
+    if element
+        .resolved_role()
+        .is_some_and(|role| role != "document")
+    {
+        return Ok(element.clone());
+    }
+    let connection = bus.get(deadline)?;
+    within(deadline, async {
+        let role = role_number(connection.inner(), element).await?;
+        if !role.is_some_and(is_text_document) {
+            return Ok(element.clone());
+        }
+        let words = states(connection.inner(), element).await?;
+        let bits = StateBits::new(&words);
+        if bits.has(FOCUSED) {
+            return Ok(element.clone());
+        }
+        if !bits.has(EDITABLE) || bits.has(READ_ONLY) {
+            return Err(refused());
+        }
+        internal_editor_focused(connection.inner(), element, role)
+            .await?
+            .ok_or_else(refused)
+    })
+}
+
 async fn states(
     connection: &zbus::Connection,
     element: &AtspiElement,
