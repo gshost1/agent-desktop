@@ -89,6 +89,10 @@ menu even if the frame reads active, so key steps stay unverified.
 Pointer forms aim at the centre of the ref's bounds, which the adapter withholds
 where the position is not proved. Read the result with a fresh `get`.
 
+On X11, GTK 2 apps that expose GAIL 2.x can receive ref-addressed pointer
+input when the adapter proves the receiver. A readable ref and bounds alone
+are not enough.
+
 Ref-addressed double and triple clicks prove the pointer receiver before every
 press, so a window raised by the first click is seen before the second. The
 checks share a 300 ms press-to-press budget, inside the 400 ms in which GTK, Qt
