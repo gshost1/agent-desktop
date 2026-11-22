@@ -1,14 +1,12 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{
-    Address, COMBO_BOX, COMPOSITE_CHILDREN_CAP, EDITABLE, EDITABLE_TEXT, LABEL, LABEL_FOR,
-    LABELLED_BY, NULL_PATH,
-};
+use super::{Address, EDITABLE, LABEL, LABEL_FOR, LABELLED_BY, NULL_PATH};
 use crate::tree::element::ancestry;
 use crate::tree::live::test_support::read_of;
+use crate::tree::vocabulary::composite_sibling::{CHILDREN_IN_FLIGHT, EDITABLE_TEXT};
 use crate::tree::vocabulary::label_read::{RelationSet, read_label_if_needed};
-use crate::tree::vocabulary::role_numbers::{DOCUMENT_WEB, ENTRY, FILLER, PUSH_BUTTON};
+use crate::tree::vocabulary::role_numbers::{COMBO_BOX, DOCUMENT_WEB, ENTRY, FILLER, PUSH_BUTTON};
 use crate::tree::{AtspiElement, Field, LabelOutcome};
 use zbus::connection::Builder;
 
@@ -24,6 +22,7 @@ struct Accessible {
     children: Vec<&'static str>,
     relations: Vec<(u32, &'static str)>,
     refuses: bool,
+    lacks_interfaces: bool,
     calls: Arc<AtomicUsize>,
 }
 
@@ -42,9 +41,12 @@ impl Accessible {
         }
     }
 
-    fn get_interfaces(&self) -> Vec<&str> {
+    fn get_interfaces(&self) -> zbus::fdo::Result<Vec<&str>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.interfaces.clone()
+        match self.lacks_interfaces {
+            true => Err(zbus::fdo::Error::UnknownMethod("GetInterfaces".to_owned())),
+            false => Ok(self.interfaces.clone()),
+        }
     }
 
     fn get_children(&self) -> Vec<Address> {
@@ -274,6 +276,42 @@ fn a_vanished_sibling_is_absent_but_a_refusing_one_leaves_the_label_unknown() {
     }
 }
 
+#[test]
+fn a_live_sibling_without_an_interface_read_leaves_the_label_unknown() {
+    let lacking = || Accessible {
+        editable: true,
+        lacks_interfaces: true,
+        ..Accessible::default()
+    };
+    let labelled = Accessible {
+        children: vec!["/entry", "/lacking"],
+        relations: vec![(LABELLED_BY, "/label")],
+        ..Accessible::default()
+    };
+    assert_eq!(
+        label_for(labelled, [("/lacking", lacking())], label(Vec::new())),
+        LabelOutcome::Failed
+    );
+    let wrapper = Accessible {
+        role: FILLER,
+        children: vec!["/entry", "/combo", "/lacking"],
+        ..Accessible::default()
+    };
+    let combo = Accessible {
+        role: COMBO_BOX,
+        relations: vec![(LABELLED_BY, "/label")],
+        ..Accessible::default()
+    };
+    assert_eq!(
+        label_for(
+            wrapper,
+            [("/combo", combo), ("/lacking", lacking())],
+            label(vec![(LABEL_FOR, "/composite")])
+        ),
+        LabelOutcome::Failed
+    );
+}
+
 fn composite(children: Vec<&'static str>, calls: &Arc<AtomicUsize>) -> Accessible {
     Accessible {
         children,
@@ -284,14 +322,23 @@ fn composite(children: Vec<&'static str>, calls: &Arc<AtomicUsize>) -> Accessibl
 }
 
 #[test]
-fn reading_stops_at_the_second_editable_child_and_skips_crowded_parents() {
-    let siblings = ["/second", "/s2", "/s3", "/s4", "/s5", "/s6", "/s7", "/s8"];
-    for (count, sibling_calls) in [(COMPOSITE_CHILDREN_CAP - 1, 8), (COMPOSITE_CHILDREN_CAP, 0)] {
+fn reading_stops_at_the_second_editable_child_and_reads_crowded_parents() {
+    let siblings: Vec<&'static str> = (0..2 * CHILDREN_IN_FLIGHT)
+        .map(|index| &*format!("/s{index}").leak())
+        .collect();
+    for (second_editable, expected, sibling_calls) in [
+        (true, LabelOutcome::Unlabelled, 2 * CHILDREN_IN_FLIGHT),
+        (
+            false,
+            LabelOutcome::Text("Find:".to_owned()),
+            4 * CHILDREN_IN_FLIGHT,
+        ),
+    ] {
         let calls = Arc::new(AtomicUsize::new(0));
-        let children = std::iter::once("/entry").chain(siblings.iter().copied().take(count));
+        let children = std::iter::once("/entry").chain(siblings.iter().copied());
         let objects = siblings.iter().enumerate().map(|(index, path)| {
             let sibling = Accessible {
-                editable: index == 0,
+                editable: second_editable && index == 0,
                 calls: calls.clone(),
                 ..Accessible::default()
             };
@@ -306,10 +353,7 @@ fn reading_stops_at_the_second_editable_child_and_skips_crowded_parents() {
             .into_iter()
             .chain(objects),
         );
-        assert_eq!(
-            labels_of(&client, &["/entry"], false),
-            [LabelOutcome::Unlabelled]
-        );
+        assert_eq!(labels_of(&client, &["/entry"], false), [expected]);
         assert_eq!(calls.load(Ordering::SeqCst), sibling_calls);
     }
 }

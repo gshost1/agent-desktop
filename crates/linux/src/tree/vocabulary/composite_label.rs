@@ -4,16 +4,16 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::task::{Poll, Waker};
 
 use agent_desktop_core::{AdapterError, Role};
-use futures_util::future::{join, try_join};
+use futures_util::future::try_join;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
+use super::composite_sibling::read_children;
 use super::label_read::{LABELLED_BY, RelationSet, label_text, read_relations};
-use super::role_numbers::{COMBO_BOX, LABEL};
+use super::role_numbers::LABEL;
 use super::roles::role_of;
 use super::state_bits::{EDITABLE, StateBits};
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
-use crate::tree::element::bounded::collect_bounded;
 use crate::tree::properties::absence::failure;
 use crate::tree::properties::failure::Failure;
 use crate::tree::properties::node_read::{call, deserialize};
@@ -21,11 +21,8 @@ use crate::tree::{AtspiElement, LabelOutcome, RawNode};
 
 const LABEL_FOR: u32 = 1;
 const NULL_PATH: &str = "/org/a11y/atspi/null";
-const EDITABLE_TEXT: &str = "org.a11y.atspi.EditableText";
-const CHILDREN_IN_FLIGHT: usize = 4;
-const COMPOSITE_CHILDREN_CAP: usize = 8;
 
-type Address = (String, OwnedObjectPath);
+pub(super) type Address = (String, OwnedObjectPath);
 type ParentKey = (String, String, String);
 type Analysis = Result<Composite, Fault>;
 
@@ -95,13 +92,9 @@ fn editable_textfield(node: &RawNode) -> bool {
 fn fault(error: zbus::Error) -> Fault {
     match crate::system::is_connection_failure(&error) {
         true => Fault::Connection(crate::system::classify(&error)),
-        false if vanished(&error) => Fault::Vanished,
+        false if failure(&error) == Failure::AppGone => Fault::Vanished,
         false => Fault::Failed,
     }
-}
-
-fn vanished(error: &zbus::Error) -> bool {
-    matches!(failure(error), Failure::AppGone | Failure::Suspect)
 }
 
 fn label_of(composite: &Composite, child: &AtspiElement) -> Option<AtspiElement> {
@@ -206,9 +199,6 @@ async fn read_composite(
         accessible::<Vec<Address>>(connection, parent, "GetChildren"),
     )
     .await?;
-    if children.len() > COMPOSITE_CHILDREN_CAP {
-        return Ok(Composite::default());
-    }
     let Some(elements) = children
         .iter()
         .map(|address| owned_address(parent, address))
@@ -249,62 +239,6 @@ async fn read_composite(
         editable,
         label,
     })
-}
-
-/// Reads the field's siblings a few at a time and stops at the first editable
-/// one, which no field can share a label with. A vanished sibling is absent.
-async fn read_children(
-    connection: &Connection,
-    siblings: &[(usize, AtspiElement)],
-    known_editable: usize,
-    need_role: bool,
-) -> Result<Vec<(usize, bool, bool)>, zbus::Error> {
-    let mut reads = Vec::with_capacity(siblings.len());
-    for chunk in siblings.chunks(CHILDREN_IN_FLIGHT) {
-        let chunk_reads = collect_bounded(
-            CHILDREN_IN_FLIGHT,
-            chunk
-                .iter()
-                .map(|(_, sibling)| read_child(connection, sibling, need_role)),
-        )
-        .await;
-        for ((index, _), read) in chunk.iter().zip(chunk_reads) {
-            match read {
-                Ok((editable, combo)) => reads.push((*index, editable, combo)),
-                Err(error) if vanished(&error) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        if known_editable + reads.iter().filter(|read| read.1).count() > 1 {
-            break;
-        }
-    }
-    Ok(reads)
-}
-
-async fn read_child(
-    connection: &Connection,
-    child: &AtspiElement,
-    need_role: bool,
-) -> Result<(bool, bool), zbus::Error> {
-    let (editability, role) = join(
-        try_join(
-            accessible::<Vec<u32>>(connection, child, "GetState"),
-            accessible::<Vec<String>>(connection, child, "GetInterfaces"),
-        ),
-        async {
-            if need_role {
-                accessible::<u32>(connection, child, "GetRole").await
-            } else {
-                Ok(0)
-            }
-        },
-    )
-    .await;
-    let (states, interfaces) = editability?;
-    let editable = StateBits::new(&states).has(EDITABLE)
-        || interfaces.iter().any(|name| name == EDITABLE_TEXT);
-    Ok((editable, role? == COMBO_BOX))
 }
 
 async fn shared_label(
@@ -381,7 +315,7 @@ async fn parent_address(
     Ok(Address::try_from(value)?)
 }
 
-async fn accessible<T>(
+pub(super) async fn accessible<T>(
     connection: &Connection,
     element: &AtspiElement,
     method: &str,
