@@ -41,6 +41,8 @@ Choose the scope:
 - With `--app` and no `--window-id`, `snapshot` and `find` take the app's only visible window, else its only focused window, else, among its standard windows, the one the platform names the app's main window (macOS does even while the app is in the background, where it focuses none), and answer `AMBIGUOUS_TARGET` with the candidates when none of these settles it. `data.window` says which window was read. Pass `--window-id` when an app has several windows.
 - On macOS, `menu` and `menubar` are application-owned and skip window selection. If you pass `--window-id`, it selects the owning app for that surface.
 
+On Linux, row visibility counts only item roles, not headers or scrollbars. A list inside a scroll area must have the same positive extents as its nearest scroll area for row visibility to establish overflow. Clipping by an outer scrolling page does not mean items remain in the list's own scroll.
+
 ### Only what changed (`--since`)
 
 After an action, `snapshot --since <snapshot_id>` re-reads the window and prints only what differs from that earlier snapshot, not the whole tree. It is a full snapshot: it gets its own `snapshot_id`, saves its refs, and can be the `--since` of the next one. Pass the same `--app`, `--window-id`, `--surface`, `-i`, `--compact`, `--skeleton` and `--max-depth` as the snapshot you compare against.

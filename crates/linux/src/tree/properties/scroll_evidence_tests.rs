@@ -13,7 +13,13 @@ fn child_visibility_only_marks_showing_lists_with_mixed_known_children() {
     let hidden = [0, 0];
     let visible = [1 << VISIBLE, 0];
     let decide = |bar, role, parent, children: Vec<Option<&[u32]>>| {
-        super::with_child_visibility(bar, role, parent, children.into_iter())
+        super::with_child_visibility(
+            bar,
+            role,
+            parent,
+            true,
+            children.into_iter().map(|states| (Some(32), states)),
+        )
     };
     for role in ["list", "listbox", "table", "outline", "grid", "browser"] {
         for offscreen in [&hidden, &visible] {

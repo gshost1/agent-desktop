@@ -178,6 +178,9 @@ returns the whole tree in place of a diff.
   subtree (`--max-depth`, `--skeleton`, the observation budget or the refmap cap).
   On Linux, mixed row visibility is evidence only when the list itself is showing
   and no scrollbar range was established; a known scrollbar range takes precedence.
+  Only item roles count, not headers or scrollbars. A list inside a scroll area
+  must have the same positive extents as its nearest scroll area for row visibility
+  to establish overflow; clipping by an outer scrolling page is not list overflow.
   A row the toolkit reports as not showing beside showing rows is an item the
   view does not show. Unknown scroll evidence never claims partial. A list inherits its nearest scroll
   area only through at most three non-list wrappers, each with one content child

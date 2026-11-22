@@ -3,9 +3,11 @@ use zbus::{Connection, zvariant::OwnedValue};
 
 use super::node_read::{call, deserialize};
 use crate::system::PROPERTIES_INTERFACE;
-use crate::tree::vocabulary::role_numbers::SCROLL_BAR;
+use crate::tree::vocabulary::role_numbers::{
+    LIST_ITEM, SCROLL_BAR, TABLE_CELL, TABLE_ROW, TREE_ITEM,
+};
 use crate::tree::vocabulary::state_bits::{SHOWING, StateBits, VERTICAL};
-use crate::tree::{AtspiElement, RawNode};
+use crate::tree::{AtspiElement, Extents, RawNode};
 
 const VALUE_INTERFACE: &str = "org.a11y.atspi.Value";
 
@@ -54,18 +56,25 @@ pub(crate) fn with_child_visibility<'a>(
     bar: Option<bool>,
     role: Option<&str>,
     states: Option<&[u32]>,
-    children: impl Iterator<Item = Option<&'a [u32]>>,
+    own_viewport: bool,
+    children: impl Iterator<Item = (Option<u32>, Option<&'a [u32]>)>,
 ) -> Option<bool> {
     bar.or_else(|| {
-        if !matches!(
-            role,
-            Some("list" | "listbox" | "table" | "outline" | "grid" | "browser")
-        ) || !states.is_some_and(|words| StateBits::new(words).has(SHOWING))
+        if !own_viewport
+            || !matches!(
+                role,
+                Some("list" | "listbox" | "table" | "outline" | "grid" | "browser")
+            )
+            || !states.is_some_and(|words| StateBits::new(words).has(SHOWING))
         {
             return None;
         }
         let (mut showing, mut not_showing) = (false, false);
-        for words in children.flatten() {
+        for words in children.filter_map(|(role, states)| {
+            matches!(role, Some(LIST_ITEM | TABLE_CELL | TABLE_ROW | TREE_ITEM))
+                .then_some(states)
+                .flatten()
+        }) {
             if StateBits::new(words).has(SHOWING) {
                 showing = true;
             } else {
@@ -74,6 +83,16 @@ pub(crate) fn with_child_visibility<'a>(
         }
         (showing && not_showing).then_some(true)
     })
+}
+
+pub(crate) fn is_own_viewport(bounds: Option<&Extents>, area: Option<Option<&Extents>>) -> bool {
+    match area {
+        None => true,
+        Some(Some(area)) => {
+            bounds.is_some_and(|bounds| bounds == area && bounds.width > 0 && bounds.height > 0)
+        }
+        Some(None) => false,
+    }
 }
 
 pub(crate) fn of_children(bars: impl Iterator<Item = Option<Result<bool, ()>>>) -> Option<bool> {

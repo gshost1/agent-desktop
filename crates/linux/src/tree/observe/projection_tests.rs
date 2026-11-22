@@ -246,6 +246,7 @@ fn a_name_over_the_field_budget_is_cut_and_counted() {
         limits: &limits,
         stats: LocatorStats::default(),
         routes: &crate::tree::capabilities::headless_routes::HeadlessRoutes::every_token(),
+        scroll_area: None,
     };
     let read = read_of(PUSH_BUTTON, "a very long name", &["click"]);
     let evidence = projector.evidence_of(&read, false);
