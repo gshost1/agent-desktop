@@ -286,7 +286,7 @@ fn composite(children: Vec<&'static str>, calls: &Arc<AtomicUsize>) -> Accessibl
 #[test]
 fn reading_stops_at_the_second_editable_child_and_skips_crowded_parents() {
     let siblings = ["/second", "/s2", "/s3", "/s4", "/s5", "/s6", "/s7", "/s8"];
-    for (count, sibling_calls) in [(COMPOSITE_CHILDREN_CAP - 1, 6), (COMPOSITE_CHILDREN_CAP, 0)] {
+    for (count, sibling_calls) in [(COMPOSITE_CHILDREN_CAP - 1, 8), (COMPOSITE_CHILDREN_CAP, 0)] {
         let calls = Arc::new(AtomicUsize::new(0));
         let children = std::iter::once("/entry").chain(siblings.iter().copied().take(count));
         let objects = siblings.iter().enumerate().map(|(index, path)| {

@@ -29,8 +29,6 @@ type Address = (String, OwnedObjectPath);
 type ParentKey = (String, String, String);
 type Analysis = Result<Composite, Fault>;
 
-/// What one parent proves for its editable children: its child list, the
-/// editable children read, and the label proven for a sole editable child.
 #[derive(Clone, Default)]
 struct Composite {
     children: Vec<Address>,
@@ -51,12 +49,10 @@ enum SlotState {
     Abandoned,
 }
 
-/// One parent's analysis, shared by every field of that parent read while it
-/// is held, so concurrent reads of a form's fields read the parent once.
+/// One parent's analysis, shared by the fields of that parent read together.
 struct Slot(Mutex<SlotState>);
 
-/// The read that analyses a parent; dropped unfinished, it lets the waiting
-/// fields read the parent themselves.
+/// The read that analyses a parent; dropped unfinished, it frees the waiters.
 struct Lead(Arc<Slot>);
 
 pub(super) async fn read_composite_label(
@@ -68,11 +64,11 @@ pub(super) async fn read_composite_label(
     }
     let parent = parent_address(connection, &node.element).await;
     let target = match parent.map(|address| owned_address(&node.element, &address)) {
-        Ok(Some(parent)) => composite_of(connection, &parent)
+        Ok(Some(parent)) => composite_of(connection, &parent, &node.element)
             .await
             .map(|composite| label_of(&composite, &node.element)),
         Ok(None) => Ok(None),
-        Err(error) => Err(fault(&error)),
+        Err(error) => Err(fault(error)),
     };
     match target {
         Ok(Some(target)) => label_text(connection, &target).await,
@@ -96,10 +92,10 @@ fn editable_textfield(node: &RawNode) -> bool {
         ) == Role::TextField
 }
 
-fn fault(error: &zbus::Error) -> Fault {
-    match crate::system::is_connection_failure(error) {
-        true => Fault::Connection(crate::system::classify(error)),
-        false if vanished(error) => Fault::Vanished,
+fn fault(error: zbus::Error) -> Fault {
+    match crate::system::is_connection_failure(&error) {
+        true => Fault::Connection(crate::system::classify(&error)),
+        false if vanished(&error) => Fault::Vanished,
         false => Fault::Failed,
     }
 }
@@ -120,19 +116,24 @@ fn label_of(composite: &Composite, child: &AtspiElement) -> Option<AtspiElement>
     .then(|| label.clone())
 }
 
-async fn composite_of(connection: &Connection, parent: &AtspiElement) -> Analysis {
+async fn composite_of(
+    connection: &Connection,
+    parent: &AtspiElement,
+    field: &AtspiElement,
+) -> Analysis {
     let key = (
         connection.server_guid().to_string(),
         parent.bus_name().to_owned(),
         parent.path().to_owned(),
     );
+    let analyse = || read_composite(connection, parent, field);
     match claim(key) {
         Err(slot) => match wait_for(&slot).await {
             Some(analysis) => analysis,
-            None => analyse(connection, parent).await,
+            None => analyse().await.map_err(fault),
         },
         Ok(lead) => {
-            let analysis = analyse(connection, parent).await;
+            let analysis = analyse().await.map_err(fault);
             lead.0.settle(SlotState::Ready(analysis.clone()));
             analysis
         }
@@ -195,15 +196,10 @@ async fn wait_for(slot: &Slot) -> Option<Analysis> {
     .await
 }
 
-async fn analyse(connection: &Connection, parent: &AtspiElement) -> Analysis {
-    read_composite(connection, parent)
-        .await
-        .map_err(|error| fault(&error))
-}
-
 async fn read_composite(
     connection: &Connection,
     parent: &AtspiElement,
+    field: &AtspiElement,
 ) -> Result<Composite, zbus::Error> {
     let (relations, children) = try_join(
         read_relations(connection, parent),
@@ -220,12 +216,16 @@ async fn read_composite(
     else {
         return Ok(Composite::default());
     };
+    let (fields, others): (Vec<_>, Vec<_>) = (0..)
+        .zip(elements)
+        .partition(|(index, _)| is_address(field, &children[*index]));
     let targets: Vec<&Address> = relation_targets(&relations, LABELLED_BY).collect();
-    let reads = read_children(connection, &elements, targets.is_empty()).await?;
-    let editable: Vec<Address> = reads
+    let reads = read_children(connection, &others, fields.len(), targets.is_empty()).await?;
+    let editable: Vec<Address> = fields
         .iter()
-        .filter(|(_, editable, _)| *editable)
-        .map(|(index, _, _)| children[*index].clone())
+        .map(|(index, _)| *index)
+        .chain(reads.iter().filter(|read| read.1).map(|read| read.0))
+        .map(|index| children[index].clone())
         .collect();
     if editable.len() > 1 {
         return Ok(Composite::default());
@@ -251,34 +251,31 @@ async fn read_composite(
     })
 }
 
-/// Reads the children a few at a time and stops once two of them are
-/// editable, since no field of such a parent can own its label. A child that
-/// vanished is absent.
+/// Reads the field's siblings a few at a time and stops at the first editable
+/// one, which no field can share a label with. A vanished sibling is absent.
 async fn read_children(
     connection: &Connection,
-    children: &[AtspiElement],
+    siblings: &[(usize, AtspiElement)],
+    known_editable: usize,
     need_role: bool,
 ) -> Result<Vec<(usize, bool, bool)>, zbus::Error> {
-    let mut reads = Vec::with_capacity(children.len());
-    for (start, chunk) in (0..)
-        .step_by(CHILDREN_IN_FLIGHT)
-        .zip(children.chunks(CHILDREN_IN_FLIGHT))
-    {
+    let mut reads = Vec::with_capacity(siblings.len());
+    for chunk in siblings.chunks(CHILDREN_IN_FLIGHT) {
         let chunk_reads = collect_bounded(
             CHILDREN_IN_FLIGHT,
             chunk
                 .iter()
-                .map(|child| read_child(connection, child, need_role)),
+                .map(|(_, sibling)| read_child(connection, sibling, need_role)),
         )
         .await;
-        for (index, read) in (start..).zip(chunk_reads) {
+        for ((index, _), read) in chunk.iter().zip(chunk_reads) {
             match read {
-                Ok((editable, combo)) => reads.push((index, editable, combo)),
+                Ok((editable, combo)) => reads.push((*index, editable, combo)),
                 Err(error) if vanished(&error) => {}
                 Err(error) => return Err(error),
             }
         }
-        if reads.iter().filter(|(_, editable, _)| *editable).count() > 1 {
+        if known_editable + reads.iter().filter(|read| read.1).count() > 1 {
             break;
         }
     }
