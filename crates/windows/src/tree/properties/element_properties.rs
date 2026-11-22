@@ -229,7 +229,7 @@ impl ElementProperties {
             identifiers: self.identifier_evidence(),
             states: vocabulary.states,
             ref_evidence: LocatorRefEvidence {
-                scrolls_vertically: None,
+                scrolls_vertically: self.gated_flag(TreeProperty::ScrollVerticallyScrollable),
                 window_bounds: LocatorField::Absent,
                 bounds,
                 available_actions: vocabulary.available_actions,
