@@ -4,7 +4,18 @@ use std::time::{Duration, Instant};
 use agent_desktop_core::Deadline;
 
 use super::*;
-use crate::system::window::window_test_support::{pass, state};
+use crate::system::window::window_test_support::{pass, state as initial_state};
+
+fn state(pid: u32) -> X11State {
+    let mut state = initial_state(pid);
+    if let X11State::Ready { clients, .. } = &mut state {
+        let mut main = clients[0].clone();
+        main.id = 1;
+        main.title = "accessible name".into();
+        clients.push(main);
+    }
+    state
+}
 
 #[test]
 fn reread_stops_as_soon_as_focus_appears() {
@@ -54,7 +65,9 @@ fn reread_caps_attempts_and_bounds_the_supplied_deadline() {
         |until| {
             assert!(until.remaining() <= Duration::from_millis(300));
             calls.set(calls.get() + 1);
-            Ok((pass(), state(7)))
+            let mut next = pass();
+            next.windows[0].info.id = format!("frame-{}", calls.get());
+            Ok((next, state(7)))
         },
         |duration| pauses.set(pauses.get() + duration),
     )
@@ -134,6 +147,7 @@ fn reread_preserves_the_last_valid_listing_when_a_read_times_out() {
             calls.set(calls.get() + 1);
             if calls.get() == 1 {
                 let mut next = pass();
+                next.windows[0].info.id = "latest valid frame".into();
                 next.windows[0].info.title = "latest valid listing".into();
                 Ok((next, state(7)))
             } else {
@@ -201,4 +215,68 @@ fn reread_can_recover_a_selected_process_with_no_listed_frames_yet() {
     )
     .unwrap();
     assert_eq!(result.focused, Some(0));
+}
+
+#[test]
+fn persistent_unclaimed_frame_and_native_client_never_reread() {
+    let mut persistent = pass();
+    persistent.windows[0].frame.title = "different title".into();
+    reread_with(
+        (persistent, state(7)),
+        Deadline::standard().unwrap(),
+        &[7],
+        |_| panic!("persistent identity mismatch must not read"),
+        |_| panic!("persistent identity mismatch must not wait"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn new_unclaimed_client_rereads_claimed_frames_until_focus_appears() {
+    let calls = Cell::new(0);
+    let (result, _) = reread_with(
+        (pass(), state(7)),
+        Deadline::standard().unwrap(),
+        &[7],
+        |_| {
+            calls.set(calls.get() + 1);
+            let mut next = pass();
+            next.windows[0].info.id = format!("mapping-{}", calls.get());
+            if calls.get() == 2 {
+                next.focused = Some(0);
+            }
+            Ok((next, state(7)))
+        },
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(calls.get(), 2);
+    assert_eq!(result.focused, Some(0));
+}
+
+#[test]
+fn stable_frame_ids_and_active_client_stop_after_one_reread() {
+    let calls = Cell::new(0);
+    let mut initial = pass();
+    let mut foreign = initial.windows[0].clone();
+    foreign.info.id = "foreign".into();
+    foreign.info.pid = 8.into();
+    foreign.frame.pid = 8;
+    initial.windows.push(foreign);
+    let windows = initial.windows.clone();
+    reread_with(
+        (initial, state(7)),
+        Deadline::standard().unwrap(),
+        &[7],
+        |_| {
+            calls.set(calls.get() + 1);
+            let mut next = pass();
+            next.windows = windows.clone();
+            next.windows.reverse();
+            Ok((next, state(7)))
+        },
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(calls.get(), 1);
 }

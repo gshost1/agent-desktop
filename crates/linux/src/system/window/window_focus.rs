@@ -1,6 +1,7 @@
+use super::dialog_evidence::DialogEvidence;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::x11::X11State;
-use crate::system::x11::map::{ClientMatch, match_client};
+use crate::system::x11::map::{ClientMatch, geometry_client, match_frames, size_matches};
 
 pub(super) fn active_client(state: &X11State) -> Option<(u32, u32)> {
     let X11State::Ready {
@@ -17,29 +18,44 @@ pub(super) fn active_client(state: &X11State) -> Option<(u32, u32)> {
 pub(super) fn reconcile_dialog(
     windows: &[ListedWindow],
     state: &X11State,
-    input_focus_in: impl FnOnce(u32) -> bool,
+    evidence: impl FnOnce(u32) -> DialogEvidence,
 ) -> Option<usize> {
     let (client, pid) = active_client(state)?;
-    if let X11State::Ready { clients, .. } = state
-        && windows
-            .iter()
-            .any(|window| match match_client(&window.frame, clients) {
-                ClientMatch::One(id) => id == client,
-                ClientMatch::Several(ids) => ids.contains(&client),
-                ClientMatch::NoClient => false,
-            })
-    {
-        return None;
-    }
     let mut active = windows
         .iter()
         .enumerate()
         .filter(|(_, window)| window.info.pid.get() == pid && window.active);
     let (index, window) = active.next()?;
-    if active.next().is_some() || !(window.modal || window.dialog) || !input_focus_in(client) {
+    if active.next().is_some() || !(window.modal || window.dialog) {
         return None;
     }
-    Some(index)
+    let X11State::Ready { clients, .. } = state else {
+        return None;
+    };
+    let native = clients.iter().find(|native| native.id == client)?;
+    let frames: Vec<_> = windows.iter().map(|window| window.frame.clone()).collect();
+    let matches = match_frames(&frames, clients);
+    if matches.iter().enumerate().any(|(other, found)| {
+        other != index
+            && match found {
+                ClientMatch::One(id) => *id == client,
+                ClientMatch::Several(ids) => ids.contains(&client),
+                ClientMatch::NoClient => false,
+            }
+    }) {
+        return None;
+    }
+    let geometry = matches[index] == ClientMatch::One(client)
+        && geometry_client(&window.frame, std::slice::from_ref(native)) == ClientMatch::One(client);
+    let evidence = evidence(client);
+    let transient = evidence.transient_for.is_some_and(|owner| {
+        owner != client
+            && clients
+                .iter()
+                .any(|other| other.id == owner && other.pid == Some(pid))
+            && size_matches(&window.frame, native)
+    });
+    (evidence.input_focus && (geometry || transient)).then_some(index)
 }
 
 #[cfg(test)]

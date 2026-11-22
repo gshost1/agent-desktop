@@ -43,7 +43,22 @@ fn same_size(left: Extents, right: Extents) -> bool {
     left.width == right.width && left.height == right.height
 }
 
-fn geometry_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
+pub(crate) fn size_matches(frame: &FrameFacts, client: &X11Client) -> bool {
+    let Some(size) = frame
+        .extents
+        .filter(|size| size.width > 0 && size.height > 0)
+    else {
+        return false;
+    };
+    frame_around(client).is_some_and(|outer| {
+        same_size(size, outer) || same_size(size, without_shadow(client, outer))
+    }) || client.bounds.is_some_and(|bounds| same_size(size, bounds))
+}
+
+pub(crate) fn geometry_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
+    if !frame.global_position && !frame.size_identity {
+        return ClientMatch::NoClient;
+    }
     let Some(size) = frame.extents.filter(|size| {
         size.width > 0 && size.height > 0 && size.x != i32::MIN && size.y != i32::MIN
     }) else {
@@ -56,9 +71,7 @@ fn geometry_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
             if frame.global_position {
                 sits_at(client, size) || client.bounds == Some(size)
             } else {
-                frame_around(client).is_some_and(|outer| {
-                    same_size(size, outer) || same_size(size, without_shadow(client, outer))
-                }) || client.bounds.is_some_and(|bounds| same_size(size, bounds))
+                size_matches(frame, client)
             }
         })
         .map(|client| client.id)
