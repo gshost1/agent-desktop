@@ -61,3 +61,15 @@ fn window_inventory_and_permission_requests_respect_the_caller() {
     assert!(permits(&windows, true, true));
     assert!(!permits(&["permissions", "--request"], true, true));
 }
+
+#[test]
+fn grant_reports_always_describe_the_caller() {
+    for args in [
+        &["status"][..],
+        &["permissions"][..],
+        &["permissions", "--guide"][..],
+    ] {
+        assert!(!permits(args, true, true));
+        assert!(!permits(args, false, false));
+    }
+}

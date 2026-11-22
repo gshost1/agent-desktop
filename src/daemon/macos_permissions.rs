@@ -40,7 +40,7 @@ fn required_grants(command: &Commands, in_session: bool) -> Option<(bool, bool)>
                 });
         }
         Commands::ListWindows(_) => return Some((true, true)),
-        Commands::Permissions(args) if args.request || args.guide => return None,
+        Commands::Status | Commands::Permissions(_) => return None,
         _ => {}
     }
     let policy = policy_for(command);
