@@ -5,9 +5,9 @@ use crate::system::registry::listed_window::ListedWindow;
 use crate::system::registry::read_registry;
 use crate::system::window::listed_twins::listed_client;
 use crate::system::window::window_ops::windows_of;
-use crate::system::x11::map::{ClientMatch, match_client};
+use crate::system::x11::map::ClientMatch;
 use crate::system::x11::stacking::stacking_source::StackingSource;
-use crate::system::x11::{DisplayReader, FrameFacts, X11State};
+use crate::system::x11::{DisplayReader, X11State};
 
 /// What mapping a listed window to the X11 clients of its session found.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,13 +19,13 @@ pub(crate) enum XidOutcome {
     Unavailable,
 }
 
-/// The outcome for one window's frame facts against what the display server
-/// and its window manager reported.
-pub(crate) fn outcome_of(state: X11State, frame: &FrameFacts) -> XidOutcome {
+/// The outcome for one window in a coherent listing against what the display
+/// server and its window manager reported.
+pub(crate) fn outcome_of(state: &X11State, listed: &[ListedWindow], index: usize) -> XidOutcome {
     match state {
         X11State::Unavailable => XidOutcome::Unavailable,
         X11State::NoWindowManager => XidOutcome::NoManager,
-        X11State::Ready { clients, .. } => match match_client(frame, &clients) {
+        X11State::Ready { .. } => match listed_client(listed, index, state) {
             ClientMatch::One(id) => XidOutcome::One(id),
             ClientMatch::Several(ids) => XidOutcome::Several(ids),
             ClientMatch::NoClient => XidOutcome::NoClient,
@@ -40,14 +40,7 @@ fn settled(state: &X11State, listed: &[ListedWindow], window: &WindowInfo) -> Xi
     else {
         return XidOutcome::Unavailable;
     };
-    let outcome = outcome_of(state.clone(), &listed[index].frame);
-    if !matches!(outcome, XidOutcome::Several(_)) {
-        return outcome;
-    }
-    match listed_client(listed, index, state) {
-        ClientMatch::One(id) => XidOutcome::One(id),
-        ClientMatch::Several(_) | ClientMatch::NoClient => outcome,
-    }
+    outcome_of(state, listed, index)
 }
 
 /// The X11 window id of a listed window, from its frame facts and the

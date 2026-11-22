@@ -1,5 +1,5 @@
 use super::*;
-use crate::system::x11::X11Client;
+use crate::system::x11::{FrameFacts, X11Client};
 use crate::tree::Extents;
 use agent_desktop_core::WindowState;
 
@@ -40,14 +40,17 @@ fn ready(clients: Vec<X11Client>) -> X11State {
 #[test]
 fn one_matching_client_is_its_id() {
     let state = ready(vec![client(7, 1, "A"), client(8, 1, "B")]);
-    assert_eq!(outcome_of(state, &frame(1, "B")), XidOutcome::One(8));
+    assert_eq!(
+        outcome_of(&state, &[listed("w", "B", false)], 0),
+        XidOutcome::One(8)
+    );
 }
 
 #[test]
 fn two_matching_clients_are_several() {
     let state = ready(vec![client(7, 1, "A"), client(8, 1, "A")]);
     assert_eq!(
-        outcome_of(state, &frame(1, "A")),
+        outcome_of(&state, &[listed("w", "A", false)], 0),
         XidOutcome::Several(vec![7, 8])
     );
 }
@@ -55,17 +58,20 @@ fn two_matching_clients_are_several() {
 #[test]
 fn no_matching_client_with_a_manager_is_no_client() {
     let state = ready(vec![client(7, 2, "A")]);
-    assert_eq!(outcome_of(state, &frame(1, "A")), XidOutcome::NoClient);
+    assert_eq!(
+        outcome_of(&state, &[listed("w", "A", false)], 0),
+        XidOutcome::NoClient
+    );
 }
 
 #[test]
 fn the_server_states_without_a_client_list_keep_their_cause() {
     assert_eq!(
-        outcome_of(X11State::NoWindowManager, &frame(1, "A")),
+        outcome_of(&X11State::NoWindowManager, &[listed("w", "A", false)], 0),
         XidOutcome::NoManager
     );
     assert_eq!(
-        outcome_of(X11State::Unavailable, &frame(1, "A")),
+        outcome_of(&X11State::Unavailable, &[listed("w", "A", false)], 0),
         XidOutcome::Unavailable
     );
 }
@@ -131,6 +137,37 @@ fn twin_windows_stay_several_when_the_manager_names_no_client_of_theirs() {
         assert_eq!(
             settled(&twins_with_active(active), &windows, &windows[0].info),
             XidOutcome::Several(vec![7, 8])
+        );
+    }
+}
+
+#[test]
+fn capture_geometry_cannot_claim_a_named_or_competing_frames_client() {
+    let native = client(7, 1, "Native");
+    for named in [false, true] {
+        let mut target = listed("w-target", "Question", true);
+        target.frame.size_identity = true;
+        target.frame.extents = native.bounds;
+        let mut other = target.clone();
+        other.info.id = "w-other".into();
+        other.frame.title = if named { "Native" } else { "Other" }.into();
+        assert_eq!(
+            crate::system::x11::map::match_client(&target.frame, std::slice::from_ref(&native)),
+            ClientMatch::One(7)
+        );
+        let windows = [target, other];
+        let state = ready(vec![native.clone()]);
+        assert_eq!(
+            settled(&state, &windows, &windows[0].info),
+            XidOutcome::NoClient
+        );
+        assert_eq!(
+            settled(&state, &windows, &windows[1].info),
+            if named {
+                XidOutcome::One(7)
+            } else {
+                XidOutcome::NoClient
+            }
         );
     }
 }
