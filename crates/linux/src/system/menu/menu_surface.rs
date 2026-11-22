@@ -75,6 +75,28 @@ pub(in crate::system) fn find_popups(
     Ok(popups)
 }
 
+pub(crate) fn popups_of(
+    bus: &SharedBus,
+    owner: &WindowInfo,
+    deadline: Deadline,
+) -> Result<Vec<MenuPopup>, AdapterError> {
+    let (bus_name, path) = window_id::decode(&owner.id)?;
+    let window = AtspiElement::new(bus_name, path, owner.pid.get());
+    let mut reader = Inventory::new(bus, deadline);
+    reader.select(&window);
+    popups_from(&mut reader)
+}
+
+fn popups_from(reader: &mut impl PopupReader) -> Result<Vec<MenuPopup>, AdapterError> {
+    match find_popups(reader) {
+        Err(error) if vanished(&error) => Ok(Vec::new()),
+        Ok(popups) if popups.is_empty() && reader.incomplete() => Err(AdapterError::timeout(
+            "The menu inventory could not be read in full",
+        )),
+        other => other,
+    }
+}
+
 fn inventory(reader: &mut impl PopupReader) -> Result<Vec<MenuPopup>, AdapterError> {
     let popups = find_popups(reader)?;
     if reader.incomplete() {
@@ -106,16 +128,6 @@ pub(crate) fn popups_at(
         Err(error) if vanished(&error) => Ok(Vec::new()),
         other => other,
     }
-}
-
-pub(crate) fn popups_of(
-    bus: &SharedBus,
-    owner: &WindowInfo,
-    deadline: Deadline,
-) -> Result<Vec<MenuPopup>, AdapterError> {
-    let (bus_name, path) = window_id::decode(&owner.id)?;
-    let window = AtspiElement::new(bus_name, path, owner.pid.get());
-    popups_at(bus, &window, deadline)
 }
 
 /// One `menu` entry for the outermost open popup.

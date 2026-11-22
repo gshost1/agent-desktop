@@ -230,3 +230,105 @@ fn popup_live_reads_the_private_override_redirect_window() {
             .all(|popup| popup.id != window)
     );
 }
+
+#[test]
+#[ignore = "needs a private X session"]
+fn popup_live_menu_filter_and_destroyed_candidates() {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{
+        AtomEnum, ConnectionExt, CreateWindowAux, PropMode, WindowClass,
+    };
+    use x11rb::wrapper::ConnectionExt as _;
+    let display = super::super::live_display::private_display();
+    let (connection, screen) = super::DisplayReader::connect(&display).unwrap();
+    let root = connection.setup().roots[screen].root;
+    let pid = std::process::id();
+    let owner = connection
+        .intern_atom(false, b"_NET_WM_PID")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    let menus = super::super::menu_pending::menu_atoms(&connection).unwrap();
+    let mut windows = Vec::new();
+    for _ in 0..2 {
+        let window = connection.generate_id().unwrap();
+        connection
+            .create_window(
+                x11rb::COPY_DEPTH_FROM_PARENT,
+                window,
+                root,
+                10,
+                20,
+                100,
+                100,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                0,
+                &CreateWindowAux::new().override_redirect(1),
+            )
+            .unwrap()
+            .check()
+            .unwrap();
+        connection
+            .change_property32(PropMode::REPLACE, window, owner, AtomEnum::CARDINAL, &[pid])
+            .unwrap()
+            .check()
+            .unwrap();
+        connection.map_window(window).unwrap().check().unwrap();
+        windows.push(window);
+    }
+    let window = windows[1];
+    connection
+        .destroy_window(windows[0])
+        .unwrap()
+        .check()
+        .unwrap();
+    let scan = |menu_only| super::read_popups(&connection, screen, pid, menu_only).unwrap();
+    assert!(scan(true).is_empty());
+    assert_eq!(scan(false).len(), 1);
+    let mut kinds = menus[1..].to_vec();
+    for name in [
+        b"_NET_WM_WINDOW_TYPE_TOOLTIP".as_slice(),
+        b"_NET_WM_WINDOW_TYPE_COMBO",
+        b"_NET_WM_WINDOW_TYPE_DND",
+    ] {
+        kinds.push(
+            connection
+                .intern_atom(false, name)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .atom,
+        );
+    }
+    for (index, kind) in kinds.into_iter().enumerate() {
+        connection
+            .change_property32(PropMode::REPLACE, window, menus[0], AtomEnum::ATOM, &[kind])
+            .unwrap()
+            .check()
+            .unwrap();
+        assert_eq!(scan(true).len(), usize::from(index < 3));
+        assert_eq!(scan(false).len(), 1);
+    }
+    connection
+        .change_property32(
+            PropMode::REPLACE,
+            window,
+            menus[0],
+            AtomEnum::ATOM,
+            &[menus[1]],
+        )
+        .unwrap()
+        .check()
+        .unwrap();
+    for types in [None, Some(menus.as_slice())] {
+        let popups = super::scan_popups(&connection, root, pid, types, windows.clone()).unwrap();
+        assert_eq!(popups.len(), 1);
+        assert_eq!(popups[0].id, window);
+        assert_eq!(
+            super::scan_popups(&connection, u32::MAX, pid, types, vec![window]),
+            Some(vec![])
+        );
+    }
+}
