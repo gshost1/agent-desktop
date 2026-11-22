@@ -8,7 +8,7 @@ Start with `agent-desktop status` and `agent-desktop list-apps`.
 |---------|------------------|
 | `PLATFORM_NOT_SUPPORTED` "The AT-SPI accessibility bus is not available in this session", or `status` shows empty `supported_surfaces` | Session bus or accessibility bus unreachable: the bus did not answer. Read `references/bus-and-permissions.md`; run inside the desktop session |
 | `list-apps` empty, `status` healthy | Bus up, no app registered. Start an app, or restart one that started before the bus |
-| App runs, `--app` finds nothing | Not on the bus, or wrong name. Use the `list-apps` name; see "Apps that are not on the bus" |
+| App runs, `--app` returns `APP_NOT_FOUND` | If `error.details.candidates` lists the intended app, retry with the exact name in `error.suggestion` (for example, `--app soffice.bin`). The refused command sent no input. If there is no candidate, use the `list-apps` name or see "Apps that are not on the bus". |
 | Chromium shows a bus entry but no windows | Renderer accessibility is off. Add `--force-renderer-accessibility` |
 | Window appears, `snapshot` is thin | Content not ready. `wait --window`, then `wait --text`; raise the wait's `--timeout` or the snapshot's `--timeout-ms` |
 | `TIMEOUT` on `snapshot` | No usable observation before the deadline, or an incomplete `--root` drill-down. Raise `--timeout-ms`; see "Observation details" |

@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use serde_json::json;
 
 use crate::{
-    AdapterError, AppError, AppInfo, Deadline, ErrorCode, ProcessIdentity, WindowInfo,
+    AdapterError, AppError, AppInfo, AppInventory, AppInventoryQuery, Deadline, ErrorCode,
+    ProcessIdentity, WindowInfo,
     adapter::{PlatformAdapter, WindowFilter},
 };
 
@@ -51,6 +54,15 @@ pub(crate) fn resolve_app(
 ) -> Result<AppInfo, AppError> {
     if let Some(name) = app {
         let candidates = exact_apps(adapter, name, None, deadline)?;
+        if candidates.is_empty() {
+            return Err(with_app_name_suggestions(
+                exact_app_not_found(name),
+                name,
+                deadline,
+                |query, deadline| adapter.query_app_inventory(query, deadline),
+            )
+            .into());
+        }
         return select_unique_app(candidates, name);
     }
     let focused = adapter.list_windows(
@@ -113,13 +125,7 @@ pub(crate) fn resolve_app_owning(
 fn select_unique_app(mut candidates: Vec<AppInfo>, label: &str) -> Result<AppInfo, AppError> {
     reject_incomplete_app_identity(&candidates, label)?;
     match candidates.len() {
-        0 => Err(AdapterError::new(
-            ErrorCode::AppNotFound,
-            format!("Application '{label}' was not found with exact process identity"),
-        )
-        .with_suggestion("Application name as reported by list-apps")
-        .unsent()
-        .into()),
+        0 => Err(exact_app_not_found(label).into()),
         1 => Ok(candidates.swap_remove(0)),
         _ => {
             let candidate_pids = candidates.iter().map(|c| c.pid).collect::<Vec<_>>();
@@ -147,6 +153,103 @@ fn select_unique_app(mut candidates: Vec<AppInfo>, label: &str) -> Result<AppInf
             .into())
         }
     }
+}
+
+fn exact_app_not_found(label: &str) -> AdapterError {
+    AdapterError::new(
+        ErrorCode::AppNotFound,
+        format!("Application '{label}' was not found with exact process identity"),
+    )
+    .with_suggestion("Application name as reported by list-apps")
+    .unsent()
+}
+
+pub(crate) fn is_near_app_name(actual: &str, query: &str) -> bool {
+    if query.trim().is_empty() {
+        return false;
+    }
+    let actual = actual.to_lowercase();
+    let query = query.to_lowercase();
+    actual.starts_with(&query) || app_name_stem(&actual) == app_name_stem(&query)
+}
+
+fn app_name_stem(name: &str) -> &str {
+    let name = name.strip_suffix(".bin").unwrap_or(name);
+    let stem = name
+        .rsplit_once(['-', '_', ' '])
+        .filter(|(_, version)| is_app_version(version.strip_prefix('v').unwrap_or(version)))
+        .map(|(stem, _)| stem)
+        .or_else(|| {
+            let stem = name.trim_end_matches(|ch: char| ch.is_ascii_digit() || ch == '.');
+            let version = &name[stem.len()..];
+            let version = version.strip_prefix('.').unwrap_or(version);
+            (version.contains('.') && is_app_version(version)).then_some(stem)
+        })
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or(name);
+    stem.strip_suffix(".bin").unwrap_or(stem)
+}
+
+fn is_app_version(suffix: &str) -> bool {
+    suffix
+        .split('.')
+        .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Best-effort diagnostics after an exact name refusal; never supplies an action target.
+pub fn with_app_name_suggestions(
+    mut error: AdapterError,
+    name: &str,
+    deadline: Deadline,
+    lookup: impl FnOnce(AppInventoryQuery<'_>, Deadline) -> Result<AppInventory, AdapterError>,
+) -> AdapterError {
+    let deadline = deadline.capped(Duration::from_millis(20));
+    if error.code != ErrorCode::AppNotFound || name.trim().is_empty() || deadline.is_expired() {
+        return error;
+    }
+    let Ok(mut inventory) = lookup(AppInventoryQuery::NearMatches(name), deadline) else {
+        return error;
+    };
+    if inventory.apps.is_empty() {
+        return error;
+    }
+    inventory
+        .apps
+        .sort_by(|left, right| (&left.name, left.pid).cmp(&(&right.name, right.pid)));
+    let suggestions = inventory
+        .apps
+        .iter()
+        .map(|app| {
+            let name = &app.name;
+            let argument = if name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+                && !name.starts_with('-')
+            {
+                format!("--app {name}")
+            } else {
+                format!("--app='{}'", name.replace('\'', "'\\''"))
+            };
+            format!("'{name}' (pid {})? retry with {argument}", app.pid.get())
+        })
+        .collect::<Vec<_>>();
+    let candidates = inventory
+        .apps
+        .iter()
+        .map(|app| {
+            json!({
+                "name": app.name,
+                "pid": app.pid,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut details = error.details.take().unwrap_or_else(|| json!({}));
+    if let Some(object) = details.as_object_mut() {
+        object.insert("candidates".into(), json!(candidates));
+    }
+    error
+        .with_suggestion(format!("did you mean {}", suggestions.join("; or ")))
+        .with_details(details)
 }
 
 fn reject_incomplete_app_identity(candidates: &[AppInfo], label: &str) -> Result<(), AppError> {

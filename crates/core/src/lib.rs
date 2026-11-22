@@ -130,6 +130,7 @@ pub use storage::state_root::validate_state_root_env;
 pub use system::app_info::{AppInfo, AppPresentation, app_name_matches};
 pub use system::app_inventory::AppInventory;
 pub use system::app_inventory_query::AppInventoryQuery;
+pub use system::app_lookup::with_app_name_suggestions;
 pub use system::cdp_endpoint::{
     devtools_http_ok_body, parse_devtools_version_body, read_devtools_http_response,
 };

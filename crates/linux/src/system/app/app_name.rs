@@ -67,6 +67,21 @@ pub(crate) fn aliases_in(index: &AliasIndex, pid: u32, facts: &ProcessFacts) -> 
     aliases_with(index, facts, launched_entry(pid, facts))
 }
 
+pub(crate) fn any_desktop_name(
+    index: &AliasIndex,
+    pid: u32,
+    facts: &ProcessFacts,
+    matches: impl Fn(&str) -> bool,
+) -> bool {
+    facts
+        .executable
+        .as_ref()
+        .is_some_and(|actual| index.matching_names_and_ids(actual).any(&matches))
+        || launched_entry(pid, facts)
+            .and_then(|id| index.entry(&id))
+            .is_some_and(|entry| matches(&entry.name) || matches(&entry.id))
+}
+
 /// The names and ids of the entries whose command the process runs, then
 /// the id of the entry `launch` started it from and its name, unless an
 /// entry running another command shares that name.

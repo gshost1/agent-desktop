@@ -59,5 +59,6 @@ agent-desktop wait --app "Font Book" --text "Saved" --timeout 5000
 Branch on `error.code`. Retry or substitute an action only when `disposition.retry` is `safe`; otherwise it may have landed, so read the state first.
 
 - `STALE_REF`, `SNAPSHOT_NOT_FOUND`: snapshot again and use the new ref. Another `details.kind` or `details.reason`, such as `capture_incomplete` (retake with a larger `--timeout-ms`), is in `skills get desktop refs-and-retry`.
+- `APP_NOT_FOUND`: if `error.details.candidates` includes the intended app, retry with its exact name from `error.suggestion`. A near match is never used to send input.
 - `AMBIGUOUS_TARGET`: identical controls; act on one that is unique in the window.
 - `POLICY_DENIED`, `ACTION_NOT_SUPPORTED`: no headless path. Ref actions are headless (no focus, cursor or keys); global `--headed` allows physical input, only when the user permits it, never as a retry.
