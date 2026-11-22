@@ -112,9 +112,11 @@ pub(crate) fn observe_menu(
     request: &ObservationRequest,
 ) -> Result<ObservedTree, AdapterError> {
     let request = (*request).validate()?;
-    let popup = super::menu_opening::await_popup(request.deadline, |deadline| {
-        popups_of(bus, window, deadline)
-    })?;
+    let popup = super::menu_opening::await_popup(
+        request.deadline,
+        |deadline| popups_of(bus, window, deadline),
+        |deadline| crate::system::x11::menu_pending::is_pending(window.pid.get(), deadline),
+    )?;
     let mut root = rooted(&popup.root);
     let (owner_bus, owner_path) = crate::system::window::window_id::decode(&window.id)?;
     root.set_menu_owner(&AtspiElement::new(owner_bus, owner_path, window.pid.get()));

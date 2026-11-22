@@ -10,15 +10,16 @@ const POLL_INTERVAL: Duration = Duration::from_millis(25);
 pub(super) fn await_popup(
     deadline: Deadline,
     mut read: impl FnMut(Deadline) -> Result<Vec<MenuPopup>, AdapterError>,
+    mut pending: impl FnMut(Deadline) -> bool,
 ) -> Result<MenuPopup, AdapterError> {
     let first = read(deadline)?;
     if !first.is_empty() {
         return super::observe_menu::outermost(first);
     }
     let opening = deadline.capped(OPENING_BUDGET);
-    while !opening.remaining().is_zero() {
+    while !opening.remaining().is_zero() && pending(opening) {
         std::thread::sleep(opening.remaining().min(POLL_INTERVAL));
-        if opening.remaining().is_zero() {
+        if opening.remaining().is_zero() || !pending(opening) {
             break;
         }
         let popups = match read(opening) {
