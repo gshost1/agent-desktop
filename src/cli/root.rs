@@ -26,8 +26,6 @@ pub(crate) struct Cli {
     pub interaction: InteractionArgs,
     #[command(flatten)]
     pub post_action_wait: PostActionWaitArgs,
-    #[command(flatten)]
-    pub daemon: crate::daemon::args::DaemonArgs,
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

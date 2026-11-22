@@ -33,7 +33,7 @@ CORE_DOMAINS = {"actionability", "actions", "adapter", "commands", "context", "c
                 "locator", "notifications", "ref_action", "refs", "response", "session", "snapshot",
                 "storage", "system", "trace", "tree", "wait"}
 BINARY_TOP_FILES = {"main.rs", "Cargo.toml"}
-BINARY_DIRS = {"batch", "cli", "cli_args", "command_policy", "daemon", "diagnostic", "dispatch", "mcp",
+BINARY_DIRS = {"batch", "cli", "cli_args", "command_policy", "diagnostic", "dispatch", "mcp",
                "tests", "visual_debug"}
 CAPABILITY_HOMES = {
     "PlatformAdapter": ("adapter.rs",),
@@ -90,7 +90,6 @@ LISTENER_ALLOWLIST = {
     "crates/core/src/system/cdp_endpoint.rs",
     "crates/macos/src/system/cursor_overlay/child.rs",
     "crates/windows/src/system/cursor_overlay/server.rs",
-    "src/daemon/unix_transport.rs",
 }
 LISTENER = re.compile(r"(?<![A-Za-z0-9_])(?:(?:UnixListener|TcpListener|UdpSocket|UnixDatagram)\s*::\s*bind\w*"
                       r"|CreateNamedPipe[AW]?|NamedPipeServer|ServerOptions|libc\s*::\s*listen)(?![A-Za-z0-9_])")

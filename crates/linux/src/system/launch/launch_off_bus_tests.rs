@@ -55,3 +55,134 @@ fn a_native_title_is_readable_only_when_nonempty_and_valid() {
         assert_eq!(decode_title(bytes), None);
     }
 }
+
+#[cfg(test)]
+fn live_window(
+    connection: &RustConnection,
+    root: Window,
+    size: (u16, u16),
+    properties: &[(Atom, Atom, u8, &[u8])],
+) -> Window {
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::{CreateWindowAux, PropMode, WindowClass};
+
+    let window = connection.generate_id().unwrap();
+    connection
+        .create_window(
+            x11rb::COPY_DEPTH_FROM_PARENT,
+            window,
+            root,
+            0,
+            0,
+            size.0,
+            size.1,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            0,
+            &CreateWindowAux::new(),
+        )
+        .unwrap()
+        .check()
+        .unwrap();
+    for (property, kind, format, value) in properties {
+        let units = u32::try_from(value.len()).unwrap() / u32::from(*format / 8);
+        connection
+            .change_property(
+                PropMode::REPLACE,
+                window,
+                *property,
+                *kind,
+                *format,
+                units,
+                value,
+            )
+            .unwrap()
+            .check()
+            .unwrap();
+    }
+    window
+}
+
+#[test]
+#[ignore = "needs a private X session; run through scripts/private-session.sh --wm"]
+fn a_window_that_vanishes_or_is_malformed_mid_read_is_skipped() {
+    let display = crate::system::x11::live_display::private_display();
+    let (connection, root) = open(&display).unwrap();
+    let [window_type, normal, name, utf8] = [
+        b"_NET_WM_WINDOW_TYPE".as_slice(),
+        b"_NET_WM_WINDOW_TYPE_NORMAL",
+        b"_NET_WM_NAME",
+        b"UTF8_STRING",
+    ]
+    .map(|atom| {
+        connection
+            .intern_atom(false, atom)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom
+    });
+    let atoms = TitleAtoms::intern(&connection).unwrap();
+    let main = live_window(
+        &connection,
+        root,
+        (400, 300),
+        &[
+            (
+                window_type,
+                AtomEnum::ATOM.into(),
+                32,
+                &normal.to_ne_bytes(),
+            ),
+            (name, utf8, 8, b"Document"),
+        ],
+    );
+    let malformed = live_window(
+        &connection,
+        root,
+        (800, 600),
+        &[
+            (window_type, AtomEnum::STRING.into(), 8, b"normal"),
+            (name, utf8, 8, b"Malformed"),
+        ],
+    );
+    let vanished = live_window(&connection, root, (900, 700), &[]);
+    connection
+        .destroy_window(vanished)
+        .unwrap()
+        .check()
+        .unwrap();
+    let candidates = read_candidates(
+        &connection,
+        &atoms,
+        [(0, main), (1, malformed), (2, vanished)],
+    );
+    assert_eq!(
+        main_window::select_title(&candidates).as_deref(),
+        Some("Document")
+    );
+    connection.destroy_window(main).unwrap().check().unwrap();
+    connection
+        .destroy_window(malformed)
+        .unwrap()
+        .check()
+        .unwrap();
+}
+
+#[test]
+#[ignore = "needs a private X session; run through scripts/private-session.sh --wm"]
+fn reading_titles_creates_no_atom_on_the_server() {
+    let display = crate::system::x11::live_display::private_display();
+    let (connection, _) = open(&display).unwrap();
+    let unknown = format!("AGENT_DESKTOP_UNSEEN_{}", std::process::id());
+    let [utf8, missing] =
+        intern_existing(&connection, [b"UTF8_STRING".as_slice(), unknown.as_bytes()]).unwrap();
+    assert_ne!(utf8, x11rb::NONE);
+    assert_eq!(missing, x11rb::NONE);
+    let again = connection
+        .intern_atom(true, unknown.as_bytes())
+        .unwrap()
+        .reply()
+        .unwrap();
+    assert_eq!(again.atom, x11rb::NONE);
+}

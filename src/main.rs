@@ -4,7 +4,6 @@ mod batch;
 mod cli;
 mod cli_args;
 mod command_policy;
-mod daemon;
 mod diagnostic;
 mod dispatch;
 mod mcp;
@@ -30,7 +29,6 @@ use cli::{
     emit::{emit_with_error_line, finish, report_output_failure},
 };
 use dispatch::pre_dispatch_error;
-use std::ffi::OsString;
 #[cfg(target_os = "macos")]
 use std::io::{BufWriter, Write};
 use std::process::ExitCode;
@@ -45,9 +43,6 @@ fn main() -> ExitCode {
 }
 
 fn run_command() -> ExitCode {
-    if let Some(exit_code) = daemon::serve_if_requested() {
-        return exit_code;
-    }
     if let Some(result) = build_adapter().run_cursor_overlay_child() {
         return if result.is_ok() {
             ExitCode::SUCCESS
@@ -89,24 +84,16 @@ fn run() -> ExitCode {
         agent_desktop_windows::WindowsPrivateFile,
     ));
 
-    if let Some(exit_code) = daemon::run_through_daemon() {
-        return exit_code;
-    }
-    run_args(&std::env::args_os().collect::<Vec<_>>())
-}
-
-/// Parses `args` (with the program name first) and runs the command they name in this process.
-fn run_args(args: &[OsString]) -> ExitCode {
-    let matches = match root_command().try_get_matches_from(args) {
+    let matches = match root_command().try_get_matches() {
         Ok(matches) => matches,
-        Err(e) => return report_parse_failure(e, args),
+        Err(e) => return report_parse_failure(e),
     };
     if let Some(("mcp", mcp_matches)) = matches.subcommand() {
         return mcp::serve(mcp_matches);
     }
     let mut cli = match Cli::from_arg_matches(&matches) {
         Ok(c) => c,
-        Err(e) => return report_parse_failure(e, args),
+        Err(e) => return report_parse_failure(e),
     };
 
     init_tracing(cli.visual_debug.verbose);
@@ -139,7 +126,7 @@ fn root_command() -> clap::Command {
     Cli::command().subcommand(mcp::command())
 }
 
-fn report_parse_failure(e: clap::Error, args: &[OsString]) -> ExitCode {
+fn report_parse_failure(e: clap::Error) -> ExitCode {
     if matches!(
         e.kind(),
         clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
@@ -151,11 +138,7 @@ fn report_parse_failure(e: clap::Error, args: &[OsString]) -> ExitCode {
     }
     let summary = diagnostic::clap_error_summary(&e.to_string());
     let error = AppError::invalid_input(diagnostic::bounded_text(&summary, 512));
-    let command_name = diagnostic::clap_command_name(
-        args.iter()
-            .skip(1)
-            .map(|arg| arg.to_string_lossy().into_owned()),
-    );
+    let command_name = diagnostic::clap_command_name(std::env::args().skip(1));
     if let Err(write_err) = emit_with_error_line(
         &Response::err(&command_name, ErrorPayload::from_app_error(&error)),
         false,
@@ -320,13 +303,13 @@ fn build_platform_adapter() -> impl agent_desktop_core::PlatformAdapter {
 fn init_tracing(verbose: bool) {
     use tracing_subscriber::{EnvFilter, fmt};
     let filter = if verbose { "debug" } else { "warn" };
-    let _ = fmt()
+    fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter)),
         )
         .with_writer(std::io::stderr)
         .with_ansi(false)
-        .try_init();
+        .init();
 }
 
 #[cfg(test)]
