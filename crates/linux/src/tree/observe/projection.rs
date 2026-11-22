@@ -153,11 +153,25 @@ impl Projector<'_> {
         visibility: &SnapshotVisibility,
     ) -> ObservedSubtree {
         let mut evidence = self.evidence_of(&node.payload, node.in_web_document);
+        let bar = crate::tree::properties::scroll_evidence::of_children(
+            node.children
+                .iter()
+                .map(|child| child.payload.vertical_bar_range),
+        );
         evidence.ref_evidence.scrolls_vertically =
-            crate::tree::properties::scroll_evidence::of_children(
-                node.children
-                    .iter()
-                    .map(|child| child.payload.vertical_bar_range),
+            crate::tree::properties::scroll_evidence::with_child_visibility(
+                bar,
+                evidence.role.known().map(String::as_str),
+                node.payload.node.traits.states.present().map(Vec::as_slice),
+                node.children.iter().map(|child| {
+                    child
+                        .payload
+                        .node
+                        .traits
+                        .states
+                        .present()
+                        .map(Vec::as_slice)
+                }),
             );
         visibility.append(&node.payload, &mut evidence);
         self.routes.withhold(&node, &mut evidence);

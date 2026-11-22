@@ -173,9 +173,13 @@ returns the whole tree in place of a diff.
   below the list's length.
 - `partial: true` means the list may hold items this snapshot does not show: the
   platform reported that the list or its own scroll container scrolls vertically
-  (its content is taller than its viewport), or the snapshot cut its
+  (its content is taller than its viewport), or the list shows some rows and
+  reports others as not showing, or the snapshot cut its
   subtree (`--max-depth`, `--skeleton`, the observation budget or the refmap cap).
-  Unknown scroll evidence never claims partial. A list inherits its nearest scroll
+  On Linux, mixed row visibility is evidence only when the list itself is showing
+  and no scrollbar range was established; a known scrollbar range takes precedence.
+  A row the toolkit reports as not showing beside showing rows is an item the
+  view does not show. Unknown scroll evidence never claims partial. A list inherits its nearest scroll
   area only through at most three non-list wrappers, each with one content child
   (scrollbars excluded).
 - With `--lines`, `contents` is an array of lines: `roles: button 62, cell 6, ...`,

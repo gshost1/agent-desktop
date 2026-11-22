@@ -4,7 +4,7 @@ use zbus::{Connection, zvariant::OwnedValue};
 use super::node_read::{call, deserialize};
 use crate::system::PROPERTIES_INTERFACE;
 use crate::tree::vocabulary::role_numbers::SCROLL_BAR;
-use crate::tree::vocabulary::state_bits::{StateBits, VERTICAL};
+use crate::tree::vocabulary::state_bits::{SHOWING, StateBits, VERTICAL};
 use crate::tree::{AtspiElement, RawNode};
 
 const VALUE_INTERFACE: &str = "org.a11y.atspi.Value";
@@ -48,6 +48,32 @@ pub(crate) async fn read_bar(connection: &Connection, node: &RawNode) -> Option<
     )
     .await;
     decide_bar(vertical, min.zip(max))
+}
+
+pub(crate) fn with_child_visibility<'a>(
+    bar: Option<bool>,
+    role: Option<&str>,
+    states: Option<&[u32]>,
+    children: impl Iterator<Item = Option<&'a [u32]>>,
+) -> Option<bool> {
+    bar.or_else(|| {
+        if !matches!(
+            role,
+            Some("list" | "listbox" | "table" | "outline" | "grid" | "browser")
+        ) || !states.is_some_and(|words| StateBits::new(words).has(SHOWING))
+        {
+            return None;
+        }
+        let (mut showing, mut not_showing) = (false, false);
+        for words in children.flatten() {
+            if StateBits::new(words).has(SHOWING) {
+                showing = true;
+            } else {
+                not_showing = true;
+            }
+        }
+        (showing && not_showing).then_some(true)
+    })
 }
 
 pub(crate) fn of_children(bars: impl Iterator<Item = Option<Result<bool, ()>>>) -> Option<bool> {
