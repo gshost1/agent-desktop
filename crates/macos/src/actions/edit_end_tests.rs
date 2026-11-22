@@ -1,4 +1,4 @@
-use super::{changed_values, nearest_peer, takes_focus_without_acting};
+use super::{changed_values, nearest_peer, refused_commit_error, takes_focus_without_acting};
 
 #[test]
 fn only_a_text_field_that_is_not_secure_or_disabled_takes_focus_for_the_commit() {
@@ -82,4 +82,25 @@ fn only_neighbours_whose_value_changed_are_reported_up_to_three() {
         *value = Some("x".into());
     }
     assert_eq!(changed_values(&before, &after).len(), 3);
+}
+
+#[test]
+fn a_refused_end_of_edit_is_a_delivered_failure_that_points_at_the_alert() {
+    let error = refused_commit_error();
+    assert_eq!(error.code, agent_desktop_core::ErrorCode::ActionFailed);
+    assert_eq!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::delivered_unverified()
+    );
+    let details = error.details.as_ref().expect("details");
+    assert_eq!(details["kind"], "edit_commit_refused");
+    assert_eq!(details["application_commit"], "refused");
+    assert!(
+        error
+            .suggestion
+            .as_deref()
+            .is_some_and(|hint| hint.contains("--surface alert")),
+        "{:?}",
+        error.suggestion
+    );
 }

@@ -77,9 +77,7 @@ mod imp {
                     request,
                     deadline,
                 )?;
-                return Ok(crate::actions::edit_end::set_value_result(
-                    action, el, steps, deadline,
-                ));
+                return crate::actions::edit_end::set_value_result(action, el, steps, deadline);
             }
 
             Action::SetFocus => {
