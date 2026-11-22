@@ -71,7 +71,10 @@ impl<'a> Inventory<'a> {
         let root = rooted(root);
         match scan_kind(self.structural, pruned) {
             ScanKind::Structural { bulk_children } => {
-                scan_walk_structure(self.bus, &root, max_nodes, bulk_children, self.deadline)
+                let mut tree =
+                    scan_walk_structure(self.bus, &root, max_nodes, bulk_children, self.deadline)?;
+                super::menu_geometry::fill(self.bus, &mut tree, self.deadline)?;
+                Ok(tree)
             }
             ScanKind::Pruned => scan_walk_pruned(self.bus, &root, max_nodes, self.deadline),
             ScanKind::Ordinary => scan_walk(self.bus, &root, max_nodes, self.deadline),
@@ -161,6 +164,10 @@ fn may_hide_a_menu(candidate: &Node) -> bool {
 }
 
 impl PopupReader for Inventory<'_> {
+    fn deadline(&self) -> Deadline {
+        self.deadline
+    }
+
     fn incomplete(&self) -> bool {
         self.incomplete
     }
