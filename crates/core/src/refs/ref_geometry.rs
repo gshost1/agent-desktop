@@ -12,8 +12,6 @@ pub struct RefGeometry {
     /// Hash of the snapshot's screen-space rectangle when `bounds` is stored
     /// in window coordinates (`BoundsSpace::Window`). Absent for screen-space
     /// refs and when the snapshot could not prove screen coordinates.
-    #[serde(default = "nonempty_screen_hash")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screen_bounds_hash: Option<u64>,
 }
-
-fn nonempty_screen_hash() -> Option<u64> { Some(0) }

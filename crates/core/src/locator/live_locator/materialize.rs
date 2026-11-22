@@ -100,7 +100,7 @@ pub(crate) fn ref_entry(
     let window = node.evidence.ref_evidence.window_bounds.known().copied();
     let screen = node.evidence.ref_evidence.bounds.known().copied();
     let bounds = window.or(screen);
-    let screen_bounds_hash = window.or(screen).and_then(|value| value.bounds_hash());
+    let screen_bounds_hash = window.and(screen).and_then(|value| value.bounds_hash());
     let identifier = selected_identifier(&node.evidence, query.identity.native_id.as_deref());
     let mut entry = RefEntry {
         process: crate::RefProcess {
