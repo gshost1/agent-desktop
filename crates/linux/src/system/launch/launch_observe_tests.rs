@@ -1,9 +1,8 @@
+use super::*;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
 
-use super::*;
-
-pub(super) fn app(pid: u32, name: &str) -> Running {
+pub(in crate::system::launch) fn app(pid: u32, name: &str) -> Running {
     Running {
         executable: keys(&[name]),
         pid,
@@ -11,7 +10,6 @@ pub(super) fn app(pid: u32, name: &str) -> Running {
         name: name.to_owned(),
     }
 }
-
 pub(super) fn keys(
     items: &[&str],
 ) -> Option<crate::system::process::executable_identity::ExecutableIdentity> {
@@ -22,11 +20,9 @@ pub(super) fn keys(
         },
     )
 }
-
 fn exited(code: u8) -> ExitStatus {
     ExitStatus::from_raw(i32::from(code) << 8)
 }
-
 fn killed(signal: i32) -> ExitStatus {
     ExitStatus::from_raw(signal)
 }
@@ -37,14 +33,18 @@ fn a_new_process_instance_with_a_reused_pid_is_a_new_launch_owner() {
     replacement.instance = "boot:replacement".into();
     let before = HashSet::from([agent_desktop_core::ProcessIdentity::new(7, "boot:7")]);
     let identity = keys(&["tool"]);
-    let actual = step(&Sample {
-        child_pid: 100,
-        child: None,
-        apps: std::slice::from_ref(&replacement),
-        before: &before,
-        identity: &identity,
-        settled: false,
-    });
+    let actual = step(
+        &Sample {
+            child_pid: 100,
+            child: None,
+            apps: std::slice::from_ref(&replacement),
+            before: &before,
+            identity: &identity,
+            settled: false,
+            near_deadline: false,
+        },
+        |_| true,
+    );
     assert_eq!(actual, Step::Owner(replacement));
 }
 
@@ -160,14 +160,18 @@ fn launch_observation_selects_the_owner_or_reports_the_exact_failure() {
             .map(|pid| agent_desktop_core::ProcessIdentity::new(pid, format!("boot:{pid}")))
             .collect();
         let wanted = keys(&[wanted]);
-        let actual = step(&Sample {
-            child_pid: 100,
-            child,
-            apps: &apps,
-            before: &before,
-            identity: &wanted,
-            settled,
-        });
+        let actual = step(
+            &Sample {
+                child_pid: 100,
+                child,
+                apps: &apps,
+                before: &before,
+                identity: &wanted,
+                settled,
+                near_deadline: false,
+            },
+            |_| true,
+        );
         assert_eq!(actual, expected, "case {index}");
     }
 }
@@ -238,9 +242,158 @@ fn only_new_descendants_can_own_a_running_wrapper_launch() {
                 before: &before,
                 identity: &identity,
                 settled: false,
+                near_deadline: false,
             },
             |pid, ancestor| ancestor == 100 && [200, 202].contains(&pid),
+            |_| true,
         );
         assert_eq!(actual, expected);
+    }
+}
+
+fn descendant_step(apps: &[Running], windowed: &[u32], near_deadline: bool) -> Step {
+    step_with_ancestry(
+        &Sample {
+            child_pid: 100,
+            child: None,
+            apps,
+            before: &HashSet::new(),
+            identity: &keys(&["tool"]),
+            settled: false,
+            near_deadline,
+        },
+        |pid, ancestor| ancestor == 100 && [200, 202].contains(&pid),
+        |app| windowed.contains(&app.pid),
+    )
+}
+
+#[test]
+fn a_windowed_descendant_is_preferred_regardless_of_registry_order() {
+    let helper = app(200, "helper");
+    let windowed = app(202, "application");
+    for apps in [
+        vec![helper.clone(), windowed.clone()],
+        vec![windowed.clone(), helper.clone()],
+    ] {
+        assert_eq!(
+            descendant_step(&apps, &[202], false),
+            Step::Owner(windowed.clone())
+        );
+    }
+}
+
+#[test]
+fn two_windowed_descendants_are_ambiguous() {
+    assert_eq!(
+        descendant_step(&[app(200, "first"), app(202, "second")], &[200, 202], false),
+        Step::Ambiguous(vec![200, 202])
+    );
+}
+
+#[test]
+fn a_windowless_descendant_waits_until_near_deadline() {
+    let helper = app(200, "helper");
+    assert_eq!(
+        descendant_step(std::slice::from_ref(&helper), &[], false),
+        Step::Wait
+    );
+    assert_eq!(
+        descendant_step(std::slice::from_ref(&helper), &[], true),
+        Step::Owner(helper)
+    );
+}
+
+#[test]
+fn a_windowed_identity_match_outside_the_tree_beats_a_windowless_descendant_helper() {
+    let helper = app(200, "helper");
+    let activated = app(201, "tool");
+    for apps in [
+        vec![helper.clone(), activated.clone()],
+        vec![activated.clone(), helper.clone()],
+    ] {
+        for settled in [false, true] {
+            assert_eq!(
+                descendant_step(&apps, &[201], settled),
+                Step::Owner(activated.clone())
+            );
+        }
+    }
+}
+
+#[test]
+fn a_windowless_outside_match_waits_and_then_loses_to_a_windowless_descendant() {
+    let activated = app(201, "tool");
+    let descendant = app(200, "helper");
+    for near_deadline in [false, true] {
+        assert_eq!(
+            descendant_step(&[descendant.clone(), activated.clone()], &[], near_deadline),
+            if near_deadline {
+                Step::Owner(descendant.clone())
+            } else {
+                Step::Wait
+            }
+        );
+    }
+}
+
+#[test]
+fn a_windowed_identity_match_outside_the_tree_is_chosen_over_a_windowless_one() {
+    let windowed = app(203, "tool");
+    assert_eq!(
+        descendant_step(
+            &[app(200, "helper"), app(201, "tool"), windowed.clone()],
+            &[203],
+            false
+        ),
+        Step::Owner(windowed)
+    );
+    assert_eq!(
+        descendant_step(
+            &[app(200, "helper"), app(201, "tool"), app(203, "tool")],
+            &[],
+            false
+        ),
+        Step::Wait
+    );
+}
+
+#[test]
+fn a_windowed_descendant_beats_a_windowed_identity_match_outside_the_tree() {
+    let application = app(202, "application");
+    assert_eq!(
+        descendant_step(&[app(201, "tool"), application.clone()], &[201, 202], false),
+        Step::Owner(application)
+    );
+}
+
+#[test]
+fn multiple_windowless_descendants_are_ambiguous_only_at_settle() {
+    let apps = [app(200, "first"), app(202, "second")];
+    assert_eq!(descendant_step(&apps, &[], false), Step::Wait);
+    assert_eq!(
+        descendant_step(&apps, &[], true),
+        Step::Ambiguous(vec![200, 202])
+    );
+}
+
+#[test]
+fn window_checks_are_skipped_without_new_descendants_or_after_exit() {
+    let identity = keys(&["tool"]);
+    for child in [None, Some(exited(0)), Some(exited(3))] {
+        for apps in [vec![], vec![app(201, "tool")], vec![app(100, "wrapper")]] {
+            let _ = step_with_ancestry(
+                &Sample {
+                    child_pid: 100,
+                    child,
+                    apps: &apps,
+                    before: &HashSet::new(),
+                    identity: &identity,
+                    settled: false,
+                    near_deadline: false,
+                },
+                |_, _| false,
+                |_| panic!("only new descendants need window checks"),
+            );
+        }
     }
 }
