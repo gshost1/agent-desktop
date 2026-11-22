@@ -7,7 +7,6 @@
     "chromium-and-electron",
     "headed-mode",
     "traces",
-    "mcp",
-    "daemon"
+    "mcp"
   ]
 }

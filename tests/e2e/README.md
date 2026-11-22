@@ -125,7 +125,6 @@ helper that returns a bare `@eN`.
 | `lib.sh` | Fail-closed assertions and exact `{ref_id,snapshot_id}` target helpers |
 | `safe-semantic.sh`, `scenarios/silent-text.sh`, `safe_semantic_guard.py` | Strict headless non-interference gate that runs before the fixture suite |
 | `scenarios/observation.sh` | Snapshots, locators, namespace pinning, strict twins |
-| `scenarios/daemon.sh` | Daemon mode: read-only commands through a warm daemon match the fixture and in-process reads; the daemon holds the grant and leaves nothing when stopped |
 | `scenarios/interaction.sh` | Headless/headed actions and exact-once effects |
 | `scenarios/acceptance.sh` | Named AE1-AE7 acceptance contract |
 | `scenarios/reliability.sh` | Stale refs, waits, drill-down, sessions |
