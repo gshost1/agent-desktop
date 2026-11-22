@@ -13,10 +13,14 @@ use super::folder_listing::FolderListing;
 use crate::channel::browser_link::BrowserLink;
 use crate::channel::web_channel_adapter::WebChannelAdapter;
 
-const LEDGER_LOCK_MS: u64 = 500;
+const LEDGER_LOCK_MS: u64 = 2_000;
 
 /// The bound on taking the download ledger's lock. It is detached from the
 /// command's deadline so a wait whose time ran out still records what it saw.
+/// Other holders keep the lock for one read-modify-write, so the bound only
+/// has to outlast a stalled host: an uncontended open of the lock file has
+/// taken 560 ms on a loaded Windows runner, and a bound shorter than that
+/// turns a finished download into a TIMEOUT.
 pub(crate) fn ledger_deadline() -> Result<Deadline, AdapterError> {
     Deadline::detached_after(LEDGER_LOCK_MS)
 }
@@ -114,3 +118,7 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "download_settle_tests.rs"]
+mod tests;
