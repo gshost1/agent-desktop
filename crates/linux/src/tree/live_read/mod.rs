@@ -40,6 +40,16 @@ pub(crate) trait NodeReader {
     ) -> Result<Vec<AtspiElement>, AdapterError> {
         Err(AdapterError::not_supported("modal window observation"))
     }
+    fn gate_memo(&mut self) -> Option<&'static super::surfaces::modal_gate::GateMemo> {
+        None
+    }
+    fn watch_app(
+        &mut self,
+        _app: &AtspiElement,
+        _deadline: Deadline,
+    ) -> Option<Box<dyn super::surfaces::modal_gate::GateWatch>> {
+        None
+    }
     fn parent_lacks(&mut self, _element: &AtspiElement) -> bool {
         false
     }
@@ -93,26 +103,21 @@ impl NodeReader for BusReader<'_> {
         element: &AtspiElement,
         deadline: Deadline,
     ) -> Result<Vec<AtspiElement>, AdapterError> {
-        let root = AtspiElement::new(
-            element.bus_name(),
-            crate::system::REGISTRY_ROOT_PATH,
-            element.pid(),
-        );
-        within(deadline, async {
-            let children = super::list_children(self.connection, &root).await?;
-            let mut windows = Vec::with_capacity(children.len());
-            for (bus, path) in children {
-                let pid = if bus == element.bus_name() {
-                    element.pid()
-                } else {
-                    crate::system::process_id(self.connection, bus.clone())
-                        .await
-                        .1?
-                };
-                windows.push(AtspiElement::new(bus, path, pid));
-            }
-            Ok(windows)
-        })
+        modal_watch::top_levels(self.connection, element, deadline)
+    }
+
+    fn gate_memo(&mut self) -> Option<&'static super::surfaces::modal_gate::GateMemo> {
+        Some(super::surfaces::modal_gate::process_memo())
+    }
+
+    fn watch_app(
+        &mut self,
+        app: &AtspiElement,
+        deadline: Deadline,
+    ) -> Option<Box<dyn super::surfaces::modal_gate::GateWatch>> {
+        modal_watch::open(app, deadline)
+            .ok()
+            .map(|watch| Box::new(watch) as Box<_>)
     }
 
     fn parent_lacks(&mut self, element: &AtspiElement) -> bool {
@@ -367,6 +372,7 @@ pub(crate) fn get_element_bounds(
 
 pub(crate) mod live_offscreen;
 pub(crate) mod live_project;
+pub(crate) mod modal_watch;
 pub(crate) mod pointer_refusal;
 #[cfg(test)]
 #[path = "live_read_tests.rs"]
