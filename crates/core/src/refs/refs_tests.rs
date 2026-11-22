@@ -19,6 +19,7 @@ pub(super) fn entry(role: &str, name: Option<&str>) -> RefEntry {
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec![],
@@ -257,6 +258,7 @@ fn test_save_load_roundtrip_with_home_override() {
             bounds_space: None,
             bounds: Some(bounds),
             bounds_hash: bounds.bounds_hash(),
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec![],

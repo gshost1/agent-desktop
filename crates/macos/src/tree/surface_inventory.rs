@@ -1,20 +1,50 @@
-use crate::system::window::popup_menu_window::searched_past_budget;
+use crate::system::process::process_identity::ProcessIdentity;
+use crate::system::window::popup_menu_window::{menu_window_numbers, searched_past_budget};
 use crate::tree::surface_window_ids::{SurfaceRead, WindowSurfaces, surfaces_from_windows};
 use crate::tree::{AXElement, properties::element::element_for_pid};
 use agent_desktop_core::{AdapterError, ErrorCode, SurfaceInfo};
 use std::time::Instant;
 
 pub(crate) fn list_surfaces_for_process(
-    identity: crate::system::process::process_identity::ProcessIdentity,
+    identity: ProcessIdentity,
     deadline: Instant,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    list_surfaces_with_window_evidence(identity, deadline, |_| None)
+}
+
+pub(crate) fn list_raised_surfaces_for_process(
+    identity: ProcessIdentity,
+    deadline: Instant,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    list_surfaces_with_window_evidence(identity, deadline, |pid| {
+        menu_window_numbers(pid)
+            .ok()
+            .map(|windows| !windows.is_empty())
+    })
+}
+
+fn list_surfaces_with_window_evidence(
+    identity: ProcessIdentity,
+    deadline: Instant,
+    menu_window_present: impl Fn(i32) -> Option<bool>,
 ) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let pid = identity.pid();
     let windows = super::app_menu::observe(identity, deadline, || window_surfaces(pid, deadline))?;
-    let menus = super::app_menu::observe(identity, deadline, || open_menu_surfaces(pid, deadline));
-    let menus = settle_by_window_server(menus, || {
-        crate::system::window::popup_menu_window::menu_window_numbers(pid)
+    let menus = super::app_menu::observe(identity, deadline, || {
+        let menus = super::app_menu::open_menus_with_window_evidence(pid, deadline, || {
+            menu_window_present(pid)
+        })?;
+        read_menu_surfaces(menus, deadline)
     });
-    combine_surfaces(windows, menus)
+    finish_surface_inventory(windows, menus, || menu_window_numbers(pid))
+}
+
+fn finish_surface_inventory(
+    windows: Vec<SurfaceInfo>,
+    menus: Result<Vec<SurfaceInfo>, AdapterError>,
+    menu_windows: impl FnOnce() -> Result<Vec<i64>, AdapterError>,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    combine_surfaces(windows, settle_by_window_server(menus, menu_windows))
 }
 
 /// Reads every window the application publishes, plus its focused window,
@@ -73,9 +103,12 @@ fn window_number(element: &AXElement, deadline: Instant) -> Result<Option<i64>, 
     }
 }
 
-fn open_menu_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
+fn read_menu_surfaces(
+    menus: Vec<(&'static str, String, AXElement)>,
+    deadline: Instant,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let mut surfaces = Vec::new();
-    for (kind, id, menu) in super::app_menu::open_menus_for_pid(pid, deadline)? {
+    for (kind, id, menu) in menus {
         push_menu_surface(&menu, kind, id, deadline, &mut surfaces)?;
     }
     Ok(surfaces)
@@ -83,8 +116,8 @@ fn open_menu_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, A
 
 /// A menu search that stopped at its node cap is unfinished on every attempt
 /// in a dense application. The window server lists every on-screen pop-up menu
-/// window of the process, so when it lists none no menu is open and the read
-/// is complete. Any other answer leaves the scan unfinished.
+/// window of the process. If none remain after the direct and focused AX
+/// reads found no menu, settle the inventory without a menu entry.
 fn settle_by_window_server(
     menus: Result<Vec<SurfaceInfo>, AdapterError>,
     menu_windows: impl FnOnce() -> Result<Vec<i64>, AdapterError>,

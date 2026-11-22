@@ -98,9 +98,12 @@ fn node_cap() -> AdapterError {
 
 #[test]
 fn a_capped_menu_search_with_no_menu_window_on_screen_reads_as_no_menu() {
-    let settled = settle_by_window_server(Err(node_cap()), || Ok(Vec::new())).unwrap();
+    let windows = vec![surface("w-31", "sheet")];
+    let settled =
+        finish_surface_inventory(windows.clone(), Err(node_cap()), || Ok(Vec::new())).unwrap();
 
-    assert!(settled.is_empty());
+    assert_eq!(settled.len(), 1);
+    assert_eq!(settled[0].id, windows[0].id);
 }
 
 #[test]
@@ -109,9 +112,8 @@ fn a_capped_menu_search_with_a_menu_window_on_screen_stays_unfinished() {
         Ok(vec![88]),
         Err(AdapterError::internal("window list unavailable")),
     ] {
-        let settled = settle_by_window_server(Err(node_cap()), || menu_windows);
-
-        let surfaces = combine_surfaces(Vec::new(), settled).unwrap();
+        let surfaces =
+            finish_surface_inventory(Vec::new(), Err(node_cap()), || menu_windows).unwrap();
         assert_eq!(surfaces.len(), 1);
         assert_eq!(surfaces[0].unclassified, ["menu"]);
     }

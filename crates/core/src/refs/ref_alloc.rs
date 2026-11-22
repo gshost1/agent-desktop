@@ -20,6 +20,9 @@ pub(crate) fn ref_entry_from_node(
     let bounds = window_bounds
         .or(node.presentation.bounds)
         .filter(|bounds| bounds.validate().is_ok());
+    let screen_bounds_hash = window_bounds
+        .and(node.presentation.bounds)
+        .and_then(|bounds| bounds.bounds_hash());
     RefEntry {
         process: crate::RefProcess {
             pid: source.pid,
@@ -42,6 +45,7 @@ pub(crate) fn ref_entry_from_node(
             bounds,
             bounds_hash: bounds.and_then(|bounds| bounds.bounds_hash()),
             bounds_space: window_bounds.map(|_| crate::BoundsSpace::Window),
+            screen_bounds_hash,
         },
         capabilities: crate::RefCapabilities {
             states: node.presentation.states.clone(),
