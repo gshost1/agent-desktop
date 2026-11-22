@@ -12,8 +12,10 @@ use crate::tree::element::bounded::collect_bounded;
 use crate::tree::properties::liveness::Liveness;
 use crate::tree::properties::node_read::read_node_for;
 use crate::tree::properties::read_purpose::ReadPurpose;
+use crate::tree::surfaces::window_extents::read_extents_async;
 use crate::tree::vocabulary::label_read::read_label_if_needed;
-use crate::tree::{AtspiElement, Expansion, ObservedRead, RawNode, WalkLimits};
+use crate::tree::vocabulary::role_numbers::MENU_BAR;
+use crate::tree::{AtspiElement, Expansion, Field, ObservedRead, RawNode, WalkLimits};
 
 const NODES_IN_FLIGHT: usize = 32;
 const PID_LOOKUPS_IN_FLIGHT: usize = 64;
@@ -23,6 +25,7 @@ const PID_LOOKUPS_IN_FLIGHT: usize = 64;
 /// unreadable instead of being read.
 pub(in crate::tree) const UNKNOWN_PID: u32 = 0;
 const UNIDENTIFIED: &str = "The owning process of the bus name could not be identified";
+const SCREEN_COORDINATES: u32 = 0;
 
 pub(in crate::tree) async fn learn_pids<'a>(
     connection: &Connection,
@@ -131,9 +134,19 @@ impl<'a> LevelReader<'a> {
                     if !at_root && element.pid() == UNKNOWN_PID {
                         Err(AdapterError::new(ErrorCode::ElementNotFound, UNIDENTIFIED))
                     } else {
-                        read_observed(connection, element, max_bytes, purpose)
-                            .await
-                            .map(|(read, _)| read)
+                        let (mut read, _) =
+                            read_observed(connection, element, max_bytes, purpose).await?;
+                        if matches!(
+                            purpose,
+                            ReadPurpose::Sampling | ReadPurpose::Count | ReadPurpose::Shape
+                        ) && read.node.traits.role.present() == Some(&MENU_BAR)
+                        {
+                            read.node.extents =
+                                read_extents_async(connection, element, SCREEN_COORDINATES)
+                                    .await?
+                                    .map_or(Field::Absent, Field::Present);
+                        }
+                        Ok(read)
                     }
                 }))
                 .buffered(NODES_IN_FLIGHT)
