@@ -27,6 +27,7 @@ fn state(titles: WindowAxTitles, focused_number: Option<i64>) -> WindowAxState {
         focused: focused_number.map(|number| (None, Some(number))),
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: FxHashSet::from_iter([7, 8]),
+        window_numbers_complete: true,
         titles,
     }
 }
