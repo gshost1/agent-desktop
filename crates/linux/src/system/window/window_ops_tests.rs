@@ -1,10 +1,14 @@
-use agent_desktop_core::{ErrorCode, WindowInfo, WindowState};
+use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo, WindowState};
 
-use super::{finish_listing, finish_process_listing, require_answered};
+use super::{finish_listing, finish_process_listing, require_answered, settle_pass};
 use crate::system::registry::app_outcome::AppOutcome;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::registry::registry_frames::RootRead;
 use crate::system::signal::signal_inventory::pass_over_with_menu;
+use crate::system::window::window_reread::reread_with;
+use crate::system::window::window_test_support::{
+    pass as inventory_pass, state as inventory_state,
+};
 use crate::system::x11::{FrameExtents, FrameFacts, X11Client, X11State};
 
 fn window(title: &str, active: bool, modal: bool) -> ListedWindow {
@@ -65,6 +69,51 @@ fn finish_preserves_an_existing_focus_decision() {
         Some(0)
     );
     assert!(pass.windows[0].info.state.is_focused);
+}
+
+#[test]
+fn initial_and_reread_passes_refuse_stopped_targets_in_both_scoped_paths() {
+    for named in [false, true] {
+        let stopped = || Some(AdapterError::app_unresponsive("app"));
+        let initial = settle_pass(inventory_pass(), stopped(), named)
+            .err()
+            .unwrap();
+        assert_eq!(initial.code, ErrorCode::AppUnresponsive);
+        let error = reread_with(
+            (
+                settle_pass(inventory_pass(), None, named).unwrap(),
+                inventory_state(7),
+            ),
+            Deadline::standard().unwrap(),
+            &[7],
+            |_| {
+                settle_pass(inventory_pass(), stopped(), named)
+                    .map(|pass| (pass, inventory_state(7)))
+            },
+            |_| {},
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code, initial.code);
+        assert_eq!(error.message, initial.message);
+    }
+}
+
+#[test]
+fn settlement_preserves_each_scoped_paths_unanswered_frame_contract() {
+    for named in [false, true] {
+        let mut unread = inventory_pass();
+        unread.windows.clear();
+        unread.outcomes = outcome(RootRead::TimedOut);
+        let settled = settle_pass(unread, None, named);
+        if named {
+            assert_eq!(settled.err().unwrap().code, ErrorCode::Timeout);
+        } else {
+            let (windows, read) = finish_process_listing(settled.unwrap());
+            assert!(windows.is_empty());
+            assert_eq!(read, RootRead::TimedOut);
+        }
+    }
 }
 
 fn state(active: u32) -> X11State {

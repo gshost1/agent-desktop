@@ -55,11 +55,17 @@ fn read_listing(
     registry: &Registry,
     select: impl Fn(&RegistryApp) -> bool,
     deadline: Deadline,
+    named: bool,
 ) -> Result<(Pass, X11State), AdapterError> {
     let pending = x11::start(|| DisplayReader.read());
     let desktops = x11::start(desktops::read);
     let finish = |deadline| pending.finish(deadline).unwrap_or(X11State::Unavailable);
-    let (mut pass, state) = run_pass_with(bus, registry, select, finish, deadline)?;
+    let (pass, state) = run_pass_with(bus, registry, &select, finish, deadline)?;
+    let mut pass = settle_pass(
+        pass,
+        stopped_target(registry, select, proc_stat::is_stopped),
+        named,
+    )?;
     finish_listing(
         &mut pass,
         &state,
@@ -67,6 +73,16 @@ fn read_listing(
         |client| focus_send::input_focus_in(client, deadline),
     );
     Ok((pass, state))
+}
+
+fn settle_pass(
+    mut pass: Pass,
+    stopped: Option<AdapterError>,
+    named: bool,
+) -> Result<Pass, AdapterError> {
+    let windows = settle_scoped(pass.windows, stopped)?;
+    pass.windows = require_answered(windows, &pass.outcomes, named)?;
+    Ok(pass)
 }
 
 /// The windows of a pass that named its application, unless none were listed
@@ -126,9 +142,8 @@ pub(crate) fn list_windows(
         None => None,
     };
     let finish = |deadline| pending.finish(deadline).unwrap_or(X11State::Unavailable);
-    let (mut pass, state) = run_pass_with(bus, &registry, select, finish, deadline)?;
-    let windows = settle_scoped(pass.windows, stopped)?;
-    pass.windows = require_answered(windows, &pass.outcomes, filter.app.is_some())?;
+    let (pass, state) = run_pass_with(bus, &registry, select, finish, deadline)?;
+    let mut pass = settle_pass(pass, stopped, filter.app.is_some())?;
     finish_listing(
         &mut pass,
         &state,
@@ -146,13 +161,13 @@ pub(crate) fn list_windows(
             (pass, state),
             deadline,
             &selected,
-            |until| read_listing(bus, &registry, select, until),
+            |until| read_listing(bus, &registry, select, until, true),
             std::thread::sleep,
         )?
     } else {
         (pass, state)
     };
-    let mut windows = require_answered(pass.windows, &pass.outcomes, filter.app.is_some())?;
+    let mut windows = pass.windows;
     if filter.focused_only {
         windows.retain(|window| window.info.state.is_focused);
     }
@@ -175,10 +190,11 @@ pub(crate) fn windows_of_process(
     let registry = read_registry_for(bus, Some(pid), deadline)?;
     let select = |app: &RegistryApp| app.root.pid() == pid;
     let finish = |deadline| pending.finish(deadline).unwrap_or(X11State::Unavailable);
-    let (mut pass, state) = run_pass_with(bus, &registry, select, finish, deadline)?;
-    pass.windows = settle_scoped(
-        pass.windows,
+    let (pass, state) = run_pass_with(bus, &registry, select, finish, deadline)?;
+    let mut pass = settle_pass(
+        pass,
         stopped_target(&registry, select, proc_stat::is_stopped),
+        false,
     )?;
     finish_listing(
         &mut pass,
@@ -190,7 +206,7 @@ pub(crate) fn windows_of_process(
         (pass, state),
         deadline,
         &[pid],
-        |until| read_listing(bus, &registry, select, until),
+        |until| read_listing(bus, &registry, select, until, false),
         std::thread::sleep,
     )?;
     Ok(finish_process_listing(pass))
