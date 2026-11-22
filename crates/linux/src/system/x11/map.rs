@@ -74,8 +74,8 @@ fn geometry_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
 /// global extents. Without a title match, exact same-process geometry identifies
 /// the client: the client, frame or shadowless frame rectangle for global
 /// toolkits, or their sizes for local ones. Several candidates stay ambiguous;
-/// child order is never used. Unnamed local frames still require the caller's
-/// size-identity proof. Missing or invalid geometry identifies nothing.
+/// child order is never used. Local frames without a title match require the
+/// caller's size-identity proof. Missing or invalid geometry identifies nothing.
 pub(crate) fn match_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
     if frame.title.is_empty() && !frame.global_position {
         return if frame.size_identity {
@@ -90,7 +90,13 @@ pub(crate) fn match_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientM
         .collect();
     let [_, _, ..] = named.as_slice() else {
         return named.first().map_or_else(
-            || geometry_client(frame, clients),
+            || {
+                if frame.global_position || frame.size_identity {
+                    geometry_client(frame, clients)
+                } else {
+                    ClientMatch::NoClient
+                }
+            },
             |client| ClientMatch::One(client.id),
         );
     };

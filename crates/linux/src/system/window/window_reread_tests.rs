@@ -124,7 +124,7 @@ fn reread_checks_budget_again_after_waiting() {
 }
 
 #[test]
-fn reread_preserves_the_last_valid_listing_when_a_read_fails() {
+fn reread_preserves_the_last_valid_listing_when_a_read_times_out() {
     let calls = Cell::new(0);
     let (result, native) = reread_with(
         (pass(), state(7)),
@@ -149,7 +149,7 @@ fn reread_preserves_the_last_valid_listing_when_a_read_fails() {
 }
 
 #[test]
-fn reread_preserves_an_initial_empty_listing_when_the_first_read_fails() {
+fn reread_preserves_an_initial_empty_listing_when_the_first_read_times_out() {
     let mut initial = pass();
     initial.windows.clear();
     let (result, _) = reread_with(
@@ -161,6 +161,27 @@ fn reread_preserves_an_initial_empty_listing_when_the_first_read_fails() {
     )
     .unwrap();
     assert!(result.windows.is_empty());
+}
+
+#[test]
+fn reread_propagates_non_timeout_errors_instead_of_returning_an_earlier_listing() {
+    for expected in [
+        AdapterError::app_unresponsive("app"),
+        AdapterError::not_supported("read"),
+    ] {
+        let error = reread_with(
+            (pass(), state(7)),
+            Deadline::standard().unwrap(),
+            &[],
+            |_| Err(expected.clone()),
+            |_| {},
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code, expected.code);
+        assert_eq!(error.message, expected.message);
+        assert_eq!(error.disposition, expected.disposition);
+    }
 }
 
 #[test]

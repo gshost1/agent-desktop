@@ -14,7 +14,7 @@ fn size(node: &RawNode) -> Option<(i32, i32)> {
         .then_some((bounds.width, bounds.height))
 }
 
-/// An unnamed showing top-level without global positions may identify an X11
+/// A showing top-level without global positions may identify an X11
 /// client by size only when no other top-level could claim that size. An unread
 /// window size leaves the association unknown.
 pub(crate) fn permits_size_match(
@@ -25,7 +25,6 @@ pub(crate) fn permits_size_match(
 ) -> bool {
     let eligible = !reports_global_position(toolkit)
         && is_top_level(&node.traits.interfaces)
-        && node.properties.name.present().is_some_and(String::is_empty)
         && node.traits.states.present().is_some_and(|words| {
             let bits = StateBits::new(words);
             bits.has(SHOWING)

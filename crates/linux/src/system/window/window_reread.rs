@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use agent_desktop_core::{AdapterError, Deadline};
+use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
 
 use super::window_focus::active_client;
 use crate::system::signal::signal_inventory::Pass;
@@ -39,7 +39,8 @@ pub(super) fn reread_with(
         }
         match read(budget) {
             Ok(next) => current = next,
-            Err(_) => break,
+            Err(error) if error.code == ErrorCode::Timeout => break,
+            Err(error) => return Err(error),
         }
     }
     Ok(current)
