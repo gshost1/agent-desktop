@@ -18,6 +18,7 @@ pub(crate) struct AtspiElement {
     pid: u32,
     ancestry: Ancestry,
     menu_owner: Option<(String, String, u32)>,
+    resolved_role: Option<String>,
 }
 
 impl PartialEq for AtspiElement {
@@ -36,6 +37,7 @@ impl AtspiElement {
             pid,
             ancestry: Ancestry::default(),
             menu_owner: None,
+            resolved_role: None,
         }
     }
 
@@ -53,6 +55,14 @@ impl AtspiElement {
 
     pub(crate) fn pid(&self) -> u32 {
         self.pid
+    }
+
+    pub(crate) fn resolved_role(&self) -> Option<&str> {
+        self.resolved_role.as_deref()
+    }
+
+    pub(crate) fn set_resolved_role(&mut self, role: String) {
+        self.resolved_role = Some(role);
     }
 
     /// The same element without its ancestry: what gets stored inside another

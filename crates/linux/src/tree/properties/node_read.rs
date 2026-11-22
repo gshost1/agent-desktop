@@ -265,6 +265,7 @@ pub(crate) async fn read_node_for(
         element: element.clone(),
         properties,
         traits: NodeTraits {
+            text_content_requested: purpose.text_content(),
             role: role.map_or_else(
                 || Ok(Field::Failed("role not read".to_owned())),
                 |read| field(read, liveness),
