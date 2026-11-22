@@ -1,7 +1,9 @@
 use super::dialog_evidence::DialogEvidence;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::x11::X11State;
-use crate::system::x11::map::{ClientMatch, geometry_client, match_frames, size_matches};
+use crate::system::x11::map::{
+    ClientMatch, exact_geometry_matches, geometry_client, match_frames, size_matches,
+};
 
 pub(super) fn active_client(state: &X11State) -> Option<(u32, u32)> {
     let X11State::Ready {
@@ -54,6 +56,18 @@ pub(super) fn reconcile_dialog(
                 .iter()
                 .any(|other| other.id == owner && other.pid == Some(pid))
             && size_matches(&window.frame, native)
+            && (window.frame.size_identity || exact_geometry_matches(&window.frame, native))
+            && !windows.iter().enumerate().any(|(other, candidate)| {
+                other != index
+                    && candidate.frame.pid == pid
+                    && candidate
+                        .frame
+                        .extents
+                        .zip(window.frame.extents)
+                        .is_some_and(|(candidate, frame)| {
+                            candidate.width == frame.width && candidate.height == frame.height
+                        })
+            })
     });
     (evidence.input_focus && (geometry || transient)).then_some(index)
 }

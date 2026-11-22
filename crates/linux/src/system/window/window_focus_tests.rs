@@ -7,6 +7,7 @@ use crate::tree::Extents;
 
 fn window(active: bool, modal: bool) -> ListedWindow {
     let mut window = listed_window(active, modal);
+    window.frame.size_identity = true;
     window.frame.extents = Some(Extents {
         x: 0,
         y: 0,
@@ -43,6 +44,74 @@ fn reconcile_dialog(
         input_focus: input(id),
         transient_for: Some(1),
     })
+}
+
+#[test]
+fn stale_local_active_dialog_cannot_claim_an_unmatched_same_size_dialogs_client() {
+    let native = state(7);
+    let mut stale = window(true, true);
+    stale.frame.global_position = false;
+    stale.frame.size_identity = false;
+    let mut actual = window(false, true);
+    actual.frame.title = "different accessible name".into();
+    actual.frame.global_position = false;
+    actual.frame.size_identity = false;
+    assert_eq!(
+        crate::system::x11::map::match_frames(
+            &[stale.frame.clone(), actual.frame.clone()],
+            match &native {
+                X11State::Ready { clients, .. } => clients,
+                _ => unreachable!(),
+            },
+        ),
+        vec![
+            crate::system::x11::map::ClientMatch::NoClient,
+            crate::system::x11::map::ClientMatch::NoClient,
+        ]
+    );
+    assert_eq!(reconcile_dialog(&[stale, actual], &native, |_| true), None);
+}
+
+#[test]
+fn transient_local_dialog_requires_size_identity_and_a_unique_listed_size() {
+    let native = state(7);
+    for proof in [false, true] {
+        for competing in [false, true] {
+            let mut dialog = window(true, true);
+            dialog.frame.title = "parent".into();
+            dialog.frame.global_position = false;
+            dialog.frame.size_identity = proof;
+            let mut windows = vec![dialog];
+            if competing {
+                let mut other = window(false, true);
+                other.frame.global_position = false;
+                other.frame.size_identity = false;
+                windows.push(other);
+            }
+            assert_eq!(
+                reconcile_dialog(&windows, &native, |_| true),
+                if proof && !competing { Some(0) } else { None }
+            );
+        }
+    }
+}
+
+#[test]
+fn transient_global_dialog_without_size_identity_requires_exact_geometry() {
+    for global in [false, true] {
+        for x in [0, 100] {
+            let mut dialog = window(true, true);
+            dialog.frame.title = "parent".into();
+            dialog.frame.size_identity = false;
+            dialog.frame.global_position = global;
+            dialog.frame.extents.as_mut().unwrap().x = x;
+            dialog.frame.extents.as_mut().unwrap().y = 100;
+            assert_eq!(
+                reconcile_dialog(&[dialog], &state(7), |_| true),
+                if global && x == 100 { Some(0) } else { None }
+            );
+        }
+    }
 }
 
 #[test]

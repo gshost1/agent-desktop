@@ -43,6 +43,17 @@ fn same_size(left: Extents, right: Extents) -> bool {
     left.width == right.width && left.height == right.height
 }
 
+pub(crate) fn exact_geometry_matches(frame: &FrameFacts, client: &X11Client) -> bool {
+    frame.global_position
+        && frame.extents.is_some_and(|size| {
+            size.width > 0
+                && size.height > 0
+                && size.x != i32::MIN
+                && size.y != i32::MIN
+                && (sits_at(client, size) || client.bounds == Some(size))
+        })
+}
+
 pub(crate) fn size_matches(frame: &FrameFacts, client: &X11Client) -> bool {
     let Some(size) = frame
         .extents
@@ -59,7 +70,7 @@ pub(crate) fn geometry_client(frame: &FrameFacts, clients: &[X11Client]) -> Clie
     if !frame.global_position && !frame.size_identity {
         return ClientMatch::NoClient;
     }
-    let Some(size) = frame.extents.filter(|size| {
+    let Some(_) = frame.extents.filter(|size| {
         size.width > 0 && size.height > 0 && size.x != i32::MIN && size.y != i32::MIN
     }) else {
         return ClientMatch::NoClient;
@@ -69,7 +80,7 @@ pub(crate) fn geometry_client(frame: &FrameFacts, clients: &[X11Client]) -> Clie
         .filter(|client| client.pid == Some(frame.pid))
         .filter(|client| {
             if frame.global_position {
-                sits_at(client, size) || client.bounds == Some(size)
+                exact_geometry_matches(frame, client)
             } else {
                 size_matches(frame, client)
             }
