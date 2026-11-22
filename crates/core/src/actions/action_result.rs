@@ -78,6 +78,28 @@ impl ActionResult {
             == Some(UNOBSERVED_COMMIT)
     }
 
+    /// Marks a value write whose edit the platform ended itself, so the
+    /// application has had its chance to take the value. Verification then
+    /// reads back what the application kept, which may be the written value
+    /// in the field's own format. `evidence` lands in the details.
+    pub fn with_commit_ended(self, evidence: serde_json::Value) -> Self {
+        let mut this = self.with_unverified_delivery();
+        let details = this.details.get_or_insert_with(|| serde_json::json!({}));
+        if let Some(details) = details.as_object_mut() {
+            details.insert("application_commit".into(), ENDED_COMMIT.into());
+            details.insert("commit_evidence".into(), evidence);
+        }
+        this
+    }
+
+    /// True for a result marked by [`ActionResult::with_commit_ended`].
+    pub fn commit_ended(&self) -> bool {
+        self.details
+            .as_ref()
+            .and_then(|details| details["application_commit"].as_str())
+            == Some(ENDED_COMMIT)
+    }
+
     /// True for a result built by [`ActionResult::awaiting_commit`].
     pub fn awaits_application_commit(&self) -> bool {
         self.details
@@ -158,6 +180,7 @@ fn delivery_summary(steps: &[ActionStep]) -> (bool, bool) {
 
 const PENDING_COMMIT: &str = "pending";
 const UNOBSERVED_COMMIT: &str = "unobserved";
+const ENDED_COMMIT: &str = "committed";
 
 const fn default_action_disposition() -> DeliverySemantics {
     DeliverySemantics::delivered_unverified()

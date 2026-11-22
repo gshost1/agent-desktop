@@ -1,4 +1,5 @@
 use super::{LocatorResolution, LocatorStats};
+use crate::AppError;
 use crate::{AdapterError, ErrorCode};
 use serde_json::json;
 use std::time::Instant;
@@ -15,7 +16,7 @@ pub(super) fn unknown_incomplete_error(resolution: &LocatorResolution) -> Adapte
         .with_disposition(crate::DeliverySemantics::not_delivered())
 }
 
-pub(super) fn has_deterministic_limit(stats: &LocatorStats) -> bool {
+pub(crate) fn has_deterministic_limit(stats: &LocatorStats) -> bool {
     let limits = &stats.traversal.limits;
     limits.node_hits > 0
         || limits.edge_hits > 0
@@ -24,7 +25,7 @@ pub(super) fn has_deterministic_limit(stats: &LocatorStats) -> bool {
         || limits.depth_hits > 0
 }
 
-pub(super) fn has_transient_incompleteness(stats: &LocatorStats) -> bool {
+pub(crate) fn has_transient_incompleteness(stats: &LocatorStats) -> bool {
     stats.traversal.limits.child_count_changes > 0
         || stats.reads.health.cannot_complete > 0
         || stats.reads.health.deadline_exhausted > 0
@@ -82,4 +83,31 @@ pub(super) fn transient_incomplete_timeout(
             "query_stats": stats,
         }))
         .with_disposition(crate::DeliverySemantics::not_delivered())
+}
+
+pub(super) fn finish_partial(
+    mut resolution: LocatorResolution,
+    mut aggregate: LocatorStats,
+    started: Instant,
+) -> Result<LocatorResolution, AppError> {
+    aggregate.elapsed_us = super::resolve::elapsed_us_since(started);
+    resolution.stats = aggregate;
+    Ok(resolution)
+}
+
+/// Ends a resolution whose walk stayed incomplete with no recorded cause: the
+/// observed matches when partial answers are allowed, `locator_incomplete`
+/// otherwise, both with the stats of every walk.
+pub(super) fn finish_causeless(
+    allow_partial: bool,
+    mut resolution: LocatorResolution,
+    mut aggregate: LocatorStats,
+    started: Instant,
+) -> Result<LocatorResolution, AppError> {
+    if allow_partial {
+        return finish_partial(resolution, aggregate, started);
+    }
+    aggregate.elapsed_us = super::resolve::elapsed_us_since(started);
+    resolution.stats = aggregate;
+    Err(unknown_incomplete_error(&resolution).into())
 }

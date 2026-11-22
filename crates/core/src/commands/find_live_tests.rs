@@ -197,14 +197,15 @@ fn execute_rejects_an_incomplete_live_traversal_with_structured_evidence() {
     )
     .expect_err("an incomplete zero-match result is not authoritative");
 
-    assert_eq!(error.code(), "TIMEOUT");
+    assert_eq!(error.code(), "ELEMENT_NOT_FOUND");
     let AppError::Adapter(error) = error else {
         panic!("expected adapter error");
     };
     assert_eq!(
         error.details.as_ref().unwrap()["kind"],
-        "locator_incomplete"
+        "locator_unreadable_part"
     );
+    assert_eq!(error.details.as_ref().unwrap()["complete"], false);
     assert_eq!(error.details.as_ref().unwrap()["observed_matches"], 0);
 }
 

@@ -77,7 +77,9 @@ mod imp {
                     request,
                     deadline,
                 )?;
-                return Ok(value_write_result(action, el, steps, deadline));
+                return Ok(crate::actions::edit_end::set_value_result(
+                    action, el, steps, deadline,
+                ));
             }
 
             Action::SetFocus => {
@@ -212,17 +214,6 @@ mod imp {
         }
 
         Ok(ActionResult::from_execution(action, steps))
-    }
-
-    fn value_write_result(
-        action: &Action,
-        el: &AXElement,
-        steps: Vec<ActionStep>,
-        deadline: Deadline,
-    ) -> ActionResult {
-        crate::actions::edit_commit::value_write_result(action, steps, || {
-            crate::actions::edit_commit::read_edit_commit(el, deadline)
-        })
     }
 
     fn awaiting_commit(action: &Action, steps: Vec<ActionStep>) -> ActionResult {

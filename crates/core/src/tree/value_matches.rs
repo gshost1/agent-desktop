@@ -33,6 +33,34 @@ pub fn value_matches(role: &str, expected: &str, observed: Option<&str>) -> bool
     }
 }
 
+/// What an application kept once editing ended: the written value itself, or
+/// the same number in the field's own format, such as `0.3000` for `0.3` or
+/// `1,200` for `1200`.
+pub(crate) fn committed_value_matches(role: &str, expected: &str, observed: Option<&str>) -> bool {
+    if value_matches(role, expected, observed) {
+        return true;
+    }
+    let Some(observed) = observed else {
+        return false;
+    };
+    match (plain_number(expected), plain_number(observed)) {
+        (Some(expected), Some(observed)) => (expected - observed).abs() <= 1e-6,
+        _ => false,
+    }
+}
+
+fn plain_number(text: &str) -> Option<f64> {
+    let digits: String = text
+        .trim()
+        .chars()
+        .filter(|character| !matches!(character, ',' | ' ' | '\u{a0}' | '\u{202f}'))
+        .collect();
+    digits
+        .parse::<f64>()
+        .ok()
+        .filter(|number| number.is_finite() && number.abs() < 9_007_199_254_740_992.0)
+}
+
 fn normalize_text(value: &str) -> std::borrow::Cow<'_, str> {
     if !value.contains('\r') {
         return std::borrow::Cow::Borrowed(value);
@@ -42,7 +70,28 @@ fn normalize_text(value: &str) -> std::borrow::Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
-    use super::value_matches;
+    use super::{committed_value_matches, value_matches};
+
+    #[test]
+    fn a_committed_field_may_keep_the_written_number_in_its_own_format() {
+        for (expected, observed, matches) in [
+            ("0.3", "0.3000", true),
+            ("1200", "1,200", true),
+            ("1200", "1 200", true),
+            ("0.3", "0.25", false),
+            ("1000000000", "1000000001", false),
+            ("abc", "ABC", false),
+            ("0.3", "0.3 cm", false),
+        ] {
+            assert_eq!(
+                committed_value_matches("textfield", expected, Some(observed)),
+                matches,
+                "{expected} -> {observed}"
+            );
+            assert!(!value_matches("textfield", expected, Some(observed)) || expected == observed);
+        }
+        assert!(!committed_value_matches("textfield", "0.3", None));
+    }
 
     #[test]
     fn numeric_readback_tolerance_does_not_hide_different_text_or_integer_targets() {
