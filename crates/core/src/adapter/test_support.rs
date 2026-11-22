@@ -155,6 +155,7 @@ pub(crate) fn minimal_ref_entry(role: &str, name: Option<&str>) -> crate::RefEnt
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: Vec::new(),

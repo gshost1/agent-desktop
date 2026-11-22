@@ -21,6 +21,7 @@ fn action_availability_makes_toggle_and_expand_applicable() {
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec![],

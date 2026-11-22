@@ -52,7 +52,7 @@ for _name, _timeout in (("explicit", 2000), ("short", 100), ("zero", 0)):
 @implementation("gaps.value_write_preserves_active_window")
 def value_write_preserves_active_window(ctx):
     schema, key = "org.gnome.desktop.peripherals.mouse", "speed"
-    with managed(ctx, "Settings", ("mouse",)) as settings:
+    with managed(ctx, "Settings Mouse", ("mouse",)) as settings:
         target = ref(ctx, settings, role="slider", name="Pointer Speed")
         with managed(ctx, "Text Editor") as other:
             native = x11.xid(ctx.tier, other.windows[0])

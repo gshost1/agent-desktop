@@ -1,4 +1,0 @@
-### Bug Fixes
-
-* macOS `notification-action`, `dismiss-notification` and `dismiss-all-notifications` now keep a delivered result when closing Notification Center or restoring the previously frontmost app fails afterwards, with `details.list_restore: "unverified"` on `notification-action`, instead of replacing it with the cleanup's retry-safe error; a failed operation keeps its own error and names the unverified cleanup, and `list-notifications` still reports its cleanup failure.
-* macOS `dismiss-notification` now reports `retry: unsafe` on any error raised after a dismiss strategy was sent or may have been (a failed re-read, a permission preflight, a pointer policy refusal, or all strategies failing), instead of the error's own retry-safe `not_delivered`; `dismiss-all-notifications` does the same for a list read that fails after an earlier dismissal.

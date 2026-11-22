@@ -407,11 +407,19 @@ function selfTest() {
 
 selfTest();
 
-if (pkg.bin?.['agent-desktop'] !== 'bin/agent-desktop') {
-  throw new Error('npm bin path must be bin/agent-desktop');
+if (pkg.name !== 'deskref') {
+  throw new Error('npm package name must be deskref');
 }
 
-if (pkg.repository?.url !== 'git+https://github.com/vercel-labs/agent-desktop.git') {
+const commandNames = Object.keys(pkg.bin ?? {}).sort();
+if (
+  JSON.stringify(commandNames) !== JSON.stringify(['agent-desktop', 'deskref']) ||
+  commandNames.some((name) => pkg.bin[name] !== 'bin/agent-desktop')
+) {
+  throw new Error('npm bin must install deskref and agent-desktop, both as bin/agent-desktop');
+}
+
+if (pkg.repository?.url !== 'git+https://github.com/gshost1/agent-desktop.git') {
   throw new Error('npm repository URL must be normalized for npm publish');
 }
 

@@ -12,19 +12,23 @@ use crate::transport::transport_error::transport_failed;
 const MAX_BUFFERED_EVENTS: usize = 1024;
 const MAX_DETACHED_SESSIONS: usize = 1024;
 const DETACHED: &str = "Target.detachedFromTarget";
+const BROWSER_VERSION: &str = "Browser.getVersion";
 
 /// A CDP client over one transport. Requests carry monotonic ids; events
 /// that arrive while a reply is awaited are buffered, oldest dropped first
 /// once the buffer holds 1024. The connection remembers every flattened
 /// session the browser announced as detached: a request on one fails at once
 /// as `cdp_target_gone`, and so does a request whose session detaches while
-/// its reply is awaited, since a closing target may never answer.
+/// its reply is awaited, since a closing target may never answer. A
+/// browser's version does not change while it runs, so the first
+/// browser-level `Browser.getVersion` reply answers every later one.
 pub struct CdpConnection {
     transport: Box<dyn CdpTransport>,
     next_id: u64,
     events: VecDeque<CdpEvent>,
     dropped_events: u64,
     detached_sessions: HashSet<String>,
+    browser_version: Option<Value>,
 }
 
 impl CdpConnection {
@@ -35,6 +39,7 @@ impl CdpConnection {
             events: VecDeque::new(),
             dropped_events: 0,
             detached_sessions: HashSet::new(),
+            browser_version: None,
         }
     }
 
@@ -48,8 +53,15 @@ impl CdpConnection {
         session_id: Option<&str>,
         deadline: Deadline,
     ) -> Result<Value, AdapterError> {
+        let asks_version = method == BROWSER_VERSION && session_id.is_none();
+        if let Some(version) = self.browser_version.as_ref().filter(|_| asks_version) {
+            return Ok(version.clone());
+        }
         let started = std::time::Instant::now();
         let reply = self.exchange(method, params, session_id, deadline);
+        if let Some(version) = reply.as_ref().ok().filter(|_| asks_version) {
+            self.browser_version = Some(version.clone());
+        }
         tracing::debug!(
             method,
             elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
@@ -66,16 +78,7 @@ impl CdpConnection {
         session_id: Option<&str>,
         deadline: Deadline,
     ) -> Result<Value, AdapterError> {
-        if session_id.is_some_and(|session| self.detached_sessions.contains(session)) {
-            return Err(session_detached(method));
-        }
-        let id = self.next_id;
-        self.next_id += 1;
-        let mut request = json!({ "id": id, "method": method, "params": params });
-        if let Some(session_id) = session_id {
-            request["sessionId"] = Value::String(session_id.to_owned());
-        }
-        self.transport.send_text(&request.to_string(), deadline)?;
+        let id = self.send_request(method, params, session_id, deadline)?;
         loop {
             let text = self.transport.receive_text(deadline)?;
             match Incoming::parse(&text) {
@@ -99,6 +102,38 @@ impl CdpConnection {
                 None => return Err(transport_failed(method, "unparseable DevTools frame")),
             }
         }
+    }
+
+    pub(super) fn send_request(
+        &mut self,
+        method: &str,
+        params: Value,
+        session_id: Option<&str>,
+        deadline: Deadline,
+    ) -> Result<u64, AdapterError> {
+        if session_id.is_some_and(|session| self.is_detached(session)) {
+            return Err(session_detached(method));
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut request = json!({ "id": id, "method": method, "params": params });
+        if let Some(session_id) = session_id {
+            request["sessionId"] = Value::String(session_id.to_owned());
+        }
+        self.transport.send_text(&request.to_string(), deadline)?;
+        Ok(id)
+    }
+
+    pub(super) fn receive_incoming(
+        &mut self,
+        deadline: Deadline,
+    ) -> Result<Option<Incoming>, AdapterError> {
+        let text = self.transport.receive_text(deadline)?;
+        Ok(Incoming::parse(&text))
+    }
+
+    pub(super) fn is_detached(&self, session_id: &str) -> bool {
+        self.detached_sessions.contains(session_id)
     }
 
     /// Returns the first event, buffered or newly read, that `matches`,
@@ -153,7 +188,7 @@ impl CdpConnection {
         self.dropped_events
     }
 
-    fn buffer(&mut self, event: CdpEvent) {
+    pub(super) fn buffer(&mut self, event: CdpEvent) {
         if event.method == DETACHED {
             if let Some(session) = event.params.get("sessionId").and_then(Value::as_str) {
                 if self.detached_sessions.len() >= MAX_DETACHED_SESSIONS {
@@ -170,11 +205,11 @@ impl CdpConnection {
     }
 }
 
-fn session_detached(method: &str) -> AdapterError {
+pub(super) fn session_detached(method: &str) -> AdapterError {
     target_gone(method, "the browser detached the target's session")
 }
 
-fn reply_unreadable(method: &str) -> AdapterError {
+pub(super) fn reply_unreadable(method: &str) -> AdapterError {
     AdapterError::new(
         ErrorCode::ActionFailed,
         format!("The reply to '{method}' nests too deeply to read"),
@@ -182,7 +217,7 @@ fn reply_unreadable(method: &str) -> AdapterError {
     .with_details(json!({ "kind": "cdp_reply_unreadable", "method": method }))
 }
 
-fn reply_result(method: &str, mut body: Value) -> Result<Value, AdapterError> {
+pub(super) fn reply_result(method: &str, mut body: Value) -> Result<Value, AdapterError> {
     if let Some(error) = body.get("error") {
         return Err(protocol_error(method, error));
     }

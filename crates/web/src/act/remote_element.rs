@@ -42,6 +42,18 @@ pub(crate) fn with_element<T>(
     body: impl FnOnce(&mut CdpConnection, &str) -> Result<T, AdapterError>,
 ) -> Result<T, AdapterError> {
     prove_document(connection, session, token, deadline)?;
+    with_proven_element(connection, session, token, deadline, body)
+}
+
+/// [`with_element`] for a caller whose previous call on this connection
+/// proved the token's document, so no second `Page.getFrameTree` is sent.
+pub(crate) fn with_proven_element<T>(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    token: &ElementToken,
+    deadline: Deadline,
+    body: impl FnOnce(&mut CdpConnection, &str) -> Result<T, AdapterError>,
+) -> Result<T, AdapterError> {
     let reply = connection
         .call(
             "DOM.resolveNode",

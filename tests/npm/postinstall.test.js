@@ -345,7 +345,7 @@ test('postinstall refuses unsupported platforms with exit code 0 and names the r
       `unexpected refusal output for ${osPlatform}-${osArch}`,
     );
     assert.match(lines[1], /^agent-desktop: Released platform keys today: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-arm64, win32-x64\.$/);
-    assert.equal(lines[2], 'agent-desktop: See: https://github.com/vercel-labs/agent-desktop');
+    assert.equal(lines[2], 'agent-desktop: See: https://github.com/gshost1/agent-desktop');
   }
 });
 
@@ -372,7 +372,7 @@ test('the manual fallback names installed destinations the wrapper resolves', ()
   assert.match(darwin, /agent-desktop-macos-helper/);
   assert.match(warnings, /curl -fsSL https:\/\/example\.invalid\/checksums\.txt/);
   assert.match(warnings, /sha256sum <downloaded-archive>/);
-  assert.match(warnings, /gh attestation verify <downloaded-archive> --repo vercel-labs\/agent-desktop/);
+  assert.match(warnings, /gh attestation verify <downloaded-archive> --repo gshost1\/agent-desktop/);
 });
 
 function promptSkillOutputFor(osPlatform) {

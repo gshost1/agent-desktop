@@ -1,3 +1,0 @@
-### Bug Fixes
-
-* `wait --menu-closed` no longer returns before a menu that its opener has not shown yet: on every platform a closed read counts only after the menu was seen open (two closed reads in a row) or after the platform's opener grace (300 ms on macOS, where a menu reads open 5 to 225 ms after a raw click on its opener; 1.5 s on Linux and Windows), a timeout that ends inside the grace with every read closed returns closed, and in `batch` the entry before the wait reads the menu first so a menu-item click ends the wait after two closed reads with no hold. On Linux this replaces the 2 s per-process action clock that raw `mouse-click` and `drag` never wrote. ([#205](https://github.com/gshost1/agent-desktop/pull/205))

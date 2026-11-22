@@ -1,3 +1,0 @@
-### Bug Fixes
-
-* Linux `select` on a dropdown it had to open no longer answers a missing or refused choice as untouched when the open may have left a change: a libadwaita combo row clicked under `--headed` answers `delivered_unverified` with `retry: unsafe`, because the click focused and selected the row, and a GTK4 `DropDown` it expanded stays `not_delivered` with `details.preparatory_expand: "expanded_then_collapsed"` only when a read shows the popup collapsed again, and is `delivered_unverified` when the collapse fails or cannot be confirmed; both errors carry `details.popup_closed` ([#208](https://github.com/gshost1/agent-desktop/pull/208))

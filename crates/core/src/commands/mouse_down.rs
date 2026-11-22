@@ -1,7 +1,7 @@
 use crate::{
     AppError, Modifier, MouseButton,
     adapter::PlatformAdapter,
-    commands::point_resolve::{require_cursor_policy, require_pointer_capability},
+    commands::point_resolve::{require_coordinate_pointer_capability, require_cursor_policy},
     context::CommandContext,
 };
 use serde_json::Value;
@@ -19,7 +19,7 @@ pub fn execute(
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     require_cursor_policy(context, "mouse-down")?;
-    require_pointer_capability(_adapter)?;
+    require_coordinate_pointer_capability(_adapter)?;
     Err(crate::commands::input_hold_policy::reject(
         "mouse-down",
         "mouse-click or drag",

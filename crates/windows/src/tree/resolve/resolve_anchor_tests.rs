@@ -42,6 +42,7 @@ fn blank_entry_with_path(fixture: &HostedFixture, path: Vec<usize>) -> RefEntry 
         bounds_space: None,
         bounds: Some(*rect),
         bounds_hash: Some(hash),
+        screen_bounds_hash: None,
     };
     entry.source.source_app = Some("fixture.exe".into());
     entry.source.source_window_id = Some(format!("w-{}", fixture.handle()));
@@ -108,6 +109,7 @@ fn an_entry_with_no_identity_and_no_usable_geometry_still_lands() {
         bounds_space: None,
         bounds: None,
         bounds_hash: None,
+        screen_bounds_hash: None,
     };
 
     let handle = resolve_locator_anchor(&entry, deadline())

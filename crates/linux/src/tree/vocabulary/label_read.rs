@@ -1,6 +1,7 @@
 use zbus::Connection;
 use zbus::zvariant::OwnedObjectPath;
 
+use super::composite_label::read_composite_label;
 use super::roles::role_of;
 use crate::system::ACCESSIBLE_INTERFACE;
 use crate::tree::properties::liveness::Liveness;
@@ -9,15 +10,15 @@ use crate::tree::{AtspiElement, Field, LabelOutcome, RawNode};
 use agent_desktop_core::tree::roles::is_interactive_role;
 use agent_desktop_core::{AdapterError, ErrorCode};
 
-const LABELLED_BY: u32 = 2;
+pub(super) const LABELLED_BY: u32 = 2;
 
-type RelationSet = Vec<(u32, Vec<(String, OwnedObjectPath)>)>;
+pub(super) type RelationSet = Vec<(u32, Vec<(String, OwnedObjectPath)>)>;
 
-pub(in crate::tree) async fn first_label_target(
+pub(super) async fn read_relations(
     connection: &Connection,
     element: &AtspiElement,
-) -> Result<Option<AtspiElement>, zbus::Error> {
-    let relations = call(
+) -> Result<RelationSet, zbus::Error> {
+    call(
         connection,
         element,
         ACCESSIBLE_INTERFACE,
@@ -26,8 +27,15 @@ pub(in crate::tree) async fn first_label_target(
     )
     .await?
     .body()
-    .deserialize::<RelationSet>()?;
-    Ok(relations
+    .deserialize()
+}
+
+pub(in crate::tree) async fn first_label_target(
+    connection: &Connection,
+    element: &AtspiElement,
+) -> Result<Option<AtspiElement>, zbus::Error> {
+    Ok(read_relations(connection, element)
+        .await?
         .into_iter()
         .find(|(kind, _)| *kind == LABELLED_BY)
         .and_then(|(_, targets)| targets.into_iter().next())
@@ -85,10 +93,12 @@ pub(crate) async fn read_label_if_needed(
     connection: &Connection,
     node: &RawNode,
 ) -> Result<LabelOutcome, AdapterError> {
-    if needs_label(node) {
-        read_label(connection, &node.element).await
-    } else {
-        Ok(LabelOutcome::Unlabelled)
+    if !needs_label(node) {
+        return Ok(LabelOutcome::Unlabelled);
+    }
+    match read_label(connection, &node.element).await? {
+        LabelOutcome::Unlabelled => read_composite_label(connection, node).await,
+        label => Ok(label),
     }
 }
 
@@ -106,7 +116,14 @@ pub(crate) async fn read_label(
         }
         Err(_) => return Ok(LabelOutcome::Failed),
     };
-    let name = match name_of(connection, &target).await {
+    label_text(connection, &target).await
+}
+
+pub(super) async fn label_text(
+    connection: &Connection,
+    target: &AtspiElement,
+) -> Result<LabelOutcome, AdapterError> {
+    let name = match name_of(connection, target).await {
         Ok(name) => Some(name),
         Err(error)
             if matches!(
@@ -120,7 +137,7 @@ pub(crate) async fn read_label(
     };
     match from_name(name) {
         Some(outcome) => Ok(outcome),
-        None => from_text(text_of(connection, &target).await),
+        None => from_text(text_of(connection, target).await),
     }
 }
 

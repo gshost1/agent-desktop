@@ -255,6 +255,7 @@ fn test_entry_defaults() -> RefEntry {
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: agent_desktop_core::RefCapabilities {
             states: Vec::new(),

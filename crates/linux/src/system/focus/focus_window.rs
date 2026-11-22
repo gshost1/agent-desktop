@@ -49,6 +49,9 @@ pub(in crate::system) trait FocusWorld: ClientWorld {
     fn send_untimed(&self, client: u32) -> Result<(), ControlError>;
     fn switch_desktop(&self, desktop: u32) -> Result<(), ActivateError>;
     fn modal_over(&self, client: u32) -> Option<String>;
+    /// The title of a modal dialog of `client` that is already the active
+    /// window, read before any activation request is sent.
+    fn open_modal_over(&self, client: u32) -> Option<String>;
     fn input_focus_in(&self, client: u32) -> bool;
     fn menu_open(&self) -> bool;
     /// Whether any accessibility frame owned by this process reports ACTIVE.
@@ -240,6 +243,9 @@ pub(in crate::system) fn run(
         return Err(refusal(Cause::OverviewOpen));
     }
     let view = client_view(world, client).map_err(refusal)?;
+    if let Some(dialog) = world.open_modal_over(client) {
+        return Err(modal_refusal(&dialog));
+    }
     let mut prior_delivery = DeliverySemantics::not_delivered();
     let outcome = (|| {
         if let Some(desktop) = view.other_desktop {

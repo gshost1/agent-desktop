@@ -3,7 +3,7 @@ use crate::{
     adapter::PlatformAdapter,
     commands::{
         operation_response::operation_response,
-        point_resolve::{require_cursor_policy, require_pointer_capability},
+        point_resolve::{require_coordinate_pointer_capability, require_cursor_policy},
     },
     context::CommandContext,
 };
@@ -20,7 +20,7 @@ pub fn execute(
     context: &CommandContext,
 ) -> Result<Value, AppError> {
     require_cursor_policy(context, "mouse-move")?;
-    require_pointer_capability(adapter)?;
+    require_coordinate_pointer_capability(adapter)?;
     let _cursor = crate::cursor_overlay::hold_cursor(context, crate::Deadline::standard()?);
     let lease = crate::commands::helpers::acquire_interaction_lease(adapter)?;
     let point = Point {

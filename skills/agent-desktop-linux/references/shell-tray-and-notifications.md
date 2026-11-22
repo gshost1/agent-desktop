@@ -97,11 +97,25 @@ popup's default action, and checks the value the combobox shows. A missing
 choice closes the popup with Escape and answers `ELEMENT_NOT_FOUND` with
 `delivered_unverified` and `retry: unsafe`: the click already focused and
 selected the row. Read the combobox before another select.
-`details.popup_closed` says whether the popup read closed afterwards; when it
-is `false`, the popup may still be open, so close it before the next action.
+`details.popup_closed` is `true` when the popup read closed afterwards, `false`
+when it stayed visible, or `null` when its closed state could not be read,
+or Escape failed after the popup read as visible. Qt combo-row cleanup
+rechecks the popup just before Escape: a popup that just hid reports `true`
+without Escape, and a popup list it cannot identify or read reports `null`.
+`details.popup_close_attempted` is `true` only when Escape was sent. If closure
+is `false` or `null`, inspect a fresh snapshot and close any visible popup
+before the next action.
 Without `--headed` that select is `POLICY_DENIED`, kind `pointer_required`,
 unless the combobox already shows the choice. Where `select` still refuses,
 adding `--headed` does not supply a missing semantic action.
+
+A headed select that opens a pointer-only combo or Qt combo row needs a
+`--timeout-ms` budget that leaves time to choose after reserving `CLOSE_WAIT`
+for cleanup: 1000 ms for pointer-only combos and 500 ms for Qt combo rows.
+If preliminary reads leave no time beyond that reserve, both refuse before
+opening with `ACTION_FAILED`, `details.kind: "popup_cleanup_budget_insufficient"`,
+`not_delivered` and `retry: safe`. Increase `--timeout-ms` before retrying that
+refusal. A combo that already shows the requested choice needs no opening.
 
 A dropdown that `select` expands semantically, such as a GTK4 `DropDown`, is
 collapsed again when the choice is missing or refused, and then read back. When
@@ -245,9 +259,12 @@ Single-item `dismiss-notification` and `notification-action` require
   Wayland a mutation fails with `ACTION_FAILED`, `pointer_hit_unproven`, before
   any input.
 - The command opens a closed message list by a click on the clock menu and
-  closes it again after the call. If it cannot open the list, the error
-  suggestion says so: open the list by hand and retry, because a list that is
-  already showing is used as it is and left showing.
+  closes it again after the call. If it cannot open the list and never pressed
+  the clock menu, the error is `retry: safe` and its suggestion says to open
+  the list by hand and retry, because a list that is already showing is used
+  as it is and left showing. If the clock menu was pressed, the error is
+  `retry: unsafe`: the press toggles the list, so run `list-surfaces` to see
+  whether it is showing before you press anything again.
 - Dismissal presses the entry's header buttons, last one first. The two look
   alike, so the effect decides: afterwards the entry's own object must be gone
   from the list and no other entry's may be. A button that only expands the
@@ -269,7 +286,9 @@ Single-item `dismiss-notification` and `notification-action` require
   `ACTION_NOT_SUPPORTED` with `available_actions`. If the entry's buttons are
   not laid out, the command first expands it with the header button before the
   last one. If that press removes the entry instead, the result is
-  `ACTION_FAILED`.
+  `ACTION_FAILED`. Every error after the expand press, a moved entry included,
+  has `retry: unsafe`: the press toggles
+  the entry, so run `list-notifications` before you act on it again.
 - An action counts only when the entry's object leaves the list, which GNOME
   does after an action unless the notification is resident. `details.evidence`
   is `action_invoked` when the daemon's own `ActionInvoked` signal was also seen

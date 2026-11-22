@@ -50,6 +50,73 @@ fn attach_flattens_and_releases_a_paused_target() {
     assert_eq!(sent[1]["sessionId"], "S9");
 }
 
+fn attached(waiting: bool) -> serde_json::Value {
+    json!({
+        "method": "Target.attachedToTarget",
+        "params": {
+            "sessionId": "S9",
+            "targetInfo": { "targetId": "P1", "type": "page" },
+            "waitingForDebugger": waiting,
+        },
+    })
+}
+
+fn methods_sent_by_attach(transport: ScriptedTransport) -> Vec<String> {
+    let sent = transport.sent_log();
+    let mut connection = CdpConnection::new(transport.boxed());
+    let session = attach_to_target(&mut connection, "P1", deadline()).unwrap();
+    assert_eq!(session.session_id, "S9");
+    let sent = sent.lock().unwrap();
+    sent.iter()
+        .filter_map(|request| request["method"].as_str().map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn a_target_the_browser_reports_running_is_not_released_again() {
+    let transport = ScriptedTransport::new().expect_with_events(
+        "Target.attachToTarget",
+        vec![attached(false)],
+        json!({ "result": { "sessionId": "S9" } }),
+    );
+
+    assert_eq!(methods_sent_by_attach(transport), ["Target.attachToTarget"]);
+}
+
+#[test]
+fn a_target_the_browser_reports_paused_is_released() {
+    let transport = ScriptedTransport::new()
+        .expect_with_events(
+            "Target.attachToTarget",
+            vec![attached(true)],
+            json!({ "result": { "sessionId": "S9" } }),
+        )
+        .expect("Runtime.runIfWaitingForDebugger", json!({}));
+
+    assert_eq!(
+        methods_sent_by_attach(transport),
+        ["Target.attachToTarget", "Runtime.runIfWaitingForDebugger"]
+    );
+}
+
+#[test]
+fn an_attach_event_for_another_session_does_not_skip_the_release() {
+    let mut other = attached(false);
+    other["params"]["sessionId"] = json!("S1");
+    let transport = ScriptedTransport::new()
+        .expect_with_events(
+            "Target.attachToTarget",
+            vec![other],
+            json!({ "result": { "sessionId": "S9" } }),
+        )
+        .expect("Runtime.runIfWaitingForDebugger", json!({}));
+
+    assert_eq!(
+        methods_sent_by_attach(transport),
+        ["Target.attachToTarget", "Runtime.runIfWaitingForDebugger"]
+    );
+}
+
 #[test]
 fn new_tabs_open_in_the_background() {
     let transport =
@@ -90,4 +157,36 @@ fn the_crate_never_raises_a_tab() {
         }
     }
     assert!(scanned > 20);
+}
+
+fn release_is_sent_after(event: serde_json::Value) {
+    let transport = ScriptedTransport::new()
+        .expect_with_events(
+            "Target.attachToTarget",
+            vec![event],
+            json!({ "result": { "sessionId": "S9" } }),
+        )
+        .expect("Runtime.runIfWaitingForDebugger", json!({}));
+
+    assert_eq!(
+        methods_sent_by_attach(transport),
+        ["Target.attachToTarget", "Runtime.runIfWaitingForDebugger"]
+    );
+}
+
+#[test]
+fn an_attach_event_that_does_not_say_whether_it_waits_does_not_skip_the_release() {
+    let mut silent = attached(false);
+    silent["params"]
+        .as_object_mut()
+        .unwrap()
+        .remove("waitingForDebugger");
+    release_is_sent_after(silent);
+}
+
+#[test]
+fn an_attach_event_inside_another_session_does_not_skip_the_release() {
+    let mut nested = attached(false);
+    nested["sessionId"] = json!("S-outer");
+    release_is_sent_after(nested);
 }

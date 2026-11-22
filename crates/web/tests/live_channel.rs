@@ -182,6 +182,7 @@ fn entry(tree: &AccessibilityNode, role: &str, name: &str, pid: u32) -> RefEntry
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: RefCapabilities {
             states: node.presentation.states.clone(),

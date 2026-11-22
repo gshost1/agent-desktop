@@ -257,12 +257,12 @@ fn observe_decorated(
     };
     let started = Instant::now();
     let (mut walk, settled) = settled_walk(&root, &element, &limits, &request, &mut host)?;
-    let toolkit = if request.observation_mode.identity_only {
-        None
+    let routes = if request.observation_mode.identity_only {
+        HeadlessRoutes::every_token()
     } else {
-        (host.place)(&mut walk)?
+        let toolkit = (host.place)(&mut walk)?;
+        HeadlessRoutes::of_walk(&walk, toolkit)
     };
-    let routes = HeadlessRoutes::of_walk(&walk, toolkit);
     let complete = walk.complete && settled;
     let displays = read_displays();
     let (subtree, mut stats) = project_with(walk, &limits, decorate, displays.as_deref(), &routes);

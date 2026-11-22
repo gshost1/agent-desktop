@@ -42,6 +42,32 @@ fn an_exited_application_and_a_destroyed_object_are_terminal() {
 }
 
 #[test]
+fn terminal_departures_carry_recovery_without_becoming_retryable() {
+    for (error, strategy) in [
+        (app_exited(), "inspect_state_then_retry_original"),
+        (object_gone(), "refresh_snapshot_then_retry_original"),
+    ] {
+        assert!(!error.permits_retry_by_default());
+        let details = error.details.as_ref().expect("direct constructor details");
+        assert_eq!(details["complete"], true);
+        assert_eq!(details["retryable"], false);
+        if kind(&error) == "resolve_owning_process_exited" {
+            assert_eq!(details["process_state"], "exited");
+        }
+        let payload = agent_desktop_core::ErrorPayload::from_app_error(
+            &agent_desktop_core::AppError::Adapter(error),
+        );
+        assert_eq!(
+            payload.disposition,
+            agent_desktop_core::DeliverySemantics::not_delivered()
+        );
+        let recovery = payload.recovery.expect("safe departure recovery");
+        assert_eq!(recovery.strategy, strategy);
+        assert!(recovery.requires_fresh_snapshot);
+    }
+}
+
+#[test]
 fn an_error_that_is_not_a_departure_passes_through_unchanged() {
     let timeout = settle_gone(AdapterError::timeout("slow"), u32::MAX);
     assert_eq!(timeout.code, ErrorCode::Timeout);

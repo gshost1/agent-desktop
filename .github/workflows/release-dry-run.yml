@@ -297,7 +297,7 @@ jobs:
           - \`include/agent_desktop.h\` — committed C ABI header
           - \`LICENSE\` — Apache-2.0
 
-          Docs: https://github.com/vercel-labs/agent-desktop/tree/main/skills/agent-desktop-ffi
+          Docs: https://github.com/gshost1/agent-desktop/tree/main/skills/agent-desktop-ffi
           EOF
           cat scripts/ffi-archive-readme-linux.md >> "$STAGE/README.md"
           # shellcheck disable=SC2016

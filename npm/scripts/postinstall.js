@@ -32,7 +32,7 @@ const binDir = join(projectRoot, 'bin');
 const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
 const version = packageJson.version;
 
-const GITHUB_REPO = 'vercel-labs/agent-desktop';
+const GITHUB_REPO = 'gshost1/agent-desktop';
 const MACOS_HELPER_PATH_ENV = 'AGENT_DESKTOP_MACOS_HELPER_PATH';
 
 function log(msg) {
@@ -246,7 +246,7 @@ function promptSkillInstall() {
   log('  agent-desktop skills get platform');
   log('Or install a skill with:');
   for (const skill of skills) {
-    log(`  npx skills add https://github.com/vercel-labs/agent-desktop --skill ${skill}`);
+    log(`  npx skills add https://github.com/${GITHUB_REPO} --skill ${skill}`);
   }
   log('');
 }

@@ -293,6 +293,41 @@ fn ref_entry_prefers_the_window_rectangle_and_tags_its_space() {
         entry.geometry.bounds_space,
         Some(crate::BoundsSpace::Window)
     );
+    assert_eq!(
+        entry.geometry.screen_bounds_hash,
+        screen_bounds.bounds_hash()
+    );
+}
+
+#[test]
+fn ref_entry_omits_screen_bounds_hash_without_both_frames() {
+    let rect = crate::Rect {
+        x: 4.0,
+        y: 8.0,
+        width: 120.0,
+        height: 24.0,
+    };
+    let cases = [
+        (
+            LocatorField::Known(rect),
+            LocatorField::Absent,
+            Some(crate::BoundsSpace::Window),
+        ),
+        (LocatorField::Absent, LocatorField::Known(rect), None),
+    ];
+    for (window_bounds, screen_bounds, expected_space) in cases {
+        let mut button = evidence("button", Some("Save"));
+        button.ref_evidence.window_bounds = window_bounds;
+        button.ref_evidence.bounds = screen_bounds;
+        let observed = tree(vec![node(0, button, vec![], &[])], vec![0], true);
+        let entry = super::materialize::ref_entry(
+            &observed.nodes[0],
+            &observed.source,
+            &LocatorQuery::default(),
+        );
+        assert_eq!(entry.geometry.bounds_space, expected_space);
+        assert_eq!(entry.geometry.screen_bounds_hash, None);
+    }
 }
 
 #[test]
@@ -339,11 +374,7 @@ fn source_entry() -> RefEntry {
             native_id: None,
             capture: crate::CaptureVerdict::Unique,
         },
-        geometry: crate::RefGeometry {
-            bounds_space: None,
-            bounds: None,
-            bounds_hash: None,
-        },
+        geometry: crate::RefGeometry::default(),
         capabilities: crate::RefCapabilities {
             states: Vec::new(),
             available_actions: Vec::new(),

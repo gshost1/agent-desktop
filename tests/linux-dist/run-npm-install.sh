@@ -106,7 +106,7 @@ echo "run-npm-install: second install reuses the recorded digests"
 PATH="$DOUBLE:$PATH" \
   AD_CURL_DOUBLE_DIR="$SERVE" \
   AD_CURL_DOUBLE_LOG="$LOG" \
-  node "$PREFIX/lib/node_modules/agent-desktop/scripts/postinstall.js"
+  node "$PREFIX/lib/node_modules/deskref/scripts/postinstall.js"
 requests=$(wc -l < "$LOG" | tr -d ' ')
 if [ "$requests" -ne 0 ]; then
   echo "run-npm-install: FAIL code=DIGEST_REUSE requests=$requests expected=0" >&2
@@ -130,7 +130,7 @@ PY
 }
 
 BIN="$PREFIX/bin/agent-desktop"
-INSTALLED_BIN="$PREFIX/lib/node_modules/agent-desktop/bin"
+INSTALLED_BIN="$PREFIX/lib/node_modules/deskref/bin"
 case "$ARCH" in
   x86_64) NATIVE="$INSTALLED_BIN/agent-desktop-linux-x64" ;;
   aarch64) NATIVE="$INSTALLED_BIN/agent-desktop-linux-arm64" ;;
@@ -140,6 +140,9 @@ esac
 
 version_json=$("$BIN" version)
 check_version symlink "$version_json"
+[ -x "$PREFIX/bin/deskref" ] || { echo "run-npm-install: FAIL code=SYMLINK_MISSING $PREFIX/bin/deskref" >&2; exit 1; }
+version_json=$("$PREFIX/bin/deskref" version)
+check_version deskref "$version_json"
 version_json=$("$NATIVE" version)
 check_version native "$version_json"
 echo "run-npm-install: symlink and native entry report os=linux target=$ARCH"

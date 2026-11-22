@@ -4,6 +4,7 @@ use crate::{
     actions::action::Action,
     actions::capability,
     adapter::{ActionOps, InputOps, NativeHandle, ObservationOps, SystemOps},
+    system::process_state::ProcessState,
 };
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -32,6 +33,7 @@ fn entry() -> RefEntry {
             bounds_space: None,
             bounds: Some(bounds),
             bounds_hash: bounds.bounds_hash(),
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec![],
@@ -289,9 +291,42 @@ fn terminal_stale_ref_preserves_exited_and_crashed_process_details() {
 
         assert_eq!(err.code, ErrorCode::StaleRef);
         assert_eq!(
+            err.suggestion.as_deref(),
+            Some(crate::refs::resolve_errors::EXITED_PROCESS_SUGGESTION)
+        );
+        assert_eq!(
             err.details.as_ref().and_then(|d| d.get("process_state")),
             Some(&serde_json::json!(label))
         );
+    }
+}
+
+#[test]
+fn process_state_suggestion_changes_only_for_exited_or_crashed_stale_refs() {
+    for (state, gone) in [
+        (ProcessState::Exited { code: None }, true),
+        (ProcessState::Crashed { signal_or_code: 11 }, true),
+        (ProcessState::Running, false),
+        (ProcessState::Unresponsive, false),
+    ] {
+        for code in [ErrorCode::StaleRef, ErrorCode::AppNotFound] {
+            let error = enrich_with_process_state(
+                &TerminatedProcessAdapter(state),
+                &entry(),
+                AdapterError::new(code.clone(), "resolution refused")
+                    .with_suggestion("original suggestion")
+                    .with_disposition(crate::DeliverySemantics::not_delivered()),
+                Deadline::standard().expect("deadline"),
+            );
+            let expected = if code == ErrorCode::StaleRef && gone {
+                crate::refs::resolve_errors::EXITED_PROCESS_SUGGESTION
+            } else {
+                "original suggestion"
+            };
+            assert_eq!(error.code, code);
+            assert_eq!(error.suggestion.as_deref(), Some(expected));
+            assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
+        }
     }
 }
 

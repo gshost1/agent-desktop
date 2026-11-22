@@ -4,7 +4,13 @@ on:
   push:
     branches: [main, master]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      macos_only:
+        description: Run only the macOS jobs, for a batch branch that every PR in it already passed on Linux and Windows
+        type: boolean
+        default: false
 
 # Cancel in-progress runs for the same ref so stale PR builds don't burn minutes.
 concurrency:
@@ -19,8 +25,29 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  macos-scope:
+    name: macOS scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      macos: ${{ steps.scope.outputs.macos }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Decide whether this event needs the macOS jobs
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: python3 -I scripts/ci_macos_scope.py --event "$EVENT_NAME" --draft "$PR_DRAFT" | tee -a "$GITHUB_OUTPUT"
+
   fmt:
     name: Format
+    if: ${{ !inputs.macos_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -40,6 +67,20 @@ jobs:
           PYTHONPYCACHEPREFIX=/tmp/agent-desktop-pycache python3 -m unittest discover -s tests/real-apps -p '*_test.py'
           PYTHONPYCACHEPREFIX=/tmp/agent-desktop-pycache python3 scripts/perf_ab_probe_test.py
           python3 -I -B scripts/test-linux-live-gate.py
+      - name: Verify macOS Bash 3.2 compatibility
+        run: bash scripts/check-bash3-compat.sh
+      - name: Enforce Rust source rules
+        run: scripts/check-rust-file-size.sh
+      - name: Enforce architecture boundaries
+        run: scripts/check-architecture.sh
+      - name: Enforce no delivery-plan references in source
+        run: scripts/check-no-phase-references.sh
+      - name: Enforce the stale_ref constructors take only ref ids
+        run: scripts/check-stale-ref-constructor-misuse.sh
+      - name: Enforce no retry advice on delivered errors
+        run: scripts/check-retry-advice.sh
+      - name: Check the macOS job scope rules
+        run: PYTHONPYCACHEPREFIX=/tmp/agent-desktop-pycache python3 scripts/ci_macos_scope_test.py
       - name: Check changelog fragments
         run: |
           PYTHONPYCACHEPREFIX=/tmp/agent-desktop-pycache python3 scripts/changelog_fragments_test.py
@@ -50,6 +91,7 @@ jobs:
 
   msrv:
     name: Rust 1.89 MSRV
+    if: ${{ !inputs.macos_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -61,8 +103,10 @@ jobs:
 
   test:
     name: Test
+    needs: macos-scope
+    if: needs.macos-scope.outputs.macos != 'false'
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -72,6 +116,7 @@ jobs:
         run: |
           rustup show
           rustup component add clippy
+          rustup target add x86_64-apple-darwin
 
       - name: Verify macOS Bash 3.2 compatibility
         run: /bin/bash scripts/check-bash3-compat.sh
@@ -103,21 +148,6 @@ jobs:
             exit 1
           fi
           echo "OK: core crate has no platform dependencies"
-
-      - name: Enforce Rust source rules
-        run: scripts/check-rust-file-size.sh
-
-      - name: Enforce architecture boundaries
-        run: scripts/check-architecture.sh
-
-      - name: Enforce no delivery-plan references in source
-        run: scripts/check-no-phase-references.sh
-
-      - name: Enforce the stale_ref constructors take only ref ids
-        run: scripts/check-stale-ref-constructor-misuse.sh
-
-      - name: Enforce no retry advice on delivered errors
-        run: scripts/check-retry-advice.sh
 
       - name: Clippy
         run: cargo clippy --locked -p agent-desktop-core -p agent-desktop-macos -p agent-desktop -p agent-desktop-ffi -p agent-desktop-web --all-targets -- -D warnings
@@ -211,8 +241,54 @@ jobs:
       - name: NPM wrapper smoke
         run: scripts/ci-npm-wrapper-smoke.sh
 
+      # The macOS FFI panic guards run here rather than in the ffi-panic-guard
+      # matrix, so a macOS change takes one macOS runner instead of three. The
+      # stub-adapter build replaces target/release-ffi, so it stays last.
+      - name: Install pinned cbindgen 0.29.4
+        run: cargo install cbindgen --version 0.29.4 --locked
+
+      - name: Verify header matches source (cbindgen --verify)
+        run: >
+          cbindgen crates/ffi
+          --config crates/ffi/cbindgen.toml
+          --output crates/ffi/include/agent_desktop.h
+          --verify
+
+      - name: Build FFI dylib (stub adapter)
+        run: >
+          cargo build --locked --profile release-ffi
+          -p agent-desktop-ffi --features stub-adapter
+
+      - name: Locate the stub dylib
+        id: dylib
+        run: |
+          DYLIB=target/release-ffi/libagent_desktop_ffi.dylib
+          if [ ! -f "$DYLIB" ]; then
+            echo "FAIL: $DYLIB not found"
+            exit 1
+          fi
+          echo "path=$DYLIB" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Run FFI smoke harness
+        env:
+          AD_EXPECT_STUB: "1"
+        run: >
+          python3 tests/ffi-python/smoke.py
+          "${{ steps.dylib.outputs.path }}"
+          crates/ffi/include/agent_desktop.h
+
+      - name: Prove the shipped cdylib catches an exported-boundary panic (arm64 and x86_64)
+        run: |
+          bash crates/ffi/tests/run_cdylib_panic_probe.sh aarch64-apple-darwin
+          bash crates/ffi/tests/run_cdylib_panic_probe.sh x86_64-apple-darwin
+
   test-linux:
     name: Test (Linux)
+    if: ${{ !inputs.macos_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -351,6 +427,7 @@ jobs:
 
   test-windows:
     name: Test (Windows)
+    if: ${{ !inputs.macos_only }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -555,6 +632,7 @@ jobs:
 
   test-windows-arm:
     name: Test (Windows ARM64)
+    if: ${{ !inputs.macos_only }}
     runs-on: windows-11-arm
     timeout-minutes: 45
     permissions:
@@ -628,14 +706,16 @@ jobs:
           $env:AGENT_DESKTOP_BINARY_PATH = (Resolve-Path 'target/release/agent-desktop.exe').Path
           Push-Location npm
           npm pack
-          $tarball = Get-ChildItem -Filter 'agent-desktop-*.tgz' | Select-Object -First 1
+          $tarball = Get-ChildItem -Filter 'deskref-*.tgz' | Select-Object -First 1
           if (-not $tarball) { Write-Host 'FAIL: npm pack produced no tarball'; exit 1 }
           Pop-Location
           $prefix = Join-Path $env:RUNNER_TEMP 'npm-arm64-prefix'
           npm install -g $tarball.FullName --prefix $prefix
           if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: npm install exited $LASTEXITCODE"; exit $LASTEXITCODE }
-          & (Join-Path $prefix 'agent-desktop.cmd') version
-          if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: agent-desktop version through the npm shim exited $LASTEXITCODE"; exit $LASTEXITCODE }
+          foreach ($command in 'agent-desktop', 'deskref') {
+            & (Join-Path $prefix "$command.cmd") version
+            if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: $command version through the npm shim exited $LASTEXITCODE"; exit $LASTEXITCODE }
+          }
           Write-Host 'OK: the win32-arm64 table entry resolves and runs through the npm shim'
 
       - name: Guard profile isolation
@@ -658,6 +738,7 @@ jobs:
 
   windows-lib-test-parity:
     name: Windows lib-test parity (x64 vs ARM64)
+    if: ${{ !inputs.macos_only }}
     runs-on: ubuntu-latest
     needs: [test-windows, test-windows-arm]
     timeout-minutes: 5
@@ -689,31 +770,29 @@ jobs:
           fi
           echo "OK: both Windows lanes executed ${X64} lib tests across ${X64_SUITES} whole-suite runs"
 
-  # FFI gates, one matrix leg per release target:
+  # FFI gates, one matrix leg per Linux and Windows release target. The two
+  # macOS targets run the same gates at the end of the macOS Test job, which
+  # also verifies the committed C header against what the pinned cbindgen
+  # 0.29.4 generates and runs the Python smoke harness against a stub-adapter
+  # cdylib:
   #   - every leg asserts that [profile.release-ffi] keeps panic="unwind" (a
   #     flip to "abort" defeats every trap_panic boundary in the dylib) and
   #     loads the feature-gated cdylib panic entrypoint to prove a panic at an
   #     exported boundary returns ErrInternal instead of aborting the host
-  #   - aarch64-apple-darwin also verifies the committed C header against what
-  #     the pinned cbindgen 0.29.4 generates, and runs the Python smoke harness
-  #     against a stub-adapter cdylib
   #   - x86_64-unknown-linux-gnu also runs the stub-adapter passthrough tests:
   #     each covered entrypoint must return PLATFORM_NOT_SUPPORTED, or the
   #     documented ErrPermDenied for ad_check_permissions
   ffi-panic-guard:
     name: FFI Panic Guard (${{ matrix.target }})
+    if: ${{ !inputs.macos_only }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.target == 'aarch64-apple-darwin' && 30 || 20 }}
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: aarch64-apple-darwin
-            runner: macos-latest
-          - target: x86_64-apple-darwin
-            runner: macos-latest
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-22.04
           - target: aarch64-unknown-linux-gnu
@@ -739,50 +818,6 @@ jobs:
             ~/.cargo/git/db/
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'src/Cargo.toml') }}
           restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Install pinned cbindgen 0.29.4
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: cargo install cbindgen --version 0.29.4 --locked
-
-      - name: Verify header matches source (cbindgen --verify)
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: >
-          cbindgen crates/ffi
-          --config crates/ffi/cbindgen.toml
-          --output crates/ffi/include/agent_desktop.h
-          --verify
-
-      - name: Build FFI dylib (stub adapter)
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: >
-          cargo build --locked --profile release-ffi
-          -p agent-desktop-ffi --features stub-adapter
-
-      - name: Locate dylib
-        id: dylib
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: |
-          DYLIB=$(find target/release-ffi -name 'libagent_desktop_ffi.*' \
-                    \( -name '*.dylib' -o -name '*.so' -o -name '*.dll' \) | head -1)
-          if [ -z "$DYLIB" ]; then
-            echo "FAIL: dylib not found under target/release-ffi"
-            exit 1
-          fi
-          echo "path=$DYLIB" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: matrix.target == 'aarch64-apple-darwin'
-        with:
-          python-version: '3.12'
-
-      - name: Run FFI smoke harness
-        if: matrix.target == 'aarch64-apple-darwin'
-        env:
-          AD_EXPECT_STUB: "1"
-        run: >
-          python3 tests/ffi-python/smoke.py
-          "${{ steps.dylib.outputs.path }}"
-          crates/ffi/include/agent_desktop.h
 
       - name: Run stub-adapter passthrough tests
         if: matrix.target == 'x86_64-unknown-linux-gnu'
