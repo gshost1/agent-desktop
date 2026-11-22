@@ -207,7 +207,7 @@ fn wait_for_text(
     let mut last_error = None;
 
     loop {
-        match snapshot::build(adapter, &opts, app.as_deref(), None, deadline) {
+        match snapshot::build_text_search(adapter, &opts, app.as_deref(), deadline) {
             Ok(mut result) => {
                 let matches = wait_text_match::find(&result.tree, &normalized_text, expected_count);
                 let matched = match expected_count {

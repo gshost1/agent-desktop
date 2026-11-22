@@ -226,6 +226,15 @@ pub(super) fn editable(evidence: &ActionabilityEvidence, action: &Action) -> Act
     if capability::contains(&evidence.available_actions, capability::SET_VALUE) {
         return pass("editable");
     }
+    if matches!(action, Action::TypeText(_))
+        && matches!(
+            crate::Role::from_token(&evidence.state.role),
+            crate::Role::Document | crate::Role::Paragraph | crate::Role::Heading
+        )
+        && capability::contains(&evidence.available_actions, capability::TYPE_TEXT)
+    {
+        return pass("editable");
+    }
     fail_terminal(
         "editable",
         format!("role {} is not editable", evidence.state.role),

@@ -48,13 +48,14 @@ pub(crate) fn capture_window(
     opts: &TreeOptions,
     window: &WindowInfo,
     deadline: crate::Deadline,
+    text_content: bool,
 ) -> Result<WindowCapture, AppError> {
     let depth = ObservationRequest::snapshot_logical_depth(opts);
     let shallow = depth < crate::refs::resolve_saved_ref::WHOLE_WINDOW_DEPTH;
     let mut unproven = None;
     if shallow && !adapter.retains_element_tokens() {
         let attempt = deadline.capped(deadline.remaining() * 3 / 4);
-        match whole_window(adapter, opts, window, attempt) {
+        match whole_window(adapter, opts, window, attempt, text_content) {
             Ok(observed) => {
                 return Ok(WindowCapture {
                     observed,
@@ -65,7 +66,7 @@ pub(crate) fn capture_window(
             Err(reason) => unproven = Some(reason),
         }
     }
-    let observed = observe_window(adapter, opts, window, deadline)?;
+    let observed = observe_window(adapter, opts, window, deadline, text_content)?;
     if !needs_whole_window(&observed) {
         return Ok(WindowCapture {
             observed,
@@ -76,7 +77,7 @@ pub(crate) fn capture_window(
     let unproven = match unproven {
         Some(reason) => reason,
         None if !shallow => "the window read was cut short".to_owned(),
-        None => match whole_window(adapter, opts, window, deadline) {
+        None => match whole_window(adapter, opts, window, deadline, text_content) {
             Ok(whole) => {
                 return Ok(WindowCapture {
                     observed: whole,
@@ -216,10 +217,14 @@ fn whole_window(
     opts: &TreeOptions,
     window: &WindowInfo,
     deadline: crate::Deadline,
+    text_content: bool,
 ) -> Result<ObservedTree, String> {
-    match crate::refs::resolve_saved_ref::observe_whole_window(
-        adapter, opts, window, deadline, None,
-    ) {
+    use crate::refs::resolve_saved_ref;
+
+    let mut request =
+        resolve_saved_ref::whole_window_request(opts, deadline).map_err(|error| error.message)?;
+    request.observation_mode.text_content = text_content;
+    match resolve_saved_ref::observe_window(adapter, &request, window, None) {
         Ok(whole) if whole.is_exhaustive() => Ok(whole),
         Ok(_) => Err("the whole-window read was cut short".to_owned()),
         Err(error) => Err(error.message),
@@ -231,9 +236,11 @@ fn observe_window(
     opts: &TreeOptions,
     window: &WindowInfo,
     deadline: crate::Deadline,
+    text_content: bool,
 ) -> Result<ObservedTree, AppError> {
     let observation_options = opts.with_ref_identity_bounds();
-    let request = ObservationRequest::snapshot(&observation_options, deadline).validate()?;
+    let mut request = ObservationRequest::snapshot(&observation_options, deadline).validate()?;
+    request.observation_mode.text_content = text_content;
     crate::tree::renderer_accessibility::observe_tree(
         adapter,
         ObservationRoot::Window(window),

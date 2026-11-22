@@ -48,3 +48,20 @@ fn an_app_name_is_quoted_as_one_shell_word() {
     assert_eq!(shell_quoted("Text Editor"), "'Text Editor'");
     assert_eq!(shell_quoted("it's"), "'it'\\''s'");
 }
+
+#[test]
+fn a_windowed_process_gets_a_quoted_state_wait_or_an_event_fallback() {
+    let text = suggestion("it's a wrapper", OffBus::Windowed, Some("Editor's window"));
+    assert!(text.contains("agent-desktop wait --app 'it'\\''s a wrapper' --window 'Editor'\\''s window' --timeout 30000"), "{text}");
+    assert!(text.contains("QT_ACCESSIBILITY=1"), "{text}");
+    for title in [None, Some(""), Some("  ")] {
+        let text = suggestion("wrapper", OffBus::Windowed, title);
+        assert!(
+            text.contains(
+                "agent-desktop wait --event window-opened --app 'wrapper' --timeout 30000"
+            ),
+            "{text}"
+        );
+        assert!(text.contains("toolkit may need a flag"), "{text}");
+    }
+}

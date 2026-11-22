@@ -4,7 +4,8 @@ use super::test_support::{
     RuleAdapter, capture, capture_observed, capture_unjudged, entry, node, resolve, tree_with,
     window,
 };
-use crate::locator::live_locator::LocatorField;
+use crate::locator::live_locator::{LocatorField, ObservationRoot};
+use crate::refs::ref_capture_proof::CaptureProof;
 use crate::response::output::ErrorPayload;
 use crate::{AdapterError, AppError, ErrorCode, refs::refs_test_support::HomeGuard};
 
@@ -142,6 +143,35 @@ fn an_entry_not_unique_at_capture_is_refused_before_any_live_search() {
     assert_eq!(error.code, ErrorCode::AmbiguousTarget);
     assert_eq!(error.details.unwrap()["kind"], "identity_not_unique");
     assert_eq!(adapter.counts(), (0, 0, 0, 0));
+}
+
+#[test]
+fn anonymous_paragraphs_are_refused_at_capture_regardless_of_text() {
+    for second in ["same text", "different text"] {
+        let paragraphs = ["same text", second].map(|text| {
+            let mut paragraph = node("paragraph", "");
+            paragraph.identity.value = Some(text.into());
+            paragraph.presentation.available_actions = vec!["TypeText".into()];
+            paragraph
+        });
+        let root = tree_with(paragraphs.into());
+        let observed =
+            crate::adapter::observed_tree(&ObservationRoot::Window(&window()), root.clone())
+                .unwrap();
+        let mut stored = entry();
+        stored.identity.role = "paragraph".into();
+        stored.identity.name = None;
+        stored.identity.value = Some("same text".into());
+        stored.identity.capture = CaptureProof::new(&observed).verdict(&stored, 1);
+        assert_eq!(stored.identity.capture, crate::CaptureVerdict::Ambiguous);
+        let adapter = RuleAdapter::new(root);
+        let Err(error) = resolve(&adapter, &stored) else {
+            panic!("anonymous twins must be refused before a live search");
+        };
+        assert_eq!(error.code, ErrorCode::AmbiguousTarget);
+        assert_eq!(error.details.unwrap()["kind"], "identity_not_unique");
+        assert_eq!(adapter.counts(), (0, 0, 0, 0));
+    }
 }
 
 #[test]

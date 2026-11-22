@@ -36,10 +36,13 @@ Start with `agent-desktop status` and `agent-desktop list-apps`.
 
 An app is in `list-apps` only when its toolkit registered with the accessibility
 bus. The CLI says so when a process is running but not on the bus. `launch`
-waits up to `--timeout` for an app that is still starting. It ends early only
-when the process maps a window on X11 or Xwayland that stays off the bus for 2 s
-after the first 5 s, or its environment sets `NO_AT_BRIDGE=1` or `GTK_A11Y=none`
-(after 5 s). The suggestion names the case.
+waits up to `--timeout` for an app that is still starting, even when it has
+already mapped an X11 or Xwayland window. It ends early after 5 s only when
+the process environment disables the bridge with `NO_AT_BRIDGE=1` or
+`GTK_A11Y=none`. The suggestion names the case and, for a mapped window with
+a readable native title, gives a state wait that also works after registration
+finishes: `agent-desktop wait --app '<app>' --window '<title>' --timeout 30000`.
+Without a readable title, it suggests the `window-opened` event wait instead.
 
 | App | Needs |
 |-----|-------|
@@ -57,7 +60,7 @@ agent-desktop launch google-chrome --arg=--force-renderer-accessibility
 
 In a session with no desktop settings daemon (container, CI, bare Xvfb)
 `org.a11y.Status IsEnabled` is false, so pass `launch --env ACCESSIBILITY_ENABLED=1`
-as well, or the browser never joins the bus and `launch` returns after about 7 s
+as well, or the browser never joins the bus and `launch` returns at `--timeout`
 with no `window` and a suggestion that the process shows a window but did not
 join the accessibility bus.
 
@@ -96,6 +99,13 @@ input on their bounds.
   report false; missing placement evidence stays unknown. Snapshots carry
   neither live `offscreen` nor `hidden`. `offscreen` is not a supported
   `get`/`is` property: use the live evidence in an actionability refusal.
+
+## Labelled editable fields
+
+An unnamed text field can appear in a snapshot with its composite control's
+explicit AT-SPI label when it is the only editable child. Use that field's ref
+with `set-value` and read the value back. The ref must still be unique over the
+complete captured window.
 
 ## GTK editor tabs
 
