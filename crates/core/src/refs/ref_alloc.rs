@@ -5,6 +5,7 @@ use crate::refs::{RefEntry, RefMap};
 use crate::{AccessibilityNode, NameSource};
 use std::collections::HashSet;
 
+#[cfg(test)]
 pub(crate) use crate::refs::ref_alloc_compact::is_collapsible;
 pub(crate) use crate::refs::ref_alloc_config::RefAllocConfig;
 
@@ -124,10 +125,7 @@ pub fn transform_tree(
         .children
         .into_iter()
         .filter_map(|child| {
-            let child = transform_tree(child, include_bounds, interactive_only, compact);
-            if compact && is_collapsible(&child) {
-                return crate::refs::ref_alloc_compact::hoist_child(child);
-            }
+            let child = transform_tree(child, include_bounds, interactive_only, false);
             if interactive_only
                 && !is_ref_able(&child)
                 && child.children.is_empty()
@@ -144,6 +142,10 @@ pub fn transform_tree(
         node.presentation.bounds = None;
     }
 
+    if compact {
+        crate::refs::ref_alloc_compact::compact_children(&mut node);
+    }
+
     node
 }
 
@@ -153,13 +155,17 @@ pub(crate) fn allocate_refs<'a>(
     config: &RefAllocConfig<'a>,
 ) -> Result<AccessibilityNode, crate::AppError> {
     let plan = AllocationPlan::new(&node, config);
-    allocate_refs_at_path(
+    let mut node = allocate_refs_at_path(
         node,
         refmap,
         config,
         &mut config.scope.path_prefix.to_vec(),
         &plan,
-    )
+    )?;
+    if config.options.compact {
+        crate::refs::ref_alloc_compact::compact_children(&mut node);
+    }
+    Ok(node)
 }
 
 /// Whether allocation over this presentation selects an entry that cannot
@@ -305,12 +311,6 @@ fn allocate_refs_at_path(
         path.push(idx);
         let child = allocate_refs_at_path(child, refmap, config, path, plan)?;
         path.pop();
-        if config.options.compact && is_collapsible(&child) {
-            if let Some(child) = crate::refs::ref_alloc_compact::hoist_child(child) {
-                children.push(child);
-            }
-            continue;
-        }
         if config.options.interactive_only
             && child.ref_id.is_none()
             && !is_ref_able(&child)

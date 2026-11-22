@@ -50,10 +50,7 @@ fn compact_hoists_scroll_evidence_onto_the_survivor() {
             area.presentation.scrolls_vertically = outer;
             let tree = transform_tree(window(vec![filler(), area]), false, false, true);
             assert_eq!(tree.children[1].role, "list");
-            assert_eq!(
-                only_region(&tree).partial,
-                outer == Some(true) || own == Some(true)
-            );
+            assert_eq!(only_region(&tree).partial, own.or(outer) == Some(true));
         }
     }
 }

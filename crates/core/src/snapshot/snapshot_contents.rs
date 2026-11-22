@@ -22,7 +22,7 @@ const NON_ROW_ROLES: &[&str] = &["column", "scrollbar", "statictext"];
 pub(super) const STRUCTURE_ROLES: &[&str] =
     &["column", "handle", "scrollarea", "scrollbar", "window"];
 const SAME_ROLE_SHARE: f64 = 0.8;
-pub(super) const MAX_WRAPPER_DEPTH: usize = 3;
+pub(crate) const MAX_WRAPPER_DEPTH: usize = 3;
 
 /// What a snapshot holds: the most common roles that carry refs, by count,
 /// and the lists and bars, largest first.

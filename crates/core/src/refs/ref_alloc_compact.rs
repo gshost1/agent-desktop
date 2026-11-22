@@ -2,16 +2,35 @@
 
 use crate::AccessibilityNode;
 
-pub(crate) fn hoist_child(node: AccessibilityNode) -> Option<AccessibilityNode> {
-    let evidence = node.presentation.scrolls_vertically;
-    let mut child = node.children.into_iter().next()?;
-    child.presentation.scrolls_vertically = match (evidence, child.presentation.scrolls_vertically)
-    {
-        (Some(true), _) | (_, Some(true)) => Some(true),
-        (_, Some(own)) => Some(own),
-        (inherited, None) => inherited,
-    };
-    Some(child)
+pub(crate) fn compact_children(node: &mut AccessibilityNode) {
+    node.children = std::mem::take(&mut node.children)
+        .into_iter()
+        .map(|child| compact_node(child, None))
+        .collect();
+}
+
+fn compact_node(
+    mut node: AccessibilityNode,
+    inherited: Option<(bool, usize)>,
+) -> AccessibilityNode {
+    let inherited = inherited
+        .filter(|(_, depth)| *depth <= crate::snapshot::snapshot_contents::MAX_WRAPPER_DEPTH);
+    if is_collapsible(&node) {
+        let evidence = node
+            .presentation
+            .scrolls_vertically
+            .map(|value| (value, 0))
+            .or(inherited);
+        if let Some(child) = node.children.pop() {
+            return compact_node(child, evidence.map(|(value, depth)| (value, depth + 1)));
+        }
+    }
+    node.presentation.scrolls_vertically = node
+        .presentation
+        .scrolls_vertically
+        .or(inherited.map(|(value, _)| value));
+    compact_children(&mut node);
+    node
 }
 
 /// A wrapper is collapsible when it carries nothing a caller reads: a
