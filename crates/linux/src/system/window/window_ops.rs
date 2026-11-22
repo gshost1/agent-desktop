@@ -3,12 +3,12 @@ use agent_desktop_core::{
 };
 use serde_json::json;
 
+use super::dialog_evidence::{self, DialogEvidence};
 use super::window_focus::reconcile_dialog;
 use super::window_order::front_to_back;
 use super::window_position::place_windows;
 use super::window_reread::reread_with;
 use crate::system::SharedBus;
-use crate::system::focus::focus_world::focus_send;
 use crate::system::process::proc_scan::find_running;
 use crate::system::process::proc_stat;
 use crate::system::process::unresponsive::{require_known_target, settle_scoped, stopped_target};
@@ -40,11 +40,11 @@ fn finish_listing(
     pass: &mut Pass,
     state: &X11State,
     desktops: Option<&Desktops>,
-    input_focus_in: impl FnOnce(u32) -> bool,
+    evidence: impl FnOnce(u32) -> DialogEvidence,
 ) -> Option<usize> {
     place_windows(&mut pass.windows, state, desktops);
     if pass.focused.is_none() {
-        pass.focused = reconcile_dialog(&pass.windows, state, input_focus_in);
+        pass.focused = reconcile_dialog(&pass.windows, state, evidence);
     }
     if let Some(index) = pass.focused {
         pass.windows[index].info.state.is_focused = true;
@@ -72,7 +72,7 @@ fn read_listing(
         &mut pass,
         &state,
         desktops.finish(deadline).flatten().as_ref(),
-        |client| focus_send::input_focus_in(client, deadline),
+        |client| dialog_evidence::read(client, deadline),
     );
     Ok((pass, state))
 }
@@ -154,7 +154,7 @@ pub(crate) fn list_windows(
         &mut pass,
         &state,
         desktops.finish(deadline).flatten().as_ref(),
-        |client| focus_send::input_focus_in(client, deadline),
+        |client| dialog_evidence::read(client, deadline),
     );
     let (pass, state) = if filter.app.is_some() {
         let selected: Vec<_> = registry
@@ -206,7 +206,7 @@ pub(crate) fn windows_of_process(
         &mut pass,
         &state,
         desktops.finish(deadline).flatten().as_ref(),
-        |client| focus_send::input_focus_in(client, deadline),
+        |client| dialog_evidence::read(client, deadline),
     );
     let (pass, _) = reread_with(
         (pass, state),
