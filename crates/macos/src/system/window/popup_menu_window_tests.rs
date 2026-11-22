@@ -1,4 +1,4 @@
-use super::{POPUP_MENU_WINDOW_LEVEL, menu_numbers_from};
+use super::{POPUP_MENU_WINDOW_LEVEL, has_menu_window, menu_numbers_from};
 use crate::system::window::cg_window::WindowDictionary;
 use core_foundation::{
     base::TCFType, dictionary::CFDictionary, number::CFNumber, string::CFString,
@@ -35,6 +35,17 @@ fn floating_panels_tooltips_and_status_items_are_not_menus() {
     let windows = vec![window(41, 3, 5), window(41, 200, 6), window(41, 25, 7)];
 
     assert!(menu_numbers_from(&windows, 41).is_empty());
+    assert!(!has_menu_window(&windows, 41));
+}
+
+#[test]
+fn raised_surface_scan_requires_a_menu_level_window_owned_by_the_target() {
+    for level in [24, 101] {
+        let windows = [window(41, 0, 1), window(52, level, 2)];
+
+        assert!(!has_menu_window(&windows, 41));
+        assert!(has_menu_window(&windows, 52));
+    }
 }
 
 #[test]

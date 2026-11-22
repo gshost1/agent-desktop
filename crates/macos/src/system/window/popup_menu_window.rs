@@ -13,10 +13,25 @@ use super::cg_window::{WindowDictionary, int_field};
 
 /// `kCGPopUpMenuWindowLevel`, the window level the window server gives a menu.
 pub(crate) const POPUP_MENU_WINDOW_LEVEL: i64 = 101;
+const MAIN_MENU_WINDOW_LEVEL: i64 = 24;
 
 /// Window numbers of the on-screen pop-up menu windows that `pid` owns.
 pub(crate) fn menu_window_numbers(pid: i32) -> Result<Vec<i64>, AdapterError> {
     Ok(menu_numbers_from(&on_screen_dictionaries()?, pid))
+}
+
+pub(crate) fn has_on_screen_menu_window(pid: i32) -> Result<bool, AdapterError> {
+    Ok(has_menu_window(&on_screen_dictionaries()?, pid))
+}
+
+fn has_menu_window(dictionaries: &[WindowDictionary], pid: i32) -> bool {
+    dictionaries.iter().any(|dictionary| {
+        int_field(dictionary, "kCGWindowOwnerPID") == Some(i64::from(pid))
+            && matches!(
+                int_field(dictionary, "kCGWindowLayer"),
+                Some(MAIN_MENU_WINDOW_LEVEL | POPUP_MENU_WINDOW_LEVEL)
+            )
+    })
 }
 
 /// Whether `pid` shows a menu, from the window server and then accessibility.

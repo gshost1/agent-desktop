@@ -1,18 +1,39 @@
-use crate::system::window::popup_menu_window::searched_past_budget;
+use crate::system::process::process_identity::ProcessIdentity;
+use crate::system::window::popup_menu_window::{
+    has_on_screen_menu_window, menu_window_numbers, searched_past_budget,
+};
 use crate::tree::surface_window_ids::{SurfaceRead, WindowSurfaces, surfaces_from_windows};
 use crate::tree::{AXElement, properties::element::element_for_pid};
 use agent_desktop_core::{AdapterError, ErrorCode, SurfaceInfo};
 use std::time::Instant;
 
 pub(crate) fn list_surfaces_for_process(
-    identity: crate::system::process::process_identity::ProcessIdentity,
+    identity: ProcessIdentity,
     deadline: Instant,
 ) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let pid = identity.pid();
     let windows = super::app_menu::observe(identity, deadline, || window_surfaces(pid, deadline))?;
-    let menus = super::app_menu::observe(identity, deadline, || open_menu_surfaces(pid, deadline));
-    let menus = settle_by_window_server(menus, || {
-        crate::system::window::popup_menu_window::menu_window_numbers(pid)
+    let menus = super::app_menu::observe(identity, deadline, || {
+        let menus = super::app_menu::open_menus_for_pid(pid, deadline)?;
+        read_menu_surfaces(menus, deadline)
+    });
+    let menus = settle_by_window_server(menus, || menu_window_numbers(pid));
+    combine_surfaces(windows, menus)
+}
+
+pub(crate) fn list_raised_surfaces_for_process(
+    identity: ProcessIdentity,
+    deadline: Instant,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    let pid = identity.pid();
+    let windows = super::app_menu::observe(identity, deadline, || window_surfaces(pid, deadline))?;
+    let menus = super::app_menu::observe(identity, deadline, || {
+        let menus = super::app_menu::open_menus_with_window_evidence(
+            pid,
+            deadline,
+            has_on_screen_menu_window(pid).ok(),
+        )?;
+        read_menu_surfaces(menus, deadline)
     });
     combine_surfaces(windows, menus)
 }
@@ -73,9 +94,12 @@ fn window_number(element: &AXElement, deadline: Instant) -> Result<Option<i64>, 
     }
 }
 
-fn open_menu_surfaces(pid: i32, deadline: Instant) -> Result<Vec<SurfaceInfo>, AdapterError> {
+fn read_menu_surfaces(
+    menus: Vec<(&'static str, String, AXElement)>,
+    deadline: Instant,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let mut surfaces = Vec::new();
-    for (kind, id, menu) in super::app_menu::open_menus_for_pid(pid, deadline)? {
+    for (kind, id, menu) in menus {
         push_menu_surface(&menu, kind, id, deadline, &mut surfaces)?;
     }
     Ok(surfaces)

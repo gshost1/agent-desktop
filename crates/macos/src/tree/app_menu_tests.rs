@@ -3,6 +3,38 @@ use super::*;
 use std::time::Duration;
 
 #[test]
+fn no_menu_window_skips_the_context_menu_tree_walk() {
+    let menu = read_context_menu(
+        Some(false),
+        || Ok(None::<u8>),
+        || panic!("a closed menu must not trigger a descendant search"),
+    )
+    .unwrap();
+
+    assert_eq!(menu, None);
+}
+
+#[test]
+fn a_menu_published_directly_is_kept_without_a_menu_window() {
+    let menu = read_context_menu(
+        Some(false),
+        || Ok(Some(7)),
+        || panic!("the direct menu read already found the menu"),
+    )
+    .unwrap();
+
+    assert_eq!(menu, Some(7));
+}
+
+#[test]
+fn a_possible_menu_window_enables_the_context_menu_tree_walk() {
+    for evidence in [Some(true), None] {
+        let menu = read_context_menu(evidence, || Ok(None), || Ok(Some(7))).unwrap();
+        assert_eq!(menu, Some(7));
+    }
+}
+
+#[test]
 fn only_complete_menu_root_absence_gets_a_typed_surface_error() {
     for (surface, message) in [
         (SnapshotSurface::Menu, "No open menu"),

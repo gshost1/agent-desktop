@@ -114,6 +114,14 @@ pub(crate) fn open_menus_for_pid(
     pid: i32,
     deadline: Instant,
 ) -> Result<Vec<(&'static str, String, AXElement)>, AdapterError> {
+    open_menus_with_window_evidence(pid, deadline, None)
+}
+
+pub(super) fn open_menus_with_window_evidence(
+    pid: i32,
+    deadline: Instant,
+    menu_window_present: Option<bool>,
+) -> Result<Vec<(&'static str, String, AXElement)>, AdapterError> {
     let mut menus = Vec::new();
     if let Some(menubar) = menubar_for_pid(pid, deadline)? {
         menus.extend(
@@ -131,7 +139,7 @@ pub(crate) fn open_menus_for_pid(
         );
     }
     if menus.is_empty()
-        && let Some((id, menu)) = context_menu_from_app(pid, deadline)?
+        && let Some((id, menu)) = context_menu_from_app(pid, deadline, menu_window_present)?
     {
         menus.push(("context_menu", id, menu));
     }
@@ -164,9 +172,33 @@ fn open_menubar_menus_with<T>(
 fn context_menu_from_app(
     pid: i32,
     deadline: Instant,
+    menu_window_present: Option<bool>,
 ) -> Result<Option<(String, AXElement)>, AdapterError> {
     let app = element_for_pid(pid);
-    for (index, menu) in surface_read::elements(&app, "AXMenus", deadline)?
+    read_context_menu(
+        menu_window_present,
+        || context_menu_from_attribute(&app, deadline),
+        || context_menu_from_descendants(&app, deadline),
+    )
+}
+
+fn read_context_menu<T>(
+    menu_window_present: Option<bool>,
+    read_direct: impl FnOnce() -> Result<Option<T>, AdapterError>,
+    search: impl FnOnce() -> Result<Option<T>, AdapterError>,
+) -> Result<Option<T>, AdapterError> {
+    let direct = read_direct()?;
+    if direct.is_some() || menu_window_present == Some(false) {
+        return Ok(direct);
+    }
+    search()
+}
+
+fn context_menu_from_attribute(
+    app: &AXElement,
+    deadline: Instant,
+) -> Result<Option<(String, AXElement)>, AdapterError> {
+    for (index, menu) in surface_read::elements(app, "AXMenus", deadline)?
         .into_iter()
         .enumerate()
     {
@@ -174,7 +206,14 @@ fn context_menu_from_app(
             return Ok(Some((format!("app/menus/{index}"), menu)));
         }
     }
-    let focused = surface_read::element(&app, "AXFocusedUIElement", deadline)?;
+    Ok(None)
+}
+
+fn context_menu_from_descendants(
+    app: &AXElement,
+    deadline: Instant,
+) -> Result<Option<(String, AXElement)>, AdapterError> {
+    let focused = surface_read::element(app, "AXFocusedUIElement", deadline)?;
     if let Some(focused) = &focused
         && let Some(menu) = find_menu_descendant(
             focused.clone(),
@@ -185,7 +224,7 @@ fn context_menu_from_app(
     {
         return Ok(Some(menu));
     }
-    for (index, child) in surface_read::elements(&app, "AXChildren", deadline)?
+    for (index, child) in surface_read::elements(app, "AXChildren", deadline)?
         .into_iter()
         .enumerate()
     {
