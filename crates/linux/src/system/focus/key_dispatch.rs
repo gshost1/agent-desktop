@@ -10,8 +10,7 @@ use crate::input::backend::Backend;
 use crate::input::physical::target_keyboard::press_for_process;
 use crate::input::physical::target_world::{LiveWorld, PhysicalWorld};
 use crate::system::process::process_lookup::Lookup;
-use crate::system::registry::read_registry_for;
-use crate::system::window::window_ops::{require_complete_frames, windows_of, windows_of_process};
+use crate::system::window::window_ops::{require_complete_frames, windows_of_process};
 use crate::system::x11::stacking::stacking_source::StackingSource;
 use crate::system::x11::{DisplayReader, X11State};
 use crate::system::{
@@ -30,7 +29,6 @@ trait KeyWorld {
         deadline: Deadline,
     ) -> Result<Option<WindowInfo>, AdapterError>;
     fn active_client_pid(&self, deadline: Deadline) -> Option<u32>;
-    fn reports_active(&self, pid: u32, deadline: Deadline) -> bool;
     fn pause(&self, duration: Duration) {
         std::thread::sleep(duration);
     }
@@ -41,14 +39,6 @@ struct LiveKeys<'a> {
 }
 
 impl KeyWorld for LiveKeys<'_> {
-    fn reports_active(&self, pid: u32, deadline: Deadline) -> bool {
-        let Ok(registry) = read_registry_for(self.bus, Some(pid), deadline) else {
-            return false;
-        };
-        windows_of(self.bus, &registry, |app| app.root.pid() == pid, deadline)
-            .is_ok_and(|windows| windows.iter().any(|window| window.active))
-    }
-
     fn lookup(&self, pid: u32) -> Lookup {
         process_facts::lookup(pid)
     }
@@ -157,13 +147,12 @@ fn require_active(
 }
 
 fn display_active(world: &impl KeyWorld, pid: u32, deadline: Deadline) -> bool {
-    if world.active_client_pid(deadline) == Some(pid) {
-        return true;
+    match world.active_client_pid(deadline) {
+        Some(owner) => return owner == pid,
+        None if deadline.is_expired() => return false,
+        None => {}
     }
     let settle = deadline.capped(Duration::from_millis(300));
-    if settle.is_expired() || !world.reports_active(pid, settle) {
-        return false;
-    }
     for _ in 0..3 {
         if settle.is_expired() {
             break;
@@ -172,8 +161,8 @@ fn display_active(world: &impl KeyWorld, pid: u32, deadline: Deadline) -> bool {
         if settle.is_expired() {
             break;
         }
-        if world.active_client_pid(settle) == Some(pid) {
-            return true;
+        if let Some(owner) = world.active_client_pid(settle) {
+            return owner == pid;
         }
     }
     false

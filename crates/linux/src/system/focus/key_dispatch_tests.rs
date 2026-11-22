@@ -97,12 +97,6 @@ impl KeyWorld for Keys<'_> {
         }
     }
 
-    fn reports_active(&self, pid: u32, deadline: Deadline) -> bool {
-        self.reads.borrow_mut().push("reports_active");
-        assert!(deadline.remaining() <= Duration::from_millis(300));
-        matches!(self.focused.borrow().front(), Some(Ok(Some(window))) if window.pid.get() == pid)
-    }
-
     fn pause(&self, _duration: Duration) {
         self.reads.borrow_mut().push("pause");
     }

@@ -48,6 +48,68 @@ fn extents_select_one_of_two_same_titled_windows_of_one_process() {
     );
 }
 
+fn openbox_client() -> X11Client {
+    let mut client = client(1, 10, "Confirm File Format", 334, 20);
+    client.extents = Some(FrameExtents {
+        left: 1,
+        right: 1,
+        top: 20,
+        bottom: 1,
+    });
+    client.bounds = Some(Extents {
+        x: 343,
+        y: 334,
+        width: 595,
+        height: 190,
+    });
+    client
+}
+
+fn openbox_frame(title: &str, global: bool) -> FrameFacts {
+    frame(
+        10,
+        title,
+        Some(Extents {
+            x: 342,
+            y: 314,
+            width: 597,
+            height: 211,
+        }),
+        global,
+    )
+}
+
+#[test]
+fn openbox_borders_identify_a_geometry_fallback() {
+    for global in [true, false] {
+        assert_eq!(
+            match_client(&openbox_frame("Question", global), &[openbox_client()]),
+            ClientMatch::One(1)
+        );
+    }
+}
+
+#[test]
+fn openbox_borders_break_a_title_tie() {
+    let clients = [
+        openbox_client(),
+        client(2, 10, "Confirm File Format", 700, 20),
+    ];
+    assert_eq!(
+        match_client(&openbox_frame("Confirm File Format", true), &clients),
+        ClientMatch::One(1)
+    );
+}
+
+#[test]
+fn invalid_or_overflowing_frame_edges_identify_nothing() {
+    let mut client = openbox_client();
+    client.extents.as_mut().unwrap().left = u32::MAX;
+    assert_eq!(frame_around(&client), None);
+    client.extents.as_mut().unwrap().left = i32::MAX as u32;
+    assert_eq!(frame_around(&client), None);
+}
+
 #[test]
 fn extents_without_the_client_side_shadow_select_the_shadowed_client() {
     let mut first = client(1, 10, "Doc", 157, 0);

@@ -11,13 +11,16 @@ pub(crate) enum ClientMatch {
 
 fn frame_around(client: &X11Client) -> Option<Extents> {
     let bounds = client.bounds?;
-    let top = client.extents.map_or(0, |extents| extents.top);
-    let top = i32::try_from(top).unwrap_or(0);
+    let edges = client.extents.unwrap_or_default();
+    let left = i32::try_from(edges.left).ok()?;
+    let right = i32::try_from(edges.right).ok()?;
+    let top = i32::try_from(edges.top).ok()?;
+    let bottom = i32::try_from(edges.bottom).ok()?;
     Some(Extents {
-        x: bounds.x,
-        y: bounds.y - top,
-        width: bounds.width,
-        height: bounds.height + top,
+        x: bounds.x.checked_sub(left)?,
+        y: bounds.y.checked_sub(top)?,
+        width: bounds.width.checked_add(left)?.checked_add(right)?,
+        height: bounds.height.checked_add(top)?.checked_add(bottom)?,
     })
 }
 

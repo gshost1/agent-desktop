@@ -294,9 +294,11 @@ Competing matches remain ambiguous. A `window_not_mapped` refusal can mean no
 safe client identity was found, not that the dialog is absent from the screen.
 Refresh `list-windows` and inspect the modal before retrying.
 
-App-targeted key delivery briefly rechecks X11 activation when the target itself
-reports an `ACTIVE` accessibility window. A background target without that
-evidence is refused without an activation wait; no focus change is requested.
+App-targeted key delivery briefly rechecks X11 activation while no active
+process can be identified, including a window manager's zero active-window
+transition. A known foreign active process is refused immediately, without an
+accessibility registry read or activation wait. Sending keys still requires
+native ownership and accessibility focus; no focus change is requested.
 
 ```bash
 agent-desktop focus-window --app gnome-calculator
