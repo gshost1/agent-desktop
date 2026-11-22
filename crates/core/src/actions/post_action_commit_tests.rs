@@ -199,3 +199,65 @@ fn a_marked_value_write_that_cannot_be_read_keeps_its_commit_report() {
     assert_eq!(details["application_commit"], "unobserved");
     assert_eq!(details["commit_hint"], "focus another field");
 }
+
+fn committed_field(value: Option<&'static str>) -> Result<ActionResult, AdapterError> {
+    let steps = vec![
+        ActionStep::succeeded("AXValue").with_verified(true),
+        ActionStep::succeeded("EndEditingByFocus").with_verified(true),
+    ];
+    let adapter = ShadowedField {
+        execution: ActionResult::from_execution(&Action::SetValueAndCommit("0.3".into()), steps)
+            .with_commit_ended(serde_json::json!({ "mechanism": "focus_round_trip" })),
+        value,
+        reads_after_dispatch: AtomicUsize::new(0),
+        dispatched: AtomicUsize::new(0),
+    };
+    execute_verified_action(
+        &adapter,
+        &NativeHandle::null(),
+        ActionRequest::headless(Action::SetValueAndCommit("0.3".into())),
+        &InteractionLease::guarded(Deadline::after(1000).unwrap(), ()).unwrap(),
+    )
+}
+
+#[test]
+fn a_committed_write_the_app_kept_in_its_own_format_is_verified() {
+    let result = committed_field(Some("0.3000")).expect("the app kept 0.3 as 0.3000");
+    assert_eq!(
+        result.disposition(),
+        DeliverySemantics::delivered_verified()
+    );
+    let details = result.details.unwrap();
+    assert_eq!(details["application_commit"], "committed");
+    assert_eq!(details["commit_evidence"]["mechanism"], "focus_round_trip");
+    assert_eq!(details["verification_scope"], "element_value");
+}
+
+#[test]
+fn a_committed_write_the_app_did_not_keep_is_refused_with_a_next_step() {
+    let error = committed_field(Some("0.2500")).expect_err("the app reverted the value");
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert!(
+        error.message.contains("did not keep the value"),
+        "{}",
+        error.message
+    );
+    assert!(error.message.contains("0.2500"), "{}", error.message);
+    assert!(
+        error
+            .suggestion
+            .as_deref()
+            .is_some_and(|hint| hint.contains("Write a value the field accepts")),
+        "{:?}",
+        error.suggestion
+    );
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+}
+
+#[test]
+fn a_committed_write_whose_value_cannot_be_read_is_not_reported_committed() {
+    let result = committed_field(None).expect("an unreadable value is unverified, not a failure");
+    let details = result.details.expect("details");
+    assert_eq!(details["application_commit"], "not_verified");
+    assert_ne!(details["delivery"], "delivered_verified");
+}

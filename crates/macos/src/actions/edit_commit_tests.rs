@@ -121,3 +121,41 @@ fn only_a_delivered_semantic_step_counts_as_a_semantic_write() {
         ActionStep::skipped("AXValue").with_mechanism(StepMechanism::SemanticApi)
     ]));
 }
+
+#[test]
+fn default_set_value_leaves_the_commit_to_the_caller() {
+    for text in ["new", ""] {
+        let result = super::set_value_result(
+            &Action::SetValue(text.into()),
+            headless_clear_steps(),
+            || EditCommit::OnEndEditing,
+            |_| panic!("default set-value must not end editing"),
+        )
+        .unwrap();
+        assert!(result.commit_unobserved());
+        let hint = result.details.unwrap()["commit_hint"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(hint.contains("--commit"));
+        assert!(hint.contains("Return"));
+    }
+}
+
+#[test]
+fn opt_in_set_value_dispatches_the_commit_path() {
+    let action = Action::SetValueAndCommit("new".into());
+    let result = super::set_value_result(
+        &action,
+        headless_clear_steps(),
+        || panic!("commit path reads its own role"),
+        |steps| {
+            Ok(
+                agent_desktop_core::ActionResult::from_execution(&action, steps)
+                    .with_commit_ended(serde_json::json!({"mechanism": "focus_round_trip"})),
+            )
+        },
+    )
+    .unwrap();
+    assert_eq!(result.details.unwrap()["application_commit"], "committed");
+}

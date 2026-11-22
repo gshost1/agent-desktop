@@ -59,8 +59,9 @@ mod imp {
                 steps.extend(toggle_state::toggle(el, request.policy, deadline)?);
             }
 
-            Action::SetValue(val) => {
+            Action::SetValue(val) | Action::SetValueAndCommit(val) => {
                 if let Some(editor) = inline_editor_target::editor_for(el, deadline)? {
+                    inline_editor_target::refuse_commit(action)?;
                     let steps = run_chain(
                         &editor,
                         &chain_defs::SET_VALUE_CHAIN,
@@ -77,7 +78,20 @@ mod imp {
                     request,
                     deadline,
                 )?;
-                return Ok(value_write_result(action, el, steps, deadline));
+                return crate::actions::edit_commit::set_value_result(
+                    action,
+                    steps,
+                    || crate::actions::edit_commit::read_edit_commit(el, deadline),
+                    |steps| {
+                        crate::actions::edit_end::set_value_result(
+                            action,
+                            el,
+                            steps,
+                            deadline,
+                            request.policy,
+                        )
+                    },
+                );
             }
 
             Action::SetFocus => {
@@ -212,17 +226,6 @@ mod imp {
         }
 
         Ok(ActionResult::from_execution(action, steps))
-    }
-
-    fn value_write_result(
-        action: &Action,
-        el: &AXElement,
-        steps: Vec<ActionStep>,
-        deadline: Deadline,
-    ) -> ActionResult {
-        crate::actions::edit_commit::value_write_result(action, steps, || {
-            crate::actions::edit_commit::read_edit_commit(el, deadline)
-        })
     }
 
     fn awaiting_commit(action: &Action, steps: Vec<ActionStep>) -> ActionResult {

@@ -319,3 +319,16 @@ fn wheel_event_round_trips_platform_neutral_line_deltas() {
         }
     ));
 }
+
+#[test]
+fn committing_a_value_preserves_set_value_requirements() {
+    let action = Action::SetValueAndCommit("private".into());
+    assert_eq!(action.name(), "set-value");
+    assert!(action.requires_scroll_into_view());
+    assert!(action.writes_element_value());
+    assert!(action.requires_state_readback());
+    assert_eq!(
+        action.headed_requirement(),
+        Action::SetValue("".into()).headed_requirement()
+    );
+}

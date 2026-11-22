@@ -199,6 +199,12 @@ pub(crate) fn execute_action(
             )
         }
         Action::SetFocus => focus(&target, request.policy),
+        Action::SetValueAndCommit(_) => Err(AdapterError::new(
+            ErrorCode::ActionNotSupported,
+            "set-value --commit is macOS-only",
+        )
+        .with_suggestion("Use plain set-value, then focus another field to end editing")
+        .with_disposition(DeliverySemantics::not_delivered())),
         Action::SetValue(text) => set_value(&target, text, request.policy),
         Action::Clear => clear(&target, request.policy),
         Action::TypeText(text) if request.policy.is_headed() => physical_first(

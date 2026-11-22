@@ -33,6 +33,36 @@ pub fn value_matches(role: &str, expected: &str, observed: Option<&str>) -> bool
     }
 }
 
+/// What an application kept once editing ended: the written text itself, or
+/// the same plain decimal with trailing fractional zeros added or dropped,
+/// such as `0.3000` for `0.3` or `7.0000` for `7`. Grouping separators,
+/// units and rounding are never taken as equal.
+pub(crate) fn committed_value_matches(role: &str, expected: &str, observed: Option<&str>) -> bool {
+    if value_matches(role, expected, observed) {
+        return true;
+    }
+    let Some(observed) = observed else {
+        return false;
+    };
+    matches!(
+        (plain_decimal(expected), plain_decimal(observed)),
+        (Some(expected), Some(observed)) if expected == observed
+    )
+}
+
+fn plain_decimal(text: &str) -> Option<(&str, &str)> {
+    let (whole, fraction) = match text.split_once('.') {
+        Some((whole, fraction)) if !fraction.is_empty() => (whole, fraction),
+        Some(_) => return None,
+        None => (text, ""),
+    };
+    let digits = whole.strip_prefix('-').unwrap_or(whole);
+    let plain = !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && fraction.bytes().all(|byte| byte.is_ascii_digit());
+    plain.then(|| (whole, fraction.trim_end_matches('0')))
+}
+
 fn normalize_text(value: &str) -> std::borrow::Cow<'_, str> {
     if !value.contains('\r') {
         return std::borrow::Cow::Borrowed(value);
@@ -42,7 +72,36 @@ fn normalize_text(value: &str) -> std::borrow::Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
-    use super::value_matches;
+    use super::{committed_value_matches, value_matches};
+
+    #[test]
+    fn a_committed_field_may_keep_the_written_number_in_its_own_format() {
+        for (expected, observed, matches) in [
+            ("0.3", "0.3000", true),
+            ("7", "7.0000", true),
+            ("-0.5", "-0.50", true),
+            ("95", "95", true),
+            ("1200", "1,200", false),
+            ("1200", "1 200", false),
+            ("12,34", "1234", false),
+            ("0.0000009", "0", false),
+            ("0.3", "0.30001", false),
+            ("3.", "3", false),
+            ("-0.5", "0.5", false),
+            ("0.3", "0.25", false),
+            ("1000000000", "1000000001", false),
+            ("abc", "ABC", false),
+            ("0.3", "0.3 cm", false),
+        ] {
+            assert_eq!(
+                committed_value_matches("textfield", expected, Some(observed)),
+                matches,
+                "{expected} -> {observed}"
+            );
+            assert!(!value_matches("textfield", expected, Some(observed)) || expected == observed);
+        }
+        assert!(!committed_value_matches("textfield", "0.3", None));
+    }
 
     #[test]
     fn numeric_readback_tolerance_does_not_hide_different_text_or_integer_targets() {

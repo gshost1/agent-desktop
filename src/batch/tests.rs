@@ -377,3 +377,17 @@ fn every_cli_subcommand_is_known_to_batch_parser() {
         }
     }
 }
+
+#[test]
+fn set_value_batch_commit_defaults_false_and_accepts_true() {
+    for commit in [false, true] {
+        let mut args = serde_json::json!({"ref_id": "@s8f3k2p9:e1", "value": ""});
+        if commit {
+            args["commit"] = true.into();
+        }
+        let Commands::SetValue(args) = parse_command(item("set-value", args)).unwrap() else {
+            panic!("expected set-value");
+        };
+        assert_eq!(args.commit, commit);
+    }
+}

@@ -55,6 +55,7 @@ pub fn execute_verified_action(
     {
         return execution;
     }
+    let committed = execution.as_ref().is_ok_and(ActionResult::commit_ended);
     let mut observed = adapter.get_live_element(handle, deadline);
     let settle = std::time::Duration::from_millis(50);
     let settle_deadline = deadline.capped(std::time::Duration::from_millis(400));
@@ -64,8 +65,13 @@ pub fn execute_verified_action(
     let mut changing = true;
     while execution.is_ok()
         && observed.as_ref().is_ok_and(|observed| {
-            matches_postcondition(&action, before.as_ref(), expected_text.as_deref(), observed)
-                == Some(false)
+            matches_postcondition(
+                &action,
+                before.as_ref(),
+                expected_text.as_deref(),
+                observed,
+                committed,
+            ) == Some(false)
         })
         && (settle_deadline.remaining() > settle
             || (drains && changing && deadline.remaining() > settle))
@@ -87,6 +93,7 @@ pub fn execute_verified_action(
                         before.as_ref(),
                         expected_text.as_deref(),
                         &observed,
+                        false,
                     ) {
                         details.insert("postcondition_satisfied".into(), satisfied.into());
                     }
@@ -101,6 +108,7 @@ pub fn execute_verified_action(
         before.as_ref(),
         expected_text.as_deref(),
         &observed,
+        committed,
     );
     let physical_text_mismatch = verified == Some(false) && typed_by_keys(&action, &result);
     if verified.is_none() || physical_text_mismatch {
@@ -128,7 +136,11 @@ pub fn execute_verified_action(
         return Err(verification_error(
             &result,
             Some(&observed),
-            mismatch_error(&action),
+            if committed {
+                committed_mismatch_error(&observed)
+            } else {
+                mismatch_error(&action)
+            },
         ));
     }
     result.post_state = Some(observed.state);
@@ -147,7 +159,7 @@ pub fn execute_verified_action(
                 "verification_reason".into(),
                 "edit_commit_unobserved".into(),
             );
-        } else if action.writes_element_value() {
+        } else if action.writes_element_value() && !committed {
             details.insert("application_commit".into(), "not_verified".into());
         }
     }
@@ -184,6 +196,19 @@ fn mismatch_error(action: &Action) -> AdapterError {
     error
 }
 
+/// The edit was ended and the application kept another value: it rejected,
+/// clamped or reverted the write.
+fn committed_mismatch_error(observed: &LiveElement) -> AdapterError {
+    let kept = observed.state.value.as_deref().unwrap_or("");
+    AdapterError::new(
+        ErrorCode::ActionFailed,
+        format!("The app did not keep the value when editing ended; the field now holds '{kept}'"),
+    )
+    .with_suggestion(
+        "The app rejected, clamped or reverted the value. Write a value the field accepts, in its range and format (read nearby labels or a linked control), then read the field back.",
+    )
+}
+
 fn secure_value_is_redacted(action: &Action, observed: &LiveElement) -> bool {
     action.writes_element_value()
         && observed.state.value.is_none()
@@ -195,10 +220,20 @@ fn matches_postcondition(
     before: Option<&LiveElement>,
     expected_text: Option<&str>,
     observed: &LiveElement,
+    committed: bool,
 ) -> Option<bool> {
     let state = &observed.state;
     match action {
-        Action::SetValue(expected) => state
+        Action::SetValue(expected) | Action::SetValueAndCommit(expected) if committed => {
+            state.value.as_deref().map(|value| {
+                crate::tree::value_matches::committed_value_matches(
+                    &state.role,
+                    expected,
+                    Some(value),
+                )
+            })
+        }
+        Action::SetValue(expected) | Action::SetValueAndCommit(expected) => state
             .value
             .as_deref()
             .map(|value| crate::value_matches(&state.role, expected, Some(value))),

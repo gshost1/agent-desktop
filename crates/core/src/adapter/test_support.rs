@@ -210,7 +210,9 @@ pub(crate) fn recorded_action_state(requests: &[crate::ActionRequest]) -> crate:
     for request in requests {
         match &request.action {
             crate::Action::Clear => value.clear(),
-            crate::Action::SetValue(next) | crate::Action::TypeText(next) => value.clone_from(next),
+            crate::Action::SetValue(next)
+            | crate::Action::SetValueAndCommit(next)
+            | crate::Action::TypeText(next) => value.clone_from(next),
             crate::Action::Check => checked = true,
             crate::Action::Uncheck => checked = false,
             crate::Action::Toggle => checked = !checked,

@@ -178,7 +178,10 @@ fn suggestion(
     } else if not_supported && matches!(request.action, Action::SetFocus) {
         "Choose an element advertising SetFocus in a fresh snapshot. To focus the owning window instead, use focus-window."
     } else if not_supported
-        && matches!(request.action, Action::SetValue(_) | Action::Clear)
+        && matches!(
+            request.action,
+            Action::SetValue(_) | Action::SetValueAndCommit(_) | Action::Clear
+        )
         && matches!(evidence.state.role.as_str(), "textfield" | "combobox")
     {
         if request.policy.is_headed() {

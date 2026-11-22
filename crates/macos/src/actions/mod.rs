@@ -8,6 +8,7 @@ pub(crate) mod clear_probe;
 pub(crate) mod delivery_tracker;
 pub(crate) mod dispatch;
 pub(crate) mod edit_commit;
+pub(crate) mod edit_end;
 pub(crate) mod extras;
 pub(crate) mod inline_editor_target;
 mod native_menu;

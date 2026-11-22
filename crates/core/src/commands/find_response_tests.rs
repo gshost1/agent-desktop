@@ -187,3 +187,39 @@ fn without_a_whole_name_match_or_a_name_query_the_order_is_kept() {
     order_exact_names_first(&mut unnamed, &LocatorQuery::default(), |name| name);
     assert_eq!(unnamed, vec!["b", "a"]);
 }
+
+#[test]
+fn an_empty_menubar_answer_says_what_the_menubar_holds_and_where_to_search_next() {
+    let mut menubar = args(false, false);
+    menubar.scope.surface = crate::SnapshotSurface::Menubar;
+    let empty = || {
+        let mut empty = resolution(true);
+        empty.meta.total_matches = 0;
+        empty
+    };
+    let response = format_response(&menubar, &LocatorQuery::default(), empty(), None).unwrap();
+    let hint = response["hint"].as_str().expect("menubar hint");
+    assert!(hint.contains("closed menus included"), "{hint}");
+    assert!(hint.contains("without --surface"), "{hint}");
+    assert!(response.get("complete").is_none());
+
+    menubar.selection.first = true;
+    let single = format_response(&menubar, &LocatorQuery::default(), empty(), None).unwrap();
+    assert!(single["hint"].is_string());
+
+    let window =
+        format_response(&args(false, false), &LocatorQuery::default(), empty(), None).unwrap();
+    assert!(window.get("hint").is_none());
+}
+
+#[test]
+fn a_menubar_answer_with_matches_carries_no_hint() {
+    let mut menubar = args(false, false);
+    menubar.scope.surface = crate::SnapshotSurface::Menubar;
+    let mut listed = serde_json::json!({ "matches": [{ "name": "Calculator" }] });
+    super::attach_menubar_hint(&mut listed, &menubar);
+    assert!(listed.get("hint").is_none());
+    let mut picked = serde_json::json!({ "match": { "name": "Calculator" } });
+    super::attach_menubar_hint(&mut picked, &menubar);
+    assert!(picked.get("hint").is_none());
+}

@@ -68,9 +68,10 @@ pub fn execute(
 
     if args.scope.scroll.is_some() {
         return find_scroll::execute(&args, &query, adapter, context)
-            .map_err(name_the_traversal_remedy);
+            .map_err(|error| name_the_traversal_remedy(error, args.scope.surface));
     }
-    live::execute(&args, &query, adapter, context).map_err(name_the_traversal_remedy)
+    live::execute(&args, &query, adapter, context)
+        .map_err(|error| name_the_traversal_remedy(error, args.scope.surface))
 }
 
 /// A traversal that ran out of budget on a large tree is not evidence the
@@ -80,16 +81,86 @@ pub fn execute(
 /// app. Applied at this boundary rather than in the shared constructor,
 /// which every other command reaches and whose wording is asserted on
 /// elsewhere.
-fn name_the_traversal_remedy(error: AppError) -> AppError {
+fn name_the_traversal_remedy(error: AppError, surface: crate::SnapshotSurface) -> AppError {
     let AppError::Adapter(adapter_error) = error else {
         return error;
     };
     if adapter_error.code != crate::ErrorCode::Timeout {
         return AppError::Adapter(adapter_error);
     }
+    if surface == crate::SnapshotSurface::Menubar && left_a_part_unreadable(&adapter_error) {
+        return AppError::Adapter(name_the_unreadable_part(adapter_error));
+    }
     AppError::Adapter(adapter_error.with_suggestion(
         "The search ran out of budget before it could answer. Raise --timeout-ms, or narrow the search with --root, --surface, or a more specific role and name.",
     ))
+}
+
+/// A walk that ended incomplete with no budget limit and no transient read
+/// failure stopped at a subtree the app would not read out, such as a field
+/// whose children fail to load. More time does not read it.
+fn left_a_part_unreadable(error: &crate::AdapterError) -> bool {
+    error.details.as_ref().is_some_and(|details| {
+        let stats = &details["query_stats"];
+        let none = |value: &serde_json::Value, keys: &[&str]| {
+            keys.iter().all(|key| value[*key].as_u64() == Some(0))
+        };
+        details["kind"] == "locator_incomplete"
+            && details["retryable"] != true
+            && none(
+                &stats["traversal"]["limits"],
+                &[
+                    "node_hits",
+                    "edge_hits",
+                    "child_hits",
+                    "text_hits",
+                    "depth_hits",
+                    "child_count_changes",
+                ],
+            )
+            && none(
+                &stats["reads"],
+                &[
+                    "cannot_complete",
+                    "deadline_exhausted",
+                    "invalidated_elements",
+                ],
+            )
+    })
+}
+
+/// With no match in the part it read, the search cannot say whether the
+/// unread part holds one, so it refuses; with matches, only a count or a
+/// positional pick reaches here, which the unread part could change.
+fn name_the_unreadable_part(error: crate::AdapterError) -> crate::AdapterError {
+    let observed = error
+        .details
+        .as_ref()
+        .and_then(|details| details["observed_matches"].as_u64())
+        .unwrap_or(0);
+    let mut details = error.details.unwrap_or_else(|| serde_json::json!({}));
+    details["kind"] = "locator_unreadable_part".into();
+    details["complete"] = false.into();
+    let refused = if observed == 0 {
+        crate::AdapterError::new(
+            crate::ErrorCode::ElementNotFound,
+            "No match in the part of the surface that could be read; another part could not be read",
+        )
+        .with_suggestion(
+            "The app returned an error for part of the tree, so a larger --timeout-ms does not help. Search where the element lives, such as the window (drop --surface), or pass --allow-partial to accept the answer for the readable part.",
+        )
+    } else {
+        crate::AdapterError::new(
+            crate::ErrorCode::Timeout,
+            "Part of the surface could not be read, so a count or positional pick is unproven",
+        )
+        .with_suggestion(
+            "The app returned an error for part of the tree, so a larger --timeout-ms does not help. Run find without --count, --first, --last or --nth to get the matches it observed, marked complete: false, or pass --allow-partial.",
+        )
+    };
+    refused
+        .with_details(details)
+        .with_disposition(error.disposition)
 }
 
 pub fn parse_state_flag(raw: &str) -> Result<StatePredicate, AppError> {
@@ -177,6 +248,10 @@ mod test_support;
 #[cfg(test)]
 #[path = "find_rooted_tests.rs"]
 mod rooted_tests;
+
+#[cfg(test)]
+#[path = "find_unreadable_tests.rs"]
+mod unreadable_tests;
 
 #[cfg(test)]
 #[path = "find_live_tests.rs"]

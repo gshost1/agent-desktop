@@ -17,9 +17,10 @@ impl ActionabilityRequirements {
                 Self::new(true, true, true, false, true)
             }
             Action::Hover | Action::Drag(_) => Self::new(true, true, false, false, true),
-            Action::SetValue(_) | Action::TypeText(_) | Action::Clear => {
-                Self::new(true, false, true, true, false)
-            }
+            Action::SetValue(_)
+            | Action::SetValueAndCommit(_)
+            | Action::TypeText(_)
+            | Action::Clear => Self::new(true, false, true, true, false),
             Action::Select(_) => Self::new(true, false, true, false, false),
             Action::Expand
             | Action::Collapse

@@ -16,7 +16,7 @@ use agent_desktop_core::{
     Action, ActionResult, ActionStep, ActionStepOutcome, Deadline, StepMechanism,
 };
 
-const FIELD_HINT: &str = "The field shows the new text, but an app may take it only when editing ends. Before you save or confirm, run `focus` on another field in the same window to end the edit, then check the result. Do not press Return in the field: it can submit a form or press a default button.";
+const FIELD_HINT: &str = "The field shows the new text, but an app may take it only when editing ends. Before you save or confirm, rerun `set-value` with `--commit`, or run `focus` on another field in the same window to end the edit, then check the result. Do not press Return in the field: it can submit a form or press a default button.";
 
 const TEXT_VIEW_HINT: &str = "The text view shows the new text, but the app's document may still hold the old text. Running `focus` on another field ends the edit, which commits some text views and not others, so after you save, check the saved result before you report success. Do not press Return in the text view: it inserts a line break.";
 
@@ -78,6 +78,19 @@ pub(crate) fn value_write_result(
     match hint {
         Some(hint) => result.with_commit_unobserved(hint),
         None => result,
+    }
+}
+
+pub(crate) fn set_value_result(
+    action: &Action,
+    steps: Vec<ActionStep>,
+    read_commit: impl FnOnce() -> EditCommit,
+    commit: impl FnOnce(Vec<ActionStep>) -> Result<ActionResult, agent_desktop_core::AdapterError>,
+) -> Result<ActionResult, agent_desktop_core::AdapterError> {
+    if matches!(action, Action::SetValueAndCommit(_)) {
+        commit(steps)
+    } else {
+        Ok(value_write_result(action, steps, read_commit))
     }
 }
 

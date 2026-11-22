@@ -26,7 +26,7 @@ pub fn for_action(action: &Action) -> &'static [&'static str] {
     match action {
         Action::Click | Action::DoubleClick | Action::TripleClick => &[CLICK],
         Action::RightClick => &[RIGHT_CLICK],
-        Action::SetValue(_) | Action::Clear => &[SET_VALUE],
+        Action::SetValue(_) | Action::SetValueAndCommit(_) | Action::Clear => &[SET_VALUE],
         Action::SetFocus => &[SET_FOCUS],
         Action::Expand => &[EXPAND],
         Action::Collapse => &[COLLAPSE],

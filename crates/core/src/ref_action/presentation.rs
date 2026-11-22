@@ -97,7 +97,10 @@ fn target_center(
 }
 
 pub(crate) fn enters_text(action: &Action) -> bool {
-    matches!(action, Action::TypeText(_) | Action::SetValue(_))
+    matches!(
+        action,
+        Action::TypeText(_) | Action::SetValue(_) | Action::SetValueAndCommit(_)
+    )
 }
 
 /// Whether the effect after dispatch plays the click ripple. Typing plays it
