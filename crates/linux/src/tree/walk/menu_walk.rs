@@ -83,3 +83,7 @@ pub(super) fn children_are_hidden(
 #[cfg(test)]
 #[path = "menu_walk_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "menu_state_tests.rs"]
+mod state_tests;
