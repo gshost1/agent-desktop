@@ -179,6 +179,7 @@ fn focus_state(
                 focused: None,
                 minimized_by_id: rustc_hash::FxHashMap::default(),
                 accessible_window_ids: rustc_hash::FxHashSet::default(),
+                window_numbers_complete: false,
                 titles: Default::default(),
             })
         }
