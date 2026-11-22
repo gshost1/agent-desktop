@@ -272,3 +272,40 @@ fn any_other_refusal_of_the_window_read_still_ends_the_launch_at_once() {
     assert!(!is_unproven(&error));
     assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }
+
+#[test]
+fn a_proven_windowless_owner_survives_the_window_wait_deadline() {
+    let calls = Cell::new(0);
+    let found = waiting_for_window(150, |launch, owner| {
+        launch.wait_for_window(owner, true, &HashSet::new(), || {
+            calls.set(calls.get() + 1);
+            launch.deadline.ensure_remaining()?;
+            Ok((Vec::new(), RootRead::Read))
+        })
+    });
+    assert!(
+        found
+            .expect("a complete windowless observation stands at expiry")
+            .is_none()
+    );
+    assert!(calls.get() > 1);
+}
+
+#[test]
+fn an_unproven_read_after_a_windowless_read_still_fails_at_the_deadline() {
+    let calls = Cell::new(0);
+    let error = waiting_for_window(150, |launch, owner| {
+        launch.wait_for_window(owner, true, &HashSet::new(), || {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                Ok((Vec::new(), RootRead::Read))
+            } else {
+                Err(unproven(owner.pid))
+            }
+        })
+    })
+    .expect_err("an older empty read cannot prove the current window state");
+    assert!(is_unproven(&error));
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
+    assert!(calls.get() > 1);
+}
