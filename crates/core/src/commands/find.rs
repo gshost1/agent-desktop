@@ -131,7 +131,8 @@ fn left_a_part_unreadable(error: &crate::AdapterError) -> bool {
 
 /// With no match in the part it read, the search cannot say whether the
 /// unread part holds one, so it refuses; with matches, only a count or a
-/// positional pick reaches here, which the unread part could change.
+/// positional pick the read part does not prove reaches here, which the
+/// unread part could change.
 fn name_the_unreadable_part(error: crate::AdapterError) -> crate::AdapterError {
     let observed = error
         .details
@@ -161,7 +162,7 @@ fn name_the_unreadable_part(error: crate::AdapterError) -> crate::AdapterError {
     };
     refused
         .with_details(details)
-        .with_disposition(crate::DeliverySemantics::unknown())
+        .with_disposition(crate::DeliverySemantics::not_delivered())
 }
 
 pub fn parse_state_flag(raw: &str) -> Result<StatePredicate, AppError> {

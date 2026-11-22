@@ -10,7 +10,8 @@ use crate::{
 };
 
 /// A menubar whose Window menu is read and whose Help menu holds a field the
-/// app will not read out, with no budget limit or transient cause recorded.
+/// app will not read out, then a readable item, with no budget limit or
+/// transient cause recorded.
 struct UnreadableMenubar(bool);
 
 fn app() -> AppInfo {
@@ -71,7 +72,10 @@ impl ObservationOps for UnreadableMenubar {
             LiveFindAdapter::evidence("menuitem", Some("Help")),
             vec![ObservedSubtree::new(
                 LiveFindAdapter::evidence("menu", Some("Help")),
-                vec![unread_field],
+                vec![
+                    unread_field,
+                    node("menuitem", Some("About MenuApp"), Vec::new()),
+                ],
                 false,
                 None,
             )],
@@ -159,7 +163,7 @@ fn unreadable_details(error: AppError) -> serde_json::Value {
     };
     let suggestion = error.suggestion.clone().unwrap_or_default();
     assert!(!error.permits_retry_by_default());
-    assert_ne!(error.disposition.retry(), crate::RetryDisposition::Safe);
+    assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
     assert!(
         !suggestion.contains("Raise --timeout-ms"),
         "an unreadable part is not a budget problem: {suggestion}"
@@ -219,29 +223,55 @@ fn no_menubar_match_beside_an_unreadable_part_refuses_without_claiming_absence()
 }
 
 #[test]
-fn a_menubar_count_or_positional_pick_beside_an_unreadable_part_stays_refused() {
+fn a_menubar_first_match_read_before_the_unreadable_part_is_answered() {
     let _guard = HomeGuard::new();
-    for selection in [
+    let response = menubar_find(
+        None,
+        "Calculator",
         FindSelectionArgs {
             first: true,
             ..listing()
         },
-        FindSelectionArgs {
-            count: true,
-            ..listing()
-        },
-        FindSelectionArgs {
-            last: true,
-            ..listing()
-        },
-        FindSelectionArgs {
-            nth: Some(0),
-            ..listing()
-        },
+    )
+    .expect("every node before the match was read, so it is proven first");
+    assert_eq!(response["match"]["name"], "Calculator");
+    assert_ne!(response["complete"], false);
+}
+
+#[test]
+fn a_menubar_pick_the_unreadable_part_could_change_stays_refused() {
+    let _guard = HomeGuard::new();
+    let first = FindSelectionArgs {
+        first: true,
+        ..listing()
+    };
+    for (name, selection) in [
+        ("About MenuApp", first),
+        (
+            "Calculator",
+            FindSelectionArgs {
+                count: true,
+                ..listing()
+            },
+        ),
+        (
+            "Calculator",
+            FindSelectionArgs {
+                last: true,
+                ..listing()
+            },
+        ),
+        (
+            "Calculator",
+            FindSelectionArgs {
+                nth: Some(0),
+                ..listing()
+            },
+        ),
     ] {
-        let error = menubar_find(None, "Calculator", selection)
+        let error = menubar_find(None, name, selection)
             .expect_err("a match in the unread part would change the answer");
-        assert_eq!(error.code(), "ELEMENT_NOT_FOUND");
+        assert_eq!(error.code(), "ELEMENT_NOT_FOUND", "{name}");
         let AppError::Adapter(ref adapter_error) = error else {
             panic!("adapter error")
         };
@@ -249,7 +279,42 @@ fn a_menubar_count_or_positional_pick_beside_an_unreadable_part_stays_refused() 
         assert!(suggestion.contains("--first") && suggestion.contains("--count"));
         let details = unreadable_details(error);
         assert_eq!(details["kind"], "locator_unreadable_part");
-        assert_eq!(details["observed_matches"], 1);
+        assert_eq!(details["observed_matches"], 1, "{name}");
+    }
+}
+
+/// The unreadable-part test reads `query_stats` from serialized details, so
+/// the key names it reads are pinned against the typed stats here.
+#[test]
+fn every_budget_limit_and_transient_read_counter_rules_out_an_unreadable_part() {
+    let details = |stats: &LocatorStats| {
+        AdapterError::timeout("incomplete").with_details(serde_json::json!({
+            "kind": "locator_incomplete",
+            "retryable": false,
+            "query_stats": stats,
+        }))
+    };
+    assert!(super::left_a_part_unreadable(&details(
+        &LocatorStats::default()
+    )));
+    let counters: [fn(&mut LocatorStats); 9] = [
+        |stats| stats.traversal.limits.node_hits = 1,
+        |stats| stats.traversal.limits.edge_hits = 1,
+        |stats| stats.traversal.limits.child_hits = 1,
+        |stats| stats.traversal.limits.text_hits = 1,
+        |stats| stats.traversal.limits.depth_hits = 1,
+        |stats| stats.traversal.limits.child_count_changes = 1,
+        |stats| stats.reads.health.cannot_complete = 1,
+        |stats| stats.reads.health.deadline_exhausted = 1,
+        |stats| stats.reads.health.invalidated_elements = 1,
+    ];
+    for (index, set) in counters.iter().enumerate() {
+        let mut stats = LocatorStats::default();
+        set(&mut stats);
+        assert!(
+            !super::left_a_part_unreadable(&details(&stats)),
+            "counter {index} must rule out an unreadable part"
+        );
     }
 }
 

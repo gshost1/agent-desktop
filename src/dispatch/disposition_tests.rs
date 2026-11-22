@@ -118,7 +118,7 @@ fn a_timeout_of_a_mutation_keeps_its_unknown_delivery() {
 }
 
 #[test]
-fn an_unreadable_menubar_refusal_does_not_advertise_a_safe_retry() {
+fn a_read_only_unreadable_menubar_refusal_is_safe_to_retry_but_not_retryable() {
     let error = settle_unknown_delivery(
         AdapterError::new(
             ErrorCode::ElementNotFound,
@@ -131,7 +131,8 @@ fn an_unreadable_menubar_refusal_does_not_advertise_a_safe_retry() {
     .into_adapter_error();
     assert_eq!(error.code, ErrorCode::ElementNotFound);
     assert!(!error.permits_retry_by_default());
-    assert_eq!(error.disposition.retry(), RetryDisposition::Unknown);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(error.disposition.retry(), RetryDisposition::Safe);
 }
 
 #[test]

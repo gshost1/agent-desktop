@@ -79,10 +79,7 @@ pub(super) fn execute_within(
         && args.scope.root.is_none()
         && resolution.meta.total_matches > 0;
     if !args.selection.allow_partial && !observed_matches_answer {
-        require_complete(
-            &resolution,
-            args.scope.surface == crate::SnapshotSurface::Menubar,
-        )?;
+        require_complete(&resolution)?;
     }
     let published = resolution.refmap.take().filter(|refmap| !refmap.is_empty());
     let ref_count = published.as_ref().map(RefMap::len);
@@ -191,16 +188,16 @@ fn resolve_request(args: &FindArgs, deadline: crate::Deadline) -> LocatorResolve
 
 /// A menubar find that lists its matches can answer with the matches an
 /// unreadable walk observed, marked incomplete. A count or a positional pick
-/// cannot: a match in the unread part would change it. Other surfaces keep
-/// the strict contract.
+/// cannot, except a first match proven first: a match in the unread part would
+/// change it. Other surfaces keep the strict contract.
 fn lists_observed_matches(args: &FindArgs) -> bool {
     let selection = &args.selection;
     args.scope.surface == crate::SnapshotSurface::Menubar
         && !(selection.count || selection.first || selection.last || selection.nth.is_some())
 }
 
-fn require_complete(resolution: &LocatorResolution, exhaustive: bool) -> Result<(), AppError> {
-    if resolution.meta.selection_complete && (!exhaustive || resolution.meta.complete) {
+fn require_complete(resolution: &LocatorResolution) -> Result<(), AppError> {
+    if resolution.meta.selection_complete {
         return Ok(());
     }
     Err(

@@ -579,7 +579,7 @@ the capture could not count gets `identity_unproven`.
 
 ### Partial results
 
-If part of a menubar cannot be read and no budget limit or transient read failure explains it, plain `find --surface menubar` returns the matches observed with `complete: false` and `truncated: true`. With no observed match it returns `ELEMENT_NOT_FOUND` with `details.kind: "locator_unreadable_part"`, `complete: false`, and `retryable: false`; this does not prove absence. `--first`, `--nth`, `--last`, and `--count` are refused with the same code and kind because the unread part could change the pick. Their disposition has `retry: "unknown"`, not `"safe"`. Drop the pick to list the observed matches, search the window instead when the element belongs there, or pass `--allow-partial` to accept an answer for the readable part. A larger timeout does not fix an unreadable part. Other surfaces retain `TIMEOUT` with `locator_incomplete`.
+If part of a menubar cannot be read and no budget limit or transient read failure explains it, plain `find --surface menubar` returns the matches observed with `complete: false` and `truncated: true`. With no observed match it returns `ELEMENT_NOT_FOUND` with `details.kind: "locator_unreadable_part"`, `complete: false`, and `retryable: false`; this does not prove absence. `--last`, `--count`, and `--nth` are refused with the same code and kind because the unread part could change the pick; `--first` answers when every node before its match was read, and is refused otherwise. Drop the pick to list the observed matches, search the window instead when the element belongs there, or pass `--allow-partial` to accept an answer for the readable part. A larger timeout does not fix an unreadable part. Other surfaces retain `TIMEOUT` with `locator_incomplete`.
 
 An empty menubar answer carries `data.hint`: menubar search reads closed menus without opening them, a match's `path` names the menus to open, and the Window menu lists only open windows. Toolbar buttons, tabs, and panes belong to a window search. Tokenless matches from an incomplete walk have no ref. Token-backed refs retain their incomplete capture verdict; the platform re-identifies them by token rather than treating the partial walk as a uniqueness proof.
 
@@ -776,7 +776,7 @@ contract; a consumer that ignores `key` reads the list as before.
 | Code | Meaning |
 |------|---------|
 | `PERM_DENIED` | Accessibility permission not granted, or a directory or file in agent-desktop's state is open to other users (`details.kind: "state_directory_permission"`; `details.path` names it and the suggestion gives the `chmod` that closes it) |
-| `ELEMENT_NOT_FOUND` | No element matched the ref or query |
+| `ELEMENT_NOT_FOUND` | No element matched the ref or query. With `details.complete: false` (`details.kind: "locator_unreadable_part"`) part of the surface could not be read, so it is not proof of absence |
 | `APP_NOT_FOUND` | No matching application process; the lookup failed before anything was sent, so the disposition is `not_delivered` |
 | `STALE_REF` | Ref could not be re-identified in the live UI |
 | `AMBIGUOUS_TARGET` | Ref recovery matched multiple plausible targets |
