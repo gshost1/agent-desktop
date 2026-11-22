@@ -4,13 +4,17 @@ use agent_desktop_core::Deadline;
 
 use crate::system::display::display_server::DisplayServer;
 
+#[cfg(test)]
+use super::FrameFacts;
 use super::map::ClientMatch;
 use super::stacking::stacking_read::StackingRead;
 use super::stacking::stacking_source::StackingSource;
-use super::twin_tie::{Twins, client_among_twins, tied_agree};
+use super::twin_tie::tied_agree;
+#[cfg(test)]
+use super::twin_tie::{Twins, client_among_twins};
 use super::window::frame_window::FrameWindow;
 use super::window::window_x11_state::WindowX11State;
-use super::{FrameFacts, X11State, start};
+use super::{X11Client, X11State, start};
 
 /// How long one stacking read may take on the real display. A read is a
 /// handful of pipelined round trips, 2 to 4 ms in `L27-3`.
@@ -56,16 +60,27 @@ pub(super) fn route(
 /// The X11 client of a listed window and its state. Several clients that
 /// share the frame's process and title are told apart by `twins`, which is
 /// read only for such a tie; a tie nothing breaks is reported as one.
+#[cfg(test)]
 pub(crate) fn frame_window_state(
     source: &dyn StackingSource,
     deadline: Deadline,
     frame: &FrameFacts,
     twins: impl FnOnce() -> Option<Twins>,
 ) -> FrameWindow {
+    matched_window_state(source, deadline, |active, clients| {
+        client_among_twins(frame, clients, active, twins)
+    })
+}
+
+pub(crate) fn matched_window_state(
+    source: &dyn StackingSource,
+    deadline: Deadline,
+    select: impl FnOnce(Option<u32>, &[X11Client]) -> ClientMatch,
+) -> FrameWindow {
     let X11State::Ready { active, clients } = source.clients_within(deadline) else {
         return FrameWindow::Unknown;
     };
-    let client_id = match client_among_twins(frame, &clients, active, twins) {
+    let client_id = match select(active, &clients) {
         ClientMatch::One(id) => id,
         ClientMatch::Several(ids) => {
             return FrameWindow::Tied {

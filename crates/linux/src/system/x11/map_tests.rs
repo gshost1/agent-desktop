@@ -66,7 +66,7 @@ fn openbox_client() -> X11Client {
 }
 
 fn openbox_frame(title: &str, global: bool) -> FrameFacts {
-    frame(
+    let mut result = frame(
         10,
         title,
         Some(Extents {
@@ -76,7 +76,9 @@ fn openbox_frame(title: &str, global: bool) -> FrameFacts {
             height: 211,
         }),
         global,
-    )
+    );
+    result.size_identity = true;
+    result
 }
 
 #[test]
@@ -250,7 +252,7 @@ fn an_unnamed_local_frame_needs_one_exact_same_process_size_match() {
     );
     assert_eq!(
         match_client(&frame(10, "Unrelated", size, false), &clients),
-        ClientMatch::One(2)
+        ClientMatch::NoClient
     );
     assert_eq!(
         match_client(
@@ -282,10 +284,9 @@ fn geometry_fallback_matches_native_title_differences_across_toolkits() {
         } else {
             frame_around(&client)
         };
-        assert_eq!(
-            match_client(&frame(10, accessible, rect, global), &[client]),
-            ClientMatch::One(1)
-        );
+        let mut frame = frame(10, accessible, rect, global);
+        frame.size_identity = true;
+        assert_eq!(match_client(&frame, &[client]), ClientMatch::One(1));
     }
 }
 
@@ -293,7 +294,8 @@ fn geometry_fallback_matches_native_title_differences_across_toolkits() {
 fn geometry_fallback_preserves_ambiguity_and_requires_same_process_geometry() {
     let clients = [client(1, 10, "", 157, 37), client(2, 10, "Other", 400, 37)];
     let rect = frame_around(&clients[0]);
-    let local = frame(10, "Question", rect, false);
+    let mut local = frame(10, "Question", rect, false);
+    local.size_identity = true;
     assert_eq!(
         match_client(&local, &clients),
         ClientMatch::Several(vec![1, 2])
@@ -332,18 +334,13 @@ fn fallback_accepts_shadowless_frames_and_local_client_sizes() {
     client.shadow = (10, 10, 10, 10);
     let rect = without_shadow(&client, frame_around(&client).unwrap());
     for global in [false, true] {
-        assert_eq!(
-            match_client(
-                &frame(10, "Accessible", Some(rect), global),
-                &[client.clone()]
-            ),
-            ClientMatch::One(1)
-        );
+        let mut frame = frame(10, "Accessible", Some(rect), global);
+        frame.size_identity = true;
+        assert_eq!(match_client(&frame, &[client.clone()]), ClientMatch::One(1));
     }
-    assert_eq!(
-        match_client(&frame(10, "Accessible", client.bounds, false), &[client]),
-        ClientMatch::One(1)
-    );
+    let mut frame = frame(10, "Accessible", client.bounds, false);
+    frame.size_identity = true;
+    assert_eq!(match_client(&frame, &[client]), ClientMatch::One(1));
 }
 
 #[test]

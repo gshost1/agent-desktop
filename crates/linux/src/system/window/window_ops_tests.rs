@@ -1,5 +1,6 @@
 use agent_desktop_core::{AdapterError, Deadline, ErrorCode, WindowInfo, WindowState};
 
+use super::super::dialog_evidence::DialogEvidence;
 use super::{finish_listing, finish_process_listing, require_answered, settle_pass};
 use crate::system::registry::app_outcome::AppOutcome;
 use crate::system::registry::listed_window::ListedWindow;
@@ -86,8 +87,24 @@ fn client(id: u32, title: &str) -> X11Client {
 #[test]
 fn finish_reconciles_unmatched_dialog_and_marks_its_public_focus_flag() {
     let mut pass = crate::system::window::window_test_support::pass();
-    let state = crate::system::window::window_test_support::state(7);
-    assert_eq!(finish_listing(&mut pass, &state, None, |_| true), Some(0));
+    let mut state = crate::system::window::window_test_support::state(7);
+    let bounds = Extents {
+        x: 10,
+        y: 20,
+        width: 500,
+        height: 300,
+    };
+    pass.windows[0].frame.extents = Some(bounds);
+    if let X11State::Ready { clients, .. } = &mut state {
+        clients[0].bounds = Some(bounds);
+    }
+    assert_eq!(
+        finish_listing(&mut pass, &state, None, |_| DialogEvidence {
+            input_focus: true,
+            transient_for: None
+        }),
+        Some(0)
+    );
     assert!(pass.windows[0].info.state.is_focused);
 }
 
@@ -112,10 +129,17 @@ fn initial_and_reread_passes_refuse_stopped_targets_in_both_scoped_paths() {
             .err()
             .unwrap();
         assert_eq!(initial.code, ErrorCode::AppUnresponsive);
+        let mut mapping_state = inventory_state(7);
+        if let X11State::Ready { clients, .. } = &mut mapping_state {
+            let mut main = clients[0].clone();
+            main.id = 1;
+            main.title = "accessible name".into();
+            clients.push(main);
+        }
         let error = reread_with(
             (
                 settle_pass(inventory_pass(), None, named).unwrap(),
-                inventory_state(7),
+                mapping_state,
             ),
             Deadline::standard().unwrap(),
             &[7],
