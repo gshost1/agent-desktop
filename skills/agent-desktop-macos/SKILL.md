@@ -91,6 +91,6 @@ Headless is the default and acts through accessibility: `click`, `select` and `s
 
 ## Sheets and menus
 
-If a ref action opens a menu you expect but omits it from `data.surfaces`, read it with `snapshot --surface menu -i`. The action report uses on-screen window evidence before searching the app tree for a context menu.
+If a ref action opens a menu that is missing from `data.surfaces`, read it with `snapshot --surface menu -i`. The action report checks for a menu around keyboard focus and uses on-screen window evidence before searching the full app tree.
 
 `press return --app <App>` or `escape` on a sheet checks that the sheet closed. If it fails with `effect: "none_observed"`, do not press again: snapshot `--surface sheet -i` and click its default button. For an app's menus, use `--surface menubar`. For an open context or pop-up menu, use `--surface menu`. For a combo box or pop-up button, use `select @ref "Option"`.
