@@ -3,7 +3,10 @@ use super::{
     surface_read,
 };
 use agent_desktop_core::{AdapterError, ErrorCode, SnapshotSurface};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+const FOCUSED_MENU_DEPTH: usize = 8;
+const MENU_FOCUS_SETTLE: Duration = Duration::from_millis(18);
 
 pub(crate) fn observe<T>(
     identity: crate::system::process::process_identity::ProcessIdentity,
@@ -114,6 +117,14 @@ pub(crate) fn open_menus_for_pid(
     pid: i32,
     deadline: Instant,
 ) -> Result<Vec<(&'static str, String, AXElement)>, AdapterError> {
+    open_menus_with_window_evidence(pid, deadline, || None)
+}
+
+pub(super) fn open_menus_with_window_evidence(
+    pid: i32,
+    deadline: Instant,
+    menu_window_present: impl FnOnce() -> Option<bool>,
+) -> Result<Vec<(&'static str, String, AXElement)>, AdapterError> {
     let mut menus = Vec::new();
     if let Some(menubar) = menubar_for_pid(pid, deadline)? {
         menus.extend(
@@ -131,7 +142,7 @@ pub(crate) fn open_menus_for_pid(
         );
     }
     if menus.is_empty()
-        && let Some((id, menu)) = context_menu_from_app(pid, deadline)?
+        && let Some((id, menu)) = context_menu_from_app(pid, deadline, menu_window_present)?
     {
         menus.push(("context_menu", id, menu));
     }
@@ -164,9 +175,40 @@ fn open_menubar_menus_with<T>(
 fn context_menu_from_app(
     pid: i32,
     deadline: Instant,
+    menu_window_present: impl FnOnce() -> Option<bool>,
 ) -> Result<Option<(String, AXElement)>, AdapterError> {
     let app = element_for_pid(pid);
-    for (index, menu) in surface_read::elements(&app, "AXMenus", deadline)?
+    read_context_menu(
+        || context_menu_from_attribute(&app, deadline),
+        || context_menu_around_focus(&app, deadline),
+        menu_window_present,
+        || context_menu_from_descendants(&app, deadline),
+    )
+}
+
+fn read_context_menu<T>(
+    read_direct: impl FnOnce() -> Result<Option<T>, AdapterError>,
+    read_focused: impl FnOnce() -> Result<Option<T>, AdapterError>,
+    menu_window_present: impl FnOnce() -> Option<bool>,
+    search: impl FnOnce() -> Result<Option<T>, AdapterError>,
+) -> Result<Option<T>, AdapterError> {
+    if let Some(menu) = read_direct()? {
+        return Ok(Some(menu));
+    }
+    if let Some(menu) = read_focused()? {
+        return Ok(Some(menu));
+    }
+    if menu_window_present() == Some(false) {
+        return Ok(None);
+    }
+    search()
+}
+
+fn context_menu_from_attribute(
+    app: &AXElement,
+    deadline: Instant,
+) -> Result<Option<(String, AXElement)>, AdapterError> {
+    for (index, menu) in surface_read::elements(app, "AXMenus", deadline)?
         .into_iter()
         .enumerate()
     {
@@ -174,7 +216,76 @@ fn context_menu_from_app(
             return Ok(Some((format!("app/menus/{index}"), menu)));
         }
     }
-    let focused = surface_read::element(&app, "AXFocusedUIElement", deadline)?;
+    Ok(None)
+}
+
+fn context_menu_around_focus(
+    app: &AXElement,
+    deadline: Instant,
+) -> Result<Option<(String, AXElement)>, AdapterError> {
+    let Some(focused) = surface_read::element(app, "AXFocusedUIElement", deadline)? else {
+        return Ok(None);
+    };
+    let menu = menu_on_focus_path(Some(focused.clone()), deadline)?;
+    if menu.is_some()
+        || surface_read::string(&focused, "AXPopupValue", deadline)?.as_deref() != Some("menu")
+        || deadline.saturating_duration_since(Instant::now()) <= MENU_FOCUS_SETTLE
+    {
+        return Ok(menu);
+    }
+    std::thread::sleep(MENU_FOCUS_SETTLE);
+    menu_on_focus_path(
+        surface_read::element(app, "AXFocusedUIElement", deadline)?,
+        deadline,
+    )
+}
+
+fn menu_on_focus_path(
+    focused: Option<AXElement>,
+    deadline: Instant,
+) -> Result<Option<(String, AXElement)>, AdapterError> {
+    Ok(focused_menu_with(
+        focused,
+        |element| surface_read::string(element, "AXRole", deadline),
+        |element| surface_read::element(element, "AXParent", deadline),
+        |element| Ok(surface_read::boolean(element, "AXVisible", deadline)? != Some(false)),
+    )?
+    .map(|(depth, menu)| {
+        let id = if depth == 0 {
+            "app/focused-element".into()
+        } else {
+            format!("app/focused-element/ancestors/{depth}")
+        };
+        (id, menu)
+    }))
+}
+
+fn focused_menu_with<T>(
+    mut current: Option<T>,
+    mut role: impl FnMut(&T) -> Result<Option<String>, AdapterError>,
+    mut parent: impl FnMut(&T) -> Result<Option<T>, AdapterError>,
+    mut visible: impl FnMut(&T) -> Result<bool, AdapterError>,
+) -> Result<Option<(usize, T)>, AdapterError> {
+    for depth in 0..=FOCUSED_MENU_DEPTH {
+        let Some(element) = current else { break };
+        match role(&element)?.as_deref() {
+            Some("AXMenu") if visible(&element)? => return Ok(Some((depth, element))),
+            Some("AXWindow" | "AXApplication") => break,
+            _ => {}
+        }
+        if depth == FOCUSED_MENU_DEPTH {
+            break;
+        }
+        current = parent(&element)?;
+    }
+    Ok(None)
+}
+
+fn context_menu_from_descendants(
+    app: &AXElement,
+    deadline: Instant,
+) -> Result<Option<(String, AXElement)>, AdapterError> {
+    let focused = surface_read::element(app, "AXFocusedUIElement", deadline)?;
     if let Some(focused) = &focused
         && let Some(menu) = find_menu_descendant(
             focused.clone(),
@@ -185,7 +296,7 @@ fn context_menu_from_app(
     {
         return Ok(Some(menu));
     }
-    for (index, child) in surface_read::elements(&app, "AXChildren", deadline)?
+    for (index, child) in surface_read::elements(app, "AXChildren", deadline)?
         .into_iter()
         .enumerate()
     {

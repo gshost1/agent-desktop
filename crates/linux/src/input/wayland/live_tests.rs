@@ -95,7 +95,7 @@ for connector in ('absent-private-monitor', sys.argv[1]):
             kind: agent_desktop_core::MouseEventKind::Click { count: 1 },
             modifiers: Vec::new(),
         },
-        &[invalid],
+        &crate::system::DisplayLayout::unscaled(vec![invalid]),
         &mut || Ok(()),
         deadline(),
     )

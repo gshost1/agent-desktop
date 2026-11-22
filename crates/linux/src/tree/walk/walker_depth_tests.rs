@@ -195,10 +195,8 @@ fn an_exhausted_node_budget_marks_the_cut_parent_and_counts_a_hit() {
 #[test]
 fn an_exhausted_edge_budget_counts_a_hit() {
     let edges: Edges = HashMap::from([(0, vec![1, 2, 3, 4])]);
-    let limits = WalkLimits {
-        max_edges: 2,
-        ..WalkLimits::default()
-    };
+    let mut limits = WalkLimits::default();
+    limits.children.max_edges = 2;
     let result = walk(&edges, |_| read_of(PUSH_BUTTON, "b", &["click"]), &limits);
     assert_eq!(result.root.children.len(), 2);
     assert_eq!(result.counts.limits.edge_hits, 1);

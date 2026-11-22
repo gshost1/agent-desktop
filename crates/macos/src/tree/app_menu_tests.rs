@@ -3,6 +3,95 @@ use super::*;
 use std::time::Duration;
 
 #[test]
+fn no_menu_window_skips_the_context_menu_tree_walk() {
+    let menu = read_context_menu(
+        || Ok(None::<u8>),
+        || Ok(None),
+        || Some(false),
+        || panic!("a closed menu must not trigger a descendant search"),
+    )
+    .unwrap();
+
+    assert_eq!(menu, None);
+}
+
+#[test]
+fn a_direct_menu_skips_focus_and_window_inventory() {
+    let menu = read_context_menu(
+        || Ok(Some(7)),
+        || panic!("the direct menu read already found the menu"),
+        || panic!("the direct menu read already found the menu"),
+        || panic!("the direct menu read already found the menu"),
+    )
+    .unwrap();
+
+    assert_eq!(menu, Some(7));
+}
+
+#[test]
+fn a_possible_menu_window_enables_the_context_menu_tree_walk() {
+    for evidence in [Some(true), None] {
+        let menu =
+            read_context_menu(|| Ok(None), || Ok(None), || evidence, || Ok(Some(7))).unwrap();
+        assert_eq!(menu, Some(7));
+    }
+}
+
+#[test]
+fn a_focused_in_window_menu_is_reported_without_window_inventory() {
+    let roles = ["AXMenuItem", "AXGroup", "AXMenu", "AXWindow"];
+    let menu = read_context_menu(
+        || Ok(None),
+        || {
+            focused_menu_with(
+                Some(0),
+                |index| Ok(Some(roles[*index].into())),
+                |index| Ok(Some(index + 1)),
+                |_| Ok(true),
+            )
+        },
+        || panic!("the focused menu needs no window-server evidence"),
+        || panic!("the focused menu needs no descendant search"),
+    )
+    .unwrap();
+
+    assert_eq!(menu, Some((2, 2)));
+}
+
+#[test]
+fn focused_menu_walk_checks_visibility_and_ends_at_the_window() {
+    let roles = ["AXMenu", "AXWindow", "AXMenu"];
+    let menu = focused_menu_with(
+        Some(0),
+        |index| Ok(Some(roles[*index].into())),
+        |index| {
+            assert_eq!(*index, 0);
+            Ok(Some(index + 1))
+        },
+        |_| Ok(false),
+    )
+    .unwrap();
+
+    assert_eq!(menu, None);
+}
+
+#[test]
+fn focused_menu_walk_stops_at_its_depth_limit() {
+    let menu = focused_menu_with(
+        Some(0),
+        |_| Ok(Some("AXGroup".into())),
+        |index| {
+            assert!(*index < FOCUSED_MENU_DEPTH);
+            Ok(Some(index + 1))
+        },
+        |_| panic!("no menu role in the ancestor chain"),
+    )
+    .unwrap();
+
+    assert_eq!(menu, None);
+}
+
+#[test]
 fn only_complete_menu_root_absence_gets_a_typed_surface_error() {
     for (surface, message) in [
         (SnapshotSurface::Menu, "No open menu"),

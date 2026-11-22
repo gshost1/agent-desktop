@@ -74,3 +74,25 @@ fn the_settled_stale_ref_message_names_the_evidence_mismatch_not_a_missing_refma
         "the derived retryability must survive the construction change"
     );
 }
+
+#[cfg(target_os = "windows")]
+#[test]
+fn an_exited_owner_refusal_carries_the_inspect_state_recovery() {
+    let error = owning_process_exited_error(&entry());
+    assert!(!error.permits_retry_by_default());
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert_eq!(
+        error.details.as_ref().expect("details")["process_state"],
+        "exited"
+    );
+    let payload = agent_desktop_core::ErrorPayload::from_app_error(
+        &agent_desktop_core::AppError::Adapter(error),
+    );
+    assert_eq!(
+        payload
+            .recovery
+            .map(|recovery| recovery.strategy)
+            .as_deref(),
+        Some("inspect_state_then_retry_original")
+    );
+}

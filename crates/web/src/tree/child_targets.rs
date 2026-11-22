@@ -2,21 +2,40 @@ use agent_desktop_core::{AdapterError, Deadline};
 use serde_json::{Value, json};
 
 use super::child_target::ChildTarget;
+use crate::cdp::cdp_request::CdpRequest;
 use crate::{CdpConnection, CdpEvent, PageSession};
 
 const ATTACHED: &str = "Target.attachedToTarget";
 const DETACHED: &str = "Target.detachedFromTarget";
 
 /// Attaches a flattened session to every out-of-process iframe directly
-/// beneath `session`'s target. Auto-attach reports the iframe targets that
-/// already exist before it replies, and a target paused for a debugger is
-/// released.
+/// beneath each parent's target, asking all parents at once, and returns
+/// each parent's children in parent order. Auto-attach reports the iframe
+/// targets that already exist before it replies, and a target paused for a
+/// debugger is released.
 pub(crate) fn attach_child_targets(
+    connection: &mut CdpConnection,
+    parents: &[(PageSession, Deadline)],
+) -> Result<Vec<Result<Vec<ChildTarget>, AdapterError>>, AdapterError> {
+    let requests: Vec<CdpRequest> = parents
+        .iter()
+        .map(|(session, deadline)| auto_attach(session, true, *deadline))
+        .collect();
+    let replies = connection.call_batch(&requests)?;
+    Ok(parents
+        .iter()
+        .zip(replies)
+        .map(|((session, deadline), reply)| {
+            reply.and_then(|_| attached_children(connection, session, *deadline))
+        })
+        .collect())
+}
+
+fn attached_children(
     connection: &mut CdpConnection,
     session: &PageSession,
     deadline: Deadline,
 ) -> Result<Vec<ChildTarget>, AdapterError> {
-    set_auto_attach(connection, session, true, deadline)?;
     let parent = session.session_id.as_str();
     let attached = connection.drain_events(|event| {
         event.method == ATTACHED
@@ -50,36 +69,34 @@ pub(crate) fn attach_child_targets(
     Ok(children)
 }
 
-/// Turns auto-attach back off for `session`, which detaches the iframe
-/// sessions it attached, and drops the attach bookkeeping events. Best
-/// effort: the snapshot is already read.
+/// Turns auto-attach back off for each of `sessions`, in order and all at
+/// once, which detaches the iframe sessions they attached, and drops the
+/// attach bookkeeping events. Best effort: the snapshot is already read.
 pub(crate) fn stop_child_targets(
     connection: &mut CdpConnection,
-    session: &PageSession,
+    sessions: &[PageSession],
     deadline: Deadline,
 ) {
-    let _ = set_auto_attach(connection, session, false, deadline);
-    let parent = session.session_id.as_str();
+    let requests: Vec<CdpRequest> = sessions
+        .iter()
+        .map(|session| auto_attach(session, false, deadline))
+        .collect();
+    let _ = connection.call_batch(&requests);
     connection.discard_events(|event| {
         matches!(event.method.as_str(), ATTACHED | DETACHED)
-            && event.session_id.as_deref() == Some(parent)
+            && sessions
+                .iter()
+                .any(|session| event.session_id.as_deref() == Some(session.session_id.as_str()))
     });
 }
 
-fn set_auto_attach(
-    connection: &mut CdpConnection,
-    session: &PageSession,
-    enabled: bool,
-    deadline: Deadline,
-) -> Result<(), AdapterError> {
-    connection
-        .call(
-            "Target.setAutoAttach",
-            json!({ "autoAttach": enabled, "waitForDebuggerOnStart": false, "flatten": true }),
-            Some(&session.session_id),
-            deadline,
-        )
-        .map(|_| ())
+fn auto_attach(session: &PageSession, enabled: bool, deadline: Deadline) -> CdpRequest {
+    CdpRequest {
+        method: "Target.setAutoAttach",
+        params: json!({ "autoAttach": enabled, "waitForDebuggerOnStart": false, "flatten": true }),
+        session_id: Some(session.session_id.clone()),
+        deadline,
+    }
 }
 
 fn child_target(event: &CdpEvent) -> Option<ChildTarget> {

@@ -36,6 +36,7 @@ pub(super) fn entry(
             bounds_space: None,
             bounds: None,
             bounds_hash,
+            screen_bounds_hash: None,
         },
         capabilities: RefCapabilities {
             states: vec![],

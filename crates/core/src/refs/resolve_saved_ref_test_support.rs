@@ -140,6 +140,8 @@ impl ObservationOps for RuleAdapter {
 impl ActionOps for RuleAdapter {}
 impl InputOps for RuleAdapter {}
 impl SystemOps for RuleAdapter {
+    crate::adapter::guarded_interaction_lease!();
+
     fn supported_surfaces(&self) -> Vec<crate::SnapshotSurface> {
         vec![crate::SnapshotSurface::Window, crate::SnapshotSurface::Menu]
     }

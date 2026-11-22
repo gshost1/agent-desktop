@@ -68,7 +68,7 @@ impl Cause {
             Self::FrameNotActive => {
                 "The window manager made the window active but the application does not report it active"
             }
-            Self::BlockedByModalDialog => "A modal dialog of the application took the focus",
+            Self::BlockedByModalDialog => "A modal dialog over the window holds the focus",
         }
     }
 

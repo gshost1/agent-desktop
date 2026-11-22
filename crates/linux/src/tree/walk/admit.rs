@@ -26,11 +26,11 @@ pub(in crate::tree) fn admit_children<K: PartialEq>(
 ) -> Admission {
     let mut hits = LocatorLimitStats::default();
     let mut considered = children.len();
-    if considered > limits.max_children {
-        considered = limits.max_children;
+    if considered > limits.children.max_per_node {
+        considered = limits.children.max_per_node;
         hits.child_hits = 1;
     }
-    let edge_room = limits.max_edges.saturating_sub(edges);
+    let edge_room = limits.children.max_edges.saturating_sub(edges);
     if considered > edge_room {
         considered = edge_room;
         hits.edge_hits = 1;

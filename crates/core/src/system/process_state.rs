@@ -33,6 +33,15 @@ impl ProcessState {
             ProcessState::Unresponsive => "unresponsive",
         }
     }
+
+    pub(crate) fn names_a_gone_process(label: &str) -> bool {
+        [
+            ProcessState::Exited { code: None },
+            ProcessState::Crashed { signal_or_code: 0 },
+        ]
+        .iter()
+        .any(|state| state.label() == label)
+    }
 }
 
 #[cfg(test)]

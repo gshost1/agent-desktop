@@ -10,6 +10,33 @@ from scenarios import launch
 
 
 class LaunchScenarioTests(unittest.TestCase):
+    def test_window_listing_skips_only_nodes_whose_role_proves_them_gone(self):
+        class GoneNode:
+            @property
+            def role(self):
+                raise RuntimeError(error)
+
+        live = SimpleNamespace(role=23, bus=":1.2", path="/frame")
+        for error in (
+            "org.freedesktop.DBus.Error.UnknownMethod: No such interface org.a11y.atspi.Accessible",
+            "org.freedesktop.DBus.Error.UnknownObject: Object does not exist at path",
+            "org.freedesktop.DBus.Error.UnknownInterface: org.a11y.atspi.Accessible",
+            "org.freedesktop.DBus.Error.NoReply",
+            "permission denied",
+        ):
+            with self.subTest(error=error), patch.object(
+                launch, "app_root", return_value=SimpleNamespace(children=lambda: [GoneNode(), live])
+            ):
+                if "org.freedesktop.DBus.Error.Unknown" in error:
+                    self.assertEqual(launch._window_ids(None), ["w-1.2-frame"])
+                else:
+                    with self.assertRaisesRegex(RuntimeError, error):
+                        launch._window_ids(None)
+
+    def test_empty_window_listing_stays_empty(self):
+        with patch.object(launch, "app_root", return_value=SimpleNamespace(children=lambda: [])):
+            self.assertEqual(launch._window_ids(None), [])
+
     def test_alias_queries_require_the_independently_launched_calculator(self):
         calculator = {"name": "gnome-calculator", "pid": 123}
         for bad in (None, [], [{"name": "gnome-text-editor", "pid": 456}],

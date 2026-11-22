@@ -20,6 +20,7 @@ fn minimal_entry(role: &str) -> RefEntry {
             bounds_space: None,
             bounds: None,
             bounds_hash: None,
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec![],
@@ -198,6 +199,7 @@ fn ref_entry_full_roundtrip_preserves_all_fields() {
             bounds_space: None,
             bounds: None,
             bounds_hash: Some(0xDEAD_BEEF),
+            screen_bounds_hash: None,
         },
         capabilities: crate::RefCapabilities {
             states: vec!["focused".into()],
@@ -236,6 +238,7 @@ fn legacy_ref_entry_json_without_bounds_space_deserializes_to_none() {
         bounds: Some(bounds),
         bounds_hash: bounds.bounds_hash(),
         bounds_space: None,
+        screen_bounds_hash: None,
     };
 
     let json = serde_json::to_string(&entry).unwrap();
@@ -243,9 +246,14 @@ fn legacy_ref_entry_json_without_bounds_space_deserializes_to_none() {
         !json.contains("\"bounds_space\""),
         "a screen rectangle writes no bounds_space key, json={json}"
     );
+    assert!(
+        !json.contains("\"screen_bounds_hash\""),
+        "a screen rectangle writes no screen_bounds_hash key, json={json}"
+    );
 
     let back: RefEntry = serde_json::from_str(&json).unwrap();
     assert_eq!(back.geometry.bounds_space, None);
+    assert_eq!(back.geometry.screen_bounds_hash, None);
     assert_eq!(back.geometry.bounds, Some(bounds));
 }
 
@@ -265,9 +273,55 @@ fn window_bounds_space_round_trips_as_window() {
         json.contains("\"bounds_space\":\"window\""),
         "a window rectangle names its space as 'window', json={json}"
     );
+    assert!(
+        !json.contains("\"screen_bounds_hash\""),
+        "absent screen_bounds_hash is omitted, json={json}"
+    );
 
     let back: RefEntry = serde_json::from_str(&json).unwrap();
     assert_eq!(back.geometry.bounds_space, Some(crate::BoundsSpace::Window));
+    assert_eq!(back.geometry.screen_bounds_hash, None);
+}
+
+#[test]
+fn window_screen_bounds_hash_round_trips_and_legacy_json_deserializes_to_none() {
+    let window = crate::Rect {
+        x: 1.0,
+        y: 279.0,
+        width: 230.0,
+        height: 43.0,
+    };
+    let screen = crate::Rect {
+        x: 471.0,
+        y: 499.0,
+        width: 230.0,
+        height: 43.0,
+    };
+    let mut entry = minimal_entry("listitem");
+    entry.geometry = crate::RefGeometry {
+        bounds: Some(window),
+        bounds_hash: window.bounds_hash(),
+        bounds_space: Some(crate::BoundsSpace::Window),
+        screen_bounds_hash: screen.bounds_hash(),
+    };
+
+    let json = serde_json::to_string(&entry).unwrap();
+    assert!(
+        json.contains("\"screen_bounds_hash\":"),
+        "window entry with screen hash serializes it, json={json}"
+    );
+    let back: RefEntry = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.geometry.screen_bounds_hash, screen.bounds_hash());
+
+    let mut legacy: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let removed = legacy.as_object_mut().unwrap().remove("screen_bounds_hash");
+    assert!(removed.is_some());
+    let legacy_entry: RefEntry = serde_json::from_value(legacy).unwrap();
+    assert_eq!(
+        legacy_entry.geometry.bounds_space,
+        Some(crate::BoundsSpace::Window)
+    );
+    assert_eq!(legacy_entry.geometry.screen_bounds_hash, None);
 }
 
 #[test]
@@ -283,6 +337,7 @@ fn refmap_round_trip_keeps_bounds_on_a_rounding_boundary() {
         bounds_space: None,
         bounds: Some(bounds),
         bounds_hash: bounds.bounds_hash(),
+        screen_bounds_hash: None,
     };
     let mut map = RefMap::new();
     let ref_id = map.try_allocate(entry).unwrap();

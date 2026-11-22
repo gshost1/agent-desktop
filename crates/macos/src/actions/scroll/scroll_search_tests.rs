@@ -7,6 +7,7 @@ fn signals(bar: u64) -> ScrollSignals {
         content: Some(Some(7)),
         descendant: None,
         sampled: 2,
+        at_end: None,
     }
 }
 
@@ -30,6 +31,7 @@ fn unreadable_signals_leave_the_page_unconfirmed() {
         content: Some(None),
         descendant: None,
         sampled: 0,
+        at_end: None,
     };
     let page = settle(signals(1), || unreadable, || true);
     assert_eq!(page, ScrollPage::Unconfirmed);
@@ -42,6 +44,7 @@ fn a_spent_deadline_ends_the_reads_without_claiming_an_end() {
         content: None,
         descendant: None,
         sampled: 0,
+        at_end: None,
     };
     let page = settle(signals(1), || unreadable, || false);
     assert_eq!(page, ScrollPage::Unconfirmed);
@@ -159,6 +162,7 @@ fn without_a_readable_bar_the_frames_decide() {
         content: Some(Some(hash)),
         descendant: Some(Some(hash)),
         sampled: 4,
+        at_end: None,
     };
     assert_eq!(area_moved(frames(1), frames(2)), Some(true));
     assert_eq!(area_moved(frames(1), frames(1)), Some(false));

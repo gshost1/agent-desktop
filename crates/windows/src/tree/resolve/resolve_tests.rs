@@ -54,6 +54,7 @@ fn a_ref_whose_window_belongs_to_another_process_never_resolves_into_it() {
         bounds_space: None,
         bounds: Some(*rect),
         bounds_hash: Some(hash),
+        screen_bounds_hash: None,
     };
     entry.source.source_window_id = Some(format!("w-{}", fixture.handle()));
     entry.scope.path_is_absolute = true;

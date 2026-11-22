@@ -1,7 +1,7 @@
 use agent_desktop_core::{AdapterError, Deadline};
 
 use super::element_call::ElementCall;
-use super::remote_element::{call_function, with_element};
+use super::remote_element::{call_function, with_element, with_proven_element};
 use crate::transport::transport_error::transport_failed;
 use crate::{CdpConnection, ElementReading, ElementToken, PageSession};
 
@@ -22,6 +22,23 @@ pub fn read_element(
     deadline: Deadline,
 ) -> Result<ElementReading, AdapterError> {
     with_element(
+        connection,
+        session,
+        token,
+        deadline,
+        |connection, object| read_object(connection, session, object, deadline),
+    )
+}
+
+/// [`read_element`] right after a read that proved the token's document on
+/// this connection, such as `read_node`: the proof is not sent again.
+pub(crate) fn read_proven_element(
+    connection: &mut CdpConnection,
+    session: &PageSession,
+    token: &ElementToken,
+    deadline: Deadline,
+) -> Result<ElementReading, AdapterError> {
+    with_proven_element(
         connection,
         session,
         token,
