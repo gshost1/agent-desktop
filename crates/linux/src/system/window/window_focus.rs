@@ -1,5 +1,6 @@
 use crate::system::registry::listed_window::ListedWindow;
-use crate::system::x11::{X11Evidence, X11State, evidence};
+use crate::system::x11::X11State;
+use crate::system::x11::map::{ClientMatch, match_client};
 
 pub(super) fn active_client(state: &X11State) -> Option<(u32, u32)> {
     let X11State::Ready {
@@ -19,8 +20,15 @@ pub(super) fn reconcile_dialog(
     input_focus_in: impl FnOnce(u32) -> bool,
 ) -> Option<usize> {
     let (client, pid) = active_client(state)?;
-    let frames: Vec<_> = windows.iter().map(|window| window.frame.clone()).collect();
-    if evidence(state, &frames) != X11Evidence::Unmapped {
+    if let X11State::Ready { clients, .. } = state
+        && windows
+            .iter()
+            .any(|window| match match_client(&window.frame, clients) {
+                ClientMatch::One(id) => id == client,
+                ClientMatch::Several(ids) => ids.contains(&client),
+                ClientMatch::NoClient => false,
+            })
+    {
         return None;
     }
     let mut active = windows
