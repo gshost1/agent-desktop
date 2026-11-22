@@ -3,6 +3,7 @@ use agent_desktop_core::{WindowInfo, WindowState};
 use super::without_ghosts;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::x11::{FrameFacts, X11Client, X11State};
+use crate::tree::Extents;
 
 fn window(id: &str, title: &str, unshown: bool) -> ListedWindow {
     ListedWindow {
@@ -102,5 +103,29 @@ fn the_husk_of_a_reopened_dialog_is_dropped_and_the_live_one_stays() {
 fn a_closed_dialog_with_a_blank_name_is_dropped() {
     let state = ready(vec![client(10, "main", false)]);
     let kept = without_ghosts(vec![window("w-2", "", true)], &state);
+    assert!(kept.is_empty());
+}
+
+#[test]
+fn competing_geometry_only_husks_cannot_each_claim_the_same_client() {
+    let bounds = Extents {
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 200,
+    };
+    let mut native = client(10, "Native", false);
+    native.bounds = Some(bounds);
+    let mut first = window("w-first", "First", true);
+    first.frame.size_identity = true;
+    first.frame.extents = Some(bounds);
+    let mut second = first.clone();
+    second.info.id = "w-second".into();
+    second.frame.title = "Second".into();
+    assert_eq!(
+        crate::system::x11::map::match_client(&first.frame, std::slice::from_ref(&native)),
+        crate::system::x11::map::ClientMatch::One(10)
+    );
+    let kept = without_ghosts(vec![first, second], &ready(vec![native]));
     assert!(kept.is_empty());
 }
