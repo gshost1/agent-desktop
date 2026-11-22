@@ -100,74 +100,111 @@ impl Text {
     }
 }
 
-struct EditableText(Arc<Mutex<String>>);
+struct EditableText(Arc<Mutex<String>>, bool);
 
 #[zbus::interface(name = "org.a11y.atspi.EditableText")]
 impl EditableText {
-    fn insert_text(&self, position: i32, text: &str, length: i32) -> bool {
+    fn insert_text(
+        &self,
+        position: i32,
+        text: &str,
+        length: i32,
+    ) -> Result<bool, zbus::fdo::Error> {
         let mut value = self.0.lock().unwrap();
         assert_eq!(position as usize, value.chars().count());
         assert_eq!(length as usize, text.len());
         value.push_str(text);
-        true
+        if self.1 {
+            value.push('!');
+            return Err(zbus::fdo::Error::Failed(
+                "reply failed after insertion".into(),
+            ));
+        }
+        Ok(true)
     }
 }
 
 #[test]
 fn document_ref_dispatch_inserts_into_focused_child_and_reports_real_target() {
     for (role, expected) in [(73, "paragraph"), (83, "heading")] {
-        let value = Arc::new(Mutex::new("before".to_owned()));
-        let (near, far) = std::os::unix::net::UnixStream::pair().unwrap();
-        let (client, server) = zbus::block_on(futures_lite::future::zip(
-            Builder::async_io_unix_stream(near).p2p().build(),
-            Builder::async_io_unix_stream(far)
-                .server(zbus::Guid::generate())
-                .unwrap()
-                .p2p()
-                .serve_at(
-                    "/document",
-                    Accessible {
-                        role: 94,
-                        focused: false,
-                        children: vec!["/child"],
-                    },
-                )
-                .unwrap()
-                .serve_at(
-                    "/child",
-                    Accessible {
-                        role,
-                        focused: true,
-                        children: vec![],
-                    },
-                )
-                .unwrap()
-                .serve_at("/child", Text(value.clone()))
-                .unwrap()
-                .serve_at("/child", EditableText(value.clone()))
-                .unwrap()
-                .build(),
-        ));
-        let _server = server.unwrap();
-        let bus = connected(client.unwrap());
-        let mut element = AtspiElement::new(OWNER, "/document", 7);
-        element.set_ancestry(crate::tree::element::ancestry::of_root(&AtspiElement::new(
-            OWNER, "/frame", 7,
-        )));
-        element.set_resolved_role("document".into());
-        let handle = element.into_native_handle();
-        let lease = InteractionLease::guarded(Deadline::after(5_000).unwrap(), ()).unwrap();
-        let result = execute_action(
-            &bus,
-            &handle,
-            ActionRequest::headless(Action::TypeText(" added".into())),
-            &lease,
-        )
-        .unwrap();
-        assert_eq!(*value.lock().unwrap(), "before added");
+        let (value, result) = dispatch(role, false);
+        assert_eq!(value, "before added");
         assert_eq!(
-            result.details.unwrap()["text_input_target"],
+            result.unwrap().details.unwrap()["text_input_target"],
             serde_json::json!({"role": expected, "path": "/child"})
         );
     }
+}
+
+#[test]
+fn document_dispatch_failure_after_delivery_reports_real_target() {
+    let (value, result) = dispatch(73, true);
+    assert_eq!(value, "before added!");
+    let error = result.unwrap_err();
+    assert_ne!(
+        error.disposition,
+        agent_desktop_core::DeliverySemantics::not_delivered()
+    );
+    assert_eq!(
+        error.details.unwrap()["text_input_target"],
+        serde_json::json!({"role": "paragraph", "path": "/child"})
+    );
+}
+
+fn dispatch(
+    role: u32,
+    corrupt: bool,
+) -> (
+    String,
+    Result<agent_desktop_core::ActionResult, agent_desktop_core::AdapterError>,
+) {
+    let value = Arc::new(Mutex::new("before".to_owned()));
+    let (near, far) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (client, server) = zbus::block_on(futures_lite::future::zip(
+        Builder::async_io_unix_stream(near).p2p().build(),
+        Builder::async_io_unix_stream(far)
+            .server(zbus::Guid::generate())
+            .unwrap()
+            .p2p()
+            .serve_at(
+                "/document",
+                Accessible {
+                    role: 94,
+                    focused: false,
+                    children: vec!["/child"],
+                },
+            )
+            .unwrap()
+            .serve_at(
+                "/child",
+                Accessible {
+                    role,
+                    focused: true,
+                    children: vec![],
+                },
+            )
+            .unwrap()
+            .serve_at("/child", Text(value.clone()))
+            .unwrap()
+            .serve_at("/child", EditableText(value.clone(), corrupt))
+            .unwrap()
+            .build(),
+    ));
+    let _server = server.unwrap();
+    let bus = connected(client.unwrap());
+    let mut element = AtspiElement::new(OWNER, "/document", 7);
+    element.set_ancestry(crate::tree::element::ancestry::of_root(&AtspiElement::new(
+        OWNER, "/frame", 7,
+    )));
+    element.set_resolved_role("document".into());
+    let handle = element.into_native_handle();
+    let lease = InteractionLease::guarded(Deadline::after(5_000).unwrap(), ()).unwrap();
+    let result = execute_action(
+        &bus,
+        &handle,
+        ActionRequest::headless(Action::TypeText(" added".into())),
+        &lease,
+    );
+    let content = value.lock().unwrap().clone();
+    (content, result)
 }

@@ -225,7 +225,14 @@ pub(crate) fn execute_action(
                 crate::system::process::proc_stat::is_stopped,
             )
         }),
-    }?;
+    }
+    .map_err(|mut error| {
+        if let Some(input) = &input_handle {
+            error.details.get_or_insert_with(|| json!({}))["text_input_target"] =
+                input.details.clone();
+        }
+        error
+    })?;
     if let Some(input) = input_handle {
         result.details.get_or_insert_with(|| json!({}))["text_input_target"] = input.details;
     }
