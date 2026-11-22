@@ -82,6 +82,14 @@ fn every_command_answers_the_same_bytes_and_status_in_both_modes() {
                 assert_eq!(home.served(pid), before, "{args:?} needs a missing grant");
                 continue;
             }
+            if matches!(args[0], "status" | "permissions") {
+                assert_eq!(
+                    home.served(pid),
+                    before,
+                    "{args:?} reports the caller's grants, so it runs in the calling process"
+                );
+                continue;
+            }
         }
         assert!(
             home.served(pid) == before + 1 || is_permission_rerun(&through_daemon),
