@@ -1,4 +1,6 @@
-use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, WindowFilter, WindowInfo};
+use agent_desktop_core::{
+    AdapterError, Deadline, DeliverySemantics, WindowFilter, WindowInfo, with_app_name_suggestions,
+};
 use serde_json::json;
 
 use super::window_order::front_to_back;
@@ -90,7 +92,11 @@ pub(crate) fn list_windows(
     )?;
     let stopped = match filter.app.as_deref() {
         Some(query) => {
-            require_known_target(&registry, select, query, find_running)?;
+            require_known_target(&registry, select, query, find_running).map_err(|error| {
+                with_app_name_suggestions(error, query, deadline, |query, deadline| {
+                    crate::system::context::inventory::query(bus, query, deadline)
+                })
+            })?;
             stopped_target(&registry, select, proc_stat::is_stopped)
         }
         None => None,
