@@ -10,6 +10,39 @@ use crate::system::window::window_test_support::{
     pass as inventory_pass, state as inventory_state,
 };
 use crate::system::x11::{FrameExtents, FrameFacts, X11Client, X11State};
+use crate::tree::Extents;
+
+#[test]
+fn geometry_focus_does_not_also_run_dialog_reconciliation() {
+    let bounds = Extents {
+        x: 12,
+        y: 34,
+        width: 500,
+        height: 200,
+    };
+    let mut dialog = window("Question", true, true);
+    dialog.frame.extents = Some(bounds);
+    let mut native = client(2, "native name");
+    native.bounds = Some(bounds);
+    let state = X11State::Ready {
+        active: Some(2),
+        clients: vec![native],
+    };
+    let mut pass = pass_over_with_menu(
+        vec![dialog],
+        Vec::new(),
+        Vec::new(),
+        &state,
+        |_| Ok(false),
+        |_| true,
+    );
+    assert_eq!(pass.focused, Some(0));
+    assert_eq!(
+        finish_listing(&mut pass, &state, None, |_| panic!("must not reconcile")),
+        Some(0)
+    );
+    assert!(pass.windows[0].info.state.is_focused);
+}
 
 fn window(title: &str, active: bool, modal: bool) -> ListedWindow {
     ListedWindow {

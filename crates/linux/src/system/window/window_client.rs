@@ -3,7 +3,7 @@ use agent_desktop_core::WindowInfo;
 use crate::system::focus::focus_cause::Cause;
 use crate::system::x11::FrameFacts;
 use crate::system::x11::X11Client;
-use crate::system::x11::map::{ClientMatch, match_client};
+use crate::system::x11::map::{ClientMatch, has_title_match, match_client};
 use crate::system::x11::twin_tie::{Twins, broken_tie};
 use crate::tree::Extents;
 
@@ -41,11 +41,9 @@ pub(crate) fn client_of(
     clients: &[X11Client],
     active_client: impl FnOnce() -> Option<u32>,
 ) -> Result<u32, Cause> {
-    let mut found = match_client(&facts_of(win, false), clients);
-    if matches!(found, ClientMatch::Several(_)) {
-        found = match_client(&facts_of(win, world.global_position()), clients);
-    }
+    let mut found = match_client(&facts_of(win, world.global_position()), clients);
     if let ClientMatch::Several(ids) = &found
+        && has_title_match(&facts_of(win, world.global_position()), clients)
         && let Some(twins) = world.twins(win)
         && let Some(id) = broken_tie(ids, active_client(), &twins)
     {
