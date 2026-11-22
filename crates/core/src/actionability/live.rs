@@ -191,6 +191,7 @@ fn live_evidence(live: &LiveElement) -> LocatorEvidence {
         identifiers: live.identity.identifiers.clone(),
         states: LocatorField::Absent,
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             bounds: LocatorField::Absent,
             window_bounds: LocatorField::Absent,
             available_actions: LocatorField::Known(live.available_actions.clone()),

@@ -8,6 +8,7 @@ pub(crate) struct ObservedRead {
     pub(crate) node: RawNode,
     pub(crate) label: LabelOutcome,
     pub(crate) value: ValueRead,
+    pub(crate) vertical_bar_range: Option<Result<bool, ()>>,
     /// The rectangle a ref can store as evidence and the frame it is measured
     /// in, when the node's own screen rectangle is not provable. `None` means
     /// the node's own extents are screen evidence.
@@ -22,6 +23,7 @@ impl ObservedRead {
             label: LabelOutcome::Unlabelled,
             value: ValueRead::absent(),
             evidence_bounds: None,
+            vertical_bar_range: None,
         }
     }
 
@@ -33,6 +35,7 @@ impl ObservedRead {
             label: LabelOutcome::Unlabelled,
             value: ValueRead::absent(),
             evidence_bounds: None,
+            vertical_bar_range: None,
         }
     }
 }

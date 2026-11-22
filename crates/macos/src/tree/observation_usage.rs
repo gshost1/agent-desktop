@@ -7,6 +7,7 @@ pub(crate) struct ObservationUsage {
     nodes: usize,
     edges: usize,
     text_bytes: usize,
+    pub(crate) contents_index: bool,
     pub(crate) selection_verdicts: SelectionVerdicts,
 }
 
@@ -21,6 +22,7 @@ impl ObservationUsage {
             nodes: 0,
             edges: 0,
             text_bytes: 0,
+            contents_index: false,
             selection_verdicts: SelectionVerdicts::default(),
         }
     }

@@ -131,11 +131,67 @@ Each line, in order:
 - Bidirectional marks (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069) are dropped. Text matching in `find`, `wait --text` and selectors already ignores them. A value copied from a line matches once its `\"` and `\\` escapes are undone; a value with neither matches as printed.
 - Every node of the presented tree has a line, in the depth-first order refs are allocated in, including nodes without a ref. `-i`, `--compact`, `--skeleton`, `--max-depth` and `--root` shape the tree as before; `--lines` only changes how it prints.
 - `available_actions`, `native_id`, `subrole`, `role_description`, `dom_classes` and `name_source` are not printed. Run without `--lines` to read them.
+- `data.contents`, when present, becomes an array of lines too (see [Snapshot contents](#snapshot-contents)).
 - Every other `data` field keeps its meaning and value, including `snapshot_id`, `ref_count`, `complete`, `truncated`, `nodes_observed`, `refmap_capped`, `identity_unproven`, `matched_selector` and `after_action`. Refs are allocated and saved exactly as without the flag, and a trace records the tree.
 - `jq -r '.data.lines[]'` prints the bare lines.
 - A tree that cannot be rendered stays in `data.tree`, and `data.lines_error` gives the reason.
 - A tree that cannot be rendered stays `data.tree`, and the envelope stays on one line, so a delivered action's report is never replaced by an error. Check for `data.lines` before reading it.
 - `agent-desktop mcp --lines` applies the flag to every call the server runs. A result whose top-level `data` holds `lines` carries the envelope without `lines` as its first text block and the lines, joined by line feeds, as a second text block. `structuredContent` keeps the whole envelope. A `batch` result keeps each entry's lines inside the envelope text.
+
+## Snapshot contents
+
+A snapshot whose tree holds 80 or more nodes, including a `--surface` snapshot,
+carries `data.contents`, a short index of what the tree holds and where, so a read
+that stops early still shows
+which lists exist, how much of each is loaded and what comes after them. The
+key sorts before `lines` and `tree`, so it prints first. A `--root` drill omits it,
+and so does a tree with nothing to index. `snapshot --since` carries it when it
+returns the whole tree in place of a diff.
+
+```json
+{ "data": { "contents": {
+    "roles": { "button": 62, "cell": 6, "radiobutton": 5, "treeitem": 6 },
+    "regions": [
+      { "line": 29, "role": "outline", "name": "item-list", "ref": "@s8f3k2p9:e28", "items": 6, "partial": true },
+      { "line": 51, "role": "tablist", "name": "tab-view" },
+      { "line": 75, "role": "scrollarea", "name": "lazy-list", "ref": "@s8f3k2p9:e73", "items": 12, "partial": true }
+    ] } } }
+```
+
+- `roles` counts the nodes that carry a ref, for the four commonest roles, leaving
+  out structure no one acts on (`column`, `handle`, `scrollarea`, `scrollbar`,
+  `window`). It is left out when no node carries a ref.
+- `regions` lists, largest first by `items` (bars count as zero), with ties by `line`, each `list`, `listbox`, `table`, `outline`, `grid`
+  and `browser`, each `scrollarea` whose content reads as a list (five or more
+  items that are not text, 80 % of them one role) and does not wrap one of those, and each `toolbar` and
+  `tablist`. Non-partial lists with fewer than three items are omitted. At most six are listed; `more_regions` counts the remaining eligible regions.
+- `line` is the region node's index in tree order, which is its index in
+  `data.lines`. `name` (shortened to 32 characters) and `ref` appear when the node
+  has them.
+- `items` is the number of items the list holds in this snapshot, or the
+  `children_count` its line prints when a depth cut left its children out. A list
+  that loads rows only near its viewport holds only those, so `items` can be far
+  below the list's length.
+- `partial: true` means the list may hold items this snapshot does not show: the
+  platform reported that the list or its own scroll container scrolls vertically
+  (its content is taller than its viewport), or the list shows some rows and
+  reports others as not showing, or the snapshot cut its
+  subtree (`--max-depth`, `--skeleton`, the observation budget or the refmap cap).
+  On Linux, mixed row visibility is evidence only when the list itself is showing
+  and no scrollbar range was established; a known scrollbar range takes precedence.
+  Only item roles count, not headers or scrollbars. A list inside a scroll area
+  must have the same positive extents as its nearest scroll area for row visibility
+  to establish overflow; clipping by an outer scrolling page is not list overflow.
+  A row the toolkit reports as not showing beside showing rows is an item the
+  view does not show. Unknown scroll evidence never claims partial. A list inherits its nearest scroll
+  area only when that area has exactly one list descendant, through at most three
+  non-list wrappers, each with one content child
+  (scrollbars excluded).
+- With `--lines`, `contents` is an array of lines: `roles: button 62, cell 6, ...`,
+  then one line per region such as
+  `line 75: @s8f3k2p9:e73 scrollarea "lazy-list" items=12 partial`, and
+  `+N more regions` when some were left out.
+- `tests/fixtures/snapshot-contents.json` pins the shape.
 
 ## Available actions
 

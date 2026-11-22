@@ -26,12 +26,16 @@ impl LocatorTraversal {
         context: crate::tree::TreeBuildContext,
         deadline: Instant,
     ) -> Self {
+        let mut usage = crate::tree::observation_usage::ObservationUsage::new(request.budget);
+        usage.contents_index = crate::tree::properties::scroll_evidence::reads_contents_index(
+            request.observation_mode,
+        );
         Self {
             request: *request,
             context,
             deadline,
             arena: TraversalArena::new(),
-            usage: crate::tree::observation_usage::ObservationUsage::new(request.budget),
+            usage,
             deferred: std::collections::VecDeque::new(),
         }
     }

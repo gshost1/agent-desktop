@@ -82,6 +82,7 @@ pub(crate) fn unknown() -> LocatorEvidence {
         identifiers: IdentifierEvidence::unknown(),
         states: LocatorField::Unknown,
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             window_bounds: LocatorField::Absent,
             bounds: LocatorField::Unknown,
             available_actions: LocatorField::Unknown,

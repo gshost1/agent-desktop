@@ -186,6 +186,7 @@ pub(crate) fn evidence(
         ),
         states: LocatorField::Absent,
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             window_bounds: LocatorField::Absent,
             bounds: bounds.map_or(LocatorField::Absent, LocatorField::Known),
             available_actions: LocatorField::Absent,

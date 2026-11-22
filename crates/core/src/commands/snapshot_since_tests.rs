@@ -267,3 +267,22 @@ fn since_refuses_root_and_wait_selectors() {
 
 #[path = "snapshot_since_fixture_tests.rs"]
 mod fixture_tests;
+
+#[test]
+fn a_whole_tree_returned_in_place_of_a_diff_carries_its_contents() {
+    let _home = HomeGuard::new();
+    let rows: Vec<AccessibilityNode> = (0..85)
+        .map(|i| node("button", &format!("Row {i}")))
+        .collect();
+    let adapter = ChangingWindow::new(rows);
+    let context = CommandContext::default();
+    let first = crate::commands::snapshot::execute(args(), &adapter, &context).unwrap();
+    assert!(first.get("contents").is_some());
+    let interactive = SnapshotArgs {
+        interactive_only: true,
+        ..args()
+    };
+    let data = execute_since(interactive, &snapshot_id(&first), &adapter, &context).unwrap();
+    assert_eq!(data["diff"]["status"], "not_comparable");
+    assert!(data["contents"].is_object(), "{data}");
+}
