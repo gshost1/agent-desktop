@@ -24,7 +24,9 @@ fn label_slot(name: &Field<String>, label: &LabelOutcome) -> SlotStatus {
     }
     match label {
         LabelOutcome::Text(_) => SlotStatus::Certain,
-        LabelOutcome::Unlabelled | LabelOutcome::WrapperDescription(_) => SlotStatus::Suppressed,
+        LabelOutcome::Unlabelled
+        | LabelOutcome::WrapperDescription(_)
+        | LabelOutcome::WrapperUnread => SlotStatus::Suppressed,
         LabelOutcome::Failed => SlotStatus::Uncertain,
     }
 }
@@ -64,6 +66,7 @@ pub(crate) fn name_fields(
     label: &LabelOutcome,
 ) -> (LocatorField<String>, LocatorField<String>) {
     let (description, description_status) = match label {
+        LabelOutcome::WrapperUnread => (None, SlotStatus::Uncertain),
         LabelOutcome::WrapperDescription(text) if properties.description.is_blank() => {
             (Some(text.clone()), SlotStatus::Certain)
         }
@@ -75,6 +78,7 @@ pub(crate) fn name_fields(
             LabelOutcome::Text(text) => Some(text.clone()),
             LabelOutcome::Unlabelled
             | LabelOutcome::WrapperDescription(_)
+            | LabelOutcome::WrapperUnread
             | LabelOutcome::Failed => None,
         },
         description,

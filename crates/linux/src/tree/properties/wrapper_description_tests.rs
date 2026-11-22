@@ -2,9 +2,10 @@ use super::{needs_description, read_wrapper_description, select_description};
 use crate::tree::live::test_support::read_of;
 use crate::tree::properties::read_purpose::ReadPurpose;
 use crate::tree::vocabulary::label_read::read_label_if_needed;
-use crate::tree::vocabulary::role_numbers::{FILLER, PANEL, PUSH_BUTTON, TOGGLE_BUTTON};
-use crate::tree::walk::walker_expand::read_observed;
+use crate::tree::vocabulary::role_numbers::{PANEL, PUSH_BUTTON, TOGGLE_BUTTON};
+use crate::tree::walk::walker_expand::{LevelReader, read_observed};
 use crate::tree::{AtspiElement, Field, LabelOutcome, resolve_vocabulary};
+use agent_desktop_core::Deadline;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use zbus::connection::Builder;
 use zbus::zvariant::OwnedObjectPath;
@@ -12,6 +13,7 @@ use zbus::zvariant::OwnedObjectPath;
 struct Child {
     labelled: bool,
     relation_reads: AtomicUsize,
+    parent_reads: AtomicUsize,
 }
 
 #[zbus::interface(name = "org.a11y.atspi.Accessible")]
@@ -60,6 +62,7 @@ impl Child {
     }
     #[zbus(property)]
     fn parent(&self) -> (String, OwnedObjectPath) {
+        self.parent_reads.fetch_add(1, Ordering::Relaxed);
         (":1.1".into(), "/parent".try_into().unwrap())
     }
 }
@@ -69,12 +72,17 @@ struct Parent {
     name: &'static str,
     description: &'static str,
     children: i32,
+    role_reads: AtomicUsize,
 }
 
 #[zbus::interface(name = "org.a11y.atspi.Accessible")]
 impl Parent {
     fn get_role(&self) -> u32 {
+        self.role_reads.fetch_add(1, Ordering::Relaxed);
         self.role
+    }
+    fn get_children(&self) -> Vec<(String, OwnedObjectPath)> {
+        vec![(":1.1".into(), "/child".try_into().unwrap())]
     }
     #[zbus(property)]
     fn name(&self) -> &str {
@@ -96,6 +104,7 @@ fn wrapper() -> Parent {
         name: "",
         description: "Paint smooth strokes",
         children: 1,
+        role_reads: AtomicUsize::new(0),
     }
 }
 
@@ -110,6 +119,7 @@ fn connection(parent: Option<Parent>, labelled: bool) -> (zbus::Connection, zbus
             Child {
                 labelled,
                 relation_reads: AtomicUsize::new(0),
+                parent_reads: AtomicUsize::new(0),
             },
         )
         .unwrap()
@@ -194,10 +204,8 @@ fn wrapper_description_requires_one_unnamed_noninteractive_container() {
     }
     assert_eq!(
         select_description(
-            &Field::Present(FILLER),
             &Field::Present(String::new()),
             Field::Present("Tooltip".into()),
-            &Field::Present(1)
         ),
         Field::Present("Tooltip".into())
     );
@@ -211,8 +219,8 @@ fn own_identity_and_explicit_labels_suppress_wrapper_reads() {
         node.properties.description = Field::Present(description.into());
         assert!(!needs_description(&node));
         assert_eq!(
-            zbus::block_on(read_wrapper_description(&connection, &node)).unwrap(),
-            None
+            zbus::block_on(read_wrapper_description(&connection, &node, None)).unwrap(),
+            Field::Absent
         );
         assert_eq!(
             node.properties.description.present().map(String::as_str),
@@ -235,35 +243,25 @@ fn optional_wrapper_failure_keeps_own_description_and_bus_loss_propagates() {
     let mut node = read_of(TOGGLE_BUTTON, "", &["click"]).node;
     node.element = AtspiElement::new(":1.1", "/child", 1);
     let label = zbus::block_on(read_label_if_needed(&client, &node)).unwrap();
-    assert_eq!(label, LabelOutcome::Unlabelled);
+    assert_eq!(label, LabelOutcome::WrapperUnread);
     assert!(node.properties.description.is_blank());
     assert!(!node.properties.description.is_failed());
     let vocabulary = resolve_vocabulary(&node, &label, false);
-    assert_eq!(
-        vocabulary.description,
-        agent_desktop_core::LocatorField::Absent
-    );
+    assert_eq!(vocabulary.name, agent_desktop_core::LocatorField::Unknown);
     node.properties.description = Field::Present(String::new());
     let lost = crate::tree::live::test_support::closed_connection();
-    let error = zbus::block_on(read_wrapper_description(&lost, &node)).unwrap_err();
+    let error = zbus::block_on(read_wrapper_description(&lost, &node, None)).unwrap_err();
     assert_eq!(error.code, agent_desktop_core::ErrorCode::Internal);
     assert_eq!(
         select_description(
-            &Field::Failed("unread role".into()),
-            &Field::Present(String::new()),
+            &Field::Failed("unread name".into()),
             Field::Present("Tooltip".into()),
-            &Field::Present(1)
         ),
-        Field::Absent
+        Field::Failed("Wrapper text unreadable".into())
     );
     assert_eq!(
-        select_description(
-            &Field::Present(PANEL),
-            &Field::Absent,
-            Field::Present("Tooltip".into()),
-            &Field::Present(1)
-        ),
-        Field::Absent
+        select_description(&Field::Absent, Field::Present("Tooltip".into()),),
+        Field::Present("Tooltip".into())
     );
 }
 
@@ -287,4 +285,36 @@ fn wrapper_fallback_reads_labelled_by_only_once() {
         interface.get().await.relation_reads.load(Ordering::Relaxed)
     });
     assert_eq!(reads, 1);
+}
+
+#[test]
+fn walked_child_reuses_parent_without_parent_calls() {
+    let (client, server) = connection(Some(wrapper()), false);
+    let root = AtspiElement::new(":1.1", "/parent", 1);
+    let mut reader = LevelReader::new(
+        &client,
+        &root,
+        &Default::default(),
+        Deadline::standard().unwrap(),
+    );
+    let parents = reader.expand(&[root]).unwrap();
+    let children = reader.expand(&parents[0].children).unwrap();
+    assert_eq!(
+        children[0].payload.label,
+        LabelOutcome::WrapperDescription("Paint smooth strokes".into())
+    );
+    zbus::block_on(async {
+        let child = server
+            .object_server()
+            .interface::<_, Child>("/child")
+            .await
+            .unwrap();
+        assert_eq!(child.get().await.parent_reads.load(Ordering::Relaxed), 0);
+        let parent = server
+            .object_server()
+            .interface::<_, Parent>("/parent")
+            .await
+            .unwrap();
+        assert_eq!(parent.get().await.role_reads.load(Ordering::Relaxed), 1);
+    });
 }

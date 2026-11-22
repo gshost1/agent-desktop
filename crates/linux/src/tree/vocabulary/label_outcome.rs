@@ -7,6 +7,8 @@ pub(crate) enum LabelOutcome {
     Text(String),
     /// An unlabelled control's sole-child wrapper supplies its description.
     WrapperDescription(String),
+    /// The unlabelled control's wrapper could not be read.
+    WrapperUnread,
     /// The relation or the target's name could not be read.
     Failed,
 }

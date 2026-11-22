@@ -3,7 +3,8 @@ use futures_util::future::join;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
-use super::node_read::{call, deserialize, string_value};
+use super::liveness::Liveness;
+use super::node_read::{call, deserialize, get_one, string_value};
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
 use crate::tree::vocabulary::role_numbers::{FILLER, PANEL};
 use crate::tree::vocabulary::roles::role_of;
@@ -15,31 +16,22 @@ fn optional<T>(result: Result<T, zbus::Error>) -> Result<Field<T>, AdapterError>
         Err(error) if crate::system::is_connection_failure(&error) => {
             Err(crate::system::classify(&error))
         }
-        Err(_) => Ok(Field::Absent),
+        Err(error) => Ok(Field::Failed(error.to_string())),
     }
 }
 
 async fn read_text(
     connection: &Connection,
     element: &AtspiElement,
-    property: &str,
+    property: &'static str,
+    liveness: Liveness,
 ) -> Result<Field<String>, AdapterError> {
-    let reply = call(
-        connection,
-        element,
-        PROPERTIES_INTERFACE,
-        "Get",
-        &(ACCESSIBLE_INTERFACE, property),
-    )
-    .await;
-    Ok(match optional(deserialize::<OwnedValue>(reply))? {
-        Field::Present(value) => string_value(&value),
-        _ => Field::Absent,
-    })
+    get_one(connection, element, property, string_value, liveness).await
 }
 
 fn needs_description(node: &RawNode) -> bool {
-    node.properties.name.is_blank()
+    !node.element.in_web_document()
+        && node.properties.name.is_blank()
         && node.properties.description.is_blank()
         && node.traits.role.present().is_some_and(|number| {
             is_interactive_role(
@@ -81,6 +73,7 @@ async fn read_description(
 ) -> Result<Field<String>, AdapterError> {
     let parent = match optional(parent(connection, element).await)? {
         Field::Present(Some(parent)) => parent,
+        Field::Failed(detail) => return Ok(Field::Failed(detail)),
         _ => return Ok(Field::Absent),
     };
     let (role, children) = join(
@@ -94,47 +87,71 @@ async fn read_description(
         ),
     )
     .await;
-    let role = optional(deserialize::<u32>(role))?;
+    let role = deserialize::<u32>(role);
+    let liveness = Liveness::of(role.as_ref().err());
+    let role = optional(role)?;
     let children = optional(
         deserialize::<OwnedValue>(children).and_then(|value| value.try_into().map_err(Into::into)),
     )?;
+    if role.is_failed() || children.is_failed() {
+        return Ok(Field::Failed("Wrapper prerequisites unreadable".into()));
+    }
     if !matches!(role.present(), Some(&PANEL | &FILLER)) || children.present() != Some(&1) {
         return Ok(Field::Absent);
     }
     let (name, description) = join(
-        read_text(connection, &parent, "Name"),
-        read_text(connection, &parent, "Description"),
+        read_text(connection, &parent, "Name", liveness),
+        read_text(connection, &parent, "Description", liveness),
     )
     .await;
-    Ok(select_description(&role, &name?, description?, &children))
+    Ok(select_description(&name?, description?))
 }
 
-fn select_description(
-    role: &Field<u32>,
-    name: &Field<String>,
-    description: Field<String>,
-    children: &Field<i32>,
-) -> Field<String> {
-    if matches!(role.present(), Some(&PANEL | &FILLER))
-        && name.present().is_some_and(|name| name.trim().is_empty())
-        && children.present() == Some(&1)
-    {
-        return description;
+fn select_description(name: &Field<String>, description: Field<String>) -> Field<String> {
+    if name.is_failed() || description.is_failed() {
+        return Field::Failed("Wrapper text unreadable".into());
     }
-    Field::Absent
+    if name.is_blank() && description.non_blank().is_some() {
+        description
+    } else {
+        Field::Absent
+    }
+}
+
+pub(in crate::tree) fn parent_summary(node: &RawNode) -> Field<String> {
+    if node.traits.role.is_failed()
+        || node.properties.name.is_failed()
+        || node.properties.description.is_failed()
+        || node.children.is_failed()
+    {
+        return Field::Failed("Wrapper prerequisites unreadable".into());
+    }
+    if !matches!(node.traits.role.present(), Some(&PANEL | &FILLER))
+        || node.children.present().map(Vec::len) != Some(1)
+    {
+        return Field::Absent;
+    }
+    select_description(&node.properties.name, node.properties.description.clone())
 }
 
 pub(in crate::tree) async fn read_wrapper_description(
     connection: &Connection,
     node: &RawNode,
-) -> Result<Option<String>, AdapterError> {
+    summary: Option<&Field<String>>,
+) -> Result<Field<String>, AdapterError> {
     if !needs_description(node) {
-        return Ok(None);
+        return Ok(Field::Absent);
     }
-    let description = read_description(connection, &node.element).await?;
-    Ok(description.non_blank().cloned())
+    match summary {
+        Some(description) => Ok(description.clone()),
+        None => read_description(connection, &node.element).await,
+    }
 }
 
 #[cfg(test)]
 #[path = "wrapper_description_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "wrapper_summary_tests.rs"]
+mod summary_tests;

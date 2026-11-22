@@ -90,9 +90,18 @@ pub(crate) fn needs_label(node: &RawNode) -> bool {
 }
 
 /// Reads the label and optional wrapper description for an unnamed control.
+#[cfg(test)]
 pub(crate) async fn read_label_if_needed(
     connection: &Connection,
     node: &RawNode,
+) -> Result<LabelOutcome, AdapterError> {
+    read_label_with_parent(connection, node, None).await
+}
+
+pub(in crate::tree) async fn read_label_with_parent(
+    connection: &Connection,
+    node: &RawNode,
+    summary: Option<&Field<String>>,
 ) -> Result<LabelOutcome, AdapterError> {
     if !needs_label(node) {
         return Ok(LabelOutcome::Unlabelled);
@@ -102,8 +111,12 @@ pub(crate) async fn read_label_if_needed(
         label => Ok(label),
     }?;
     if label == LabelOutcome::Unlabelled {
-        if let Some(description) = read_wrapper_description(connection, node).await? {
-            return Ok(LabelOutcome::WrapperDescription(description));
+        match read_wrapper_description(connection, node, summary).await? {
+            Field::Present(description) => {
+                return Ok(LabelOutcome::WrapperDescription(description));
+            }
+            Field::Failed(_) => return Ok(LabelOutcome::WrapperUnread),
+            Field::Absent => {}
         }
     }
     Ok(label)
