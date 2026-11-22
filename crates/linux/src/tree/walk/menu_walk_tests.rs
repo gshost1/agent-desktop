@@ -1,4 +1,4 @@
-use agent_desktop_core::{ObservationRequest, SnapshotSurface, adapter::TreeOptions};
+use agent_desktop_core::{ObservationRequest, SnapshotSurface, TreeOptions};
 
 use super::*;
 use crate::tree::Field;
@@ -7,6 +7,14 @@ use crate::tree::vocabulary::role_numbers::{FRAME, MENU_ITEM};
 use crate::tree::vocabulary::state_bits::VISIBLE;
 
 fn fixture(opener: Field<Vec<u32>>, item: Option<u32>) -> (Walk<ObservedRead>, Vec<u32>) {
+    fixture_under(MENU_BAR, opener, item)
+}
+
+fn fixture_under(
+    parent_role: u32,
+    opener: Field<Vec<u32>>,
+    item: Option<u32>,
+) -> (Walk<ObservedRead>, Vec<u32>) {
     let mut visited = Vec::new();
     let walk = walk_menu_levels(
         0,
@@ -19,7 +27,7 @@ fn fixture(opener: Field<Vec<u32>>, item: Option<u32>) -> (Walk<ObservedRead>, V
                 .map(|key| {
                     let (role, name, children) = match *key {
                         0 => (FRAME, "Window", vec![1]),
-                        1 => (MENU_BAR, "Menu bar", vec![2, 3]),
+                        1 => (parent_role, "Menu bar", vec![2, 3]),
                         2 => (MENU, "File", vec![4, 5]),
                         3 => (MENU_ITEM, "Edit", vec![6]),
                         4 => (MENU_ITEM, "Open", Vec::new()),
@@ -108,9 +116,21 @@ fn unreadable_menu_state_keeps_its_descendants() {
 }
 
 #[test]
+fn empty_menu_state_keeps_its_descendants() {
+    let (_, visited) = fixture(Field::Present(Vec::new()), Some(0));
+    assert_eq!(visited, [0, 1, 2, 3, 4, 5, 7]);
+}
+
+#[test]
 fn unreadable_child_state_keeps_the_menu_descendants() {
     let (_, visited) = fixture(Field::Present(vec![1 << SHOWING, 0]), None);
     assert_eq!(visited, [0, 1, 2, 3, 4, 5, 7]);
+}
+
+#[test]
+fn menus_outside_a_menubar_keep_their_descendants() {
+    let (_, visited) = fixture_under(FRAME, Field::Present(vec![1 << SHOWING, 0]), Some(0));
+    assert_eq!(visited, [0, 1, 2, 3, 4, 5, 6, 7]);
 }
 
 #[test]
