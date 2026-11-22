@@ -1,5 +1,6 @@
 use super::*;
 use crate::system::display::{display_cause::Cause, display_unavailable::Unavailable};
+use crate::tree::Extents;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -43,19 +44,61 @@ fn popup(id: u32, x: i32) -> PopupWindow {
 fn only_unaccounted_popups_are_pending() {
     let first = popup(1, 10);
     let second = popup(2, 200);
-    let item = Extents {
-        x: 20,
-        y: 30,
-        width: 20,
-        height: 20,
-    };
     assert!(!unaccounted(&[], &[]));
     assert!(unaccounted(&[first], &[]));
-    assert!(!unaccounted(&[first], &[item]));
-    assert!(unaccounted(&[first, second], &[item]));
-    assert!(!unaccounted(&[first, second], &[item, second.bounds]));
-    assert!(unaccounted(&[first], &[Extents { width: 0, ..item }]));
-    assert!(unaccounted(&[first], &[Extents { x: 0, ..item }]));
+    assert!(!unaccounted(&[first], &[first.id]));
+    assert!(unaccounted(&[first, second], &[first.id]));
+    assert!(!unaccounted(&[first, second], &[first.id, second.id]));
+    assert!(unaccounted(&[first], &[second.id]));
+}
+
+fn poll(session: &MenuProbe, generation: usize) -> bool {
+    session.requests.as_ref().unwrap().send(generation).unwrap();
+    session
+        .answers
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .unwrap()
+}
+
+#[test]
+fn newly_mapped_popup_requires_a_subsequent_complete_inventory() {
+    let first = popup(1, 10);
+    let second = popup(2, 10);
+    let mut frames = std::collections::VecDeque::from([
+        vec![],
+        vec![first],
+        vec![first],
+        vec![first],
+        vec![first, second],
+        vec![first, second],
+        vec![first, second],
+        vec![second],
+        vec![first, second],
+        vec![first, second],
+    ]);
+    let session = MenuProbe::with_reader(move || Some(move || frames.pop_front()));
+    for (generation, expected) in [
+        (1, false),
+        (1, true),
+        (1, true),
+        (2, false),
+        (2, true),
+        (2, true),
+        (3, false),
+        (3, false),
+        (3, true),
+        (4, false),
+    ] {
+        assert_eq!(poll(&session, generation), expected, "read {generation}");
+    }
+}
+
+#[test]
+fn first_probe_cannot_account_for_stale_extents_from_the_initial_read() {
+    let session = MenuProbe::with_reader(|| Some(|| Some(vec![popup(1, 10)])));
+    assert!(poll(&session, 1));
+    assert!(poll(&session, 1));
+    assert!(!poll(&session, 2));
 }
 
 #[test]
@@ -71,20 +114,8 @@ fn repeated_pending_probes_connect_once_and_read_fresh_windows() {
             Some(vec![popup(1, 10)])
         })
     });
-    for accounted in [vec![], vec![popup(1, 10).bounds], vec![]] {
-        session
-            .requests
-            .as_ref()
-            .unwrap()
-            .send(accounted.clone())
-            .unwrap();
-        assert_eq!(
-            session
-                .answers
-                .recv_timeout(std::time::Duration::from_secs(1))
-                .unwrap(),
-            accounted.is_empty()
-        );
+    for (generation, expected) in [(1, true), (1, true), (2, false)] {
+        assert_eq!(poll(&session, generation), expected);
     }
     drop(session);
     assert_eq!(connections.load(Ordering::SeqCst), 1);
@@ -101,7 +132,7 @@ fn unreadable_and_non_x11_probes_close_without_pending_evidence() {
         }),
     ] {
         let session = MenuProbe::new(server, 1);
-        session.requests.as_ref().unwrap().send(vec![]).ok();
+        session.requests.as_ref().unwrap().send(1).ok();
         assert!(
             session
                 .answers
@@ -110,7 +141,7 @@ fn unreadable_and_non_x11_probes_close_without_pending_evidence() {
         );
     }
     let session = MenuProbe::with_reader(|| Some(|| None));
-    session.requests.as_ref().unwrap().send(vec![]).unwrap();
+    session.requests.as_ref().unwrap().send(1).unwrap();
     assert!(
         session
             .answers

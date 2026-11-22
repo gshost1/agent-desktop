@@ -8,7 +8,6 @@ use super::menu_popup::{self, Node};
 use crate::system::{SharedBus, window::window_id};
 use crate::tree::AtspiElement;
 use crate::tree::menu::menu_context::MenuContext;
-use crate::tree::vocabulary::role_numbers::{MENU, POPUP_MENU, is_menu_item};
 
 pub(crate) struct MenuPopup {
     pub(crate) root: AtspiElement,
@@ -47,18 +46,10 @@ fn popup_of(found: crate::system::menu::menu_found::Found<'_>) -> MenuPopup {
 pub(in crate::system) fn find_popups(
     reader: &mut impl PopupReader,
 ) -> Result<Vec<MenuPopup>, AdapterError> {
-    find_popups_accounted(reader, &mut Vec::new())
-}
-
-fn find_popups_accounted(
-    reader: &mut impl PopupReader,
-    accounted: &mut Vec<crate::tree::Extents>,
-) -> Result<Vec<MenuPopup>, AdapterError> {
     let mut popups = Vec::new();
     let mut unread = false;
     let deadline = reader.deadline();
     if let Some(frame) = reader.window()? {
-        account_menus(&frame, accounted);
         unread |= !popup_read_complete(&frame);
         if menu_popup::top_level(&frame, deadline).is_none() {
             popups.extend(
@@ -69,9 +60,6 @@ fn find_popups_accounted(
         }
     }
     let windows = reader.top_levels()?;
-    for window in &windows {
-        account_menus(window, accounted);
-    }
     unread |= windows.iter().any(|window| !popup_read_complete(window));
     popups.extend(
         windows
@@ -87,38 +75,16 @@ fn find_popups_accounted(
     Ok(popups)
 }
 
-fn account_menus(node: &Node, accounted: &mut Vec<crate::tree::Extents>) {
-    if node.in_web_document {
-        return;
-    }
-    let raw = &node.payload.node;
-    if raw
-        .traits
-        .role
-        .present()
-        .is_some_and(|role| matches!(*role, MENU | POPUP_MENU) || is_menu_item(*role))
-        && let Some(rect) = raw.extents.present().copied()
-        && crate::tree::placement::visibility::is_placed(rect)
-    {
-        accounted.push(rect);
-    }
-    for child in &node.children {
-        account_menus(child, accounted);
-    }
-}
-
-pub(crate) fn popups_of_accounted(
+pub(crate) fn popups_of(
     bus: &SharedBus,
     owner: &WindowInfo,
     deadline: Deadline,
-    accounted: &mut Vec<crate::tree::Extents>,
 ) -> Result<Vec<MenuPopup>, AdapterError> {
-    accounted.clear();
     let (bus_name, path) = window_id::decode(&owner.id)?;
     let window = AtspiElement::new(bus_name, path, owner.pid.get());
     let mut reader = Inventory::new(bus, deadline);
     reader.select(&window);
-    let result = find_popups_accounted(&mut reader, accounted);
+    let result = find_popups(&mut reader);
     if reader.incomplete() {
         return Err(AdapterError::timeout(
             "The menu inventory could not be read in full",

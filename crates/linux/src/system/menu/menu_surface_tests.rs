@@ -6,25 +6,24 @@ use crate::system::menu::menu_fixture::*;
 use crate::tree::{Extents, Field};
 
 #[test]
-fn completed_inventory_accounts_for_menu_geometry_even_when_no_menu_is_presented() {
+fn stale_menu_item_geometry_does_not_establish_an_open_menu() {
     let bounds = Extents {
         x: 100,
         y: 100,
         width: 80,
         height: 20,
     };
-    let mut item = node(ITEM, "Closed", &[], vec![]);
+    let mut item = node(
+        ITEM,
+        "Closed",
+        &[crate::tree::vocabulary::state_bits::VISIBLE],
+        vec![],
+    );
     item.payload.node.extents = Field::Present(bounds);
     let mut reader = Fake::new(frame_with(vec![node(MENU, "File", &[], vec![item])]));
-    let mut accounted = Vec::new();
+    assert!(find_popups(&mut reader).unwrap().is_empty());
     assert!(
-        super::find_popups_accounted(&mut reader, &mut accounted)
-            .unwrap()
-            .is_empty()
-    );
-    assert!(accounted.contains(&bounds));
-    assert!(
-        super::find_popups_accounted(&mut Fake::new(frame_with(vec![])), &mut Vec::new())
+        find_popups(&mut Fake::new(frame_with(vec![])))
             .unwrap()
             .is_empty()
     );

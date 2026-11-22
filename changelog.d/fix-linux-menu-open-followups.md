@@ -1,7 +1,8 @@
 ### Bug Fixes
 
 * Return `TIMEOUT` for incomplete Linux menu reads, require menu-typed popup evidence covering the menu's readable items, and tolerate items or X11 windows disappearing during a read.
+* Retry newly mapped Linux menu windows until a complete accessibility read has run while that window was already mapped, without trusting stale menu-item bounds.
 
 ### Performance
 
-* Stop retrying Linux menu snapshots when AT-SPI already accounts for the mapped popup, and reuse one X11 connection across opening probes.
+* Stop retrying Linux menu snapshots after a complete AT-SPI read accounts for the mapped popup, and reuse one X11 connection across opening probes.
