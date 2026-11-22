@@ -79,8 +79,63 @@ fn pending_evidence_is_bounded_and_keeps_the_surface_absent_error() {
 fn the_callers_shorter_deadline_bounds_the_opening_wait() {
     let started = Instant::now();
     let result = await_popup(Deadline::after(40).unwrap(), |_| Ok(Vec::new()), |_| true);
-    assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
+    assert!(
+        result
+            .err()
+            .unwrap()
+            .is_confirmed_surface_absence(SnapshotSurface::Menu)
+    );
     assert!(started.elapsed() < OPENING_BUDGET);
+}
+
+#[test]
+fn a_complete_empty_read_at_expiry_remains_absent() {
+    let mut absent = Vec::new();
+    for complete_on in [1, 2] {
+        let deadline = Deadline::after(100).unwrap();
+        let mut reads = 0;
+        let result = await_popup(
+            deadline,
+            |budget| {
+                reads += 1;
+                if reads == complete_on {
+                    std::thread::sleep(budget.remaining());
+                    assert!(deadline.is_expired());
+                }
+                Ok(Vec::new())
+            },
+            |_| true,
+        );
+        absent.push(
+            result
+                .err()
+                .unwrap()
+                .is_confirmed_surface_absence(SnapshotSurface::Menu),
+        );
+        assert_eq!(reads, complete_on);
+    }
+    assert_eq!(absent, [true, true]);
+}
+
+#[test]
+fn a_cut_read_at_expiry_remains_timeout() {
+    for cut_on in [1, 2] {
+        let mut reads = 0;
+        let result = await_popup(
+            Deadline::after(100).unwrap(),
+            |budget| {
+                reads += 1;
+                if reads == cut_on {
+                    std::thread::sleep(budget.remaining());
+                    return Err(budget.timeout_error());
+                }
+                Ok(Vec::new())
+            },
+            |_| true,
+        );
+        assert_eq!(result.err().unwrap().code, ErrorCode::Timeout);
+        assert_eq!(reads, cut_on);
+    }
 }
 
 #[test]

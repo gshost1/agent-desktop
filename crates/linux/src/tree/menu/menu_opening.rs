@@ -27,9 +27,6 @@ pub(super) fn await_popup(
             return super::observe_menu::outermost(popups);
         }
     }
-    if deadline.is_expired() {
-        return Err(deadline.timeout_error());
-    }
     super::observe_menu::outermost(Vec::new())
 }
 

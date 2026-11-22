@@ -2,6 +2,7 @@
 
 * Return `TIMEOUT` for incomplete Linux menu reads, require menu-typed popup evidence fully containing at least one readable item, and tolerate items or X11 windows disappearing during a read.
 * Detect open Linux menus when scrolled-out, screen-edge-clipped, or stale item bounds lie outside the popup.
+* Preserve completed empty Linux menu reads at deadline expiry, treat vanished owners as absent, and retain original read errors and observed popups after partial inventory reads.
 * Retry newly mapped Linux menu windows until a complete accessibility read has run while that window was already mapped, without trusting stale menu-item bounds.
 
 ### Performance

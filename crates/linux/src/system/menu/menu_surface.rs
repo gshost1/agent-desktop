@@ -84,14 +84,15 @@ pub(crate) fn popups_of(
     let window = AtspiElement::new(bus_name, path, owner.pid.get());
     let mut reader = Inventory::new(bus, deadline);
     reader.select(&window);
-    let result = find_popups(&mut reader);
-    if reader.incomplete() {
-        return Err(AdapterError::timeout(
-            "The menu inventory could not be read in full",
-        ));
-    }
-    match result {
+    popups_from(&mut reader)
+}
+
+fn popups_from(reader: &mut impl PopupReader) -> Result<Vec<MenuPopup>, AdapterError> {
+    match find_popups(reader) {
         Err(error) if vanished(&error) => Ok(Vec::new()),
+        Ok(popups) if popups.is_empty() && reader.incomplete() => Err(AdapterError::timeout(
+            "The menu inventory could not be read in full",
+        )),
         other => other,
     }
 }
