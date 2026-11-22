@@ -88,6 +88,19 @@ verify "select Tab Two" tab-status 1 semantic_api "$tab_two" click
 require_target tab_one radiobutton "Tab One"
 verify "select Tab One" tab-status 0 semantic_api "$tab_one" click
 
+note "Outline row click and select"
+require_target first_row treeitem list-item-1
+verify "click selects the first outline row" list-selection 1 semantic_api "$first_row" click
+require_target second_row treeitem list-item-2
+verify "select replaces the first outline row with the second" list-selection 2 semantic_api "$second_row" select list-item-2
+require_target second_row treeitem list-item-2
+row_noop="$(act_target "$second_row" select list-item-2 2>/dev/null)"
+require_value row_selection list-selection
+row_delivery="$(json_field "$row_noop" data.disposition.delivery)"
+assert "select on the already-selected outline row does not deliver a write" \
+    "$([ "$(json_field "$row_noop" ok)" = "True" ] && [ "$row_delivery" = not_delivered ] && [ "$row_selection" = 2 ] && echo 1 || echo 0)" \
+    "selection=$row_selection delivery=$row_delivery"
+
 note "Headed gesture fallback"
 require_target double_target button double-target
 "$bin" focus-window --app "$app" >/dev/null 2>&1

@@ -7,6 +7,7 @@ mod imp {
     use super::*;
     use crate::actions::{
         chain::chain_defs,
+        chain::chain_delivery::DeliveryOutcome,
         chain::{ChainContext, ChainDef, execute_chain},
         inline_editor_target, toggle_state,
     };
@@ -30,16 +31,32 @@ mod imp {
         tracing::debug!("action: perform {label}");
         match action {
             Action::Click => {
-                let native_menu = crate::tree::native_menu::is_native_menu(el, deadline)?
+                let (role, native_menu) =
+                    crate::tree::native_menu::target_role_and_native_menu(el, deadline)?;
+                let native_menu = native_menu
                     || (request.policy.is_headed()
-                        && probe_click_role(el, deadline)?.as_deref() == Some("AXMenuBarItem"));
-                steps.extend(run_chain(
-                    el,
-                    chain_defs::click_chain(native_menu),
-                    None,
-                    request,
-                    deadline,
-                )?);
+                        && role.as_deref() == Some("AXMenuBarItem")
+                        && !crate::tree::shell_surface::is_status_item(
+                            el,
+                            crate::tree::locator_deadline::from_operation(deadline)?,
+                        ));
+                let definition = chain_defs::click_chain(native_menu);
+                steps.extend(
+                    if !native_menu
+                        && role
+                            .as_deref()
+                            .is_some_and(crate::actions::select::container_select::is_selection_row)
+                    {
+                        crate::actions::select::row_selection::click_settled_by_selection(
+                            el,
+                            definition,
+                            &budget,
+                            request.policy,
+                        )?
+                    } else {
+                        execute_chain(el, definition, &budget, request.policy)?
+                    },
+                );
             }
 
             Action::DoubleClick => {
@@ -134,11 +151,15 @@ mod imp {
             }
 
             Action::Select(value) => {
-                let verified = crate::actions::extras::select_value(el, value.as_str(), deadline)?;
-                steps.push(
+                let outcome = crate::actions::extras::select_value(el, value.as_str(), deadline)?;
+                let step = if outcome == DeliveryOutcome::SatisfiedNoDelivery {
+                    ActionStep::skipped("Select")
+                } else {
                     ActionStep::succeeded("Select")
-                        .with_mechanism(StepMechanism::SemanticApi)
-                        .with_verified(verified),
+                };
+                steps.push(
+                    step.with_mechanism(StepMechanism::SemanticApi)
+                        .with_verified(outcome.was_verified()),
                 );
             }
 
@@ -246,27 +267,6 @@ mod imp {
             },
             request.policy,
         )
-    }
-
-    fn probe_click_role(
-        element: &AXElement,
-        deadline: Deadline,
-    ) -> Result<Option<String>, AdapterError> {
-        let operation_deadline = crate::tree::locator_deadline::from_operation(deadline)?;
-        match crate::tree::resolve::resolve_ax_read::read_string(
-            element,
-            "AXRole",
-            operation_deadline,
-        ) {
-            Ok(Some(role))
-                if role == "AXMenuBarItem"
-                    && crate::tree::shell_surface::is_status_item(element, operation_deadline) =>
-            {
-                Ok(None)
-            }
-            Err(error) if error.code == ErrorCode::AppUnresponsive => Ok(None),
-            result => result,
-        }
     }
 }
 

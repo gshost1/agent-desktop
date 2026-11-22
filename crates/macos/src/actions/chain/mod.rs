@@ -19,11 +19,7 @@ mod imp {
         ctx: &ChainContext,
         policy: InteractionPolicy,
     ) -> Result<Vec<ActionStep>, AdapterError> {
-        let pid = crate::system::app::app_ops::pid_from_element(el, ctx.deadline);
-        match run_steps(el, def, ctx, policy, pid)? {
-            (steps, true) => Ok(steps),
-            (steps, false) => Err(exhaustion_error(&steps, def.suggestion)),
-        }
+        execute_observed_chain(el, def, ctx, policy, |_, _| None)
     }
 
     /// Runs the chain and returns its recorded steps with whether a step ended
@@ -37,6 +33,33 @@ mod imp {
         policy: InteractionPolicy,
         pid: Option<i32>,
     ) -> Result<(Vec<ActionStep>, bool), AdapterError> {
+        run_steps_observing(el, def, ctx, policy, (pid, |_, _| None))
+    }
+
+    pub(crate) fn execute_observed_chain(
+        el: &AXElement,
+        def: &ChainDef,
+        ctx: &ChainContext,
+        policy: InteractionPolicy,
+        observe: impl FnMut(&'static str, &Result<DeliveryOutcome, AdapterError>) -> Option<ActionStep>,
+    ) -> Result<Vec<ActionStep>, AdapterError> {
+        let pid = crate::system::app::app_ops::pid_from_element(el, ctx.deadline);
+        match run_steps_observing(el, def, ctx, policy, (pid, observe))? {
+            (steps, true) => Ok(steps),
+            (steps, false) => Err(exhaustion_error(&steps, def.suggestion)),
+        }
+    }
+
+    fn run_steps_observing<F>(
+        el: &AXElement,
+        def: &ChainDef,
+        ctx: &ChainContext,
+        policy: InteractionPolicy,
+        (pid, mut observe): (Option<i32>, F),
+    ) -> Result<(Vec<ActionStep>, bool), AdapterError>
+    where
+        F: FnMut(&'static str, &Result<DeliveryOutcome, AdapterError>) -> Option<ActionStep>,
+    {
         let total = def.steps.len();
         let mut steps = Vec::new();
         if let Some(pid) = pid {
@@ -54,8 +77,12 @@ mod imp {
                 continue;
             }
             let label = step_label(step);
-            let outcome =
-                execute_step(el, step, ctx, policy).map_err(|error| after_steps(&steps, error))?;
+            let outcome = execute_step(el, step, ctx, policy);
+            if let Some(postcondition) = observe(label, &outcome) {
+                record_observed_step(&mut steps, step, outcome, postcondition);
+                return Ok((steps, true));
+            }
+            let outcome = outcome.map_err(|error| after_steps(&steps, error))?;
             let continue_unverified = def.continue_after_unverified_delivery;
             if record_step_outcome(&mut steps, step, outcome, continue_unverified) {
                 tracing::debug!("chain: [{}/{}] {} -> success", i + 1, total, label);
@@ -146,6 +173,19 @@ mod imp {
                 && outcome == DeliveryOutcome::DeliveredUnverified)
     }
 
+    pub(crate) fn record_observed_step(
+        steps: &mut Vec<ActionStep>,
+        step: &ChainStep,
+        outcome: Result<DeliveryOutcome, AdapterError>,
+        postcondition: ActionStep,
+    ) {
+        steps.push(build_step(
+            step,
+            outcome.unwrap_or(DeliveryOutcome::DeliveredUnverified),
+        ));
+        steps.push(postcondition);
+    }
+
     fn step_label(step: &ChainStep) -> &'static str {
         match step {
             ChainStep::Action(name) => name,
@@ -168,8 +208,8 @@ mod imp {
 
 #[cfg(test)]
 pub(crate) use imp::{
-    after_steps, build_step, exhaustion_disposition, record_step_outcome, step_allowed,
-    step_mechanism,
+    after_steps, build_step, exhaustion_disposition, record_observed_step, record_step_outcome,
+    step_allowed, step_mechanism,
 };
 
 pub(crate) mod activate_descendant;
@@ -200,4 +240,4 @@ mod tests;
 #[path = "chain_outcome_tests.rs"]
 mod outcome_tests;
 
-pub(crate) use imp::{execute_chain, exhaustion_error, run_steps};
+pub(crate) use imp::{execute_chain, execute_observed_chain, exhaustion_error, run_steps};

@@ -6,17 +6,35 @@ pub(crate) fn is_native_menu(
     element: &AXElement,
     deadline: Deadline,
 ) -> Result<bool, AdapterError> {
+    target_role_and_native_menu(element, deadline).map(|(_, native_menu)| native_menu)
+}
+
+pub(crate) fn target_role_and_native_menu(
+    element: &AXElement,
+    deadline: Deadline,
+) -> Result<(Option<String>, bool), AdapterError> {
     let end = crate::tree::locator_deadline::from_operation(deadline)?;
-    classify(
+    let target_role = surface_read::string(element, "AXRole", end)?;
+    if !matches!(target_role.as_deref(), Some("AXMenuItem" | "AXMenuBarItem")) {
+        return Ok((target_role, false));
+    }
+    let mut first_role = target_role.clone();
+    let native_menu = classify(
         element.clone(),
         deadline,
-        |element| surface_read::string(element, "AXRole", end),
+        |element| {
+            first_role.take().map_or_else(
+                || surface_read::string(element, "AXRole", end),
+                |role| Ok(Some(role)),
+            )
+        },
         |element| surface_read::element(element, "AXParent", end),
         |application, menubar| {
             Ok(surface_read::element(application, "AXMenuBar", end)?
                 .is_some_and(|owned| crate::tree::same_element(&owned, menubar)))
         },
-    )
+    )?;
+    Ok((target_role, native_menu))
 }
 
 fn classify<T: Clone>(

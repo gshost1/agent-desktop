@@ -10,7 +10,11 @@ pub(crate) struct ActivationState {
 impl ActivationState {
     pub(crate) fn capture(element: &AXElement, action: &str, deadline: Deadline) -> Self {
         Self {
-            focus: crate::actions::activation::activation_effect::focus_state(element, deadline),
+            focus: crate::actions::activation::activation_effect::focus_state(
+                element,
+                deadline,
+                selection_verifies_activation(action),
+            ),
             sheet: crate::actions::activation::activation_sheet::OwnedSheet::capture(
                 element, action, deadline,
             ),
@@ -39,5 +43,19 @@ impl ActivationState {
                 .title
                 .as_ref()
                 .is_some_and(|title| title.changed(deadline))
+    }
+}
+
+pub(crate) fn selection_verifies_activation(action: &str) -> bool {
+    !matches!(action, "AXOpen" | "AXPress")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn opening_or_pressing_is_not_verified_by_selection_alone() {
+        assert!(!super::selection_verifies_activation("AXOpen"));
+        assert!(!super::selection_verifies_activation("AXPress"));
+        assert!(super::selection_verifies_activation("AXConfirm"));
     }
 }
