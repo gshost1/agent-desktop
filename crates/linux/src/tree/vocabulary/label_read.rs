@@ -7,6 +7,7 @@ use crate::system::ACCESSIBLE_INTERFACE;
 use crate::tree::properties::liveness::Liveness;
 use crate::tree::properties::node_read::{NAME, call, get_one, string_value};
 use crate::tree::properties::wrapper_description::read_wrapper_description;
+use crate::tree::properties::wrapper_parent::WrapperParent;
 use crate::tree::{AtspiElement, Field, LabelOutcome, RawNode};
 use agent_desktop_core::tree::roles::is_interactive_role;
 use agent_desktop_core::{AdapterError, ErrorCode};
@@ -101,7 +102,7 @@ pub(crate) async fn read_label_if_needed(
 pub(in crate::tree) async fn read_label_with_parent(
     connection: &Connection,
     node: &RawNode,
-    summary: Option<&Field<String>>,
+    summary: Option<&WrapperParent>,
 ) -> Result<LabelOutcome, AdapterError> {
     if !needs_label(node) {
         return Ok(LabelOutcome::Unlabelled);

@@ -13,6 +13,7 @@ use crate::tree::properties::liveness::Liveness;
 use crate::tree::properties::node_read::read_node_for;
 use crate::tree::properties::read_purpose::ReadPurpose;
 use crate::tree::properties::wrapper_description::parent_summary;
+use crate::tree::properties::wrapper_parent::WrapperParent;
 use crate::tree::surfaces::window_extents::read_extents_async;
 use crate::tree::vocabulary::label_read::read_label_with_parent;
 use crate::tree::vocabulary::role_numbers::MENU_BAR;
@@ -93,7 +94,7 @@ pub(in crate::tree) struct LevelReader<'a> {
     deadline: Deadline,
     at_root: bool,
     purpose: ReadPurpose,
-    parents: HashMap<(String, String), Field<String>>,
+    parents: HashMap<(String, String), WrapperParent>,
 }
 
 impl<'a> LevelReader<'a> {
@@ -191,10 +192,14 @@ impl<'a> LevelReader<'a> {
                     let children = child_elements(&read.node, pids);
                     if let Some(summary) = parent_summary(&read.node, purpose) {
                         for child in &children {
-                            parents.insert(
-                                (child.bus_name().to_owned(), child.path().to_owned()),
-                                summary.clone(),
-                            );
+                            let description = if child.bus_name() == read.node.element.bus_name() {
+                                summary.clone()
+                            } else {
+                                Field::Absent
+                            };
+                            parents
+                                .entry((child.bus_name().to_owned(), child.path().to_owned()))
+                                .or_insert(WrapperParent::Known(description));
                         }
                     }
                     Expansion {
@@ -224,7 +229,7 @@ pub(in crate::tree) async fn read_observed_with_parent(
     element: &AtspiElement,
     max_field_bytes: usize,
     purpose: ReadPurpose,
-    summary: Option<&Field<String>>,
+    summary: Option<&WrapperParent>,
 ) -> Result<(ObservedRead, Liveness), AdapterError> {
     let (node, liveness) = read_node_for(connection, element, purpose).await?;
     let (label, value) = join(

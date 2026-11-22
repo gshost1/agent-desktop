@@ -1,14 +1,14 @@
-use agent_desktop_core::{AdapterError, tree::roles::is_interactive_role};
+use agent_desktop_core::AdapterError;
 use futures_util::future::join;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use super::liveness::Liveness;
-use super::node_read::{call, deserialize, get_one, string_value};
+use super::node_read::{call, deserialize, get_one, read_children, string_value};
 use super::read_purpose::ReadPurpose;
+use super::wrapper_parent::WrapperParent;
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
 use crate::tree::vocabulary::role_numbers::{FILLER, PANEL};
-use crate::tree::vocabulary::roles::role_of;
 use crate::tree::{AtspiElement, Field, RawNode};
 
 fn optional<T>(result: Result<T, zbus::Error>) -> Result<Field<T>, AdapterError> {
@@ -31,20 +31,7 @@ async fn read_text(
 }
 
 fn needs_description(node: &RawNode) -> bool {
-    !node.element.in_web_document()
-        && node.properties.name.is_blank()
-        && node.properties.description.is_blank()
-        && node.traits.role.present().is_some_and(|number| {
-            is_interactive_role(
-                role_of(
-                    *number,
-                    &node.traits.states,
-                    &node.traits.interfaces,
-                    &node.attributes,
-                )
-                .as_str(),
-            )
-        })
+    !node.element.in_web_document() && node.properties.description.is_blank()
 }
 
 async fn parent(
@@ -82,27 +69,39 @@ async fn read_description(
         call(
             connection,
             &parent,
-            PROPERTIES_INTERFACE,
-            "Get",
-            &(ACCESSIBLE_INTERFACE, "ChildCount"),
+            ACCESSIBLE_INTERFACE,
+            "GetChildren",
+            &(),
         ),
     )
     .await;
     let role = deserialize::<u32>(role);
     let liveness = Liveness::of(role.as_ref().err());
     let role = optional(role)?;
-    let children = optional(
-        deserialize::<OwnedValue>(children).and_then(|value| value.try_into().map_err(Into::into)),
-    )?;
+    let children = read_children(children, Liveness::Alive)?;
     if role.is_failed() || children.is_failed() {
         return Ok(Field::Failed("Wrapper prerequisites unreadable".into()));
     }
-    if !matches!(role.present(), Some(&PANEL | &FILLER)) || children.present() != Some(&1) {
+    if !matches!(role.present(), Some(&PANEL | &FILLER))
+        || !children.present().is_some_and(|children| {
+            children.len() == 1
+                && children[0].0 == element.bus_name()
+                && children[0].1 == element.path()
+        })
+    {
         return Ok(Field::Absent);
     }
+    read_parent_text(connection, &parent, liveness).await
+}
+
+async fn read_parent_text(
+    connection: &Connection,
+    parent: &AtspiElement,
+    liveness: Liveness,
+) -> Result<Field<String>, AdapterError> {
     let (name, description) = join(
-        read_text(connection, &parent, "Name", liveness),
-        read_text(connection, &parent, "Description", liveness),
+        read_text(connection, parent, "Name", liveness),
+        read_text(connection, parent, "Description", liveness),
     )
     .await;
     Ok(select_description(&name?, description?))
@@ -127,11 +126,7 @@ pub(in crate::tree) fn parent_summary(
 }
 
 fn summarize_parent(node: &RawNode) -> Field<String> {
-    if node.traits.role.is_failed()
-        || node.properties.name.is_failed()
-        || node.properties.description.is_failed()
-        || node.children.is_failed()
-    {
+    if node.traits.role.is_failed() || node.children.is_failed() {
         return Field::Failed("Wrapper prerequisites unreadable".into());
     }
     if !matches!(node.traits.role.present(), Some(&PANEL | &FILLER))
@@ -142,16 +137,34 @@ fn summarize_parent(node: &RawNode) -> Field<String> {
     select_description(&node.properties.name, node.properties.description.clone())
 }
 
+pub(in crate::tree) fn listing_parent(node: &RawNode, child: &AtspiElement) -> WrapperParent {
+    let evidence = if node.element.bus_name() != child.bus_name() {
+        Field::Absent
+    } else if node.traits.role.is_failed() || node.children.is_failed() {
+        Field::Failed("Wrapper prerequisites unreadable".into())
+    } else if matches!(node.traits.role.present(), Some(&PANEL | &FILLER))
+        && node.children.present().map(Vec::len) == Some(1)
+    {
+        return WrapperParent::Listing(node.element.clone());
+    } else {
+        Field::Absent
+    };
+    WrapperParent::Known(evidence)
+}
+
 pub(in crate::tree) async fn read_wrapper_description(
     connection: &Connection,
     node: &RawNode,
-    summary: Option<&Field<String>>,
+    summary: Option<&WrapperParent>,
 ) -> Result<Field<String>, AdapterError> {
     if !needs_description(node) {
         return Ok(Field::Absent);
     }
     match summary {
-        Some(description) => Ok(description.clone()),
+        Some(WrapperParent::Known(description)) => Ok(description.clone()),
+        Some(WrapperParent::Listing(parent)) => {
+            read_parent_text(connection, parent, Liveness::Alive).await
+        }
         None => read_description(connection, &node.element).await,
     }
 }
@@ -163,3 +176,7 @@ mod tests;
 #[cfg(test)]
 #[path = "wrapper_summary_tests.rs"]
 mod summary_tests;
+
+#[cfg(test)]
+#[path = "wrapper_listing_tests.rs"]
+mod listing_tests;

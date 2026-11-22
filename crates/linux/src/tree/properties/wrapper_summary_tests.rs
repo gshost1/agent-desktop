@@ -54,11 +54,34 @@ fn summary_preserves_each_failed_prerequisite() {
 }
 
 #[test]
+fn non_wrapper_ignores_failed_text_after_readable_prerequisites() {
+    for rule in 0..3 {
+        let mut node = wrapper();
+        node.properties.name = Field::Failed("unread name".into());
+        node.properties.description = Field::Failed("unread description".into());
+        match rule {
+            0 => node.traits.role = Field::Present(PUSH_BUTTON),
+            1 => node.children = Field::Present(vec![]),
+            _ => {
+                node.children =
+                    Field::Present(vec![("a".into(), "/a".into()), ("b".into(), "/b".into())])
+            }
+        }
+        assert_eq!(parent_summary(&node), Field::Absent);
+    }
+}
+
+#[test]
 fn web_document_skips_live_and_summarized_wrapper() {
     let connection = closed_connection();
     let mut node = read_of(PUSH_BUTTON, "", &["click"]).node;
     node.element.set_ancestry(Ancestry::of(None, None, true));
-    for summary in [None, Some(Field::Present("Tooltip".into()))] {
+    for summary in [
+        None,
+        Some(super::WrapperParent::Known(Field::Present(
+            "Tooltip".into(),
+        ))),
+    ] {
         assert_eq!(
             zbus::block_on(read_wrapper_description(
                 &connection,

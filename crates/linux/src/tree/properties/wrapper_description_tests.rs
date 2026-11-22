@@ -1,10 +1,9 @@
 use super::{needs_description, read_wrapper_description, select_description};
 use crate::tree::live::test_support::read_of;
-use crate::tree::properties::node_read::read_node_for;
 use crate::tree::properties::read_purpose::ReadPurpose;
 use crate::tree::vocabulary::label_read::read_label_if_needed;
 use crate::tree::vocabulary::role_numbers::{PANEL, PUSH_BUTTON, TOGGLE_BUTTON};
-use crate::tree::walk::walker_expand::{LevelReader, read_observed, read_observed_with_parent};
+use crate::tree::walk::walker_expand::{LevelReader, read_observed};
 use crate::tree::{AtspiElement, Field, LabelOutcome, resolve_vocabulary};
 use agent_desktop_core::Deadline;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -55,7 +54,7 @@ impl Child {
     }
     #[zbus(property)]
     fn accessible_id(&self) -> &str {
-        ""
+        "stable-child"
     }
     #[zbus(property)]
     fn child_count(&self) -> i32 {
@@ -68,12 +67,13 @@ impl Child {
     }
 }
 
-struct Parent {
-    role: u32,
-    name: &'static str,
-    description: &'static str,
-    children: i32,
-    role_reads: AtomicUsize,
+pub(super) struct Parent {
+    pub(super) role: u32,
+    pub(super) name: &'static str,
+    pub(super) description: &'static str,
+    pub(super) children: i32,
+    pub(super) role_reads: AtomicUsize,
+    pub(super) listing: Option<Vec<(String, OwnedObjectPath)>>,
 }
 
 #[zbus::interface(name = "org.a11y.atspi.Accessible")]
@@ -83,7 +83,21 @@ impl Parent {
         self.role
     }
     fn get_children(&self) -> Vec<(String, OwnedObjectPath)> {
-        vec![(":1.1".into(), "/child".try_into().unwrap())]
+        if let Some(listing) = &self.listing {
+            return listing.clone();
+        }
+        (0..self.children)
+            .map(|index| {
+                (
+                    ":1.1".into(),
+                    if index == 0 {
+                        "/child".try_into().unwrap()
+                    } else {
+                        "/other".try_into().unwrap()
+                    },
+                )
+            })
+            .collect()
     }
     #[zbus(property)]
     fn name(&self) -> &str {
@@ -99,17 +113,21 @@ impl Parent {
     }
 }
 
-fn wrapper() -> Parent {
+pub(super) fn wrapper() -> Parent {
     Parent {
         role: PANEL,
         name: "",
         description: "Paint smooth strokes",
         children: 1,
         role_reads: AtomicUsize::new(0),
+        listing: None,
     }
 }
 
-fn connection(parent: Option<Parent>, labelled: bool) -> (zbus::Connection, zbus::Connection) {
+pub(super) fn connection(
+    parent: Option<Parent>,
+    labelled: bool,
+) -> (zbus::Connection, zbus::Connection) {
     let (near, far) = std::os::unix::net::UnixStream::pair().unwrap();
     let server = Builder::async_io_unix_stream(far)
         .server(zbus::Guid::generate())
@@ -218,11 +236,18 @@ fn own_identity_and_explicit_labels_suppress_wrapper_reads() {
     for (name, description) in [("Own name", ""), ("", "Own description")] {
         let mut node = read_of(TOGGLE_BUTTON, name, &["click"]).node;
         node.properties.description = Field::Present(description.into());
-        assert!(!needs_description(&node));
-        assert_eq!(
-            zbus::block_on(read_wrapper_description(&connection, &node, None)).unwrap(),
-            Field::Absent
-        );
+        assert_eq!(needs_description(&node), description.is_empty());
+        if name.is_empty() {
+            assert_eq!(
+                zbus::block_on(read_wrapper_description(&connection, &node, None)).unwrap(),
+                Field::Absent
+            );
+        } else {
+            assert_eq!(
+                zbus::block_on(read_label_if_needed(&connection, &node)).unwrap(),
+                LabelOutcome::Unlabelled
+            );
+        }
         assert_eq!(
             node.properties.description.present().map(String::as_str),
             Some(description)
@@ -318,50 +343,4 @@ fn walked_child_reuses_parent_without_parent_calls() {
             .unwrap();
         assert_eq!(parent.get().await.role_reads.load(Ordering::Relaxed), 1);
     });
-}
-
-#[test]
-fn identity_purposes_without_children_use_live_wrapper_fallback() {
-    let (client, _server) = connection(Some(wrapper()), false);
-    let element = AtspiElement::new(":1.1", "/parent", 1);
-    for purpose in [
-        ReadPurpose::Snapshot,
-        ReadPurpose::TextSearch,
-        ReadPurpose::TypeTarget,
-        ReadPurpose::Sampling,
-        ReadPurpose::Count,
-        ReadPurpose::Identity,
-        ReadPurpose::Resolve,
-        ReadPurpose::Element,
-    ] {
-        assert!(purpose.identity());
-        let (node, _) = zbus::block_on(read_node_for(&client, &element, purpose)).unwrap();
-        assert!(!node.properties.name.is_failed(), "{purpose:?}");
-        assert!(!node.properties.description.is_failed(), "{purpose:?}");
-        let summary = super::parent_summary(&node, purpose);
-        if purpose.children() {
-            assert_eq!(
-                summary,
-                Some(Field::Present("Paint smooth strokes".into())),
-                "{purpose:?}"
-            );
-        } else {
-            assert!(node.children.is_failed(), "{purpose:?}");
-            assert_eq!(summary, None, "{purpose:?}");
-        }
-        let child = AtspiElement::new(":1.1", "/child", 1);
-        let (read, _) = zbus::block_on(read_observed_with_parent(
-            &client,
-            &child,
-            4096,
-            purpose,
-            summary.as_ref(),
-        ))
-        .unwrap();
-        assert_eq!(
-            read.label,
-            LabelOutcome::WrapperDescription("Paint smooth strokes".into()),
-            "{purpose:?}"
-        );
-    }
 }
