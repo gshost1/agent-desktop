@@ -139,6 +139,20 @@ pub(crate) fn read_node_view(
     )
 }
 
+pub(crate) fn read_type_target(
+    bus: &SharedBus,
+    handle: &NativeHandle,
+    deadline: Deadline,
+) -> Result<NodeView, AdapterError> {
+    with_reader(
+        bus,
+        handle,
+        deadline,
+        ReadPurpose::TypeTarget,
+        |reader, handle| read_live(reader, handle).map(NodeView::new),
+    )
+}
+
 /// What one `GetRole` outcome says about the node. Every live node of every
 /// toolkit answers it, so an error naming a missing object or application is
 /// the second witness a destroyed node needs, a timeout proves nothing, and

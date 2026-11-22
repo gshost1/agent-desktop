@@ -23,6 +23,8 @@ pub(crate) fn target_steps(
     ensure_keyboard_policy(policy)?;
     ensure_budget(deadline)?;
     let backend = world.backend()?;
+    let keyboard_target = world.keyboard_target(element, deadline)?;
+    let element = &keyboard_target;
     let mut active = ActiveGate::new(world, element, deadline);
     crate::input::physical::keyboard_focus::prepare(world, element, deadline)?;
     let mut gate = || {
@@ -161,3 +163,7 @@ fn physical_step(backend: &Backend, operation: &'static str) -> ActionStep {
 #[cfg(test)]
 #[path = "target_keyboard_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "target_keyboard_document_tests.rs"]
+mod document_tests;

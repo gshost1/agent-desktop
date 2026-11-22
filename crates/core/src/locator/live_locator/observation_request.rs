@@ -40,6 +40,8 @@ pub struct ObservationMode {
     /// when they are the only part it did not read. Only a platform that reads
     /// rows after the rest of the tree honors it.
     pub leave_rows_unread: bool,
+    /// Read text content for a search, rather than only control values.
+    pub text_content: bool,
 }
 
 impl ObservationRequest {
@@ -87,6 +89,7 @@ impl ObservationRequest {
                 force_renderer_accessibility: options.force_renderer_accessibility,
                 identity_only: false,
                 leave_rows_unread: false,
+                text_content: false,
             },
         }
     }
@@ -113,7 +116,10 @@ impl ObservationRequest {
             surface: SnapshotSurface::Window,
             evidence_plan: EvidencePlan::uniform(EvidenceRequirements::locator(query, request)),
             budget: ObservationBudget::default(),
-            observation_mode: ObservationMode::default(),
+            observation_mode: ObservationMode {
+                text_content: reads_text_content(query),
+                ..ObservationMode::default()
+            },
         }
     }
 
@@ -159,7 +165,10 @@ impl ObservationRequest {
                 EvidenceRequirements::query(query),
             ),
             budget: ObservationBudget::default(),
-            observation_mode: ObservationMode::default(),
+            observation_mode: ObservationMode {
+                text_content: reads_text_content(query),
+                ..ObservationMode::default()
+            },
         }
     }
 
@@ -175,3 +184,18 @@ impl ObservationRequest {
         self.evidence_plan.hydrates_root_name_from_children()
     }
 }
+
+fn reads_text_content(query: &LocatorQuery) -> bool {
+    query.has_text.is_some()
+        || [
+            query.containment.has.as_deref(),
+            query.containment.has_not.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(reads_text_content)
+}
+
+#[cfg(test)]
+#[path = "observation_text_tests.rs"]
+mod tests;

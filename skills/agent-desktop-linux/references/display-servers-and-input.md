@@ -65,9 +65,10 @@ A physical ref-addressed key needs the target frame `active` within a short
 wait, else `check: window_active`. Headed `type` and ref-addressed key presses
 also need the target, or its proven internal editor, `focused`: before each X11
 text plan and, on Wayland, before the bootstrap Shift and each subsequent
-key-down. The internal-editor proof needs an editable target, a same-owner hit,
-a parent chain back to the target and a focused editor that advertises
-`EditableText`.
+key-down. For an editable text document, the internal-editor proof walks the
+same-owner subtree for one uniquely focused writable `Text` and `EditableText`
+descendant. Other editable targets use a same-owner hit and a parent chain
+back to the target with a focused editor that advertises `EditableText`.
 
 Closing a GTK4 menu can leave the document unfocused even while its window is
 active. GNOME 46's GTK4 bridge rejects AT-SPI `Component.GrabFocus` as
@@ -158,6 +159,19 @@ empty insertion is dispatched.
 - Headless `type @ref text` writes through `EditableText.InsertText`. Without
   `--timeout-ms`, `type` waits 5000 ms plus 30 ms per character; an explicit
   `--timeout-ms` replaces that.
+- Linux exposes `TypeText` and `SetValue` on paragraphs and headings that
+  report `EDITABLE`, do not report `READ_ONLY`, and expose both `Text` and
+  `EditableText`. Use a stable ref to insert into or replace that block. Changing its text does not change
+  the ref's identity. Anonymous paragraphs with an empty name and no native ID
+  are refused as `AMBIGUOUS_TARGET` at capture when their stable identity is not
+  unique; their editable text cannot distinguish them.
+  Type through the document ref instead; it routes to the focused paragraph or heading.
+- To type through a compound document's ref, first place the caret in the
+  intended paragraph or heading. The document must report `EDITABLE` without
+  `READ_ONLY`.
+  `type` checks for exactly one focused, writable text descendant, then
+  returns its role and AT-SPI path in `details.text_input_target`. Missing or
+  ambiguous focus refuses before delivery. Use this route for insertion.
 - Under `--headed` it sends physical keys first (step `XTEST.type_text` on X11,
   `RemoteDesktop.type_text` on Wayland, `physical_synthetic`; the result still
   reads the field back when it can) and falls back to `EditableText` only where
@@ -190,9 +204,8 @@ empty insertion is dispatched.
   state is unsupported, the physical route refuses before that chunk's keys; the
   semantic fallback applies only if no key was sent, since earlier chunks report
   `delivered_unverified`.
-- The first `type` into a fresh document changes the window title, but the ref
-  from the snapshot still resolves: `get` on it reads the typed value. Take a
-  fresh snapshot only when the UI you address has changed for another reason.
+- Typing can change a document's window title without invalidating its ref.
+  Use `wait --text` or `find --text` to verify insertion into document content.
 
 ## Wayland keys
 
