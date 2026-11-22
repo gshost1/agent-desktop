@@ -1,9 +1,12 @@
 use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, WindowFilter, WindowInfo};
 use serde_json::json;
 
+use super::window_focus::reconcile_dialog;
 use super::window_order::front_to_back;
 use super::window_position::place_windows;
+use super::window_reread::reread_with;
 use crate::system::SharedBus;
+use crate::system::focus::focus_world::focus_send;
 use crate::system::process::proc_scan::find_running;
 use crate::system::process::proc_stat;
 use crate::system::process::unresponsive::{require_known_target, settle_scoped, stopped_target};
@@ -31,12 +34,39 @@ pub(crate) fn windows_of(
 /// Places the windows of a pass, trims the client-side shadows the toolkit
 /// drew, marks the minimized ones, those on another desktop and the focused
 /// one, and returns the index of the focused window.
-fn finish_listing(pass: &mut Pass, state: &X11State, desktops: Option<&Desktops>) -> Option<usize> {
+fn finish_listing(
+    pass: &mut Pass,
+    state: &X11State,
+    desktops: Option<&Desktops>,
+    input_focus_in: impl FnOnce(u32) -> bool,
+) -> Option<usize> {
     place_windows(&mut pass.windows, state, desktops);
+    if pass.focused.is_none() {
+        pass.focused = reconcile_dialog(&pass.windows, state, input_focus_in);
+    }
     if let Some(index) = pass.focused {
         pass.windows[index].info.state.is_focused = true;
     }
     pass.focused
+}
+
+fn read_listing(
+    bus: &SharedBus,
+    registry: &Registry,
+    select: impl Fn(&RegistryApp) -> bool,
+    deadline: Deadline,
+) -> Result<(Pass, X11State), AdapterError> {
+    let pending = x11::start(|| DisplayReader.read());
+    let desktops = x11::start(desktops::read);
+    let finish = |deadline| pending.finish(deadline).unwrap_or(X11State::Unavailable);
+    let (mut pass, state) = run_pass_with(bus, registry, select, finish, deadline)?;
+    finish_listing(
+        &mut pass,
+        &state,
+        desktops.finish(deadline).flatten().as_ref(),
+        |client| focus_send::input_focus_in(client, deadline),
+    );
+    Ok((pass, state))
 }
 
 /// The windows of a pass that named its application, unless none were listed
@@ -103,8 +133,26 @@ pub(crate) fn list_windows(
         &mut pass,
         &state,
         desktops.finish(deadline).flatten().as_ref(),
+        |client| focus_send::input_focus_in(client, deadline),
     );
-    let mut windows = pass.windows;
+    let (pass, state) = if filter.app.is_some() {
+        let selected: Vec<_> = registry
+            .apps
+            .iter()
+            .filter(|app| select(app))
+            .map(|app| app.root.pid())
+            .collect();
+        reread_with(
+            (pass, state),
+            deadline,
+            &selected,
+            |until| read_listing(bus, &registry, select, until),
+            std::thread::sleep,
+        )?
+    } else {
+        (pass, state)
+    };
+    let mut windows = require_answered(pass.windows, &pass.outcomes, filter.app.is_some())?;
     if filter.focused_only {
         windows.retain(|window| window.info.state.is_focused);
     }
@@ -132,18 +180,23 @@ pub(crate) fn windows_of_process(
         pass.windows,
         stopped_target(&registry, select, proc_stat::is_stopped),
     )?;
-    Ok(finish_process_listing(
-        pass,
+    finish_listing(
+        &mut pass,
         &state,
         desktops.finish(deadline).flatten().as_ref(),
-    ))
+        |client| focus_send::input_focus_in(client, deadline),
+    );
+    let (pass, _) = reread_with(
+        (pass, state),
+        deadline,
+        &[pid],
+        |until| read_listing(bus, &registry, select, until),
+        std::thread::sleep,
+    )?;
+    Ok(finish_process_listing(pass))
 }
 
-fn finish_process_listing(
-    mut pass: Pass,
-    state: &X11State,
-    desktops: Option<&Desktops>,
-) -> (Vec<WindowInfo>, RootRead) {
+fn finish_process_listing(pass: Pass) -> (Vec<WindowInfo>, RootRead) {
     let read = if pass
         .outcomes
         .iter()
@@ -153,7 +206,6 @@ fn finish_process_listing(
     } else {
         RootRead::Read
     };
-    finish_listing(&mut pass, state, desktops);
     (
         pass.windows.into_iter().map(|window| window.info).collect(),
         read,

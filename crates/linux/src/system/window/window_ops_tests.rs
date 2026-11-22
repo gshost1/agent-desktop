@@ -1,6 +1,6 @@
 use agent_desktop_core::{ErrorCode, WindowInfo, WindowState};
 
-use super::{finish_process_listing, require_answered};
+use super::{finish_listing, finish_process_listing, require_answered};
 use crate::system::registry::app_outcome::AppOutcome;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::registry::registry_frames::RootRead;
@@ -44,6 +44,27 @@ fn client(id: u32, title: &str) -> X11Client {
         bounds: None,
         hidden: false,
     }
+}
+
+#[test]
+fn finish_reconciles_unmatched_dialog_and_marks_its_public_focus_flag() {
+    let mut pass = crate::system::window::window_test_support::pass();
+    let state = crate::system::window::window_test_support::state(7);
+    assert_eq!(finish_listing(&mut pass, &state, None, |_| true), Some(0));
+    assert!(pass.windows[0].info.state.is_focused);
+}
+
+#[test]
+fn finish_preserves_an_existing_focus_decision() {
+    let mut pass = crate::system::window::window_test_support::pass();
+    pass.focused = Some(0);
+    assert_eq!(
+        finish_listing(&mut pass, &X11State::Unavailable, None, |_| panic!(
+            "must not reconcile"
+        )),
+        Some(0)
+    );
+    assert!(pass.windows[0].info.state.is_focused);
 }
 
 fn state(active: u32) -> X11State {
@@ -162,7 +183,7 @@ fn process_inventory_keeps_windows_and_reports_any_unanswered_frames() {
                 |_| Ok(false),
                 |_| false,
             );
-            let (windows, read) = finish_process_listing(pass, &X11State::Unavailable, None);
+            let (windows, read) = finish_process_listing(pass);
             assert_eq!(windows.len(), expected_count);
             assert_eq!(
                 read == RootRead::TimedOut,
