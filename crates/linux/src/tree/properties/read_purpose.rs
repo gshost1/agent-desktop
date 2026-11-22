@@ -22,6 +22,10 @@ pub(crate) enum ReadPurpose {
 }
 
 impl ReadPurpose {
+    pub(in crate::tree) fn text_content(self) -> bool {
+        matches!(self, Self::TextSearch | Self::TypeTarget)
+    }
+
     pub(in crate::tree) fn identity(self) -> bool {
         matches!(
             self,

@@ -39,7 +39,7 @@ fn document_and_paragraph_text_is_searchable_even_when_read_only() {
 fn document_content_is_read_only_for_searches_and_target_checks() {
     use crate::tree::properties::read_purpose::ReadPurpose;
     for role in [73, 82, 83, 92, 93, 94, 95, 96] {
-        let node = node(role, &["Text"], &[EDITABLE]);
+        let mut node = node(role, &["Text"], &[EDITABLE]);
         for purpose in [
             ReadPurpose::Snapshot,
             ReadPurpose::Count,
@@ -49,16 +49,15 @@ fn document_content_is_read_only_for_searches_and_target_checks() {
             ReadPurpose::Element,
             ReadPurpose::Value,
         ] {
-            assert!(!reads_content(&node, purpose), "{role} {purpose:?}");
+            node.traits.text_content_requested = purpose.text_content();
+            assert!(!reads_content(&node), "{role} {purpose:?}");
         }
         for purpose in [ReadPurpose::TextSearch, ReadPurpose::TypeTarget] {
-            assert!(reads_content(&node, purpose));
+            node.traits.text_content_requested = purpose.text_content();
+            assert!(reads_content(&node));
         }
     }
-    assert!(reads_content(
-        &node(79, &["Text"], &[EDITABLE]),
-        ReadPurpose::Snapshot
-    ));
+    assert!(reads_content(&node(79, &["Text"], &[EDITABLE])));
 }
 
 #[test]

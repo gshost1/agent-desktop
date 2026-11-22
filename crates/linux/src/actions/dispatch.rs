@@ -235,3 +235,7 @@ pub(crate) fn execute_action(
 #[cfg(test)]
 #[path = "dispatch_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "dispatch_document_tests.rs"]
+mod document_tests;

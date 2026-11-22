@@ -160,12 +160,15 @@ empty insertion is dispatched.
   `--timeout-ms`, `type` waits 5000 ms plus 30 ms per character; an explicit
   `--timeout-ms` replaces that.
 - Linux exposes `TypeText` and `SetValue` on paragraphs and headings that
-  report an editable state and both `Text` and `EditableText`. Use a stable
-  ref to insert into or replace that block. Changing its text does not change
-  the ref's identity. Anonymous paragraphs with no distinct native ID, name,
-  or description can return `AMBIGUOUS_TARGET`.
+  report `EDITABLE`, do not report `READ_ONLY`, and expose both `Text` and
+  `EditableText`. Use a stable ref to insert into or replace that block. Changing its text does not change
+  the ref's identity. Anonymous paragraphs with an empty name and no native ID
+  are refused as `AMBIGUOUS_TARGET` at capture when their stable identity is not
+  unique; their editable text cannot distinguish them.
+  Type through the document ref instead; it routes to the focused paragraph or heading.
 - To type through a compound document's ref, first place the caret in the
-  intended paragraph or heading. The document must expose an editable state.
+  intended paragraph or heading. The document must report `EDITABLE` without
+  `READ_ONLY`.
   `type` checks for exactly one focused, writable text descendant, then
   returns its role and AT-SPI path in `details.text_input_target`. Missing or
   ambiguous focus refuses before delivery. Use this route for insertion.

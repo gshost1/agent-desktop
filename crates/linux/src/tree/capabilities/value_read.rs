@@ -15,17 +15,13 @@ const VALUE_INTERFACE: &str = "org.a11y.atspi.Value";
 const TEXT_INTERFACE: &str = "org.a11y.atspi.Text";
 const MAX_TEXT_CHARACTERS: i32 = 64 * 1024;
 
-pub(crate) fn reads_content(
-    node: &RawNode,
-    purpose: crate::tree::properties::read_purpose::ReadPurpose,
-) -> bool {
-    use crate::tree::properties::read_purpose::ReadPurpose;
+pub(crate) fn reads_content(node: &RawNode) -> bool {
     !node
         .traits
         .role
         .present()
         .is_some_and(|role| is_document_content(*role))
-        || matches!(purpose, ReadPurpose::TextSearch | ReadPurpose::TypeTarget)
+        || node.traits.text_content_requested
 }
 
 /// Where a node's value comes from, decided from what the node is.
@@ -181,6 +177,9 @@ pub(crate) async fn read_value(
     node: &RawNode,
     max_bytes: usize,
 ) -> Result<ValueRead, AdapterError> {
+    if !reads_content(node) {
+        return Ok(ValueRead::absent());
+    }
     let outcome = match value_source(node) {
         ValueSource::None => return Ok(ValueRead::absent()),
         ValueSource::Unknown => {
