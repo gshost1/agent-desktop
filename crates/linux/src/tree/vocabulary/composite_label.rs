@@ -45,7 +45,7 @@ enum Fault {
 
 enum SlotState {
     Pending(Vec<Waker>),
-    Ready(Analysis),
+    Ready(Box<Analysis>),
     Abandoned,
 }
 
@@ -134,7 +134,7 @@ async fn composite_of(
         },
         Ok(lead) => {
             let analysis = analyse().await.map_err(fault);
-            lead.0.settle(SlotState::Ready(analysis.clone()));
+            lead.0.settle(SlotState::Ready(Box::new(analysis.clone())));
             analysis
         }
     }
@@ -184,7 +184,7 @@ impl Drop for Lead {
 
 async fn wait_for(slot: &Slot) -> Option<Analysis> {
     poll_fn(|context| match &mut *slot.state() {
-        SlotState::Ready(analysis) => Poll::Ready(Some(analysis.clone())),
+        SlotState::Ready(analysis) => Poll::Ready(Some((**analysis).clone())),
         SlotState::Abandoned => Poll::Ready(None),
         SlotState::Pending(wakers) => {
             if !wakers.iter().any(|waker| waker.will_wake(context.waker())) {
