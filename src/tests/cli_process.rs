@@ -18,7 +18,7 @@ mod launch_display_tests;
 mod launch_atspi_display_tests;
 
 fn binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_agent-desktop"))
+    support::binary()
 }
 
 #[test]
