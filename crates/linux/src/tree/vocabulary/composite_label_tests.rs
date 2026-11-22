@@ -46,6 +46,11 @@ impl Accessible {
     }
 
     #[zbus(property)]
+    fn child_count(&self) -> i32 {
+        self.children.len() as i32
+    }
+
+    #[zbus(property)]
     fn parent(&self) -> Address {
         address(self.parent)
     }
