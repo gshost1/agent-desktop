@@ -63,6 +63,11 @@ impl Accessible {
     }
 
     #[zbus(property)]
+    fn child_count(&self) -> i32 {
+        self.children.len() as i32
+    }
+
+    #[zbus(property)]
     fn parent(&self) -> Address {
         self.calls.fetch_add(1, Ordering::SeqCst);
         address(self.parent)
