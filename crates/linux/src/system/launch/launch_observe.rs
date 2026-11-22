@@ -5,7 +5,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::process::{Child, ExitStatus};
 use std::time::Duration;
 
-use agent_desktop_core::{AdapterError, DeliverySemantics, ErrorCode, ProcessId};
+use agent_desktop_core::{AdapterError, Deadline, DeliverySemantics, ErrorCode, ProcessId};
 
 use super::launch_adopt;
 use super::launch_attach::matches;
@@ -13,6 +13,7 @@ use super::launch_handoff;
 use super::launch_owner_query::OwnerQuery;
 use super::launch_owner_query::off_bus::{self, OffBus};
 use super::launch_owner_query::seen::Seen;
+use super::launch_window_probe::{self, Roots, WindowProbe};
 use crate::system::SharedBus;
 use crate::system::process::running_app::Running;
 use crate::system::registry::Registry;
@@ -29,16 +30,32 @@ fn pick(mut found: Vec<&Running>) -> Option<Step> {
 }
 
 /// The next move of a launch. The owner is the child while it runs and shows
-/// on the registry, else a new descendant, else an application matching the
-/// executable identity that was absent before the spawn, else (when the launcher exited cleanly after
-/// forwarding) the one that was already running. A launcher killed by a signal
-/// or exiting with a failure and no owner is a failed launch, and a clean
-/// exit with no owner is one too at the launch deadline.
-pub(crate) fn step(sample: &Sample<'_>) -> Step {
-    step_with_ancestry(sample, off_bus::descends_from)
+/// on the registry. Otherwise, with no new descendant on the registry, it is
+/// an application matching the executable identity that was absent before
+/// the spawn. With new descendants, it is one with an accessible window, else
+/// a windowed identity match outside the spawned process's tree (by bus
+/// activation or in a service scope, for example). Near the deadline, a
+/// windowless descendant owns it, else a windowless outside identity match.
+/// After the launcher exits cleanly having forwarded, it is the
+/// identity match that was already running. A launcher killed by a signal or
+/// exiting with a failure and no owner is a failed launch, and a clean exit
+/// with no owner is one too at the launch deadline.
+pub(crate) fn step(sample: &Sample<'_>, has_window: impl FnMut(&Running) -> bool) -> Step {
+    step_with_ancestry(sample, off_bus::descends_from, has_window)
 }
 
-fn step_with_ancestry(sample: &Sample<'_>, descends: impl Fn(u32, u32) -> bool) -> Step {
+fn windowed<'a>(
+    apps: &[&'a Running],
+    has_window: &mut impl FnMut(&Running) -> bool,
+) -> Vec<&'a Running> {
+    apps.iter().copied().filter(|app| has_window(app)).collect()
+}
+
+fn step_with_ancestry(
+    sample: &Sample<'_>,
+    descends: impl Fn(u32, u32) -> bool,
+    mut has_window: impl FnMut(&Running) -> bool,
+) -> Step {
     let candidates: Vec<&Running> = sample
         .apps
         .iter()
@@ -54,16 +71,28 @@ fn step_with_ancestry(sample: &Sample<'_>, descends: impl Fn(u32, u32) -> bool) 
         None => own
             .map(|app| Step::Owner(app.clone()))
             .or_else(|| {
-                pick(
-                    sample
-                        .apps
-                        .iter()
-                        .filter(|app| !sample.before.contains(&app.identity()))
-                        .filter(|app| descends(app.pid, sample.child_pid))
-                        .collect(),
-                )
+                let descendants: Vec<&Running> = sample
+                    .apps
+                    .iter()
+                    .filter(|app| !sample.before.contains(&app.identity()))
+                    .filter(|app| descends(app.pid, sample.child_pid))
+                    .collect();
+                if descendants.is_empty() {
+                    return pick(new);
+                }
+                let outside: Vec<&Running> = new
+                    .iter()
+                    .copied()
+                    .filter(|app| !descendants.contains(app))
+                    .collect();
+                pick(windowed(&descendants, &mut has_window))
+                    .or_else(|| pick(windowed(&outside, &mut has_window)))
+                    .or_else(|| {
+                        (sample.near_deadline || sample.settled)
+                            .then(|| pick(descendants).or_else(|| pick(outside)))
+                            .flatten()
+                    })
             })
-            .or_else(|| pick(new))
             .unwrap_or(Step::Wait),
         Some(status) if status.code().is_none() => Step::Failed(status),
         Some(status) => {
@@ -213,11 +242,34 @@ pub(super) fn find_owner(
     let deadline = query.deadline;
     let pid = spawned.pid;
     let mut serving = std::collections::HashMap::new();
+    let roots = Roots::default();
+    let mut probe = WindowProbe::new(
+        |app: &Running| launch_window_probe::root_children(bus, &roots, app, deadline),
+        |owner: &Running| {
+            let Ok(slice) = deadline
+                .remaining_slice(POLL_LIMIT)
+                .and_then(Deadline::from_duration)
+            else {
+                return false;
+            };
+            crate::system::window::window_ops::windows_of_process(bus, owner.pid, slice).is_ok_and(
+                |(windows, _)| {
+                    windows.iter().any(|window| {
+                        window.pid.get() == owner.pid
+                            && window.process_instance.as_deref() == Some(owner.instance.as_str())
+                    })
+                },
+            )
+        },
+    );
     let found = poll_owner(
         spawned,
         query,
         || match crate::system::registry::read_processes(bus, deadline) {
-            Ok(registry) => running_of(&registry).map(Some),
+            Ok(registry) => {
+                roots.replace(launch_window_probe::roots_of(&registry));
+                running_of(&registry).map(Some)
+            }
             Err(error) if error.code == ErrorCode::Timeout => Ok(None),
             Err(error) => Err(error),
         },
@@ -231,7 +283,10 @@ pub(super) fn find_owner(
             }
             observed => observed,
         },
-        || off_bus::observe(pid),
+        (
+            || off_bus::observe(pid),
+            |app: &Running| probe.has_window(app),
+        ),
     );
     if matches!(found, Ok(None)) && query.seen.get() == Seen::Nothing {
         query.seen.set(Seen::OffBus(off_bus::observe(pid)));
@@ -251,7 +306,7 @@ fn poll_owner(
     query: &OwnerQuery<'_>,
     mut read: impl FnMut() -> Result<Option<Vec<Running>>, AdapterError>,
     mut handoff: impl FnMut(&[Running], bool) -> Step,
-    mut observe: impl FnMut() -> OffBus,
+    (mut observe, mut has_window): (impl FnMut() -> OffBus, impl FnMut(&Running) -> bool),
 ) -> Result<Option<Running>, AdapterError> {
     let deadline = query.deadline;
     let mut interval = POLL_INTERVAL;
@@ -259,6 +314,7 @@ fn poll_owner(
     loop {
         let child = spawned.state();
         let expired = deadline.is_expired();
+        let near_deadline = deadline.remaining() < interval + POLL_LIMIT;
         let grace_over = query.not_on_bus.is_expired();
         let listed = read().map_err(after_spawn)?;
         let registry_read = listed.is_some();
@@ -270,8 +326,9 @@ fn poll_owner(
             before: &query.before.processes,
             identity: query.identity,
             settled: expired,
+            near_deadline,
         };
-        let mut next = step(&sample);
+        let mut next = step(&sample, &mut has_window);
         if let Some(status) = child
             && status.success()
             && matches!(next, Step::Wait | Step::Failed(_))
@@ -310,4 +367,4 @@ fn poll_owner(
 mod poll_tests;
 #[cfg(test)]
 #[path = "launch_observe_tests.rs"]
-mod tests;
+pub(super) mod tests;
