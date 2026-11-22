@@ -1,3 +1,4 @@
+mod composite_label;
 pub(super) mod descriptor;
 pub(super) mod gtk_switch;
 pub(super) mod identity;
