@@ -29,6 +29,7 @@ fn entry() -> RefEntry {
         bounds: Some(bounds),
         bounds_hash: bounds.bounds_hash(),
         bounds_space: Some(BoundsSpace::Window),
+        screen_bounds_hash: None,
     };
     entry.capabilities.available_actions = vec![capability::SET_VALUE.into()];
     entry

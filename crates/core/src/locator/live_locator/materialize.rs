@@ -98,7 +98,9 @@ pub(crate) fn ref_entry(
         .cloned()
         .unwrap_or_else(|| "unknown".into());
     let window = node.evidence.ref_evidence.window_bounds.known().copied();
-    let bounds = window.or_else(|| node.evidence.ref_evidence.bounds.known().copied());
+    let screen = node.evidence.ref_evidence.bounds.known().copied();
+    let bounds = window.or(screen);
+    let screen_bounds_hash = window.and(screen).and_then(|value| value.bounds_hash());
     let identifier = selected_identifier(&node.evidence, query.identity.native_id.as_deref());
     let mut entry = RefEntry {
         process: crate::RefProcess {
@@ -122,6 +124,7 @@ pub(crate) fn ref_entry(
             bounds,
             bounds_hash: bounds.as_ref().and_then(|value| value.bounds_hash()),
             bounds_space: window.map(|_| crate::BoundsSpace::Window),
+            screen_bounds_hash,
         },
         capabilities: crate::RefCapabilities {
             states: node.evidence.states.known().cloned().unwrap_or_default(),

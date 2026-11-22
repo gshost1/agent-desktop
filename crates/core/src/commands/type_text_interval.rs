@@ -239,7 +239,9 @@ fn confirm_target(
             deadline,
         },
         request,
-        crate::actionability::StabilityExpectation::permissive(burst.entry.geometry.bounds_hash),
+        crate::actionability::StabilityExpectation::permissive(
+            crate::ref_action::ref_action_poll_state::screen_bounds_hash(&burst.entry),
+        ),
     )?;
     Ok(())
 }

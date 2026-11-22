@@ -228,6 +228,7 @@ unsafe fn decode_core_ref_entry(
             bounds_space,
             bounds,
             bounds_hash,
+            screen_bounds_hash: None,
         },
         capabilities: RefCapabilities {
             states,

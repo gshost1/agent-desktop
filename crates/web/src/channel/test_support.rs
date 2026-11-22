@@ -262,11 +262,7 @@ pub(crate) fn web_entry(token: &str, role: &str, name: &str) -> RefEntry {
             capture: agent_desktop_core::CaptureVerdict::Unique,
             ..RefEntryIdentity::default()
         },
-        geometry: RefGeometry {
-            bounds_space: None,
-            bounds: None,
-            bounds_hash: None,
-        },
+        geometry: RefGeometry::default(),
         capabilities: RefCapabilities {
             states: Vec::new(),
             available_actions: vec!["Click".into()],
