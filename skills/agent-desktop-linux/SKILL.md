@@ -45,6 +45,6 @@ agent-desktop snapshot --app gnome-text-editor -i --compact --lines
 - **Two `click`s on one GTK4 button within about 250 ms act once.** Wait for the effect between repeated clicks.
 - **Pointer input needs `--headed`**: `double-click`, `triple-click`, `hover`, `drag`, `scroll`, `mouse-*`. On GNOME Wayland only coordinate forms work (`mouse-*`, `hover --xy`, `drag --from-xy --to-xy`), `delivered_unverified`; ref-aimed ones refuse. `press` works on X11 and Mutter Wayland, and a headless `press --app` needs the target to hold live focus; window ops and `focus-window` need X11. Under `--headed`, ref `click`, `right-click` and `type` try physical input first.
 - **Keys:** `cmd` and `meta` are Super; X keysym names work. Blocked combos refuse without `--force`.
-- **Menus:** while closed, window snapshots list only the menubar's top level. Open one, read `data.surfaces`, then `snapshot --surface menu --app <name> -i`. List dropdowns are window content.
+- **Menus:** an item of a closed menubar menu is not in a window snapshot or window find; open the menu first, then `snapshot --surface menu --app <name> -i`. List dropdowns are window content.
 - **Chromium and Qt apps need a launch flag** to appear on the bus; open `troubleshooting`.
 - **The state root must be private.** A group- or world-accessible `~/.agent-desktop` makes `snapshot` fail with `PERM_DENIED`, `details.kind: "state_directory_permission"`, and a suggestion naming the `chmod`: `chmod 700` it.
