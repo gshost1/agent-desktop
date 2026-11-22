@@ -102,3 +102,49 @@ fn showing_items_do_not_require_x11_corroboration() {
         super::super::menu_popup::in_window_with(&frame, &mut |_| panic!("SHOWING is sufficient"));
     assert_eq!(found[0].items, 2);
 }
+
+#[test]
+fn closed_nearest_menus_never_read_native_popup_evidence() {
+    let item = visible_item(Field::Present(rect(110, 120, 80, 20)));
+    let closed = node(MENU, "Closed", &[], vec![item.clone()]);
+    let tree = frame_with(vec![
+        closed.clone(),
+        node(MENU, "Open", &[SHOWING], vec![closed]),
+    ]);
+    let mut presented = corroborate_with(|_| panic!("a closed menu must not read X"));
+    assert!(super::super::menu_popup::in_window_with(&tree, &mut presented).is_empty());
+}
+
+#[test]
+fn top_level_children_share_one_native_read_per_process() {
+    let calls = std::rc::Rc::new(RefCell::new(Vec::new()));
+    let rejected = node(
+        MENU,
+        "Uncovered",
+        &[SHOWING],
+        vec![visible_item(Field::Present(rect(400, 400, 80, 20)))],
+    );
+    let accepted = node(
+        MENU,
+        "Covered",
+        &[SHOWING],
+        vec![visible_item(Field::Present(rect(110, 120, 80, 20)))],
+    );
+    let window = node(WINDOW, "", &[SHOWING], vec![rejected, accepted]);
+    let found = super::super::menu_popup::top_level_with(&window, || {
+        let calls = std::rc::Rc::clone(&calls);
+        corroborate_with(move |pid| {
+            calls.borrow_mut().push(pid);
+            Some(vec![PopupWindow {
+                id: 8,
+                bounds: rect(100, 100, 100, 100),
+            }])
+        })
+    })
+    .unwrap();
+    assert_eq!(
+        found.root.payload.node.properties.name.present().unwrap(),
+        "Covered"
+    );
+    assert_eq!(*calls.borrow(), [1]);
+}

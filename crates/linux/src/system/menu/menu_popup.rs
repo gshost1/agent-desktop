@@ -333,6 +333,16 @@ pub(in crate::system) fn is_popup_candidate(window: &Node) -> bool {
 /// GTK 3 context menus are such a window and Chromium menus such a frame; a
 /// real window has a title or holds something besides menus.
 pub(in crate::system) fn top_level(window: &Node, deadline: Deadline) -> Option<Found<'_>> {
+    top_level_with(window, || super::menu_presentation::corroborate(deadline))
+}
+
+pub(super) fn top_level_with<F>(
+    window: &Node,
+    mut make_corroborator: impl FnMut() -> F,
+) -> Option<Found<'_>>
+where
+    F: FnMut(&Node) -> bool,
+{
     if !is_popup_candidate(window) {
         return None;
     }
@@ -348,9 +358,11 @@ pub(in crate::system) fn top_level(window: &Node, deadline: Deadline) -> Option<
     if !window.children.iter().all(only_menu_content) {
         return None;
     }
-    let (root, items) = window.children.iter().find_map(|child| {
-        first_open_menu(child, &mut super::menu_presentation::corroborate(deadline))
-    })?;
+    let mut corroborate = make_corroborator();
+    let (root, items) = window
+        .children
+        .iter()
+        .find_map(|child| first_open_menu(child, &mut corroborate))?;
     Some(Found {
         root,
         family,
