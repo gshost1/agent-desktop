@@ -2,6 +2,18 @@
 
 use crate::AccessibilityNode;
 
+pub(crate) fn hoist_child(node: AccessibilityNode) -> Option<AccessibilityNode> {
+    let evidence = node.presentation.scrolls_vertically;
+    let mut child = node.children.into_iter().next()?;
+    child.presentation.scrolls_vertically = match (evidence, child.presentation.scrolls_vertically)
+    {
+        (Some(true), _) | (_, Some(true)) => Some(true),
+        (_, Some(own)) => Some(own),
+        (inherited, None) => inherited,
+    };
+    Some(child)
+}
+
 /// A wrapper is collapsible when it carries nothing a caller reads: a
 /// transparent role, no ref, no identity text, no hint, state, action, bounds
 /// or truncation marker, and exactly one child. Callers judge a node after

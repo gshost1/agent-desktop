@@ -1,7 +1,7 @@
 use super::summarize;
 use crate::{AccessibilityNode, adapter::minimal_accessibility_node, snapshot::ref_lines};
 
-fn node(role: &str, name: &str) -> AccessibilityNode {
+pub(super) fn node(role: &str, name: &str) -> AccessibilityNode {
     minimal_accessibility_node(role, name)
 }
 
@@ -10,12 +10,15 @@ fn with_ref(mut node: AccessibilityNode, ref_id: &str) -> AccessibilityNode {
     node
 }
 
-fn parent(mut node: AccessibilityNode, children: Vec<AccessibilityNode>) -> AccessibilityNode {
+pub(super) fn parent(
+    mut node: AccessibilityNode,
+    children: Vec<AccessibilityNode>,
+) -> AccessibilityNode {
     node.children = children;
     node
 }
 
-fn buttons(count: usize, prefix: &str) -> Vec<AccessibilityNode> {
+pub(super) fn buttons(count: usize, prefix: &str) -> Vec<AccessibilityNode> {
     (0..count)
         .map(|i| {
             with_ref(
@@ -34,18 +37,20 @@ fn scrollbar(enabled: bool) -> AccessibilityNode {
     bar
 }
 
-fn window(children: Vec<AccessibilityNode>) -> AccessibilityNode {
+pub(super) fn window(children: Vec<AccessibilityNode>) -> AccessibilityNode {
     parent(with_ref(node("window", "Main"), "@s1:e0"), children)
 }
 
 fn lazy_list(rows: usize, enabled_bar: bool) -> AccessibilityNode {
-    parent(
+    let mut area = parent(
         with_ref(node("scrollarea", "Rows"), "@s1:area"),
         vec![
             parent(node("group", ""), buttons(rows, "row")),
             scrollbar(enabled_bar),
         ],
-    )
+    );
+    area.presentation.scrolls_vertically = Some(enabled_bar);
+    area
 }
 
 #[test]
@@ -59,7 +64,9 @@ fn a_scrolling_list_reports_its_loaded_items_and_that_more_may_exist() {
     let tree = window(vec![toolbar, lazy_list(85, true)]);
     let contents = summarize(&tree).expect("contents");
     assert_eq!(contents.roles.get("button"), Some(&88));
-    let regions = &contents.regions;
+    let mut ordered = contents.regions.clone();
+    ordered.sort_by_key(|region| region.line);
+    let regions = &ordered;
     assert_eq!(regions.len(), 2);
     assert_eq!((regions[0].role.as_str(), regions[0].line), ("toolbar", 1));
     assert_eq!(regions[0].items, None);
@@ -179,14 +186,14 @@ fn the_lines_form_puts_each_region_on_one_line_led_by_its_line() {
         data["contents"],
         serde_json::json!([
             "roles: button 82",
-            "line 1: toolbar",
             "line 4: @s1:area scrollarea \"Rows\" items=80 partial",
+            "line 1: toolbar",
         ])
     );
     assert!(data.get("tree").is_none());
 }
 
-fn filler() -> AccessibilityNode {
+pub(super) fn filler() -> AccessibilityNode {
     parent(node("group", ""), buttons(85, "f"))
 }
 
@@ -196,7 +203,9 @@ fn rows(role: &str, count: usize) -> Vec<AccessibilityNode> {
         .collect()
 }
 
-fn only_region(tree: &AccessibilityNode) -> crate::snapshot::content_region::ContentRegion {
+pub(super) fn only_region(
+    tree: &AccessibilityNode,
+) -> crate::snapshot::content_region::ContentRegion {
     let contents = summarize(tree).expect("contents");
     assert_eq!(contents.regions.len(), 1, "{:?}", contents.regions);
     contents.regions[0].clone()
@@ -225,29 +234,30 @@ fn a_list_the_refmap_cap_cut_is_partial_after_its_scroll_bar_was_cut_away() {
 }
 
 #[test]
-fn a_windows_listbox_that_owns_its_scroll_bar_is_a_partial_region() {
+fn a_scrollbar_without_evidence_does_not_claim_partial() {
     let mut children = rows("listitem", 85);
     children.push(scrollbar(true));
     let listbox = parent(with_ref(node("listbox", "Fonts"), "@s1:fonts"), children);
     let region = only_region(&window(vec![listbox]));
     assert_eq!((region.role.as_str(), region.items), ("listbox", Some(85)));
-    assert!(region.partial);
+    assert!(!region.partial);
 }
 
 #[test]
-fn a_windows_list_that_advertises_scrolling_is_partial() {
+fn a_scroll_action_without_evidence_does_not_claim_partial() {
     let mut list = parent(
         with_ref(node("list", "Files"), "@s1:files"),
         rows("listitem", 85),
     );
     list.presentation.available_actions = vec!["Scroll".into()];
-    assert!(only_region(&window(vec![list])).partial);
+    assert!(!only_region(&window(vec![list])).partial);
 }
 
 #[test]
 fn a_linux_listbox_in_a_scroll_pane_is_the_one_region() {
     let listbox = parent(node("listbox", "Apps"), rows("listitem", 85));
-    let pane = parent(node("scrollarea", ""), vec![listbox, scrollbar(true)]);
+    let mut pane = parent(node("scrollarea", ""), vec![listbox, scrollbar(true)]);
+    pane.presentation.scrolls_vertically = Some(true);
     let region = only_region(&window(vec![pane]));
     assert_eq!((region.role.as_str(), region.items), ("listbox", Some(85)));
     assert!(region.partial);
@@ -257,7 +267,8 @@ fn a_linux_listbox_in_a_scroll_pane_is_the_one_region() {
 fn a_web_table_keeps_the_scroll_bar_of_the_area_around_its_document() {
     let table = parent(node("table", "Orders"), rows("row", 85));
     let document = parent(node("webarea", "Shop"), vec![table]);
-    let area = parent(node("scrollarea", ""), vec![document, scrollbar(true)]);
+    let mut area = parent(node("scrollarea", ""), vec![document, scrollbar(true)]);
+    area.presentation.scrolls_vertically = Some(true);
     let region = only_region(&window(vec![area]));
     assert_eq!(region.role, "table");
     assert!(region.partial);

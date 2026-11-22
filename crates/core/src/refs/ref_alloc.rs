@@ -126,7 +126,7 @@ pub fn transform_tree(
         .filter_map(|child| {
             let child = transform_tree(child, include_bounds, interactive_only, compact);
             if compact && is_collapsible(&child) {
-                return child.children.into_iter().next();
+                return crate::refs::ref_alloc_compact::hoist_child(child);
             }
             if interactive_only
                 && !is_ref_able(&child)
@@ -306,7 +306,7 @@ fn allocate_refs_at_path(
         let child = allocate_refs_at_path(child, refmap, config, path, plan)?;
         path.pop();
         if config.options.compact && is_collapsible(&child) {
-            if let Some(child) = child.children.into_iter().next() {
+            if let Some(child) = crate::refs::ref_alloc_compact::hoist_child(child) {
                 children.push(child);
             }
             continue;

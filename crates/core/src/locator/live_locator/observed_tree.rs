@@ -320,6 +320,7 @@ impl ObservedTree {
                 bounds: node.evidence.ref_evidence.bounds.known().copied(),
                 ref_bounds: node.evidence.ref_evidence.window_bounds.known().copied(),
                 descriptors,
+                scrolls_vertically: None,
             },
             children_count: node.children_count,
             subtree_truncated: !node.completeness.subtree_complete,

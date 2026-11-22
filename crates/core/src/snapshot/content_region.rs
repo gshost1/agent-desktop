@@ -17,8 +17,7 @@ pub struct ContentRegion {
     /// the rows near its viewport.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub items: Option<usize>,
-    /// The list's scroll area can still scroll, so it may hold items this
-    /// snapshot does not show.
+    /// The platform reported vertical overflow, or the snapshot cut the content.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub partial: bool,
 }

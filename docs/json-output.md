@@ -160,10 +160,10 @@ returns the whole tree in place of a diff.
 - `roles` counts the nodes that carry a ref, for the four commonest roles, leaving
   out structure no one acts on (`column`, `handle`, `scrollarea`, `scrollbar`,
   `window`). It is left out when no node carries a ref.
-- `regions` lists, in tree order, each `list`, `listbox`, `table`, `outline`, `grid`
+- `regions` lists, largest first by `items` (bars count as zero), with ties by `line`, each `list`, `listbox`, `table`, `outline`, `grid`
   and `browser`, each `scrollarea` whose content reads as a list (five or more
   items that are not text, 80 % of them one role) and does not wrap one of those, and each `toolbar` and
-  `tablist`. At most six are listed; `more_regions` counts the rest.
+  `tablist`. Non-partial lists with fewer than three items are omitted. At most six are listed; `more_regions` counts the remaining eligible regions.
 - `line` is the region node's index in tree order, which is its index in
   `data.lines`. `name` (shortened to 32 characters) and `ref` appear when the node
   has them.
@@ -172,9 +172,12 @@ returns the whole tree in place of a diff.
   that loads rows only near its viewport holds only those, so `items` can be far
   below the list's length.
 - `partial: true` means the list may hold items this snapshot does not show: the
-  list or the scroll area around it has an enabled scroll bar, the list advertises
-  `Scroll` (a Windows list with no separate scroll area), or the snapshot cut its
+  platform reported that the list or its own scroll container scrolls vertically
+  (its content is taller than its viewport), or the snapshot cut its
   subtree (`--max-depth`, `--skeleton`, the observation budget or the refmap cap).
+  Unknown scroll evidence never claims partial. A list inherits its nearest scroll
+  area only through at most three non-list wrappers, each with one content child
+  (scrollbars excluded).
 - With `--lines`, `contents` is an array of lines: `roles: button 62, cell 6, ...`,
   then one line per region such as
   `line 75: @s8f3k2p9:e73 scrollarea "lazy-list" items=12 partial`, and

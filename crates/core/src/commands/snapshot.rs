@@ -119,8 +119,6 @@ pub fn execute(
     format_result(result)
 }
 
-/// A drill is a read of one region the caller already chose, so its index
-/// would only point back at its own first line.
 fn without_contents(mut body: Value) -> Value {
     if let Some(fields) = body.as_object_mut() {
         fields.remove("contents");

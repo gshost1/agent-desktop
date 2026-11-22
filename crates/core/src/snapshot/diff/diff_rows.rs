@@ -72,6 +72,7 @@ fn row_of(node: &AccessibilityNode) -> AccessibilityNode {
             available_actions: node.presentation.available_actions.clone(),
             bounds: node.presentation.bounds,
             ref_bounds: None,
+            scrolls_vertically: node.presentation.scrolls_vertically,
             descriptors: node.presentation.descriptors.clone(),
         },
         children_count: node.children_count,
