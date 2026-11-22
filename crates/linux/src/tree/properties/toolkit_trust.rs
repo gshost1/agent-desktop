@@ -90,6 +90,7 @@ pub(crate) async fn read_web_family(
 /// The toolkits whose accessibility geometry has been measured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolkitKind {
+    Gtk2,
     Gtk3,
     Gtk4,
     Qt,
@@ -114,7 +115,9 @@ pub(crate) fn kind(toolkit: &ToolkitId) -> ToolkitKind {
             None => ToolkitKind::Other,
         };
     }
-    if name.eq_ignore_ascii_case("qt") {
+    if name.eq_ignore_ascii_case("gail") && gtk_major(toolkit.version.as_deref()) == Some(2) {
+        ToolkitKind::Gtk2
+    } else if name.eq_ignore_ascii_case("qt") {
         ToolkitKind::Qt
     } else if name.eq_ignore_ascii_case("chromium") {
         ToolkitKind::Chromium
@@ -166,7 +169,8 @@ pub(crate) fn reports_global_position(toolkit: &ToolkitId) -> bool {
 }
 
 /// Whether window-coordinate descent is usable after sibling overlap has
-/// been excluded. GTK 3 and Qt can descend beneath an overlapping sibling;
+/// been excluded. GTK 2 uses GAIL's window-coordinate point query.
+/// GTK 3 and Qt can descend beneath an overlapping sibling;
 /// neither their child order nor their component z-order proves stacking.
 /// GTK 4 qualifies in window coordinates only.
 pub(crate) fn trusts_descent(toolkit: &ToolkitId) -> bool {
@@ -197,7 +201,7 @@ pub(crate) fn stops_above_target(toolkit: &ToolkitId) -> bool {
 /// toolkit that could not be read is not assumed to agree; Gecko is measured.
 pub(crate) fn selection_indices_are_accessible(toolkit: &ToolkitId) -> bool {
     match kind(toolkit) {
-        ToolkitKind::Gtk4 => false,
+        ToolkitKind::Gtk2 | ToolkitKind::Gtk4 => false,
         ToolkitKind::Other => is_gecko(toolkit),
         _ => true,
     }
