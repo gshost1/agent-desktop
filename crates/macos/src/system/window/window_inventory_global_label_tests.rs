@@ -1,15 +1,16 @@
 use super::*;
 use agent_desktop_core::{WindowInfo, WindowState};
-
-use crate::system::window::window_ax_state::label_accessibility;
+use std::cell::Cell;
 
 #[test]
 fn timeout_then_success_labels_only_bridged_windows_accessible() {
     let mut windows = vec![window(1), window(2)];
     let mut probes = Vec::new();
-    let deadline = Instant::now() + Duration::from_secs(2);
-    label_accessibility(&mut windows, |pid, wanted| {
-        read_until(pid, wanted, deadline, |pid, wanted, probe| {
+    let start = Instant::now();
+    label_until(
+        &mut windows,
+        start + Duration::from_secs(2),
+        |pid, wanted, probe| {
             assert_eq!(pid, 10);
             assert_eq!(wanted, &FxHashSet::from_iter([1, 2]));
             probes.push(probe);
@@ -20,11 +21,13 @@ fn timeout_then_success_labels_only_bridged_windows_accessible() {
                 titles.record(1, Some("Document".into()));
                 Ok(titles)
             }
-        })
-    });
-    assert_eq!(probes.len(), 2);
-    assert!(probes[1] > probes[0]);
-    assert!(probes.iter().all(|probe| *probe <= deadline));
+        },
+        || start,
+    );
+    assert_eq!(
+        probes,
+        vec![start + LABEL_PROBE, start + LABEL_RETRY_BUDGET]
+    );
     assert!(windows[0].state.accessible);
     assert_eq!(windows[0].title, "Document");
     assert!(!windows[1].state.accessible);
@@ -32,61 +35,101 @@ fn timeout_then_success_labels_only_bridged_windows_accessible() {
 }
 
 #[test]
-fn repeated_timeout_reads_exactly_twice_and_preserves_optimistic_labels() {
-    let mut windows = vec![window(1), window(2)];
-    let mut attempts = 0;
-    let deadline = Instant::now() + Duration::from_secs(2);
-    label_accessibility(&mut windows, |pid, wanted| {
-        read_until(pid, wanted, deadline, |_, _, _| {
-            attempts += 1;
-            Err(AdapterError::timeout("unresponsive application"))
-        })
-    });
-    assert_eq!(attempts, 2);
-    assert!(windows.iter().all(|window| window.state.accessible));
+fn shared_retry_budget_bounds_hung_apps_and_preserves_unretried_labels() {
+    let run = || {
+        let start = Instant::now();
+        let clock = Cell::new(start);
+        let mut windows = (1..=12)
+            .rev()
+            .map(|id| {
+                let mut window = window(id);
+                window.pid = (id as u32).into();
+                window.state.accessible = id % 2 == 0;
+                window
+            })
+            .collect::<Vec<_>>();
+        let mut attempts = Vec::new();
+        label_until(
+            &mut windows,
+            start + Duration::from_secs(5),
+            |pid, _, probe| {
+                attempts.push(pid);
+                clock.set(probe);
+                Err(AdapterError::timeout("hung app"))
+            },
+            || clock.get(),
+        );
+        assert_eq!(clock.get() - start, LABEL_PROBE * 12 + LABEL_RETRY_BUDGET);
+        assert_eq!(attempts, (1..=12).chain([1]).collect::<Vec<_>>());
+        let labels = windows
+            .iter()
+            .map(|window| window.state.accessible)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            (1..=12).rev().map(|id| id % 2 == 0).collect::<Vec<_>>()
+        );
+        labels
+    };
+    assert_eq!(run(), run());
 }
 
 #[test]
-fn non_timeout_error_is_not_retried() {
-    let mut windows = vec![window(1)];
-    let mut attempts = 0;
-    let deadline = Instant::now() + Duration::from_secs(2);
-    label_accessibility(&mut windows, |pid, wanted| {
-        read_until(pid, wanted, deadline, |_, _, _| {
-            attempts += 1;
-            Err(AdapterError::permission_denied())
-        })
-    });
-    assert_eq!(attempts, 1);
-    assert!(windows[0].state.accessible);
+fn non_timeout_error_and_successful_empty_read_are_not_retried() {
+    for permission_error in [false, true] {
+        let mut windows = vec![window(1)];
+        let mut attempts = 0;
+        let start = Instant::now();
+        label_until(
+            &mut windows,
+            start + Duration::from_secs(2),
+            |_, _, _| {
+                attempts += 1;
+                if permission_error {
+                    Err(AdapterError::permission_denied())
+                } else {
+                    Ok(WindowAxTitles::default())
+                }
+            },
+            || start,
+        );
+        assert_eq!(attempts, 1);
+        assert_eq!(windows[0].state.accessible, permission_error);
+    }
 }
 
 #[test]
-fn successful_empty_read_is_not_retried_and_labels_missing_window_inaccessible() {
-    let mut windows = vec![window(1)];
-    let mut attempts = 0;
-    let deadline = Instant::now() + Duration::from_secs(2);
-    label_accessibility(&mut windows, |pid, wanted| {
-        read_until(pid, wanted, deadline, |_, _, _| {
-            attempts += 1;
-            Ok(WindowAxTitles::default())
-        })
-    });
-    assert_eq!(attempts, 1);
-    assert!(!windows[0].state.accessible);
+fn overall_deadline_without_retry_margin_preserves_first_read() {
+    for remaining in [Duration::ZERO, LABEL_PROBE * 2] {
+        let start = Instant::now();
+        let deadline = start + remaining;
+        let mut windows = vec![window(1)];
+        windows[0].state.accessible = false;
+        let mut attempts = 0;
+        label_until(
+            &mut windows,
+            deadline,
+            |_, _, probe| {
+                attempts += 1;
+                assert_eq!(probe, (start + LABEL_PROBE).min(deadline));
+                Err(AdapterError::timeout("overall deadline exhausted"))
+            },
+            || start,
+        );
+        assert_eq!(attempts, 1);
+        assert!(!windows[0].state.accessible);
+    }
 }
 
 #[test]
-fn both_attempts_are_capped_by_the_overall_deadline() {
-    let deadline = Instant::now();
-    let mut attempts = 0;
-    let result = read_until(10, &FxHashSet::default(), deadline, |_, _, probe| {
-        attempts += 1;
-        assert_eq!(probe, deadline);
-        Err(AdapterError::timeout("overall deadline exhausted"))
-    });
-    assert_eq!(attempts, 2);
-    assert_eq!(result.unwrap_err().code, ErrorCode::Timeout);
+fn empty_inventory_does_not_read() {
+    let start = Instant::now();
+    label_until(
+        &mut [],
+        start,
+        |_, _, _| panic!("unexpected read"),
+        || start,
+    );
 }
 
 fn window(number: i64) -> WindowInfo {

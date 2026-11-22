@@ -59,14 +59,12 @@ fn capture_global_once(
         },
         |pid| crate::system::window::window_ax_state::read_frontmost_until(pid, deadline),
     )?;
-    crate::system::window::window_ax_state::label_accessibility(&mut windows, |pid, wanted| {
-        label::read_until(
-            pid,
-            wanted,
-            deadline,
-            crate::system::window::window_ax_state::accessible_window_titles_until,
-        )
-    });
+    label::label_until(
+        &mut windows,
+        deadline,
+        crate::system::window::window_ax_state::accessible_window_titles_until,
+        Instant::now,
+    );
     Ok(windows)
 }
 
