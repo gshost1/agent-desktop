@@ -78,7 +78,7 @@ fn poll(
                     }
                 }
             },
-            Err(AppError::Adapter(err)) if wait_timeout::is_deadline_expired(&err) => {
+            Err(AppError::Adapter(err)) if wait_timeout::expired_during_poll(&err, deadline) => {
                 return wait_timeout::notification(
                     app.as_ref(),
                     text.as_ref(),

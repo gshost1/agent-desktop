@@ -45,7 +45,9 @@ pub(crate) fn wait_for_event(
         {
             return unresolved_target_result(&requested, input.app.as_deref(), start);
         }
-        Err(AppError::Adapter(err)) if crate::commands::wait_timeout::is_deadline_expired(&err) => {
+        Err(AppError::Adapter(err))
+            if crate::commands::wait_timeout::expired_during_poll(&err, deadline) =>
+        {
             return timeout_err(
                 &input.event,
                 input.app.as_ref(),

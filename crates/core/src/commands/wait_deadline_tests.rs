@@ -72,6 +72,127 @@ impl ActionOps for ResolutionFailure {}
 impl InputOps for ResolutionFailure {}
 impl SystemOps for ResolutionFailure {}
 
+struct PollTimeout {
+    expire_first: bool,
+    calls: AtomicUsize,
+}
+
+impl PollTimeout {
+    fn read<T: Default>(&self, deadline: Deadline) -> Result<T, AdapterError> {
+        let first = self.calls.fetch_add(1, Ordering::SeqCst) == 0;
+        if self.expire_first || !first {
+            crate::wait::deadline::sleep(deadline.remaining() + Duration::from_millis(1));
+        }
+        if first {
+            Err(AdapterError::timeout("provider poll timed out"))
+        } else {
+            Ok(T::default())
+        }
+    }
+}
+
+impl ObservationOps for PollTimeout {
+    fn observe_tree(
+        &self,
+        _root: crate::locator::live_locator::ObservationRoot<'_>,
+        request: &crate::locator::live_locator::ObservationRequest,
+    ) -> Result<crate::locator::live_locator::ObservedTree, AdapterError> {
+        assert!(request.deadline.is_expired());
+        Err(request.deadline.timeout_error())
+    }
+
+    fn list_apps(&self, _deadline: Deadline) -> Result<Vec<AppInfo>, AdapterError> {
+        Ok(vec![AppInfo {
+            name: "TestApp".into(),
+            pid: crate::ProcessId::new(42),
+            bundle_id: None,
+            process_instance: Some("test-instance".into()),
+            presentation: None,
+        }])
+    }
+
+    fn list_windows(
+        &self,
+        _filter: &WindowFilter,
+        deadline: Deadline,
+    ) -> Result<Vec<WindowInfo>, AdapterError> {
+        self.read::<()>(deadline)?;
+        Ok(vec![WindowInfo {
+            id: "w-1".into(),
+            title: "Other".into(),
+            app: "TestApp".into(),
+            pid: crate::ProcessId::new(42),
+            process_instance: Some("test-instance".into()),
+            bounds: None,
+            state: Default::default(),
+        }])
+    }
+}
+
+impl ActionOps for PollTimeout {}
+impl InputOps for PollTimeout {}
+
+impl SystemOps for PollTimeout {
+    fn list_notifications(
+        &self,
+        _filter: &NotificationFilter,
+        _policy: crate::InteractionPolicy,
+        deadline: Deadline,
+        _lease: Option<&crate::InteractionLease>,
+    ) -> Result<Vec<NotificationInfo>, AdapterError> {
+        self.read(deadline)
+    }
+}
+
+#[test]
+fn poll_timeouts_are_evidence_only_while_the_wait_has_time_remaining() {
+    for expire_first in [true, false] {
+        for mode in [
+            WaitModeArgs {
+                window: Some("Doc".into()),
+                ..wait_args().mode
+            },
+            WaitModeArgs {
+                text: Some("hello".into()),
+                ..wait_args().mode
+            },
+            WaitModeArgs {
+                surface: Some(SurfaceWait::Notification),
+                ..wait_args().mode
+            },
+        ] {
+            let _clock = crate::wait::deadline::VirtualClock::freeze();
+            let adapter = PollTimeout {
+                expire_first,
+                calls: AtomicUsize::new(0),
+            };
+            let error = execute(
+                WaitArgs {
+                    mode,
+                    timeout_ms: 300,
+                    ..wait_args()
+                },
+                &adapter,
+                &CommandContext::default(),
+            )
+            .unwrap_err();
+            let AppError::Adapter(error) = error else {
+                panic!("adapter error expected")
+            };
+            assert_eq!(error.code, ErrorCode::Timeout);
+            let details = error.details.unwrap();
+            assert_eq!(details["kind"], "wait_timeout");
+            if expire_first {
+                assert!(details.get("last_error").is_none(), "{details}");
+                assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+            } else {
+                assert_eq!(details["last_error"]["code"], "TIMEOUT");
+                assert_eq!(details["last_error"]["message"], "provider poll timed out");
+            }
+        }
+    }
+}
+
 #[test]
 fn menu_wait_normalizes_resolution_timeouts_and_preserves_resolution_refusals() {
     for error in [

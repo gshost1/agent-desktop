@@ -1,5 +1,84 @@
 use super::*;
 
+struct MaterializationTimeout {
+    calls: AtomicUsize,
+    expire: bool,
+}
+
+impl ObservationOps for MaterializationTimeout {
+    fn list_windows(
+        &self,
+        filter: &WindowFilter,
+        deadline: crate::Deadline,
+    ) -> Result<Vec<WindowInfo>, AdapterError> {
+        StaticTreeAdapter {
+            tree: window_node(vec![]),
+        }
+        .list_windows(filter, deadline)
+    }
+
+    fn observe_tree(
+        &self,
+        root: crate::locator::live_locator::ObservationRoot<'_>,
+        request: &crate::locator::live_locator::ObservationRequest,
+    ) -> Result<crate::locator::live_locator::ObservedTree, AdapterError> {
+        match self.calls.fetch_add(1, Ordering::SeqCst) {
+            0 => crate::adapter::observed_tree(&root, window_node(vec![button_node("match")])),
+            1 => {
+                if self.expire {
+                    crate::wait::deadline::sleep(
+                        request.deadline.remaining() + std::time::Duration::from_millis(1),
+                    );
+                }
+                Err(AdapterError::timeout("materialization timed out"))
+            }
+            _ => crate::adapter::observed_tree(&root, window_node(vec![])),
+        }
+    }
+}
+
+impl ActionOps for MaterializationTimeout {}
+impl InputOps for MaterializationTimeout {}
+impl SystemOps for MaterializationTimeout {}
+
+#[test]
+fn selector_materialization_records_only_timeouts_before_expiry() {
+    let _guard = HomeGuard::new();
+    for expire in [true, false] {
+        let _clock = crate::wait::deadline::VirtualClock::freeze();
+        let adapter = MaterializationTimeout {
+            calls: AtomicUsize::new(0),
+            expire,
+        };
+        let error = execute(
+            WaitSelectorInput {
+                opts: crate::adapter::TreeOptions {
+                    max_depth: 50,
+                    ..Default::default()
+                },
+                ..base_input("button:match", false)
+            },
+            &adapter,
+            &CommandContext::default(),
+        )
+        .unwrap_err();
+        let AppError::Adapter(error) = error else {
+            panic!("adapter error expected")
+        };
+        let details = error.details.unwrap();
+        assert_eq!(details["kind"], "wait_timeout");
+        if expire {
+            assert!(details.get("last_error").is_none(), "{details}");
+        } else {
+            assert_eq!(
+                details["last_error"]["message"],
+                "materialization timed out"
+            );
+        }
+        assert!(adapter.calls.load(Ordering::SeqCst) >= 2);
+    }
+}
+
 /// Regression guard for the post-action-wait `lock_timeout` envelope-replacement
 /// bug. Under a batch, the wait's deadline is intersected with the inherited
 /// batch deadline; once that inherited deadline has expired, the recovery write

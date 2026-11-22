@@ -15,6 +15,10 @@ pub(crate) fn is_deadline_expired(error: &AdapterError) -> bool {
             == Some("deadline")
 }
 
+pub(crate) fn expired_during_poll(error: &AdapterError, deadline: crate::Deadline) -> bool {
+    is_deadline_expired(error) || (error.code == ErrorCode::Timeout && deadline.is_expired())
+}
+
 pub(crate) fn menu(mut error: AdapterError, timeout_ms: u64) -> AppError {
     if error.code == ErrorCode::Timeout {
         let details = error.details.get_or_insert_with(|| json!({}));

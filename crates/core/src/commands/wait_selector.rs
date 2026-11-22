@@ -107,6 +107,11 @@ fn execute_for_target(
                             last_built = Some(result);
                             None
                         }
+                        Err(AppError::Adapter(ref err))
+                            if super::wait_timeout::expired_during_poll(err, poll_deadline) =>
+                        {
+                            None
+                        }
                         Err(err)
                             if err.code() == ErrorCode::Timeout.as_str()
                                 || is_transient_poll_error(&err, input.window_id.as_deref())
@@ -132,8 +137,8 @@ fn execute_for_target(
                 Err(err) if is_target_gone_error(&err) && input.gone && entry.is_none() => {
                     Some(Ok(SelectorCompletion::Absent))
                 }
-                Err(err)
-                    if err.code() == ErrorCode::Timeout.as_str() && poll_deadline.is_expired() =>
+                Err(AppError::Adapter(ref err))
+                    if super::wait_timeout::expired_during_poll(err, poll_deadline) =>
                 {
                     return Ok(None);
                 }
@@ -158,6 +163,8 @@ fn execute_for_target(
             {
                 match build_snapshot(adapter, &input, entry, poll_deadline) {
                     Ok(result) => last_built = Some(result),
+                    Err(AppError::Adapter(ref err))
+                        if super::wait_timeout::expired_during_poll(err, poll_deadline) => {}
                     Err(error) => last_error = Some(poll_error_json(&error)),
                 }
             }
@@ -176,14 +183,10 @@ fn execute_for_target(
             deadline.elapsed().as_millis(),
         )),
         Ok(None) => timeout_response(adapter, &input, entry, context, (last_built, last_error)),
-        Err(err) if err.code() == ErrorCode::Timeout.as_str() && deadline.is_expired() => {
-            timeout_response(
-                adapter,
-                &input,
-                entry,
-                context,
-                (last_built, Some(poll_error_json(&err))),
-            )
+        Err(AppError::Adapter(ref err))
+            if super::wait_timeout::expired_during_poll(err, deadline) =>
+        {
+            timeout_response(adapter, &input, entry, context, (last_built, last_error))
         }
         Err(err) => Err(err),
     }
