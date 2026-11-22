@@ -3,6 +3,31 @@ use crate::system::menu::menu_fixture::{BUTTON, ITEM, MENU, PANEL, POPUP_MENU, f
 use crate::tree::Field;
 
 #[test]
+fn vanished_item_bounds_preserve_unreadable_item_and_remaining_items() {
+    let mut items = [
+        node(ITEM, "Vanished", &[VISIBLE], vec![]),
+        node(ITEM, "Open", &[VISIBLE], vec![]),
+    ];
+    items[0].payload.node.extents = Field::Failed("unread".into());
+    let bounds = crate::tree::Extents {
+        x: 10,
+        y: 20,
+        width: 100,
+        height: 20,
+    };
+    apply_bounds(
+        &mut items[0].payload,
+        Err(AdapterError::timeout("item vanished")),
+    )
+    .unwrap();
+    apply_bounds(&mut items[1].payload, Ok(Field::Present(bounds))).unwrap();
+    assert!(items[0].payload.node.extents.is_failed());
+    assert_eq!(items[1].payload.node.extents.present(), Some(&bounds));
+    apply_bounds(&mut items[1].payload, Ok(Field::Absent)).unwrap();
+    assert!(items[1].payload.node.extents.present().is_none());
+}
+
+#[test]
 fn structural_reads_only_need_geometry_for_visible_only_menu_items() {
     let mut visible = node(ITEM, "Open", &[VISIBLE], vec![]);
     visible.payload.node.extents = Field::Failed("field not requested".into());

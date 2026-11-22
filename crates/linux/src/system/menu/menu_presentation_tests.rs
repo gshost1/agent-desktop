@@ -1,5 +1,6 @@
 use super::*;
 use crate::system::menu::menu_fixture::*;
+use crate::system::menu::menu_fixture::{MENU, SHOWING};
 use crate::tree::Field;
 use crate::tree::vocabulary::state_bits::VISIBLE;
 use std::cell::RefCell;
@@ -147,4 +148,122 @@ fn top_level_children_share_one_native_read_per_process() {
         "Covered"
     );
     assert_eq!(*calls.borrow(), [1]);
+}
+
+#[test]
+fn one_contained_item_corroborates_a_menu_with_other_items_outside() {
+    let menu = node(
+        MENU,
+        "File",
+        &[SHOWING],
+        vec![
+            visible_item(Field::Present(rect(110, 120, 80, 20))),
+            visible_item(Field::Present(rect(310, 120, 80, 20))),
+        ],
+    );
+    let frame = frame_with(vec![menu]);
+    let windows = vec![
+        PopupWindow {
+            id: 1,
+            bounds: rect(100, 100, 100, 100),
+        },
+        PopupWindow {
+            id: 2,
+            bounds: rect(300, 100, 100, 100),
+        },
+    ];
+    let mut separated = corroborate_with(|_| Some(windows.clone()));
+    assert_eq!(
+        super::super::menu_popup::in_window_with(&frame, &mut separated)[0].items,
+        2
+    );
+    let mut covered = corroborate_with(|_| {
+        Some(vec![PopupWindow {
+            id: 3,
+            bounds: rect(100, 100, 300, 100),
+        }])
+    });
+    assert_eq!(
+        super::super::menu_popup::in_window_with(&frame, &mut covered)[0].items,
+        2
+    );
+}
+
+#[test]
+fn a_scrolled_menu_keeps_items_above_and_below_the_popup() {
+    let menu = node(
+        MENU,
+        "File",
+        &[SHOWING],
+        vec![
+            visible_item(Field::Present(rect(328, -19, 310, 25))),
+            visible_item(Field::Present(rect(328, 31, 310, 25))),
+            visible_item(Field::Present(rect(328, 479, 310, 25))),
+        ],
+    );
+    let frame = frame_with(vec![menu]);
+    let mut presented = corroborate_with(|_| {
+        Some(vec![PopupWindow {
+            id: 1,
+            bounds: rect(326, 22, 314, 218),
+        }])
+    });
+    assert_eq!(
+        super::super::menu_popup::in_window_with(&frame, &mut presented)[0].items,
+        3
+    );
+}
+
+#[test]
+fn a_screen_edge_menu_keeps_partly_clipped_items() {
+    let menu = node(
+        MENU,
+        "File",
+        &[SHOWING],
+        vec![
+            visible_item(Field::Present(rect(328, 41, 310, 25))),
+            visible_item(Field::Present(rect(328, 232, 310, 25))),
+        ],
+    );
+    let frame = frame_with(vec![menu]);
+    for bounds in [rect(326, 22, 314, 218), rect(326, 22, 314, 230)] {
+        let mut presented = corroborate_with(|_| Some(vec![PopupWindow { id: 1, bounds }]));
+        assert_eq!(
+            super::super::menu_popup::in_window_with(&frame, &mut presented)[0].items,
+            2
+        );
+    }
+    for bounds in [rect(0, 0, 100, 100), rect(330, 22, 310, 218)] {
+        let mut unrelated = corroborate_with(|_| Some(vec![PopupWindow { id: 1, bounds }]));
+        assert!(super::super::menu_popup::in_window_with(&frame, &mut unrelated).is_empty());
+    }
+}
+
+#[test]
+fn native_coverage_counts_only_readable_visible_items_alongside_showing_items() {
+    let mut showing = visible_item(Field::Present(rect(110, 120, 80, 20)));
+    showing.payload.node.traits.states = Field::Present(vec![1 << SHOWING, 0]);
+    let mut hidden = visible_item(Field::Present(rect(110, 180, 80, 20)));
+    hidden.payload.node.traits.states = Field::Present(vec![0, 0]);
+    let menu = node(
+        MENU,
+        "File",
+        &[SHOWING],
+        vec![
+            showing,
+            visible_item(Field::Present(rect(110, 140, 80, 20))),
+            hidden,
+            visible_item(Field::Failed("vanished".into())),
+        ],
+    );
+    let frame = frame_with(vec![menu]);
+    let mut presented = corroborate_with(|_| {
+        Some(vec![PopupWindow {
+            id: 1,
+            bounds: rect(100, 100, 100, 100),
+        }])
+    });
+    let found = super::super::menu_popup::in_window_with(&frame, &mut presented);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].items, 2);
 }
