@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use agent_desktop_core::{
     ActionResult, AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionLease,
     InteractionPolicy, KeyCombo, ProcessIdentity, WindowInfo,
@@ -27,6 +29,9 @@ trait KeyWorld {
         deadline: Deadline,
     ) -> Result<Option<WindowInfo>, AdapterError>;
     fn active_client_pid(&self, deadline: Deadline) -> Option<u32>;
+    fn pause(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
 }
 
 struct LiveKeys<'a> {
@@ -115,7 +120,7 @@ fn require_active(
 ) -> Result<(), AdapterError> {
     let pid = process.pid.get();
     let display_active =
-        !matches!(backend, Backend::X11(_)) || world.active_client_pid(deadline) == Some(pid);
+        !matches!(backend, Backend::X11(_)) || display_active(world, pid, deadline);
     if !display_active {
         return Err(match window {
             Some(window) => window_not_active(window),
@@ -139,6 +144,28 @@ fn require_active(
         Some(_) => Err(not_active(process, "other_application")),
         None => Err(not_active(process, "frame_not_active")),
     }
+}
+
+fn display_active(world: &impl KeyWorld, pid: u32, deadline: Deadline) -> bool {
+    match world.active_client_pid(deadline) {
+        Some(owner) => return owner == pid,
+        None if deadline.is_expired() => return false,
+        None => {}
+    }
+    let settle = deadline.capped(Duration::from_millis(300));
+    for _ in 0..3 {
+        if settle.is_expired() {
+            break;
+        }
+        world.pause(Duration::from_millis(25).min(settle.remaining()));
+        if settle.is_expired() {
+            break;
+        }
+        if let Some(owner) = world.active_client_pid(settle) {
+            return owner == pid;
+        }
+    }
+    false
 }
 
 fn window_not_active(window: &WindowInfo) -> AdapterError {
@@ -197,9 +224,10 @@ fn press_in(
         deadline,
     } = request;
     let backend = physical.backend()?;
+    let activation = deadline.capped(Duration::from_millis(300));
     let mut gate = || {
         require_process(keys, process)?;
-        require_active(keys, &backend, process, window, deadline)
+        require_active(keys, &backend, process, window, activation)
     };
     let result = press_for_process(physical, combo, policy, &mut gate, deadline)?;
     after_delivery(keys, process, result)

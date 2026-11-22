@@ -48,6 +48,68 @@ fn extents_select_one_of_two_same_titled_windows_of_one_process() {
     );
 }
 
+fn openbox_client() -> X11Client {
+    let mut client = client(1, 10, "Confirm File Format", 334, 20);
+    client.extents = Some(FrameExtents {
+        left: 1,
+        right: 1,
+        top: 20,
+        bottom: 1,
+    });
+    client.bounds = Some(Extents {
+        x: 343,
+        y: 334,
+        width: 595,
+        height: 190,
+    });
+    client
+}
+
+fn openbox_frame(title: &str, global: bool) -> FrameFacts {
+    frame(
+        10,
+        title,
+        Some(Extents {
+            x: 342,
+            y: 314,
+            width: 597,
+            height: 211,
+        }),
+        global,
+    )
+}
+
+#[test]
+fn openbox_borders_identify_a_geometry_fallback() {
+    for global in [true, false] {
+        assert_eq!(
+            match_client(&openbox_frame("Question", global), &[openbox_client()]),
+            ClientMatch::One(1)
+        );
+    }
+}
+
+#[test]
+fn openbox_borders_break_a_title_tie() {
+    let clients = [
+        openbox_client(),
+        client(2, 10, "Confirm File Format", 700, 20),
+    ];
+    assert_eq!(
+        match_client(&openbox_frame("Confirm File Format", true), &clients),
+        ClientMatch::One(1)
+    );
+}
+
+#[test]
+fn invalid_or_overflowing_frame_edges_identify_nothing() {
+    let mut client = openbox_client();
+    client.extents.as_mut().unwrap().left = u32::MAX;
+    assert_eq!(frame_around(&client), None);
+    client.extents.as_mut().unwrap().left = i32::MAX as u32;
+    assert_eq!(frame_around(&client), None);
+}
+
 #[test]
 fn extents_without_the_client_side_shadow_select_the_shadowed_client() {
     let mut first = client(1, 10, "Doc", 157, 0);
@@ -188,7 +250,7 @@ fn an_unnamed_local_frame_needs_one_exact_same_process_size_match() {
     );
     assert_eq!(
         match_client(&frame(10, "Unrelated", size, false), &clients),
-        ClientMatch::NoClient
+        ClientMatch::One(2)
     );
     assert_eq!(
         match_client(
@@ -204,5 +266,116 @@ fn an_unnamed_local_frame_needs_one_exact_same_process_size_match() {
             &clients
         ),
         ClientMatch::NoClient
+    );
+}
+
+#[test]
+fn geometry_fallback_matches_native_title_differences_across_toolkits() {
+    for (accessible, native, global, client_rect) in [
+        ("Question", "", false, false),
+        ("Question", "Confirm File Format", true, false),
+        ("", "KCalc", true, true),
+    ] {
+        let client = client(1, 10, native, 157, 37);
+        let rect = if client_rect {
+            client.bounds
+        } else {
+            frame_around(&client)
+        };
+        assert_eq!(
+            match_client(&frame(10, accessible, rect, global), &[client]),
+            ClientMatch::One(1)
+        );
+    }
+}
+
+#[test]
+fn geometry_fallback_preserves_ambiguity_and_requires_same_process_geometry() {
+    let clients = [client(1, 10, "", 157, 37), client(2, 10, "Other", 400, 37)];
+    let rect = frame_around(&clients[0]);
+    let local = frame(10, "Question", rect, false);
+    assert_eq!(
+        match_client(&local, &clients),
+        ClientMatch::Several(vec![1, 2])
+    );
+    let global = frame(10, "Question", rect, true);
+    assert_eq!(match_client(&global, &clients), ClientMatch::One(1));
+    assert_eq!(
+        match_client(&frame(11, "Question", rect, true), &clients),
+        ClientMatch::NoClient
+    );
+    assert_eq!(
+        match_client(&frame(10, "Question", None, true), &clients),
+        ClientMatch::NoClient
+    );
+    assert_eq!(match_client(&global, &[]), ClientMatch::NoClient);
+    assert_eq!(
+        match_client(
+            &frame(
+                10,
+                "Question",
+                Some(Extents {
+                    width: 0,
+                    ..rect.unwrap()
+                }),
+                false
+            ),
+            &clients
+        ),
+        ClientMatch::NoClient
+    );
+}
+
+#[test]
+fn fallback_accepts_shadowless_frames_and_local_client_sizes() {
+    let mut client = client(1, 10, "Native", 157, 37);
+    client.shadow = (10, 10, 10, 10);
+    let rect = without_shadow(&client, frame_around(&client).unwrap());
+    for global in [false, true] {
+        assert_eq!(
+            match_client(
+                &frame(10, "Accessible", Some(rect), global),
+                &[client.clone()]
+            ),
+            ClientMatch::One(1)
+        );
+    }
+    assert_eq!(
+        match_client(&frame(10, "Accessible", client.bounds, false), &[client]),
+        ClientMatch::One(1)
+    );
+}
+
+#[test]
+fn a_title_match_keeps_precedence_over_a_geometry_match() {
+    let clients = [
+        client(1, 10, "Doc", 157, 37),
+        client(2, 10, "Other", 400, 37),
+    ];
+    assert_eq!(
+        match_client(&frame(10, "Doc", frame_around(&clients[1]), true), &clients),
+        ClientMatch::One(1)
+    );
+}
+
+#[test]
+fn named_frames_reserve_their_clients_against_geometry_fallback() {
+    let clients = vec![client(1, 10, "Doc", 157, 37)];
+    let frames = [
+        frame(10, "Doc", None, false),
+        frame(10, "Question", frame_around(&clients[0]), true),
+    ];
+    assert_eq!(
+        match_frames(&frames, &clients),
+        vec![ClientMatch::One(1), ClientMatch::NoClient]
+    );
+    assert_eq!(
+        evidence(&ready(Some(1), clients.clone()), &frames),
+        X11Evidence::Frame(0)
+    );
+    let frames = [frames[1].clone(), frames[1].clone()];
+    assert_eq!(
+        match_frames(&frames, &clients),
+        vec![ClientMatch::NoClient, ClientMatch::NoClient]
     );
 }
