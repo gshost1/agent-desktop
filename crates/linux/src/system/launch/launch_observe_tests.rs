@@ -37,14 +37,17 @@ fn a_new_process_instance_with_a_reused_pid_is_a_new_launch_owner() {
     replacement.instance = "boot:replacement".into();
     let before = HashSet::from([agent_desktop_core::ProcessIdentity::new(7, "boot:7")]);
     let identity = keys(&["tool"]);
-    let actual = step(&Sample {
-        child_pid: 100,
-        child: None,
-        apps: std::slice::from_ref(&replacement),
-        before: &before,
-        identity: &identity,
-        settled: false,
-    });
+    let actual = step(
+        &Sample {
+            child_pid: 100,
+            child: None,
+            apps: std::slice::from_ref(&replacement),
+            before: &before,
+            identity: &identity,
+            settled: false,
+        },
+        |_| true,
+    );
     assert_eq!(actual, Step::Owner(replacement));
 }
 
@@ -160,14 +163,17 @@ fn launch_observation_selects_the_owner_or_reports_the_exact_failure() {
             .map(|pid| agent_desktop_core::ProcessIdentity::new(pid, format!("boot:{pid}")))
             .collect();
         let wanted = keys(&[wanted]);
-        let actual = step(&Sample {
-            child_pid: 100,
-            child,
-            apps: &apps,
-            before: &before,
-            identity: &wanted,
-            settled,
-        });
+        let actual = step(
+            &Sample {
+                child_pid: 100,
+                child,
+                apps: &apps,
+                before: &before,
+                identity: &wanted,
+                settled,
+            },
+            |_| true,
+        );
         assert_eq!(actual, expected, "case {index}");
     }
 }
@@ -240,7 +246,98 @@ fn only_new_descendants_can_own_a_running_wrapper_launch() {
                 settled: false,
             },
             |pid, ancestor| ancestor == 100 && [200, 202].contains(&pid),
+            |_| true,
         );
         assert_eq!(actual, expected);
+    }
+}
+
+fn descendant_step(apps: &[Running], windowed: &[u32], settled: bool) -> Step {
+    step_with_ancestry(
+        &Sample {
+            child_pid: 100,
+            child: None,
+            apps,
+            before: &HashSet::new(),
+            identity: &keys(&["tool"]),
+            settled,
+        },
+        |pid, ancestor| ancestor == 100 && [200, 202].contains(&pid),
+        |app| windowed.contains(&app.pid),
+    )
+}
+
+#[test]
+fn a_windowed_descendant_is_preferred_regardless_of_registry_order() {
+    let helper = app(200, "helper");
+    let windowed = app(202, "application");
+    for apps in [
+        vec![helper.clone(), windowed.clone()],
+        vec![windowed.clone(), helper.clone()],
+    ] {
+        assert_eq!(
+            descendant_step(&apps, &[202], false),
+            Step::Owner(windowed.clone())
+        );
+    }
+}
+
+#[test]
+fn two_windowed_descendants_are_ambiguous() {
+    assert_eq!(
+        descendant_step(&[app(200, "first"), app(202, "second")], &[200, 202], false),
+        Step::Ambiguous(vec![200, 202])
+    );
+}
+
+#[test]
+fn a_windowless_descendant_waits_until_settled() {
+    let helper = app(200, "helper");
+    assert_eq!(
+        descendant_step(std::slice::from_ref(&helper), &[], false),
+        Step::Wait
+    );
+    assert_eq!(
+        descendant_step(std::slice::from_ref(&helper), &[], true),
+        Step::Owner(helper)
+    );
+}
+
+#[test]
+fn windowless_descendants_prevent_identity_fallback_before_settle() {
+    assert_eq!(
+        descendant_step(&[app(200, "helper"), app(201, "tool")], &[201], false),
+        Step::Wait
+    );
+}
+
+#[test]
+fn multiple_windowless_descendants_are_ambiguous_only_at_settle() {
+    let apps = [app(200, "first"), app(202, "second")];
+    assert_eq!(descendant_step(&apps, &[], false), Step::Wait);
+    assert_eq!(
+        descendant_step(&apps, &[], true),
+        Step::Ambiguous(vec![200, 202])
+    );
+}
+
+#[test]
+fn window_checks_are_skipped_without_new_descendants_or_after_exit() {
+    let identity = keys(&["tool"]);
+    for child in [None, Some(exited(0)), Some(exited(3))] {
+        for apps in [vec![], vec![app(201, "tool")], vec![app(100, "wrapper")]] {
+            let _ = step_with_ancestry(
+                &Sample {
+                    child_pid: 100,
+                    child,
+                    apps: &apps,
+                    before: &HashSet::new(),
+                    identity: &identity,
+                    settled: false,
+                },
+                |_, _| false,
+                |_| panic!("only new descendants need window checks"),
+            );
+        }
     }
 }

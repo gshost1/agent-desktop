@@ -54,7 +54,7 @@ fn a_bridge_turned_off_ends_the_wait_after_the_grace() {
         &query,
         stop_after_reads(&reads, 3, Some(vec![app(9, "other")])),
         |_, _| Step::Wait,
-        || OffBus::BridgeOff,
+        (|| OffBus::BridgeOff, |_| true),
     );
     assert_eq!(owner.unwrap(), None);
     assert_eq!(reads.get(), 1);
@@ -76,7 +76,7 @@ fn the_not_on_bus_grace_waits_while_it_runs_and_ignores_unread_registries() {
             &query,
             stop_after_reads(&reads, 3, listed),
             |_, _| Step::Wait,
-            || OffBus::Windowed,
+            (|| OffBus::Windowed, |_| true),
         )
         .unwrap_err();
         assert_eq!(error.code, ErrorCode::Internal);
@@ -97,7 +97,7 @@ fn an_owner_found_inside_the_grace_is_the_launch_owner() {
         &query,
         stop_after_reads(&reads, 3, Some(vec![own.clone()])),
         |_, _| Step::Wait,
-        || OffBus::Windowed,
+        (|| OffBus::Windowed, |_| true),
     );
     assert_eq!(owner.unwrap(), Some(own));
 }
@@ -137,7 +137,7 @@ fn a_grace_that_expires_during_a_read_is_settled_only_by_the_next_read() {
             Ok(Some(Vec::new()))
         },
         |_, _| Step::Wait,
-        || OffBus::BridgeOff,
+        (|| OffBus::BridgeOff, |_| true),
     );
     assert_eq!(owner.unwrap(), None);
     assert_eq!(reads.get(), 2);
@@ -167,10 +167,13 @@ fn a_process_that_may_still_be_starting_is_waited_for_until_the_deadline() {
         &query,
         || Ok(Some(Vec::new())),
         |_, _| Step::Wait,
-        || {
-            observed.set(observed.get() + 1);
-            OffBus::Starting
-        },
+        (
+            || {
+                observed.set(observed.get() + 1);
+                OffBus::Starting
+            },
+            |_| true,
+        ),
     );
     assert_eq!(owner.unwrap(), None);
     assert!(started.elapsed() >= std::time::Duration::from_millis(400));
@@ -190,7 +193,10 @@ fn the_process_is_not_examined_inside_the_grace() {
         &query,
         stop_after_reads(&reads, 3, Some(Vec::new())),
         |_, _| Step::Wait,
-        || panic!("the process is examined only after the grace"),
+        (
+            || panic!("the process is examined only after the grace"),
+            |_| true,
+        ),
     )
     .unwrap_err();
     assert_eq!(error.code, ErrorCode::Internal);
@@ -219,7 +225,7 @@ fn a_clean_launcher_exit_is_settled_only_after_the_query_settle() {
             assert!(settled, "a zero settle is settled at once");
             Step::Owner(resident.clone())
         },
-        || OffBus::Starting,
+        (|| OffBus::Starting, |_| true),
     );
     assert_eq!(owner.unwrap(), Some(resident));
     let unsettled = query_until(&identity, &before, 30_000)
@@ -234,7 +240,10 @@ fn a_clean_launcher_exit_is_settled_only_after_the_query_settle() {
             assert!(!settled, "an hour-long settle has not passed");
             Step::Wait
         },
-        || panic!("an exited launcher is not examined for a window"),
+        (
+            || panic!("an exited launcher is not examined for a window"),
+            |_| true,
+        ),
     )
     .unwrap_err();
     assert_eq!(error.code, ErrorCode::Internal);
@@ -260,7 +269,7 @@ fn a_window_off_the_bus_is_waited_for_until_an_owner_appears() {
             }))
         },
         |_, _| Step::Wait,
-        || OffBus::Windowed,
+        (|| OffBus::Windowed, |_| true),
     )
     .unwrap();
     assert_eq!(owner, Some(own));
@@ -280,7 +289,7 @@ fn a_window_off_the_bus_is_waited_for_until_the_deadline() {
         &query,
         || Ok(Some(Vec::new())),
         |_, _| Step::Wait,
-        || OffBus::Windowed,
+        (|| OffBus::Windowed, |_| true),
     )
     .unwrap();
     assert_eq!(owner, None);

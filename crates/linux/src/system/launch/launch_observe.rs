@@ -29,16 +29,21 @@ fn pick(mut found: Vec<&Running>) -> Option<Step> {
 }
 
 /// The next move of a launch. The owner is the child while it runs and shows
-/// on the registry, else a new descendant, else an application matching the
+/// on the registry, else a new descendant with an accessible window (or any
+/// new descendant at the deadline), else an application matching the
 /// executable identity that was absent before the spawn, else (when the launcher exited cleanly after
 /// forwarding) the one that was already running. A launcher killed by a signal
 /// or exiting with a failure and no owner is a failed launch, and a clean
 /// exit with no owner is one too at the launch deadline.
-pub(crate) fn step(sample: &Sample<'_>) -> Step {
-    step_with_ancestry(sample, off_bus::descends_from)
+pub(crate) fn step(sample: &Sample<'_>, has_window: impl FnMut(&Running) -> bool) -> Step {
+    step_with_ancestry(sample, off_bus::descends_from, has_window)
 }
 
-fn step_with_ancestry(sample: &Sample<'_>, descends: impl Fn(u32, u32) -> bool) -> Step {
+fn step_with_ancestry(
+    sample: &Sample<'_>,
+    descends: impl Fn(u32, u32) -> bool,
+    mut has_window: impl FnMut(&Running) -> bool,
+) -> Step {
     let candidates: Vec<&Running> = sample
         .apps
         .iter()
@@ -54,14 +59,24 @@ fn step_with_ancestry(sample: &Sample<'_>, descends: impl Fn(u32, u32) -> bool) 
         None => own
             .map(|app| Step::Owner(app.clone()))
             .or_else(|| {
+                let descendants: Vec<&Running> = sample
+                    .apps
+                    .iter()
+                    .filter(|app| !sample.before.contains(&app.identity()))
+                    .filter(|app| descends(app.pid, sample.child_pid))
+                    .collect();
+                if descendants.is_empty() {
+                    return None;
+                }
                 pick(
-                    sample
-                        .apps
+                    descendants
                         .iter()
-                        .filter(|app| !sample.before.contains(&app.identity()))
-                        .filter(|app| descends(app.pid, sample.child_pid))
+                        .copied()
+                        .filter(|app| has_window(app))
                         .collect(),
                 )
+                .or_else(|| sample.settled.then(|| pick(descendants)).flatten())
+                .or(Some(Step::Wait))
             })
             .or_else(|| pick(new))
             .unwrap_or(Step::Wait),
@@ -231,7 +246,19 @@ pub(super) fn find_owner(
             }
             observed => observed,
         },
-        || off_bus::observe(pid),
+        (
+            || off_bus::observe(pid),
+            |owner: &Running| {
+                crate::system::window::window_ops::windows_of_process(bus, owner.pid, deadline)
+                    .is_ok_and(|(windows, _)| {
+                        windows.iter().any(|window| {
+                            window.pid.get() == owner.pid
+                                && window.process_instance.as_deref()
+                                    == Some(owner.instance.as_str())
+                        })
+                    })
+            },
+        ),
     );
     if matches!(found, Ok(None)) && query.seen.get() == Seen::Nothing {
         query.seen.set(Seen::OffBus(off_bus::observe(pid)));
@@ -251,7 +278,7 @@ fn poll_owner(
     query: &OwnerQuery<'_>,
     mut read: impl FnMut() -> Result<Option<Vec<Running>>, AdapterError>,
     mut handoff: impl FnMut(&[Running], bool) -> Step,
-    mut observe: impl FnMut() -> OffBus,
+    (mut observe, mut has_window): (impl FnMut() -> OffBus, impl FnMut(&Running) -> bool),
 ) -> Result<Option<Running>, AdapterError> {
     let deadline = query.deadline;
     let mut interval = POLL_INTERVAL;
@@ -271,7 +298,7 @@ fn poll_owner(
             identity: query.identity,
             settled: expired,
         };
-        let mut next = step(&sample);
+        let mut next = step(&sample, &mut has_window);
         if let Some(status) = child
             && status.success()
             && matches!(next, Step::Wait | Step::Failed(_))
