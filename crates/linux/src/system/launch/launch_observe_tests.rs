@@ -3,7 +3,7 @@ use std::process::ExitStatus;
 
 use super::*;
 
-pub(super) fn app(pid: u32, name: &str) -> Running {
+pub(in crate::system::launch) fn app(pid: u32, name: &str) -> Running {
     Running {
         executable: keys(&[name]),
         pid,
@@ -304,10 +304,60 @@ fn a_windowless_descendant_waits_until_settled() {
 }
 
 #[test]
-fn windowless_descendants_prevent_identity_fallback_before_settle() {
+fn a_windowed_identity_match_outside_the_tree_beats_a_windowless_descendant_helper() {
+    let helper = app(200, "helper");
+    let activated = app(201, "tool");
+    for apps in [
+        vec![helper.clone(), activated.clone()],
+        vec![activated.clone(), helper.clone()],
+    ] {
+        for settled in [false, true] {
+            assert_eq!(
+                descendant_step(&apps, &[201], settled),
+                Step::Owner(activated.clone())
+            );
+        }
+    }
+}
+
+#[test]
+fn an_identity_match_outside_the_tree_owns_before_a_windowless_descendant_settles() {
+    let activated = app(201, "tool");
+    for settled in [false, true] {
+        assert_eq!(
+            descendant_step(&[app(200, "helper"), activated.clone()], &[], settled),
+            Step::Owner(activated.clone())
+        );
+    }
+}
+
+#[test]
+fn a_windowed_identity_match_outside_the_tree_is_chosen_over_a_windowless_one() {
+    let windowed = app(203, "tool");
     assert_eq!(
-        descendant_step(&[app(200, "helper"), app(201, "tool")], &[201], false),
-        Step::Wait
+        descendant_step(
+            &[app(200, "helper"), app(201, "tool"), windowed.clone()],
+            &[203],
+            false
+        ),
+        Step::Owner(windowed)
+    );
+    assert_eq!(
+        descendant_step(
+            &[app(200, "helper"), app(201, "tool"), app(203, "tool")],
+            &[],
+            false
+        ),
+        Step::Ambiguous(vec![201, 203])
+    );
+}
+
+#[test]
+fn a_windowed_descendant_beats_a_windowed_identity_match_outside_the_tree() {
+    let application = app(202, "application");
+    assert_eq!(
+        descendant_step(&[app(201, "tool"), application.clone()], &[201, 202], false),
+        Step::Owner(application)
     );
 }
 

@@ -13,6 +13,7 @@ use super::launch_handoff;
 use super::launch_owner_query::OwnerQuery;
 use super::launch_owner_query::off_bus::{self, OffBus};
 use super::launch_owner_query::seen::Seen;
+use super::launch_window_probe::{self, Roots, WindowProbe};
 use crate::system::SharedBus;
 use crate::system::process::running_app::Running;
 use crate::system::registry::Registry;
@@ -29,14 +30,24 @@ fn pick(mut found: Vec<&Running>) -> Option<Step> {
 }
 
 /// The next move of a launch. The owner is the child while it runs and shows
-/// on the registry, else a new descendant with an accessible window (or any
-/// new descendant at the deadline), else an application matching the
-/// executable identity that was absent before the spawn, else (when the launcher exited cleanly after
-/// forwarding) the one that was already running. A launcher killed by a signal
-/// or exiting with a failure and no owner is a failed launch, and a clean
-/// exit with no owner is one too at the launch deadline.
+/// on the registry. Otherwise, with no new descendant on the registry, it is
+/// an application matching the executable identity that was absent before
+/// the spawn. With new descendants, it is one with an accessible window, else
+/// such an identity match started outside the spawned process's tree (by bus
+/// activation or in a service scope, for example), a windowed one first, else
+/// at the deadline any new descendant. After the launcher exits cleanly having forwarded, it is the
+/// identity match that was already running. A launcher killed by a signal or
+/// exiting with a failure and no owner is a failed launch, and a clean exit
+/// with no owner is one too at the launch deadline.
 pub(crate) fn step(sample: &Sample<'_>, has_window: impl FnMut(&Running) -> bool) -> Step {
     step_with_ancestry(sample, off_bus::descends_from, has_window)
+}
+
+fn windowed<'a>(
+    apps: &[&'a Running],
+    has_window: &mut impl FnMut(&Running) -> bool,
+) -> Vec<&'a Running> {
+    apps.iter().copied().filter(|app| has_window(app)).collect()
 }
 
 fn step_with_ancestry(
@@ -66,19 +77,18 @@ fn step_with_ancestry(
                     .filter(|app| descends(app.pid, sample.child_pid))
                     .collect();
                 if descendants.is_empty() {
-                    return None;
+                    return pick(new);
                 }
-                pick(
-                    descendants
-                        .iter()
-                        .copied()
-                        .filter(|app| has_window(app))
-                        .collect(),
-                )
-                .or_else(|| sample.settled.then(|| pick(descendants)).flatten())
-                .or(Some(Step::Wait))
+                let outside: Vec<&Running> = new
+                    .iter()
+                    .copied()
+                    .filter(|app| !descendants.contains(app))
+                    .collect();
+                pick(windowed(&descendants, &mut has_window))
+                    .or_else(|| pick(windowed(&outside, &mut has_window)))
+                    .or_else(|| pick(outside))
+                    .or_else(|| sample.settled.then(|| pick(descendants)).flatten())
             })
-            .or_else(|| pick(new))
             .unwrap_or(Step::Wait),
         Some(status) if status.code().is_none() => Step::Failed(status),
         Some(status) => {
@@ -228,11 +238,27 @@ pub(super) fn find_owner(
     let deadline = query.deadline;
     let pid = spawned.pid;
     let mut serving = std::collections::HashMap::new();
+    let roots = Roots::default();
+    let mut probe = WindowProbe::new(
+        |app: &Running| launch_window_probe::root_children(bus, &roots, app, deadline),
+        |owner: &Running| {
+            crate::system::window::window_ops::windows_of_process(bus, owner.pid, deadline)
+                .is_ok_and(|(windows, _)| {
+                    windows.iter().any(|window| {
+                        window.pid.get() == owner.pid
+                            && window.process_instance.as_deref() == Some(owner.instance.as_str())
+                    })
+                })
+        },
+    );
     let found = poll_owner(
         spawned,
         query,
         || match crate::system::registry::read_processes(bus, deadline) {
-            Ok(registry) => running_of(&registry).map(Some),
+            Ok(registry) => {
+                roots.replace(launch_window_probe::roots_of(&registry));
+                running_of(&registry).map(Some)
+            }
             Err(error) if error.code == ErrorCode::Timeout => Ok(None),
             Err(error) => Err(error),
         },
@@ -248,16 +274,7 @@ pub(super) fn find_owner(
         },
         (
             || off_bus::observe(pid),
-            |owner: &Running| {
-                crate::system::window::window_ops::windows_of_process(bus, owner.pid, deadline)
-                    .is_ok_and(|(windows, _)| {
-                        windows.iter().any(|window| {
-                            window.pid.get() == owner.pid
-                                && window.process_instance.as_deref()
-                                    == Some(owner.instance.as_str())
-                        })
-                    })
-            },
+            |app: &Running| probe.has_window(app),
         ),
     );
     if matches!(found, Ok(None)) && query.seen.get() == Seen::Nothing {
@@ -337,4 +354,4 @@ fn poll_owner(
 mod poll_tests;
 #[cfg(test)]
 #[path = "launch_observe_tests.rs"]
-mod tests;
+pub(super) mod tests;
