@@ -11,6 +11,7 @@ use std::sync::Mutex;
 struct StaleThenOkAdapter {
     retry: StaleRetryCounter,
     value: Mutex<String>,
+    commit: Mutex<bool>,
 }
 
 impl StaleThenOkAdapter {
@@ -18,6 +19,7 @@ impl StaleThenOkAdapter {
         Self {
             retry: StaleRetryCounter::new(fail_until),
             value: Mutex::new(String::new()),
+            commit: Mutex::new(false),
         }
     }
 }
@@ -54,7 +56,10 @@ impl ActionOps for StaleThenOkAdapter {
         request: ActionRequest,
         _lease: &crate::InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
-        if let crate::Action::SetValue(value) = request.action {
+        *self.commit.lock().unwrap() = matches!(request.action, Action::SetValueAndCommit(_));
+        if let crate::Action::SetValue(value) | crate::Action::SetValueAndCommit(value) =
+            request.action
+        {
             *self.value.lock().unwrap() = value;
         }
         Ok(ActionResult::delivered_unverified("set_value"))
@@ -82,6 +87,7 @@ fn transient_stale_ref_retries_then_succeeds_when_timeout_wired() {
 
     let value = execute(
         SetValueArgs {
+            commit: false,
             ref_id: format!("@{}:e1", snapshot_id),
             value: "hi".into(),
             timeout_ms: Some(5_000),
@@ -103,6 +109,7 @@ fn timeout_none_makes_exactly_one_resolve_attempt() {
 
     let err = execute(
         SetValueArgs {
+            commit: false,
             ref_id: format!("@{}:e1", snapshot_id),
             value: "hi".into(),
             timeout_ms: None,
@@ -114,4 +121,25 @@ fn timeout_none_makes_exactly_one_resolve_attempt() {
 
     assert_eq!(err.code(), "STALE_REF");
     assert_eq!(adapter.retry.calls(), 1);
+}
+
+#[test]
+fn commit_selects_the_opt_in_action_even_for_an_empty_value() {
+    let _guard = HomeGuard::new();
+    let snapshot_id = snapshot_id();
+    for commit in [false, true] {
+        let adapter = StaleThenOkAdapter::new(0);
+        execute(
+            SetValueArgs {
+                ref_id: format!("@{snapshot_id}:e1"),
+                value: String::new(),
+                commit,
+                timeout_ms: None,
+            },
+            &adapter,
+            &CommandContext::default(),
+        )
+        .unwrap();
+        assert_eq!(*adapter.commit.lock().unwrap(), commit);
+    }
 }

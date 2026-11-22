@@ -101,6 +101,12 @@ pub(crate) struct SetValueArgs {
     #[arg(long, help = "Read up to 128 KiB of UTF-8 text from a pipe or file")]
     #[serde(skip)]
     pub stdin: bool,
+    #[arg(
+        long,
+        help = "End editing with a focus round trip (macOS only). May trigger the app\'s own end-of-editing action: an action the field sends when editing ends, a default button, or a SwiftUI submit"
+    )]
+    #[serde(default)]
+    pub commit: bool,
 }
 
 #[derive(Parser, Debug, Deserialize)]

@@ -224,10 +224,16 @@ fn matches_postcondition(
 ) -> Option<bool> {
     let state = &observed.state;
     match action {
-        Action::SetValue(expected) if committed => state.value.as_deref().map(|value| {
-            crate::tree::value_matches::committed_value_matches(&state.role, expected, Some(value))
-        }),
-        Action::SetValue(expected) => state
+        Action::SetValue(expected) | Action::SetValueAndCommit(expected) if committed => {
+            state.value.as_deref().map(|value| {
+                crate::tree::value_matches::committed_value_matches(
+                    &state.role,
+                    expected,
+                    Some(value),
+                )
+            })
+        }
+        Action::SetValue(expected) | Action::SetValueAndCommit(expected) => state
             .value
             .as_deref()
             .map(|value| crate::value_matches(&state.role, expected, Some(value))),

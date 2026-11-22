@@ -206,7 +206,7 @@ fn committed_field(value: Option<&'static str>) -> Result<ActionResult, AdapterE
         ActionStep::succeeded("EndEditingByFocus").with_verified(true),
     ];
     let adapter = ShadowedField {
-        execution: ActionResult::from_execution(&Action::SetValue("0.3".into()), steps)
+        execution: ActionResult::from_execution(&Action::SetValueAndCommit("0.3".into()), steps)
             .with_commit_ended(serde_json::json!({ "mechanism": "focus_round_trip" })),
         value,
         reads_after_dispatch: AtomicUsize::new(0),
@@ -215,7 +215,7 @@ fn committed_field(value: Option<&'static str>) -> Result<ActionResult, AdapterE
     execute_verified_action(
         &adapter,
         &NativeHandle::null(),
-        ActionRequest::headless(Action::SetValue("0.3".into())),
+        ActionRequest::headless(Action::SetValueAndCommit("0.3".into())),
         &InteractionLease::guarded(Deadline::after(1000).unwrap(), ()).unwrap(),
     )
 }

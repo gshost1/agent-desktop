@@ -188,3 +188,28 @@ fn type_args_with_an_interval_budget_the_spread_plus_each_keystroke() {
 
     assert!(TypeArgs::try_parse_from(["type", "@e1", "abc", "--interval-ms", "0"]).is_err());
 }
+
+#[test]
+fn set_value_commit_is_opt_in_for_cli_and_json() {
+    for commit in [false, true] {
+        let mut argv = vec!["set-value", "@e1", "value"];
+        if commit {
+            argv.push("--commit");
+        }
+        assert_eq!(SetValueArgs::try_parse_from(argv).unwrap().commit, commit);
+        let mut json = serde_json::json!({"ref_id": "@e1", "value": "v"});
+        if commit {
+            json["commit"] = true.into();
+        }
+        assert_eq!(
+            serde_json::from_value::<SetValueArgs>(json).unwrap().commit,
+            commit
+        );
+    }
+    assert!(
+        serde_json::from_value::<SetValueArgs>(
+            serde_json::json!({"ref_id": "@e1", "value": "v", "commit": "yes"})
+        )
+        .is_err()
+    );
+}

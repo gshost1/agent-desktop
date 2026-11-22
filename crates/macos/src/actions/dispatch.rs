@@ -59,7 +59,7 @@ mod imp {
                 steps.extend(toggle_state::toggle(el, request.policy, deadline)?);
             }
 
-            Action::SetValue(val) => {
+            Action::SetValue(val) | Action::SetValueAndCommit(val) => {
                 if let Some(editor) = inline_editor_target::editor_for(el, deadline)? {
                     let steps = run_chain(
                         &editor,
@@ -77,7 +77,12 @@ mod imp {
                     request,
                     deadline,
                 )?;
-                return crate::actions::edit_end::set_value_result(action, el, steps, deadline);
+                return crate::actions::edit_commit::set_value_result(
+                    action,
+                    steps,
+                    || crate::actions::edit_commit::read_edit_commit(el, deadline),
+                    |steps| crate::actions::edit_end::set_value_result(action, el, steps, deadline),
+                );
             }
 
             Action::SetFocus => {

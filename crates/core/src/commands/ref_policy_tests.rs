@@ -219,16 +219,7 @@ fn default_ref_commands_use_least_permissive_supported_policy() {
     expand::execute(ref_args(&snapshot_id), &adapter, &context).unwrap();
     collapse::execute(ref_args(&snapshot_id), &adapter, &context).unwrap();
     scroll_to::execute(ref_args(&snapshot_id), &adapter, &context).unwrap();
-    set_value::execute(
-        set_value::SetValueArgs {
-            ref_id: format!("@{}:e1", snapshot_id.clone()),
-            value: "value".into(),
-            timeout_ms: None,
-        },
-        &adapter,
-        &context,
-    )
-    .unwrap();
+    set_value::execute(set_value_args(&snapshot_id), &adapter, &context).unwrap();
     select::execute(
         select::SelectArgs {
             ref_id: format!("@{}:e1", snapshot_id.clone()),
@@ -308,16 +299,7 @@ fn headed_context_reaches_every_ref_action_without_policy_downgrade() {
     collapse::execute(ref_args(&snapshot_id), &adapter, &context).unwrap();
     scroll_to::execute(ref_args(&snapshot_id), &adapter, &context).unwrap();
     focus::execute(ref_args(&snapshot_id), &adapter, &context).unwrap();
-    set_value::execute(
-        set_value::SetValueArgs {
-            ref_id: format!("@{}:e1", snapshot_id.clone()),
-            value: "value".into(),
-            timeout_ms: None,
-        },
-        &adapter,
-        &context,
-    )
-    .unwrap();
+    set_value::execute(set_value_args(&snapshot_id), &adapter, &context).unwrap();
     select::execute(
         select::SelectArgs {
             ref_id: format!("@{}:e1", snapshot_id.clone()),
@@ -397,4 +379,13 @@ fn every_ref_action_command_is_registered_in_the_policy_list() {
         "new ref-action command(s) call context.request_base( but are not in POLICY_TESTED_COMMANDS: {uncovered:?}\n\
          Add each stem to POLICY_TESTED_COMMANDS and write a matching policy assertion."
     );
+}
+
+fn set_value_args(snapshot_id: &str) -> set_value::SetValueArgs {
+    set_value::SetValueArgs {
+        commit: false,
+        ref_id: format!("@{snapshot_id}:e1"),
+        value: "value".into(),
+        timeout_ms: None,
+    }
 }

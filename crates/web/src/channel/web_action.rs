@@ -33,6 +33,14 @@ impl<P: PlatformAdapter> WebChannelAdapter<P> {
         request: ActionRequest,
         lease: &InteractionLease,
     ) -> Result<ActionResult, AdapterError> {
+        if matches!(request.action, Action::SetValueAndCommit(_)) {
+            return Err(AdapterError::new(
+                ErrorCode::ActionNotSupported,
+                "set-value --commit is macOS-only",
+            )
+            .with_suggestion("Use plain set-value, then focus another field to end editing")
+            .with_disposition(DeliverySemantics::not_delivered()));
+        }
         if let Some(expected) = request.expected_process()
             && expected != &handle.process
         {

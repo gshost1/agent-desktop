@@ -216,7 +216,7 @@ pub(super) fn policy(request: &ActionRequest) -> ActionabilityCheck {
 pub(super) fn editable(evidence: &ActionabilityEvidence, action: &Action) -> ActionabilityCheck {
     if !matches!(
         action,
-        Action::SetValue(_) | Action::TypeText(_) | Action::Clear
+        Action::SetValue(_) | Action::SetValueAndCommit(_) | Action::TypeText(_) | Action::Clear
     ) {
         return pass("editable");
     }

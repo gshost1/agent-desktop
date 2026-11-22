@@ -48,6 +48,7 @@ pub(super) fn set_value(
         .ok_or_else(|| AppError::invalid_input("set-value input is missing"))?;
     set_value_command::execute(
         set_value_command::SetValueArgs {
+            commit: args.commit,
             ref_id: args.ref_id,
             value,
             timeout_ms: helpers::normalize_action_timeout_ms(args.timeout_ms),

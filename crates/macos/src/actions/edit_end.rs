@@ -74,6 +74,11 @@ pub(crate) fn set_value_result(
         }
         EndedEdit::Refused => Err(refused_commit_error()),
         EndedEdit::NotRestored(evidence) => Err(focus_not_restored_error(evidence)),
+        EndedEdit::NotAttempted if commit == EditCommit::OnEndEditing => Ok(
+            ActionResult::from_execution(action, steps).with_commit_unobserved(
+                "There is no other text field to end the edit with. Focus another field before saving or confirming, then check the result. Do not press Return: it can submit a form or press a default button.",
+            ),
+        ),
         EndedEdit::NotAttempted => Ok(edit_commit::value_write_result(action, steps, || commit)),
     }
 }

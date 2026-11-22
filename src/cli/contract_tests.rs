@@ -346,3 +346,18 @@ fn lines_is_global_for_snapshot_wait_for_actions_and_batch() {
     let plain = Cli::try_parse_from(["agent-desktop", "snapshot"]).unwrap();
     assert!(!plain.output.lines);
 }
+
+#[test]
+fn set_value_commit_is_a_command_flag_with_end_editing_warning() {
+    let mut root = Cli::command();
+    let command = root.find_subcommand_mut("set-value").unwrap();
+    let help = command.render_long_help().to_string();
+    for phrase in ["--commit", "macOS only", "default button", "SwiftUI submit"] {
+        assert!(help.contains(phrase), "{phrase}: {help}");
+    }
+    assert!(
+        !root
+            .get_arguments()
+            .any(|arg| arg.get_long() == Some("commit"))
+    );
+}

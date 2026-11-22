@@ -246,3 +246,16 @@ fn the_page_takes_double_click_and_scroll_but_never_hover_or_triple_click() {
     assert!(!super::runs_through_the_page(&Action::TripleClick));
     assert!(!super::runs_through_the_page(&Action::RightClick));
 }
+
+#[test]
+fn set_value_commit_is_refused_before_contacting_the_page() {
+    let error = run(
+        ScriptedTransport::new(),
+        Action::SetValueAndCommit("".into()),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    assert!(error.message.contains("macOS-only"));
+    assert!(error.suggestion.unwrap().contains("plain set-value"));
+}

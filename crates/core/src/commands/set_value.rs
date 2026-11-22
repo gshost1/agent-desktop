@@ -10,6 +10,7 @@ use serde_json::Value;
 pub struct SetValueArgs {
     pub ref_id: String,
     pub value: String,
+    pub commit: bool,
     pub timeout_ms: Option<u64>,
 }
 
@@ -18,7 +19,12 @@ pub fn execute(
     adapter: &dyn PlatformAdapter,
     context: &CommandContext,
 ) -> Result<Value, AppError> {
-    let request = context.request_base(Action::SetValue(args.value));
+    let action = if args.commit {
+        Action::SetValueAndCommit(args.value)
+    } else {
+        Action::SetValue(args.value)
+    };
+    let request = context.request_base(action);
     execute_ref_action_with_context(
         RefArgs {
             ref_id: args.ref_id,

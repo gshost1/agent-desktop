@@ -107,6 +107,12 @@ mod imp {
             Action::KeyDown(_) | Action::KeyUp(_) | Action::Hover | Action::Drag(_) => {
                 adapter_level_rejection(request.action.name())
             }
+            Action::SetValueAndCommit(_) => Err(AdapterError::new(
+                ErrorCode::ActionNotSupported,
+                "set-value --commit is macOS-only",
+            )
+            .with_suggestion("Use plain set-value, then focus another field to end editing")
+            .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())),
             Action::SetValue(value) => {
                 let steps = set_value_steps(element, value, request.policy, deadline)?;
                 Ok(ActionResult::from_execution(&request.action, steps))

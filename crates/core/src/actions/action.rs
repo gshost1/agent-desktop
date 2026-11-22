@@ -9,6 +9,7 @@ pub enum Action {
     RightClick,
     TripleClick,
     SetValue(String),
+    SetValueAndCommit(String),
     SetFocus,
     Expand,
     Collapse,
@@ -38,6 +39,7 @@ impl Action {
             | Self::Hover
             | Self::Drag(_) => crate::HeadedRequirement::FocusedWindowAndCursor,
             Self::SetValue(_)
+            | Self::SetValueAndCommit(_)
             | Self::SetFocus
             | Self::Expand
             | Self::Collapse
@@ -60,7 +62,7 @@ impl Action {
             Self::DoubleClick => "double-click",
             Self::RightClick => "right-click",
             Self::TripleClick => "triple-click",
-            Self::SetValue(_) => "set-value",
+            Self::SetValue(_) | Self::SetValueAndCommit(_) => "set-value",
             Self::SetFocus => "focus",
             Self::Expand => "expand",
             Self::Collapse => "collapse",
@@ -81,7 +83,10 @@ impl Action {
     }
 
     pub(crate) fn writes_element_value(&self) -> bool {
-        matches!(self, Self::SetValue(_) | Self::Clear | Self::TypeText(_))
+        matches!(
+            self,
+            Self::SetValue(_) | Self::SetValueAndCommit(_) | Self::Clear | Self::TypeText(_)
+        )
     }
 
     pub(crate) fn requires_state_readback(&self) -> bool {
@@ -142,6 +147,7 @@ impl Action {
                 | Self::RightClick
                 | Self::TripleClick
                 | Self::SetValue(_)
+                | Self::SetValueAndCommit(_)
                 | Self::Expand
                 | Self::Collapse
                 | Self::Select(_)
