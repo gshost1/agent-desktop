@@ -57,8 +57,11 @@ Observation and semantic actions need no helper tool.
   fresh snapshot and verify which items the application exposes.
 - **A window appears before its content.** Run
   `wait --window "Text Editor" --app gnome-text-editor` first, then
-  `wait --text`, which matches a node's own name, value or description. For a
-  web-engine app (detected from its AT-SPI toolkit metadata), a window
+  `wait --text`, which matches a node's own name, value or description.
+  `wait --text` and `find --text` can match text exposed by paragraphs,
+  headings and documents, including read-only content. Text beyond the
+  per-field limit is outside the search. Plain snapshots omit document content.
+  For a web-engine app (detected from its AT-SPI toolkit metadata), a window
   observation waits for three equal full reads and a web-document role, or a
   requested depth cut. A shell with no document yet stays incomplete when the
   budget ends. A `--timeout` shorter than the first read returns `TIMEOUT`,

@@ -23,6 +23,43 @@ fn evidence(offscreen: Option<bool>, bounds: Option<Rect>) -> ActionabilityEvide
 }
 
 #[test]
+fn an_explicit_type_text_capability_authorizes_only_typing_not_replacement() {
+    for role in ["document", "paragraph", "heading"] {
+        let mut shown = evidence(Some(false), None);
+        shown.state.role = role.into();
+        shown.available_actions = vec!["TypeText".into()];
+        assert_eq!(
+            super::editable(&shown, &Action::TypeText("text".into())).status,
+            ActionabilityStatus::Pass,
+            "{role}"
+        );
+        assert_eq!(
+            super::editable(&shown, &Action::Clear).status,
+            ActionabilityStatus::Fail,
+            "{role}"
+        );
+        assert_eq!(
+            super::editable(&shown, &Action::SetValue("text".into())).status,
+            ActionabilityStatus::Fail,
+            "{role}"
+        );
+        shown.available_actions.clear();
+        assert_eq!(
+            super::editable(&shown, &Action::TypeText("text".into())).status,
+            ActionabilityStatus::Fail,
+            "{role} without TypeText"
+        );
+    }
+    let mut button = evidence(Some(false), None);
+    button.state.role = "button".into();
+    button.available_actions = vec!["TypeText".into()];
+    assert_eq!(
+        super::editable(&button, &Action::TypeText("text".into())).status,
+        ActionabilityStatus::Fail
+    );
+}
+
+#[test]
 fn a_known_on_screen_node_passes_without_bounds_when_no_geometry_is_needed() {
     let check = visibility(&evidence(Some(false), None), false, false);
     assert_eq!(check.status, ActionabilityStatus::Pass);
