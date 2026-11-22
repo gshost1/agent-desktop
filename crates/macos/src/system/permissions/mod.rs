@@ -184,11 +184,13 @@ pub(crate) fn prompt_automation() -> bool {
     imp::request_automation_permission()
 }
 
-pub(crate) fn preflight_accessibility() -> bool {
+/// Checks the current process's Accessibility grant without prompting.
+pub fn preflight_accessibility() -> bool {
     imp::is_trusted()
 }
 
-pub(crate) fn preflight_screen_recording() -> bool {
+/// Checks the current process's Screen Recording grant without prompting.
+pub fn preflight_screen_recording() -> bool {
     imp::screen_recording_granted()
 }
 
