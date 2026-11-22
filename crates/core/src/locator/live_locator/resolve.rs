@@ -1,6 +1,7 @@
+use super::partial_answers::PartialAnswers;
 use super::resolve_errors::{
-    deterministic_limit_error, has_deterministic_limit, has_transient_incompleteness,
-    incomplete_evidence, transient_incomplete_timeout, unknown_incomplete_error,
+    deterministic_limit_error, finish_causeless, finish_partial, has_deterministic_limit,
+    has_transient_incompleteness, incomplete_evidence, transient_incomplete_timeout,
 };
 use super::{
     LocatorResolution, LocatorResolveRequest, LocatorStats, ObservationRequest, ObservationRoot,
@@ -37,6 +38,25 @@ pub(crate) fn resolve_query_allowing_partial(
     resolve_query_from_allowing_partial(adapter, query, request, observe)
 }
 
+/// Resolves like [`resolve_query`], except that a walk the platform cannot
+/// finish for a reason no retry changes, such as a subtree whose children
+/// fail to read, returns its matches when it observed any. With no match the
+/// part it could not read could hold one, so it still fails.
+pub(crate) fn resolve_query_keeping_observed_matches(
+    adapter: &dyn PlatformAdapter,
+    query: &LocatorQuery,
+    root: ObservationRoot<'_>,
+    request: &LocatorResolveRequest,
+) -> Result<LocatorResolution, AppError> {
+    let attempt = Attempt {
+        adapter,
+        query,
+        request,
+        partial: PartialAnswers::ObservedMatches,
+    };
+    resolve_attempts(&attempt, observe_root(adapter, query, root, request))
+}
+
 fn observe_root<'a>(
     adapter: &'a dyn PlatformAdapter,
     query: &'a LocatorQuery,
@@ -57,7 +77,7 @@ struct Attempt<'a> {
     adapter: &'a dyn PlatformAdapter,
     query: &'a LocatorQuery,
     request: &'a LocatorResolveRequest,
-    allow_partial: bool,
+    partial: PartialAnswers,
 }
 
 /// Resolves a query over trees the caller observes. A caller that already holds
@@ -84,7 +104,7 @@ pub(crate) fn resolve_query_from(
         adapter,
         query,
         request,
-        allow_partial: false,
+        partial: PartialAnswers::Never,
     };
     resolve_attempts(&attempt, observe)
 }
@@ -106,7 +126,7 @@ pub(crate) fn resolve_query_from_allowing_partial(
         adapter,
         query,
         request,
-        allow_partial: true,
+        partial: PartialAnswers::Always,
     };
     resolve_attempts(&attempt, observe)
 }
@@ -155,7 +175,7 @@ fn resolve_attempts_with(
     let mut last_incomplete = None;
     let mut last_partial = None;
     let mut selection_retry_used = false;
-    let mut causeless = None;
+    let mut causeless: Option<LocatorResolution> = None;
     let mut rows = first_pass_rows(request);
     loop {
         let remaining = deadline.remaining();
@@ -164,7 +184,12 @@ fn resolve_attempts_with(
                 return finish_partial(partial, aggregate, started);
             }
             if let Some(resolution) = causeless.take() {
-                return finish_causeless(attempt.allow_partial, resolution, aggregate, started);
+                return finish_causeless(
+                    attempt.partial.on_unreadable(resolution.meta.total_matches),
+                    resolution,
+                    aggregate,
+                    started,
+                );
             }
             return Err(transient_incomplete_timeout(
                 deadline,
@@ -201,7 +226,7 @@ fn resolve_attempts_with(
                 }
                 if !resolution.meta.selection_complete && has_deterministic_limit(&resolution.stats)
                 {
-                    if attempt.allow_partial {
+                    if attempt.partial.on_limit() {
                         aggregate.merge_attempt(&resolution.stats);
                         return finish_partial(resolution, aggregate, started);
                     }
@@ -212,7 +237,7 @@ fn resolve_attempts_with(
                 {
                     last_incomplete = Some(incomplete_evidence(&resolution));
                     aggregate.merge_attempt(&resolution.stats);
-                    if attempt.allow_partial {
+                    if attempt.partial.on_limit() {
                         if deadline.is_expired() || attempt_deadline.is_expired() {
                             return finish_partial(resolution, aggregate, started);
                         }
@@ -236,7 +261,12 @@ fn resolve_attempts_with(
                         causeless = Some(resolution);
                         continue;
                     }
-                    return finish_causeless(attempt.allow_partial, resolution, aggregate, started);
+                    return finish_causeless(
+                        attempt.partial.on_unreadable(resolution.meta.total_matches),
+                        resolution,
+                        aggregate,
+                        started,
+                    );
                 }
                 aggregate.merge_attempt(&resolution.stats);
                 aggregate.elapsed_us = elapsed_us_since(started);
@@ -272,33 +302,6 @@ fn first_pass_rows(request: &LocatorResolveRequest) -> RowReading {
     } else {
         RowReading::All
     }
-}
-
-fn finish_partial(
-    mut resolution: LocatorResolution,
-    mut aggregate: LocatorStats,
-    started: Instant,
-) -> Result<LocatorResolution, AppError> {
-    aggregate.elapsed_us = elapsed_us_since(started);
-    resolution.stats = aggregate;
-    Ok(resolution)
-}
-
-/// Ends a resolution whose walk stayed incomplete with no recorded cause: the
-/// observed matches when partial answers are allowed, `locator_incomplete`
-/// otherwise, both with the stats of every walk.
-fn finish_causeless(
-    allow_partial: bool,
-    mut resolution: LocatorResolution,
-    mut aggregate: LocatorStats,
-    started: Instant,
-) -> Result<LocatorResolution, AppError> {
-    if allow_partial {
-        return finish_partial(resolution, aggregate, started);
-    }
-    aggregate.elapsed_us = elapsed_us_since(started);
-    resolution.stats = aggregate;
-    Err(unknown_incomplete_error(&resolution).into())
 }
 
 fn requires_authoritative_result(request: &LocatorResolveRequest) -> bool {
@@ -346,8 +349,10 @@ fn resolve_observed_attempt(
         && super::row_proof::has_unproven_tokenless_match(&resolution, &tree);
     let awaits_proof =
         unproven_first && rows_left_unread && !has_deterministic_limit(&resolution.stats);
-    let published_as_partial =
-        (attempt.allow_partial && unanswered && !rows_left_unread) || awaits_proof;
+    let published_as_partial = (attempt.partial.on_unreadable(resolution.meta.total_matches)
+        && unanswered
+        && !rows_left_unread)
+        || awaits_proof;
     if published_as_partial {
         super::partial::publish_observed_matches(adapter, query, request, &mut resolution, &tree)?;
     } else if request.materialization == super::LocatorMaterialization::SelectedMatches

@@ -579,6 +579,10 @@ the capture could not count gets `identity_unproven`.
 
 ### Partial results
 
+If part of a menubar cannot be read and no budget limit or transient read failure explains it, plain `find --surface menubar` returns the matches observed with `complete: false` and `truncated: true`. With no observed match it returns `ELEMENT_NOT_FOUND` with `details.kind: "locator_unreadable_part"`, `complete: false`, and `retryable: false`; this does not prove absence. `--first`, `--nth`, `--last`, and `--count` are refused with the same code and kind because the unread part could change the pick. Their disposition has `retry: "unknown"`, not `"safe"`. Drop the pick to list the observed matches, search the window instead when the element belongs there, or pass `--allow-partial` to accept an answer for the readable part. A larger timeout does not fix an unreadable part. Other surfaces retain `TIMEOUT` with `locator_incomplete`.
+
+An empty menubar answer carries `data.hint`: menubar search reads closed menus without opening them, a match's `path` names the menus to open, and the Window menu lists only open windows. Toolbar buttons, tabs, and panes belong to a window search. Tokenless matches from an incomplete walk have no ref. Token-backed refs retain their incomplete capture verdict; the platform re-identifies them by token rather than treating the partial walk as a uniqueness proof.
+
 By default a `find` that cannot finish its walk within `--timeout-ms` returns
 `TIMEOUT`. With `--allow-partial` it returns the matches it observed instead.
 The data then carries `complete`. A `--first --name` answer carries
@@ -601,8 +605,8 @@ could hide an earlier whole-name match (see above):
   token, the same check a complete answer makes, to fill the fields the walk
   skipped. A match it cannot re-read before the deadline, and every match without
   a token, has no ref and carries `bounds` when the platform reports them.
-- Without the flag the data has no `complete` field, and an incomplete walk is
-  still `TIMEOUT`.
+- Outside the unreadable-menubar case, without the flag the data has no `complete`
+  field, and an incomplete walk is still `TIMEOUT`.
 
 ### Scroll search
 

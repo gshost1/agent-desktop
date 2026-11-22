@@ -9,7 +9,8 @@ use crate::{
     locator::live_locator::{
         LocatorMaterialization, LocatorResolution, LocatorResolveRequest, LocatorSelection,
         ObservationRequest, ObservationRoot, ObservedObservation, resolve_query,
-        resolve_query_allowing_partial, selects_tokenless_entry,
+        resolve_query_allowing_partial, resolve_query_keeping_observed_matches,
+        selects_tokenless_entry,
     },
     refs::RefMap,
     refs::ref_root_read::{RootRead, read_saved_root},
@@ -65,6 +66,8 @@ pub(super) fn execute_within(
                 let root = owner.observation_root(args.scope.surface);
                 if args.selection.allow_partial {
                     resolve_query_allowing_partial(adapter, query, root, &request)
+                } else if lists_observed_matches(args) {
+                    resolve_query_keeping_observed_matches(adapter, query, root, &request)
                 } else {
                     resolve_query(adapter, query, root, &request)
                 }
@@ -72,8 +75,14 @@ pub(super) fn execute_within(
             .1
         }
     };
-    if !args.selection.allow_partial {
-        require_complete(&resolution)?;
+    let observed_matches_answer = lists_observed_matches(args)
+        && args.scope.root.is_none()
+        && resolution.meta.total_matches > 0;
+    if !args.selection.allow_partial && !observed_matches_answer {
+        require_complete(
+            &resolution,
+            args.scope.surface == crate::SnapshotSurface::Menubar,
+        )?;
     }
     let published = resolution.refmap.take().filter(|refmap| !refmap.is_empty());
     let ref_count = published.as_ref().map(RefMap::len);
@@ -180,8 +189,18 @@ fn resolve_request(args: &FindArgs, deadline: crate::Deadline) -> LocatorResolve
     }
 }
 
-fn require_complete(resolution: &LocatorResolution) -> Result<(), AppError> {
-    if resolution.meta.selection_complete {
+/// A menubar find that lists its matches can answer with the matches an
+/// unreadable walk observed, marked incomplete. A count or a positional pick
+/// cannot: a match in the unread part would change it. Other surfaces keep
+/// the strict contract.
+fn lists_observed_matches(args: &FindArgs) -> bool {
+    let selection = &args.selection;
+    args.scope.surface == crate::SnapshotSurface::Menubar
+        && !(selection.count || selection.first || selection.last || selection.nth.is_some())
+}
+
+fn require_complete(resolution: &LocatorResolution, exhaustive: bool) -> Result<(), AppError> {
+    if resolution.meta.selection_complete && (!exhaustive || resolution.meta.complete) {
         return Ok(());
     }
     Err(

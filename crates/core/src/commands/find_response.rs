@@ -16,8 +16,9 @@ pub(super) fn format_response(
     snapshot_id: Option<&str>,
 ) -> Result<Value, AppError> {
     let unproven = resolution.meta.exact_name_unproven;
-    let completeness = (args.selection.allow_partial || unproven)
-        .then_some(resolution.meta.selection_complete && !unproven);
+    let completeness =
+        (args.selection.allow_partial || unproven || !resolution.meta.selection_complete)
+            .then_some(resolution.meta.selection_complete && !unproven);
     let mut response = shaped_response(args, query, resolution, snapshot_id)?;
     if let (Some(object), Some(complete)) = (response.as_object_mut(), completeness) {
         object.insert("complete".into(), json!(complete));
@@ -48,6 +49,7 @@ fn shaped_response(
         .collect::<Result<Vec<_>, _>>()?;
     if args.selection.first || args.selection.last || args.selection.nth.is_some() {
         let mut response = single_match_response(matches.into_iter().next(), query, roles_present);
+        attach_menubar_hint(&mut response, args);
         attach_snapshot_id(&mut response, snapshot_id);
         return Ok(response);
     }
@@ -58,6 +60,7 @@ fn shaped_response(
     });
     let is_empty = response["matches"].as_array().is_some_and(Vec::is_empty);
     attach_roles_present(&mut response, is_empty, query, roles_present);
+    attach_menubar_hint(&mut response, args);
     attach_snapshot_id(&mut response, snapshot_id);
     Ok(response)
 }
@@ -121,3 +124,19 @@ fn attach_roles_present(
 #[cfg(test)]
 #[path = "find_response_tests.rs"]
 mod tests;
+
+pub(super) const MENUBAR_EMPTY_HINT: &str = "Menubar search reads every item of every menubar menu, closed menus included, without opening them; a match's path names the menus to open. A Window menu lists only windows that are open, and a toolbar button, tab or pane is not a menu item: search the window instead (find --app <App> --name <name>, without --surface).";
+
+/// An empty menubar answer says what the menubar holds, so a caller looking
+/// for a pane or a window that is not open searches the window next instead
+/// of walking menus.
+fn attach_menubar_hint(response: &mut Value, args: &FindArgs) {
+    if args.scope.surface != crate::SnapshotSurface::Menubar {
+        return;
+    }
+    let empty =
+        response["match"].is_null() && response["matches"].as_array().is_none_or(Vec::is_empty);
+    if let (true, Some(object)) = (empty, response.as_object_mut()) {
+        object.insert("hint".into(), json!(MENUBAR_EMPTY_HINT));
+    }
+}
