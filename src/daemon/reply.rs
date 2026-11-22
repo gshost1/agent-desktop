@@ -1,6 +1,6 @@
-//! What the daemon answers, in order: `Declined`, or `Ready`; after the client's go, `Started`,
-//! `Running` heartbeats while the command runs, then `Done` or `Rerun`. The client may run the
-//! command itself whenever `Started` has not arrived, and after it only when the command reads.
+//! What the daemon answers, in order: `Declined`, or `Ready`; after the client's go, `Started`
+//! and then `Done` or `Rerun`. `Running` heartbeats can arrive before or after `Started`.
+//! If the daemon goes away after `Started`, the client only retries read-only commands.
 
 /// The client's one message after `Ready`: run it. Without it the daemon never runs the command.
 pub(crate) const GO: &str = "go";
@@ -17,7 +17,7 @@ pub(crate) enum DaemonReply {
     Ready { command: String, rerun_safe: bool },
     /// The command is running from here on.
     Started,
-    /// The daemon is alive and the command still runs.
+    /// The daemon is alive and the command is queued or running.
     Running,
     /// The command finished; its stdout and stderr bytes follow as two frames.
     Done { exit: u8 },

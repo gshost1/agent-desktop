@@ -26,15 +26,13 @@ fn client_leaving_after_the_command_finished_is_normal() {
 }
 
 #[test]
-fn heartbeats_run_only_while_the_command_runs() {
+fn a_job_settles_after_it_finishes_running() {
     let state = JobState::default();
-    assert!(!state.is_running());
     assert!(!state.is_settled());
     assert!(state.start());
-    assert!(state.is_running());
+    assert!(!state.is_settled());
     state.finish();
 
-    assert!(!state.is_running());
     assert!(state.is_settled());
 }
 
@@ -44,5 +42,4 @@ fn a_command_its_client_abandoned_is_settled_without_running() {
     assert!(!state.client_left());
 
     assert!(state.is_settled());
-    assert!(!state.is_running());
 }

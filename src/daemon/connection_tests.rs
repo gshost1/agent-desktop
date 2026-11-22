@@ -1,14 +1,16 @@
 use super::serve_connection;
 use crate::daemon::build_identity::BuildIdentity;
+use crate::daemon::client::exchange;
 use crate::daemon::endpoint::DaemonEndpoint;
 use crate::daemon::env_subset::EnvSubset;
 use crate::daemon::reply::{DaemonReply, GO};
 use crate::daemon::request::{DaemonRequest, PROTOCOL_VERSION};
 use crate::daemon::server_state::ServerState;
 use crate::daemon::transport::DaemonStream;
-use crate::daemon::wire::{REPLY_LIMIT, read_message, write_message};
+use crate::daemon::wire::{REPLY_LIMIT, read_message, write_frame, write_message};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use std::process::ExitCode;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -135,6 +137,31 @@ fn a_client_that_says_go_hands_its_command_to_the_executor() {
 
     assert!(matches!(reply, DaemonReply::Ready { .. }), "{reply:?}");
     assert!(ran);
+}
+
+#[test]
+fn a_queued_call_waits_past_the_stall_limit_for_the_executor() {
+    let (client, daemon_end) = UnixStream::pair().unwrap();
+    let server = server();
+    let (jobs, queue) = channel();
+    std::thread::scope(|scope| {
+        let client = scope.spawn(|| exchange(Box::new(client), &request()));
+        scope.spawn(|| serve_connection(Box::new(daemon_end), &server, &jobs));
+        let job = queue.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        std::thread::sleep(Duration::from_secs(6));
+
+        job.state.finish();
+        let reply = {
+            let mut stream = job.writer.lock().unwrap();
+            write_message(&mut *stream, &DaemonReply::Started)
+                .and_then(|()| write_message(&mut *stream, &DaemonReply::Done { exit: 0 }))
+                .and_then(|()| write_frame(&mut *stream, b""))
+                .and_then(|()| write_frame(&mut *stream, b""))
+        };
+        assert_eq!(client.join().unwrap(), Some(ExitCode::SUCCESS));
+        reply.unwrap();
+    });
 }
 
 #[test]

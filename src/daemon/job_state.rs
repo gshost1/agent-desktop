@@ -24,10 +24,6 @@ impl JobState {
         self.0.store(FINISHED, Ordering::Release);
     }
 
-    pub(crate) fn is_running(&self) -> bool {
-        self.0.load(Ordering::Acquire) == RUNNING
-    }
-
     /// Whether the executor is done with this command, by running it or by skipping it.
     pub(crate) fn is_settled(&self) -> bool {
         matches!(self.0.load(Ordering::Acquire), FINISHED | ABANDONED)

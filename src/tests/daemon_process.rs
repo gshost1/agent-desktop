@@ -57,10 +57,13 @@ fn every_command_answers_the_same_bytes_and_status_in_both_modes() {
     let home = Home::new();
     let pid = home.warm();
     #[cfg(target_os = "macos")]
-    let screen_recording_granted = {
+    let (accessibility_granted, screen_recording_granted) = {
         let permissions = home.run(false, &["permissions"]);
         let report: serde_json::Value = serde_json::from_slice(&permissions.stdout).unwrap();
-        report["data"]["screen_recording"]["state"] == "granted"
+        (
+            report["data"]["accessibility"]["state"] == "granted",
+            report["data"]["screen_recording"]["state"] == "granted",
+        )
     };
     for args in MATRIX {
         let in_process = home.run(false, args);
@@ -68,9 +71,17 @@ fn every_command_answers_the_same_bytes_and_status_in_both_modes() {
         let through_daemon = home.run(true, args);
         assert_same(args, &in_process, &through_daemon);
         #[cfg(target_os = "macos")]
-        if *args == ["list-windows"] && !screen_recording_granted {
-            assert_eq!(home.served(pid), before, "window titles can be protected");
-            continue;
+        {
+            let needs_ax = matches!(
+                args[0],
+                "list-windows" | "snapshot" | "find" | "click" | "get" | "wait" | "batch"
+            );
+            if (needs_ax && !accessibility_granted)
+                || (*args == ["list-windows"] && !screen_recording_granted)
+            {
+                assert_eq!(home.served(pid), before, "{args:?} needs a missing grant");
+                continue;
+            }
         }
         assert!(
             home.served(pid) == before + 1 || is_permission_rerun(&through_daemon),
@@ -250,6 +261,22 @@ fn daemon_mode_off_starts_no_daemon() {
     }
 
     assert!(!home.state_root().join("daemon").exists());
+}
+
+#[test]
+fn stray_serve_environment_runs_the_normal_cli_with_or_without_opt_in() {
+    let home = Home::new();
+    let plain = home.run(false, &["version"]);
+    let stray_path = home.root.join("missing/daemon/0123456789abcdef.sock");
+    for opt_in in [false, true] {
+        let actual = home
+            .command(opt_in, &["version"])
+            .env("AGENT_DESKTOP_DAEMON_SERVE", &stray_path)
+            .output()
+            .unwrap();
+        assert_same(&["version"], &plain, &actual);
+        assert!(!stray_path.exists());
+    }
 }
 
 #[test]

@@ -66,6 +66,8 @@ mod server_state;
 #[cfg(unix)]
 mod spawn;
 #[cfg(unix)]
+mod startup;
+#[cfg(unix)]
 mod state_file;
 #[cfg(unix)]
 mod termination;

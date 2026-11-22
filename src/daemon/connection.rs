@@ -1,6 +1,6 @@
 //! One client connection: check its request, admit the command or decline it, take the execution
 //! slot, offer `Ready` and wait for the client's go, hand the command to the executor, then send
-//! heartbeats and watch for the client going away while it runs.
+//! heartbeats and watch for the client going away while the command is queued or running.
 
 use std::io::{ErrorKind, Read};
 use std::sync::mpsc::Sender;
@@ -19,7 +19,7 @@ use super::wire::{REQUEST_LIMIT, read_message, write_message};
 const REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long the slot stays held for a client that was offered `Ready` and has not said go.
 const GO_TIMEOUT: Duration = Duration::from_secs(2);
-/// How often a running command's client hears that the daemon is alive.
+/// How often a queued or running command's client hears that the daemon is alive.
 pub(crate) const HEARTBEAT: Duration = Duration::from_millis(500);
 const STOP_GRACE: Duration = Duration::from_secs(5);
 /// How long a reply or heartbeat may wait on a client that stopped reading. The bound keeps a
@@ -74,7 +74,7 @@ pub(crate) fn serve_connection(
         server.release();
         return;
     }
-    watch_while_running(watch, &writer, &state);
+    watch_until_settled(watch, &writer, &state);
 }
 
 fn read_request(
@@ -109,11 +109,11 @@ pub(crate) fn decline(stream: &mut dyn DaemonStream, reason: &str) {
 }
 
 /// A client sends nothing after its go, so a read returns only when it closes. Between reads
-/// the running command's client gets a heartbeat. A client that vanishes while its command runs
-/// stops the daemon, exactly as killing a one-shot CLI stops the command it was running. Where
+/// the client gets a heartbeat even if its command is still queued. A client that vanishes while
+/// its command runs stops the daemon, as killing a one-shot CLI stops the command it was running. Where
 /// the heartbeat timeout cannot be set (macOS, after the peer closed) the read blocks until the
 /// hangup it then reports at once.
-fn watch_while_running(mut watch: Box<dyn DaemonStream>, writer: &SharedWriter, state: &JobState) {
+fn watch_until_settled(mut watch: Box<dyn DaemonStream>, writer: &SharedWriter, state: &JobState) {
     let _ = watch.set_read_timeout(Some(HEARTBEAT));
     let mut byte = [0_u8; 1];
     loop {
@@ -124,9 +124,7 @@ fn watch_while_running(mut watch: Box<dyn DaemonStream>, writer: &SharedWriter, 
                 if state.is_settled() {
                     return;
                 }
-                if state.is_running() {
-                    send_heartbeat(writer);
-                }
+                send_heartbeat(writer);
             }
             Err(error) if error.kind() == ErrorKind::Interrupted => {}
             Err(_) => break,

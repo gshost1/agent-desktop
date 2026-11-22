@@ -1,4 +1,4 @@
-//! The daemon process: started by a client with `AGENT_DESKTOP_DAEMON_SERVE=<socket>`, it
+//! The daemon process: authorized by the client's launch frame and opt-in, it
 //! detaches into its own session, takes the endpoint's lock, binds the socket 0600 inside the
 //! private daemon directory and serves until it has been idle for the configured time.
 
@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Sender, channel};
 use std::time::Duration;
 
+use super::IDLE_ENV;
 use super::build_identity::BuildIdentity;
 use super::clock::SystemClock;
 use super::connection::serve_connection;
@@ -20,10 +21,10 @@ use super::executor::run_until_idle;
 use super::idle_policy::IdlePolicy;
 use super::job::Job;
 use super::server_state::ServerState;
+use super::startup::take_socket_path;
 use super::state_file::DaemonStateFile;
 use super::termination::remove_files_on_termination;
 use super::transport::{DaemonListener, DaemonTransport};
-use super::{IDLE_ENV, SERVE_ENV};
 
 const ACCEPT_RETRY: Duration = Duration::from_millis(10);
 const DEFAULT_IDLE_MS: u64 = 300_000;
@@ -32,8 +33,7 @@ const IDLE_RANGE_MS: std::ops::RangeInclusive<u64> = 100..=86_400_000;
 /// Serves when this process was started as a daemon. The variable is removed first, while the
 /// process is still single-threaded, so nothing this daemon starts inherits it.
 pub(crate) fn serve_from_env(transport: &dyn DaemonTransport) -> Option<ExitCode> {
-    let socket = std::env::var_os(SERVE_ENV)?;
-    unsafe { std::env::remove_var(SERVE_ENV) };
+    let socket = take_socket_path()?;
     Some(serve(transport, Path::new(&socket)))
 }
 

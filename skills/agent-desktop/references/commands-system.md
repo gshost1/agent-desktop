@@ -236,8 +236,10 @@ Multi-agent cursors (macOS and Windows): start with `session start --cursor --mu
 
 `export AGENT_DESKTOP_DAEMON=1` (or `--daemon` on one call) hands each call to a warm background process of the same binary. Output, stderr and exit codes are unchanged. Off by default.
 
-- One daemon serves one user, build, `--session`/`--agent-id` and environment. It exits after `AGENT_DESKTOP_DAEMON_IDLE_MS` (default 300000) without a call.
-- The CLI runs the command itself when the daemon is busy, cannot start, does not answer within 2 s, or the state root does not exist yet; for `--stdin`, `launch`, `--verbose` and help; and after a permission refusal the daemon alone got. Calls never queue.
+- One daemon serves one user, build, `--session`/`--agent-id`, and matched environment. Variables outside the matched subset come from the client that started it. The daemon exits after `AGENT_DESKTOP_DAEMON_IDLE_MS` (default 300000) without a call.
+- The CLI runs the command itself when the daemon is busy, cannot start, does not answer within 2 s, or the state root does not exist yet. It also runs locally for `--stdin`, `launch`, `--verbose`, and help, or when the daemon reports a permission refusal before delivering the command.
+- After the daemon accepts a call, it sends heartbeats while the call waits for the previous reply to be sent and while the command runs.
+- On macOS, the CLI runs locally when it lacks a grant the command needs. The daemon can verify a peer's user ID but cannot verify that peer's Accessibility or Screen Recording grants. [Daemon security](https://agent-browser.dev/desktop/guides/daemon#security)
 - If the daemon stops mid-command, a read-only command runs again in the CLI. Any other command returns `INTERNAL` with `delivery_uncertain` and `retry: unsafe`: snapshot and check before you repeat it.
 - Linux and macOS; on Windows it is ignored.
 
