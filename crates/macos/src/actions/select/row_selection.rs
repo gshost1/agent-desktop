@@ -1,9 +1,8 @@
-//! Settles a click on a selectable member, such as a table or outline row,
-//! by the selection it produced. A click that reached the application and
-//! moved the selection onto the member did its job even when a later step in
-//! the chain, such as `AXConfirm` on a label inside the row, reports no effect.
+//! Settles selection-compatible steps of a row click by reading a selection change.
 
 use agent_desktop_core::{ActionStep, AdapterError, DeliveryDisposition, ErrorCode, StepMechanism};
+
+use crate::actions::chain::chain_delivery::DeliveryOutcome;
 
 pub(crate) const SELECTION_POSTCONDITION: &str = "selection_postcondition";
 
@@ -13,24 +12,32 @@ pub(crate) const SELECTION_POSTCONDITION: &str = "selection_postcondition";
 /// confirmed this way: a row that already held the selection proves nothing.
 fn settle_by_selection(
     before: Option<bool>,
-    outcome: Result<Vec<ActionStep>, AdapterError>,
-    mut selected_after: impl FnMut(bool) -> bool,
-) -> Result<Vec<ActionStep>, AdapterError> {
+    step: &str,
+    outcome: &Result<DeliveryOutcome, AdapterError>,
+    selected_after: impl FnOnce(bool) -> bool,
+) -> Option<ActionStep> {
     if before != Some(false) {
-        return outcome;
+        return None;
     }
-    match outcome {
-        Err(error) if reached_application(&error) && selected_after(true) => {
-            Ok(vec![postcondition_step()])
-        }
-        Ok(mut steps)
-            if !steps.iter().any(|step| step.verified() == Some(true)) && selected_after(false) =>
+    let selection_step = matches!(step, "AXConfirm" | "select_within_container");
+    let poll = match outcome {
+        Err(error)
+            if reached_application(error)
+                && (selection_step
+                    || (step == "activate_descendant"
+                        && error
+                            .details
+                            .as_ref()
+                            .and_then(|details| details.get("operation"))
+                            .and_then(serde_json::Value::as_str)
+                            == Some("AXConfirm"))) =>
         {
-            steps.push(postcondition_step());
-            Ok(steps)
+            true
         }
-        other => other,
-    }
+        Ok(DeliveryOutcome::DeliveredUnverified) if selection_step || step == "CGClick" => false,
+        _ => return None,
+    };
+    selected_after(poll).then(postcondition_step)
 }
 
 fn reached_application(error: &AdapterError) -> bool {
@@ -48,8 +55,11 @@ fn postcondition_step() -> ActionStep {
 }
 
 mod imp {
-    use agent_desktop_core::{ActionStep, AdapterError, Deadline};
+    use agent_desktop_core::{
+        ActionStep, AdapterError, Deadline, actions::interaction_policy::InteractionPolicy,
+    };
 
+    use crate::actions::chain::{ChainContext, ChainDef, execute_observed_chain};
     use crate::actions::select::container_select::{SELECTED, element_activates_by_selection};
     use crate::tree::AXElement;
 
@@ -59,22 +69,26 @@ mod imp {
 
     pub(crate) fn click_settled_by_selection(
         element: &AXElement,
-        deadline: Deadline,
-        click: impl FnOnce() -> Result<Vec<ActionStep>, AdapterError>,
+        definition: &ChainDef,
+        context: &ChainContext,
+        policy: InteractionPolicy,
     ) -> Result<Vec<ActionStep>, AdapterError> {
+        let deadline = context.deadline;
         let before = if element_activates_by_selection(element, deadline) {
             member_selected(element, deadline)
         } else {
             None
         };
-        super::settle_by_selection(before, click(), |settle| {
-            if settle {
-                crate::actions::select::selection_settle::selection_settles(deadline, || {
+        execute_observed_chain(element, definition, context, policy, |step, outcome| {
+            super::settle_by_selection(before, step, outcome, |settle| {
+                if settle {
+                    crate::actions::select::selection_settle::selection_settles(deadline, || {
+                        member_selected(element, deadline) == Some(true)
+                    })
+                } else {
                     member_selected(element, deadline) == Some(true)
-                })
-            } else {
-                member_selected(element, deadline) == Some(true)
-            }
+                }
+            })
         })
     }
 

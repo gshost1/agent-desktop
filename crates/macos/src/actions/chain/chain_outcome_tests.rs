@@ -1,7 +1,30 @@
-use super::{ChainStep, build_step, exhaustion_disposition, record_step_outcome};
+use super::{
+    ChainStep, build_step, exhaustion_disposition, record_observed_step, record_step_outcome,
+};
 use crate::actions::chain::chain_delivery::DeliveryOutcome;
 use agent_desktop_core::MouseButton;
 use agent_desktop_core::actions::step_mechanism::StepMechanism;
+
+#[test]
+fn observation_appends_to_the_attempt_history() {
+    use agent_desktop_core::{ActionStep, AdapterError, ErrorCode};
+
+    let mut steps = vec![build_step(
+        &ChainStep::Action("AXOpen"),
+        DeliveryOutcome::NotDelivered,
+    )];
+    record_observed_step(
+        &mut steps,
+        &ChainStep::Action("AXConfirm"),
+        Err(AdapterError::new(ErrorCode::ActionFailed, "uncertain")),
+        ActionStep::succeeded("selection_postcondition").with_verified(true),
+    );
+    assert_eq!(
+        steps.iter().map(ActionStep::label).collect::<Vec<_>>(),
+        ["AXOpen", "AXConfirm", "selection_postcondition"]
+    );
+    assert_eq!(steps[1].verified(), Some(false));
+}
 
 #[test]
 fn build_step_tags_mechanism_and_verified_on_success() {

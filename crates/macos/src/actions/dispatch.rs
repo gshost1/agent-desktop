@@ -33,20 +33,15 @@ mod imp {
                 let native_menu = crate::tree::native_menu::is_native_menu(el, deadline)?
                     || (request.policy.is_headed()
                         && probe_click_role(el, deadline)?.as_deref() == Some("AXMenuBarItem"));
-                let click = || {
-                    run_chain(
-                        el,
-                        chain_defs::click_chain(native_menu),
-                        None,
-                        request,
-                        deadline,
-                    )
-                };
+                let definition = chain_defs::click_chain(native_menu);
                 steps.extend(if native_menu {
-                    click()?
+                    execute_chain(el, definition, &budget, request.policy)?
                 } else {
                     crate::actions::select::row_selection::click_settled_by_selection(
-                        el, deadline, click,
+                        el,
+                        definition,
+                        &budget,
+                        request.policy,
                     )?
                 });
             }
