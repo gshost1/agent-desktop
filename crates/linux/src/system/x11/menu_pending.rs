@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::time::{Duration, Instant};
 
 use agent_desktop_core::Deadline;
 use x11rb::protocol::xproto::{Atom, AtomEnum};
@@ -8,6 +10,8 @@ use super::DisplayReader;
 use super::control_display::{atoms, longs, property};
 use super::window::popup_window::PopupWindow;
 use crate::system::display::display_server::{DisplayServer, session_server};
+
+const MENU_SETTLE_TIME: Duration = Duration::from_millis(175);
 
 struct MenuProbe {
     requests: Option<Sender<usize>>,
@@ -46,15 +50,25 @@ pub(crate) fn probe(pid: u32) -> impl FnMut(Deadline, usize) -> bool {
 impl MenuProbe {
     fn new(server: DisplayServer, pid: u32) -> Self {
         Self::with_reader(move || {
-            let DisplayServer::X11(display) = server else {
+            let DisplayServer::X11(display) = &server else {
                 return None;
             };
-            let (connection, screen) = DisplayReader::connect(&display).ok()?;
+            let (connection, screen) = DisplayReader::connect(display).ok()?;
             Some(move || super::reader::read_popups(&connection, screen, pid, true))
         })
     }
 
-    fn with_reader<F>(connect: impl FnOnce() -> Option<F> + Send + 'static) -> Self
+    fn with_reader<F>(connect: impl FnMut() -> Option<F> + Send + 'static) -> Self
+    where
+        F: FnMut() -> Option<Vec<PopupWindow>>,
+    {
+        Self::with_clock(connect, Instant::now)
+    }
+
+    fn with_clock<F>(
+        mut connect: impl FnMut() -> Option<F> + Send + 'static,
+        mut now: impl FnMut() -> Instant + Send + 'static,
+    ) -> Self
     where
         F: FnMut() -> Option<Vec<PopupWindow>>,
     {
@@ -65,19 +79,32 @@ impl MenuProbe {
                 return;
             };
             let mut generation = None;
-            let mut mapped = Vec::new();
+            let mut mapped = HashMap::new();
             let mut accounted = Vec::new();
             while let Ok(completed_read) = receive.recv() {
                 if generation != Some(completed_read) {
-                    accounted.clone_from(&mapped);
+                    accounted = mapped.keys().copied().collect();
                     generation = Some(completed_read);
                 }
-                let Some(popups) = read() else {
+                let Some(popups) = read().or_else(|| {
+                    read = connect()?;
+                    read()
+                }) else {
                     return;
                 };
                 accounted.retain(|id| popups.iter().any(|popup| popup.id == *id));
-                mapped = popups.iter().map(|popup| popup.id).collect();
-                if send.send(unaccounted(&popups, &accounted)).is_err() {
+                mapped.retain(|id, _| popups.iter().any(|popup| popup.id == *id));
+                let observed = now();
+                for popup in &popups {
+                    mapped.entry(popup.id).or_insert(observed);
+                }
+                let settling = mapped
+                    .values()
+                    .any(|seen| observed.duration_since(*seen) < MENU_SETTLE_TIME);
+                if send
+                    .send(settling || unaccounted(&popups, &accounted))
+                    .is_err()
+                {
                     return;
                 }
             }
@@ -119,3 +146,7 @@ pub(super) fn is_menu_window(connection: &RustConnection, window: u32, atoms: &[
 #[cfg(test)]
 #[path = "menu_pending_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "menu_pending_worker_tests.rs"]
+mod worker_tests;

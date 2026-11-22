@@ -60,6 +60,17 @@ fn poll(session: &MenuProbe, generation: usize) -> bool {
         .unwrap()
 }
 
+fn advancing_reader<F>(connect: impl FnMut() -> Option<F> + Send + 'static) -> MenuProbe
+where
+    F: FnMut() -> Option<Vec<PopupWindow>>,
+{
+    let mut instant = Instant::now();
+    MenuProbe::with_clock(connect, move || {
+        instant += MENU_SETTLE_TIME;
+        instant
+    })
+}
+
 #[test]
 fn newly_mapped_popup_requires_a_subsequent_complete_inventory() {
     let first = popup(1, 10);
@@ -76,7 +87,11 @@ fn newly_mapped_popup_requires_a_subsequent_complete_inventory() {
         vec![first, second],
         vec![first, second],
     ]);
-    let session = MenuProbe::with_reader(move || Some(move || frames.pop_front()));
+    let mut frames = Some(std::mem::take(&mut frames));
+    let session = advancing_reader(move || {
+        let mut frames = frames.take()?;
+        Some(move || frames.pop_front())
+    });
     for (generation, expected) in [
         (1, false),
         (1, true),
@@ -95,7 +110,7 @@ fn newly_mapped_popup_requires_a_subsequent_complete_inventory() {
 
 #[test]
 fn first_probe_cannot_account_for_stale_extents_from_the_initial_read() {
-    let session = MenuProbe::with_reader(|| Some(|| Some(vec![popup(1, 10)])));
+    let session = advancing_reader(|| Some(|| Some(vec![popup(1, 10)])));
     assert!(poll(&session, 1));
     assert!(poll(&session, 1));
     assert!(!poll(&session, 2));
@@ -107,8 +122,9 @@ fn repeated_pending_probes_connect_once_and_read_fresh_windows() {
     let reads = Arc::new(AtomicUsize::new(0));
     let connected = connections.clone();
     let scanned = reads.clone();
-    let session = MenuProbe::with_reader(move || {
+    let session = advancing_reader(move || {
         connected.fetch_add(1, Ordering::SeqCst);
+        let scanned = scanned.clone();
         Some(move || {
             scanned.fetch_add(1, Ordering::SeqCst);
             Some(vec![popup(1, 10)])
