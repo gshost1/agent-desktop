@@ -10,11 +10,95 @@ fn combo(key: &str, modifiers: &[Modifier]) -> KeyCombo {
 fn edges(steps: &[Step]) -> Vec<(u8, bool)> {
     steps
         .iter()
-        .map(|step| match step {
-            Step::Key { code, down } => (*code, *down),
+        .filter_map(|step| match step {
+            Step::Key { code, down } => Some((*code, *down)),
+            Step::Pause(_) => None,
             _ => unreachable!(),
         })
         .collect()
+}
+
+#[test]
+fn modified_chords_settle_once_before_the_base_key() {
+    let map = Keymap::sample();
+    for (key, modifiers, down_count) in [
+        ("a", vec![Modifier::Ctrl], 1),
+        (
+            "a",
+            vec![Modifier::Ctrl, Modifier::Ctrl, Modifier::Shift],
+            2,
+        ),
+        ("A", vec![], 1),
+        ("A", vec![Modifier::Shift], 1),
+    ] {
+        let plan = plan_combo(&map, &combo(key, &modifiers)).unwrap();
+        assert_eq!(
+            plan.steps[down_count],
+            Step::Pause(Duration::from_millis(10))
+        );
+        assert_eq!(plan.steps.len(), 2 * down_count + 3);
+        assert!(
+            plan.steps[..down_count]
+                .iter()
+                .all(|step| matches!(step, Step::Key { down: true, .. }))
+        );
+        assert_eq!(
+            plan.steps[down_count + 1],
+            Step::Key {
+                code: 10,
+                down: true
+            }
+        );
+        assert_eq!(
+            plan.steps[down_count + 2],
+            Step::Key {
+                code: 10,
+                down: false
+            }
+        );
+        let downs = edges(&plan.steps[..down_count]);
+        let releases = edges(&plan.steps[down_count + 3..]);
+        assert_eq!(
+            releases,
+            downs
+                .into_iter()
+                .rev()
+                .map(|(code, _)| (code, false))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn unmodified_key_has_no_pause() {
+    let plan = plan_combo(&Keymap::sample(), &combo("a", &[])).unwrap();
+    assert_eq!(
+        plan.steps,
+        vec![
+            Step::Key {
+                code: 10,
+                down: true
+            },
+            Step::Key {
+                code: 10,
+                down: false
+            }
+        ]
+    );
+}
+
+#[test]
+fn invalid_chords_remain_not_delivered() {
+    let map = Keymap::new(8, 2, vec![0x61, 0x41], 0, Vec::new());
+    for chord in [
+        combo("", &[]),
+        combo("你", &[]),
+        combo("a", &[Modifier::Alt]),
+        combo("A", &[]),
+    ] {
+        let error = plan_combo(&map, &chord).unwrap_err();
+        assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    }
 }
 
 #[test]
