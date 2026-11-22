@@ -40,6 +40,7 @@ fn args(allow_partial: bool, count: bool) -> FindArgs {
 
 fn resolution(selection_complete: bool) -> LocatorResolution {
     LocatorResolution {
+        match_depth: None,
         matches: Vec::new(),
         refmap: None,
         stats: LocatorStats::default(),

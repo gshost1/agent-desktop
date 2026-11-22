@@ -393,3 +393,6 @@ fn post_action_wait_polls_acted_on_window_not_focused_window() {
 
 #[path = "helpers_ref_action_wait_result_tests.rs"]
 mod result_tests;
+
+#[path = "helpers_post_action_wait_depth_tests.rs"]
+mod depth_tests;

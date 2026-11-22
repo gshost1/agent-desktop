@@ -2,7 +2,9 @@ use crate::wait::{ref_wait::RefWait, window_baseline::WindowBaseline};
 use crate::{
     AppError, ErrorCode,
     adapter::{PlatformAdapter, TreeOptions},
+    commands::selector_hit::SelectorHit,
     commands::selector_observation::SelectorObservation,
+    commands::selector_read::SelectorRead,
     commands::{query, snapshot as snapshot_cmd},
     context::CommandContext,
     refs::refs_store::RefStore,
@@ -76,13 +78,12 @@ fn execute_for_target(
         |poll_deadline| {
             let observed = match following.as_mut() {
                 Some(scope) => scope.observe(adapter, (&query, &input.query_raw), poll_deadline),
-                None => observe_selector(adapter, &input, entry, &query, poll_deadline)
-                    .map(|matches| matches.map(|matches| (matches, None))),
+                None => observe_selector(adapter, &input, entry, &query, poll_deadline),
             };
             let completion = match observed {
-                Ok(Some((true, _))) if input.gone => None,
-                Ok(Some((true, owner))) => {
-                    let (owners, opts) = match owner {
+                Ok(SelectorRead::Hit(_)) if input.gone => None,
+                Ok(SelectorRead::Hit(hit)) => {
+                    let (owners, opts) = match hit.owner {
                         Some((owner, surface)) => (
                             Ok(vec![owner]),
                             TreeOptions {
@@ -95,6 +96,7 @@ fn execute_for_target(
                             input.opts,
                         ),
                     };
+                    let opts = reaching(opts, hit.depth);
                     match owners.and_then(|owners| {
                         build_materialization(adapter, &opts, owners, &query, poll_deadline)
                     }) {
@@ -120,9 +122,9 @@ fn execute_for_target(
                         Err(err) => Some(Err(err)),
                     }
                 }
-                Ok(Some((false, _))) if input.gone => Some(Ok(SelectorCompletion::Absent)),
-                Ok(Some((false, _))) => None,
-                Ok(None) => {
+                Ok(SelectorRead::Absent) if input.gone => Some(Ok(SelectorCompletion::Absent)),
+                Ok(SelectorRead::Absent) => None,
+                Ok(SelectorRead::Incomplete) => {
                     last_error = Some(json!({ "kind": "locator_incomplete" }));
                     None
                 }
@@ -219,7 +221,7 @@ fn observe_selector(
     entry: Option<&crate::RefEntry>,
     query: &crate::LocatorQuery,
     deadline: crate::Deadline,
-) -> Result<Option<bool>, AppError> {
+) -> scope::Observed {
     let observation = if let Some(entry) = entry {
         SelectorObservation::observe_ref(adapter, entry, query, deadline)?
     } else {
@@ -232,11 +234,35 @@ fn observe_selector(
         )?
     };
     match observation {
-        SelectorObservation::Selector { matches, complete } => Ok(complete.then_some(matches)),
-        SelectorObservation::OwnerUnavailable(
+        SelectorObservation::Selector {
+            complete: false, ..
+        } => Ok(SelectorRead::Incomplete),
+        SelectorObservation::Selector {
+            matches: true,
+            depth,
+            ..
+        } => Ok(SelectorRead::Hit(SelectorHit::on_target(depth))),
+        SelectorObservation::Selector { .. }
+        | SelectorObservation::OwnerUnavailable(
             ProcessState::Exited { .. } | ProcessState::Crashed { .. },
-        ) => Ok(Some(false)),
+        ) => Ok(SelectorRead::Absent),
         SelectorObservation::OwnerUnavailable(state) => Err(owner_unavailable(state)),
+    }
+}
+
+/// The options of the snapshot a matched wait returns, deep enough to hold the
+/// match its read found. The read looks further down than a snapshot's
+/// default depth, so a match below it deepens this snapshot to the match; a
+/// skeleton presents three levels at most, so one below that is returned as
+/// a full tree to the match's depth.
+fn reaching(opts: TreeOptions, depth: u8) -> TreeOptions {
+    if crate::locator::live_locator::ObservationRequest::snapshot_logical_depth(&opts) >= depth {
+        return opts;
+    }
+    TreeOptions {
+        max_depth: depth,
+        skeleton: false,
+        ..opts
     }
 }
 

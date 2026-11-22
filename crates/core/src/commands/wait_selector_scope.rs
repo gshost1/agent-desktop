@@ -22,8 +22,11 @@ use serde_json::json;
 
 use crate::{
     AdapterError, AppError, Deadline, ErrorCode, LocatorQuery, PlatformAdapter, RefEntry,
-    SnapshotOwner, SnapshotSurface,
-    commands::selector_observation::SelectorObservation,
+    SnapshotSurface,
+    commands::{
+        selector_hit::SelectorHit, selector_observation::SelectorObservation,
+        selector_read::SelectorRead,
+    },
     snapshot::{ref_owner_observation::RefOwnerObservation, surface_target},
     system::process_state::ProcessState,
     wait::{
@@ -39,20 +42,15 @@ use reads::{Unmatched, observe_each, observe_owner, read_overlays};
 
 /// A read of the poll's window phase: `Some` where it matched, `None` where
 /// nothing did, with what it saw recorded in the poll's [`Unmatched`].
-type WindowPhase = Result<Option<Matched>, AppError>;
+type WindowPhase = Result<Option<SelectorHit>, AppError>;
 
 const TARGET_GONE: &str = "wait_target_gone";
 const OWNER_UNRESPONSIVE: &str = "wait_owner_unresponsive";
 const ABSENT_READS_BEFORE_WIDENING: u32 = 2;
 const PROCESS_STATE_BUDGET: Duration = Duration::from_secs(1);
 
-/// One read of the wait: `Some((matches, owner))` for a complete read, with
-/// the owner and surface that matched, or `None` for an incomplete one.
-pub(crate) type Observed = Result<Option<(bool, Matched)>, AppError>;
-
-/// Where a read matched: the owner and surface, or `None` for the ref's own
-/// application surface.
-pub(crate) type Matched = Option<(SnapshotOwner, SnapshotSurface)>;
+/// One read of the wait.
+pub(crate) type Observed = Result<SelectorRead, AppError>;
 
 /// The scope an appear wait follows from a window-owned ref, and what it
 /// remembers between reads.
@@ -107,13 +105,10 @@ impl<'a> FollowedScope<'a> {
         } else {
             self.read_windows(adapter, (query, query_raw), deadline, &mut unmatched)?
         };
-        if let Some(found) = found {
-            return Ok(Some((true, found)));
-        }
-        if let Some(found) =
-            read_overlays(adapter, self.target.entry, query, deadline, &mut unmatched)
+        if let Some(found) = found
+            .or_else(|| read_overlays(adapter, self.target.entry, query, deadline, &mut unmatched))
         {
-            return Ok(Some((true, Some(found))));
+            return Ok(SelectorRead::Hit(found));
         }
         unmatched.finish()
     }
@@ -131,7 +126,8 @@ impl<'a> FollowedScope<'a> {
             Ok(SelectorObservation::Selector {
                 matches: true,
                 complete: true,
-            }) => return Ok(Some(None)),
+                depth,
+            }) => return Ok(Some(SelectorHit::on_target(depth))),
             Ok(SelectorObservation::Selector { complete, .. }) => unmatched.record_read(complete),
             Ok(SelectorObservation::OwnerUnavailable(
                 state @ (ProcessState::Exited { .. } | ProcessState::Crashed { .. }),
@@ -164,8 +160,10 @@ impl<'a> FollowedScope<'a> {
             RefOwnerObservation::Present(owner) => {
                 self.absent_reads = 0;
                 match observe_owner(adapter, &owner, query, deadline) {
-                    Ok((true, _)) => return Ok(Some(Some((owner, SnapshotSurface::Window)))),
-                    Ok((false, complete)) => unmatched.record_read(complete),
+                    Ok((Some(depth), _)) => {
+                        return Ok(Some(SelectorHit::on(owner, SnapshotSurface::Window, depth)));
+                    }
+                    Ok((None, complete)) => unmatched.record_read(complete),
                     Err(error) => unmatched.keep_unreadable(error)?,
                 }
                 let opened = match self.target.baseline {
@@ -202,7 +200,7 @@ fn every_window(
     entry: &RefEntry,
     (query, deadline): (&LocatorQuery, Deadline),
     unmatched: &mut Unmatched,
-) -> Option<Matched> {
+) -> Option<SelectorHit> {
     let (Some(app), Some(process)) = (entry.source.source_app.as_deref(), entry.process.identity())
     else {
         unmatched.record_read(false);
