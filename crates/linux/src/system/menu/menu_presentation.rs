@@ -41,7 +41,7 @@ fn corroborate_with(
             .is_some_and(|popups| {
                 popups
                     .iter()
-                    .any(|popup| rects.iter().all(|rect| covers(popup.bounds, *rect)))
+                    .any(|popup| rects.iter().any(|rect| covers(popup.bounds, *rect)))
             })
     }
 }

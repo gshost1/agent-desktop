@@ -151,7 +151,7 @@ fn top_level_children_share_one_native_read_per_process() {
 }
 
 #[test]
-fn one_popup_must_cover_all_readable_items_of_the_menu() {
+fn one_contained_item_corroborates_a_menu_with_other_items_outside() {
     let menu = node(
         MENU,
         "File",
@@ -173,7 +173,10 @@ fn one_popup_must_cover_all_readable_items_of_the_menu() {
         },
     ];
     let mut separated = corroborate_with(|_| Some(windows.clone()));
-    assert!(super::super::menu_popup::in_window_with(&frame, &mut separated).is_empty());
+    assert_eq!(
+        super::super::menu_popup::in_window_with(&frame, &mut separated)[0].items,
+        2
+    );
     let mut covered = corroborate_with(|_| {
         Some(vec![PopupWindow {
             id: 3,
@@ -184,6 +187,56 @@ fn one_popup_must_cover_all_readable_items_of_the_menu() {
         super::super::menu_popup::in_window_with(&frame, &mut covered)[0].items,
         2
     );
+}
+
+#[test]
+fn a_scrolled_menu_keeps_items_above_and_below_the_popup() {
+    let menu = node(
+        MENU,
+        "File",
+        &[SHOWING],
+        vec![
+            visible_item(Field::Present(rect(328, -19, 310, 25))),
+            visible_item(Field::Present(rect(328, 31, 310, 25))),
+            visible_item(Field::Present(rect(328, 479, 310, 25))),
+        ],
+    );
+    let frame = frame_with(vec![menu]);
+    let mut presented = corroborate_with(|_| {
+        Some(vec![PopupWindow {
+            id: 1,
+            bounds: rect(326, 22, 314, 218),
+        }])
+    });
+    assert_eq!(
+        super::super::menu_popup::in_window_with(&frame, &mut presented)[0].items,
+        3
+    );
+}
+
+#[test]
+fn a_screen_edge_menu_keeps_partly_clipped_items() {
+    let menu = node(
+        MENU,
+        "File",
+        &[SHOWING],
+        vec![
+            visible_item(Field::Present(rect(328, 41, 310, 25))),
+            visible_item(Field::Present(rect(328, 232, 310, 25))),
+        ],
+    );
+    let frame = frame_with(vec![menu]);
+    for bounds in [rect(326, 22, 314, 218), rect(326, 22, 314, 230)] {
+        let mut presented = corroborate_with(|_| Some(vec![PopupWindow { id: 1, bounds }]));
+        assert_eq!(
+            super::super::menu_popup::in_window_with(&frame, &mut presented)[0].items,
+            2
+        );
+    }
+    for bounds in [rect(0, 0, 100, 100), rect(330, 22, 310, 218)] {
+        let mut unrelated = corroborate_with(|_| Some(vec![PopupWindow { id: 1, bounds }]));
+        assert!(super::super::menu_popup::in_window_with(&frame, &mut unrelated).is_empty());
+    }
 }
 
 #[test]
