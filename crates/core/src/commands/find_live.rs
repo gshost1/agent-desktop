@@ -8,9 +8,9 @@ use crate::{
     context::CommandContext,
     locator::live_locator::{
         LocatorMaterialization, LocatorResolution, LocatorResolveRequest, LocatorSelection,
-        ObservationRequest, ObservationRoot, ObservedObservation, has_deterministic_limit,
-        has_transient_incompleteness, resolve_query, resolve_query_allowing_partial,
-        resolve_query_keeping_observed_matches, selects_tokenless_entry,
+        ObservationRequest, ObservationRoot, ObservedObservation, resolve_query,
+        resolve_query_allowing_partial, resolve_query_keeping_observed_matches,
+        selects_tokenless_entry,
     },
     refs::RefMap,
     refs::ref_root_read::{RootRead, read_saved_root},
@@ -186,12 +186,14 @@ fn resolve_request(args: &FindArgs, deadline: crate::Deadline) -> LocatorResolve
     }
 }
 
-/// A find that lists its matches can answer with the matches an unreadable
-/// walk observed, marked incomplete. A count or a positional pick cannot: a
-/// match in the unread part would change it.
+/// A menubar find that lists its matches can answer with the matches an
+/// unreadable walk observed, marked incomplete. A count or a positional pick
+/// cannot: a match in the unread part would change it. Other surfaces keep
+/// the strict contract.
 fn lists_observed_matches(args: &FindArgs) -> bool {
     let selection = &args.selection;
-    !(selection.count || selection.first || selection.last || selection.nth.is_some())
+    args.scope.surface == crate::SnapshotSurface::Menubar
+        && !(selection.count || selection.first || selection.last || selection.nth.is_some())
 }
 
 fn require_complete(resolution: &LocatorResolution) -> Result<(), AppError> {
@@ -202,8 +204,6 @@ fn require_complete(resolution: &LocatorResolution) -> Result<(), AppError> {
         AdapterError::timeout("Locator traversal did not produce an authoritative result")
             .with_details(json!({
                 "kind": "locator_incomplete",
-                "retryable": has_deterministic_limit(&resolution.stats)
-                    || has_transient_incompleteness(&resolution.stats),
                 "observed_matches": resolution.meta.total_matches,
                 "query_stats": resolution.stats,
                 "roles_present": resolution.meta.roles_present,

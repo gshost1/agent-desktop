@@ -126,7 +126,7 @@ pub fn execute_verified_action(
         if let Some(details) = details.as_object_mut() {
             details.insert("verification_scope".into(), "unavailable".into());
             details.insert("verification_reason".into(), reason.into());
-            if !commit_unobserved && !committed {
+            if !commit_unobserved {
                 details.insert("application_commit".into(), "not_verified".into());
             }
         }

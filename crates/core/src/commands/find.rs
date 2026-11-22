@@ -68,9 +68,10 @@ pub fn execute(
 
     if args.scope.scroll.is_some() {
         return find_scroll::execute(&args, &query, adapter, context)
-            .map_err(name_the_traversal_remedy);
+            .map_err(|error| name_the_traversal_remedy(error, args.scope.surface));
     }
-    live::execute(&args, &query, adapter, context).map_err(name_the_traversal_remedy)
+    live::execute(&args, &query, adapter, context)
+        .map_err(|error| name_the_traversal_remedy(error, args.scope.surface))
 }
 
 /// A traversal that ran out of budget on a large tree is not evidence the
@@ -80,14 +81,14 @@ pub fn execute(
 /// app. Applied at this boundary rather than in the shared constructor,
 /// which every other command reaches and whose wording is asserted on
 /// elsewhere.
-fn name_the_traversal_remedy(error: AppError) -> AppError {
+fn name_the_traversal_remedy(error: AppError, surface: crate::SnapshotSurface) -> AppError {
     let AppError::Adapter(adapter_error) = error else {
         return error;
     };
     if adapter_error.code != crate::ErrorCode::Timeout {
         return AppError::Adapter(adapter_error);
     }
-    if left_a_part_unreadable(&adapter_error) {
+    if surface == crate::SnapshotSurface::Menubar && left_a_part_unreadable(&adapter_error) {
         return AppError::Adapter(name_the_unreadable_part(adapter_error));
     }
     AppError::Adapter(adapter_error.with_suggestion(
@@ -100,7 +101,31 @@ fn name_the_traversal_remedy(error: AppError) -> AppError {
 /// whose children fail to load. More time does not read it.
 fn left_a_part_unreadable(error: &crate::AdapterError) -> bool {
     error.details.as_ref().is_some_and(|details| {
-        details["kind"] == "locator_incomplete" && details["retryable"] == false
+        let stats = &details["query_stats"];
+        let none = |value: &serde_json::Value, keys: &[&str]| {
+            keys.iter().all(|key| value[*key].as_u64() == Some(0))
+        };
+        details["kind"] == "locator_incomplete"
+            && details["retryable"] != true
+            && none(
+                &stats["traversal"]["limits"],
+                &[
+                    "node_hits",
+                    "edge_hits",
+                    "child_hits",
+                    "text_hits",
+                    "depth_hits",
+                    "child_count_changes",
+                ],
+            )
+            && none(
+                &stats["reads"],
+                &[
+                    "cannot_complete",
+                    "deadline_exhausted",
+                    "invalidated_elements",
+                ],
+            )
     })
 }
 

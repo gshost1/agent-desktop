@@ -94,7 +94,6 @@ pub(crate) use resolve::{
     resolve_query_allowing_partial, resolve_query_from, resolve_query_from_allowing_partial,
     resolve_query_keeping_observed_matches,
 };
-pub(crate) use resolve_errors::{has_deterministic_limit, has_transient_incompleteness};
 pub(crate) use row_reading::RowReading;
 pub(crate) use select::is_exact_name;
 pub use validate::{validate_query, validate_request};

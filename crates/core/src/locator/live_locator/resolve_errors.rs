@@ -16,7 +16,7 @@ pub(super) fn unknown_incomplete_error(resolution: &LocatorResolution) -> Adapte
         .with_disposition(crate::DeliverySemantics::not_delivered())
 }
 
-pub(crate) fn has_deterministic_limit(stats: &LocatorStats) -> bool {
+pub(super) fn has_deterministic_limit(stats: &LocatorStats) -> bool {
     let limits = &stats.traversal.limits;
     limits.node_hits > 0
         || limits.edge_hits > 0
@@ -25,7 +25,7 @@ pub(crate) fn has_deterministic_limit(stats: &LocatorStats) -> bool {
         || limits.depth_hits > 0
 }
 
-pub(crate) fn has_transient_incompleteness(stats: &LocatorStats) -> bool {
+pub(super) fn has_transient_incompleteness(stats: &LocatorStats) -> bool {
     stats.traversal.limits.child_count_changes > 0
         || stats.reads.health.cannot_complete > 0
         || stats.reads.health.deadline_exhausted > 0
