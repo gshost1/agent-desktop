@@ -274,6 +274,24 @@ fn any_other_refusal_of_the_window_read_still_ends_the_launch_at_once() {
 }
 
 #[test]
+fn a_window_appearing_during_the_last_grace_sleep_is_read() {
+    let calls = Cell::new(0);
+    let found = waiting_for_window(5_000, |launch, owner| {
+        launch.wait_for_window(owner, true, &HashSet::new(), || {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                std::thread::sleep(WINDOW_GRACE - POLL_INTERVAL / 2);
+                Ok((Vec::new(), RootRead::Read))
+            } else {
+                Ok((vec![window_of_owner(owner)], RootRead::Read))
+            }
+        })
+    });
+    assert_eq!(found.unwrap().unwrap().id, "w-proven");
+    assert_eq!(calls.get(), 2);
+}
+
+#[test]
 fn a_proven_windowless_owner_survives_the_window_wait_deadline() {
     let calls = Cell::new(0);
     let found = waiting_for_window(150, |launch, owner| {
