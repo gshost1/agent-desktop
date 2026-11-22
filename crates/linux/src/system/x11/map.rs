@@ -40,7 +40,7 @@ fn same_size(left: Extents, right: Extents) -> bool {
     left.width == right.width && left.height == right.height
 }
 
-fn unnamed_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
+fn geometry_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
     let Some(size) = frame.extents.filter(|size| {
         size.width > 0 && size.height > 0 && size.x != i32::MIN && size.y != i32::MIN
     }) else {
@@ -50,9 +50,13 @@ fn unnamed_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
         .iter()
         .filter(|client| client.pid == Some(frame.pid))
         .filter(|client| {
-            frame_around(client).is_some_and(|outer| {
-                same_size(size, outer) || same_size(size, without_shadow(client, outer))
-            })
+            if frame.global_position {
+                sits_at(client, size) || client.bounds == Some(size)
+            } else {
+                frame_around(client).is_some_and(|outer| {
+                    same_size(size, outer) || same_size(size, without_shadow(client, outer))
+                }) || client.bounds.is_some_and(|bounds| same_size(size, bounds))
+            }
         })
         .map(|client| client.id)
         .collect();
@@ -64,16 +68,15 @@ fn unnamed_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
 }
 
 /// The client of a window, by process id and title first. A tie is broken by
-/// the window's extents only when the toolkit reports them in screen
-/// coordinates: the accessibility rectangle then equals the client rectangle
-/// grown upward by the top frame extent. A tie that extents cannot break
-/// stays a tie, and child order is never used. An unnamed frame with local
-/// extents needs an exact, unique same-process size match, including the
-/// toolkit's client-side shadow convention; a missing size identifies nothing.
+/// global extents. Without a title match, exact same-process geometry identifies
+/// the client: the client, frame or shadowless frame rectangle for global
+/// toolkits, or their sizes for local ones. Several candidates stay ambiguous;
+/// child order is never used. Unnamed local frames still require the caller's
+/// size-identity proof. Missing or invalid geometry identifies nothing.
 pub(crate) fn match_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientMatch {
     if frame.title.is_empty() && !frame.global_position {
         return if frame.size_identity {
-            unnamed_client(frame, clients)
+            geometry_client(frame, clients)
         } else {
             ClientMatch::NoClient
         };
@@ -83,9 +86,10 @@ pub(crate) fn match_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientM
         .filter(|client| client.pid == Some(frame.pid) && client.title == frame.title)
         .collect();
     let [_, _, ..] = named.as_slice() else {
-        return named
-            .first()
-            .map_or(ClientMatch::NoClient, |client| ClientMatch::One(client.id));
+        return named.first().map_or_else(
+            || geometry_client(frame, clients),
+            |client| ClientMatch::One(client.id),
+        );
     };
     if let (true, Some(extents)) = (frame.global_position, frame.extents) {
         let placed: Vec<&&X11Client> = named
@@ -99,6 +103,56 @@ pub(crate) fn match_client(frame: &FrameFacts, clients: &[X11Client]) -> ClientM
     ClientMatch::Several(named.iter().map(|client| client.id).collect())
 }
 
+pub(crate) fn has_title_match(frame: &FrameFacts, clients: &[X11Client]) -> bool {
+    (!frame.title.is_empty() || frame.global_position)
+        && clients
+            .iter()
+            .any(|client| client.pid == Some(frame.pid) && client.title == frame.title)
+}
+
+/// Matches a coherent set of frames without letting geometry reclaim a named
+/// client's identity or assigning one client to competing geometry-only frames.
+pub(crate) fn match_frames(frames: &[FrameFacts], clients: &[X11Client]) -> Vec<ClientMatch> {
+    let named: Vec<bool> = frames
+        .iter()
+        .map(|frame| has_title_match(frame, clients))
+        .collect();
+    let available: Vec<X11Client> = clients
+        .iter()
+        .filter(|client| {
+            !frames.iter().zip(&named).any(|(frame, named)| {
+                *named && Some(frame.pid) == client.pid && frame.title == client.title
+            })
+        })
+        .cloned()
+        .collect();
+    let matches: Vec<ClientMatch> = frames
+        .iter()
+        .zip(&named)
+        .map(|(frame, named)| match_client(frame, if *named { clients } else { &available }))
+        .collect();
+    matches
+        .iter()
+        .enumerate()
+        .map(|(index, found)| {
+            if !named[index]
+                && let ClientMatch::One(id) = found
+                && matches.iter().enumerate().any(|(other, found)| {
+                    other != index
+                        && match found {
+                            ClientMatch::One(other) => other == id,
+                            ClientMatch::Several(ids) => ids.contains(id),
+                            ClientMatch::NoClient => false,
+                        }
+                })
+            {
+                return ClientMatch::NoClient;
+            }
+            found.clone()
+        })
+        .collect()
+}
+
 /// What the window manager's answer says about the listed windows.
 pub(crate) fn evidence(state: &X11State, frames: &[FrameFacts]) -> X11Evidence {
     let X11State::Ready { active, clients } = state else {
@@ -109,8 +163,8 @@ pub(crate) fn evidence(state: &X11State, frames: &[FrameFacts]) -> X11Evidence {
     };
     let mut exact = Vec::new();
     let mut possible = false;
-    for (index, frame) in frames.iter().enumerate() {
-        match match_client(frame, clients) {
+    for (index, found) in match_frames(frames, clients).into_iter().enumerate() {
+        match found {
             ClientMatch::One(id) if id == *active => exact.push(index),
             ClientMatch::Several(ids) if ids.contains(active) => possible = true,
             _ => {}

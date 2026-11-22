@@ -16,7 +16,7 @@ const INSTANCE: &str = "boot:100";
 struct Keys<'a> {
     physical: &'a FakeWorld,
     focused: RefCell<VecDeque<Result<Option<WindowInfo>, AdapterError>>>,
-    active: Option<u32>,
+    active: RefCell<VecDeque<Option<u32>>>,
     lookup: Lookup,
     changes_after_send: bool,
     reads: RefCell<Vec<&'static str>>,
@@ -38,7 +38,7 @@ impl<'a> Keys<'a> {
         Self {
             physical,
             focused: RefCell::new(VecDeque::from([Ok(Some(window(PID, "target")))])),
-            active: Some(PID),
+            active: RefCell::new(VecDeque::from([Some(PID)])),
             lookup: Lookup::Found(facts(INSTANCE)),
             changes_after_send: false,
             reads: RefCell::new(Vec::new()),
@@ -89,7 +89,22 @@ impl KeyWorld for Keys<'_> {
 
     fn active_client_pid(&self, _deadline: Deadline) -> Option<u32> {
         self.reads.borrow_mut().push("active");
-        self.active
+        let mut active = self.active.borrow_mut();
+        if active.len() > 1 {
+            active.pop_front().flatten()
+        } else {
+            active.front().copied().flatten()
+        }
+    }
+
+    fn reports_active(&self, pid: u32, deadline: Deadline) -> bool {
+        self.reads.borrow_mut().push("reports_active");
+        assert!(deadline.remaining() <= Duration::from_millis(300));
+        matches!(self.focused.borrow().front(), Some(Ok(Some(window))) if window.pid.get() == pid)
+    }
+
+    fn pause(&self, _duration: Duration) {
+        self.reads.borrow_mut().push("pause");
     }
 }
 
@@ -166,9 +181,9 @@ fn another_application_owning_either_active_measure_gets_no_keys() {
         (Some(PID), Some(OTHER), "display_active_window"),
     ] {
         let physical = FakeWorld::x11();
-        let mut keys = Keys::owning(&physical);
+        let keys = Keys::owning(&physical);
         keys.set_focused(focused);
-        keys.active = active;
+        *keys.active.borrow_mut() = VecDeque::from([active]);
         let error = press(&physical, &keys, InteractionPolicy::headed()).unwrap_err();
         assert_eq!(check_of(&error).as_deref(), Some("window_active"));
         assert_eq!(error.details.as_ref().unwrap()["cause"], cause);
@@ -180,8 +195,8 @@ fn another_application_owning_either_active_measure_gets_no_keys() {
 #[test]
 fn a_window_with_no_known_owner_on_the_display_is_not_the_target() {
     let physical = FakeWorld::x11();
-    let mut keys = Keys::owning(&physical);
-    keys.active = None;
+    let keys = Keys::owning(&physical);
+    *keys.active.borrow_mut() = VecDeque::from([None]);
     let error = press(&physical, &keys, InteractionPolicy::headed()).unwrap_err();
     assert_eq!(check_of(&error).as_deref(), Some("window_active"));
     assert_eq!(
@@ -195,8 +210,8 @@ fn a_window_with_no_known_owner_on_the_display_is_not_the_target() {
 #[test]
 fn on_wayland_the_gate_is_the_frame_alone() {
     let physical = FakeWorld::wayland();
-    let mut keys = Keys::owning(&physical);
-    keys.active = None;
+    let keys = Keys::owning(&physical);
+    *keys.active.borrow_mut() = VecDeque::from([None]);
     let result = press(&physical, &keys, InteractionPolicy::headless()).expect("frame active");
     assert_eq!(result.steps[0].label(), "RemoteDesktop.press_key");
     assert_eq!(keys.read_count("active"), 0);
@@ -242,9 +257,9 @@ fn an_inactive_wayland_press_offers_manual_focus_then_a_supported_retry() {
 fn a_background_target_fails_by_policy_and_neither_case_calls_synthesis() {
     for policy in [InteractionPolicy::headed(), InteractionPolicy::headless()] {
         let physical = FakeWorld::x11();
-        let mut keys = Keys::owning(&physical);
+        let keys = Keys::owning(&physical);
         keys.set_focused(Some(OTHER));
-        keys.active = Some(OTHER);
+        *keys.active.borrow_mut() = VecDeque::from([Some(OTHER)]);
         let error = press(&physical, &keys, policy).unwrap_err();
         assert_eq!(error.code, ErrorCode::ActionFailed);
         assert_eq!(check_of(&error).as_deref(), Some("window_active"));
@@ -256,6 +271,9 @@ fn a_background_target_fails_by_policy_and_neither_case_calls_synthesis() {
         assert!(physical.sent_nothing());
     }
 }
+
+#[path = "key_dispatch_retry_tests.rs"]
+mod retry_tests;
 
 #[test]
 fn a_token_that_changed_before_synthesis_is_refused_with_nothing_read_or_sent() {

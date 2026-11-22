@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use agent_desktop_core::{
     ActionResult, AdapterError, Deadline, DeliverySemantics, ErrorCode, InteractionLease,
     InteractionPolicy, KeyCombo, ProcessIdentity, WindowInfo,
@@ -8,7 +10,8 @@ use crate::input::backend::Backend;
 use crate::input::physical::target_keyboard::press_for_process;
 use crate::input::physical::target_world::{LiveWorld, PhysicalWorld};
 use crate::system::process::process_lookup::Lookup;
-use crate::system::window::window_ops::{require_complete_frames, windows_of_process};
+use crate::system::registry::read_registry_for;
+use crate::system::window::window_ops::{require_complete_frames, windows_of, windows_of_process};
 use crate::system::x11::stacking::stacking_source::StackingSource;
 use crate::system::x11::{DisplayReader, X11State};
 use crate::system::{
@@ -27,6 +30,10 @@ trait KeyWorld {
         deadline: Deadline,
     ) -> Result<Option<WindowInfo>, AdapterError>;
     fn active_client_pid(&self, deadline: Deadline) -> Option<u32>;
+    fn reports_active(&self, pid: u32, deadline: Deadline) -> bool;
+    fn pause(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
 }
 
 struct LiveKeys<'a> {
@@ -34,6 +41,14 @@ struct LiveKeys<'a> {
 }
 
 impl KeyWorld for LiveKeys<'_> {
+    fn reports_active(&self, pid: u32, deadline: Deadline) -> bool {
+        let Ok(registry) = read_registry_for(self.bus, Some(pid), deadline) else {
+            return false;
+        };
+        windows_of(self.bus, &registry, |app| app.root.pid() == pid, deadline)
+            .is_ok_and(|windows| windows.iter().any(|window| window.active))
+    }
+
     fn lookup(&self, pid: u32) -> Lookup {
         process_facts::lookup(pid)
     }
@@ -115,7 +130,7 @@ fn require_active(
 ) -> Result<(), AdapterError> {
     let pid = process.pid.get();
     let display_active =
-        !matches!(backend, Backend::X11(_)) || world.active_client_pid(deadline) == Some(pid);
+        !matches!(backend, Backend::X11(_)) || display_active(world, pid, deadline);
     if !display_active {
         return Err(match window {
             Some(window) => window_not_active(window),
@@ -139,6 +154,29 @@ fn require_active(
         Some(_) => Err(not_active(process, "other_application")),
         None => Err(not_active(process, "frame_not_active")),
     }
+}
+
+fn display_active(world: &impl KeyWorld, pid: u32, deadline: Deadline) -> bool {
+    if world.active_client_pid(deadline) == Some(pid) {
+        return true;
+    }
+    let settle = deadline.capped(Duration::from_millis(300));
+    if settle.is_expired() || !world.reports_active(pid, settle) {
+        return false;
+    }
+    for _ in 0..3 {
+        if settle.is_expired() {
+            break;
+        }
+        world.pause(Duration::from_millis(25).min(settle.remaining()));
+        if settle.is_expired() {
+            break;
+        }
+        if world.active_client_pid(settle) == Some(pid) {
+            return true;
+        }
+    }
+    false
 }
 
 fn window_not_active(window: &WindowInfo) -> AdapterError {

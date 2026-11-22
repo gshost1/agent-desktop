@@ -101,3 +101,26 @@ fn a_session_without_clients_maps_nothing() {
         assert_eq!(listed_client(&windows, 0, &state), ClientMatch::NoClient);
     }
 }
+
+#[test]
+fn a_geometry_fallback_cannot_claim_a_named_frames_client() {
+    let rect = crate::tree::Extents {
+        x: 100,
+        y: 100,
+        width: 320,
+        height: 200,
+    };
+    let mut fallback = listed(1, "Question", true);
+    fallback.frame.extents = Some(rect);
+    fallback.frame.global_position = true;
+    let named = listed(1, "Doc", false);
+    let mut native = client(7, 1, "Doc");
+    native.bounds = Some(rect);
+    let state = X11State::Ready {
+        active: Some(7),
+        clients: vec![native],
+    };
+    let windows = [fallback, named];
+    assert_eq!(listed_client(&windows, 0, &state), ClientMatch::NoClient);
+    assert_eq!(listed_client(&windows, 1, &state), ClientMatch::One(7));
+}

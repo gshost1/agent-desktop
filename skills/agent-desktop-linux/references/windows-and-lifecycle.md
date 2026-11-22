@@ -287,6 +287,17 @@ Reports carry `action`, `target`, `steps` and `disposition`, without a `moved`,
 
 ## Focus
 
+Native and accessibility window titles can differ, particularly for modal
+dialogs. When no title matches, X11 mapping uses exact same-process geometry:
+screen rectangles for toolkits with global coordinates, sizes otherwise.
+Competing matches remain ambiguous. A `window_not_mapped` refusal can mean no
+safe client identity was found, not that the dialog is absent from the screen.
+Refresh `list-windows` and inspect the modal before retrying.
+
+App-targeted key delivery briefly rechecks X11 activation when the target itself
+reports an `ACTIVE` accessibility window. A background target without that
+evidence is refused without an activation wait; no focus change is requested.
+
 ```bash
 agent-desktop focus-window --app gnome-calculator
 ```
