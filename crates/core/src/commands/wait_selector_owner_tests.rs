@@ -30,6 +30,7 @@ struct Pane {
     info: WindowInfo,
     field: Field,
     fails: Option<ErrorCode>,
+    deep: bool,
 }
 
 /// Windows of two processes. `failure` fails every read, a pane's `fails`
@@ -73,6 +74,7 @@ impl TwoWindowApp {
         &self,
         id: &str,
         surface: SnapshotSurface,
+        max_depth: u8,
     ) -> Result<AccessibilityNode, AdapterError> {
         if let Some(error) = self.failure() {
             return Err(error);
@@ -85,20 +87,22 @@ impl TwoWindowApp {
         if let Some(code) = pane.fails.clone() {
             return Err(error_for(code));
         }
-        self.pane_tree(pane, surface)
+        self.pane_tree(pane, surface, max_depth)
     }
 
     fn pane_tree(
         &self,
         pane: &Pane,
         surface: SnapshotSurface,
+        max_depth: u8,
     ) -> Result<AccessibilityNode, AdapterError> {
-        let width = |since| {
-            if self.shown(since) {
-                vec![node("incrementor", "Width:")]
-            } else {
-                Vec::new()
-            }
+        let width = |since| match (self.shown(since), pane.deep) {
+            (true, true) => vec![depth_tests::buried(
+                node("incrementor", "Width:"),
+                max_depth,
+            )],
+            (true, false) => vec![node("incrementor", "Width:")],
+            (false, _) => Vec::new(),
         };
         let children = match (surface, pane.field) {
             (SnapshotSurface::Sheet, Field::InSheet(since)) => width(since),
@@ -157,7 +161,9 @@ impl ObservationOps for TwoWindowApp {
             self.charge_overlay_probe();
         }
         let tree = match &root {
-            ObservationRoot::Window(window) => self.surface_tree(&window.id, request.surface)?,
+            ObservationRoot::Window(window) => {
+                self.surface_tree(&window.id, request.surface, request.max_logical_depth)?
+            }
             ObservationRoot::Application { .. } => match self.failure() {
                 Some(error) => return Err(error),
                 None => node("menubar", "Menu Bar"),
@@ -175,13 +181,17 @@ impl ObservationOps for TwoWindowApp {
         Ok(self.panes.iter().map(|pane| pane.info.clone()).collect())
     }
 
+    fn is_auxiliary_window(&self, window: &WindowInfo, _deadline: crate::Deadline) -> bool {
+        window.id.starts_with("panel")
+    }
+
     fn get_tree(
         &self,
         window: &WindowInfo,
         opts: &crate::adapter::TreeOptions,
         _deadline: crate::Deadline,
     ) -> Result<AccessibilityNode, AdapterError> {
-        self.surface_tree(&window.id, opts.surface)
+        self.surface_tree(&window.id, opts.surface, opts.max_depth)
     }
 }
 
@@ -235,6 +245,7 @@ fn pane(id: &str, instance: &str, focused: bool, field: Field) -> Pane {
         },
         field,
         fails: None,
+        deep: false,
     }
 }
 
@@ -353,3 +364,6 @@ mod unreadable_tests;
 
 #[path = "wait_selector_front_window_tests.rs"]
 mod front_window_tests;
+
+#[path = "wait_selector_depth_scope_tests.rs"]
+mod depth_tests;

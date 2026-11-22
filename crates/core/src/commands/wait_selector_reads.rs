@@ -13,12 +13,15 @@
 use crate::{
     AdapterError, AppError, Deadline, ErrorCode, LocatorQuery, PlatformAdapter, RefEntry,
     SnapshotOwner, SnapshotSurface, WindowInfo,
-    commands::selector_observation::SelectorObservation,
+    commands::{
+        selector_hit::SelectorHit, selector_observation::SelectorObservation,
+        selector_read::SelectorRead,
+    },
     system::window_lookup::surface_owner_order,
     wait::window_baseline::{WINDOW_BASELINE_BUDGET, process_windows},
 };
 
-use super::{Matched, Observed};
+use super::Observed;
 
 const OVERLAY_SURFACES: [SnapshotSurface; 4] = [
     SnapshotSurface::Sheet,
@@ -86,19 +89,20 @@ impl Unmatched {
     pub(super) fn finish(self) -> Observed {
         match self.unreadable {
             Some(error) => Err(error),
-            None => Ok(self.complete.then_some((false, None))),
+            None if self.complete => Ok(SelectorRead::Absent),
+            None => Ok(SelectorRead::Incomplete),
         }
     }
 }
 
-/// `(matched, complete)` for one owner; a match counts only from a complete
-/// read.
+/// `(match depth, complete)` for one owner, with the depth of the first match
+/// where it matched; a match counts only from a complete read.
 pub(super) fn observe_owner(
     adapter: &dyn PlatformAdapter,
     owner: &SnapshotOwner,
     query: &LocatorQuery,
     deadline: Deadline,
-) -> Result<(bool, bool), AppError> {
+) -> Result<(Option<u8>, bool), AppError> {
     let observed = SelectorObservation::observe_owners(
         adapter,
         vec![owner.clone()],
@@ -107,8 +111,12 @@ pub(super) fn observe_owner(
         deadline,
     )?;
     Ok(match observed {
-        SelectorObservation::Selector { matches, complete } => (matches && complete, complete),
-        SelectorObservation::OwnerUnavailable(_) => (false, false),
+        SelectorObservation::Selector {
+            matches,
+            complete,
+            depth,
+        } => ((matches && complete).then_some(depth), complete),
+        SelectorObservation::OwnerUnavailable(_) => (None, false),
     })
 }
 
@@ -119,12 +127,14 @@ pub(super) fn observe_each(
     query: &LocatorQuery,
     deadline: Deadline,
     unmatched: &mut Unmatched,
-) -> Option<Matched> {
+) -> Option<SelectorHit> {
     for window in windows {
         let owner = SnapshotOwner::Window(window);
         match observe_owner(adapter, &owner, query, deadline) {
-            Ok((true, _)) => return Some(Some((owner, SnapshotSurface::Window))),
-            Ok((false, complete)) => unmatched.record_read(complete),
+            Ok((Some(depth), _)) => {
+                return Some(SelectorHit::on(owner, SnapshotSurface::Window, depth));
+            }
+            Ok((None, complete)) => unmatched.record_read(complete),
             Err(error) => unmatched.record_error(error),
         }
     }
@@ -146,7 +156,7 @@ pub(super) fn read_overlays(
     query: &LocatorQuery,
     deadline: Deadline,
     unmatched: &mut Unmatched,
-) -> Option<(SnapshotOwner, SnapshotSurface)> {
+) -> Option<SelectorHit> {
     let (Some(app), Some(process)) = (entry.source.source_app.as_deref(), entry.process.identity())
     else {
         return None;
@@ -189,7 +199,8 @@ pub(super) fn read_overlays(
                 Ok(SelectorObservation::Selector {
                     matches: true,
                     complete: true,
-                }) => return Some((owner.clone(), surface)),
+                    depth,
+                }) => return Some(SelectorHit::on(owner.clone(), surface, depth)),
                 Ok(SelectorObservation::Selector { complete, .. }) => {
                     unmatched.record_read(complete)
                 }
