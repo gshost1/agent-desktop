@@ -12,7 +12,7 @@ use crate::system::menu::overview::overview_open;
 use crate::system::process::process_lookup::Lookup;
 use crate::system::process::{proc_stat, process_facts};
 use crate::system::registry::toolkit;
-use crate::system::window::window_client::ClientWorld;
+use crate::system::window::window_client::{ClientWorld, frames_on_bus};
 use crate::system::window::window_filter::frame_state;
 use crate::system::x11::control::activate::active_window_within;
 use crate::system::x11::control::activate_error::ActivateError;
@@ -44,6 +44,7 @@ pub(in crate::system) struct LiveWorld<'a> {
     owner: agent_desktop_core::ProcessIdentity,
     deadline: Deadline,
     wake: RefCell<Option<crate::system::signal::subscription::Subscription>>,
+    native_titles: RefCell<Vec<String>>,
 }
 
 impl<'a> LiveWorld<'a> {
@@ -62,6 +63,7 @@ impl<'a> LiveWorld<'a> {
             ),
             deadline,
             wake: RefCell::new(None),
+            native_titles: RefCell::new(Vec::new()),
         })
     }
 }
@@ -122,7 +124,16 @@ impl FocusWorld for LiveWorld<'_> {
     }
 
     fn clients(&self) -> X11State {
-        DisplayReader.clients_within(self.deadline)
+        let state = DisplayReader.clients_within(self.deadline);
+        *self.native_titles.borrow_mut() = match &state {
+            X11State::Ready { clients, .. } => clients
+                .iter()
+                .filter(|client| client.pid == Some(self.frame.pid()))
+                .map(|client| client.title.clone())
+                .collect(),
+            _ => Vec::new(),
+        };
+        state
     }
 
     fn stacking(&self, client: u32) -> StackingRead {
@@ -212,6 +223,13 @@ impl FocusWorld for LiveWorld<'_> {
 }
 
 impl ClientWorld for LiveWorld<'_> {
+    fn frames(&self, win: &WindowInfo) -> Option<(Vec<crate::system::x11::FrameFacts>, usize)> {
+        if !win.title.is_empty() && self.native_titles.borrow().contains(&win.title) {
+            return None;
+        }
+        frames_on_bus(self.bus, win, self.deadline)
+    }
+
     fn twins(&self, win: &WindowInfo) -> Option<Twins> {
         let shared = self.bus.get(self.deadline).ok()?;
         within(self.deadline, async {
