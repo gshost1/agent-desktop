@@ -81,20 +81,38 @@ pub(crate) fn accessible_window_titles_until(
 fn for_each_window(
     pid: i32,
     deadline: Instant,
-    mut visit: impl FnMut(&crate::tree::AXElement, i64) -> Result<(), AdapterError>,
+    visit: impl FnMut(&crate::tree::AXElement, i64) -> Result<(), AdapterError>,
 ) -> Result<bool, AdapterError> {
     let app = crate::tree::element_for_pid(pid);
-    for window in crate::tree::surface_read::elements(&app, "AXWindows", deadline)? {
-        match crate::system::window::window_resolve::ax_window_id_with_deadline(&window, deadline) {
+    visit_bridged(
+        crate::tree::surface_read::elements(&app, "AXWindows", deadline)?,
+        |window| {
+            crate::system::window::window_resolve::ax_window_id_with_deadline(window, deadline)
+        },
+        visit,
+    )
+}
+
+/// Visits every window the bridge numbers and reports whether the visited
+/// numbers are the complete set: a window the bridge cannot number, or a
+/// missing bridge, leaves it incomplete.
+fn visit_bridged<W>(
+    windows: impl IntoIterator<Item = W>,
+    mut bridge: impl FnMut(&W) -> Result<Option<i64>, AdapterError>,
+    mut visit: impl FnMut(&W, i64) -> Result<(), AdapterError>,
+) -> Result<bool, AdapterError> {
+    let mut complete = true;
+    for window in windows {
+        match bridge(&window) {
             Ok(Some(id)) => visit(&window, id)?,
-            Ok(None) => {}
+            Ok(None) => complete = false,
             Err(error) if crate::system::window::window_bridge::is_unavailable(&error) => {
                 return Ok(false);
             }
             Err(error) => return Err(error),
         }
     }
-    Ok(true)
+    Ok(complete)
 }
 
 /// Labels each window's accessibility and gives a window with an unknown title
@@ -217,10 +235,48 @@ fn focused_role_kind(role: Option<&str>) -> FocusedRoleKind {
 mod tests {
     use super::{
         FocusedRoleKind, focused_role_kind, is_transient_surface_role, label_accessibility,
+        visit_bridged,
     };
     use crate::system::window::window_ax_titles::WindowAxTitles;
     use agent_desktop_core::{ProcessId, WindowInfo, WindowState};
     use rustc_hash::FxHashSet;
+
+    #[test]
+    fn a_window_the_bridge_cannot_number_leaves_the_set_incomplete() {
+        let mut visited = Vec::new();
+        let complete = visit_bridged(
+            [Some(7), None, Some(8)],
+            |window| Ok(*window),
+            |_, id| {
+                visited.push(id);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(!complete);
+        assert_eq!(visited, [7, 8]);
+    }
+
+    #[test]
+    fn every_numbered_window_makes_a_complete_set() {
+        let complete =
+            visit_bridged([7_i64, 8], |window| Ok(Some(*window)), |_, _| Ok(())).unwrap();
+        assert!(complete);
+        assert!(visit_bridged(Vec::<i64>::new(), |_| Ok(None), |_, _| Ok(())).unwrap());
+    }
+
+    #[test]
+    fn an_unavailable_bridge_leaves_the_set_incomplete() {
+        let unavailable = agent_desktop_core::AdapterError::not_supported("bridge")
+            .with_details(serde_json::json!({"kind": "resolution_window_bridge_unavailable"}));
+        let complete = visit_bridged(
+            [7_i64],
+            |_| Err(unavailable.clone()),
+            |_, _| panic!("no window is visited without a bridge"),
+        )
+        .unwrap();
+        assert!(!complete);
+    }
 
     #[test]
     fn modal_surfaces_can_temporarily_own_focused_window() {

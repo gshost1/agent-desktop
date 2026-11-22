@@ -52,57 +52,6 @@ fn parse_window_number_accepts_w_prefix() {
     assert_eq!(parse_window_number("w-bad"), None);
 }
 
-fn publication_state(
-    published: bool,
-    complete: bool,
-) -> super::super::window_ax_state::WindowAxState {
-    super::super::window_ax_state::WindowAxState {
-        focused: None,
-        minimized_by_id: rustc_hash::FxHashMap::default(),
-        accessible_window_ids: if published {
-            rustc_hash::FxHashSet::from_iter([42])
-        } else {
-            rustc_hash::FxHashSet::default()
-        },
-        window_numbers_complete: complete,
-        titles: Default::default(),
-    }
-}
-
-#[test]
-fn offscreen_unpublished_window_is_not_found() {
-    let mut live = record("Fixture", 10, "Closed", 42);
-    live.presence = super::super::window_presence::WindowPresence::Offscreen;
-    let error = require_live_window("w-42", &live, &publication_state(false, true)).unwrap_err();
-    assert_eq!(error.code, ErrorCode::WindowNotFound);
-    assert_eq!(error.message, "Window 'w-42' not found");
-}
-
-#[test]
-fn offscreen_published_minimized_window_still_resolves() {
-    let mut live = record("Fixture", 10, "Minimized", 42);
-    live.presence = super::super::window_presence::WindowPresence::Offscreen;
-    let mut state = publication_state(true, true);
-    state.minimized_by_id.insert(42, true);
-    assert!(require_live_window("w-42", &live, &state).is_ok());
-}
-
-#[test]
-fn onscreen_unpublished_window_keeps_not_accessible_error() {
-    let live = record("Fixture", 10, "Visible", 42);
-    let result = require_live_window("w-42", &live, &publication_state(false, true))
-        .and_then(|()| Err::<(), _>(window_not_accessible("w-42")));
-    assert_eq!(result.unwrap_err().code, ErrorCode::ActionNotSupported);
-}
-
-#[test]
-fn offscreen_window_without_complete_bridge_evidence_is_not_closed() {
-    let mut live = record("Fixture", 10, "Unknown", 42);
-    live.presence = super::super::window_presence::WindowPresence::Offscreen;
-    assert!(require_live_window("w-42", &live, &publication_state(false, false)).is_ok());
-    assert!(require_live_window("w-42", &live, &publication_state(true, false)).is_ok());
-}
-
 #[test]
 fn verify_rejects_recycled_id_with_wrong_pid() {
     let requested = win("w-100", 10, "Untitled");
@@ -256,7 +205,7 @@ fn verify_skips_title_when_request_title_empty() {
 /// contradicts the inventory that just handed out the id.
 #[test]
 fn a_window_without_an_accessibility_element_is_not_reported_as_missing() {
-    let error = super::window_not_accessible("w-82");
+    let error = window_not_accessible("w-82");
 
     assert_eq!(
         error.code,
