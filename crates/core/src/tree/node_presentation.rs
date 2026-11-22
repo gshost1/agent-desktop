@@ -16,6 +16,10 @@ pub struct NodePresentation {
     /// cannot identify an element. Not part of the output envelope.
     #[serde(skip)]
     pub ref_bounds: Option<Rect>,
+    /// Some(true) means this node's own vertical content exceeds its viewport;
+    /// Some(false) means the platform read that it fits; None means unknown.
+    #[serde(skip)]
+    pub scrolls_vertically: Option<bool>,
     #[serde(flatten)]
     pub descriptors: NodeDescriptor,
 }

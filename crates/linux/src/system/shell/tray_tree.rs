@@ -18,6 +18,7 @@ pub(crate) fn logical_tree(
         identifiers: IdentifierEvidence::absent(),
         states: LocatorField::Known(Vec::new()),
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             bounds: LocatorField::Absent,
             window_bounds: LocatorField::Absent,
             available_actions: LocatorField::Known(Vec::new()),

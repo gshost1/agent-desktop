@@ -25,6 +25,8 @@ pub struct ObservationRequest {
 /// back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ObservationMode {
+    /// Collect scroll evidence for the snapshot's contents index.
+    pub contents_index: bool,
     /// Shallow overview traversal: `max_logical_depth` is clamped to 3 and
     /// truncated containers are annotated with `children_count` rather than
     /// descended into.
@@ -85,6 +87,7 @@ impl ObservationRequest {
             evidence_plan: EvidencePlan::uniform(EvidenceRequirements::snapshot()),
             budget: ObservationBudget::default(),
             observation_mode: ObservationMode {
+                contents_index: true,
                 skeleton: options.skeleton,
                 force_renderer_accessibility: options.force_renderer_accessibility,
                 identity_only: false,

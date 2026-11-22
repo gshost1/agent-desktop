@@ -40,6 +40,7 @@ pub fn node_evidence(node: &AccessibilityNode) -> LocatorEvidence {
         },
         states: LocatorField::Known(node.presentation.states.clone()),
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: None,
             bounds: LocatorField::Absent,
             window_bounds: LocatorField::Absent,
             available_actions: LocatorField::Known(node.presentation.available_actions.clone()),

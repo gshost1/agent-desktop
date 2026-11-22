@@ -177,3 +177,47 @@ fn raw_tree_compact_keeps_a_wrapper_whose_bounds_are_kept() {
 
     assert_eq!(out.children[0].role, "group");
 }
+
+#[test]
+fn compact_keeps_a_lists_own_scroll_evidence_over_its_wrapper() {
+    for outer in [Some(true), Some(false)] {
+        for own in [Some(false), Some(true), None] {
+            let mut list = bounded("list", None);
+            list.presentation.scrolls_vertically = own;
+            let mut wrapper = wrapped(vec![list]);
+            wrapper.presentation.scrolls_vertically = outer;
+            let tree = window_with(vec![wrapper]);
+            let raw = transform_tree(tree.clone(), false, false, true);
+            let (allocated, _) = allocate(tree, compact());
+            for out in [raw, allocated] {
+                assert_eq!(out.children[0].role, "list");
+                assert_eq!(
+                    out.children[0].presentation.scrolls_vertically,
+                    own.or(outer)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn compact_limits_inherited_scroll_evidence_to_three_collapsed_wrappers() {
+    for depth in 1..=4 {
+        let mut child = bounded("list", None);
+        for _ in 0..depth {
+            child = wrapped(vec![child]);
+        }
+        child.presentation.scrolls_vertically = Some(true);
+        let tree = window_with(vec![child]);
+        let raw = transform_tree(tree.clone(), false, false, true);
+        let (allocated, _) = allocate(tree, compact());
+        for out in [raw, allocated] {
+            assert_eq!(out.children[0].role, "list");
+            assert_eq!(
+                out.children[0].presentation.scrolls_vertically,
+                (depth <= 3).then_some(true),
+                "depth={depth}"
+            );
+        }
+    }
+}

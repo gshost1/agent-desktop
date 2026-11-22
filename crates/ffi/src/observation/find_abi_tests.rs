@@ -79,6 +79,7 @@ fn subtree_named(name: &str, complete: bool) -> ObservedSubtree {
             identifiers: IdentifierEvidence::absent(),
             states: LocatorField::Known(Vec::new()),
             ref_evidence: LocatorRefEvidence {
+                scrolls_vertically: None,
                 window_bounds: LocatorField::Absent,
                 bounds: LocatorField::Absent,
                 available_actions: LocatorField::Known(vec!["Click".into()]),

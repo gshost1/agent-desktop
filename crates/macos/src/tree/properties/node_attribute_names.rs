@@ -115,6 +115,7 @@ mod imp {
             mask |= attribute_bit(AX_IDENTIFIER) | attribute_bit(AX_DOM_IDENTIFIER);
         }
         if requirements.states {
+            mask |= attribute_bit(VERTICAL_SCROLLBAR);
             for index in [
                 VALUE, ENABLED, FOCUSED, EXPANDED, DISCLOSING, SELECTED, HIDDEN, BUSY, MODAL,
                 REQUIRED, POSITION, SIZE,

@@ -49,6 +49,7 @@ fn descriptor_evidence_projects_onto_the_accessibility_node() {
         identifiers: IdentifierEvidence::absent(),
         states: LocatorField::Known(Vec::new()),
         ref_evidence: LocatorRefEvidence {
+            scrolls_vertically: Some(true),
             window_bounds: LocatorField::Absent,
             bounds: LocatorField::Known(Rect {
                 x: 0.0,
@@ -74,6 +75,7 @@ fn descriptor_evidence_projects_onto_the_accessibility_node() {
     )
     .unwrap();
     let node = tree.into_accessibility_tree().unwrap();
+    assert_eq!(node.presentation.scrolls_vertically, Some(true));
 
     assert_eq!(
         node.presentation.descriptors,

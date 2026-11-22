@@ -2,6 +2,29 @@ use super::{LocatorResolveRequest, ObservationRequest};
 use crate::{Deadline, IdentityPredicate, LocatorMaterialization, LocatorQuery, LocatorSelection};
 
 #[test]
+fn only_snapshot_requests_collect_contents_index_evidence() {
+    let deadline = Deadline::after(500).unwrap();
+    assert!(
+        ObservationRequest::snapshot(&Default::default(), deadline)
+            .observation_mode
+            .contents_index
+    );
+    let request = LocatorResolveRequest {
+        selection: LocatorSelection::All { limit: None },
+        deadline,
+        max_raw_depth: 50,
+        materialization: LocatorMaterialization::FullRefMap,
+        surface: None,
+    };
+    let observation = ObservationRequest::locator(&LocatorQuery::default(), &request, deadline);
+    assert_eq!(
+        observation.evidence_for_raw_depth(0),
+        super::EvidenceRequirements::snapshot()
+    );
+    assert!(!observation.observation_mode.contents_index);
+}
+
+#[test]
 fn only_text_queries_request_content_not_plain_capture_or_role_queries() {
     let deadline = Deadline::after(500).unwrap();
     assert!(

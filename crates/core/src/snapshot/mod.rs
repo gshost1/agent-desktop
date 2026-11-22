@@ -241,12 +241,15 @@ pub(crate) fn emit_snapshot_saved(
     })
 }
 
+pub(crate) mod content_region;
+pub(crate) mod contents_walk;
 pub mod diff;
 pub mod hints;
 pub mod ref_lines;
 pub(crate) mod ref_owner_observation;
 pub(crate) mod refmap_fit;
 pub mod snapshot_channel;
+pub(crate) mod snapshot_contents;
 pub mod snapshot_notes;
 pub(crate) mod snapshot_owner;
 pub(crate) mod snapshot_ref;
