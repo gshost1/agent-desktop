@@ -252,7 +252,9 @@ impl ActionOps for DocumentAdapter {
 
 impl InputOps for DocumentAdapter {}
 
-impl SystemOps for DocumentAdapter {}
+impl SystemOps for DocumentAdapter {
+    crate::adapter::guarded_interaction_lease!();
+}
 
 #[test]
 fn consecutive_edits_on_same_document_ref_and_named_paragraph_ref_succeed_without_stale_ref() {

@@ -229,8 +229,6 @@ fn text_is_not_read_on_the_stub_during_resolve_count_or_plain_snapshot_walks() {
 
     struct TextStub {
         role: u32,
-        text: &'static str,
-        reads: Arc<AtomicUsize>,
     }
 
     #[zbus::interface(name = "org.a11y.atspi.Accessible")]
@@ -312,14 +310,7 @@ fn text_is_not_read_on_the_stub_during_resolve_count_or_plain_snapshot_walks() {
                 .server(zbus::Guid::generate())
                 .unwrap()
                 .p2p()
-                .serve_at(
-                    path,
-                    TextStub {
-                        role,
-                        text,
-                        reads: reads.clone(),
-                    },
-                )
+                .serve_at(path, TextStub { role })
                 .unwrap()
                 .serve_at(
                     path,
