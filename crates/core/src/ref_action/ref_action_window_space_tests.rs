@@ -141,6 +141,7 @@ struct CountingRow {
     bounds_reads_under_lease: AtomicUsize,
     bounds_reads_total: AtomicUsize,
     dispatches: AtomicUsize,
+    live_reads_total: AtomicUsize,
 }
 
 impl CountingRow {
@@ -152,6 +153,7 @@ impl CountingRow {
             bounds_reads_under_lease: AtomicUsize::new(0),
             bounds_reads_total: AtomicUsize::new(0),
             dispatches: AtomicUsize::new(0),
+            live_reads_total: AtomicUsize::new(0),
         }
     }
 }
@@ -170,6 +172,7 @@ impl ObservationOps for CountingRow {
         _handle: &NativeHandle,
         _deadline: crate::Deadline,
     ) -> Result<crate::LiveElement, AdapterError> {
+        self.live_reads_total.fetch_add(1, Ordering::SeqCst);
         if self.in_lease.load(Ordering::SeqCst) {
             self.live_reads_under_lease.fetch_add(1, Ordering::SeqCst);
         }
@@ -315,4 +318,21 @@ fn headless_window_space_ref_with_screen_hash_refuses_without_live_priming() {
         error.message
     );
     assert_eq!(adapter.bounds_reads_total.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn headless_non_semantic_window_space_stability_retries_after_stale_screen_hash() {
+    let adapter = CountingRow::new(live_on_screen());
+    let target = window_entry_with_screen(in_window(), Some(in_window()));
+    let request = ActionRequest::headless(Action::ScrollTo).with_timeout_ms(Some(400));
+
+    let result = execute_entry(&adapter, &target, request);
+
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(adapter.dispatches.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        adapter.live_reads_total.load(Ordering::SeqCst)
+            - adapter.live_reads_under_lease.load(Ordering::SeqCst),
+        2
+    );
 }

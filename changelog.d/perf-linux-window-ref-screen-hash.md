@@ -1,3 +1,3 @@
 ### Performance
 
-* **linux:** Reuse snapshot screen bounds to skip redundant stability reads for headed clicks on stationary X11 controls, including GTK4 controls in windows away from the screen origin.
+* **linux:** Skip the stability sampler for pointer actions on unmoved GTK 4 (window-coordinate) controls on X11 by keeping the snapshot's screen bounds hash with the ref.
