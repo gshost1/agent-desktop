@@ -261,7 +261,7 @@ pub(crate) async fn read_node_for(
         },
     )
     .await;
-    let node = RawNode {
+    let mut node = RawNode {
         element: element.clone(),
         properties,
         traits: NodeTraits {
@@ -282,6 +282,9 @@ pub(crate) async fn read_node_for(
             None => Field::Failed("field not requested".to_owned()),
         },
     };
+    if purpose.identity() {
+        super::wrapper_description::inherit_description(connection, &mut node).await?;
+    }
     Ok((node, liveness))
 }
 
