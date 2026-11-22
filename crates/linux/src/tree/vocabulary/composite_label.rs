@@ -329,3 +329,7 @@ where
 #[cfg(test)]
 #[path = "composite_label_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "composite_label_document_tests.rs"]
+mod document_tests;

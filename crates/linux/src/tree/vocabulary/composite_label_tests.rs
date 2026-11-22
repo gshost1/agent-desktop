@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::document_tests::composite;
 use super::{Address, EDITABLE, LABEL, LABEL_FOR, LABELLED_BY, NULL_PATH};
 use crate::tree::element::ancestry;
 use crate::tree::live::test_support::read_of;
@@ -13,17 +14,17 @@ use zbus::connection::Builder;
 const OWNER: &str = "org.agentdesktop.CompositeLabelFixture";
 
 #[derive(Default)]
-struct Accessible {
-    role: u32,
-    editable: bool,
-    interfaces: Vec<&'static str>,
-    name: &'static str,
-    parent: &'static str,
-    children: Vec<&'static str>,
-    relations: Vec<(u32, &'static str)>,
-    refuses: bool,
-    lacks_interfaces: bool,
-    calls: Arc<AtomicUsize>,
+pub(super) struct Accessible {
+    pub(super) role: u32,
+    pub(super) editable: bool,
+    pub(super) interfaces: Vec<&'static str>,
+    pub(super) name: &'static str,
+    pub(super) parent: &'static str,
+    pub(super) children: Vec<&'static str>,
+    pub(super) relations: Vec<(u32, &'static str)>,
+    pub(super) refuses: bool,
+    pub(super) lacks_interfaces: bool,
+    pub(super) calls: Arc<AtomicUsize>,
 }
 
 #[zbus::interface(name = "org.a11y.atspi.Accessible")]
@@ -83,7 +84,7 @@ fn address(path: &str) -> Address {
     (OWNER.to_owned(), path.try_into().unwrap())
 }
 
-fn entry(calls: &Arc<AtomicUsize>) -> Accessible {
+pub(super) fn entry(calls: &Arc<AtomicUsize>) -> Accessible {
     Accessible {
         editable: true,
         parent: "/composite",
@@ -92,7 +93,9 @@ fn entry(calls: &Arc<AtomicUsize>) -> Accessible {
     }
 }
 
-fn serve(objects: impl IntoIterator<Item = (&'static str, Accessible)>) -> [zbus::Connection; 2] {
+pub(super) fn serve(
+    objects: impl IntoIterator<Item = (&'static str, Accessible)>,
+) -> [zbus::Connection; 2] {
     let (near, far) = std::os::unix::net::UnixStream::pair().unwrap();
     let mut server = Builder::async_io_unix_stream(far)
         .server(zbus::Guid::generate())
@@ -108,7 +111,7 @@ fn serve(objects: impl IntoIterator<Item = (&'static str, Accessible)>) -> [zbus
     [client.unwrap(), server.unwrap()]
 }
 
-fn labels_of(
+pub(super) fn labels_of(
     connection: &zbus::Connection,
     entries: &[&str],
     in_web_document: bool,
@@ -151,7 +154,7 @@ fn label_for(
     labels_of(&client, &["/entry"], false).remove(0)
 }
 
-fn label(relations: Vec<(u32, &'static str)>) -> Accessible {
+pub(super) fn label(relations: Vec<(u32, &'static str)>) -> Accessible {
     Accessible {
         role: LABEL,
         name: "Find:",
@@ -317,15 +320,6 @@ fn a_live_sibling_without_an_interface_read_leaves_the_label_unknown() {
     );
 }
 
-fn composite(children: Vec<&'static str>, calls: &Arc<AtomicUsize>) -> Accessible {
-    Accessible {
-        children,
-        relations: vec![(LABELLED_BY, "/label")],
-        calls: calls.clone(),
-        ..Accessible::default()
-    }
-}
-
 #[test]
 fn reading_stops_at_the_second_editable_child_and_reads_crowded_parents() {
     let siblings: Vec<&'static str> = (0..2 * CHILDREN_IN_FLIGHT)
@@ -361,43 +355,4 @@ fn reading_stops_at_the_second_editable_child_and_reads_crowded_parents() {
         assert_eq!(labels_of(&client, &["/entry"], false), [expected]);
         assert_eq!(calls.load(Ordering::SeqCst), sibling_calls);
     }
-}
-
-#[test]
-fn fields_of_one_parent_share_one_read_of_it() {
-    let fields = ["/entry", "/e2", "/e3", "/e4"];
-    let calls = Arc::new(AtomicUsize::new(0));
-    let entries = fields.map(|path| (path, entry(&Arc::default())));
-    let [client, _server] = serve(
-        [
-            ("/composite", composite(fields.to_vec(), &calls)),
-            ("/label", label(Vec::new())),
-        ]
-        .into_iter()
-        .chain(entries),
-    );
-    assert_eq!(
-        labels_of(&client, &fields, false),
-        [const { LabelOutcome::Unlabelled }; 4]
-    );
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-}
-
-#[test]
-fn a_field_inside_a_web_document_reads_no_composite() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let [client, _server] = serve([
-        ("/composite", composite(vec!["/entry"], &calls)),
-        ("/label", label(Vec::new())),
-        ("/entry", entry(&calls)),
-    ]);
-    assert_eq!(
-        labels_of(&client, &["/entry"], true),
-        [LabelOutcome::Unlabelled]
-    );
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        labels_of(&client, &["/entry"], false),
-        [LabelOutcome::Text("Find:".to_owned())]
-    );
 }
