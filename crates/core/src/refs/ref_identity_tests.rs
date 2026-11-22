@@ -153,6 +153,27 @@ fn mutable_value_change_cannot_prove_identity_by_itself() {
 }
 
 #[test]
+fn document_content_value_changes_preserve_description_identity() {
+    for role in ["document", "paragraph", "heading", "webarea"] {
+        let mut entry = entry();
+        entry.identity.role = role.into();
+        entry.identity.name = Some(String::new());
+        entry.identity.value = Some("captured text".into());
+        entry.identity.description = Some("Draft block".into());
+        for value in [Some("captured text"), Some("edited text"), Some(""), None] {
+            assert!(
+                identity_matches(&entry, Some(""), value, Some("Draft block"), None),
+                "{role}: value {value:?} must not override stable description identity"
+            );
+        }
+        assert!(
+            !identity_matches(&entry, Some(""), Some("captured text"), Some("Other"), None),
+            "{role}: unchanged content must not rescue a different description"
+        );
+    }
+}
+
+#[test]
 fn unnamed_mutable_value_role_cannot_use_content_as_identity() {
     let mut entry = entry();
     entry.identity.role = "textfield".into();
