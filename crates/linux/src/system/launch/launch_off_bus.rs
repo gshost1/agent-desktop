@@ -2,13 +2,16 @@ use std::time::Duration;
 
 use agent_desktop_core::Deadline;
 use x11rb::protocol::res::{ClientIdMask, ClientIdSpec, ConnectionExt as _};
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, MapState, Window};
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, GetPropertyReply, MapState, Window};
 use x11rb::rust_connection::RustConnection;
 
 use crate::system::display::display_server::{DisplayServer, session_server};
 use crate::system::process::proc_stat::read_stat;
 use crate::system::x11::control_display::open;
 use crate::system::x11::stacking::bounded;
+
+#[path = "launch_main_window.rs"]
+mod main_window;
 
 /// The longest one window read of the off-bus check may take. It may run as
 /// the launch deadline expires, so it is bounded on its own and stays well
@@ -66,7 +69,8 @@ fn maps_window(pid: u32) -> bool {
     })
 }
 
-/// A readable title of a mapped window owned by the process or its descendants.
+/// A trusted UTF-8 title of the largest mapped normal window owned by the
+/// process or its descendants, absent when equally large windows disagree.
 pub(in crate::system::launch) fn window_title(pid: u32) -> Option<String> {
     let display = match session_server() {
         DisplayServer::X11(display) => display,
@@ -76,24 +80,80 @@ pub(in crate::system::launch) fn window_title(pid: u32) -> Option<String> {
     let deadline = Deadline::from_duration(WINDOW_READ).ok()?;
     bounded(deadline, None, move || {
         let (connection, root) = open(&display)?;
-        toplevels(&connection, root)?
+        let candidates = toplevels(&connection, root)?
             .into_iter()
-            .filter(|window| owns_one(&connection, std::slice::from_ref(window), pid))
-            .find_map(|window| {
-                read_title(&connection, window, b"_NET_WM_NAME")
-                    .or_else(|| read_title(&connection, window, b"WM_NAME"))
+            .enumerate()
+            .filter(|(_, window)| {
+                connection
+                    .get_window_attributes(*window)
+                    .ok()
+                    .and_then(|cookie| cookie.reply().ok())
+                    .is_some_and(|attributes| attributes.map_state == MapState::VIEWABLE)
             })
+            .filter(|(_, window)| owns_one(&connection, std::slice::from_ref(window), pid))
+            .map(|(order, window)| read_candidate(&connection, window, order))
+            .collect::<Option<Vec<_>>>()?;
+        main_window::select_title(&candidates)
     })
 }
 
-fn read_title(connection: &RustConnection, window: Window, name: &[u8]) -> Option<String> {
-    let atom = connection.intern_atom(true, name).ok()?.reply().ok()?.atom;
-    let property = connection
-        .get_property(false, window, atom, AtomEnum::ANY, 0, 1_024)
+fn read_candidate(
+    connection: &RustConnection,
+    window: Window,
+    order: usize,
+) -> Option<main_window::Candidate> {
+    let kind = read_property(connection, window, b"_NET_WM_WINDOW_TYPE", AtomEnum::ANY)?;
+    let normal = if kind.type_ == u32::from(AtomEnum::NONE) {
+        None
+    } else {
+        if kind.type_ != u32::from(AtomEnum::ATOM) || kind.format != 32 {
+            return None;
+        }
+        let first = kind.value32()?.next()?;
+        Some(
+            first
+                == connection
+                    .intern_atom(false, b"_NET_WM_WINDOW_TYPE_NORMAL")
+                    .ok()?
+                    .reply()
+                    .ok()?
+                    .atom,
+        )
+    };
+    let transient = read_property(connection, window, b"WM_TRANSIENT_FOR", AtomEnum::ANY)?;
+    let geometry = connection.get_geometry(window).ok()?.reply().ok()?;
+    Some(main_window::Candidate {
+        normal,
+        transient: transient.type_ != u32::from(AtomEnum::NONE),
+        area: u32::from(geometry.width) * u32::from(geometry.height),
+        order,
+        title: read_title(connection, window),
+    })
+}
+
+fn read_property(
+    connection: &RustConnection,
+    window: Window,
+    name: &[u8],
+    kind: AtomEnum,
+) -> Option<GetPropertyReply> {
+    let atom = connection.intern_atom(false, name).ok()?.reply().ok()?.atom;
+    connection
+        .get_property(false, window, atom, kind, 0, 1_024)
         .ok()?
         .reply()
-        .ok()?;
-    if property.format != 8 || property.bytes_after != 0 {
+        .ok()
+}
+
+fn read_title(connection: &RustConnection, window: Window) -> Option<String> {
+    let property = read_property(connection, window, b"_NET_WM_NAME", AtomEnum::ANY)?;
+    let utf8 = connection
+        .intern_atom(false, b"UTF8_STRING")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    if property.type_ != utf8 || property.format != 8 || property.bytes_after != 0 {
         return None;
     }
     decode_title(property.value)
