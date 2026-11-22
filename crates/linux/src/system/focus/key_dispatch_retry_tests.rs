@@ -1,5 +1,74 @@
 use super::*;
 
+struct BudgetKeys<'a> {
+    inner: Keys<'a>,
+    until: Cell<Option<std::time::Instant>>,
+}
+
+impl BudgetKeys<'_> {
+    fn check_budget(&self, deadline: Deadline) {
+        assert!(deadline.remaining() <= Duration::from_millis(300));
+        let until = std::time::Instant::now() + deadline.remaining();
+        if let Some(first) = self.until.get() {
+            assert!(until <= first + Duration::from_millis(1));
+        } else {
+            self.until.set(Some(until));
+        }
+    }
+}
+
+impl KeyWorld for BudgetKeys<'_> {
+    fn lookup(&self, pid: u32) -> Lookup {
+        self.inner.lookup(pid)
+    }
+
+    fn stopped(&self, pid: u32) -> bool {
+        self.inner.stopped(pid)
+    }
+
+    fn active_client_pid(&self, deadline: Deadline) -> Option<u32> {
+        self.check_budget(deadline);
+        self.inner.active_client_pid(deadline)
+    }
+
+    fn focused_window(
+        &self,
+        pid: u32,
+        deadline: Deadline,
+    ) -> Result<Option<WindowInfo>, AdapterError> {
+        self.check_budget(deadline);
+        self.inner.focused_window(pid, deadline)
+    }
+
+    fn pause(&self, duration: Duration) {
+        self.inner.pause(duration);
+        std::thread::sleep(duration);
+    }
+}
+
+#[test]
+fn native_and_accessibility_rechecks_share_one_budget_across_both_delivery_gates() {
+    let physical = FakeWorld::x11();
+    let keys = BudgetKeys {
+        inner: Keys::owning(&physical),
+        until: Cell::new(None),
+    };
+    *keys.inner.active.borrow_mut() = VecDeque::from([None, Some(PID)]);
+    press_in(Press {
+        physical: &physical,
+        keys: &keys,
+        process: &process(),
+        window: None,
+        combo: &combo(),
+        policy: InteractionPolicy::headless(),
+        deadline: deadline(),
+    })
+    .unwrap();
+    assert_eq!(keys.inner.read_count("pause"), 1);
+    assert_eq!(keys.inner.read_count("focused"), 2);
+    assert_eq!(physical.count("sent"), 1);
+}
+
 #[test]
 fn a_new_active_dialog_gets_bounded_display_activation_rechecks() {
     for misses in 1..=3 {

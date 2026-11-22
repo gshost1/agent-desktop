@@ -224,9 +224,10 @@ fn press_in(
         deadline,
     } = request;
     let backend = physical.backend()?;
+    let activation = deadline.capped(Duration::from_millis(300));
     let mut gate = || {
         require_process(keys, process)?;
-        require_active(keys, &backend, process, window, deadline)
+        require_active(keys, &backend, process, window, activation)
     };
     let result = press_for_process(physical, combo, policy, &mut gate, deadline)?;
     after_delivery(keys, process, result)

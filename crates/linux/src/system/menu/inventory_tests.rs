@@ -1,6 +1,6 @@
 use agent_desktop_core::{AdapterError, ErrorCode, WindowInfo, WindowState};
 
-use super::{Nested, scan_windows};
+use super::Nested;
 use crate::system::registry::listed_window::ListedWindow;
 use crate::system::x11::FrameFacts;
 use crate::tree::live::test_support::{read_of, words};
@@ -8,6 +8,17 @@ use crate::tree::surfaces::nested_dialog::Node;
 use crate::tree::vocabulary::role_numbers::{ALERT, DIALOG, FRAME, NOTIFICATION, PANEL, WINDOW};
 use crate::tree::vocabulary::state_bits::SHOWING;
 use crate::tree::{AtspiElement, Field, WalkedNode};
+
+fn scan_windows(
+    windows: &[ListedWindow],
+    read: impl FnMut(&AtspiElement) -> Result<Node, AdapterError>,
+) -> super::NestedScan {
+    super::scan_windows(
+        windows,
+        agent_desktop_core::Deadline::after(0).unwrap(),
+        read,
+    )
+}
 
 fn window(id: &str, sheet: bool) -> ListedWindow {
     ListedWindow {
