@@ -2,7 +2,7 @@ use std::process::{Child, Output};
 use std::time::{Duration, Instant};
 
 use super::held_session::HeldSession;
-use super::support::{Home, assert_same, is_alive, processes_using, sockets_in, wait_gone};
+use super::support::{Home, assert_same, processes_using, sockets_in, wait_gone};
 
 /// Matches `READY_TIMEOUT` and `STALL_LIMIT` in `src/daemon/client.rs`.
 const READY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -119,7 +119,7 @@ fn daemon_killed_during_a_read_only_command_lets_the_client_run_it() {
         &home.run(false, &["session", "list", "--session", &id]),
         &output,
     );
-    assert!(!is_alive(pid));
+    assert!(wait_gone(pid));
     assert_clean(&home);
 }
 
