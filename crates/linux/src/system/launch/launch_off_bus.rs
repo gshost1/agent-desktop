@@ -66,6 +66,45 @@ fn maps_window(pid: u32) -> bool {
     })
 }
 
+/// A readable title of a mapped window owned by the process or its descendants.
+pub(in crate::system::launch) fn window_title(pid: u32) -> Option<String> {
+    let display = match session_server() {
+        DisplayServer::X11(display) => display,
+        DisplayServer::Wayland => std::env::var("DISPLAY").ok()?,
+        DisplayServer::Unavailable(..) => return None,
+    };
+    let deadline = Deadline::from_duration(WINDOW_READ).ok()?;
+    bounded(deadline, None, move || {
+        let (connection, root) = open(&display)?;
+        toplevels(&connection, root)?
+            .into_iter()
+            .filter(|window| owns_one(&connection, std::slice::from_ref(window), pid))
+            .find_map(|window| {
+                read_title(&connection, window, b"_NET_WM_NAME")
+                    .or_else(|| read_title(&connection, window, b"WM_NAME"))
+            })
+    })
+}
+
+fn read_title(connection: &RustConnection, window: Window, name: &[u8]) -> Option<String> {
+    let atom = connection.intern_atom(true, name).ok()?.reply().ok()?.atom;
+    let property = connection
+        .get_property(false, window, atom, AtomEnum::ANY, 0, 1_024)
+        .ok()?
+        .reply()
+        .ok()?;
+    if property.format != 8 || property.bytes_after != 0 {
+        return None;
+    }
+    decode_title(property.value)
+}
+
+fn decode_title(bytes: Vec<u8>) -> Option<String> {
+    let title = String::from_utf8(bytes).ok()?;
+    let title = title.trim_matches('\0').trim();
+    (!title.is_empty() && !title.contains('\0')).then(|| title.to_owned())
+}
+
 /// The window manager's client list, or without a manager the mapped
 /// children of the root.
 fn toplevels(connection: &RustConnection, root: Window) -> Option<Vec<Window>> {
@@ -128,7 +167,7 @@ fn owns_one(connection: &RustConnection, windows: &[Window], pid: u32) -> bool {
 
 /// Whether `process` is `ancestor` or started from it, following the parent
 /// in `/proc/<pid>/stat`.
-fn descends_from(process: u32, ancestor: u32) -> bool {
+pub(in crate::system::launch) fn descends_from(process: u32, ancestor: u32) -> bool {
     let mut current = process;
     for _ in 0..MAX_ANCESTRY {
         if current == ancestor {
