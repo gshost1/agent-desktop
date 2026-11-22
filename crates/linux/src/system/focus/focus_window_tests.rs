@@ -2,7 +2,92 @@ use agent_desktop_core::ErrorCode;
 
 use super::fake::*;
 use super::*;
+use crate::system::x11::FrameFacts;
 use crate::system::x11::twin_tie::Twins;
+use crate::tree::Extents;
+
+fn dialog_world(global: bool, title: &str) -> World {
+    let mut world = World::new(Some(OTHER));
+    world.global = global;
+    world.frame_dialog = true;
+    let bounds = Extents {
+        x: 10,
+        y: 20,
+        width: 400,
+        height: 300,
+    };
+    let mut native = x11_client(CLIENT, "Confirm File Format");
+    native.bounds = Some(bounds);
+    let mut parent = x11_client(OTHER, "Doc");
+    parent.bounds = Some(Extents {
+        width: 800,
+        ..bounds
+    });
+    world.state = X11State::Ready {
+        active: Some(OTHER),
+        clients: vec![parent, native],
+    };
+    let dialog = FrameFacts {
+        pid: 100,
+        title: title.into(),
+        extents: Some(bounds),
+        global_position: global,
+        size_identity: !global,
+    };
+    let mut parent = dialog.clone();
+    parent.title = "Doc".into();
+    parent.extents.as_mut().unwrap().width = 800;
+    world.frames = Some((vec![parent, dialog], 1));
+    world
+}
+
+#[test]
+fn a_dialog_with_a_different_native_title_is_focused_by_coherent_geometry() {
+    for global in [false, true] {
+        for title in ["Question", ""] {
+            let world = dialog_world(global, title);
+            let mut win = window();
+            win.title = title.into();
+            run(&world, &win, budget()).expect("the coherent frame identifies the dialog");
+            assert_eq!(*world.sent.borrow(), vec![CLIENT]);
+        }
+    }
+}
+
+#[test]
+fn an_unproved_or_competing_dialog_frame_is_refused_before_any_send() {
+    for competing in [false, true] {
+        let mut world = dialog_world(false, "Question");
+        let (frames, _) = world.frames.as_mut().unwrap();
+        if competing {
+            let mut other = frames[1].clone();
+            other.title = "Another dialog".into();
+            frames.push(other);
+        } else {
+            frames[1].size_identity = false;
+        }
+        let mut win = window();
+        win.title = "Question".into();
+        let error = run(&world, &win, budget()).expect_err("no frame identity is proved");
+        assert_refused(&error, "window_not_mapped");
+        assert_eq!(world.sends(), 0);
+    }
+}
+
+#[test]
+fn a_dialog_matching_multiple_native_clients_is_refused_before_any_send() {
+    let mut world = dialog_world(false, "Question");
+    if let X11State::Ready { clients, .. } = &mut world.state {
+        let mut other = clients[1].clone();
+        other.id += 1;
+        clients.push(other);
+    }
+    let mut win = window();
+    win.title = "Question".into();
+    let error = run(&world, &win, budget()).expect_err("several clients fit the dialog");
+    assert_refused(&error, "ambiguous_window");
+    assert_eq!(world.sends(), 0);
+}
 
 #[test]
 fn a_window_already_active_by_both_measures_sends_nothing() {
