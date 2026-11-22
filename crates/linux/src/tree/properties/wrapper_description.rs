@@ -1,15 +1,42 @@
 use agent_desktop_core::{AdapterError, tree::roles::is_interactive_role};
-use futures_util::future::join4;
+use futures_util::future::join;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
-use super::liveness::Liveness;
-use super::node_read::{call, deserialize, field, get_one, string_value};
+use super::node_read::{call, deserialize, string_value};
 use crate::system::{ACCESSIBLE_INTERFACE, PROPERTIES_INTERFACE};
-use crate::tree::vocabulary::label_read::read_label;
 use crate::tree::vocabulary::role_numbers::{FILLER, PANEL};
 use crate::tree::vocabulary::roles::role_of;
-use crate::tree::{AtspiElement, Field, LabelOutcome, RawNode};
+use crate::tree::{AtspiElement, Field, RawNode};
+
+fn optional<T>(result: Result<T, zbus::Error>) -> Result<Field<T>, AdapterError> {
+    match result {
+        Ok(value) => Ok(Field::Present(value)),
+        Err(error) if crate::system::is_connection_failure(&error) => {
+            Err(crate::system::classify(&error))
+        }
+        Err(_) => Ok(Field::Absent),
+    }
+}
+
+async fn read_text(
+    connection: &Connection,
+    element: &AtspiElement,
+    property: &str,
+) -> Result<Field<String>, AdapterError> {
+    let reply = call(
+        connection,
+        element,
+        PROPERTIES_INTERFACE,
+        "Get",
+        &(ACCESSIBLE_INTERFACE, property),
+    )
+    .await;
+    Ok(match optional(deserialize::<OwnedValue>(reply))? {
+        Field::Present(value) => string_value(&value),
+        _ => Field::Absent,
+    })
+}
 
 fn needs_description(node: &RawNode) -> bool {
     node.properties.name.is_blank()
@@ -52,21 +79,12 @@ async fn read_description(
     connection: &Connection,
     element: &AtspiElement,
 ) -> Result<Field<String>, AdapterError> {
-    let parent = match field(parent(connection, element).await, Liveness::Alive)? {
+    let parent = match optional(parent(connection, element).await)? {
         Field::Present(Some(parent)) => parent,
-        Field::Failed(detail) => return Ok(Field::Failed(detail)),
         _ => return Ok(Field::Absent),
     };
-    let (role, name, description, children) = join4(
+    let (role, children) = join(
         call(connection, &parent, ACCESSIBLE_INTERFACE, "GetRole", &()),
-        get_one(connection, &parent, "Name", string_value, Liveness::Alive),
-        get_one(
-            connection,
-            &parent,
-            "Description",
-            string_value,
-            Liveness::Alive,
-        ),
         call(
             connection,
             &parent,
@@ -76,11 +94,18 @@ async fn read_description(
         ),
     )
     .await;
-    let role = field(deserialize::<u32>(role), Liveness::Alive)?;
-    let children = field(
+    let role = optional(deserialize::<u32>(role))?;
+    let children = optional(
         deserialize::<OwnedValue>(children).and_then(|value| value.try_into().map_err(Into::into)),
-        Liveness::Alive,
     )?;
+    if !matches!(role.present(), Some(&PANEL | &FILLER)) || children.present() != Some(&1) {
+        return Ok(Field::Absent);
+    }
+    let (name, description) = join(
+        read_text(connection, &parent, "Name"),
+        read_text(connection, &parent, "Description"),
+    )
+    .await;
     Ok(select_description(&role, &name?, description?, &children))
 }
 
@@ -91,31 +116,23 @@ fn select_description(
     children: &Field<i32>,
 ) -> Field<String> {
     if matches!(role.present(), Some(&PANEL | &FILLER))
-        && name.is_blank()
+        && name.present().is_some_and(|name| name.trim().is_empty())
         && children.present() == Some(&1)
     {
         return description;
     }
-    if role.is_failed() || name.is_failed() || children.is_failed() {
-        return Field::Failed("wrapper description could not be established".to_owned());
-    }
     Field::Absent
 }
 
-pub(super) async fn inherit_description(
+pub(in crate::tree) async fn read_wrapper_description(
     connection: &Connection,
-    node: &mut RawNode,
-) -> Result<(), AdapterError> {
-    if !needs_description(node)
-        || read_label(connection, &node.element).await? != LabelOutcome::Unlabelled
-    {
-        return Ok(());
+    node: &RawNode,
+) -> Result<Option<String>, AdapterError> {
+    if !needs_description(node) {
+        return Ok(None);
     }
     let description = read_description(connection, &node.element).await?;
-    if !description.is_blank() {
-        node.properties.description = description;
-    }
-    Ok(())
+    Ok(description.non_blank().cloned())
 }
 
 #[cfg(test)]

@@ -1,14 +1,17 @@
-use super::{inherit_description, needs_description, select_description};
+use super::{needs_description, read_wrapper_description, select_description};
 use crate::tree::live::test_support::read_of;
-use crate::tree::properties::node_read::read_node_for;
 use crate::tree::properties::read_purpose::ReadPurpose;
+use crate::tree::vocabulary::label_read::read_label_if_needed;
 use crate::tree::vocabulary::role_numbers::{FILLER, PANEL, PUSH_BUTTON, TOGGLE_BUTTON};
-use crate::tree::{AtspiElement, Field};
+use crate::tree::walk::walker_expand::read_observed;
+use crate::tree::{AtspiElement, Field, LabelOutcome, resolve_vocabulary};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use zbus::connection::Builder;
 use zbus::zvariant::OwnedObjectPath;
 
 struct Child {
     labelled: bool,
+    relation_reads: AtomicUsize,
 }
 
 #[zbus::interface(name = "org.a11y.atspi.Accessible")]
@@ -32,6 +35,7 @@ impl Child {
         vec![]
     }
     fn get_relation_set(&self) -> Vec<(u32, Vec<(String, OwnedObjectPath)>)> {
+        self.relation_reads.fetch_add(1, Ordering::Relaxed);
         if self.labelled {
             vec![(2, vec![(":1.1".into(), "/label".try_into().unwrap())])]
         } else {
@@ -101,7 +105,13 @@ fn connection(parent: Option<Parent>, labelled: bool) -> (zbus::Connection, zbus
         .server(zbus::Guid::generate())
         .unwrap()
         .p2p()
-        .serve_at("/child", Child { labelled })
+        .serve_at(
+            "/child",
+            Child {
+                labelled,
+                relation_reads: AtomicUsize::new(0),
+            },
+        )
         .unwrap()
         .serve_at(
             "/label",
@@ -131,18 +141,25 @@ fn sole_child_wrapper_description_is_shared_by_capture_and_live_identity_reads()
         ReadPurpose::Resolve,
         ReadPurpose::Count,
     ] {
-        let (node, _) = zbus::block_on(read_node_for(
+        let (read, _) = zbus::block_on(read_observed(
             &client,
             &AtspiElement::new(":1.1", "/child", 1),
+            4096,
             purpose,
         ))
         .unwrap();
         assert_eq!(
-            node.properties.description.present().map(String::as_str),
-            Some("Paint smooth strokes"),
+            read.label,
+            LabelOutcome::WrapperDescription("Paint smooth strokes".into()),
             "{purpose:?}"
         );
-        assert!(node.properties.name.is_blank());
+        let vocabulary = resolve_vocabulary(&read.node, &read.label, false);
+        assert_eq!(
+            vocabulary.name,
+            agent_desktop_core::LocatorField::Known("Paint smooth strokes".into())
+        );
+        assert!(read.node.properties.name.is_blank());
+        assert!(read.node.properties.description.is_blank());
     }
 }
 
@@ -169,7 +186,10 @@ fn wrapper_description_requires_one_unnamed_noninteractive_container() {
         let (client, _server) = connection(Some(parent), false);
         let mut node = read_of(TOGGLE_BUTTON, "", &["click"]).node;
         node.element = AtspiElement::new(":1.1", "/child", 1);
-        zbus::block_on(inherit_description(&client, &mut node)).unwrap();
+        assert_eq!(
+            zbus::block_on(read_label_if_needed(&client, &node)).unwrap(),
+            LabelOutcome::Unlabelled
+        );
         assert!(node.properties.description.is_blank());
     }
     assert_eq!(
@@ -190,7 +210,10 @@ fn own_identity_and_explicit_labels_suppress_wrapper_reads() {
         let mut node = read_of(TOGGLE_BUTTON, name, &["click"]).node;
         node.properties.description = Field::Present(description.into());
         assert!(!needs_description(&node));
-        zbus::block_on(inherit_description(&connection, &mut node)).unwrap();
+        assert_eq!(
+            zbus::block_on(read_wrapper_description(&connection, &node)).unwrap(),
+            None
+        );
         assert_eq!(
             node.properties.description.present().map(String::as_str),
             Some(description)
@@ -199,28 +222,69 @@ fn own_identity_and_explicit_labels_suppress_wrapper_reads() {
     let (client, _server) = self::connection(None, true);
     let mut node = read_of(TOGGLE_BUTTON, "", &["click"]).node;
     node.element = AtspiElement::new(":1.1", "/child", 1);
-    zbus::block_on(inherit_description(&client, &mut node)).unwrap();
+    assert_eq!(
+        zbus::block_on(read_label_if_needed(&client, &node)).unwrap(),
+        LabelOutcome::Text("Explicit label".into())
+    );
     assert!(node.properties.description.is_blank());
 }
 
 #[test]
-fn unread_wrapper_evidence_stays_uncertain_and_bus_loss_propagates() {
+fn optional_wrapper_failure_keeps_own_description_and_bus_loss_propagates() {
     let (client, _server) = connection(None, false);
     let mut node = read_of(TOGGLE_BUTTON, "", &["click"]).node;
     node.element = AtspiElement::new(":1.1", "/child", 1);
-    zbus::block_on(inherit_description(&client, &mut node)).unwrap();
-    assert!(node.properties.description.is_failed());
+    let label = zbus::block_on(read_label_if_needed(&client, &node)).unwrap();
+    assert_eq!(label, LabelOutcome::Unlabelled);
+    assert!(node.properties.description.is_blank());
+    assert!(!node.properties.description.is_failed());
+    let vocabulary = resolve_vocabulary(&node, &label, false);
+    assert_eq!(
+        vocabulary.description,
+        agent_desktop_core::LocatorField::Absent
+    );
     node.properties.description = Field::Present(String::new());
     let lost = crate::tree::live::test_support::closed_connection();
-    let error = zbus::block_on(inherit_description(&lost, &mut node)).unwrap_err();
+    let error = zbus::block_on(read_wrapper_description(&lost, &node)).unwrap_err();
     assert_eq!(error.code, agent_desktop_core::ErrorCode::Internal);
-    assert!(
+    assert_eq!(
         select_description(
             &Field::Failed("unread role".into()),
             &Field::Present(String::new()),
             Field::Present("Tooltip".into()),
             &Field::Present(1)
-        )
-        .is_failed()
+        ),
+        Field::Absent
     );
+    assert_eq!(
+        select_description(
+            &Field::Present(PANEL),
+            &Field::Absent,
+            Field::Present("Tooltip".into()),
+            &Field::Present(1)
+        ),
+        Field::Absent
+    );
+}
+
+#[test]
+fn wrapper_fallback_reads_labelled_by_only_once() {
+    let (client, server) = connection(Some(wrapper()), false);
+    let (read, _) = zbus::block_on(read_observed(
+        &client,
+        &AtspiElement::new(":1.1", "/child", 1),
+        4096,
+        ReadPurpose::Snapshot,
+    ))
+    .unwrap();
+    assert!(matches!(read.label, LabelOutcome::WrapperDescription(_)));
+    let reads = zbus::block_on(async {
+        let interface = server
+            .object_server()
+            .interface::<_, Child>("/child")
+            .await
+            .unwrap();
+        interface.get().await.relation_reads.load(Ordering::Relaxed)
+    });
+    assert_eq!(reads, 1);
 }

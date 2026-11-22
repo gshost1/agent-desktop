@@ -6,6 +6,7 @@ use super::roles::role_of;
 use crate::system::ACCESSIBLE_INTERFACE;
 use crate::tree::properties::liveness::Liveness;
 use crate::tree::properties::node_read::{NAME, call, get_one, string_value};
+use crate::tree::properties::wrapper_description::read_wrapper_description;
 use crate::tree::{AtspiElement, Field, LabelOutcome, RawNode};
 use agent_desktop_core::tree::roles::is_interactive_role;
 use agent_desktop_core::{AdapterError, ErrorCode};
@@ -88,7 +89,7 @@ pub(crate) fn needs_label(node: &RawNode) -> bool {
     blank && is_interactive_role(role.as_str())
 }
 
-/// Reads the label when the node needs it; any other node is unlabelled.
+/// Reads the label and optional wrapper description for an unnamed control.
 pub(crate) async fn read_label_if_needed(
     connection: &Connection,
     node: &RawNode,
@@ -96,10 +97,16 @@ pub(crate) async fn read_label_if_needed(
     if !needs_label(node) {
         return Ok(LabelOutcome::Unlabelled);
     }
-    match read_label(connection, &node.element).await? {
+    let label = match read_label(connection, &node.element).await? {
         LabelOutcome::Unlabelled => read_composite_label(connection, node).await,
         label => Ok(label),
+    }?;
+    if label == LabelOutcome::Unlabelled {
+        if let Some(description) = read_wrapper_description(connection, node).await? {
+            return Ok(LabelOutcome::WrapperDescription(description));
+        }
     }
+    Ok(label)
 }
 
 /// Reads the text of the node's `LabelledBy` target. Meant for a node whose

@@ -24,7 +24,7 @@ fn label_slot(name: &Field<String>, label: &LabelOutcome) -> SlotStatus {
     }
     match label {
         LabelOutcome::Text(_) => SlotStatus::Certain,
-        LabelOutcome::Unlabelled => SlotStatus::Suppressed,
+        LabelOutcome::Unlabelled | LabelOutcome::WrapperDescription(_) => SlotStatus::Suppressed,
         LabelOutcome::Failed => SlotStatus::Uncertain,
     }
 }
@@ -63,12 +63,19 @@ pub(crate) fn name_fields(
     placeholder: &PlaceholderRead,
     label: &LabelOutcome,
 ) -> (LocatorField<String>, LocatorField<String>) {
-    let (description, description_status) = description_of(properties, role, placeholder);
+    let (description, description_status) = match label {
+        LabelOutcome::WrapperDescription(text) if properties.description.is_blank() => {
+            (Some(text.clone()), SlotStatus::Certain)
+        }
+        _ => description_of(properties, role, placeholder),
+    };
     let evidence = NameEvidence {
         native_title: text_of(&properties.name),
         labelled_by_text: match label {
             LabelOutcome::Text(text) => Some(text.clone()),
-            LabelOutcome::Unlabelled | LabelOutcome::Failed => None,
+            LabelOutcome::Unlabelled
+            | LabelOutcome::WrapperDescription(_)
+            | LabelOutcome::Failed => None,
         },
         description,
         placeholder: placeholder.text().map(str::to_owned),
