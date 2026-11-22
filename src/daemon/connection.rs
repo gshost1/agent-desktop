@@ -32,6 +32,25 @@ pub(crate) fn serve_connection(
     server: &ServerState,
     jobs: &Sender<Job>,
 ) {
+    serve_connection_with_permission_check(stream, server, jobs, |argv| {
+        #[cfg(target_os = "macos")]
+        {
+            super::macos_permissions::daemon_permission(argv)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = argv;
+            Ok(())
+        }
+    });
+}
+
+fn serve_connection_with_permission_check(
+    stream: Box<dyn DaemonStream>,
+    server: &ServerState,
+    jobs: &Sender<Job>,
+    check_permission: impl FnOnce(&[String]) -> Result<(), &'static str>,
+) {
     let Some((mut stream, request)) = read_request(stream) else {
         return;
     };
@@ -46,6 +65,10 @@ pub(crate) fn serve_connection(
             return;
         }
     };
+    if let Err(reason) = check_permission(&request.argv) {
+        decline(stream.as_mut(), reason);
+        return;
+    }
     if !server.claim() {
         decline(stream.as_mut(), "busy");
         return;

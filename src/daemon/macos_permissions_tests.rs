@@ -73,3 +73,16 @@ fn grant_reports_always_describe_the_caller() {
         assert!(!permits(args, false, false));
     }
 }
+
+#[test]
+fn daemon_session_input_requires_its_own_screen_recording_grant() {
+    let argv = ["agent-desktop", "click", "@s1234abcd:e1"].map(str::to_owned);
+    assert_eq!(
+        super::permission_decision(&argv, true, || true, || false),
+        Err("permission")
+    );
+    assert_eq!(
+        super::permission_decision(&argv, false, || true, || false),
+        Ok(())
+    );
+}

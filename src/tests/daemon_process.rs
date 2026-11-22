@@ -111,6 +111,38 @@ fn every_command_answers_the_same_bytes_and_status_in_both_modes() {
     assert_eq!(processes_using(&home.state_root()), Vec::<i32>::new());
 }
 
+#[cfg(all(target_os = "macos", debug_assertions))]
+#[test]
+fn a_daemon_without_its_own_grants_leaves_window_inventory_to_the_caller() {
+    let home = Home::new();
+    let permissions = home.run(false, &["permissions"]);
+    let report: serde_json::Value = serde_json::from_slice(&permissions.stdout).unwrap();
+    if report["data"]["accessibility"]["state"] != "granted" {
+        eprintln!("skipping ungranted daemon test: caller lacks Accessibility");
+        return;
+    }
+    let run = |daemon, args: &[&str]| {
+        home.command(daemon, args)
+            .env("AGENT_DESKTOP_DAEMON_TEST_UNGRANTED", "1")
+            .output()
+            .unwrap()
+    };
+    assert!(run(true, &["version"]).status.success());
+    let pid = wait_until(Duration::from_secs(10), || {
+        home.daemons().first().map(|daemon| daemon.0)
+    })
+    .unwrap();
+    let before = home.served(pid);
+    let direct = run(false, &["list-windows"]);
+    let forwarded = run(true, &["list-windows"]);
+    assert_eq!(direct.status, forwarded.status);
+    assert_eq!(direct.stdout, forwarded.stdout);
+    assert_eq!(home.served(pid), before);
+    assert!(run(true, &["version"]).status.success());
+    assert_eq!(home.served(pid), before + 1);
+    home.stop_daemons();
+}
+
 #[test]
 fn first_call_starts_one_private_daemon_and_runs_in_it() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};

@@ -89,6 +89,10 @@ pub(crate) const SERVE_ENV: &str = "AGENT_DESKTOP_DAEMON_SERVE";
 /// How long an idle daemon waits for its next command before it exits, in milliseconds.
 pub(crate) const IDLE_ENV: &str = "AGENT_DESKTOP_DAEMON_IDLE_MS";
 
+#[cfg(all(target_os = "macos", debug_assertions))]
+/// Debug-only, test-only override that makes the daemon's own grant checks fail.
+pub(crate) const TEST_UNGRANTED_ENV: &str = "AGENT_DESKTOP_DAEMON_TEST_UNGRANTED";
+
 /// Serves commands when this process was started as a daemon; `None` for every other process.
 pub(crate) fn serve_if_requested() -> Option<ExitCode> {
     #[cfg(unix)]

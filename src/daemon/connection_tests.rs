@@ -1,4 +1,4 @@
-use super::serve_connection;
+use super::serve_connection_with_permission_check;
 use crate::daemon::build_identity::BuildIdentity;
 use crate::daemon::client::exchange;
 use crate::daemon::endpoint::DaemonEndpoint;
@@ -13,6 +13,14 @@ use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 use std::sync::mpsc::channel;
 use std::time::Duration;
+
+fn serve_connection(
+    stream: Box<dyn DaemonStream>,
+    server: &ServerState,
+    jobs: &std::sync::mpsc::Sender<crate::daemon::job::Job>,
+) {
+    serve_connection_with_permission_check(stream, server, jobs, |_| Ok(()));
+}
 
 fn server() -> ServerState {
     let metadata = std::fs::metadata(std::env::current_exe().unwrap()).unwrap();
@@ -193,4 +201,75 @@ fn a_go_sent_before_the_client_closed_counts_when_timeouts_cannot_be_changed() {
         ran,
         "a readable go is never discarded over a refused timeout change"
     );
+}
+
+#[test]
+fn missing_daemon_grants_decline_before_ready_without_queueing() {
+    for args in [
+        vec!["list-windows"],
+        vec!["snapshot", "--app", "Application"],
+        vec!["click", "@s1234abcd:e1"],
+        vec![
+            "batch",
+            r#"[{"command":"click","args":{"ref_id":"@s1234abcd:e1"}}]"#,
+        ],
+    ] {
+        assert_permission_reply(&args, false, true, false);
+        assert_permission_reply(&args, true, true, true);
+    }
+    assert_permission_reply(&["list-windows"], true, false, false);
+}
+
+#[test]
+fn ungranted_daemon_still_offers_ready_for_commands_needing_no_grants() {
+    for args in [vec!["version"], vec!["skills", "list"]] {
+        assert_permission_reply(&args, false, false, true);
+    }
+}
+
+fn assert_permission_reply(
+    args: &[&str],
+    accessibility: bool,
+    screen_recording: bool,
+    ready: bool,
+) {
+    let server = server();
+    let (mut client, daemon_end) = UnixStream::pair().unwrap();
+    let (jobs, queue) = channel();
+    let mut request = request();
+    request.argv = std::iter::once("agent-desktop")
+        .chain(args.iter().copied())
+        .map(str::to_owned)
+        .collect();
+    write_message(&mut client, &request).unwrap();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            serve_connection_with_permission_check(Box::new(daemon_end), &server, &jobs, |argv| {
+                crate::daemon::macos_permissions::permission_decision(
+                    argv,
+                    false,
+                    || accessibility,
+                    || screen_recording,
+                )
+            });
+        });
+        let reply: DaemonReply = read_message(&mut client, REPLY_LIMIT).unwrap();
+        if ready {
+            assert!(
+                matches!(reply, DaemonReply::Ready { .. }),
+                "{args:?}: {reply:?}"
+            );
+        } else {
+            assert_eq!(
+                reply,
+                DaemonReply::Declined {
+                    reason: "permission".into()
+                },
+                "{args:?}"
+            );
+        }
+        drop(client);
+    });
+    assert!(queue.try_recv().is_err(), "{args:?} queued without go");
+    assert!(server.claim(), "{args:?} held the execution slot");
 }

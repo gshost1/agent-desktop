@@ -1,10 +1,40 @@
-//! The macOS CLI checks its own grants before it connects to a daemon.
+//! Both the macOS caller and daemon require their own grants before forwarding or serving.
 
 use agent_desktop_core::commands::batch::parse_commands;
 use clap::Parser;
 
 use crate::cli::{Cli, Commands};
 use crate::command_policy::{policy_for, requires_accessibility, requires_screen_recording};
+
+#[cfg(target_os = "macos")]
+pub(super) fn daemon_permission(argv: &[String]) -> Result<(), &'static str> {
+    #[cfg(not(debug_assertions))]
+    let ungranted = false;
+    #[cfg(debug_assertions)]
+    let ungranted = std::env::var(super::TEST_UNGRANTED_ENV).is_ok_and(|value| value == "1");
+    permission_decision(
+        argv,
+        std::env::var_os("AGENT_DESKTOP_SESSION").is_some(),
+        || !ungranted && agent_desktop_macos::preflight_accessibility(),
+        || !ungranted && agent_desktop_macos::preflight_screen_recording(),
+    )
+}
+
+pub(super) fn permission_decision(
+    argv: &[String],
+    session_from_env: bool,
+    check_accessibility: impl FnOnce() -> bool,
+    check_screen_recording: impl FnOnce() -> bool,
+) -> Result<(), &'static str> {
+    permits_forwarding(
+        argv,
+        session_from_env,
+        check_accessibility,
+        check_screen_recording,
+    )
+    .then_some(())
+    .ok_or("permission")
+}
 
 pub(super) fn permits_forwarding(
     argv: &[String],
