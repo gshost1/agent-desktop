@@ -238,7 +238,11 @@ fn enabled_session(context: &CommandContext) -> Option<&str> {
 
 fn update(adapter: &dyn PlatformAdapter, control: &super::CursorOverlayControl) -> bool {
     if let Err(error) = adapter.update_cursor_overlay(control) {
-        tracing::warn!(code = %error.code.as_str(), "agent cursor presentation was skipped");
+        if error.code == crate::ErrorCode::PlatformNotSupported {
+            tracing::debug!(code = %error.code.as_str(), "agent cursor presentation was skipped");
+        } else {
+            tracing::warn!(code = %error.code.as_str(), "agent cursor presentation was skipped");
+        }
         return false;
     }
     true
