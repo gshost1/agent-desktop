@@ -49,6 +49,7 @@ def main():
             return False
 
     session_id = None
+    pids = []
     try:
         started = cli("session", "start", "--cursor")
         session_id = started["session_id"]
@@ -75,6 +76,9 @@ def main():
         if session_id:
             subprocess.run([str(renamed), "session", "end", session_id], env=env,
                            capture_output=True, timeout=15)
+        for pid in pids:
+            if alive(pid):
+                os.kill(pid, 9)
         state_directory.cleanup()
 
 

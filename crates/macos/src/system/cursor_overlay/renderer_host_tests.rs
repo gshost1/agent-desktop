@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use agent_desktop_core::ErrorCode;
 
-use super::renderer_executable;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use super::{claim_unless_child, renderer_executable};
 
 #[test]
 fn a_renamed_cli_binary_starts_the_renderer_from_its_own_path() {
@@ -40,4 +42,23 @@ fn a_test_binary_has_not_claimed_the_renderer_role() {
     let error = super::executable().unwrap_err();
 
     assert_eq!(error.code, ErrorCode::PlatformNotSupported);
+}
+
+#[test]
+fn a_process_that_is_not_the_renderer_child_claims_the_host_role() {
+    let host = AtomicBool::new(false);
+
+    assert!(claim_unless_child(None, &host).is_none());
+
+    assert!(host.load(Ordering::Acquire));
+}
+
+#[test]
+fn the_renderer_child_itself_does_not_claim_the_host_role() {
+    let host = AtomicBool::new(false);
+
+    let entry = claim_unless_child(Some(Ok(())), &host);
+
+    assert!(matches!(entry, Some(Ok(()))));
+    assert!(!host.load(Ordering::Acquire));
 }

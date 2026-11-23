@@ -19,16 +19,22 @@ static RENDERER_HOST: AtomicBool = AtomicBool::new(false);
 /// Runs the renderer when this process was started as one, and otherwise
 /// records that this executable answers the child marker.
 pub(crate) fn entry_or_claim() -> Option<Result<(), AdapterError>> {
-    let entry = super::child::entry_from_env();
+    claim_unless_child(super::child::entry_from_env(), &RENDERER_HOST)
+}
+
+fn claim_unless_child(
+    entry: Option<Result<(), AdapterError>>,
+    host: &AtomicBool,
+) -> Option<Result<(), AdapterError>> {
     if entry.is_none() {
-        RENDERER_HOST.store(true, Ordering::Release);
+        host.store(true, Ordering::Release);
     }
     entry
 }
 
 /// The executable to start as the renderer. A process that never claimed
-/// the role refuses with `PLATFORM_NOT_SUPPORTED`, which dispatch reports
-/// as `rendered: false`.
+/// the role refuses with `PLATFORM_NOT_SUPPORTED`: the CLI's dispatch
+/// reports it as `rendered: false`, and action presentation is skipped.
 pub(crate) fn executable() -> Result<PathBuf, AdapterError> {
     renderer_executable(
         RENDERER_HOST.load(Ordering::Acquire),

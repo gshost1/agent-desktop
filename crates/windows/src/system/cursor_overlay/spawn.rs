@@ -202,9 +202,9 @@ mod imp {
     /// `current_exe()` is the host process, which must never be re-launched
     /// as a renderer, and a test binary must not fork one either.
     ///
-    /// The refusal is an `Err` rather than macOS's `Ok(())`, because
-    /// dispatch turns `Ok` into `rendered: true` - which would claim an
-    /// overlay that was never started.
+    /// The refusal is an `Err`, as on macOS, because dispatch turns `Ok`
+    /// into `rendered: true` - which would claim an overlay that was never
+    /// started.
     ///
     /// The image test is the one a client applies to a pipe server it found,
     /// so what may be forked and what may be trusted cannot drift apart.

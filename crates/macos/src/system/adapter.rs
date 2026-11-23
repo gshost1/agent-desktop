@@ -20,6 +20,8 @@ impl SystemOps for MacOSAdapter {
         crate::system::cursor_overlay::update(control)
     }
 
+    /// Runs the renderer when started as one; otherwise claims this process
+    /// as the renderer host. Only the CLI's `main` calls it, before anything else.
     fn run_cursor_overlay_child(&self) -> Option<Result<(), AdapterError>> {
         crate::system::cursor_overlay::entry_or_claim()
     }
