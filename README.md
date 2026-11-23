@@ -8,16 +8,16 @@ deskref is a fork of vercel-labs/agent-desktop. It reads an app's UI through the
 
 ## Why use it
 
-- **Faster.** 186 s vs 439 s for upstream on the held-out Mac suite (about 2.4× faster), and faster than Peekaboo (264 s) and Cua Driver (316 s).
+- **Faster.** 186 s vs 439 s for upstream on the Mac dev set (fixes were tuned on it; about 2.4× faster), and faster than Peekaboo (264 s) and Cua Driver (316 s).
 - **Fewer tokens.** 637k tokens vs 891k for upstream (29% fewer), 922k for Peekaboo, and 1623k for Cua Driver.
-- **More tasks passed.** 48/50 runs passed on the held-out Mac suite, compared with 46/50 for Peekaboo and 44/50 for upstream and Cua Driver (not statistically significant; see below).
-- **Web pages in Chrome through the same loop.** `snapshot --surface web` reads Chrome over DevTools with the same refs as native apps, cutting upstream's web wall time by 64% on Mac and 88% on Linux on held-out web tasks.
+- **More tasks passed.** 48/50 runs passed on the Mac dev set, compared with 46/50 for Peekaboo and 44/50 for upstream and Cua Driver (not statistically significant; see below).
+- **Web pages in Chrome through the same loop.** `snapshot --surface web` reads Chrome over DevTools with the same refs as native apps, cutting upstream's web wall time by 64% on Mac and 88% on Linux on held-out web tasks (2026-11-11 run).
 
 <!-- demo video: added after recording -->
 
-## Held-out Mac benchmark (2026-11-22)
+## Mac dev set benchmark (2026-11-22)
 
-10 macOS native tasks, 5 runs each, using Claude Sonnet 5.5 via Claude Code. None of the tasks were used for tuning, and they are kept private so they stay unseen. Each figure is the sum of per-task medians.
+10 macOS native tasks, 5 runs each, using Claude Sonnet 5.5 via Claude Code. The tasks are private, and 1.6.0's fixes were tuned on them, so these numbers show progress on a known set, not how the tools do on unseen tasks. Each figure is the sum of per-task medians.
 
 | Tool | Runs passed | Wall time | Tokens |
 |---|---|---|---|
