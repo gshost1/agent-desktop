@@ -1,6 +1,6 @@
 {
   "name": "deskref",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Reliable computer use for AI agents — observe and operate desktop apps via native accessibility trees",
   "license": "Apache-2.0",
   "repository": {
