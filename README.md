@@ -1,56 +1,46 @@
-# agent-desktop
+# deskref
 
-Computer use for AI agents: see and operate desktop apps on macOS, Windows, and Linux through the OS accessibility tree.
+Computer use for AI agents on macOS, Windows, and Linux. It reads the accessibility tree instead of screenshots, and it's faster and cheaper than upstream [agent-desktop](https://github.com/vercel-labs/agent-desktop).
 
-This repository is a fork of [vercel-labs/agent-desktop](https://github.com/vercel-labs/agent-desktop). It adds a web surface for pages in Chrome and makes macOS commands faster. It ships as [GitHub release archives](https://github.com/gshost1/agent-desktop/releases); the `agent-desktop` packages on npm and Homebrew are upstream's builds.
+## What it is
 
-agent-desktop gives an AI agent computer use without screenshots or pixel matching. It reads the accessibility tree of a desktop app and returns it as JSON, with a ref for every element the agent can act on. The agent clicks or types on a ref, reads the UI again to check the result, and repeats. The loop lives in your agent; agent-desktop has no model inside. It ships as a CLI and a C library.
+deskref is a fork of vercel-labs/agent-desktop. It reads an app's UI through the OS accessibility tree and returns JSON with a ref for each element an agent can act on. The agent acts on a ref, then reads the UI again to verify the change. There is no model inside; the loop lives in your agent, and deskref ships as a CLI and a C library.
 
-Snapshots, clipboard reads, screenshots, command output, and debug artifacts can contain private desktop content. Keep them out of public logs and uploads.
+## Why use it
 
-## What this fork changes
+- **Faster.** 186 s vs 439 s for upstream on the held-out Mac suite (about 2.4× faster), and faster than Peekaboo (264 s) and Cua Driver (316 s).
+- **Fewer tokens.** 637k tokens vs 891k for upstream (29% fewer), 922k for Peekaboo, and 1623k for Cua Driver.
+- **More tasks passed.** 48/50 runs passed on the held-out Mac suite, compared with 46/50 for Peekaboo and 44/50 for upstream and Cua Driver (not statistically significant; see below).
+- **Web pages in Chrome through the same loop.** `snapshot --surface web` reads Chrome over DevTools with the same refs as native apps, cutting upstream's web wall time by 64% on Mac and 88% on Linux on held-out web tasks.
 
-- **Web pages.** `snapshot --surface web` reads a page in Chrome through the browser's DevTools endpoint and gives its elements refs, so the same snapshot-and-ref loop drives a web page and a native app. Upstream has no web surface and reads Chrome through the accessibility tree. `agent-desktop skills get web` is the guide.
-- **Faster macOS commands.** Every command is a new process. 1.4.0 opens the window-server and accessibility connections while the permission checks run, and reads an element's children with one call instead of three. On System Settings, the median `find --text` fell from 992 ms to 296 ms.
-- **Fewer tokens per turn.** The global `--lines` flag prints one line per node in place of the JSON tree, about a third fewer tokens. The web guide an agent loads first is 1,818 tokens.
+<!-- demo video: added after recording -->
 
-The [changelog](CHANGELOG.md) lists every change with its measurement.
+## Held-out Mac benchmark (2026-11-22)
 
-## Benchmarks
+10 macOS native tasks, 5 runs each, using Claude Sonnet 5.5 via Claude Code. None of the tasks were used for tuning, and they are kept private so they stay unseen. Each figure is the sum of per-task medians.
 
-An agent ran the same tasks with each tool, and a script judged every run against the expected result. All runs used Claude Opus 5.5 through `claude -p` with Bash only and each tool's own skill, on one MacBook Air (M2, 8 GB), on 2026-11-10. Each figure is the sum of the per-task medians, shown as the other tool, then this fork.
-
-| Tasks | Compared with | Wall time | Input tokens | Runs passed |
-|---|---|---|---|---|
-| 3 native app tasks, 8 runs each | upstream | 68.6 s → 37.8 s (-45%) | 190K → 96K (-49%) | 24/24 → 24/24 |
-| 6 harder native app tasks, 4 runs each | upstream | 182.4 s → 101.8 s (-44%) | 474K → 292K (-38%) | 23/24 → 24/24 |
-| 9 web tasks, 3 runs each | upstream | 655.7 s → 232.3 s (-65%) | 1.96M → 475K (-76%) | 27/27 → 26/27 |
-| 9 web tasks, 3 runs each | browser-harness 0.1.13 | 224.0 s → 184.3 s (-18%) | 366K → 396K (+8%) | 27/27 → 27/27 |
-
-Upstream is its main branch at `8e8dd7cbe`. This fork is `697c618d6`, the code released as 1.4.0. The web comparison with upstream sets two paths to the same task side by side: upstream reads Chrome through the accessibility tree, and this fork uses `--surface web`. Against browser-harness, this fork is faster and uses about the same number of tokens.
-
-These results come from one model on one machine, with 3 to 8 runs per task. The [1.4.0 release pull request](https://github.com/gshost1/agent-desktop/pull/131) has the task list, the per-benchmark tables, and the limits.
-
-### Held-out tasks on Mac and Linux
-
-The fork was tuned on the tasks above. A second benchmark checks it on tasks it never saw: 18 tasks adapted from public benchmarks and frozen before the first run, namely 8 OSWorld desktop tasks, 7 WebArena tasks on a local copy of their sites, and 3 WebVoyager tasks on arXiv and Cambridge Dictionary. Each tool ran each task 5 times with Claude Sonnet 5.5 through Claude Code on 2026-11-11, on a MacBook Pro (M1 Pro, macOS 15) and on Linux virtual machines. The Mac ran the native tasks in TextEdit, Preview and System Settings, and Linux ran them in LibreOffice Writer, GIMP and GNOME Settings, as OSWorld does. Tool time is the time spent inside the tool's own commands, and wall time is the whole run. Each figure is the sum of the per-task medians, shown as the best other tool, then this fork.
-
-| Suite | Tool time | Wall time | Runs passed |
+| Tool | Runs passed | Wall time | Tokens |
 |---|---|---|---|
-| Mac, 8 native tasks | Cua Driver 52.4 s → 36.7 s | Cua Driver 277.7 s → 368.5 s | Peekaboo 31/40 → 32/40 |
-| Mac, 10 web tasks | agent-browser 7.7 s → 10.3 s | browser-harness 111.0 s → 132.2 s | browser-harness 50/50 → 47/50 |
-| Linux, 8 native tasks | upstream 102.1 s → 96.9 s | upstream 318.4 s → 371.4 s | upstream 36/40 → 38/40 |
-| Linux, 10 web tasks | agent-browser 5.5 s → 8.2 s | browser-harness 110.4 s → 121.9 s | browser-harness 50/50 → 46/50 |
+| deskref 1.6.0 (fork `f50cdf6`) | 48/50 | 186 s | 637k |
+| upstream agent-desktop (`8e8dd7cbe`) | 44/50 | 439 s | 891k |
+| Peekaboo 4.9.8 | 46/50 | 264 s | 922k |
+| Cua Driver 0.47.7 | 44/50 | 316 s | 1623k |
 
-This fork had the lowest tool time in both native suites and the lowest wall time in none. On the web, agent-browser's tool time was lower on both machines, and this fork passed more runs on the Mac (47/50 against 43/50) and the same number on Linux (46/50). Against browser-harness, this fork's web tool time was 41% lower on the Mac and 52% lower on Linux. Its tool time was 7% to 26% of its wall time, and the model's turns took the rest, so a faster tool moves the total only a little. On the web it cut upstream's tool time by 77% on the Mac and 97% on Linux, and its wall time by 64% and 88%. On the Linux native tasks it was 17% slower than upstream end to end and used 12% more tokens.
-
-It fell short on two tasks. On the Mac it passed none of 5 runs of a TextEdit strike-through task, which upstream also failed and Peekaboo and Cua Driver passed 3 times out of 5. On both machines it miscounted the meanings of a Cambridge Dictionary entry, in 3 of 5 runs on the Mac and 4 of 5 on Linux.
-
-The other tools were upstream at `8e8dd7cbe`, Peekaboo 4.9.8, Cua Driver 0.47.7, browser-harness 0.1.13, agent-browser 0.42.0 and Playwright CLI 0.1.24 on the Mac. agent-browser ran on both machines after the other tools, on the same tasks with the same seeds. Linux has no Peekaboo, which runs only on macOS, and used Cua Driver 0.46.1. Compare tools within one machine, because the native tasks used different apps on each. On Linux the harness's command check also failed 2 correct runs of this fork, and the table counts them as failures.
+deskref is about 2.4× faster than upstream with 29% fewer tokens. Its pass-rate lead isn't statistically significant (Holm-corrected p ≈ 0.66).
 
 ## Install
 
-Download the archive for your OS and architecture from the [latest release](https://github.com/gshost1/agent-desktop/releases/latest), and extract the executable and its helper into one directory on your `PATH`. On macOS and Linux:
+Install from npm:
+
+```bash
+npm install -g deskref
+deskref status                # platform, permissions, supported surfaces
+deskref permissions --guide   # macOS: walks you through the Accessibility grant
+```
+
+`npm install -g deskref` installs one executable under two command names, `deskref` and `agent-desktop`, and every example below works with either. The `agent-desktop` npm package and `brew install agent-desktop` install upstream's build, which has no web surface.
+
+Or download the archive for your OS and architecture from the [latest release](https://github.com/gshost1/agent-desktop/releases/latest), and extract the executable and its helper into one directory on your `PATH`. On macOS and Linux:
 
 ```bash
 VERSION=1.5.0
@@ -67,15 +57,15 @@ agent-desktop permissions --guide   # macOS: walks you through the Accessibility
 
 If `~/.local/bin` is not on your `PATH`, add it or extract into a directory that is. On Windows, download the `x86_64-pc-windows-msvc` or `aarch64-pc-windows-msvc` archive from the release page and extract it with `tar -xzf`.
 
-Or install this fork from npm with `npm install -g deskref`. It installs one executable under two command names, `deskref` and `agent-desktop`, and every example here works with either. The npm package `agent-desktop` and `brew install agent-desktop` install upstream's build, which has no web surface.
-
 ## Quick start
 
 ```bash
-agent-desktop snapshot --app Finder -i      # interactive elements, each with a ref
-agent-desktop click @s8f3k2p9:e8            # act on a ref from that snapshot
-agent-desktop snapshot --app Finder -i      # observe again to verify
+deskref snapshot --app Finder -i      # interactive elements, each with a ref
+deskref click @s8f3k2p9:e8            # act on a ref from that snapshot
+deskref snapshot --app Finder -i      # observe again to verify
 ```
+
+To see a visible cursor for each action, run `deskref session start --cursor` and export its `AGENT_DESKTOP_SESSION` (printed in `data.next`).
 
 Each command prints one JSON envelope. Add `--lines` to get the tree as `data.lines`, one line per node with its ref first. A trimmed snapshot:
 
@@ -117,8 +107,51 @@ Each command prints one JSON envelope. Add `--lines` to get the tree as `data.li
   describe the selector limits.
 - `type`, `set-value`, and `clipboard-set` accept `--stdin` for piped text, keeping it out of process arguments. Run secret steps as separate commands; batch JSON text appears in process arguments.
 - **PowerShell.** Quote every ref (`'@s8f3k2p9:e8'`), because a bare `@token` is the splatting operator.
+- **Privacy.** Snapshots, clipboard reads, screenshots, command output, and debug artifacts can contain private desktop content. Keep them out of public logs and uploads.
 
 The full walkthrough is in the [quick start](https://agent-browser.dev/desktop/quick-start).
+
+## What this fork changes
+
+- **Web pages.** `snapshot --surface web` reads a page in Chrome over DevTools and assigns refs, so the same snapshot-and-ref loop drives web pages and native apps. Upstream has no web surface and reads Chrome through the accessibility tree. `deskref skills get web` is the guide.
+- **Faster macOS commands.** Every command is a new process. 1.4.0 opens the window-server and accessibility connections while permission checks run, and reads an element's children in one call instead of three. On System Settings, median `find --text` fell from 992 ms to 296 ms.
+- **Fewer tokens per turn.** Global `--lines` prints one line per node instead of a JSON tree, about a third fewer tokens. The web guide an agent loads first is 1,818 tokens.
+
+The [changelog](CHANGELOG.md) lists every change with its measurement.
+
+## Earlier benchmarks
+
+### 1.4.0 suite (2026-11-10)
+
+Claude Opus 5.5 via `claude -p`, Bash only, each tool's own skill, on one MacBook Air (M2, 8 GB), with a script judging every run. Each figure is the sum of per-task medians (other tool → this fork).
+
+| Tasks | Compared with | Wall time | Input tokens | Runs passed |
+|---|---|---|---|---|
+| 3 native app tasks, 8 runs each | upstream | 68.6 s → 37.8 s (-45%) | 190K → 96K (-49%) | 24/24 → 24/24 |
+| 6 harder native app tasks, 4 runs each | upstream | 182.4 s → 101.8 s (-44%) | 474K → 292K (-38%) | 23/24 → 24/24 |
+| 9 web tasks, 3 runs each | upstream | 655.7 s → 232.3 s (-65%) | 1.96M → 475K (-76%) | 27/27 → 26/27 |
+| 9 web tasks, 3 runs each | browser-harness 0.1.13 | 224.0 s → 184.3 s (-18%) | 366K → 396K (+8%) | 27/27 → 27/27 |
+
+Upstream is `8e8dd7cbe`; this fork is `697c618d6` (1.4.0). On web tasks, upstream reads Chrome through the accessibility tree while this fork uses `--surface web`; against browser-harness, this fork is faster with similar token use. One model, one machine, 3 to 8 runs per task; see [pull request #131](https://github.com/gshost1/agent-desktop/pull/131) for the task list, per-benchmark tables, and limits.
+
+### Held-out tasks on Mac and Linux (2026-11-11)
+
+The fork was tuned on the 1.4.0 tasks above. This held-out run tested 18 unseen tasks frozen from public benchmarks: 8 OSWorld desktop tasks, 7 local WebArena tasks, and 3 WebVoyager tasks (arXiv, Cambridge Dictionary). Each tool ran each task 5 times with Claude Sonnet 5.5 via Claude Code on a MacBook Pro (M1 Pro, macOS 15; TextEdit, Preview, System Settings) and on Linux VMs (LibreOffice Writer, GIMP, GNOME Settings). Tool time is time inside tool commands; wall time is the whole run. Each figure is the sum of per-task medians (best other tool → this fork).
+
+| Suite | Tool time | Wall time | Runs passed |
+|---|---|---|---|
+| Mac, 8 native tasks | Cua Driver 52.4 s → 36.7 s | Cua Driver 277.7 s → 368.5 s | Peekaboo 31/40 → 32/40 |
+| Mac, 10 web tasks | agent-browser 7.7 s → 10.3 s | browser-harness 111.0 s → 132.2 s | browser-harness 50/50 → 47/50 |
+| Linux, 8 native tasks | upstream 102.1 s → 96.9 s | upstream 318.4 s → 371.4 s | upstream 36/40 → 38/40 |
+| Linux, 10 web tasks | agent-browser 5.5 s → 8.2 s | browser-harness 110.4 s → 121.9 s | browser-harness 50/50 → 46/50 |
+
+This fork had the lowest tool time in both native suites and the lowest wall time in none; tool time was 7% to 26% of wall time, with model turns taking the rest. On the web, agent-browser had lower tool time on both machines, while this fork passed more runs on Mac (47/50 vs 43/50) and tied on Linux (46/50); against browser-harness, this fork's web tool time was 41% lower on Mac and 52% lower on Linux. Against upstream on the web, it cut tool time by 77% on Mac and 97% on Linux, and wall time by 64% and 88%. On Linux native tasks it was 17% slower than upstream end to end and used 12% more tokens.
+
+Losses and limits:
+
+- On Mac it passed 0/5 runs of a TextEdit strike-through task (upstream also 0/5; Peekaboo and Cua Driver 3/5).
+- On both machines it miscounted the meanings of a Cambridge Dictionary entry (3/5 runs on Mac, 4/5 on Linux).
+- Compared tools: upstream `8e8dd7cbe`, Peekaboo 4.9.8 (macOS only), Cua Driver 0.47.7 (Mac) and 0.46.1 (Linux), browser-harness 0.1.13, agent-browser 0.42.0 (run after the others on the same tasks and seeds), and Playwright CLI 0.1.24 (Mac). Compare within one machine, as native tasks used different apps per OS. On Linux, the harness's command check failed 2 correct runs of this fork, counted as failures above.
 
 ## How it works
 
