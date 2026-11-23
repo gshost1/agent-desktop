@@ -15,7 +15,7 @@ deskref is a fork of vercel-labs/agent-desktop. It reads an app's UI through the
 - **More tasks passed.** 48/50 runs passed on the Mac dev set, compared with 46/50 for Peekaboo and 44/50 for upstream and Cua Driver (not statistically significant; see below).
 - **Web pages in Chrome through the same loop.** `snapshot --surface web` reads Chrome over DevTools with the same refs as native apps, cutting upstream's web wall time by 64% on Mac and 88% on Linux on held-out web tasks (2026-11-11 run).
 
-<!-- demo video: added after recording -->
+https://github.com/user-attachments/assets/aa952405-68c1-487a-965e-ab757f130110
 
 ## Mac dev set benchmark (2026-11-22)
 
