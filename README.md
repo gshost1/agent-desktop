@@ -45,7 +45,7 @@ deskref permissions --guide   # macOS: walks you through the Accessibility grant
 Or download the archive for your OS and architecture from the [latest release](https://github.com/gshost1/agent-desktop/releases/latest), and extract the executable and its helper into one directory on your `PATH`. On macOS and Linux:
 
 ```bash
-VERSION=1.5.0
+VERSION=1.6.0
 TARGET=aarch64-apple-darwin         # or x86_64-apple-darwin, aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu
 BASE="https://github.com/gshost1/agent-desktop/releases/download/v$VERSION"
 curl -fLO "$BASE/agent-desktop-v$VERSION-$TARGET.tar.gz"

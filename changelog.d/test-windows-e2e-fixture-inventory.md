@@ -1,3 +1,0 @@
-### Testing
-
-* The Windows live E2E suite runs nightly and by hand on a hosted `windows-latest` runner through `scripts/run-windows-e2e-ci.ps1`, with failures reported as failed runs. The new `windows-e2e` workflow also runs non-gating on pull requests that edit it and is never a pull-request gate. Its Preconditions scenario counts a `find` match that carries no ref, legs that need foreground off the fixture steal it onto a window the harness owns, a failed leg's verdict line names the error envelope it saw, the shell-surface legs skip only on evidence that the runner's shell lacks the surface, and an aborted run prints the legs recorded so far. ([#210](https://github.com/gshost1/agent-desktop/pull/210))
