@@ -153,6 +153,14 @@ else
     badmsg "fixture could not be restarted for the multi-agent cursor probe"
 fi
 
+note "Renamed binary cursor probe"
+if "$e2e_python" "$repo/scripts/cursor-renamed-binary-probe.py" \
+    --bin "$raw_bin" --out "$suite_root/renamed-binary-cursor"; then
+    okmsg "a renamed CLI binary starts the cursor overlay renderer and ends it with the session"
+else
+    badmsg "renamed binary cursor probe failed"
+fi
+
 # shellcheck source=tests/e2e/scenarios/ref_churn.sh
 source "$here/scenarios/ref_churn.sh"
 

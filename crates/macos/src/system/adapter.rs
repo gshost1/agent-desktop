@@ -21,7 +21,7 @@ impl SystemOps for MacOSAdapter {
     }
 
     fn run_cursor_overlay_child(&self) -> Option<Result<(), AdapterError>> {
-        crate::system::cursor_overlay::entry_from_env()
+        crate::system::cursor_overlay::entry_or_claim()
     }
 
     fn acquire_interaction_lease(
