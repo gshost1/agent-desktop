@@ -97,13 +97,7 @@ fn spawn(
             "Cursor overlay startup deadline elapsed",
         ));
     }
-    let executable = std::env::current_exe().map_err(|error| {
-        AdapterError::internal("Could not locate the cursor overlay executable")
-            .with_platform_detail(error.to_string())
-    })?;
-    if executable.file_stem().and_then(|name| name.to_str()) != Some("agent-desktop") {
-        return Ok(());
-    }
+    let executable = super::renderer_host::executable()?;
     let payload = serde_json::to_vec(control).map_err(|error| {
         AdapterError::internal("Could not encode macOS cursor overlay control")
             .with_platform_detail(error.to_string())
