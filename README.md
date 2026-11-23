@@ -1,5 +1,7 @@
 # deskref
 
+[![npm](https://img.shields.io/npm/v/deskref)](https://www.npmjs.com/package/deskref)
+
 Computer use for AI agents on macOS, Windows, and Linux. It reads the accessibility tree instead of screenshots, and it's faster and cheaper than upstream [agent-desktop](https://github.com/vercel-labs/agent-desktop).
 
 ## What it is
