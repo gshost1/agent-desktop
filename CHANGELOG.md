@@ -84,6 +84,7 @@
 * Linux snapshots use an explicit AT-SPI composite label for its sole editable child, so distinct fields can be edited by ref.
 * **linux:** items of a closed menubar menu are no longer in a window snapshot, a window `find` or a window `wait --text`/selector, and a ref captured earlier for such an item now gets `STALE_REF`; the menubar's top-level openers stay, so open the menu first, then read it with `snapshot --surface menu`
 * A web connection from a `launch --cdp` registry entry refuses a WebSocket URL whose path does not start with `/devtools/browser/`, with error kind `cdp_endpoint_not_browser`; before, a page endpoint passed both the handshake and `Browser.setDownloadBehavior` and was used as the browser.
+* macOS: the cursor overlay stays on screen across `--headed` commands and starts its next move from where it last landed, instead of jumping to a fixed offset beside each target; a cancelled drag still forgets its grab point, so the next move does not start from it. (from [vercel-labs/agent-desktop#715](https://github.com/vercel-labs/agent-desktop/pull/715))
 
 ### Performance
 
