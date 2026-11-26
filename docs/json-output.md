@@ -415,8 +415,9 @@ leaves the result `delivered_unverified` with `effect: "still_showing"`: the
 press was delivered, and either the button does not close the surface or the
 app ignored it, so read the surface again with `snapshot --surface sheet` (or
 `alert`) before pressing again. When the surface has no window of its own that
-can be told apart from the window it hangs from, or the window list cannot be
-read, the result is `delivered_unverified` with `effect: "unobservable"` and no
+can be told apart from the window it hangs from, when that window was not on
+screen before the press (a sheet on another Space), or when the window list
+cannot be read, the result is `delivered_unverified` with `effect: "unobservable"` and no
 wait. A press already verified another way, a click in a standard window, and
 a native menu click are unchanged and pay no settle.
 

@@ -34,7 +34,9 @@ pub(crate) struct PressedSurface {
 impl PressedSurface {
     /// Nothing when the element is not inside a sheet or alert, so every other
     /// press pays only the parent walk. An unreadable ancestry is treated as no
-    /// surface and never fails the press.
+    /// surface and never fails the press. A surface window that is not on screen
+    /// before the press, such as one on another Space, is not watched, because
+    /// its absence afterwards would prove nothing.
     pub(crate) fn capture(element: &AXElement, deadline: Deadline) -> Option<Self> {
         let end = crate::tree::locator_deadline::from_operation(deadline).ok()?;
         let (surface, kind) = enclosing_surface(
@@ -57,10 +59,9 @@ impl PressedSurface {
             .ok()
             .flatten()
             .and_then(|host| window_id(&host, end).ok().flatten());
-        Some(Self {
-            kind,
-            window: window_surface_watch::distinct_window(own, host),
-        })
+        let window = window_surface_watch::distinct_window(own, host)
+            .filter(|window| window_surface_watch::window_on_screen(*window).unwrap_or(false));
+        Some(Self { kind, window })
     }
 
     /// Judges an unverified press by whether its surface left the screen. Any
