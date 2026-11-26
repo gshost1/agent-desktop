@@ -50,7 +50,6 @@ pub(crate) fn approval_pending(port: u16, elapsed_ms: u128) -> AdapterError {
         "port": port,
         "elapsed_ms": elapsed_ms,
         "retryable": false,
-        "approval_surface": "sheet",
     }))
     .with_disposition(DeliverySemantics::uncertain())
 }

@@ -47,7 +47,6 @@ fn a_silent_active_port_browser_reports_pending_approval() {
     assert_eq!(details["kind"], "cdp_approval_pending");
     assert_eq!(details["port"], 9222);
     assert_eq!(details["retryable"], false);
-    assert_eq!(details["approval_surface"], "sheet");
     let suggestion = error.suggestion.unwrap();
     assert!(suggestion.contains("Allow remote debugging"));
     assert!(suggestion.contains("--surface sheet"));
