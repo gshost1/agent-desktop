@@ -587,6 +587,12 @@ Errors carry `details.kind`:
 
 Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
 
+## Window inventory
+
+`list-windows` entries carry `state.visible`, `state.minimized` and `state.on_other_space` only when the platform knows them. On macOS, `list-windows --app` lists a window that the window server places on a Space other than the one on screen, and that the app's accessibility windows leave out, with `visible: false`, `accessible: false` and `on_other_space: true`. A window the app ordered out belongs to no Space and stays unlisted. The Space read runs only for off-screen windows that are not minimized and not in the accessibility windows, at most 32 per inventory, within 100 ms; a window whose Space it cannot read is left out as before. `snapshot` and `find` on such a window fail `ACTION_NOT_SUPPORTED`, `details.kind: "window_on_other_space"`, `details.window_id`, `not_delivered`. `screenshot --window-id` captures it in place. `focus-window` activates its application so macOS switches Spaces, waits up to 1.5 s for the window to reach the accessibility windows, then raises it; when it stays away the error adds `details.application_activated: true`. `screenshot --app` chooses among the windows `list-windows --app` lists, not every window the process owns.
+
+An `AMBIGUOUS_TARGET` between windows lists up to 10 `details.candidates` as `{ id, is_focused, visible, on_other_space? }`. Titles are left out, because in a browser they are the user's open tabs; read them with `list-windows` when you need them. The macOS `verified_window_title_ambiguous` error names `details.window_id` instead of the title.
+
 ## Find result shape
 
 A match object leaves out what it does not have, like every other object in the contract: a context match has no `ref_id`, and `value`, `states` and `path` are omitted when absent or empty (the window root has no `path`). `role` and `interactive` are always present. Earlier builds printed `"ref_id": null`, `"value": null`, `"states": []` and `"path": []`; a reader that indexed those keys must treat a missing key as that value. `tests/fixtures/find-matches.json` pins the shape.

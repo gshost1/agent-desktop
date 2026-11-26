@@ -31,7 +31,7 @@ pub(crate) fn mark_other_space_windows(
     let candidates = windows
         .iter()
         .filter(|window| is_space_candidate(window))
-        .filter_map(|window| window_number(window))
+        .filter_map(window_number)
         .take(MAX_SPACE_READS)
         .collect::<Vec<_>>();
     if candidates.is_empty() {
