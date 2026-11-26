@@ -13,8 +13,34 @@ pub(crate) fn find_window_for_process(
         focused_only: false,
         app: None,
     };
+    find_window_in(process, &filter, adapter, deadline)
+}
+
+/// Like [`find_window_for_process`], but chooses among the windows the
+/// app-scoped inventory lists, the set `list-windows --app` shows. On macOS
+/// that set holds the app's windows on other Spaces and leaves out the
+/// off-screen windows it ordered out.
+pub(crate) fn find_window_for_app(
+    app: &crate::AppInfo,
+    adapter: &dyn PlatformAdapter,
+    deadline: crate::Deadline,
+) -> Result<WindowInfo, AppError> {
+    let process = crate::system::app_lookup::process_identity(app)?;
+    let filter = WindowFilter {
+        focused_only: false,
+        app: Some(app.name.clone()),
+    };
+    find_window_in(process, &filter, adapter, deadline)
+}
+
+fn find_window_in(
+    process: ProcessIdentity,
+    filter: &WindowFilter,
+    adapter: &dyn PlatformAdapter,
+    deadline: crate::Deadline,
+) -> Result<WindowInfo, AppError> {
     let same_pid: Vec<_> = adapter
-        .list_windows(&filter, deadline)?
+        .list_windows(filter, deadline)?
         .into_iter()
         .filter(|window| window.pid == process.pid)
         .collect();
@@ -182,17 +208,22 @@ fn narrow_window(mut candidates: Vec<WindowInfo>) -> Result<WindowInfo, Vec<Wind
     Err(candidates)
 }
 
+/// Window titles are left out: in a browser they are the user's open tabs,
+/// and an error must not carry them into the caller's context.
 fn ambiguous_error(candidates: &[WindowInfo], ambiguous_message: &str) -> AppError {
     let summaries = candidates
         .iter()
         .take(10)
         .map(|window| {
-            json!({
+            let mut summary = json!({
                 "id": window.id,
-                "title": window.title,
                 "is_focused": window.state.is_focused,
                 "visible": window.state.visible,
-            })
+            });
+            if let Some(on_other_space) = window.state.on_other_space {
+                summary["on_other_space"] = json!(on_other_space);
+            }
+            summary
         })
         .collect::<Vec<_>>();
     crate::AdapterError::ambiguous_target(ambiguous_message)

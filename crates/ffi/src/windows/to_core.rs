@@ -67,6 +67,7 @@ fn decode_window(
             accessible,
             minimized: None,
             visible: None,
+            on_other_space: None,
         },
     })
 }

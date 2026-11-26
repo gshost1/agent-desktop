@@ -31,6 +31,7 @@ fn optional_window_state_serializes_flat() {
             accessible: true,
             minimized: Some(true),
             visible: Some(false),
+            on_other_space: None,
         },
     };
     let value = serde_json::to_value(window).expect("window json");

@@ -336,6 +336,7 @@ fn walk_verdict(root: &UIAElement, deadline: Deadline) -> Value {
             accessible: true,
             minimized: None,
             visible: Some(true),
+            on_other_space: None,
         },
     };
     match walk_uia_subtree(

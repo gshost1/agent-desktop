@@ -45,6 +45,17 @@ pub(crate) fn list_windows_until(
             },
         )?;
         windows.map(|mut windows| {
+            crate::system::window::window_inventory_space::mark_other_space_windows(
+                &mut windows,
+                |numbers| {
+                    crate::system::window::window_space::other_space_placement(
+                        numbers,
+                        crate::system::window::window_inventory_space::space_read_deadline(
+                            deadline,
+                        ),
+                    )
+                },
+            );
             narrow_to_real_windows(&mut windows);
             windows
         })
@@ -196,7 +207,11 @@ fn visible_window_pids(records: &[cg_window::WindowRecord]) -> rustc_hash::FxHas
 }
 
 fn narrow_to_real_windows(windows: &mut Vec<WindowInfo>) {
-    windows.retain(|window| window.state.visible == Some(true) || window.state.minimized.is_some());
+    windows.retain(|window| {
+        window.state.visible == Some(true)
+            || window.state.minimized.is_some()
+            || window.state.on_other_space == Some(true)
+    });
 }
 
 /// The visible or minimized windows a process owns, read once, with their

@@ -129,11 +129,7 @@ fn resolve_target(
 
     if let Some(app_name) = &args.app {
         let app = crate::commands::helpers::resolve_app(Some(app_name), adapter, deadline)?;
-        let win = crate::system::window_lookup::find_window_for_process(
-            crate::commands::helpers::process_identity(&app)?,
-            adapter,
-            deadline,
-        )?;
+        let win = crate::system::window_lookup::find_window_for_app(&app, adapter, deadline)?;
         return Ok(ScreenshotTarget::ExactWindow(win));
     }
 

@@ -14,6 +14,7 @@ pub(crate) mod window_bridge;
 pub(crate) mod window_element_lookup;
 pub(crate) mod window_inventory;
 pub(crate) mod window_inventory_global;
+pub(crate) mod window_inventory_space;
 pub(crate) mod window_liveness;
 pub(crate) mod window_main;
 pub(crate) mod window_ops;

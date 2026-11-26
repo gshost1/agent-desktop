@@ -26,7 +26,7 @@ fn a_window_number_outside_the_window_server_range_is_unknown() {
 #[test]
 fn an_expired_deadline_skips_the_space_read() {
     assert_eq!(
-        read_before_deadline(&EXPIRED_IN_FLIGHT, Instant::now(), || panic!(
+        read_before_deadline::<bool>(&EXPIRED_IN_FLIGHT, Instant::now(), || panic!(
             "no read after the deadline"
         )),
         None
@@ -68,4 +68,44 @@ fn a_blocked_space_read_returns_unknown_at_the_deadline_and_blocks_no_second_rea
         ),
         Some(false)
     );
+}
+
+#[test]
+fn a_window_on_some_space_but_no_current_one_is_on_another_space() {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let placements = read_placements(&[1, 2, 3], deadline, |window_id, mask| {
+        match (window_id, mask) {
+            (1, ALL_SPACES_MASK) => Some(true),
+            (1, CURRENT_SPACE_MASK) => Some(false),
+            (2, ALL_SPACES_MASK) => Some(true),
+            (2, CURRENT_SPACE_MASK) => Some(true),
+            (3, ALL_SPACES_MASK) => Some(false),
+            _ => panic!("no current-Space read for a window on no Space"),
+        }
+    });
+    assert_eq!(placements.get(&1), Some(&true));
+    assert_eq!(placements.get(&2), Some(&false));
+    assert_eq!(placements.get(&3), Some(&false));
+}
+
+#[test]
+fn an_unreadable_placement_is_left_out_not_guessed() {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let placements = read_placements(&[1, 2, -4], deadline, |window_id, mask| {
+        match (window_id, mask) {
+            (1, _) => None,
+            (2, ALL_SPACES_MASK) => Some(true),
+            (2, _) => None,
+            _ => panic!("an out-of-range window number is never read"),
+        }
+    });
+    assert!(placements.is_empty());
+}
+
+#[test]
+fn placement_reads_stop_at_the_deadline() {
+    let placements = read_placements(&[1, 2], Instant::now(), |_, _| {
+        panic!("no read after the deadline")
+    });
+    assert!(placements.is_empty());
 }

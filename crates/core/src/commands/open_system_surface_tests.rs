@@ -81,6 +81,7 @@ fn shell_window() -> WindowInfo {
             accessible: true,
             minimized: Some(false),
             visible: Some(true),
+            on_other_space: None,
         },
     }
 }

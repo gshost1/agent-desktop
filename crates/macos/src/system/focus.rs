@@ -176,8 +176,14 @@ pub(crate) fn focus_window_impl(
     let identity = crate::system::process::process_identity::require_core(
         &agent_desktop_core::ProcessIdentity::new(window.pid, instance),
     )?;
-    let element = crate::system::window::window_resolve::window_element_for_info(window, deadline)?;
-    let focused = focus_identity(identity, deadline)?;
+    let (element, focused) =
+        match crate::system::window::window_resolve::window_element_for_info(window, deadline) {
+            Ok(element) => (element, focus_identity(identity, deadline)?),
+            Err(error) if crate::system::focus_other_space::is_other_space_error(&error) => {
+                bring_space_on_screen(window, identity, deadline)?
+            }
+            Err(error) => return Err(error),
+        };
     crate::system::window::window_ops::raise_window(&element, deadline).map_err(|error| {
         crate::actions::DeliveryTracker::from_delivered_units(usize::from(focused)).annotate(error)
     })?;
@@ -187,6 +193,29 @@ pub(crate) fn focus_window_impl(
         )));
     }
     verify_identity_focused(identity, deadline).map_err(after_delivery)
+}
+
+/// Activates the application of a window on another Space, even when it is
+/// already frontmost, so macOS switches to a Space that holds its windows,
+/// then waits for the window's accessibility element.
+fn bring_space_on_screen(
+    window: &WindowInfo,
+    identity: crate::system::process::process_identity::ProcessIdentity,
+    deadline: Deadline,
+) -> Result<(crate::tree::AXElement, bool), AdapterError> {
+    crate::system::cocoa_runtime::ensure_cocoa_multithreaded().map_err(before_activation)?;
+    deadline.ensure_remaining().map_err(before_activation)?;
+    let activated = crate::system::focus_bridge::activate(identity)?;
+    let element = crate::system::focus_other_space::element_after_activation(
+        || crate::system::window::window_resolve::window_element_for_info(window, deadline),
+        deadline,
+    )
+    .map_err(|error| {
+        crate::actions::DeliveryTracker::from_delivered_units(usize::from(activated))
+            .annotate(error)
+    })?;
+    let focused = focus_identity(identity, deadline)?;
+    Ok((element, activated || focused))
 }
 
 pub(crate) fn wait_until_main(

@@ -3,6 +3,7 @@ use agent_desktop_core::{AdapterError, ErrorCode, WindowInfo};
 use crate::system::window::cg_window::WindowRecord;
 use crate::system::window::window_resolve_errors::{
     invalid_window_id, window_identity_mismatch, window_not_accessible, window_not_found,
+    window_on_other_space,
 };
 use crate::system::window::window_sources::{LiveWindowSources, WindowSources};
 use crate::tree::{AXElement, properties::attributes::set_messaging_timeout};
@@ -177,6 +178,11 @@ fn resolve_window_element_strict(
         return Ok(element);
     }
     require_live_offscreen_window(win, &record, deadline, sources)?;
+    if !record.presence.is_onscreen()
+        && sources.is_on_other_space(window_number, deadline) == Some(true)
+    {
+        return Err(window_on_other_space(&win.id));
+    }
     Err(window_not_accessible(&win.id))
 }
 
@@ -240,6 +246,7 @@ fn window_info_from_record(
             accessible: win.state.accessible,
             minimized: win.state.minimized,
             visible: Some(record.presence.is_onscreen()),
+            on_other_space: None,
         },
     })
 }

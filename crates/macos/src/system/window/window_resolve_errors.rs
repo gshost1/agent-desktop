@@ -40,3 +40,22 @@ pub(crate) fn window_identity_mismatch(id: &str) -> AdapterError {
     )
     .with_suggestion("Run 'list-windows' to refresh window IDs, then retry.")
 }
+
+/// The window exists, the window server places it on a Space other than the
+/// one on screen, and macOS gives windows there no accessibility tree. Only a
+/// screenshot reaches it where it is; a tree read needs it on screen first.
+pub(crate) fn window_on_other_space(id: &str) -> AdapterError {
+    AdapterError::new(
+        ErrorCode::ActionNotSupported,
+        format!("Window '{id}' is on another Space, where macOS exposes no accessibility tree"),
+    )
+    .with_details(serde_json::json!({
+        "kind": "window_on_other_space",
+        "window_id": id,
+    }))
+    .with_suggestion(format!(
+        "Run 'focus-window --window-id {id}' to bring its Space on screen, then retry. \
+         'screenshot --window-id {id}' works without moving it."
+    ))
+    .with_disposition(agent_desktop_core::DeliverySemantics::not_delivered())
+}

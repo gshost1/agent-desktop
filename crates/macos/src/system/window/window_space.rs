@@ -7,6 +7,10 @@
 //! ordered out belongs to no Space. The symbol is private, so it is resolved at
 //! run time and its absence reads as unknown.
 //!
+//! A window on another Space is told apart from one on the Space on screen by
+//! asking again with the current-Space mask: a window on some Space but on no
+//! current one sits on another Space.
+//!
 //! The call is a synchronous window-server round trip with no timeout of its
 //! own, so it runs on a worker thread and the caller waits only until its
 //! deadline. A read still blocked from an earlier call makes the next read
@@ -15,6 +19,7 @@
 use core_foundation::array::{CFArray, CFArrayRef};
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::number::CFNumber;
+use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -22,6 +27,7 @@ type MainConnection = unsafe extern "C" fn() -> u32;
 type CopySpacesForWindows = unsafe extern "C" fn(u32, i32, CFArrayRef) -> CFArrayRef;
 
 const ALL_SPACES_MASK: i32 = 7;
+const CURRENT_SPACE_MASK: i32 = 5;
 
 static READ_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
@@ -31,15 +37,60 @@ pub(crate) fn is_on_any_space(window_number: i64, deadline: Instant) -> Option<b
     let window_id = u32::try_from(window_number).ok()?;
     let functions = space_functions()?;
     read_before_deadline(&READ_IN_FLIGHT, deadline, move || {
-        copy_space_membership(functions, window_id)
+        copy_space_membership(functions, window_id, ALL_SPACES_MASK)
     })
 }
 
-fn read_before_deadline(
+/// For each of `window_numbers`, whether the window server places it on a
+/// Space other than the one on screen, read in one worker before `deadline`.
+/// A window whose placement could not be read is absent from the answer.
+pub(crate) fn other_space_placement(
+    window_numbers: Vec<i64>,
+    deadline: Instant,
+) -> FxHashMap<i64, bool> {
+    let Some(functions) = space_functions() else {
+        return FxHashMap::default();
+    };
+    read_before_deadline(&READ_IN_FLIGHT, deadline, move || {
+        Some(read_placements(
+            &window_numbers,
+            deadline,
+            |window_id, mask| copy_space_membership(functions, window_id, mask),
+        ))
+    })
+    .unwrap_or_default()
+}
+
+fn read_placements(
+    window_numbers: &[i64],
+    deadline: Instant,
+    mut membership: impl FnMut(u32, i32) -> Option<bool>,
+) -> FxHashMap<i64, bool> {
+    let mut placements = FxHashMap::default();
+    for &window_number in window_numbers {
+        if Instant::now() >= deadline {
+            break;
+        }
+        let Ok(window_id) = u32::try_from(window_number) else {
+            continue;
+        };
+        let placement = match membership(window_id, ALL_SPACES_MASK) {
+            Some(false) => Some(false),
+            Some(true) => membership(window_id, CURRENT_SPACE_MASK).map(|current| !current),
+            None => None,
+        };
+        if let Some(on_other_space) = placement {
+            placements.insert(window_number, on_other_space);
+        }
+    }
+    placements
+}
+
+fn read_before_deadline<T: Send + 'static>(
     in_flight: &'static AtomicBool,
     deadline: Instant,
-    read: impl FnOnce() -> Option<bool> + Send + 'static,
-) -> Option<bool> {
+    read: impl FnOnce() -> Option<T> + Send + 'static,
+) -> Option<T> {
     if Instant::now() >= deadline || in_flight.swap(true, Ordering::AcqRel) {
         return None;
     }
@@ -64,12 +115,13 @@ fn read_before_deadline(
 fn copy_space_membership(
     (main_connection, copy_spaces): (MainConnection, CopySpacesForWindows),
     window_id: u32,
+    mask: i32,
 ) -> Option<bool> {
     let window_id = CFNumber::from(i32::from_ne_bytes(window_id.to_ne_bytes()));
     let requested = CFArray::from_CFTypes(&[window_id]);
     let spaces = unsafe {
         let connection = main_connection();
-        copy_spaces(connection, ALL_SPACES_MASK, requested.as_concrete_TypeRef())
+        copy_spaces(connection, mask, requested.as_concrete_TypeRef())
     };
     if spaces.is_null() {
         return None;

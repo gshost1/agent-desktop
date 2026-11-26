@@ -37,6 +37,7 @@ fn window(id: &str, title: &str, sheet: bool) -> ListedWindow {
                 accessible: true,
                 minimized: None,
                 visible: Some(true),
+                on_other_space: None,
             },
         },
         active: false,

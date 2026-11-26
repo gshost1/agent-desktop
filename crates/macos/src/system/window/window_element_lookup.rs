@@ -53,11 +53,11 @@ pub(crate) fn ax_window_element_for_number(
         }
         if single_match.is_some() {
             return Err(AdapterError::ambiguous_target(format!(
-                "Multiple AX windows matched the verified CoreGraphics title '{title}'"
+                "Multiple accessibility windows of window w-{window_number} share its title"
             ))
             .with_details(serde_json::json!({
                 "kind": "verified_window_title_ambiguous",
-                "title": title,
+                "window_id": format!("w-{window_number}"),
             })));
         }
         single_match = Some(window);
