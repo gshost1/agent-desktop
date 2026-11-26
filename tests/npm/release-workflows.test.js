@@ -23,13 +23,25 @@ function jobBlock(workflow, jobName) {
 
 function matrixRows(jobText) {
   const rows = [];
+  const seen = new Set();
+  const addRow = (row) => {
+    if (!row.target) return;
+    const key = `${row.target}|${row.runner ?? ''}|${row.container ?? ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push(row);
+  };
   for (const line of jobText.split('\n')) {
     const target = line.match(/^\s*-\s+target:\s*(\S+)/);
-    if (target) rows.push({ target: target[1] });
+    if (target) addRow({ target: target[1] });
     const runner = line.match(/^\s+runner:\s*(\S+)/);
     if (runner && rows.length > 0) rows[rows.length - 1].runner = runner[1];
     const container = line.match(/^\s+container:\s*(\S+)/);
     if (container && rows.length > 0) rows[rows.length - 1].container = container[1];
+  }
+  // A matrix.include that is a fromJSON() expression carries its rows as JSON arrays.
+  for (const array of jobText.match(/'\[[\s\S]*?\]'/g) ?? []) {
+    for (const item of JSON.parse(array.slice(1, -1))) addRow(item);
   }
   return rows;
 }
