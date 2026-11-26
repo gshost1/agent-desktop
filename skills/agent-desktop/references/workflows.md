@@ -71,7 +71,7 @@ agent-desktop snapshot --app "TextEdit" -i
 
 A save dialog's name field takes a file name only, never a path. Choose the folder with the dialog's own controls, read back the folder the dialog shows, then save. A path in the name field does not choose a folder, and `set-value` still reports `delivered_verified`, because the field holds the text you wrote. On macOS the document is saved in the dialog's current folder, under a name in which each `/` became `:`.
 
-Snapshot the surface (`sheet`, `alert`, `popover`), not the window, while an overlay is open. Never use `--skeleton` on a surface. After the dialog closes, snapshot the window again for fresh refs. When an action leaves `data.surfaces` non-empty, answer that overlay next.
+Snapshot the surface (`sheet`, `alert`, `popover`), not the window, while an overlay is open. Never use `--skeleton` on a surface. After the dialog closes, snapshot the window again for fresh refs. When an action leaves `data.surfaces` non-empty, answer that overlay next. On macOS, a `click` inside a sheet or alert also reports `details.surface_after_press.effect`: `closed` (verified) or `still_showing` (delivered, the surface is still open: snapshot it again before you act).
 
 ## Right-click context menu
 
