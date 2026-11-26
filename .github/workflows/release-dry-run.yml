@@ -54,22 +54,12 @@ jobs:
       GLIBC_FLOOR: '2.35'
     strategy:
       fail-fast: false
+      # A pull request skips the hosted macOS targets: macOS is tested on the self-hosted
+      # ARM macOS queue, and hosted macOS runners are scarce. A manual dispatch builds them.
       matrix:
-        include:
-          - target: aarch64-apple-darwin
-            runner: macos-latest
-          - target: x86_64-apple-darwin
-            runner: macos-latest
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-24.04
-            container: ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
-          - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-24.04-arm
-            container: ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-          - target: aarch64-pc-windows-msvc
-            runner: windows-11-arm
+        include: ${{ fromJSON(github.event_name == 'pull_request'
+          && '[{"target":"x86_64-unknown-linux-gnu","runner":"ubuntu-24.04","container":"ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956"},{"target":"aarch64-unknown-linux-gnu","runner":"ubuntu-24.04-arm","container":"ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956"},{"target":"x86_64-pc-windows-msvc","runner":"windows-latest"},{"target":"aarch64-pc-windows-msvc","runner":"windows-11-arm"}]'
+          || '[{"target":"aarch64-apple-darwin","runner":"macos-latest"},{"target":"x86_64-apple-darwin","runner":"macos-latest"},{"target":"x86_64-unknown-linux-gnu","runner":"ubuntu-24.04","container":"ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956"},{"target":"aarch64-unknown-linux-gnu","runner":"ubuntu-24.04-arm","container":"ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956"},{"target":"x86_64-pc-windows-msvc","runner":"windows-latest"},{"target":"aarch64-pc-windows-msvc","runner":"windows-11-arm"}]') }}
     steps:
       - name: Install container build tools
         if: runner.os == 'Linux'
