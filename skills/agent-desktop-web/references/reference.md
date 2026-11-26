@@ -100,6 +100,8 @@ A batch has `ok: true` even when an entry failed. When `data.failed_entries` and
 | `ACTION_FAILED`, `cdp_value_rejected` | The input refused the value, such as `2026-02-30`, and kept its old one | Pass a value that exists |
 | `ACTION_FAILED`, `cdp_value_adjusted` | The input or the page changed the value after it was set; `details.observed` holds it | Read it with `get @ref --property value` before you set it again |
 | `ACTION_NOT_SUPPORTED`, message `role incrementor is not editable` | The ref is one part of a date or time input, or a stepper | `set-value` on the field that contains it |
-| `PERM_DENIED`, `cdp_approval_required` | Chrome asked its user to allow the connection | Ask the user; do not retry in a loop |
+| `PERM_DENIED`, `cdp_approval_pending` | The browser shows an "Allow remote debugging?" prompt and is waiting for its user; `disposition.retry` is `unsafe` because every new connection stacks another prompt | Do not retry. `agent-desktop list-surfaces --app <browser>`, then `agent-desktop snapshot --app <browser> --surface sheet -i` (macOS; elsewhere the dialog window). Click Allow only when the user asked to use their own browser, Cancel otherwise, then retry once |
+| `PERM_DENIED`, `cdp_approval_required` | A read-only command would have made the browser show its approval prompt, so it did not connect | `snapshot --surface web` of the browser asks once; or `launch <browser> --cdp` |
+| `PERM_DENIED`, `cdp_connection_rejected` | The prompt was declined, or the browser refused the connection | Ask the user before you connect again |
 
 Retry an action only when `error.disposition.retry` is `safe`. Otherwise read the page again and decide from what it shows.
