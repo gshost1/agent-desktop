@@ -26,3 +26,4 @@ pub(crate) mod window_sources;
 pub(crate) mod window_space;
 pub(crate) mod window_stack_occluder;
 pub(crate) mod window_subrole;
+pub(crate) mod window_surface_watch;

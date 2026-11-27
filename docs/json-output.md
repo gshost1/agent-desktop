@@ -399,6 +399,28 @@ says whether the surface names such a button. Read the surface again and use
 its controls by ref instead of repeating the key. Presses with modifiers, other
 keys, and presses with no sheet or dialog in the focused window are unchanged.
 
+On macOS, a `click` on an element inside a sheet or alert is judged by whether
+that surface closed. The surface is the nearest sheet above the element, or its
+window when that window's subrole is a sheet, dialog, system dialog or alert;
+the element's own window must be reached without passing a popover or menu.
+When the press alone left the result `delivered_unverified`, the surface's own
+window-server window is read for up to 750 ms, and it counts as closed only
+when it is off screen on two consecutive reads. That window belongs to the one
+sheet that held the button, so another sheet with the same title, stacked on
+the same window, never answers for it. A closed surface makes the result
+`delivered_verified`, marks the delivering step `verified: true` and adds
+`details.surface_after_press: { "surface": "sheet" | "alert", "effect":
+"closed", "signal": "surface_window_closed" }`. A surface still on screen
+leaves the result `delivered_unverified` with `effect: "still_showing"`: the
+press was delivered, and either the button does not close the surface or the
+app ignored it, so read the surface again with `snapshot --surface sheet` (or
+`alert`) before pressing again. When the surface has no window of its own that
+can be told apart from the window it hangs from, when that window was not on
+screen before the press (a sheet on another Space), or when the window list
+cannot be read, the result is `delivered_unverified` with `effect: "unobservable"` and no
+wait. A press already verified another way, a click in a standard window, and
+a native menu click are unchanged and pay no settle.
+
 The two reports meet only through `keyboard_target`. While a proven hosted
 view owns the keys (`route: "hosted_view"`), the sheet and dialog check does not
 run: the key goes to the hosted view's process, no `AXConfirm` or `AXCancel` is

@@ -5,6 +5,7 @@ use agent_desktop_core::{
 
 mod imp {
     use super::*;
+    use crate::actions::activation::activation_surface::PressedSurface;
     use crate::actions::{
         chain::chain_defs,
         chain::chain_delivery::DeliveryOutcome,
@@ -41,6 +42,9 @@ mod imp {
                             crate::tree::locator_deadline::from_operation(deadline)?,
                         ));
                 let definition = chain_defs::click_chain(native_menu);
+                let surface = (!native_menu)
+                    .then(|| PressedSurface::capture(el, deadline))
+                    .flatten();
                 steps.extend(
                     if !native_menu
                         && role
@@ -57,6 +61,10 @@ mod imp {
                         execute_chain(el, definition, &budget, request.policy)?
                     },
                 );
+                if let Some(surface) = surface {
+                    let result = ActionResult::from_execution(action, steps);
+                    return Ok(surface.judge(result, deadline));
+                }
             }
 
             Action::DoubleClick => {
