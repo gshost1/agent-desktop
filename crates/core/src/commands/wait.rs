@@ -144,7 +144,7 @@ fn wait_for_window(
                 }
                 last_observed = Some(wait_timeout::window_observation(&windows));
             }
-            Err(err) if wait_timeout::is_deadline_expired(&err) => {
+            Err(err) if wait_timeout::expired_during_poll(&err, deadline) => {
                 return wait_timeout::window(
                     &title,
                     filter.app.as_deref(),
@@ -248,7 +248,7 @@ fn wait_for_text(
                     return Ok(body);
                 }
             }
-            Err(AppError::Adapter(err)) if wait_timeout::is_deadline_expired(&err) => {
+            Err(AppError::Adapter(err)) if wait_timeout::expired_during_poll(&err, deadline) => {
                 return wait_timeout::text(&text, timeout_ms, expected_count, last_error);
             }
             Err(err) if is_retryable_wait_app_error(&err) => {

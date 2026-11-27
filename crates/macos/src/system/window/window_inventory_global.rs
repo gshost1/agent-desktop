@@ -59,16 +59,12 @@ fn capture_global_once(
         },
         |pid| crate::system::window::window_ax_state::read_frontmost_until(pid, deadline),
     )?;
-    crate::system::window::window_ax_state::label_accessibility(&mut windows, |pid, wanted| {
-        let probe_deadline = Instant::now()
-            .checked_add(std::time::Duration::from_millis(50))
-            .map_or(deadline, |probe| probe.min(deadline));
-        crate::system::window::window_ax_state::accessible_window_titles_until(
-            pid,
-            wanted,
-            probe_deadline,
-        )
-    });
+    label::label_until(
+        &mut windows,
+        deadline,
+        crate::system::window::window_ax_state::accessible_window_titles_until,
+        Instant::now,
+    );
     Ok(windows)
 }
 
@@ -380,6 +376,9 @@ fn retryable_global_error(error: &AdapterError) -> bool {
 #[path = "window_inventory_global_timeout.rs"]
 mod timeout;
 use timeout::global_timeout;
+
+#[path = "window_inventory_global_label.rs"]
+mod label;
 
 #[cfg(test)]
 #[path = "window_inventory_global_timeout_tests.rs"]
