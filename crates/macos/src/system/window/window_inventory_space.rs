@@ -44,8 +44,6 @@ pub(crate) fn mark_other_space_windows(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     };
-    // The read can wait up to its budget, so it runs without the lock: a copy
-    // goes in and the updated memory is merged back.
     let mut remembered = lock().clone().unwrap_or_default();
     let before = remembered.clone();
     mark_with_memory(windows, read_placement, &mut remembered);

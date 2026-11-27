@@ -39,9 +39,6 @@ fn resolve_owned_surface<T>(
                 .and_then(|details| details["kind"].as_str())
             {
                 Some("window_without_accessibility_element") => fallback(),
-                // The fallback reads the windows on the Space on screen, so
-                // finding nothing there says nothing about a window on
-                // another Space: keep the error that names it.
                 Some("window_on_other_space") => match fallback()? {
                     Some(surface) => Ok(Some(surface)),
                     None => Err(error),
