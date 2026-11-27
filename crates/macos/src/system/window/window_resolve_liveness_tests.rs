@@ -11,6 +11,7 @@ struct FakeSources {
     published: bool,
     complete: bool,
     on_any_space: Option<bool>,
+    on_other_space: Option<bool>,
     element: bool,
     ax_reads: Cell<usize>,
     space_deadline: Cell<Option<Instant>>,
@@ -36,6 +37,7 @@ impl FakeSources {
             published: false,
             complete: true,
             on_any_space: Some(false),
+            on_other_space: None,
             element: false,
             ax_reads: Cell::new(0),
             space_deadline: Cell::new(None),
@@ -66,6 +68,10 @@ impl WindowSources for FakeSources {
     fn is_on_any_space(&self, _: i64, deadline: Instant) -> Option<bool> {
         self.space_deadline.set(Some(deadline));
         self.on_any_space
+    }
+
+    fn is_on_other_space(&self, _: i64, _: Instant) -> Option<bool> {
+        self.on_other_space
     }
 
     fn element(
@@ -164,6 +170,31 @@ fn strict_resolve_reports_a_window_gone_from_core_graphics_closed() {
 fn element_path_keeps_not_accessible_for_a_window_on_another_space() {
     let mut sources = FakeSources::new(WindowPresence::Offscreen);
     sources.on_any_space = Some(true);
+    let error = element_error(&sources);
+    assert!(is_not_accessible(&error), "{error:?}");
+}
+
+#[test]
+fn element_path_names_another_space_and_focus_window_for_a_window_placed_there() {
+    let mut sources = FakeSources::new(WindowPresence::Offscreen);
+    sources.on_any_space = Some(true);
+    sources.on_other_space = Some(true);
+    let error = element_error(&sources);
+    assert_eq!(error.code, ErrorCode::ActionNotSupported);
+    assert_eq!(
+        error.details.as_ref().map(|details| &details["kind"]),
+        Some(&serde_json::json!("window_on_other_space"))
+    );
+    assert!(error.message.contains("another Space"), "{error:?}");
+    let suggestion = error.suggestion.as_deref().unwrap_or_default();
+    assert!(suggestion.contains(&format!("focus-window --window-id w-{NUMBER}")));
+    assert!(!suggestion.contains("wait"), "{suggestion}");
+}
+
+#[test]
+fn element_path_never_names_another_space_for_an_onscreen_window() {
+    let mut sources = FakeSources::new(WindowPresence::Onscreen);
+    sources.on_other_space = Some(true);
     let error = element_error(&sources);
     assert!(is_not_accessible(&error), "{error:?}");
 }

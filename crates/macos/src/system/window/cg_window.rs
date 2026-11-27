@@ -39,6 +39,7 @@ impl WindowRecord {
                 accessible,
                 minimized,
                 visible: Some(self.presence.is_onscreen()),
+                on_other_space: None,
             },
         })
     }

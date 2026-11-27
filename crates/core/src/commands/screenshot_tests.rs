@@ -11,6 +11,8 @@ struct ScreenshotAdapter {
     windows: Vec<WindowInfo>,
     target: Mutex<Option<ScreenshotTarget>>,
     stopped: bool,
+    app_inventory: bool,
+    window_filters: Mutex<Vec<Option<String>>>,
 }
 
 impl ScreenshotAdapter {
@@ -22,6 +24,8 @@ impl ScreenshotAdapter {
             windows: vec![window("w-41", 700), focused],
             target: Mutex::new(None),
             stopped: false,
+            app_inventory: false,
+            window_filters: Mutex::new(Vec::new()),
         }
     }
 
@@ -43,10 +47,18 @@ impl ObservationOps for ScreenshotAdapter {
 
     fn list_windows(
         &self,
-        _filter: &WindowFilter,
+        filter: &WindowFilter,
         _deadline: crate::Deadline,
     ) -> Result<Vec<WindowInfo>, AdapterError> {
+        self.window_filters
+            .lock()
+            .expect("filters lock")
+            .push(filter.app.clone());
         Ok(self.windows.clone())
+    }
+
+    fn screenshot_app_uses_app_inventory(&self) -> bool {
+        self.app_inventory
     }
 }
 
@@ -196,6 +208,39 @@ fn app_target_resolves_one_exact_focused_window() {
 }
 
 #[test]
+fn app_target_reads_the_process_wide_inventory_by_default() {
+    let adapter = ScreenshotAdapter::new();
+    let mut request = args();
+    request.app = Some("Example".into());
+
+    screenshot::execute(request, &adapter).expect("screenshot");
+
+    let filters = adapter.window_filters.lock().expect("filters lock").clone();
+    assert!(!filters.is_empty());
+    assert!(filters.iter().all(Option::is_none), "filters: {filters:?}");
+}
+
+#[test]
+fn app_target_reads_the_app_inventory_when_the_adapter_asks() {
+    let mut adapter = ScreenshotAdapter::new();
+    adapter.app_inventory = true;
+    let mut request = args();
+    request.app = Some("Example".into());
+
+    screenshot::execute(request, &adapter).expect("screenshot");
+
+    let filters = adapter.window_filters.lock().expect("filters lock").clone();
+    assert!(
+        filters.iter().any(|app| app.as_deref() == Some("Example")),
+        "filters: {filters:?}"
+    );
+    assert!(matches!(
+        adapter.take_target(),
+        Some(ScreenshotTarget::ExactWindow(window)) if window.id == "w-42"
+    ));
+}
+
+#[test]
 fn missing_window_returns_an_error_without_capturing() {
     let adapter = ScreenshotAdapter::new();
     let mut request = args();
@@ -256,6 +301,8 @@ fn incomplete_process_identity_carries_a_suggestion_and_a_safe_disposition() {
         windows: vec![incomplete],
         target: Mutex::new(None),
         stopped: false,
+        app_inventory: false,
+        window_filters: Mutex::new(Vec::new()),
     };
     let mut request = args();
     request.window_id = Some("w-42".into());

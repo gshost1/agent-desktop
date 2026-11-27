@@ -37,6 +37,7 @@ fn window(owner: usize, id: &str, visible: bool) -> ListedWindow {
                 accessible: true,
                 minimized: None,
                 visible: Some(visible),
+                on_other_space: None,
             },
         },
         active: false,

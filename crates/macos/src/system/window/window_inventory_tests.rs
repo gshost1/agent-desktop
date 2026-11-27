@@ -237,6 +237,7 @@ fn window_with_state(id: &str, visible: Option<bool>, minimized: Option<bool>) -
             accessible: true,
             minimized,
             visible,
+            on_other_space: None,
         },
     }
 }
@@ -263,4 +264,17 @@ fn narrowing_leaves_nothing_when_an_application_has_only_panels() {
     narrow_to_real_windows(&mut windows);
 
     assert!(windows.is_empty());
+}
+
+#[test]
+fn narrowing_keeps_a_window_on_another_space() {
+    let mut away = window_with_state("other-space", Some(false), None);
+    away.state.accessible = false;
+    away.state.on_other_space = Some(true);
+    let mut windows = vec![away, window_with_state("ordered-out", Some(false), None)];
+
+    narrow_to_real_windows(&mut windows);
+
+    let kept = windows.iter().map(|w| w.id.as_str()).collect::<Vec<_>>();
+    assert_eq!(kept, vec!["other-space"]);
 }

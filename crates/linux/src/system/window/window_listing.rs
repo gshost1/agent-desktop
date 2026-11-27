@@ -46,6 +46,7 @@ fn listed(
                 accessible: true,
                 minimized: state.minimized,
                 visible: state.visible,
+                on_other_space: None,
             },
         },
         active: state.active == Some(true),

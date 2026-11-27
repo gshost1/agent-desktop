@@ -179,6 +179,7 @@ pub(crate) fn window_info(
             accessible: true,
             minimized: Some(false),
             visible: Some(true),
+            on_other_space: None,
         },
     })
 }

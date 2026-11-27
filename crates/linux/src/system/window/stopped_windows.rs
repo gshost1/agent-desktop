@@ -55,6 +55,7 @@ pub(crate) fn of_stopped_apps(
                         accessible: false,
                         minimized: Some(client.hidden),
                         visible: Some(!client.hidden),
+                        on_other_space: None,
                     },
                 },
                 active: *active == Some(client.id),

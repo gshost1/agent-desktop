@@ -14,6 +14,7 @@ fn window(id: &str, app: &str, pid: u32, instance: &str) -> WindowInfo {
             accessible: true,
             minimized: None,
             visible: None,
+            on_other_space: None,
         },
     }
 }

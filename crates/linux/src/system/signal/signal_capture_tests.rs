@@ -58,6 +58,7 @@ fn listed(app: &RegistryApp, scripted: &Scripted) -> ListedWindow {
                 accessible: true,
                 minimized: None,
                 visible: Some(true),
+                on_other_space: None,
             },
         },
         active: scripted.active,

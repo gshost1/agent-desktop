@@ -71,7 +71,39 @@ fn shared_window_selector_emits_one_stable_ambiguity_shape() {
     assert!(details["candidates"][0].get("focused").is_none());
     assert!(details["candidates"][0].get("pid").is_none());
     assert!(details["candidates"][0].get("process_instance").is_none());
+    assert!(details["candidates"][0].get("title").is_none());
+    assert!(details["candidates"][0].get("on_other_space").is_none());
+    assert!(!error.message.contains("Example"));
     assert!(error.suggestion.as_deref().unwrap().contains("--window-id"));
+}
+
+#[test]
+fn window_ambiguity_names_candidates_on_another_space_without_their_titles() {
+    let mut here = window(Some("generation-a"));
+    here.state.is_focused = false;
+    here.state.visible = Some(false);
+    here.title = "Private tab one".into();
+    let mut away = here.clone();
+    away.id = "w-2".into();
+    away.title = "Private tab two".into();
+    away.state.on_other_space = Some(true);
+    let error = select_window(
+        vec![here, away],
+        crate::AdapterError::new(ErrorCode::WindowNotFound, "none"),
+        "multiple",
+    )
+    .unwrap_err();
+
+    let AppError::Adapter(error) = error else {
+        panic!("expected adapter error");
+    };
+    let details = error.details.as_ref().unwrap();
+    let rendered = details.to_string();
+    assert!(!rendered.contains("Private tab"), "{rendered}");
+    assert!(details["candidates"][0].get("on_other_space").is_none());
+    assert_eq!(details["candidates"][1]["id"], "w-2");
+    assert_eq!(details["candidates"][1]["on_other_space"], true);
+    assert_eq!(details["candidates"][1]["visible"], false);
 }
 
 #[test]
@@ -154,4 +186,63 @@ fn an_empty_window_selection_is_not_delivered_and_safe_to_retry() {
     assert_eq!(error.code, ErrorCode::WindowNotFound);
     assert_eq!(error.disposition, crate::DeliverySemantics::not_delivered());
     assert_eq!(error.disposition.retry(), crate::RetryDisposition::Safe);
+}
+
+struct ScopedInventory {
+    global: Vec<WindowInfo>,
+    scoped: Vec<WindowInfo>,
+}
+
+impl ObservationOps for ScopedInventory {
+    fn list_windows(
+        &self,
+        filter: &WindowFilter,
+        _deadline: crate::Deadline,
+    ) -> Result<Vec<WindowInfo>, crate::AdapterError> {
+        Ok(match filter.app.as_deref() {
+            Some("Example") => self.scoped.clone(),
+            Some(_) => Vec::new(),
+            None => self.global.clone(),
+        })
+    }
+}
+
+impl ActionOps for ScopedInventory {}
+impl InputOps for ScopedInventory {}
+impl SystemOps for ScopedInventory {}
+
+#[test]
+fn an_app_window_is_chosen_from_the_app_scoped_inventory() {
+    let mut away = window(Some("generation-a"));
+    away.id = "w-7".into();
+    away.state.is_focused = false;
+    away.state.visible = Some(false);
+    away.state.accessible = false;
+    away.state.on_other_space = Some(true);
+    let helpers = (10..26)
+        .map(|number| {
+            let mut helper = away.clone();
+            helper.id = format!("w-{number}");
+            helper.state.on_other_space = None;
+            helper
+        })
+        .collect::<Vec<_>>();
+    let mut global = helpers;
+    global.push(away.clone());
+    let adapter = ScopedInventory {
+        global,
+        scoped: vec![away],
+    };
+    let app = crate::AppInfo {
+        name: "Example".into(),
+        pid: crate::ProcessId::new(42),
+        bundle_id: None,
+        process_instance: Some("generation-a".into()),
+        presentation: None,
+    };
+
+    let chosen = find_window_for_app(&app, &adapter, crate::Deadline::standard().unwrap()).unwrap();
+
+    assert_eq!(chosen.id, "w-7");
+    assert_eq!(chosen.state.on_other_space, Some(true));
 }

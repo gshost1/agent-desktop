@@ -196,7 +196,11 @@ impl AdapterError {
             ErrorCode::WindowNotFound,
             format!("Application '{app}' is running but has no matching window"),
         )
-        .with_suggestion("Wait for the app to present a window, or run 'list-windows --app'.")
+        .with_suggestion(format!(
+            "Run 'list-windows --app \"{app}\"' to see its windows. A window marked \
+             on_other_space needs 'focus-window --window-id <id>' first; with none listed, \
+             wait for the app to present a window."
+        ))
     }
 
     pub fn timeout(message: impl Into<String>) -> Self {

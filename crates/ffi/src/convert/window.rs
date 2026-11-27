@@ -121,6 +121,7 @@ mod tests {
                 accessible: true,
                 minimized: None,
                 visible: None,
+                on_other_space: None,
             },
         };
         let c = window_info_to_c(&w);

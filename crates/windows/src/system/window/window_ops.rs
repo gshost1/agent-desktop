@@ -296,6 +296,7 @@ pub(crate) fn window_state(is_focused: bool, minimized: bool, visible: bool) -> 
         accessible: true,
         minimized: Some(minimized),
         visible: Some(visible),
+        on_other_space: None,
     }
 }
 

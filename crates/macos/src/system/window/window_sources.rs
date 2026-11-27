@@ -21,6 +21,8 @@ pub(crate) trait WindowSources {
 
     fn is_on_any_space(&self, window_number: i64, deadline: Instant) -> Option<bool>;
 
+    fn is_on_other_space(&self, window_number: i64, deadline: Instant) -> Option<bool>;
+
     fn element(
         &self,
         pid: i32,
@@ -47,6 +49,12 @@ impl WindowSources for LiveWindowSources {
 
     fn is_on_any_space(&self, window_number: i64, deadline: Instant) -> Option<bool> {
         crate::system::window::window_space::is_on_any_space(window_number, deadline)
+    }
+
+    fn is_on_other_space(&self, window_number: i64, deadline: Instant) -> Option<bool> {
+        crate::system::window::window_space::other_space_placement(vec![window_number], deadline)
+            .get(&window_number)
+            .copied()
     }
 
     fn element(

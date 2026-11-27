@@ -93,6 +93,15 @@ pub trait ObservationOps: Send + Sync {
         Err(AdapterError::not_supported("list_windows"))
     }
 
+    /// Whether `screenshot --app` should choose among the windows the
+    /// app-scoped inventory (`list-windows --app`) lists instead of every
+    /// window the process owns. macOS answers yes: its app-scoped inventory
+    /// adds windows on other Spaces and leaves out windows the app ordered
+    /// out. Other adapters keep the process-wide lookup.
+    fn screenshot_app_uses_app_inventory(&self) -> bool {
+        false
+    }
+
     /// Whether `window` is auxiliary rather than a document window or a
     /// dialog, such as a floating tool panel or a text field's suggestion
     /// list. When `--app` matches several windows and no one of them is

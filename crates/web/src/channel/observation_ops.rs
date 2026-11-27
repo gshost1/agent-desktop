@@ -117,6 +117,10 @@ impl<P: PlatformAdapter> ObservationOps for WebChannelAdapter<P> {
         self.inner.list_windows(filter, deadline)
     }
 
+    fn screenshot_app_uses_app_inventory(&self) -> bool {
+        self.inner.screenshot_app_uses_app_inventory()
+    }
+
     fn is_auxiliary_window(&self, window: &WindowInfo, deadline: Deadline) -> bool {
         self.inner.is_auxiliary_window(window, deadline)
     }

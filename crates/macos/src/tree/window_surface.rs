@@ -32,15 +32,19 @@ fn resolve_owned_surface<T>(
 ) -> Result<Option<T>, AdapterError> {
     match owner {
         Ok(owner) => in_window(owner),
-        Err(error)
-            if error.code == ErrorCode::ActionNotSupported
-                && error
-                    .details
-                    .as_ref()
-                    .and_then(|details| details["kind"].as_str())
-                    == Some("window_without_accessibility_element") =>
-        {
-            fallback()
+        Err(error) if error.code == ErrorCode::ActionNotSupported => {
+            match error
+                .details
+                .as_ref()
+                .and_then(|details| details["kind"].as_str())
+            {
+                Some("window_without_accessibility_element") => fallback(),
+                Some("window_on_other_space") => match fallback()? {
+                    Some(surface) => Ok(Some(surface)),
+                    None => Err(error),
+                },
+                _ => Err(error),
+            }
         }
         Err(error) => Err(error),
     }
@@ -237,22 +241,38 @@ mod tests {
 
     #[test]
     fn missing_ax_window_uses_number_checked_fallback() {
-        let error = AdapterError::new(ErrorCode::ActionNotSupported, "no AX window")
-            .with_details(serde_json::json!({"kind": "window_without_accessibility_element"}));
-        let result = resolve_owned_surface::<i64>(
-            Err(error),
-            |_| panic!("no owner"),
-            || {
-                find_numbered_surface(
-                    vec![41, 42],
-                    Some(42),
-                    |_| Ok(vec![]),
-                    |number| Ok(Some(*number)),
-                )
-            },
-        )
-        .unwrap();
-        assert_eq!(result, Some(42));
+        for kind in [
+            "window_without_accessibility_element",
+            "window_on_other_space",
+        ] {
+            let error = AdapterError::new(ErrorCode::ActionNotSupported, "no AX window")
+                .with_details(serde_json::json!({"kind": kind}));
+            let result = resolve_owned_surface::<i64>(
+                Err(error),
+                |_| panic!("no owner"),
+                || {
+                    find_numbered_surface(
+                        vec![41, 42],
+                        Some(42),
+                        |_| Ok(vec![]),
+                        |number| Ok(Some(*number)),
+                    )
+                },
+            )
+            .unwrap();
+            assert_eq!(result, Some(42), "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn a_window_on_another_space_keeps_its_error_when_the_fallback_finds_nothing() {
+        let error = AdapterError::new(ErrorCode::ActionNotSupported, "away").with_details(
+            serde_json::json!({"kind": "window_on_other_space", "window_id": "w-42"}),
+        );
+        let actual =
+            resolve_owned_surface::<i64>(Err(error.clone()), |_| panic!("no owner"), || Ok(None))
+                .unwrap_err();
+        assert_eq!(actual.details, error.details);
     }
 
     #[test]
