@@ -576,7 +576,7 @@ A web `date`, `time`, `datetime-local`, `month`, `week` or `color` input is one 
 
 A URL the browser saves as a file instead of showing returns `"opened": "download"` with the requested URL and an empty `title`; `wait --download` returns the file.
 
-Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
+Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_pending"` when the approval does not arrive in time. Its disposition is `delivery_uncertain` with `retry: "unsafe"`: the browser is still showing the prompt, and each new connection adds another. Read and answer the prompt through the native surfaces (`list-surfaces`, `snapshot --surface sheet`) before you retry. A declined prompt returns `details.kind: "cdp_connection_rejected"`. A command that only reads and would have made the browser show the prompt returns `details.kind: "cdp_approval_required"` without connecting.
 
 ### Downloads
 
@@ -608,6 +608,10 @@ Errors carry `details.kind`:
 | `TIMEOUT` | `wait_timeout`, with `cause` `cdp_download_not_started` or `cdp_download_in_progress` | The timeout passed first. |
 
 Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
+
+## Surface inventory
+
+`list-surfaces` returns `data.pid` and `data.surfaces`, one entry per surface the app presents now: `id`, `type`, and `title`, `item_count` and `unclassified` when known. An entry's identity is its `id`, never its title: two sheets, alerts or popovers with the same title are two entries with two ids. On macOS a sheet, popover or alert has the id of its own window, `w-<n>`, or `w-<n>/<type>/<index>` under its parent window when it has no window of its own; the same sheet read twice, as a window of the app and as a child of its parent, is one entry. A macOS window presents one sheet at a time and queues any further sheet until the shown one closes, and a queued sheet is not in the accessibility tree, so the number of `sheet` entries is the number of sheets on screen, not the number still waiting. When a sheet closes and the next queued one appears, the next one has a new `id`.
 
 ## Find result shape
 
