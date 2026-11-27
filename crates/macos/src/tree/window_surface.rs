@@ -32,17 +32,22 @@ fn resolve_owned_surface<T>(
 ) -> Result<Option<T>, AdapterError> {
     match owner {
         Ok(owner) => in_window(owner),
-        Err(error)
-            if error.code == ErrorCode::ActionNotSupported
-                && matches!(
-                    error
-                        .details
-                        .as_ref()
-                        .and_then(|details| details["kind"].as_str()),
-                    Some("window_without_accessibility_element" | "window_on_other_space")
-                ) =>
-        {
-            fallback()
+        Err(error) if error.code == ErrorCode::ActionNotSupported => {
+            match error
+                .details
+                .as_ref()
+                .and_then(|details| details["kind"].as_str())
+            {
+                Some("window_without_accessibility_element") => fallback(),
+                // The fallback reads the windows on the Space on screen, so
+                // finding nothing there says nothing about a window on
+                // another Space: keep the error that names it.
+                Some("window_on_other_space") => match fallback()? {
+                    Some(surface) => Ok(Some(surface)),
+                    None => Err(error),
+                },
+                _ => Err(error),
+            }
         }
         Err(error) => Err(error),
     }
@@ -260,6 +265,17 @@ mod tests {
             .unwrap();
             assert_eq!(result, Some(42), "kind {kind}");
         }
+    }
+
+    #[test]
+    fn a_window_on_another_space_keeps_its_error_when_the_fallback_finds_nothing() {
+        let error = AdapterError::new(ErrorCode::ActionNotSupported, "away").with_details(
+            serde_json::json!({"kind": "window_on_other_space", "window_id": "w-42"}),
+        );
+        let actual =
+            resolve_owned_surface::<i64>(Err(error.clone()), |_| panic!("no owner"), || Ok(None))
+                .unwrap_err();
+        assert_eq!(actual.details, error.details);
     }
 
     #[test]

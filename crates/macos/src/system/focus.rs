@@ -212,6 +212,7 @@ fn bring_space_on_screen(
     };
     let element = crate::system::focus_other_space::element_after_activation(
         || crate::system::window::window_resolve::window_element_for_info(window, deadline),
+        activated,
         deadline,
     )
     .map_err(after_activation)?;

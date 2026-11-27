@@ -39,14 +39,24 @@ pub(crate) fn mark_other_space_windows(
     windows: &mut [WindowInfo],
     read_placement: impl FnOnce(Vec<i64>) -> FxHashMap<i64, bool>,
 ) {
-    let mut remembered = REMEMBERED
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    mark_with_memory(
-        windows,
-        read_placement,
-        remembered.get_or_insert_with(FxHashMap::default),
-    );
+    let lock = || {
+        REMEMBERED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    // The read can wait up to its budget, so it runs without the lock: a copy
+    // goes in and the updated memory is merged back.
+    let mut remembered = lock().clone().unwrap_or_default();
+    let before = remembered.clone();
+    mark_with_memory(windows, read_placement, &mut remembered);
+    if remembered != before {
+        let mut shared = lock();
+        let shared = shared.get_or_insert_with(FxHashMap::default);
+        if remembered.len() < before.len() {
+            shared.clear();
+        }
+        shared.extend(remembered);
+    }
 }
 
 fn mark_with_memory(
@@ -58,12 +68,11 @@ fn mark_with_memory(
         .iter()
         .filter(|window| is_space_candidate(window))
         .filter_map(window_number)
-        .take(MAX_SPACE_READS)
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         return;
     }
-    let mut placements = read_placement(candidates.clone());
+    let mut placements = read_placement(candidates.iter().copied().take(MAX_SPACE_READS).collect());
     if remembered.len() + placements.len() > MAX_REMEMBERED {
         remembered.clear();
     }

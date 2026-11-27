@@ -141,3 +141,21 @@ fn a_remembered_placement_marks_only_a_window_that_is_still_a_candidate() {
     );
     assert_eq!(windows[0].state.on_other_space, None);
 }
+
+#[test]
+fn a_remembered_window_beyond_the_read_cap_stays_marked() {
+    let mut windows = (1..=40)
+        .map(|number| window(number, false, None, false))
+        .collect::<Vec<_>>();
+    let mut memory = FxHashMap::from_iter([(40, true)]);
+    mark_with_memory(
+        &mut windows,
+        |numbers| {
+            assert_eq!(numbers.len(), MAX_SPACE_READS);
+            assert!(!numbers.contains(&40));
+            FxHashMap::default()
+        },
+        &mut memory,
+    );
+    assert_eq!(windows[39].state.on_other_space, Some(true));
+}
