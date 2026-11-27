@@ -135,7 +135,7 @@ fn error_kind(error: &AdapterError) -> Option<&str> {
 fn stayed_on_other_space(error: &AdapterError, application_activated: bool) -> AdapterError {
     let window_id = window_id(error);
     AdapterError::new(
-        error.code,
+        error.code.clone(),
         format!("Window '{window_id}' stayed on another Space after its application was activated"),
     )
     .with_details(serde_json::json!({
