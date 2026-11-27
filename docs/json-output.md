@@ -399,6 +399,28 @@ says whether the surface names such a button. Read the surface again and use
 its controls by ref instead of repeating the key. Presses with modifiers, other
 keys, and presses with no sheet or dialog in the focused window are unchanged.
 
+On macOS, a `click` on an element inside a sheet or alert is judged by whether
+that surface closed. The surface is the nearest sheet above the element, or its
+window when that window's subrole is a sheet, dialog, system dialog or alert;
+the element's own window must be reached without passing a popover or menu.
+When the press alone left the result `delivered_unverified`, the surface's own
+window-server window is read for up to 750 ms, and it counts as closed only
+when it is off screen on two consecutive reads. That window belongs to the one
+sheet that held the button, so another sheet with the same title, stacked on
+the same window, never answers for it. A closed surface makes the result
+`delivered_verified`, marks the delivering step `verified: true` and adds
+`details.surface_after_press: { "surface": "sheet" | "alert", "effect":
+"closed", "signal": "surface_window_closed" }`. A surface still on screen
+leaves the result `delivered_unverified` with `effect: "still_showing"`: the
+press was delivered, and either the button does not close the surface or the
+app ignored it, so read the surface again with `snapshot --surface sheet` (or
+`alert`) before pressing again. When the surface has no window of its own that
+can be told apart from the window it hangs from, when that window was not on
+screen before the press (a sheet on another Space), or when the window list
+cannot be read, the result is `delivered_unverified` with `effect: "unobservable"` and no
+wait. A press already verified another way, a click in a standard window, and
+a native menu click are unchanged and pay no settle.
+
 The two reports meet only through `keyboard_target`. While a proven hosted
 view owns the keys (`route: "hosted_view"`), the sheet and dialog check does not
 run: the key goes to the hosted view's process, no `AXConfirm` or `AXCancel` is
@@ -554,7 +576,7 @@ A web `date`, `time`, `datetime-local`, `month`, `week` or `color` input is one 
 
 A URL the browser saves as a file instead of showing returns `"opened": "download"` with the requested URL and an empty `title`; `wait --download` returns the file.
 
-Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
+Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_pending"` when the approval does not arrive in time. Its disposition is `delivery_uncertain` with `retry: "unsafe"`: the browser is still showing the prompt, and each new connection adds another. Read and answer the prompt through the native surfaces (`list-surfaces`, `snapshot --surface sheet`) before you retry. A declined prompt returns `details.kind: "cdp_connection_rejected"`. A command that only reads and would have made the browser show the prompt returns `details.kind: "cdp_approval_required"` without connecting.
 
 ### Downloads
 
@@ -592,6 +614,10 @@ Each returned or failed download is consumed, so the next `wait --download` move
 `list-windows` entries carry `state.visible`, `state.minimized` and `state.on_other_space` only when the platform knows them. On macOS, `list-windows --app` lists a window that the window server places on a Space other than the one on screen, and that the app's accessibility windows leave out, with `visible: false`, `accessible: false` and `on_other_space: true`. A window the app ordered out belongs to no Space and stays unlisted. The Space read runs only for off-screen windows that are not minimized and not in the accessibility windows, at most 32 per inventory, within 100 ms; a window whose Space it cannot read is left out as before. `snapshot` and `find` on such a window fail `ACTION_NOT_SUPPORTED`, `details.kind: "window_on_other_space"`, `details.window_id`, `not_delivered`. `screenshot --window-id` captures it in place. `focus-window` activates its application so macOS switches Spaces, waits up to 1.5 s for the window to reach the accessibility windows, then raises it; when it stays away the error adds `details.application_activated: true`. `screenshot --app` chooses among the windows `list-windows --app` lists, not every window the process owns.
 
 An `AMBIGUOUS_TARGET` between windows lists up to 10 `details.candidates` as `{ id, is_focused, visible, on_other_space? }`. Titles are left out, because in a browser they are the user's open tabs; read them with `list-windows` when you need them. The macOS `verified_window_title_ambiguous` error names `details.window_id` instead of the title.
+
+## Surface inventory
+
+`list-surfaces` returns `data.pid` and `data.surfaces`, one entry per surface the app presents now: `id`, `type`, and `title`, `item_count` and `unclassified` when known. An entry's identity is its `id`, never its title: two sheets, alerts or popovers with the same title are two entries with two ids. On macOS a sheet, popover or alert has the id of its own window, `w-<n>`, or `w-<n>/<type>/<index>` under its parent window when it has no window of its own; the same sheet read twice, as a window of the app and as a child of its parent, is one entry. A macOS window presents one sheet at a time and queues any further sheet until the shown one closes, and a queued sheet is not in the accessibility tree, so the number of `sheet` entries is the number of sheets on screen, not the number still waiting. When a sheet closes and the next queued one appears, the next one has a new `id`.
 
 ## Find result shape
 

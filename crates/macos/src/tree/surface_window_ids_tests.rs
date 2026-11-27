@@ -91,3 +91,60 @@ fn a_window_without_a_number_or_surfaces_leaves_the_inventory_complete() {
 
     assert!(surfaces.is_empty());
 }
+
+fn titled(number: Option<i64>, kind: &'static str, title: &str) -> SurfaceRead {
+    SurfaceRead {
+        number,
+        kind,
+        title: Some(title.into()),
+    }
+}
+
+#[test]
+fn identically_titled_sheets_on_their_own_windows_each_get_an_entry() {
+    let prompt = "Allow remote debugging?";
+    let surfaces = surfaces_from_windows(vec![
+        window(
+            Some(30),
+            None,
+            vec![
+                titled(Some(31), "sheet", prompt),
+                titled(Some(32), "sheet", prompt),
+                titled(Some(33), "sheet", prompt),
+            ],
+        ),
+        window(
+            Some(33),
+            Some(titled(Some(33), "sheet", prompt)),
+            Vec::new(),
+        ),
+    ]);
+
+    assert_eq!(
+        ids(&surfaces),
+        [("w-31", "sheet"), ("w-32", "sheet"), ("w-33", "sheet")]
+    );
+    assert!(
+        surfaces
+            .iter()
+            .all(|surface| surface.title.as_deref() == Some(prompt))
+    );
+}
+
+#[test]
+fn identically_titled_sheets_without_their_own_windows_each_get_an_ordinal() {
+    let prompt = "Allow remote debugging?";
+    let surfaces = surfaces_from_windows(vec![window(
+        Some(30),
+        None,
+        vec![
+            titled(None, "sheet", prompt),
+            titled(Some(30), "sheet", prompt),
+        ],
+    )]);
+
+    assert_eq!(
+        ids(&surfaces),
+        [("w-30/sheet/0", "sheet"), ("w-30/sheet/1", "sheet")]
+    );
+}

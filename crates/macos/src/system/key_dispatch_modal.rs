@@ -10,12 +10,13 @@ use agent_desktop_core::{
 };
 use std::time::{Duration, Instant};
 
+use crate::system::window::window_surface_watch::{
+    SURFACE_WINDOW_CLOSED, distinct_window, settle_with, window_on_screen,
+};
 use crate::tree::AXElement;
 
 const SETTLE_LIMIT: Duration = Duration::from_millis(750);
-const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const DIALOG_SUBROLES: [&str; 2] = ["AXDialog", "AXSystemDialog"];
-const SURFACE_WINDOW_CLOSED: &str = "surface_window_closed";
 const TEXT_EDITED: &str = "text_edited";
 
 /// The sheet or dialog that holds the keyboard when a confirm or cancel key is
@@ -184,51 +185,6 @@ impl FocusedValue {
     fn changed(&self, deadline: Deadline) -> bool {
         crate::tree::copy_value_typed(&self.element, deadline) != self.value
     }
-}
-
-/// Polls `read` until the same signal is seen on two consecutive reads, or
-/// `limit` passes. A signal that one re-read does not confirm is not an
-/// effect.
-fn settle_with(
-    mut read: impl FnMut() -> Result<Option<&'static str>, AdapterError>,
-    limit: Duration,
-    deadline: Deadline,
-) -> Result<Option<&'static str>, AdapterError> {
-    let soft = Instant::now() + deadline.capped(limit).remaining();
-    let hard = soft + POLL_INTERVAL * 3;
-    let mut previous = None;
-    loop {
-        let signal = read()?;
-        if signal.is_some() && signal == previous {
-            return Ok(signal);
-        }
-        previous = signal;
-        let now = Instant::now();
-        if now >= hard || (now >= soft && previous.is_none()) {
-            return Ok(None);
-        }
-        let pause = deadline.remaining_slice(POLL_INTERVAL)?;
-        std::thread::sleep(pause.min(POLL_INTERVAL));
-    }
-}
-
-/// The surface's own window, only when it differs from the window it is
-/// attached to; a bridge that answers with the host's window would make the
-/// surface look open forever or closed with the host.
-fn distinct_window(own: Option<i64>, host: Option<i64>) -> Option<i64> {
-    own.filter(|own| host != Some(*own))
-}
-
-fn window_on_screen(window: i64) -> Result<bool, AdapterError> {
-    use crate::system::window::cg_window::{
-        WindowRecordScope, records_from_dictionaries, window_dictionaries,
-    };
-
-    Ok(
-        records_from_dictionaries(window_dictionaries()?, WindowRecordScope::Window(window))?
-            .iter()
-            .any(|record| record.presence.is_onscreen()),
-    )
 }
 
 type FoundSurface = (AXElement, &'static str, AXElement);
