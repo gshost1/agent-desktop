@@ -48,6 +48,13 @@ pub(crate) fn element_after_activation<T>(
             Ok(element) => return Ok(element),
             Err(error) if is_still_away(&error) => {
                 seen_on_other_space |= is_other_space_error(&error);
+                if Instant::now() >= limit {
+                    return Err(if seen_on_other_space {
+                        stayed_on_other_space(&error, application_activated)
+                    } else {
+                        with_activation(error, application_activated)
+                    });
+                }
                 last_away = Some(error);
             }
             Err(error) if error.code == ErrorCode::Timeout && deadline.is_expired() => {
@@ -59,14 +66,6 @@ pub(crate) fn element_after_activation<T>(
                 ));
             }
             Err(error) => return Err(error),
-        }
-        if Instant::now() >= limit {
-            let away = last_away.take().expect("a still-away lookup was recorded");
-            return Err(if seen_on_other_space {
-                stayed_on_other_space(&away, application_activated)
-            } else {
-                with_activation(away, application_activated)
-            });
         }
         if let Ok(pause) = deadline.remaining_slice(POLL_INTERVAL) {
             std::thread::sleep(pause);
