@@ -587,6 +587,10 @@ Errors carry `details.kind`:
 
 Each returned or failed download is consumed, so the next `wait --download` moves on to the following one. Files already in the folder at launch are never returned.
 
+## Surface inventory
+
+`list-surfaces` returns `data.pid` and `data.surfaces`, one entry per surface the app presents now: `id`, `type`, and `title`, `item_count` and `unclassified` when known. An entry's identity is its `id`, never its title: two sheets, alerts or popovers with the same title are two entries with two ids. On macOS a sheet, popover or alert has the id of its own window, `w-<n>`, or `w-<n>/<type>/<index>` under its parent window when it has no window of its own; the same sheet read twice, as a window of the app and as a child of its parent, is one entry. A macOS window presents one sheet at a time and queues any further sheet until the shown one closes, and a queued sheet is not in the accessibility tree, so the number of `sheet` entries is the number of sheets on screen, not the number still waiting. When a sheet closes and the next queued one appears, the next one has a new `id`.
+
 ## Find result shape
 
 A match object leaves out what it does not have, like every other object in the contract: a context match has no `ref_id`, and `value`, `states` and `path` are omitted when absent or empty (the window root has no `path`). `role` and `interactive` are always present. Earlier builds printed `"ref_id": null`, `"value": null`, `"states": []` and `"path": []`; a reader that indexed those keys must treat a missing key as that value. `tests/fixtures/find-matches.json` pins the shape.
