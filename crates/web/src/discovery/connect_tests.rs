@@ -1,4 +1,4 @@
-use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
+use agent_desktop_core::{AdapterError, Deadline, ErrorCode, RetryDisposition};
 use serde_json::json;
 
 use super::verify_connection;
@@ -46,7 +46,18 @@ fn a_silent_active_port_browser_reports_pending_approval() {
     let details = error.details.as_ref().unwrap();
     assert_eq!(details["kind"], "cdp_approval_pending");
     assert_eq!(details["port"], 9222);
-    assert!(error.suggestion.unwrap().contains("Allow remote debugging"));
+    assert_eq!(details["retryable"], false);
+    let suggestion = error.suggestion.unwrap();
+    assert!(suggestion.contains("Allow remote debugging"));
+    assert!(suggestion.contains("--surface sheet"));
+    assert!(suggestion.contains("do not retry"));
+}
+
+#[test]
+fn a_pending_approval_is_not_marked_safe_to_retry() {
+    let error = verify_against_silence(EndpointSource::DevToolsActivePort);
+    assert_eq!(error.disposition.retry(), RetryDisposition::Unsafe);
+    assert_ne!(error.disposition.retry(), RetryDisposition::Safe);
 }
 
 #[test]

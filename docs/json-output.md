@@ -554,7 +554,7 @@ A web `date`, `time`, `datetime-local`, `month`, `week` or `color` input is one 
 
 A URL the browser saves as a file instead of showing returns `"opened": "download"` with the requested URL and an empty `title`; `wait --download` returns the file.
 
-Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_required"` when the approval does not arrive in time.
+Without an endpoint, `open-url` returns `PLATFORM_NOT_SUPPORTED`. A browser that asks its user to approve each DevTools connection returns `PERM_DENIED` with `details.kind: "cdp_approval_pending"` when the approval does not arrive in time. Its disposition is `delivery_uncertain` with `retry: "unsafe"`: the browser is still showing the prompt, and each new connection adds another. Read and answer the prompt through the native surfaces (`list-surfaces`, `snapshot --surface sheet`) before you retry. A declined prompt returns `details.kind: "cdp_connection_rejected"`. A command that only reads and would have made the browser show the prompt returns `details.kind: "cdp_approval_required"` without connecting.
 
 ### Downloads
 
