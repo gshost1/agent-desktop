@@ -12,21 +12,47 @@
 //! published through accessibility are asked about, at most
 //! [`MAX_SPACE_READS`] of them, within [`SPACE_READ_BUDGET`], in one worker.
 //! An inventory whose windows are all on screen or published makes no read.
-//! A window whose placement is unknown is not marked and stays out.
+//!
+//! The read is best effort, so the last placement read for each window number
+//! is remembered for the life of the process. A window the current read could
+//! not answer for keeps its remembered placement, so a window on another Space
+//! does not drop out of one poll of a wait and come back in the next. A fresh
+//! answer always replaces the remembered one. A window never answered for is
+//! not marked and stays out.
 
 use agent_desktop_core::WindowInfo;
 use rustc_hash::FxHashMap;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const MAX_SPACE_READS: usize = 32;
 const SPACE_READ_BUDGET: Duration = Duration::from_millis(100);
+const MAX_REMEMBERED: usize = 4096;
+
+static REMEMBERED: Mutex<Option<FxHashMap<i64, bool>>> = Mutex::new(None);
 
 /// Sets `on_other_space` on every candidate window that `read_placement`
-/// places on another Space. `read_placement` is called once, and only when
+/// places on another Space, or that an earlier read placed there when this
+/// read has no answer for it. `read_placement` is called once, and only when
 /// there is a candidate.
 pub(crate) fn mark_other_space_windows(
     windows: &mut [WindowInfo],
     read_placement: impl FnOnce(Vec<i64>) -> FxHashMap<i64, bool>,
+) {
+    let mut remembered = REMEMBERED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    mark_with_memory(
+        windows,
+        read_placement,
+        remembered.get_or_insert_with(FxHashMap::default),
+    );
+}
+
+fn mark_with_memory(
+    windows: &mut [WindowInfo],
+    read_placement: impl FnOnce(Vec<i64>) -> FxHashMap<i64, bool>,
+    remembered: &mut FxHashMap<i64, bool>,
 ) {
     let candidates = windows
         .iter()
@@ -37,7 +63,22 @@ pub(crate) fn mark_other_space_windows(
     if candidates.is_empty() {
         return;
     }
-    let placements = read_placement(candidates);
+    let mut placements = read_placement(candidates.clone());
+    if remembered.len() + placements.len() > MAX_REMEMBERED {
+        remembered.clear();
+    }
+    for number in candidates {
+        match placements.get(&number) {
+            Some(&placement) => {
+                remembered.insert(number, placement);
+            }
+            None => {
+                if let Some(&placement) = remembered.get(&number) {
+                    placements.insert(number, placement);
+                }
+            }
+        }
+    }
     for window in windows.iter_mut() {
         let on_other_space = is_space_candidate(window)
             && window_number(window)

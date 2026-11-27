@@ -277,6 +277,8 @@ fn gone_wait_requires_window_absence_after_accessibility_disappears() {
             Some("TIMEOUT"),
             250,
         ),
+        ("window_on_other_space", true, None, 5_000),
+        ("window_on_other_space", false, Some("TIMEOUT"), 250),
         (
             "unsupported_surface",
             true,

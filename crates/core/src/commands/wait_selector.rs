@@ -364,6 +364,15 @@ fn is_target_gone_error(err: &AppError) -> bool {
     )
 }
 
+/// Kinds of `ACTION_NOT_SUPPORTED` that say a window exists but has no
+/// accessibility tree right now. A poll keeps going through them: the window
+/// may publish its element, or come on screen from another Space, before the
+/// wait ends.
+const WINDOW_TEMPORARILY_WITHOUT_TREE: [&str; 2] = [
+    "window_without_accessibility_element",
+    "window_on_other_space",
+];
+
 pub(crate) fn is_transient_poll_error(err: &AppError, window_id: Option<&str>) -> bool {
     let AppError::Adapter(error) = err else {
         return false;
@@ -371,7 +380,9 @@ pub(crate) fn is_transient_poll_error(err: &AppError, window_id: Option<&str>) -
     error.is_explicitly_retryable()
         || (error.code == ErrorCode::ActionNotSupported
             && error.details.as_ref().is_some_and(|details| {
-                details["kind"] == "window_without_accessibility_element"
+                details["kind"]
+                    .as_str()
+                    .is_some_and(|kind| WINDOW_TEMPORARILY_WITHOUT_TREE.contains(&kind))
                     && window_id.is_none_or(|id| details["window_id"].as_str() == Some(id))
             }))
 }

@@ -34,11 +34,13 @@ fn resolve_owned_surface<T>(
         Ok(owner) => in_window(owner),
         Err(error)
             if error.code == ErrorCode::ActionNotSupported
-                && error
-                    .details
-                    .as_ref()
-                    .and_then(|details| details["kind"].as_str())
-                    == Some("window_without_accessibility_element") =>
+                && matches!(
+                    error
+                        .details
+                        .as_ref()
+                        .and_then(|details| details["kind"].as_str()),
+                    Some("window_without_accessibility_element" | "window_on_other_space")
+                ) =>
         {
             fallback()
         }
@@ -237,22 +239,27 @@ mod tests {
 
     #[test]
     fn missing_ax_window_uses_number_checked_fallback() {
-        let error = AdapterError::new(ErrorCode::ActionNotSupported, "no AX window")
-            .with_details(serde_json::json!({"kind": "window_without_accessibility_element"}));
-        let result = resolve_owned_surface::<i64>(
-            Err(error),
-            |_| panic!("no owner"),
-            || {
-                find_numbered_surface(
-                    vec![41, 42],
-                    Some(42),
-                    |_| Ok(vec![]),
-                    |number| Ok(Some(*number)),
-                )
-            },
-        )
-        .unwrap();
-        assert_eq!(result, Some(42));
+        for kind in [
+            "window_without_accessibility_element",
+            "window_on_other_space",
+        ] {
+            let error = AdapterError::new(ErrorCode::ActionNotSupported, "no AX window")
+                .with_details(serde_json::json!({"kind": kind}));
+            let result = resolve_owned_surface::<i64>(
+                Err(error),
+                |_| panic!("no owner"),
+                || {
+                    find_numbered_surface(
+                        vec![41, 42],
+                        Some(42),
+                        |_| Ok(vec![]),
+                        |number| Ok(Some(*number)),
+                    )
+                },
+            )
+            .unwrap();
+            assert_eq!(result, Some(42), "kind {kind}");
+        }
     }
 
     #[test]

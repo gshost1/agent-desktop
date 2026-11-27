@@ -63,3 +63,38 @@ fn a_window_that_never_arrives_names_mission_control_not_focus_window() {
     assert!(suggestion.contains("Mission Control"));
     assert!(!suggestion.contains("focus-window"));
 }
+
+#[test]
+fn a_window_on_screen_without_its_element_keeps_that_error() {
+    let error = element_after_activation::<()>(
+        || Err(away("window_without_accessibility_element")),
+        deadline(),
+    )
+    .unwrap_err();
+    let details = error.details.as_ref().unwrap();
+    assert_eq!(details["kind"], "window_without_accessibility_element");
+    assert_eq!(details["window_id"], "w-9");
+    assert_eq!(details["application_activated"], true);
+    assert!(!error.message.contains("stayed on another Space"));
+}
+
+#[test]
+fn the_command_deadline_running_out_is_a_timeout() {
+    let short = Deadline::after(60).unwrap();
+    let error =
+        element_after_activation::<()>(|| Err(away("window_on_other_space")), short).unwrap_err();
+    assert_eq!(error.code, ErrorCode::Timeout);
+    let details = error.details.as_ref().unwrap();
+    assert_eq!(details["kind"], "window_space_switch");
+    assert_eq!(details["window_id"], "w-9");
+    assert_eq!(details["application_activated"], true);
+}
+
+#[test]
+fn the_suggestion_covers_an_application_with_a_window_on_screen() {
+    let error = element_after_activation::<()>(|| Err(away("window_on_other_space")), deadline())
+        .unwrap_err();
+    let suggestion = error.suggestion.as_deref().unwrap();
+    assert!(suggestion.contains("did not switch Spaces"));
+    assert!(suggestion.contains("no window on the Space on screen"));
+}

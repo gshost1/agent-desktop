@@ -109,3 +109,14 @@ fn placement_reads_stop_at_the_deadline() {
     });
     assert!(placements.is_empty());
 }
+
+#[test]
+fn the_worker_stops_before_the_caller_gives_up() {
+    let now = Instant::now();
+    let deadline = now + std::time::Duration::from_millis(100);
+    let worker = worker_deadline(now, deadline);
+    assert!(worker > now);
+    assert!(worker < deadline);
+    assert_eq!(worker - now, std::time::Duration::from_millis(75));
+    assert_eq!(worker_deadline(deadline, now), deadline);
+}

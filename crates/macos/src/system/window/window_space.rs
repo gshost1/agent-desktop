@@ -44,6 +44,10 @@ pub(crate) fn is_on_any_space(window_number: i64, deadline: Instant) -> Option<b
 /// For each of `window_numbers`, whether the window server places it on a
 /// Space other than the one on screen, read in one worker before `deadline`.
 /// A window whose placement could not be read is absent from the answer.
+///
+/// The worker stops starting reads at an earlier deadline, so the windows it
+/// has read reach the caller instead of being lost with a worker that is
+/// still busy when the caller stops waiting.
 pub(crate) fn other_space_placement(
     window_numbers: Vec<i64>,
     deadline: Instant,
@@ -51,14 +55,21 @@ pub(crate) fn other_space_placement(
     let Some(functions) = space_functions() else {
         return FxHashMap::default();
     };
+    let worker_deadline = worker_deadline(Instant::now(), deadline);
     read_before_deadline(&READ_IN_FLIGHT, deadline, move || {
         Some(read_placements(
             &window_numbers,
-            deadline,
+            worker_deadline,
             |window_id, mask| copy_space_membership(functions, window_id, mask),
         ))
     })
     .unwrap_or_default()
+}
+
+/// Three quarters of the time left before `deadline`, the rest kept for the
+/// worker's last round trip and the hand-off of its answer.
+fn worker_deadline(now: Instant, deadline: Instant) -> Instant {
+    now + deadline.saturating_duration_since(now) * 3 / 4
 }
 
 fn read_placements(

@@ -206,15 +206,16 @@ fn bring_space_on_screen(
     crate::system::cocoa_runtime::ensure_cocoa_multithreaded().map_err(before_activation)?;
     deadline.ensure_remaining().map_err(before_activation)?;
     let activated = crate::system::focus_bridge::activate(identity)?;
+    let after_activation = |error| {
+        crate::actions::DeliveryTracker::from_delivered_units(usize::from(activated))
+            .annotate(error)
+    };
     let element = crate::system::focus_other_space::element_after_activation(
         || crate::system::window::window_resolve::window_element_for_info(window, deadline),
         deadline,
     )
-    .map_err(|error| {
-        crate::actions::DeliveryTracker::from_delivered_units(usize::from(activated))
-            .annotate(error)
-    })?;
-    let focused = focus_identity(identity, deadline)?;
+    .map_err(after_activation)?;
+    let focused = focus_identity(identity, deadline).map_err(after_activation)?;
     Ok((element, activated || focused))
 }
 

@@ -108,6 +108,10 @@ impl ObservationOps for MacOSAdapter {
         )
     }
 
+    fn screenshot_app_uses_app_inventory(&self) -> bool {
+        true
+    }
+
     fn is_auxiliary_window(&self, window: &WindowInfo, deadline: Deadline) -> bool {
         crate::system::window::window_subrole::is_auxiliary_window(window, deadline)
     }
